@@ -79,6 +79,17 @@
   </div>
   <div>
     <section>
+      <h2>Species rig</h2>
+      <label>Preset
+        <select id="rigPreset">
+          <option value="tzatzul">Tzatzul</option>
+          <option value="skeeri">Skeeri</option>
+          <option value="custom" disabled>Custom / imported</option>
+        </select>
+      </label>
+      <p>Choose a species to load its rig and saved browser draft. Use Reset preset below to restore the repository's authored values.</p>
+    </section>
+    <section>
       <h2>Sprite paths</h2>
       <p>Use PNG paths relative to <code>docs/assets/</code>.</p>
       <form id="sprites">
@@ -94,7 +105,7 @@
       <div class="row">
         <button type="button" id="save" disabled>Export JSON</button>
         <button type="button" id="open">Import JSON</button>
-        <button type="button" id="reset">Reset to Tzatzul</button>
+        <button type="button" id="reset">Reset preset</button>
         <input id="file" type="file" accept=".json,application/json" hidden>
       </div>
       <p id="status" role="status">Loading preview…</p>
@@ -118,6 +129,6 @@
 <script src="../../js/repo-pattern-library.js?v=20261030lichPatterns3"></script>
 <script src="../../js/furniture-pattern-surfaces.js?v=20261102witchBombGlyphGlow1"></script>
 <script src="talon-carry.js?v=20261103talon6"></script>
-<script src="app.js?v=20261104hcabe19a"></script>
+<script src="app.js?v=20261104skeeri1"></script>
 </body>
 </html>
