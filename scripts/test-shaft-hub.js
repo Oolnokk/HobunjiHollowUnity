@@ -9,7 +9,8 @@ const H=require('../docs/js/shaft-hub.js');
 const Plan=require('../docs/js/ruin-layer-plan.js');
 const Corridor=require('../docs/js/ruin-shaft-corridor.js');
 const Connector=require('../docs/js/ruin-shaft-connector.js');
-const Playable=require('../docs/js/ruin-layer-playable.js'); // Tests mounted stone wings, challenge gates and braziers.
+const Playable=require('../docs/js/ruin-layer-playable.js');
+const Challenges=require('../docs/js/ruin-layer-challenges.js'); // Canonical projectile and plate stage logic. // Tests mounted stone wings, challenge gates and braziers.
 
 const runtime=fs.readFileSync('docs/js/dev-random-ruin-interior-map.js','utf8');
 const index=fs.readFileSync('docs/index.html','utf8');
@@ -18,7 +19,7 @@ assert(runtime.includes('attachShaftHub(rec,0);'),'story vault retains the shaft
 assert(runtime.includes('window.RuinShaftConnector'),'runtime must use physical hallway module');
 assert(!runtime.includes("passage('Enter Shaft Hub'"),'no gameplay teleporter into the shaft');
 assert(!runtime.includes("passage('Return to Ruin'"),'no gameplay teleporter out of the shaft');
-for(const file of ['ruin-layer-plan.js','ruin-shaft-corridor.js','ruin-shaft-connector.js','ruin-layer-playable.js'])
+for(const file of ['ruin-layer-plan.js','ruin-shaft-corridor.js','ruin-shaft-connector.js','ruin-layer-playable.js','ruin-layer-challenges.js'])
   assert(index.includes(file),'game page must load '+file);
 
 // At identical X/Z, select the actor's story grid instead of the first
@@ -58,6 +59,9 @@ for(let seed=1;seed<=1000;seed++){
       assert(wing.rooms.filter(r=>!!r.challenge).length>=2,'multiple challenge rooms before brazier');
       assert.equal(wing.rooms.filter(r=>r.kind==='brazier-chamber').length,1,'exactly one brazier endpoint');
       assert.equal(wing.corridors.length,wing.rooms.length,'hallway per progression stage');
+    assert.equal(wing.rooms[0].challenge,'pressurePlate','every wing starts with a functional stone plate');
+    assert(['glyphObelisk','ceilingRailTargets'].includes(wing.rooms[1].challenge),
+      'every wing includes a real ranged-target room, never a fake labelled placeholder');
       assert(wing.corridors.every(h=>h.length>0&&h.rects.length>=1),'variable-length halls must have footprint');
       if(seed<=80){
         // Regression: even-sized rooms once had an invisible one-cell gap at
@@ -187,7 +191,7 @@ for(const side of ['north','east','south','west']){
   const occupancy={create(config){return {cols:config.cols,rows:config.rows,getPosition:config.getPlayerPosition}}};
   const connected=Connector.connect({rec,ruin,seed:23,meta,THREE,makeTile,DynamicSurfaces:DS,
     ShaftHub:H,ClimbSurfaces:climb,DevRandomRuin:dev,TileOccupancy:occupancy,
-    RuinLayerPlan:Plan,RuinShaftCorridor:Corridor,RuinLayerPlayable:Playable,CellGrid3D:G,
+    RuinLayerPlan:Plan,RuinShaftCorridor:Corridor,RuinLayerPlayable:Playable,RuinLayerChallenges:Challenges,CellGrid3D:G,
     getPlayerPosition:()=>({x:player.x,z:player.z}),getPlayerY:()=>player.y});
   assert(connected.hub.ok,'integrated octagonal room passed reachability');
   assert(ruin.shaftConnection.physical,'the normal ruin entrance is a real corridor');
@@ -221,8 +225,9 @@ for(const side of ['north','east','south','west']){
   assert.equal(network.getState().lit,0,'uncompleted wing cannot ignite its endpoint');
   for(const remaining of first.challenges.slice(1)){
     player={x:remaining.x,z:remaining.z,y:remaining.floorY};
-    for(let i=0;i<17;i++)network.tick(.05);
-    assert(remaining.solved);
+    if(remaining.kind==='pressurePlate')for(let i=0;i<17;i++)network.tick(.05);
+    else for(let i=0;i<remaining.targetCount;i++)remaining.simulateHit(i); // Dispatch actual projectile onHit callbacks.
+    assert(remaining.solved,'the puzzle family must truly unlock its gate: '+remaining.kind);
   }
   brazierControl.onPress();
   assert.equal(network.getState().lit,1,'a completed wing can ignite its real brazier');
@@ -251,7 +256,7 @@ for(const side of ['north','east','south','west']){
   const placed=Connector.connect({rec,ruin,seed:0,meta:{rooms:[{name:'vault'}]},
     THREE,makeTile,DynamicSurfaces:ds,ShaftHub:H,ClimbSurfaces:climb,
     DevRandomRuin:dev,RuinLayerPlan:Plan,RuinShaftCorridor:Corridor,
-    RuinLayerPlayable:Playable,CellGrid3D:G,getPlayerPosition:()=>({x:6,z:27}),getPlayerY:()=>0});
+    RuinLayerPlayable:Playable,RuinLayerChallenges:Challenges,CellGrid3D:G,getPlayerPosition:()=>({x:6,z:27}),getPlayerY:()=>0});
   assert(placed.route.ok&&placed.route.path[0].x===6&&placed.route.path[0].z===28,
     'fixed story vault extends physically through its actual southern doorway');
   assert(rec.floorSet.has('6,28')&&ruin.shaftConnection.physical);
