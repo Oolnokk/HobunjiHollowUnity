@@ -57,7 +57,7 @@
       throw new Error('Shaft connector dependencies are incomplete.');
     const spacing=64; // Snap multi-story anchors far apart; floor room networks fill the open cells.
     const anchorX=Math.ceil((rec.cols+spacing)/spacing)*spacing;
-    const anchorZ=Math.ceil((rec.rows+spacing)/spacing)*spacing;
+    const anchorZ=Math.max(spacing,Math.round((rec.rows/2)/spacing)*spacing); // Near the dungeon's midline; anchors still align on every future floor.
     const plan=RuinLayerPlan.compose({seed,spacing,anchorX,anchorZ,shaftSize:33,floorHeight:4});
     if(!plan.ok)throw new Error('Layer plan invalid: '+plan.checks.filter(c=>!c.ok).map(c=>c.name).join(', '));
     const shaftOptions={seed,floors:plan.floorCount,chambers:false,wall:8,shaft:plan.options.shaftSize,spacing:plan.options.floorHeight,entranceSide:'W'}; // Upper exits terminate at real side-wall thresholds, ready for future wings.
@@ -101,8 +101,11 @@
       floorCount:plan.floorCount,totalWingsPlanned:plan.totalWings,braziersPlanned:plan.totalBraziers,
       hallwayTiles:route.tiles.length,addedFloorTiles:allFloor.length};
     const scope='dev-ruin-shaft-corridor'; // Distinct disposal scope from normal V50 floor supports.
-    for(const [c,r] of route.tiles)DS.registerSurface({id:scope+'-'+c+','+r,scope,
-      bounds:{minX:c,maxX:c+1,minZ:r,maxZ:r+1},topY:placed.grid.baseY,priority:1});
+    const corridorSupportRects=RuinShaftCorridor.rectangles(route.tiles); // Group adjacent stone into broad collision supports.
+    corridorSupportRects.forEach((bounds,i)=>DS.registerSurface({id:scope+'-support-'+i,scope,
+      bounds:{minX:bounds.minC,maxX:bounds.maxC+1,minZ:bounds.minR,maxZ:bounds.maxR+1},
+      topY:placed.grid.baseY,priority:1}));
+    ruin.shaftConnection.supportRects=corridorSupportRects.length;
     const unmountVisual=visual(route.tiles.filter(([c,r])=>!oldFloor.has(key(c,r))),THREE,rec.scene,placed.grid.baseY,rec.floorSet);
     const registered=ShaftHub.mount(placed,{THREE,parent:rec.scene,ClimbSurfaces,DynamicSurfaces:DS,DevRandomRuin});
     // Tile occupancy was created before the old post-generation shaft phase.
