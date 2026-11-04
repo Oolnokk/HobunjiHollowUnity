@@ -232,11 +232,18 @@
       const panel=(door.children||[]).find(child=>child?.isMesh&&child.geometry)||door;
       const box=worldBox(panel),height=box?.max.y-box?.min.y||2;
       const closed=Number(panel.position.y)||0;
-      const state={door,panel,open:0,target:0,closed,height};
+      const state={door,panel,open:0,target:0,closed,height,openingSide:0,
+        crossingAxis:Math.abs(Math.sin(Number(door.rotation.y)||0))>.707?'x':'z'}; // A V50 hallway exit door closes behind the player only once they actually cross its plane.
       trackBlocker(scope+'-transit-door-'+door.id,panel,()=>state.open<.88);
       control({kind:'v50NativeTransitDoor',object:door,promptRoot:door,range:1.9,
         priority:21,touchIcon:'✋',label:()=>state.target?'Close Stone Door':'Open Stone Door',
-        onPress:()=>{if(!nearFloor(door))return;state.target=state.target?0:1;}});
+        onPress:()=>{
+          if(!nearFloor(door))return;
+          state.target=state.target?0:1;
+          const player=getPlayerPosition?.(),position=center(door);
+          const signed=player?(state.crossingAxis==='x'?player.x-position.x:player.z-position.z):0;
+          state.openingSide=state.target&&player?(Math.sign(signed)||1):0; // Manual close does not leave a stale passage-side detector.
+        }});
       inventory.transitDoors[inventory.transitDoors.indexOf(door)]=state;
     }
     const unreg=options.hitPuzzles?.registerExternalRoot?.(nativeRoot);
@@ -293,6 +300,13 @@
       for(const state of inventory.transitDoors){
         state.open+=clamp(state.target-state.open,-step*2.4,step*2.4);
         state.panel.position.y=state.closed+(state.height+.12)*(state.open*state.open*(3-2*state.open));
+        if(state.target>.5&&state.open>.9&&state.openingSide){
+          const player=getPlayerPosition?.(),position=center(state.door);
+          const signed=player?(state.crossingAxis==='x'?player.x-position.x:player.z-position.z):0;
+          if(Math.sign(signed)===-state.openingSide&&Math.abs(signed)>.48){
+            state.target=0;state.openingSide=0; // Mirrors V50's authored hallway exit behavior; a closed transit door still has its own repeatable interact control.
+          }
+        }
       }
     }
     function stageCandidate(room,preferredMechanismId=null){

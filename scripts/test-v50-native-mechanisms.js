@@ -123,6 +123,14 @@ assert(runtime.isSolved(glyphBridge.userData.mechanismId),'projectile glyph sign
 assert(runtime.isSolved(fireBridge.userData.mechanismId),'authentic torch ignition signal is authoritative');
 const door=controls.find(c=>c.kind==='v50NativeTransitDoor');
 door.onPress();runtime.tick(.05);assert(transit.children.length===0);
+assert.equal(runtime.inventory.transitDoors[0].target,1,'native transit door opens from either side on interaction');
+for(let i=0;i<10;i++)runtime.tick(.05);
+player.z=6;runtime.tick(.05);
+assert.equal(runtime.inventory.transitDoors[0].target,0,'native exit door closes automatically after the player crosses its threshold');
+for(let i=0;i<10;i++)runtime.tick(.05);
+door.onPress();assert.equal(runtime.inventory.transitDoors[0].target,1,'native transit door can reopen from its opposite side');
+player.z=2;for(let i=0;i<12;i++)runtime.tick(.05);
+assert.equal(runtime.inventory.transitDoors[0].target,0,'native exit door also auto-closes on reverse passage');
 assert(blockers.some(record=>record.id.includes('v50-fixed-block')),'immovable native push-route shapers have real upper-story collision');
 const raisedBlocker=blockers.find(record=>record.id.includes('pushblock-'+block.id)); // Verify actor height is checked against the actual world-space block, not the overlapping 2D tile.
 assert(raisedBlocker&&!raisedBlocker.blocksAt(3,2,1.25,null,0,{y:0}),
