@@ -142,4 +142,31 @@ frame++;
 area = 'town';
 assert.equal(window.FarmAnimals.aimedAnimal(), null, 'livestock targeting cannot claim other scenes');
 
+area = 'farm';
+near.avatarRef.group.position.x = 3.7; // A large animal's center can be farther away while its visible front corner remains in reach.
+near.modelWidth = 2.4;
+near.modelHeight = 2.4;
+near.avatarRef.frontPlane.hitPoint = { x: 2.05, y: 1, z: 0 };
+far.avatarRef.frontPlane.hitPoint = null;
+frame++;
+assert.equal(window.FarmAnimals.aimedAnimal(), near, 'bounding prefilter must include the corners of a scaled/rotated sprite rectangle');
+
+near._harvestFrozen = true;
+frame++;
+assert.equal(window.FarmAnimals.aimedAnimal(), null, 'ongoing milk/venom harvesting prevents duplicate animal interactions');
+near._harvestFrozen = false;
+
+const back = near.avatarRef.backPlane; // Rigged front/back planes share one mirrored source texture in the production renderer.
+near.avatarRef.frontPlane.hitPoint = null;
+back.hitPoint = { x: 2, y: 1, z: 0 };
+back.hitDistance = 3;
+back.hitUv = { x: 0.85, y: 0.5 };
+back.material.map = near.avatarRef.frontPlane.material.map;
+back.material.map.image = {
+  width: 800, height: 450,
+  opaque: (u, v) => u >= 0.1 && u <= 0.2 && v >= 0.4 && v <= 0.6,
+};
+frame++;
+assert.equal(window.FarmAnimals.aimedAnimal(), near, 'the shared-face shader mirror is honored when checking reverse-card PNG alpha');
+
 console.log('Livestock camera-ray interaction regression checks passed.');
