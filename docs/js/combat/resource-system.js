@@ -511,6 +511,7 @@
     const family = AFFLICTIONS[id]?.family; // Used to apply Thickblood once at the central buildup path.
     const player = window.Combat?.deps?.player; // Used to restrict the player's active potion modifier to the player.
     if (family === "damage" && entity === player) amount *= window.AlchemySystem?.getIncomingDamageAfflictionMultiplier?.() || 1;
+    if (entity === player && !AFFLICTIONS[id]?.immutable && ['damage', 'control', 'offensiveDebuff', 'defensiveDebuff'].includes(family)) amount *= statModifier(entity, 'incomingAffliction'); // Venomous Blood magnifies harmful buildup only, never enhancements or immutable Shambling Footing.
     const before = getAffliction(entity, id);
     setAffliction(entity, id, before + amount);
     const added = round1(getAffliction(entity, id) - before);
@@ -670,7 +671,9 @@
     const before = Number(entity.health) || 0; // Used to keep resource-tick recovery from resurrecting dead actors or rounding tiny living Health to zero.
     const effectiveMax = getLiveEffectiveHealthMax(entity); // Used so recovery and cap maintenance honor every installed maximum-Health reducer.
     const livingFloor = Math.min(before, effectiveMax); // Used to allow a lowered max-Health cap to reduce current Health while never reducing it further merely because recovery is rounded to tenths.
-    const recoveryAmount = Math.max(0, Number(amount) || 0) * timedDebuffModifier(entity, "healingReceived"); // Inhibited scales recovery percentage without altering Health-affliction state.
+    const lowHealthThreshold = Math.max(0, getLiveEffectiveHealthMax(entity)) * 0.35; // Berserker's Bargain tests current Health before healing, preventing a potion from dodging its penalty when it crosses the threshold.
+    const lowHealthHealMultiplier = before < lowHealthThreshold ? statModifier(entity, 'lowHealthHealing') : 1; // Multiplies the existing Inhibited healing penalty without changing Health capacity.
+    const recoveryAmount = Math.max(0, Number(amount) || 0) * timedDebuffModifier(entity, "healingReceived") * lowHealthHealMultiplier; // Inhibited scales recovery percentage without altering Health-affliction state.
     const target = clamp(before + recoveryAmount, 0, effectiveMax); // Used as the unrounded recovery target before the living floor is reapplied.
     entity.health = clamp(round1(target), livingFloor, effectiveMax);
     return round1(entity.health - before);
@@ -678,7 +681,7 @@
 
   function applyHealthAfflictionDamage(entity, amount, cause = 'affliction') {
     if (!(amount > 0) || !(entity?.health > 0)) return 0;
-    const enhanced = resolveEnhancedResourceTransaction(entity, "health", amount, { kind: "damage", source: "afflictionTick" }); // Enhanced Health absorbs DoT through the same transaction path as direct damage.
+    const enhanced = resolveEnhancedResourceTransaction(entity, "health", amount * statModifier(entity, 'incomingHealthDamage'), { kind: "damage", source: "afflictionTick" }); // Glass Fang / False Courage change actual DoT Health loss without creating extra affliction buildup. // Enhanced Health absorbs DoT through the same transaction path as direct damage.
     const remaining = enhanced.ordinaryRemaining;
     if (!(remaining > 0)) return 0;
     const before = Number(entity.health) || 0; // Used to report actual Health lost when an already-applied DoT buildup ticks.
@@ -874,6 +877,15 @@
     entity.lastAttackAttemptAt = nowMs();
     amount *= timedDebuffModifier(entity, "staminaCost"); // Taxed raises the price of the action itself without altering the Stamina resource/affliction bands.
     if (entity === window.Combat?.deps?.player) {
+      const actionKind = String(transaction?.actionKind || ''); // Structured action type is authoritative when callers provide one.
+      const label = String(reason || ''); // Legacy combat actions that don't yet supply a type still retain their costs.
+      const dodge = actionKind === 'combatDodge' || /\\bdodge\\b/i.test(label); // Fractured Guard taxes dodges, not movement or weapon attacks.
+      const attacking = !dodge && (/^(combatCombo|combatQuickAttack|offensiveHeldCharge|offensiveHeldFlurry|rangedWeaponLoad|rangedWeaponFire|combatWeaponAttack)$/.test(actionKind) || (!actionKind && /attack|swing|strike|breaker|flurry|quick|jab|stab|shot|reload|heavy/i.test(label)));
+      const heavy = transaction?.heavy === true || /^(offensiveHeldCharge|offensiveHeldFlurry)$/.test(actionKind); // Lead Knuckles applies only to heavy attacks, not other weapon actions.
+      if (dodge) amount *= statModifier(entity, 'dodgeStaminaCost');
+      if (attacking) amount *= statModifier(entity, 'attackStaminaCost') * (heavy ? statModifier(entity, 'heavyAttackStaminaCost') : 1);
+    }
+    if (entity === window.Combat?.deps?.player) {
       amount *= window.AlchemySystem?.getStaminaSpendMultiplier?.() || 1;
       amount *= 1 - Math.min(0.6, (window.PerkSystem?.rank('combat', 'reduceStaminaUse') || 0) * 0.08); // Reduce Stamina Use perk.
     }
@@ -911,7 +923,7 @@
   function spendFooting(entity, amount, reason = "hit") {
     if (entity.prone) return 0;
     if (!(amount > 0) || !Number.isFinite(entity.footing)) return 0;
-    amount *= timedDebuffModifier(entity, "footingDamageTaken"); // Brittle amplifies percentage Footing loss without creating or consuming any Footing affliction.
+    amount *= timedDebuffModifier(entity, "footingDamageTaken") * statModifier(entity, 'incomingFootingDamage'); // Double-edged balance trinkets adjust only received Footing damage, before existing resistance and enhanced Footing.
     if (entity === window.Combat?.deps?.player) amount *= 1 - Math.min(0.6, (window.PerkSystem?.rank('combat', 'increaseFootingResistance') || 0) * 0.08); // Increase Footing Resistance perk.
     const enhanced = resolveEnhancedResourceTransaction(entity, "footing", amount, { kind: "loss", reason }); // Resolute Footing absorbs at its authored 3:1 effective value.
     const ordinaryLoss = enhanced.ordinaryRemaining;
@@ -974,6 +986,7 @@
       }
     }
 
+    finalDamage *= statModifier(entity, 'incomingHealthDamage'); // Player trade-offs apply to actual direct Health damage (including heavy Bruised consumption), not raw affliction chances.
     const enhanced = resolveEnhancedResourceTransaction(entity, "health", finalDamage, { kind: "damage", reason: opts.reason || "damage" }); // Resolute/Mirrored Health absorb before ordinary Health through the shared enhanced transaction.
     const before = entity.health;
     entity.health = round1(clamp(entity.health - enhanced.ordinaryRemaining, 0, getEffectiveMax(entity, "health")));
@@ -1028,7 +1041,7 @@
     const mul = rest.rested ? 2 : 1;
     const isPlayer = entity === window.Combat?.deps?.player; // Used to apply the consumer's central regeneration modifiers.
     const staminaRegenMultiplier = statModifier(entity, "staminaRegen") * timedDebuffModifier(entity, "staminaRegen"); // Used by both ordinary and Exhausted Stamina recovery so Sapped cannot be bypassed by entering black Stamina.
-    const staminaRate = (opts.staminaRegenPerSec ?? cfg.staminaRegenPerSec) * STAMINA_RECOVERY_MULTIPLIER * (isPlayer ? window.AlchemySystem?.getStaminaRegenMultiplier?.() || 1 : 1) * staminaRegenMultiplier;
+    const staminaRate = (opts.staminaRegenPerSec ?? cfg.staminaRegenPerSec) * STAMINA_RECOVERY_MULTIPLIER * (isPlayer ? window.AlchemySystem?.getStaminaRegenMultiplier?.() || 1 : 1) * staminaRegenMultiplier * statModifier(entity, 'ordinaryStaminaRegen'); // Death's Momentum reduces ordinary Stamina regen only, without unintentionally slowing black-Stamina debt recovery.
     const healthRecoveryBlocked = opts.healthRecoveryBlocked === true; // Used by the shared combat-recovery policy to suppress automatic current-Health gains without disabling the rest of ResourceSystem maintenance.
     const healthRate = healthRecoveryBlocked ? 0 : (opts.healthRegenPerSec ?? cfg.healthRegenPerSec) * (isPlayer ? window.AlchemySystem?.getHealthRegenMultiplier?.() || 1 : 1)
       * statModifier(entity, "healthRegen") * timedDebuffModifier(entity, "healthRegen") * (rest.rested ? 1 : statModifier(entity, "healthRegenInCombat")); // In-combat = not yet rested (the same quietSeconds rule that doubles out-of-combat regen).
