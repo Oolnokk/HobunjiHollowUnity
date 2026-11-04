@@ -66,6 +66,12 @@ function extractItemDefs(gameJsSource) {
   return splitTopLevelEntries(block).map(parseEntry).filter(Boolean);
 }
 
+// The runtime material registration bridge is authoritative for recently added animal drops.
+function extractWildlifeMaterials(registrationSource) {
+  const block = findBlock(registrationSource, 'const WILDLIFE_MATERIAL_DEFS = Object.freeze({'); // Same literals registered by PuktukDenNestRegistration during CookingSystem.init.
+  return block ? splitTopLevelEntries(block).map(parseEntry).filter(Boolean) : [];
+}
+
 function extractToolItemDefs(gameJsSource) {
   const block = findBlock(gameJsSource, 'const TOOL_ITEM_DEFS = {');
   if (!block) return [];
@@ -112,12 +118,14 @@ function main() {
   const gameJsSource = fs.readFileSync(path.join(DOCS, 'game.js'), 'utf8');
   const cookingDataSource = fs.readFileSync(path.join(DOCS, 'js', 'cooking-data.js'), 'utf8');
   const cookingSystemSource = fs.readFileSync(path.join(DOCS, 'js', 'cooking-system.js'), 'utf8'); // Supplies canonical ingredient placeholders.
+  const animalMaterialsSource = fs.readFileSync(path.join(DOCS, 'js', 'puktuk-den-nest-registration.js'), 'utf8'); // Reads the exact wild shell/hide material catalog registered at runtime.
   const cosmeticsIndexJson = fs.readFileSync(path.join(DOCS, 'config', 'cosmetics', 'index.json'), 'utf8');
 
   const items = {};
   for (const item of extractItemDefs(gameJsSource)) items[item.key] = item;
   for (const item of extractToolItemDefs(gameJsSource)) if (!items[item.key]) items[item.key] = item;
   for (const item of extractCookingIngredients(cookingDataSource, cookingSystemSource)) if (!items[item.key]) items[item.key] = item;
+  for (const item of extractWildlifeMaterials(animalMaterialsSource)) items[item.key] = item; // New wildlife materials stay visible in the item editor when this index is regenerated.
   for (const item of extractCosmetics(cosmeticsIndexJson)) if (!items[item.key]) items[item.key] = item;
 
   const sortedKeys = Object.keys(items).sort((a, b) => a.localeCompare(b));
