@@ -90,8 +90,12 @@ const runtimeButton=new MockGroup();
 const root=new MockGroup();
 scene.add(root);
 const plinth=new MockGroup(),plinthAnchor=new MockGroup(); // Linked defense plinth used to prove seated statues are protected from recall.
-plinth.userData.burdenPlateAnchor=plinthAnchor;
-let cancelledPlinths=0;
+plinth.userData.burdenPlateAnchor=plinthAnchor;plinth.userData.puzzleInstanceId='trial_plinth';
+plinth.userData.furniturePuzzle={behavior:'burdenPlate'};plinth.add(plinthAnchor);
+const alternate=new MockGroup(),alternateAnchor=new MockGroup(); // An unrelated optional plinth can accept the same physical Key Statue kind.
+alternate.userData.burdenPlateAnchor=alternateAnchor;alternate.userData.puzzleInstanceId='alternate_plinth';
+alternate.userData.furniturePuzzle={behavior:'burdenPlate'};alternate.add(alternateAnchor);
+let cancelledPlinths=0,alternateCancels=0;
 root.userData.meshById=new Map([['key_statue_button',runtimeButton]]);
 let assetLoads=0;
 const registered=[];
@@ -110,8 +114,12 @@ const runtimeWindow={
  },
  FurniturePuzzleRuntime:{
   setKeyStatueTaken(_map,_id,taken){takenTransitions.push(taken);return true;},
-  getNode(_map,id){return id==='trial_plinth'?plinth:null;},
-  cancelBurdenPlate(_map,id){assert.equal(id,'trial_plinth');cancelledPlinths++;plinth.userData.burdenPlatePayload=null;return true;},
+  getNode(_map,id){return id==='trial_plinth'?plinth:id==='alternate_plinth'?alternate:null;},
+  cancelBurdenPlate(_map,id){
+    if(id==='trial_plinth'){cancelledPlinths++;plinth.userData.burdenPlatePayload=null;return true;}
+    if(id==='alternate_plinth'){alternateCancels++;alternate.userData.burdenPlatePayload=null;return true;}
+    return false;
+  },
  },
 };
 runtimeWindow.window=runtimeWindow;
@@ -156,5 +164,15 @@ assert.equal(cancelledPlinths,1,'destroying the seated statue reverses its plint
 assert.equal(registered.length,4,'destroying the seated statue restores exactly one replacement');
 assert.equal(api.status(area,'fixture'),'ready','after a failed defense the dispenser is ready again');
 assert.equal(api.debugSnapshot().dispensers[0].feedPlinthId,'trial_plinth','mobile debug reports the linked defense objective');
-console.log('Key Statue: authored dispenser + plinth feed, retry after failed loads, loss and drop recovery, protected in-progress defense, and reset on destruction passed.');
+const swapped=registered[3];swapped.carried=false;swapped.keyStatueMounted=false;
+swapped.plinthAttached=true;swapped.plinthAnchor=alternateAnchor;
+alternateAnchor.add(swapped.group);alternate.userData.burdenPlatePayload=swapped;
+assert.equal(api.status(area,'fixture'),'seated','a statue moved into another plinth is protected by its actual attachment');
+assert.equal(api.recall(area,'fixture').ok,false,'the original dispenser cannot duplicate a statue seated at another plinth');
+runtimeWindow.Shattercasks.discardBurden(swapped);
+await new Promise(resolve=>setImmediate(resolve));
+assert.equal(alternateCancels,1,'destroying a swapped statue resets the plinth that actually held it');
+assert.equal(registered.length,5,'a cross-placed destroyed statue still produces only one fresh replacement');
+assert.equal(api.status(area,'fixture'),'ready');
+console.log('Key Statue: authored dispenser + plinth feed, retry after failed loads, loss and drop recovery, protected in-progress or swapped statues, and reset on destruction passed.');
 })().catch(error=>{console.error(error);process.exitCode=1;});
