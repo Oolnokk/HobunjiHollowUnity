@@ -87,6 +87,31 @@
         <label>X offset <input data-x-${index} type="range" min="-10" max="10" step="0.05" value="0" aria-label="${index ? "Overpass" : "Primary"} pattern X offset"></label><output data-x-value-${index}>0.00</output>
         <label>Y offset <input data-y-${index} type="range" min="-10" max="10" step="0.05" value="0" aria-label="${index ? "Overpass" : "Primary"} pattern Y offset"></label><output data-y-value-${index}>0.00</output></fieldset>`).join('');
     host.appendChild(controls);
+    // Keep arrows in both game furniture/rug menus and standalone furniture authoring tools.
+    const addArrows = window.PatternQuickControls?.addArrowButtons || (node => {
+      for (const slider of node.querySelectorAll('input[type="range"]')) {
+        if (slider.dataset.arrowButtons) continue;
+        slider.dataset.arrowButtons = 'yes';
+        const wrap = document.createElement('span'); // Slider remains intact between native controller-focusable buttons.
+        wrap.style.cssText = 'display:inline-flex;align-items:center;gap:4px;max-width:100%';
+        slider.before(wrap); wrap.appendChild(slider);
+        for (const dir of [-1, 1]) {
+          const button = document.createElement('button');
+          button.type = 'button'; button.textContent = dir < 0 ? '‹' : '›';
+          button.setAttribute('aria-label', (dir < 0 ? 'Decrease ' : 'Increase ') + (slider.getAttribute('aria-label') || 'pattern setting'));
+          button.style.cssText = 'min-width:30px;min-height:30px;border:1px solid #78908b;border-radius:6px;background:#22302f;color:#fff';
+          button.addEventListener('click', () => {
+            if (slider.disabled) return;
+            const next = Math.min(Number(slider.max), Math.max(Number(slider.min), Number((Number(slider.value) + dir * Number(slider.step || .1)).toFixed(5))));
+            slider.value = String(next);
+            slider.dispatchEvent(new Event('input', { bubbles: true }));
+            slider.dispatchEvent(new Event('change', { bubbles: true }));
+          });
+          if (dir < 0) wrap.prepend(button); else wrap.appendChild(button);
+        }
+      }
+    });
+    addArrows(controls);
     const field = name => controls.querySelector(`[data-${name}]`); // Scoped fields allow multiple authoring panels without ID collisions.
     for(let index=0;index<2;index++) for(const name of ['zoom','motif','rotation','x','y']) field(`${name}-${index}`)?.addEventListener?.('input',()=>{const output=field(`${name}-value-${index}`),value=Number(field(`${name}-${index}`).value);if(output)output.textContent=name==='zoom'?`${value.toFixed(1)}×`:name==='motif'?`${value.toFixed(2)}×`:name==='rotation'?`${value}°`:value.toFixed(2);});
     const dyes = () => window.DyeSystem?.getCatalog?.() || window.ScratchbonesAccount?.getDyeCatalog?.() || window.SCRATCHBONES_CONFIG?.game?.dyes?.catalog || [];
