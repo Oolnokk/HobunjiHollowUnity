@@ -5,7 +5,8 @@
   ctx.globalAlpha=opacity;
   ctx.drawImage(rawCanvas,rect.x,rect.y,rect.w,rect.h);
   ctx.globalAlpha=1;
-  if(fitRegion()!=='headwear')await applyRuntimeCloudMask(out); // Cloud opacity masks clip torso layers, never the skull or hats.
+  // The game no longer applies a destination-out cloud mask to portrait art.
+  // Its original mask image is consumed by the separate arm-cut pipeline only.
   return out;
 }
 function targetGarmentLayerXform(){
@@ -130,7 +131,7 @@ async function extendedRuntimeCanvas(){
   const out=Object.assign(document.createElement('canvas'),{width:normalSize,height:outHeight});
   const ctx=out.getContext('2d',{alpha:true});ctx.imageSmoothingEnabled=false;
   ctx.drawImage(raw,drawX,drawY,drawW,drawH);
-  await applyRuntimeCloudMask(out);
+  // Extended overlays must also remain uncut: the in-game cloud image is arm-only.
   return out;
 }
 function disposeObjectTree(root){
