@@ -1064,10 +1064,32 @@
   function objectAt(mapId, col, row) {
     const id = String(mapId); // Used to select only this cave's authored clusters.
     const plan = plansByMapId.get(id);
-    if (!plan?.mushrooms?.length || String(wildlifeDeps?.getCurrentArea?.() || '') !== id) return null;
+    if (!plan || String(wildlifeDeps?.getCurrentArea?.() || '') !== id) return null;
+    const profile = sitesByMapId.get(id); // The cave profile validates both cache and Duskcap world interactions.
+    const cache = plan.cache; // The authored chest now requires an explicit press instead of proximity auto-loot.
+    if (profile && cache && cache.col === col && cache.row === row && !stateFor(profile).cacheOpened
+      && caveDistanceTiles(cache) <= CACHE_OPEN_RADIUS_TILES) {
+      return {
+        id: cache.id, type: 'treasure_chest', col, row, label: '🗝️ Hidden Cave Cache',
+        getButtons: () => [{ icon: '🗝️', label: 'Pick Cave Cache Lock', action: 'obj_pick_cave_cache', style: 'primary', allowed: true }],
+        onAction(action) {
+          if (action !== 'obj_pick_cave_cache') return { ok: false, message: 'Unknown action.' };
+          const valid = () => String(wildlifeDeps?.getCurrentArea?.() || '') === id
+            && plansByMapId.get(id) === plan && !stateFor(profile).cacheOpened
+            && caveDistanceTiles(cache) <= CACHE_OPEN_RADIUS_TILES;
+          if (!valid()) return { ok: false, message: 'The cache is out of reach.' };
+          const started = window.ChestLockpicking?.open?.({
+            id: cache.id, title: 'Hidden Cave Cache', tier: cache.tier || 2,
+            valid,
+            onSuccess: () => grantCacheLoot(profile, plan, stateFor(profile)), // Keep the original saved cave loot path.
+          });
+          return { ok: false, message: started ? '' : 'Lockpicking unavailable.', deferMemberSave: true };
+        },
+      };
+    }
+    if (!plan.mushrooms?.length) return null;
     const mushroom = plan.mushrooms.find(item => item.col === col && item.row === row);
     if (!mushroom || caveDistanceTiles(mushroom) > MUSHROOM_INTERACT_RADIUS_TILES) return null;
-    const profile = sitesByMapId.get(id);
     if (!profile || !mushroomAvailable(stateFor(profile), mushroom)) return null;
     const meshes = mushroomMeshesByMapId.get(id);
     if (meshes && !meshes.has(mushroom.id)) return null;
@@ -1244,7 +1266,7 @@
     markDiscovered(profile, state);
     ensureOccupants(profile, plan, state);
     triggerTraps(profile, plan, state);
-    grantCacheLoot(profile, plan, state);
+    // Hidden caches are awarded through the explicit lockpicking interaction, never proximity alone.
     // The cave scene is cached across visits: restore missing stalks after
     // their three-day regrowth window, without rebuilding the cave each tick.
     if (mushroomVisualDayByMapId.has(mapId) && mushroomVisualDayByMapId.get(mapId) !== currentDay()) {

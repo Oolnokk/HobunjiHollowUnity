@@ -242,7 +242,8 @@
   // over undisturbed ground, and re-burying it (filling the trench back
   // in before opening) hides the option again.
   function _makeTreasureChestObject(mapId, col, row, placement, mesh) {
-    return {
+    let completingPick = false; // Ephemeral success-only reentry flag; never saved on the persistent placement or restored to bypass a lock.
+    const chestObject = { // The success callback re-enters the live decorated action so discovery rewards still fire.
       id: 'treasurechest_' + mapId + '_' + col + '_' + row, type: 'treasure_chest',
       col, row, mesh,
       label: '🗝️ Buried Chest',
@@ -257,6 +258,35 @@
         if (action !== 'obj_open_treasure_chest') return { ok: false, message: 'Unknown action.' };
         const tile = deps._zoneScenes.get(mapId)?.grid[row]?.[col];
         if (tile?.type !== deps.TileType.TRENCH) return { ok: false, message: "It's still buried — dig a trench here to reach it." };
+        if (placement.found) return { ok: false, message: 'Already opened.' }; // Reject stale interaction buttons after the treasure is claimed.
+        if (!completingPick) {
+          const valid = () => !placement.found && deps.getCurrentArea() === mapId
+            && deps._zoneTreasurePersist.get(mapId)?.placements?.includes(placement)
+            && deps._zoneTreasureObjects.get(mapId)?.get(col + ',' + row) === chestObject
+            && deps._zoneScenes.get(mapId)?.grid[row]?.[col]?.type === deps.TileType.TRENCH; // A replaced or weekly-rescattered chest cannot pay an obsolete victory.
+          const started = window.ChestLockpicking?.open?.({
+            id: chestObject.id, title: 'Buried Chest', tier: 1, valid,
+            onSuccess: () => {
+              let result; // The decorated action remains the only loot and rare-weapon reward authority.
+              try {
+                completingPick = true; // Only this synchronous success reentry skips the minigame.
+                result = chestObject.onAction('obj_open_treasure_chest'); // Runs WeaponDiscoveryRewards after the normal treasure loot.
+              } finally { completingPick = false; }
+              if (result?.message) deps.showToast?.(result.message, result.ok === true);
+              if (result?.ok) {
+                // The world dispatcher saw an asynchronous false result, so it
+                // never saved this successful chest. Persist the live inventory now.
+                const saved = window.HobunjiRuntimeSave?.flushNow?.({ reason: 'buried-chest-lockpicked' })
+                  ?? (typeof deps.saveMemberWorldData === 'function' ? (deps.saveMemberWorldData(), { ok: true }) : null);
+                if (!saved || saved.ok === false || saved.captured === false)
+                  deps.showToast?.('Chest opened, but the save was not confirmed. Check Save Diagnostics.', false);
+              }
+            },
+          });
+          // A pending minigame is NOT an opened chest. Keep result.ok false so
+          // WeaponDiscoveryRewards cannot roll a weapon before a successful pick.
+          return { ok: false, message: started ? '' : 'Lockpicking unavailable.', deferMemberSave: true };
+        }
         const { loot } = placement;
         const parts = [];
         for (const metalKey of loot.metalKeys) {
@@ -302,6 +332,7 @@
         return { ok: true, message: 'Opened the chest: ' + parts.join(', ') };
       },
     };
+    return chestObject;
   }
 
   function _clearZoneTreasureMeshes(mapId) {
