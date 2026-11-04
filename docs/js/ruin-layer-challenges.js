@@ -38,13 +38,16 @@
     };
     const target=(name,x,py,z)=>{
       const base=body(name+'-stone',new THREE.BoxGeometry(.94,.68,.68),stone,x,py,z);
+      base.raycast=()=>{}; // Decorative stone does not shadow the smaller authoritative glyph hit volume.
       const rune=body(name+'-rune',new THREE.BoxGeometry(.6,.48,.76),idle,x,py,z);
       rune.userData.devRuinProjectileTarget=true;
       const state={
         id:name,object:rune,hitMesh:rune,active:false,
-        hittable:()=>!rec.disposed&&!state.active&&isActive()&&rune.visible,
+        hittable:()=>!rec.disposed&&!state.active&&isActive()&&rune.visible
+          &&Number.isFinite(Number(getPlayerY?.()))&&Math.abs(Number(getPlayerY())-y)<.9,
         onHit:()=>{
-          if(state.active||rec.disposed||!isActive())return;
+          if(state.active||rec.disposed||!isActive()
+            ||!Number.isFinite(Number(getPlayerY?.()))||Math.abs(Number(getPlayerY())-y)>=.9)return; // Cannot shoot an upstairs target through an unseen deck.
           state.active=true;rec.hits++;
           rune.material=hit;
           options.onHit?.(rec,state);
