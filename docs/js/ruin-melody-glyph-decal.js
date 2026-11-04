@@ -146,8 +146,13 @@
     }
 
     if (!setNotes(notes)) {root.remove(group);return null;}
+    const matchesNotes = candidate => {
+      const displayed=group.userData.melodyNotes; // Avoid allocation/serialization in the ruin's per-frame sequence synchronization.
+      return Array.isArray(candidate) && candidate.length===displayed.length &&
+        candidate.every((note,index)=>note===displayed[index]);
+    };
     return {
-      group,setNotes,
+      group,setNotes,matchesNotes,
       get sequenceKey() {return sequenceKey;},
       diagnostics:()=>({notes:group.userData.melodyNotes?.slice()||[],...placement}),
     };
