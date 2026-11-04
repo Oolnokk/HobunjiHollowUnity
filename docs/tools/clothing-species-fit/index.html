@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<script src="../../js/tap-reliability.js?v=20261010a"></script>
+<script defer src="../../js/tap-reliability.js?v=20261010a"></script>
 <title>Hobunji Clothing / Headwear Species Fit</title>
 <link rel="stylesheet" href="style.css">
 </head>
@@ -160,7 +160,18 @@
   </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
-<script src="loader.js"></script>
+<!-- The 2D editor must never wait for the optional Three.js CDN on mobile. -->
+<script async src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"
+  onload="window.dispatchEvent(new Event('hobunji-clothing-fit-three-ready'))"
+  onerror="document.getElementById('threeStatus').textContent='Three.js could not load; 2D fitting is still available. Retry the 3D preview when connected.'"></script>
+<script>
+window.__hobunjiFitLoaderStarted=false;
+setTimeout(()=>{
+  if(!window.__hobunjiFitLoaderStarted){
+    document.getElementById('status').textContent='Editor loader has not responded after 20 seconds. Check your connection or reload.';
+  }
+},20000); // Detect a hanging script download before loader.js can install its own diagnostics.
+</script>
+<script src="loader.js" onerror="document.getElementById('status').textContent='Editor loader could not be fetched. Check your connection and reload this page.'"></script>
 </body>
 </html>
