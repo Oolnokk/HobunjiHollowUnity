@@ -45,7 +45,7 @@ async function updateThreePreview(){
     return;
   }
   const buildId=++R.three.buildGeneration;
-  try{
+  let pendingRigGroup=null, pendingAvatarModel=null, pendingFeet=null; // Dispose incomplete previews if any 3D construction stage fails.
     await withThreePreviewDeadline(ensureRigRuntime(),60000,'3D module loading');
     if(buildId!==R.three.buildGeneration)return;
     E.threeStatus.textContent='Rendering runtime portrait + cloud mask…';
@@ -60,6 +60,7 @@ async function updateThreePreview(){
     disposeRuntimeRig();
 
     const rigGroup=new THREE.Group();
+    pendingRigGroup=rigGroup;
     rigGroup.name=`RuntimeCharacterRig_${E.species.value}_${E.gender.value}`;
     const avatarCfg=window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar||{};
     const baseWidth=Number(avatarCfg.worldModelWidth)>0?Number(avatarCfg.worldModelWidth):.9;
@@ -75,6 +76,7 @@ async function updateThreePreview(){
       name:'ClothingFitRuntimePortrait',
       userData:{source:'clothing-fit-runtime-preview',nonInteractive:true},
     });
+    pendingAvatarModel=model;
     model.userData.proceduralHandParent=rigGroup;
     model.userData.rigAvatarProfile=avatar.profile;
     rigGroup.add(model);
@@ -93,6 +95,7 @@ async function updateThreePreview(){
       profile:avatar.profile,
       portraitSize:avatar.frontComposed.width||200,
     })||null;
+    pendingFeet=feet;
     feet?.update?.(0,0,false,null);
 
     if(E.showExtended3D.checked&&R.extendedSource){
@@ -106,6 +109,7 @@ async function updateThreePreview(){
 
     R.three.group.add(rigGroup);
     R.three.rigRoot=rigGroup;R.three.avatarModel=model;R.three.feet=feet;
+    pendingRigGroup=null;pendingAvatarModel=null;pendingFeet=null; // Ownership now belongs to R.three and disposeRuntimeRig().
 
     // Match the full-character preview contract used elsewhere in the repository.
     const scale=window.HobunjiCharacterRigScale?.scaleFor?.(E.species.value,E.gender.value)||null;
@@ -131,6 +135,12 @@ async function updateThreePreview(){
     E.threeStatus.textContent=`Target: ${E.species.value} ${E.gender.value} • Source: ${E.sourceSpecies.value} ${E.sourceGender.value} • Runtime rig: portrait + neck + ${handState} + feet + ${cloud} + garment preset B${R.extendedGroup?' + extended overlay':''}.`;
   }catch(error){
     if(buildId!==R.three.buildGeneration)return;
+    try{pendingFeet?.dispose?.()}catch{}
+    try{if(pendingAvatarModel)window.PNGPlaneAvatar?.disposeAvatarModel?.(pendingAvatarModel)}catch{}
+    if(pendingRigGroup)disposeObjectTree(pendingRigGroup);
+    disposeRuntimeRig(); // Never leave the last successful character visible after a failed new garment build.
+    R.three.matchedFront2D=null;
+    render(false); // Repaint the raw 2D fallback without triggering another failed 3D attempt.
     console.error(error);E.threeStatus.textContent=`Target ${E.species.value} ${E.gender.value}: runtime rig failed: ${error.message}`;
     if(E.match3D.checked)E.match3DStatus.textContent='Game-matched portrait unavailable; showing raw artwork. '+error.message;
     log('3D RUNTIME ERROR '+error.message);
