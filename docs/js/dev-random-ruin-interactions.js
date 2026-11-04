@@ -204,7 +204,7 @@
         const z = origin.z + axis.z * offset * sign + lateral.z * side;
         const support = DS.sampleSupport?.(x, z, { minY:expectedBottom - .65, maxY:expectedTop + .65, pad:.02 });
         if (!support || !Number.isFinite(Number(support.y))) continue;
-        const blocker = DS.blockerAt?.(x, z, { radius:.18, actorHeight:1.25 }) || null;
+        const blocker = DS.blockerAt?.(x, z, { radius:.18, actorHeight:1.25, y:Number(support.y) }) || null; // Landings test blockers at their own physical elevation, not the player's current story.
         candidates.push({ x, z, y:Number(support.y), supportId:support.id || null, blocked:!!blocker, blockerId:blocker?.id || null, offset, sign });
       }
     }
@@ -221,7 +221,7 @@
         const a = i / 16 * Math.PI * 2, x = pos.x + Math.cos(a) * radius, z = pos.z + Math.sin(a) * radius;
         const support = DS.sampleSupport?.(x, z, { minY:landing.y - .2, maxY:landing.y + .2, pad:.02 });
         if (!support || Math.abs(Number(support.y) - landing.y) > .15) continue;
-        if (DS.blockerAt?.(x, z, { radius:.18, actorHeight:1.25 })) continue;
+        if (DS.blockerAt?.(x, z, { radius:.18, actorHeight:1.25, y:Number(support.y) })) continue; // The upper landing can be free even while a different floor has a stone blocker at the same X/Z.
         const d = (x - landing.x) ** 2 + (z - landing.z) ** 2;
         if (!best || d < best.d) best = { x, z, y:Number(support.y), supportId:support.id || null, blocked:false, offset:radius, sign:landing.sign, d };
       }
