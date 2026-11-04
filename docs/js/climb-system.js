@@ -59,6 +59,17 @@
   }
 
   const CLIMB_MAX_WALL_TILES = 4;
+  // Shared across player/creature movement and mesa rendering; cached per live grid.
+  function currentCliffNetwork() {
+    if (!deps?._isZoneArea?.(deps.getCurrentArea())) return null;
+    const grid = deps.getActiveGrid?.();
+    return window.CliffRouteNetwork?.forGrid?.(grid, {
+      area: deps.getCurrentArea(),
+      blocked: t => !t || t.incline || deps.isSolid(t.type),
+      isBoundary: t => window.MapBoundaryGuard?.isBoundaryTile?.(t) || false,
+      tileY: t => deps.tileSurfaceYInArea(t, deps.getCurrentArea()),
+    }) || null;
+  }
   function getWallClimbTarget() {
     const player = deps.player;
     const mountHeading = window.Mounts?.rideState === 'mounted' ? Number(window.Mounts?.heading) : NaN; // Used below so cliff targeting follows the carrier while rider look remains independent.
@@ -87,7 +98,12 @@
         if (deps.isSolid(t.type)) return null;
         if ((t.elevTier || 0) === startElevTier) return null;
         const landElevTier = t.elevTier || 0;
+        const network = currentCliffNetwork(); // Stops unrestricted auto-ascent at every unmarked cliff face.
+        const entry = network && window.CliffRouteNetwork.crossing(network, startCol, startRow, col, row);
+        if (entry) return { type: 'cliffRoute', dir, route: entry.route, entry: entry.entry };
+        if (network && landElevTier > startElevTier) return null; // Only carved handhold paths are climbable.
         return { type: 'wall', dir, landCol: col, landRow: row, startElevTier, landElevTier, wallTiles, descending: landElevTier < startElevTier };
+
       }
       wallTiles++;
     }
@@ -212,6 +228,12 @@
   function getClimbTarget() {
     if (!deps._isZoneArea(deps.getCurrentArea())) return null;
     const player = deps.player;
+    if (player.onCliffBalcony) {
+      const network = currentCliffNetwork();
+      const shelf = window.CliffRouteNetwork?.shelfAt?.(network, player.onCliffBalcony);
+      const route = shelf && network?.routes[shelf.routeId];
+      return route ? { type: 'cliffRoute', route, entry: shelf.nodeId } : null;
+    }
     if (player.onBranch) {
       const branch = player.onBranch;
       // An enemy under the same centered ray keeps Action 1 in combat; jump
@@ -323,6 +345,26 @@
     return true;
   }
 
+  // A cliff climb stays attached between *individual* hops. Each new
+  // direction chooses a neighboring hold, including lateral/diagonal forks.
+  function startRouteClimb(climb) {
+    const player = deps.player, node = climb.route?.nodes[climb.entry];
+    if (!node || player.climbing) return false;
+    player.onCliffBalcony = null;
+    player._cliffRouteSession = {
+      area: deps.getCurrentArea(), route: climb.route, nodeIndex: climb.entry,
+      moving: false, toIndex: -1,
+    };
+    player.climbing = true;
+    player.x = node.x * deps.TILE; player.y = node.z * deps.TILE;
+    player.climbSurfaceY = node.y;
+    player.climbHopBounce = 0; player.vx = 0; player.vy = 0;
+    player._climbTargetBranch = null; player._climbJumpDownAxis = null;
+    player._cliffLandingShelf = null;
+    resetClimbTiming(player, { cancelable: false });
+    return true;
+  }
+
   function startClimb(climb) {
     const mountRideState = deps.getMountRideState?.() || 'none'; // Used to keep scripted climbing mutually exclusive with every mount transition phase.
     if (mountRideState !== 'none') {
@@ -343,6 +385,7 @@
       window.__farmLog?.(`[climb] blocked while mount rideState=${mountRideState}`, 'wildlife');
       return false;
     }
+    if (climb.type === 'cliffRoute') return startRouteClimb(climb);
     if (climb.type === 'branch') return startBranchClimb(climb.branch);
     if (climb.type === 'branchJumpDown') return startBranchJumpDown(climb);
 
@@ -362,6 +405,19 @@
     player.climbEndY = (climb.landRow + 0.5) * deps.TILE;
     player.climbSurfaceStartY = deps.tileSurfaceYInArea(startTile, currentArea);
     player.climbSurfaceEndY = deps.tileSurfaceYInArea(landTile, currentArea);
+    // Descending remains possible from *any* cliff. Catch a real elevated
+    // mini-cliff on the fall line before reaching the ordinary ground tile.
+    const network = descending ? currentCliffNetwork() : null;
+    const shelf = descending && window.CliffRouteNetwork?.highestBelow?.(
+      network, player.climbEndX / deps.TILE, player.climbEndY / deps.TILE,
+      player.climbSurfaceStartY, player.climbSurfaceEndY
+    );
+    player._cliffLandingShelf = shelf?.id || null;
+    if (shelf) {
+      player.climbEndX = shelf.x * deps.TILE;
+      player.climbEndY = shelf.z * deps.TILE;
+      player.climbSurfaceEndY = shelf.y;
+    }
     player.climbSurfaceY = player.climbSurfaceStartY;
     player.climbHopBounce = 0;
     player.vx = 0; player.vy = 0;
@@ -594,6 +650,31 @@
 
   function updateClimb(dt) {
     const player = deps.player;
+    const session = player._cliffRouteSession; // Active only for exterior directional handhold climbing.
+    if (session && session.area !== deps.getCurrentArea()) {
+      player._cliffRouteSession = null; player.climbing = false; return;
+    }
+    if (session && !session.moving) {
+      const raw = deps.getMovementInput?.() || { x: 0, y: 0 };
+      const next = window.CliffRouteNetwork?.nextHop?.(session.route, session.nodeIndex, { x: raw.x, z: raw.y });
+      if (!next) {
+        player.vx = 0; player.vy = 0; player.climbHopBounce = 0;
+        return; // No direction or no link: hang in place; never advance automatically.
+      }
+      session.toIndex = next.id; session.moving = true;
+      player.climbStartX = player.x; player.climbStartY = player.y;
+      player.climbEndX = next.x * deps.TILE; player.climbEndY = next.z * deps.TILE;
+      player.climbSurfaceStartY = player.climbSurfaceY;
+      player.climbSurfaceEndY = next.y;
+      player.climbElapsed = 0; player.climbHopCount = 1;
+      player._climbLastHopIndex = -1;
+      resetClimbTiming(player, { activeS: 0.32, pauseS: 0.13, bounce: 0.35, cancelable: false });
+      const facing = Math.atan2(player.climbEndY - player.y, player.climbEndX - player.x);
+      if (Number.isFinite(facing)) {
+        player.angle = facing;
+        deps.setFacingAngle(facing); deps.setTargetAimAngle(facing); deps.setLastMoveAngle(facing);
+      }
+    }
     if (climbCancelRequested(player, dt)) dropFromClimb(player);
     const hopActiveS = player._climbHopActiveS ?? CLIMB_HOP_ACTIVE_S;
     const hopPauseS = player._climbHopPauseS ?? CLIMB_HOP_PAUSE_S;
@@ -627,6 +708,27 @@
       player.y = player.climbEndY;
       player.climbSurfaceY = player.climbSurfaceEndY;
       player.climbHopBounce = 0;
+      if (session) {
+        session.nodeIndex = session.toIndex; session.moving = false;
+        const node = session.route.nodes[session.nodeIndex];
+        if (node.balconyId) {
+          player.onCliffBalcony = node.balconyId;
+          player._cliffBalconyY = node.y;
+          player._cliffRouteSession = null;
+        } else if (session.nodeIndex !== 0 && session.nodeIndex !== session.route.upperNode) {
+          player.climbing = true; // Wait for the next input; no automatic hop chains.
+          return;
+        } else {
+          player._cliffRouteSession = null;
+        }
+      }
+      if (player._cliffLandingShelf) {
+        const net = currentCliffNetwork();
+        const landed = window.CliffRouteNetwork?.shelfAt?.(net, player._cliffLandingShelf);
+        if (landed) { player.onCliffBalcony = landed.id; player._cliffBalconyY = landed.y; }
+        player._cliffLandingShelf = null;
+        player._climbJumpDownAxis = null; // No ground-level tumble when caught by a ledge.
+      }
       player.climbing = false;
       player._climbCancelable = false;
       player._climbDropped = false;
@@ -654,7 +756,63 @@
     }
   }
 
+  // Balcony movement keeps the support elevation independent from whichever
+  // ground, plateau, or second balcony occupies the exact same X/Z cells.
+  function jumpFromBalcony(direction = null) {
+    const player = deps?.player, net = currentCliffNetwork();
+    const shelf = window.CliffRouteNetwork?.shelfAt?.(net, player?.onCliffBalcony);
+    if (!shelf || player.climbing) return false;
+    const raw = direction || deps.getMovementInput?.() || { x: shelf.normal.x, y: shelf.normal.z };
+    const length = Math.hypot(raw.x, raw.y);
+    const dir = length > 0.25 ? { x: raw.x / length, y: raw.y / length } : { x: shelf.normal.x, y: shelf.normal.z };
+    const grid = deps.getActiveGrid();
+    let destination = null;
+    for (const distance of [0.7, 1.2, 1.8, 2.5, 3.2]) {
+      const wx = shelf.x + dir.x * distance, wz = shelf.z + dir.y * distance;
+      const tile = grid[Math.floor(wz)]?.[Math.floor(wx)];
+      if (!tile || tile.incline || deps.isSolid(tile.type) || window.MapBoundaryGuard?.isBoundaryTile?.(tile)) continue;
+      const floor = deps.tileSurfaceYInArea(tile, deps.getCurrentArea());
+      if (floor >= shelf.y - 0.1) continue;
+      const lower = window.CliffRouteNetwork?.highestBelow?.(net, wx, wz, shelf.y, floor);
+      destination = { x: (lower?.x ?? wx) * deps.TILE, y: (lower?.z ?? wz) * deps.TILE,
+        surfaceY: lower?.y ?? floor, balconyId: lower?.id || null };
+      break;
+    }
+    if (!destination) return false; // Never leap into an ungrounded/unreachable void.
+    player.onCliffBalcony = null;
+    if (!startScriptedWorldClimb({
+      endX: destination.x, endY: destination.y,
+      startWorldY: shelf.y, endWorldY: destination.surfaceY,
+      hopCount: 2, shortHops: true
+    })) { player.onCliffBalcony = shelf.id; return false; }
+    player.climbHopCount = 1;
+    player._cliffLandingShelf = destination.balconyId;
+    player._climbJumpDownAxis = dir;
+    resetClimbTiming(player, { activeS: 0.42, pauseS: 0, bounce: 0.32 });
+    return true;
+  }
+
+  function updateBalcony(dt) {
+    const player = deps?.player, net = currentCliffNetwork();
+    if (!player?.onCliffBalcony) return false;
+    const shelf = window.CliffRouteNetwork?.shelfAt?.(net, player.onCliffBalcony);
+    if (!shelf) { player.onCliffBalcony = null; return false; }
+    const raw = deps.getMovementInput?.() || { x: 0, y: 0 };
+    const length = Math.hypot(raw.x, raw.y);
+    if (length > 0.22) {
+      const distance = Math.min(1, length) * 2.1 * Math.max(0, dt);
+      const x = player.x / deps.TILE + raw.x / length * distance;
+      const z = player.y / deps.TILE + raw.y / length * distance;
+      if (window.CliffRouteNetwork.shelfContains(shelf, x, z, -0.12)) {
+        player.x = x * deps.TILE; player.y = z * deps.TILE;
+      } else jumpFromBalcony(raw);
+    }
+    player.vx = 0; player.vy = 0;
+    return true;
+  }
+
   window.ClimbSystem = {
+    updateBalcony, jumpFromBalcony,
     init,
     getClimbTarget,
     getAimedNest,
@@ -681,6 +839,9 @@
       return {
         playerClimbing: !!deps?.player?.climbing,
         playerOnBranch: !!deps?.player?.onBranch,
+        handholdRoute: deps?.player?._cliffRouteSession?.route.id ?? null,
+        handholdNode: deps?.player?._cliffRouteSession?.nodeIndex ?? null,
+        balcony: deps?.player?.onCliffBalcony ?? null,
         mountRideState: deps?.getMountRideState?.() || 'none',
         ...climbSafetyDebug,
       };
