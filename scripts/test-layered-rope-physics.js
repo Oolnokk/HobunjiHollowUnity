@@ -41,7 +41,9 @@ function flightCanReach(start,goal,floorY) {
 }
 function landingFor(pit,side,room,reverse=false){
   const alongX=pit.axis==='x',forward=side==='E'||side==='S',direction=forward?1:-1;
-  const endpoint=alongX?(forward?pit.maxX:pit.minX):(forward?pit.maxZ:pit.minZ);
+  const entry=alongX?(forward?pit.minX:pit.maxX):(forward?pit.minZ:pit.maxZ);
+  const exit=alongX?(forward?pit.maxX:pit.minX):(forward?pit.maxZ:pit.minZ);
+  const endpoint=reverse?entry:exit; // A reverse release must land on the original START bank, not on the far bank again.
   const target=endpoint+(reverse?-direction:direction)*.8;
   return {x:alongX?target:(pit.minX+pit.maxX)/2,
     z:alongX?(pit.minZ+pit.maxZ)/2:target,
