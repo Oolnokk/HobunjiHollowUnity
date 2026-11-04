@@ -27,6 +27,7 @@
   let RANGE_SCALE = 0.6;
   let LUNGE_SCALE = 1.5;
 
+  const SPECIAL_FINISHER_DAMAGE_MULTIPLIER = 1.5; // A qualified third hit is visibly stronger, even before unlocked mastery bonuses.
   // Populated by attack-values.json through applyComboConfig below. Keeping
   // the fallback empty means an unavailable config produces no override and
   // the shared SFX pipeline retains its neutral pitch.
@@ -136,6 +137,9 @@
     let comboIndex = 0;
     let lastTapAt = -99;
     let busyAction = null;
+    let lastWeaponKey = null; // Switching weapons invalidates the previous weapon's combo and its landed setup hits.
+    let firstHits = new Set(); // Exact creatures struck by step one; geometry alone does not count if they dodge.
+    let secondHits = new Set(); // Exact creatures struck by step two; a special third hit requires membership in both sets.
 
     function onTap() {
       if (busyAction) return; // previous step's windup/strike hasn't resolved yet
@@ -146,14 +150,23 @@
       // can't start a new combo step until it clears.
       if (window.Combat.isStaggered(deps.player)) return;
       const t = now();
-      if (t - lastTapAt > COMBO_RESET_S) comboIndex = 0;
+      const weaponKey = deps.currentWeaponKey(); // Stable ownership snapshot for this entire three-hit chain.
+      if (t - lastTapAt > COMBO_RESET_S || weaponKey !== lastWeaponKey) {
+        comboIndex = 0;
+        firstHits.clear();
+        secondHits.clear();
+      }
       lastTapAt = t;
+      lastWeaponKey = weaponKey;
       // Preserve the selected zero-based step before advancing the combo so
       // strike-time consumers receive the identity/pitch of this attack,
       // rather than the next attack in the sequence.
       const comboStep = comboIndex % steps.length;
       const step = steps[comboStep];
       const isFinisher = comboStep === steps.length - 1; // Used for explicit power-hit vulnerability consumption and its conditional huge impact cue.
+      const qualifiedTargets = isFinisher ? new Set([...firstHits].filter(target => secondHits.has(target))) : new Set(); // Same enemy must have taken BOTH consecutive setup attacks.
+      const finisherEffects = qualifiedTargets.size ? window.CombatProgression?.getEffects(weaponKey, id + 'Finisher', { includePerks: false }) : null; // Scroll-unlocked Quick Attack payload; inert without a connected chain.
+      const finisherStats = finisherEffects?.stats || {}; // Only non-damage geometry/cost choices apply to the whole qualified swing.
       const configuredPitch = SFX_PITCH_BY_STEP[comboStep];
       const sfxPitch = Number.isFinite(configuredPitch) && configuredPitch > 0 ? configuredPitch : undefined;
       comboIndex = (comboIndex + 1) % steps.length;
@@ -163,7 +176,9 @@
       // upgrades on the equipped weapon's own mastery track (see combat-
       // progression.js) — a fresh, unleveled combo deals plain damage with
       // no afflictions at all.
-      const effects = window.CombatProgression?.getEffects(deps.currentWeaponKey(), id) || { afflictions: {}, stats: {} };
+      const effects = window.CombatProgression?.getEffects(weaponKey, id) || { afflictions: {}, stats: {} };
+      const activeStats = { ...effects.stats }; // The ordinary Cleave/Long Lunge always keeps its own mastery modifiers.
+      if (qualifiedTargets.size) for (const stat of ['staminaCostMul', 'rangeMul', 'coneWidthMul', 'lungeMul']) activeStats[stat] = (activeStats[stat] || 0) + (finisherStats[stat] || 0); // Conditional attack-wide modifiers are committed before the strike.
       // Sharp/blunt is determined by whichever tool occupies the weapon
       // slot (see TOOL_ITEM_DEFS' own dmgType, and weaponDamageTypeForTool)
       // -- not by step.dmgTag, a per-combo-family value (swingCombo always
@@ -180,16 +195,16 @@
       // then slows this swing's own windup/strike/return down instead,
       // same as the source demo's "the same multiplier slows attack
       // cooldown" rule.
-      window.ResourceSystem?.spendStamina(deps.player, (step.staminaCost * (1 + (effects.stats.staminaCostMul || 0)) / shapeStats.efficiency), step.name);
+      window.ResourceSystem?.spendStamina(deps.player, (step.staminaCost * (1 + (activeStats.staminaCostMul || 0)) / shapeStats.efficiency), step.name);
       const timeScale = 1 / ((window.ResourceSystem?.getExhaustionSpeed(deps.player) ?? 1) * shapeStats.speed);
       const windupS = step.windupS * timeScale;
       const strikeS = step.strikeS * timeScale;
       const returnS = (step.returnS || 0) * timeScale;
 
       const baseAbil = deps.weaponAbility('cut') || { damage: 14, rangePx: deps.TILE * 1.05, knockbackPxS: 360 };
-      const rangePx = baseAbil.rangePx * step.rangeMul * RANGE_SCALE * (1 + (effects.stats.rangeMul || 0)) * shapeStats.range;
-      const halfConeRad = Math.min(Math.PI, step.halfConeDeg * Math.PI / 180 * shapeStats.range * (1 + (effects.stats.coneWidthMul || 0)));
-      const baseLungePx = deps.TILE * step.lungeMul * LUNGE_SCALE * (1 + (effects.stats.lungeMul || 0)); // Existing lunge computation remains authoritative before cross-cutting attack modifiers.
+      const rangePx = baseAbil.rangePx * step.rangeMul * RANGE_SCALE * (1 + (activeStats.rangeMul || 0)) * shapeStats.range;
+      const halfConeRad = Math.min(Math.PI, step.halfConeDeg * Math.PI / 180 * shapeStats.range * (1 + (activeStats.coneWidthMul || 0)));
+      const baseLungePx = deps.TILE * step.lungeMul * LUNGE_SCALE * (1 + (activeStats.lungeMul || 0)); // Existing lunge computation remains authoritative before cross-cutting attack modifiers.
       const attackContext = window.CombatAttackEvents?.prepare?.({
         attacker: deps.player,
         weaponKey: deps.currentWeaponKey(),
