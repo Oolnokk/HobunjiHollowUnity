@@ -43,7 +43,7 @@ assert.equal(favor('cora').favor,0,'coworkers no longer inherit anyone else’s 
 assert.equal(balance.factionPoints(home),40);
 assert.equal(balance.factionPoints(inn),40);
 assert.equal(balance.factionRank(home),1);
-assert.equal(balance.gainMultiplierForNpc('alice'),1.21,'two ranked affiliations multiply positive personal gains');
+assert(Math.abs(balance.gainMultiplierForNpc('alice')-1.21)<1e-9,'two ranked affiliations multiply positive personal gains');
 dialogue.adjustNpcFavor('bob',10,'gift_liked');
 assert.equal(favor('bob').favor,11,'household rank multiplies Bob’s own earned Favor');
 assert.equal(balance.factionPoints(home),51);
