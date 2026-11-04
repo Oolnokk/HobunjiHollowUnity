@@ -292,7 +292,7 @@
     // overlapping footprint tiles never overwrite the ground beneath them.
     const network = window.CliffRouteNetwork?.forGrid?.(zGrid, {
       area: mapId,
-      blocked: t => !t || t.incline || t.type === deps.TileType.ROCK || t.type === deps.TileType.WALL,
+      blocked: t => !t || t.incline || deps.isSolid(t.type) || [deps.TileType.RIVER, deps.TileType.STREAM, deps.TileType.TRENCH].includes(t.type),
       isBoundary: t => window.MapBoundaryGuard?.isBoundaryTile?.(t) || false,
       tileY: t => Number.isFinite(t?.surfaceY) ? t.surfaceY
         : (deps.NORMAL_TOP + (t?.elevTier || 0) * deps.PLATEAU_UNIT),
