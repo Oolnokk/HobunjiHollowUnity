@@ -450,8 +450,8 @@
     syncCarrierRearPortrait(backCarried===cask?backCarryRoot():carryDeps()?.playerMesh);
   }
   function carryDeps() { return window.ProceduralHandAttachments?.gameDeps || deps() || {}; }
-  // Back burdens mount to the registered whole-character rig root, never to a head/hand socket.
-  // If the rig is temporarily unregistered during avatar rebuild, retain the old parent until it returns.
+  // Stowed Burdens mount directly to the current player portrait plane, never a head/hand socket.
+  // The character root supplies the authored posterior frame and serves as a temporary loading fallback.
   function backCarryRoot(){
     const composer=window.PlayerBodyTransformComposer; // Authoritative character root, used to locate the live portrait and resolve authored offsets.
     return typeof composer?.getPlayerMesh==='function'?composer.getPlayerMesh():carryDeps()?.playerMesh;
