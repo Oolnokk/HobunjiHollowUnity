@@ -183,9 +183,6 @@
       copy.desc = `Successful condition-bonus procs apply ${names} as a burst; ordinary Quick Attack hits do not.`;
       return copy;
     }));
-    if (isBlunt) for (const row of tree) row.push(
-      quickDebuff('knockdown', 'Knockdown', 'A successful Quick Attack condition bonus knocks the target prone for 1 second. Assign at multiple mastery levels to add 1 second per level.', 1)
-    ); // Append after existing indexes: every blunt level can extend duration without remapping saved selections.
     tree[2] = [
       ...tree[2],
       // Keep these first three appended indexes stable for saves created against the first cooldown-debuff implementation.
@@ -201,6 +198,10 @@
       quickDebuff('inhibited', 'Inhibit Recovery', 'Adds a stack of Inhibited: reduced Health recovery received. Stacks up to 5 and refreshes for 12 seconds.'),
       quickInstantEffect('bleedout', 'Bleedout', 'Instantly realizes up to 12 existing Bleeding Health as Health loss; it cannot create Bleeding.', 6),
     ];
+    // All legacy rank-three cooldown-debuff indexes are now committed.
+    if (isBlunt) for (const row of tree) row.push(
+      quickDebuff('knockdown', 'Knockdown', 'A successful Quick Attack condition bonus knocks the target prone for 1 second. Assign at multiple mastery levels to add 1 second per level.', 1)
+    ); // Append only after built-in choices: existing save indexes (especially rank-three Exposed/Sapped/Unsteady) never shift.
     return tree;
   }
 
