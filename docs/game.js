@@ -9335,6 +9335,7 @@
         member.animalHides = window.AnimalHides?.serialize?.() || { version: 1, pack: {} }; // Persist individual hide genetics beside the world-member's count inventory.
         member.wildBerryState = window.WildBerries.serializeState();
         member.zoneTreasureState = window.WildTreasure.serializeState();
+        member.cliffBalconyRewards = window.CliffRouteNetwork?.serializeRewards?.() || {}; // Layer-specific dig/mining state independent of the ground tile.
         member.wildernessChunkState = serializeWildernessChunkState();
         member.wildernessCampfireState = window.WildernessCampfire?.serialize?.() || null;
         member.felledTreeState = serializeZoneFelledTreeState();
@@ -16357,6 +16358,103 @@
         });
       }
 
+      function getCliffBalconyResourceAt(col, row) {
+        if (!_isZoneArea(currentArea) || !player.onCliffBalcony) return null;
+        const routeNet = window.CliffRouteNetwork?.forArea?.(currentArea); // Reuse rendered Y-layer state rather than the underlying single-height grid.
+        const shelf = window.CliffRouteNetwork?.shelfAt?.(routeNet, player.onCliffBalcony);
+        if (!shelf || !shelf.footprint.some(f => f.c === col && f.r === row)) return null;
+        const state = window.CliffRouteNetwork.getRewardState(currentArea, shelf.id);
+        if (state.claimed) return null;
+        const areaAtCreation = currentArea; // Asynchronous lockpicking validates the original area/ledge before paying.
+        const isAvailable = () => currentArea === areaAtCreation && player.onCliffBalcony === shelf.id &&
+          window.CliffRouteNetwork.shelfAt(window.CliffRouteNetwork.forArea(currentArea), shelf.id) === shelf &&
+          !window.CliffRouteNetwork.getRewardState(currentArea, shelf.id).claimed;
+        const award = () => {
+          const rewards = [];
+          if (shelf.reward === 'oreRock') {
+            const amount = 2 + (shelf.routeId % 3); // Fixed per-rock amount; prevents rerolling on repeated failed actions.
+            inventory.stone = Math.min(window.InventoryStacks.MAX_TOTAL, (inventory.stone || 0) + amount);
+            rewards.push(amount + ' Stone');
+            const metals = Object.keys(ORE_DEFS || {});
+            const oreKey = metals.length ? metals[shelf.routeId % metals.length] : null;
+            const oreItem = oreKey ? metalOreItemKey(oreKey) : null;
+            if (oreItem) {
+              inventory[oreItem] = Math.min(window.InventoryStacks.MAX_TOTAL, (inventory[oreItem] || 0) + 2);
+              window.TownMine?.recordHeldOres?.([oreKey]);
+              rewards.push('2 ' + (ORE_DEFS[oreKey]?.label || oreKey));
+              window.HobunjiActivityEvents?.emit('ore_mined', { oreKey });
+            }
+            window.SkillSystem?.award?.('mining', window.SkillSystem?.XP_GAINS?.rock || 8, 'mined cliff ore');
+            window.HobunjiActivityEvents?.emit('rock_broken', { area: currentArea });
+          } else {
+            const metalLoot = window.WildTreasure?.rollTreasureMetalBarLoot?.() || {}; // Existing wilderness buried-chest metal picker.
+            for (const [itemKey, amount] of Object.entries(metalLoot)) {
+              inventory[itemKey] = Math.min(window.InventoryStacks.MAX_TOTAL, (inventory[itemKey] || 0) + amount);
+              rewards.push(amount + ' ' + (ITEM_DEFS[itemKey]?.label || itemKey));
+            }
+            const gold = 14 + (shelf.routeId % 7) * 4;
+            inventory.gold = (inventory.gold || 0) + gold;
+            rewards.push(gold + 'g');
+            window.HobunjiActivityEvents?.emit('chest_opened', { buried: true, mapId: currentArea });
+          }
+          window.CliffRouteNetwork.setRewardStage(currentArea, shelf.id, 'claimed');
+          refreshItemScroll(); buildInventoryGrid(); buildPackClothingSection();
+          return { ok: true, zoneVisualsUpdated: true, message: 'Found: ' + rewards.join(', ') };
+        };
+        return {
+          id: shelf.id + '-resource', col, row, type: 'cliff_balcony_resource',
+          label: shelf.reward === 'oreRock' ? 'Ore Rock' : 'Buried Cliff Chest',
+          getButtons() {
+            if (shelf.reward === 'oreRock') return [{
+              icon: '⛏️', label: 'Mine the balcony ore rock',
+              action: 'balcony_mine', inputAction: 'action1', worldInteraction: true,
+              style: 'primary', allowed: activeTool === 'pick' && heldMode === 'tool',
+            }];
+            if (!state.revealed) return [{
+              icon: '🪏', label: 'Dig for buried treasure',
+              action: 'balcony_dig', inputAction: 'action1', worldInteraction: true,
+              style: 'primary', allowed: activeTool === 'shovel' && heldMode === 'tool',
+            }];
+            return [{
+              icon: '🗝️', label: 'Open the cliff chest',
+              action: 'balcony_open', inputAction: 'action1', worldInteraction: true,
+              style: 'primary', allowed: true,
+            }];
+          },
+          onAction(action) {
+            if (!isAvailable()) return { ok: false, message: 'That ledge is no longer accessible.' };
+            if (action === 'balcony_mine' && shelf.reward === 'oreRock') {
+              if (activeTool !== 'pick' || heldMode !== 'tool') return { ok: false, message: 'Equip a pick to mine this rock.' };
+              return award();
+            }
+            if (action === 'balcony_dig' && shelf.reward !== 'oreRock' && !state.revealed) {
+              if (activeTool !== 'shovel' || heldMode !== 'tool') return { ok: false, message: 'Equip a shovel to dig here.' };
+              window.CliffRouteNetwork.setRewardStage(currentArea, shelf.id, 'revealed');
+              awardToolUseMasteryXp('shovel');
+              return { ok: true, zoneVisualsUpdated: true, message: 'The dirt breaks away, revealing a buried chest.' };
+            }
+            if (action === 'balcony_open' && shelf.reward !== 'oreRock' && state.revealed) {
+              const valid = () => isAvailable() && window.CliffRouteNetwork.getRewardState(currentArea, shelf.id).revealed;
+              const started = window.ChestLockpicking?.open?.({
+                id: shelf.id, title: 'Cliff Chest', tier: 1, valid,
+                onSuccess: () => {
+                  if (!valid()) return;
+                  const result = award();
+                  if (result.message) showToast(result.message, result.ok);
+                  if (result.ok) {
+                    const saved = window.HobunjiRuntimeSave?.flushNow?.({ reason: 'cliff-balcony-chest-opened' })
+                      ?? (saveMemberWorldData(), { ok: true });
+                    if (saved?.ok === false || saved?.captured === false) showToast('Chest opened, but save was not confirmed.', false);
+                  }
+                },
+              });
+              return { ok: false, deferMemberSave: true, message: started ? '' : 'Lockpicking unavailable.' };
+            }
+            return { ok: false, message: 'Unavailable.' };
+          },
+        };
+      }
+
       function getWorldObjectAt(col, row) {
         // FurnitureTableSystem.objectAt answers "what is the camera ray focused on" and ignores
         // col/row, so only the reticle tile may use it; placement/occupancy probes of other
@@ -16364,6 +16462,8 @@
         const aim = getReticleTile();
         const furniture = aim.col === col && aim.row === row ? window.FurnitureTableSystem?.objectAt(currentArea, col, row) : null; // Exterior chairs and attached surface furniture use ordinary world inputs.
         if (furniture) return furniture;
+        const cliffResource = getCliffBalconyResourceAt(col, row); // Real elevation layer wins over objects on ground below.
+        if (cliffResource) return cliffResource;
         const corpse = getCorpseObjectAt(col, row);
         if (corpse) return corpse;
         if (currentArea === 'interior') return interiorWorldObjects.get(col + ',' + row) || null;
@@ -32625,6 +32725,7 @@
         window.ReagentPlants.restoreZoneReagentState(playerData.alchemyReagentState);
         window.WildBerries.restoreState(playerData.wildBerryState);
         window.WildTreasure.restoreState(playerData.zoneTreasureState);
+        window.CliffRouteNetwork?.restoreRewards?.(playerData.cliffBalconyRewards);
         restoreWildernessChunkState(playerData.wildernessChunkState);
         window.WildernessCampfire?.restore(playerData.wildernessCampfireState);
         restoreZoneFelledTreeState(playerData.felledTreeState);
