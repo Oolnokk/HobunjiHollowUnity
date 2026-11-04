@@ -101,10 +101,11 @@
           decal.userData.devRuinScratchboneMelodyNote=number;
         }
       }
-      melodyListener=event=>{
-        if(rec.disposed||rec.solved||event?.detail?.id!==id)return;
-        if(event.detail.solved===true){rec.plate.material=hit;complete();}
+      rec.onMelodyResult=detail=>{
+        if(rec.disposed||rec.solved||detail?.id!==id)return;
+        if(detail.solved===true){rec.plate.material=hit;complete();}
       };
+      melodyListener=event=>rec.onMelodyResult(event?.detail); // One authoritative callback shared by browser event and tests.
       events?.addEventListener?.('hobunji-ruin-melody-result',melodyListener);
     }else if(kind==='glyphObelisk'){
       // Three separate real projectile targets spaced around the room.
