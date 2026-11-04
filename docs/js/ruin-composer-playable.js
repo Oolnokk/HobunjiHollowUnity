@@ -104,6 +104,7 @@
       || !A?.load || !A?.buildGroup || !P?.registerNode || !G.HangingRopes?.registerRope || !G.RuinEncounters?.create)
       throw new Error('Playable ruin wing requires the real scene, authored furniture, puzzle, rope and encounter runtimes.');
     const { room, composition } = plan(options.seed, options.archetype);
+    const feedPlinthId=composition.records.find(record=>record.piece==='plinth')?.id||null; // Each authored statue dispenser feeds its own encounter objective, not a global map channel.
     const origin = {x:Math.ceil(Number(options.originX)||3),z:Math.ceil(Number(options.originZ)||rec.rows+4)}; // Isolated south wing with a return prompt.
     const keys = [...new Set([...composition.records.map(record=>record.key).filter(Boolean),...(options.burdenOffering===true&&options.archetype!=='vaultHall'?['burdenPlinth','shattercaskBlasting']:[])])]; // Load the optional self-contained Burden offering before mutating the ruin.
     const data = new Map(); // Preload every authored piece before touching the live map: never build half a puzzle.
@@ -167,7 +168,7 @@
             throw new Error('Witch-bomb dispenser did not register.');
         }
         if (record.piece==='statueDispenser') {
-          if (!G.KeyStatues?.registerDispenser?.(mapId,record.id,group,group.userData.furniturePuzzle))
+          if (!G.KeyStatues?.registerDispenser?.(mapId,record.id,group,group.userData.furniturePuzzle,{feedPlinthId}))
             throw new Error('Key Statue dispenser did not register.');
         }
         if (record.piece==='plinth' || record.piece==='statueDispenser' || record.piece==='bombDispenser') {
@@ -237,7 +238,7 @@
       }
       // On both real wilderness sites and dev tests, returning is an ordinary world interaction.
       result={ok:true,origin,room,composition,entry:{x:origin.x+1.7,y:0,z:origin.z+room.bounds.maxZ/2},
-        placed:owner.placed.length,controls:owner.controls,offering:!!owner.offering,update,dispose};
+        placed:owner.placed.length,controls:owner.controls,feedPlinthId,offering:!!owner.offering,update,dispose};
       return result;
     } catch (error) {
       dispose();
