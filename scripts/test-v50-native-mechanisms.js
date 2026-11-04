@@ -32,9 +32,10 @@ const DS={
   registerSurface:def=>surfaces.push(def),registerBlocker:def=>blockers.push(def),
   remove:id=>removed.push(id)
 };
+let pressureSyncs=0; // Confirms real authored weight signals are recalculated whenever the player pushes their block.
 const generator={
   applyProgress(object,value){calls.push({object,value});},
-  syncPressurePlates(object){assert.equal(object,root);},
+  syncPressurePlates(object){assert.equal(object,root);pressureSyncs++;},
   rotateLinkedCube(object,index){object.userData.solveProgress=1;object.userData.lastTurn=index;},
 };
 const player={x:1,y:4,z:1},getPlayerY=()=>player.y;
@@ -85,7 +86,11 @@ const runtime=Native.mount({nativeRoot:root,floor:2,scope:'story-f2',api:generat
 assert.equal(rootsRegistered,1);
 assert.equal(runtime.getState().mechanisms,6);
 assert(runtime.getState().families.includes('glyphObelisk')&&runtime.getState().families.includes('brazier'));
-assert(controls.some(c=>c.kind==='v50NativePushBlock'));
+const push=controls.find(c=>c.kind==='v50NativePushBlock');
+assert(push);
+push.onPress();
+assert.equal(block.position.x,3,'player pushes the native V50 block along the actual authored path');
+assert.equal(pressureSyncs,1,'push rechecks the original V50 pressure plate solver');
 assert.equal(controls.filter(c=>c.kind==='v50NativeLinkedCube').length,4);
 assert.equal(controls.filter(c=>c.kind==='v50NativeObelisk').length,3);
 assert(controls.some(c=>c.kind==='v50NativeTransitDoor'));
