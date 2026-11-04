@@ -36,6 +36,8 @@
   function intersects(a,b){
     return a.x<b.x+b.w&&a.x+a.w>b.x&&a.z<b.z+b.d&&a.z+a.d>b.z;
   }
+  const inRect=(p,r)=>p.x>=r.x&&p.x<r.x+r.w&&p.z>=r.z&&p.z<r.z+r.d;
+  const connectedRects=(a,b)=>a.x<=b.x+b.w&&a.x+a.w>=b.x&&a.z<=b.z+b.d&&a.z+a.d>=b.z;
   function compose(options={}){
     const o={...DEFAULTS,...options};
     o.spacing=Math.max(48,Math.min(128,Math.round(Number(o.spacing)||DEFAULTS.spacing)));
@@ -83,14 +85,14 @@
           const door={x:rx-dir.dx*Math.floor(rw/2),z:rz-dir.dz*Math.floor(rd/2)};
           const along=dir.dx?'x':'z';
           const approach={x:door.x-dir.dx,z:door.z-dir.dz};
-          const bend={x:approach.x*lateral.dx+previous.x*dir.dx,z:approach.z*lateral.dz+previous.z*dir.dz};
+          const bend=dir.dx!==0?{x:previous.x,z:approach.z}:{x:approach.x,z:previous.z}; // Preserve signed coordinates in west/north doglegs.
           const pieces=[];
-          if((previous.x!==bend.x)||(previous.z!==bend.z))pieces.push(segment(previous,bend,o.corridorWidth,along));
-          if((bend.x!==approach.x)||(bend.z!==approach.z))pieces.push(segment(bend,approach,o.corridorWidth,dir.dx?'z':'x'));
+          if((previous.x!==bend.x)||(previous.z!==bend.z))pieces.push(segment(previous,bend,o.corridorWidth,dir.dx?'z':'x')); // Lateral dogleg.
+          if((bend.x!==approach.x)||(bend.z!==approach.z))pieces.push(segment(bend,approach,o.corridorWidth,along)); // Radial length varies to fit rooms.
           // Straight corridor if there was no lateral drift.
           if(!pieces.length)pieces.push(segment(previous,approach,o.corridorWidth,along));
           const hall={id:`${wingId}-hall${stage}`,floor,y,from:stage===1?`shaft-f${floor}`:nodes[stage-2].id,to:id,rects:pieces,
-            length:Math.abs(previous.x-approach.x)+Math.abs(previous.z-approach.z)};
+            start:{...previous},end:{...approach},bend:{...bend},length:Math.abs(previous.x-approach.x)+Math.abs(previous.z-approach.z)};
           corridors.push(hall);hallways.push(hall);
           doorways.push({from:hall.from,to:id,side:dir.side,point:{...door},floor});
           previous={x:rx+dir.dx*Math.floor((dir.dx?rw:rd)/2),z:rz+dir.dz*Math.floor((dir.dx?rw:rd)/2)};
@@ -119,7 +121,9 @@
       for(const wing of floor.wings){
         add(wing.id+'-challenges',wing.rooms.length>=3&&wing.rooms.length<=5);
         add(wing.id+'-braziers',floor.braziers.filter(b=>b.wingId===wing.id).length===1);
-        add(wing.id+'-corridors',wing.corridors.length===wing.rooms.length&&wing.corridors.every(c=>c.length>0&&c.rects.length>=1));
+        add(wing.id+'-corridors',wing.corridors.length===wing.rooms.length&&wing.corridors.every(c=>
+          c.length>0&&c.rects.length>=1&&c.rects.some(r=>inRect(c.start,r))&&
+          c.rects.some(r=>inRect(c.end,r))&&c.rects.every((r,i)=>i===0||connectedRects(r,c.rects[i-1]))));
         add(wing.id+'-roomsSeparate',wing.rooms.every((room,i)=>floor.rooms.every((other,j)=>other.id===room.id||!intersects(room,other)||j<=i&&other.wingId===wing.id&&other===room)));
       }
     }
