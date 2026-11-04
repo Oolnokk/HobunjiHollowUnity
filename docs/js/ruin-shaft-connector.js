@@ -52,8 +52,8 @@
     parent.add(group);
     return ()=>{group.parent?.remove(group);group.traverse(node=>node.geometry?.dispose?.());floorMat.dispose();wallMat.dispose();};
   }
-  function connect({rec,ruin,seed,meta,pad=2,tileScale=2,THREE,makeTile,DynamicSurfaces:DS,ShaftHub,ClimbSurfaces,DevRandomRuin,TileOccupancy,RuinLayerPlan,RuinShaftCorridor,RuinLayerPlayable,RuinLayerChallenges,RuinLayerDefense,CellGrid3D,getPlayerPosition,getPlayerY,showToast,onStateChange}={}){
-    if(!rec||!ruin||!meta||!THREE||!DS||!ShaftHub||!RuinLayerPlan||!RuinShaftCorridor||!RuinLayerPlayable||!RuinLayerChallenges||!RuinLayerDefense||!CellGrid3D||!makeTile)
+  function connect({rec,ruin,seed,meta,pad=2,tileScale=2,THREE,makeTile,DynamicSurfaces:DS,ShaftHub,ClimbSurfaces,DevRandomRuin,TileOccupancy,RuinLayerPlan,RuinShaftCorridor,RuinLayerPlayable,RuinLayerChallenges,RuinLayerDefense,RuinV50NativeFloors,preplanned=null,nativeFloors=[],prepareMaterials=null,CellGrid3D,getPlayerPosition,getPlayerY,showToast,onStateChange}={}){
+    if(!rec||!ruin||!meta||!THREE||!DS||!ShaftHub||!RuinLayerPlan||!RuinShaftCorridor||!RuinLayerPlayable||!RuinLayerChallenges||!RuinLayerDefense||!CellGrid3D||preplanned?.nativeFloorCount&&!RuinV50NativeFloors||!makeTile)
       throw new Error('Shaft connector dependencies are incomplete.');
     const spacing=64; // Snap multi-story anchors far apart; floor room networks fill the open cells.
     // Reserve enough clearance for up to five freely placed puzzle rooms in
@@ -61,9 +61,14 @@
     // coordinates while the original V50 room stays at its authored position.
     const anchorX=Math.ceil(Math.max(rec.cols+spacing,spacing*3)/spacing)*spacing;
     const anchorZ=Math.ceil(Math.max(rec.rows+spacing,spacing*3)/spacing)*spacing;
-    const plan=RuinLayerPlan.compose({seed,spacing,anchorX,anchorZ,shaftSize:33,floorHeight:4});
+    const plan=preplanned||RuinLayerPlan.compose({seed,spacing,anchorX,anchorZ,shaftSize:33,floorHeight:4});
+    if(preplanned&&(preplanned.shaft.anchor.x<rec.cols+spacing||preplanned.shaft.anchor.z<rec.rows+spacing))
+      throw new Error('Reserved native V50 shaft overlaps the original entry-floor V50 footprint');
     if(!plan.ok)throw new Error('Layer plan invalid: '+plan.checks.filter(c=>!c.ok).map(c=>c.name).join(', '));
-    const portals=plan.floors.flatMap(f=>f.wings.map(w=>({floor:f.floor,side:w.side}))); // Every generated room chain now receives a separate physical doorway.
+    const portals=plan.floors.flatMap(f=>[
+      ...f.wings.map(w=>({floor:f.floor,side:w.side})),
+      ...(f.nativePort?[{floor:f.floor,side:f.nativePort.side}]:[]),
+    ]); // All E-side native V50 entrances are reserved before V50 emits any floor scene. // Every generated room chain now receives a separate physical doorway.
     const shaftOptions={seed,floors:plan.floorCount,chambers:false,wall:plan.options.shaftWall,
       shaft:plan.options.shaftSize,spacing:plan.options.floorHeight,entranceSide:'W',portals};
     const hub=ShaftHub.compose(shaftOptions); // The real shared room; origin is set below after determining its full masonry shell.
@@ -130,9 +135,18 @@
       RuinShaftCorridor,RuinLayerChallenges,RuinLayerDefense,DevRandomRuin,getPlayerPosition,getPlayerY,showToast,onStateChange
     }); // Mounts 1–4 stone puzzle wings and one interactive brazier per story-side.
     ruin.shaftLayerRuntime=layerRuntime;
+    const nativeRuntime=plan.nativeFloorCount?RuinV50NativeFloors.mount({
+      rec,ruin,plan,hub:placed,records:nativeFloors,makeTile,THREE,
+      DynamicSurfaces:DS,CellGrid3D,RuinShaftCorridor,RuinLayerChallenges,
+      RuinLayerPlayable,DevRandomRuin,getPlayerPosition,getPlayerY,showToast,onStateChange,
+      prepareMaterials,tileScale,
+    }):null; // Each real upper V50 graph gets its own collision, stage gates, brazier and render root.
+    ruin.nativeV50Runtime=nativeRuntime;
     const active=layerRuntime.getState();
     ruin.shaftConnection.wingsPlayable=active.wings;
     ruin.shaftConnection.braziersPlayable=active.braziers;
+    ruin.shaftConnection.nativeV50Floors=nativeRuntime?.getState?.().floors||0;
+    ruin.shaftConnection.nativeV50Rooms=nativeRuntime?.getState?.().rooms||0;
     // Tile occupancy was created before the old post-generation shaft phase.
     // Rebuild it against the enlarged record so the ordinary game can walk all
     // corridor tiles; this is not a separate, invisible movement harness.
@@ -153,8 +167,8 @@
           if(child.userData?.groundedToMovingPlatform)ruin.occupancy.scanSolids?.(child,'dais-feature');
       }
     }
-    ruin.shaftConnectorCleanup=()=>{layerRuntime.dispose();unmountVisual();DS.clearScope(scope);};
-    return {plan,hub:placed,route,registered,layerRuntime};
+    ruin.shaftConnectorCleanup=()=>{nativeRuntime?.dispose();layerRuntime.dispose();unmountVisual();DS.clearScope(scope);};
+    return {plan,hub:placed,route,registered,layerRuntime,nativeRuntime};
   }
   return Object.freeze({entranceOutside,connect});
 });
