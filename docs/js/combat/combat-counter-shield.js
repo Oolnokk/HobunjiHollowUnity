@@ -731,7 +731,7 @@
 
       deps.triggerWeaponSwingVisual(counterDurationS, {
         anim: 'thrust',
-        windupFrac: COUNTER_WINDUP_S / counterDurationS,
+        windupFrac: COUNTER_WINDUP_S / Math.max(0.001, COUNTER_WINDUP_S + COUNTER_STRIKE_S), // Preserve the authored windup fraction when Bloodrush shortens both phases equally.
         strikeFrac: 1,
         holdS: COUNTER_HOLD_S / (shapeStats.speed * (window.DoubleEdgedCombatTrinkets?.attackSpeed?.() || 1)),
         afflictionIds: Object.keys(attackAfflictions),
