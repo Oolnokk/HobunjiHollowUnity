@@ -165,4 +165,52 @@ assert.equal(removed.length,surfaces.length+blockers.length,'no 3D supports or b
     'the push reaches the original V50 elevator-block route endpoint');
   liftRuntime.dispose();assert.equal(controls.length,0,'nested elevator controls release on floor teardown');
 }
+// Bridge-drop pressure puzzle: ON holds the native bridge; OFF must be
+// what physically drops its block onto the final pressure plate.
+{
+  const dropRoot=new Node(0,4,0),bridge=new Node(30,0,30),onGlyph=new Node(30,0,29);
+  bridge.userData={mechanismId:'bridge',previewMotion:{type:'bridgeSequence'},
+    linkedCubePuzzleRoot:{userData:{solveProgress:.5}}};
+  onGlyph.userData={activatorType:'glyphObelisk',linkedMechanismId:'bridge',bridgeCommand:'ON'};
+  const dropBlock=new Node(30.4,0,30);
+  dropBlock.userData={pushable:true,previewMotion:{type:'pushPuzzleBlock'},
+    dropOntoPlateAfterRetraction:true,pushPath:[{x:30.4,y:0,z:30},{x:31.4,y:0,z:30},{x:31.4,y:-1.1,z:30}]};
+  const plate=new Node(31.4,-1.1,30);
+  plate.userData={activatorType:'pressurePlate',linkedMechanismId:'door',
+    previewMotion:{type:'pressurePlate'},weightProgress:0,linkedWeightBlock:dropBlock};
+  const door=new Node(34,0,30);
+  door.userData={mechanismId:'door',previewMotion:{type:'stoneDoor'},linkedPressurePlateRoot:plate};
+  for(const object of [bridge,onGlyph,dropBlock,plate,door])dropRoot.add(object);
+  let dropsSynced=0;const api={
+    applyProgress(){},
+    syncPressurePlates(){
+      dropsSynced++;
+      plate.userData.weightProgress=Math.abs(dropBlock.position.y+1.1)<.01?1:0;
+    }
+  };
+  const dropRuntime=Native.mount({nativeRoot:dropRoot,floor:2,scope:'drop-story',api,THREE,
+    DynamicSurfaces:DS,getPlayerPosition:()=>player,getPlayerY,addControl,removeControl,
+    hitPuzzles:{registerExternalRoot:()=>()=>{}},heightAt:()=>4,showToast(){}});
+  const pushing=controls.find(c=>c.kind==='v50NativePushBlock');
+  assert(pushing,'native bridge-drop burden must receive its own push interaction');
+  assert.equal(dropRuntime.stageCandidate({x:29,z:28,w:3,d:3}),null,
+    'a preparatory ON glyph never substitutes for the final pressure-plate solution');
+  player.x=29.4;player.z=30;player.y=4;
+  pushing.onPress();assert.equal(dropBlock.position.x,30.4,
+    'block cannot be pushed onto a bridge before the ON command extends it');
+  for(let i=0;i<9;i++)dropRuntime.tick(.05);
+  pushing.onPress();
+  assert.equal(dropBlock.position.x,31.4,'the block travels across V50\'s bridge to the final ledge');
+  pushing.onPress();assert.equal(dropBlock.position.y,0,
+    'the last V50 path node is a vertical fall and cannot be solved by another push');
+  bridge.userData.linkedCubePuzzleRoot.userData.solveProgress=0; // Authored OFF glyph retracts the native bridge.
+  for(let i=0;i<20;i++)dropRuntime.tick(.05);
+  assert(Math.abs(dropBlock.position.y+1.1)<.01,'with support removed, gravity moves the real block onto its plate');
+  assert.equal(dropRuntime.getState().completedBridgeDrops,1);
+  assert(dropsSynced>0,'the native plate recalculates once the block actually lands');
+  dropRuntime.tick(.05);
+  assert.equal(dropRuntime.isSolved('door'),true,
+    'the lower pressure plate, rather than the bridge glyph, unlocks the final V50 door');
+  dropRuntime.dispose();assert.equal(controls.length,0);
+}
 console.log('ok V50 native authored puzzles: plates, blocks, glyphs, torches, ring obelisks, linked cubes, moving stone, transit controls, cleanup');
