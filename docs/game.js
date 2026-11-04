@@ -16407,33 +16407,33 @@
           getButtons() {
             if (shelf.reward === 'oreRock') return [{
               icon: '⛏️', label: 'Mine the balcony ore rock',
-              action: 'balcony_mine', inputAction: 'action1', worldInteraction: true,
+              action: 'obj_balcony_mine', inputAction: 'action1', worldInteraction: true,
               style: 'primary', allowed: activeTool === 'pick' && heldMode === 'tool',
             }];
             if (!state.revealed) return [{
               icon: '🪏', label: 'Dig for buried treasure',
-              action: 'balcony_dig', inputAction: 'action1', worldInteraction: true,
+              action: 'obj_balcony_dig', inputAction: 'action1', worldInteraction: true,
               style: 'primary', allowed: activeTool === 'shovel' && heldMode === 'tool',
             }];
             return [{
               icon: '🗝️', label: 'Open the cliff chest',
-              action: 'balcony_open', inputAction: 'action1', worldInteraction: true,
+              action: 'obj_balcony_open', inputAction: 'action1', worldInteraction: true,
               style: 'primary', allowed: true,
             }];
           },
           onAction(action) {
             if (!isAvailable()) return { ok: false, message: 'That ledge is no longer accessible.' };
-            if (action === 'balcony_mine' && shelf.reward === 'oreRock') {
+            if (action === 'obj_balcony_mine' && shelf.reward === 'oreRock') {
               if (activeTool !== 'pick' || heldMode !== 'tool') return { ok: false, message: 'Equip a pick to mine this rock.' };
               return award();
             }
-            if (action === 'balcony_dig' && shelf.reward !== 'oreRock' && !state.revealed) {
+            if (action === 'obj_balcony_dig' && shelf.reward !== 'oreRock' && !state.revealed) {
               if (activeTool !== 'shovel' || heldMode !== 'tool') return { ok: false, message: 'Equip a shovel to dig here.' };
               window.CliffRouteNetwork.setRewardStage(currentArea, shelf.id, 'revealed');
               awardToolUseMasteryXp('shovel');
               return { ok: true, zoneVisualsUpdated: true, message: 'The dirt breaks away, revealing a buried chest.' };
             }
-            if (action === 'balcony_open' && shelf.reward !== 'oreRock' && state.revealed) {
+            if (action === 'obj_balcony_open' && shelf.reward !== 'oreRock' && state.revealed) {
               const valid = () => isAvailable() && window.CliffRouteNetwork.getRewardState(currentArea, shelf.id).revealed;
               const started = window.ChestLockpicking?.open?.({
                 id: shelf.id, title: 'Cliff Chest', tier: 1, valid,
