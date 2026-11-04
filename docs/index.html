@@ -310,7 +310,7 @@
   <script src="js/farm-world-settings.js?v=20261013h4299425"></script>
   <script src="onboarding.js?v=20261104weaponfamily1"></script>
   <!-- Combat system modules (windup/strike pipeline, loadout, abilities) -->
-  <script src="js/combat/resource-system.js?v=20261104scent1439"></script>
+  <script src="js/combat/resource-system.js?v=20261104scent1439b"></script>
   <script src="js/sacred-ground.js?v=20261026sacred1"></script> <!-- Global sacred-ground provider registry for totems, temple and future blessings. -->
   <script src="js/combat/knockback-collision-impact.js?v=20260930h6c19d61"></script>
   <!-- Burning Health presentation: reuses the authored campfire fire emitter on afflicted player/enemy avatar roots. -->
@@ -335,18 +335,18 @@
   <script src="js/combat/impact-blend-library.js?v=20260828b"></script>
   <script src="js/combat/impact-ragdoll-playback.js?v=20261024h5f9cf28"></script>
   <script src="js/combat/combat-enemy-telegraph.js?v=20261009he463e76"></script>
-  <script src="js/combat/combat-animal-attacks.js?v=20261104scent1439"></script>
+  <script src="js/combat/combat-animal-attacks.js?v=20261104scent1439b"></script>
   <script src="js/combat/combat-voorg-ass-rear-kick.js?v=20261028hkickhold1"></script> <!-- Voorg-Ass rear-kick named attack; uses the Head Rigger separator and existing animal attack lifecycle. -->
   <script src="js/combat/combat-attach.js?v=20261101h47c5427"></script> <!-- Reusable "climb onto a target and take its place" attacks (honeyfuzzle Swarm). -->
   <script src="js/combat/combat-loadout.js?v=20261030h5bdb79c"></script>
-  <script src="js/combat/combat-progression.js?v=20261104scent1439"></script>
+  <script src="js/combat/combat-progression.js?v=20261104scent1439b"></script>
   <!-- Shared player-attack event context (prepare/hit/defensive) published by every
        ability module; Enchantments and future cross-cutting systems observe it. -->
   <script src="js/combat/combat-attack-events.js?v=20261027shape2"></script>
   <!-- Shared companion offensive-stat aggregation (Engraved Whistle × Sicced). -->
-  <script src="js/combat/companion-offense.js?v=20261104scent1439"></script>
+  <script src="js/combat/companion-offense.js?v=20261104scent1439b"></script>
   <script src="js/companion-combat-response.js?v=20261031responsive3"></script>
-  <script src="js/combat/animal-scent-targeting.js?v=20261104scent1"></script> <!-- Wild/enemy-pet scent opponent priority; consumes only existing combat state, no extra tick loop. --> <!-- Modular companion target priority, commitment and mobile debug; read by game.js. -->
+  <script src="js/combat/animal-scent-targeting.js?v=20261104scent1439b"></script> <!-- Priority targets for hostile animal companions and wild opponents. --> <!-- Modular companion target priority, commitment and mobile debug; read by game.js. -->
   <script src="js/combat/combat-input.js?v=20261024hc6ea2cd"></script>
   <!-- Attack pose templates shared with the attack-animation editor; before every ability module. -->
   <script src="js/combat/attack-pose-templates.js?v=20261017a"></script>
@@ -371,7 +371,7 @@
   <script src="js/area-footprint-blockers.js?v=20260929shotfloor1"></script>
   <!-- Sub-stepped sliding move extracted out of game.js; must load before game.js. -->
   <script src="js/swept-move.js?v=20260927footprints1"></script>
-  <script src="js/combat/ranged-weapons.js?v=20261104scent1439"></script>
+  <script src="js/combat/ranged-weapons.js?v=20261104scent1439b"></script>
   <script src="js/combat/ranged-hud-reticle.js?v=20261020hitcolor2"></script>
   <script src="js/combat/melee-hud-reticle.js?v=20261031aoeWidth1"></script>
   <!-- Bandit gang combat AI + weapon visuals (window.BanditCombat) — must
@@ -407,7 +407,7 @@
   <script src="js/bounty-board.js?v=20261008h416634c"></script>
   <!-- Loads docs/config/combat/attack-values.json and overrides every
        combat-*.js module's hardcoded defaults with it. -->
-  <script src="js/combat/combat-config-loader.js?v=20261104scent1439"></script>
+  <script src="js/combat/combat-config-loader.js?v=20261104scent1439b"></script>
   <!-- Shared timed-effect HUD, skill progression, food processing rules, and
        hearth cooking. These modules own their state/UI and expose narrow
        adapters to game.js. -->
@@ -583,12 +583,14 @@
        aside from deps injected via init(), so load order relative to the
        other systems above doesn't matter; must load before game.js, which
        calls window.ClimbSystem.init(...) during its own setup. -->
-  <script src="js/climb-system.js?v=20261027soursap1"></script>
-  <script src="js/creature-cliff-climb.js?v=1"></script>
+  <script src="js/cliff-route-network.js?v=20261104h0b96857"></script> <!-- Shared graph for selected exterior handholds, balcony terrain and wildlife routes. -->
+  <script src="js/climb-system.js?v=20261104cliffAudit1"></script>
+  <script src="js/creature-cliff-climb.js?v=20261104cliffAudit1"></script>
   <!-- Cubic 3D cell grid (window.CellGrid3D): the tile grid plus a level axis.
        Pure data/math with no dependencies, so load order doesn't matter.
        See docs/architecture/vertical-grid.md. -->
   <script src="js/cell-grid-3d.js?v=20261103he7fa634"></script>
+  <script src="js/cliff-elevated-surfaces.js?v=20261104shaftBridge1"></script> <!-- Wilderness balconies reuse CellGrid3D and scoped DynamicSurfaces; terrain heightfield stays intact. -->
   <!-- Climbable wall surfaces (window.ClimbSurfaces): attach + move along a wall.
        Needs ClimbSystem (registered as a world-climb provider by game.js). -->
   <script src="js/climb-surfaces.js?v=20261103rawfacefix1"></script>
@@ -675,7 +677,7 @@
        at call time (already global by then), so load order relative to the
        other systems above doesn't matter; must load before game.js, which
        calls window.WildlifeSpawn.init(...) during its own setup. -->
-  <script src="js/wildlife-spawn.js?v=20261104scent1439"></script>
+  <script src="js/wildlife-spawn.js?v=20261104scent1439b"></script>
   <!-- Town/zone building mesh spawning + decorative furniture/prop spawning
        (window.TownZoneBuildings) — reads globally-loaded HousePieceGen/
        WallBuilder/BuildingDoor/window.ProceduralFurniture/window.Music at
@@ -864,7 +866,7 @@
        window.ZonePlateauMesa.buildPlateauMesa(...) lazily, whenever a
        zone with tiered plateaus is first built or a plateau-top tile
        changes at runtime — never synchronously during initial boot. -->
-  <script src="js/zone-plateau-mesa.js?v=20261102h670262c"></script>
+  <script src="js/zone-plateau-mesa.js?v=20261104ha6b20d1"></script>
   <script src="js/wilderness-bedrock.js?v=20261027a"></script>
   <!-- One world-UV texture-backed mesh per water surface group. Dynamic
        flood/trench meshes are rebuilt only when the water simulation ticks;
@@ -893,7 +895,7 @@
        dependencies; must load before shattercasks.js, which feeds them. See docs/architecture/ruin-capabilities.md. -->
   <script src="js/world-events.js?v=1"></script>
   <script src="js/targetables.js?v=1"></script>
-  <script src="js/shattercasks.js?v=20261104hccd3dae"></script>
+  <script src="js/shattercasks.js?v=20261104portraitback2"></script>
   <script src="js/crate-piles.js?v=20261104cratepiles1"></script>
   <script src="js/hronal-witch-bombs.js?v=20261104backcarry3"></script>
   <!-- Hanging ropes: the shared rope swing arithmetic (pure) and the rope component burdens hang from. Needs Shattercasks at
@@ -2709,7 +2711,7 @@
   </div>
 
   <script src="js/tool-icon-render.js?v=20261103dungeonplumepadding3"></script>
-  <script src="js/sprite-recolor.js?v=20261104scent1439"></script>
+  <script src="js/sprite-recolor.js?v=20261104scent1439b"></script>
   <!-- Mount ride system (window.Mounts) — must load before game.js, which
        calls window.Mounts.init(...) during its own setup. -->
   <script src="js/mount-system.js?v=20261016he27d4d6"></script>
@@ -2737,7 +2739,7 @@
   <!-- Pixel Probe debug tool (window.PixelProbe) — wires its own DOM
        buttons at load time, and must load before game.js, which calls
        window.PixelProbe.init(...) during its own setup. -->
-  <script src="js/pixel-probe.js?v=20261103dungeonparticles1"></script>
+  <script src="js/pixel-probe.js?v=20261104h63b136f"></script>
   <!-- NPC dialogue CONTENT (window.DialogueContent) — text/token
        resolution, tree/pool selection, typewriter, portrait rendering,
        choice buttons. Must load before game.js, which calls
@@ -2840,7 +2842,7 @@
   <!-- NPC walkability/beeline checks + area-graph pathfinding
        (window.NpcPathfinding) — must load before game.js, which calls
        window.NpcPathfinding.init(...) during its own setup. -->
-  <script src="js/npc-pathfinding.js?v=20261021-npcsafety-rebased1"></script>
+  <script src="js/npc-pathfinding.js?v=20261104cliffAudit1"></script>
   <script src="js/npc-route-graph.js?v=20261009h41465f3"></script>
   <!-- Cutscene Director "Preview in game" one-shot handoff — must run
        BEFORE game.js so window.__hobunjiPlayerProfile is already set when
@@ -2929,7 +2931,7 @@
   <script src="js/delvers-vault-signal.js?v=20261031storyVault1"></script>
   <script src="js/bed-lie-pose.js?v=20261102mattressxray2"></script> <!-- Surface-aligned sleep presentation; game.js injects the live player and calendar. -->
   <script src="js/lunge-targeting.js?v=1"></script>
-  <script src="game.js?v=20261104scent1439"></script>
+  <script src="game.js?v=20261104scent1439b"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261029hguild2"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->
