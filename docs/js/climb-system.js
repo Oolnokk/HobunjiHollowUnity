@@ -65,7 +65,7 @@
     const grid = deps.getActiveGrid?.();
     return window.CliffRouteNetwork?.forGrid?.(grid, {
       area: deps.getCurrentArea(),
-      blocked: t => !t || t.incline || deps.isSolid(t.type),
+      blocked: t => !t || t.incline || deps.isSolid(t.type) || ['river', 'stream', 'trench'].includes(String(t.type).toLowerCase()),
       isBoundary: t => window.MapBoundaryGuard?.isBoundaryTile?.(t) || false,
       tileY: t => deps.tileSurfaceYInArea(t, deps.getCurrentArea()),
     }) || null;
