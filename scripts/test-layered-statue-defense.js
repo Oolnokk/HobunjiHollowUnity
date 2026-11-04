@@ -15,16 +15,20 @@ class Group {
   }
   add(node){node.parent?.remove?.(node);this.children.push(node);node.parent=this;}
   remove(node){this.children=this.children.filter(child=>child!==node);node.parent=null;}
+  traverse(fn){fn(this);for(const child of this.children)child.traverse?.(fn);}
 }
 const THREE={Group}; // Only authored scene roots are needed; the furniture runtime owns meshes.
 
 function harness(id,overrides={}){
   const parent=new Group(),nodes=new Map(),controls=[],encounters=[],dispensers=[],removed=[];
+  const disposed={geometries:0,materials:0}; // Tracks per-instance authored furniture GPU wrapper disposal on exit and failed assembly.
   let currentY=8,solved=0,linked=0,errors=0; // Mutable story elevation and externally observable stage effects.
   const authored={
     load:async key=>({key,parts:[{id:'authored'}]}),
     buildGroup:asset=>{
       const group=new Group();
+      group.geometry={dispose:()=>disposed.geometries++}; // Fake private authored geometry; disposed without affecting cached textures.
+      group.material={dispose:()=>disposed.materials++}; // Private material wrapper owned by this one room instance.
       if(asset.key==='ruinDefensePlinth')
         group.userData.furniturePuzzle={behavior:'burdenPlate',motion:{durationSeconds:8}};
       if(asset.key==='keyStatueDispenser')
@@ -66,7 +70,7 @@ function harness(id,overrides={}){
     },
     onSolved:()=>solved++,onLink:()=>linked++,onError:()=>errors++,
   });
-  return {instance,parent,nodes,controls,encounters,dispensers,removed,
+  return {instance,parent,nodes,controls,encounters,dispensers,removed,disposed,
     get solved(){return solved},get linked(){return linked},get errors(){return errors},
     setFloor:y=>{currentY=y},puzzle,
   };
@@ -106,6 +110,8 @@ async function flush(){
   rec.tick(.05);assert.equal(one.solved,1,'completion callback is idempotent');
   rec.dispose();assert.equal(one.nodes.size,0,'defence cleanup unregisters all furniture puzzle nodes');
   assert.equal(one.controls.length,0,'defence cleanup withdraws player inputs');
+  assert(one.disposed.geometries>=rec.composedPieces&&one.disposed.materials>=rec.composedPieces,
+    'all private authored statue meshes release GPU geometry/material wrappers');
   assert.deepEqual(one.removed,[combat.id],'defence cleanup removes its enemy encounter and survivors');
 
   const invalid=harness('statue-missing-metadata',{
