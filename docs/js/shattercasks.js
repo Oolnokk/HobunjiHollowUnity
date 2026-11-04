@@ -1133,12 +1133,17 @@
     if(burden.kind==='shattercask'&&!burden._backOriginalSpawnRetired){
       burden._backOriginalSpawnRetired=true;
       saveConsumed(oldMapId+':'+oldId);
+      // Reserve a separate ID BEFORE the destination's async authored
+      // furniture loads. Otherwise its unspawned static charge could be
+      // silently suppressed by the traveling charge with the same local ID.
+      burden._backTravelId='traveling_back_'+(++devArenaSpawnSerial)+'_'+oldId;
     }
-    // Static room IDs are not global IDs. Never overwrite another physical
-    // burden if the destination generated one with the same name.
-    let nextId=oldId,serial=1;
+    // Keep the traveling identity stable between rooms. Other Burden kinds
+    // retain their authored IDs unless a populated destination collides.
+    let nextId=burden._backTravelId||oldId,serial=1;
     while(newRecord.vases.has(nextId)&&newRecord.vases.get(nextId)!==burden)
-      nextId=oldId+'_back_'+serial++;
+      nextId=(burden._backTravelId||oldId)+'_back_'+serial++;
+    if(burden._backTravelId)burden._backTravelId=nextId;
     burden.id=nextId;
     newRecord.vases.set(nextId,burden);
     burden.mapId=mapId;
