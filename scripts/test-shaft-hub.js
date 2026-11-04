@@ -21,6 +21,25 @@ assert(!runtime.includes("passage('Return to Ruin'"),'no gameplay teleporter out
 for(const file of ['ruin-layer-plan.js','ruin-shaft-corridor.js','ruin-shaft-connector.js','ruin-layer-playable.js'])
   assert(index.includes(file),'game page must load '+file);
 
+// At identical X/Z, select the actor's story grid instead of the first
+// registered one; the shared shaft still owns all levels of its own portal.
+{
+  const lower=G.create({cols:10,rows:10,baseY:0});
+  const upper=G.create({cols:10,rows:10,baseY:4});
+  const hub=G.create({cols:10,rows:10,baseY:0,levels:20});
+  const stacks=new Map([['lower',{grid:lower,contains:()=>true}],
+    ['upper',{grid:upper,contains:()=>true}]]);
+  assert.equal(Playable.selectGrid(stacks,5,5,0),lower);
+  assert.equal(Playable.selectGrid(stacks,5,5,4),upper);
+  assert.equal(Playable.selectGrid(stacks,5,5,8),upper);
+  stacks.set('shaft-hub',{grid:hub});
+  assert.equal(Playable.selectGrid(stacks,5,5,8),hub,'hub owns every portal height');
+  const footprint=new Map([['lower',{grid:lower,contains:()=>false}],
+    ['upper',{grid:upper,contains:(x,z)=>x<6&&z<6}]]);
+  assert.equal(Playable.selectGrid(footprint,5,5,0),upper,'empty lower wing bounds never capture upper rooms');
+  assert.equal(Playable.selectGrid(footprint,8,8,4),null,'no collision owner beyond all actual footprints');
+}
+
 // Every floor is an independent ordinary 2D plan, with one shared, grid-snapped,
 // wide octagonal anchor, 1..4 wings, multiple challenges and one brazier per wing.
 let plannedWings=0;
@@ -176,6 +195,10 @@ for(const side of ['north','east','south','west']){
   assert(ruin.shaftConnection.supportRects<100,'hallway support surfaces merged');
   assert.deepEqual(ruin.occupancy.getPosition(),{x:5,z:7},'occupancy must reuse injected player adapter');
   const network=connected.layerRuntime;
+  network.tick(0);
+  const upperVisual=network.group.children.find(c=>c.name==='ruin-layer-floor-1');
+  assert.equal(upperVisual?.visible,false,'upper floor meshes must not cover player viewed from below');
+  assert.equal(network.group.children.find(c=>c.name==='ruin-layer-floor-0')?.visible,true);
   assert.equal(network.getState().wings,connected.plan.totalWings,'every planned floor wing is instantiated');
   assert.equal(network.getState().braziers,connected.plan.totalWings,'one physical brazier per wing');
   assert.equal(ruin.controls.filter(c=>c.kind==='layerBrazier').length,network.getState().braziers);
