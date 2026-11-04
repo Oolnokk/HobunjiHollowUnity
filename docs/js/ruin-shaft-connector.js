@@ -72,7 +72,7 @@
     const shaftOptions={seed,floors:plan.floorCount,chambers:false,wall:plan.options.shaftWall,
       shaft:plan.options.shaftSize,spacing:plan.options.floorHeight,entranceSide:'W',portals};
     const hub=ShaftHub.compose(shaftOptions); // The real shared room; origin is set below after determining its full masonry shell.
-    const originX=anchorX-Math.floor(hub.cols/2),originZ=anchorZ-Math.floor(hub.rows/2);
+    const originX=plan.shaft.anchor.x-Math.floor(hub.cols/2),originZ=plan.shaft.anchor.z-Math.floor(hub.rows/2); // The pre-generation anchor owns every portal and wing, including the rendered shaft.
     const placed=ShaftHub.compose({...shaftOptions,originX,originZ});
     if(!placed.ok)throw new Error('Octagonal shaft failed: '+placed.checks.filter(c=>!c.ok).map(c=>c.name).join(', '));
     const oldCols=rec.cols,oldRows=rec.rows,oldFloor=new Set(rec.floorSet); // Original geometry stays fixed and remains the gameplay entry.
@@ -129,13 +129,15 @@
       topY:placed.grid.baseY,priority:1}));
     ruin.shaftConnection.supportRects=corridorSupportRects.length;
     const unmountVisual=visual(route.tiles.filter(([c,r])=>!oldFloor.has(key(c,r))),THREE,rec.scene,placed.grid.baseY,rec.floorSet);
+    let layerRuntime=null,nativeRuntime=null; // Install cleanup before any later floor mount can fail.
+    ruin.shaftConnectorCleanup=()=>{nativeRuntime?.dispose();layerRuntime?.dispose();unmountVisual();DS.clearScope(scope);};
     const registered=ShaftHub.mount(placed,{THREE,parent:rec.scene,ClimbSurfaces,DynamicSurfaces:DS,DevRandomRuin});
-    const layerRuntime=RuinLayerPlayable.mount({
+    layerRuntime=RuinLayerPlayable.mount({
       rec,ruin,plan,hub:placed,makeTile,THREE,DynamicSurfaces:DS,CellGrid3D,
       RuinShaftCorridor,RuinLayerChallenges,RuinLayerDefense,DevRandomRuin,getPlayerPosition,getPlayerY,showToast,onStateChange
     }); // Mounts 1–4 stone puzzle wings and one interactive brazier per story-side.
     ruin.shaftLayerRuntime=layerRuntime;
-    const nativeRuntime=plan.nativeFloorCount?RuinV50NativeFloors.mount({
+    nativeRuntime=plan.nativeFloorCount?RuinV50NativeFloors.mount({
       rec,ruin,plan,hub:placed,records:nativeFloors,makeTile,THREE,
       DynamicSurfaces:DS,CellGrid3D,RuinShaftCorridor,RuinLayerChallenges,
       RuinLayerPlayable,DevRandomRuin,getPlayerPosition,getPlayerY,showToast,onStateChange,
@@ -152,7 +154,7 @@
     // corridor tiles; this is not a separate, invisible movement harness.
     if(TileOccupancy&&ruin.occupancy){
       const walls=[];ruin.localeRoot?.traverse?.(node=>{if(node.userData?.ruinInteriorWall)walls.push(node);});
-      ruin.occupancy=TileOccupancy.create({mapId:rec.mapData.id,scope:'dev-random-ruin-interior',cols,rows,
+      ruin.occupancy=TileOccupancy.create({mapId:rec.mapData.id,scope:'dev-random-ruin-interior',cols:rec.cols,rows:rec.rows,
         floorSet:rec.floorSet,grid:rec.grid,solidType:makeTile(false).type,
         walls,solidRoots:[ruin.localeRoot],mechanisms:ruin.mechanisms,transitDoors:ruin.transitDoors,
         activators:ruin.activators,pushBlocks:ruin.pushBlocks,
@@ -167,7 +169,6 @@
           if(child.userData?.groundedToMovingPlatform)ruin.occupancy.scanSolids?.(child,'dais-feature');
       }
     }
-    ruin.shaftConnectorCleanup=()=>{nativeRuntime?.dispose();layerRuntime.dispose();unmountVisual();DS.clearScope(scope);};
     return {plan,hub:placed,route,registered,layerRuntime,nativeRuntime};
   }
   return Object.freeze({entranceOutside,connect});

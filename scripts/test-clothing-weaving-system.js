@@ -968,7 +968,7 @@ assert.match(source, /Math\.ceil\(fullCost \/ 2\)/, 'reweaving charges half the 
 assert.match(source, /Reweave —/, 'loom operation selector exposes permanent Gear garments as reweave targets');
 assert.match(equipmentPanelSource, /compositeIncludesFinalDyes = [^;]*?window\.ClothingWeavingSystem\?\.hasWovenPattern\?\.\(item\)/, 'EquipmentPanel recognizes woven composites as already fully dyed');
 assert.match(equipmentPanelSource, /hasSecondaryDyeForItem/, 'inventory redye asks the shared cosmetic-palette resolver whether a real Trim channel exists');
-assert.match(source, /const hasSecondary = \(\) => layersUseSecondaryDye\(state\.layers\)/, 'loom Trim controls follow authored palette-B usage instead of the broad hood/overwear slot');
+assert.match(source, /const hasSecondary = \(\) => !reweaveItem\?\.furTrimColorName && layersUseSecondaryDye\(state\.layers\)/, 'loom Trim controls follow authored palette-B usage instead of the broad hood/overwear slot');
 assert.match(source, /for \(const \{ role, key \} of patternRoles\(\)\)/, 'loom pattern controls deduplicate multiple raster sprites that share one logical cloth role');
 assert.match(equipmentPanelSource, /if \(!compositeIncludesFinalDyes\) tintClothingIcon/, 'woven icon pixels are not washed out by the legacy single-color tint pass');
 assert.match(inventoryUiSource, /attributeFilter:\['src'\]/, 'Pack inventory observes the async icon src completion once instead of polling or compositing every frame');

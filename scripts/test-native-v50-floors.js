@@ -79,6 +79,14 @@ const meta=metadata(),analysis=Native.analyze(meta);
 assert(analysis.ok&&analysis.stages.length===3&&analysis.gates.length===3,
   'independent V50 room graphs are recognized by their actual parent/doorway metadata');
 assert.equal(analysis.rooms,4);assert.equal(analysis.hallways,3);
+assert.deepEqual(Native.doorwayCells({axis:'x',boundary:20,center:18.5,widthCells:5}),
+  [[20,16],[20,17],[20,18],[20,19],[20,20]],'odd-width gates must match their half-cell centers');
+const strayTiles=[]; // A floor-only shortcut is invisible to the room graph but must invalidate the gate.
+for(let x=8;x<=62;x++)strayTiles.push([x,25]);
+for(let z=18;z<=25;z++){strayTiles.push([8,z]);strayTiles.push([62,z]);}
+assert(!Native.analyze({...meta,floorCells:[...meta.floorCells,...strayTiles]}).ok,
+  'actual walkable tiles, not only doorway edges, must be cut by each sealed gate');
+
 assert(!Native.analyze({...meta,doorways:[]}).ok,
   'a disconnected native V50 graph must not be placed with a fake progression gate');
 const shortcut={id:'hall_shortcut',col:10,row:25,w:50,h:4};
@@ -98,13 +106,16 @@ for(const floor of plan.floors)if(floor.floor>0){
   assert(!floor.wings.some(wing=>wing.side==='E'),'native and custom wings may not share a shaft portal');
   assert(floor.wings.length+1<=4,'at most four physical wing exits per story');
 }
+assert.throws(()=>Native.layoutPlacement({...meta,layoutReservation:{...plan.floors[1].nativePort.reservation,floor:2,y:8,tileScale:2}},plan.floors[1].nativePort),/reservations differ/);
 const scene=new Group(),floors=[],nativeRoots=[];
 for(let floor=1;floor<3;floor++){
   const root=new Group();root.name='v50-real-render-root-'+floor;
   root.add(new Mesh(new Geometry(),new Material())); // Preserve genuine produced geometry, never replace it with mocked stone-room boxes.
   nativeRoots.push(root);
+  const floorMeta={...meta,layoutReservation:{...plan.floors[floor].nativePort.reservation,floor,y:plan.floors[floor].y,tileScale:2},
+    plateauModel:{stepHeight:.42,levelByCell:{'8,18':1,'62,18':1}}}; // Puzzle and goal centers are elevated in the real generated support map.
   floors.push({floor,roots:{localeRoot:root,particleRoot:new Group()},
-    generated:{locale:{meta:{interiorShell:meta}}}});
+    generated:{locale:{meta:{interiorShell:floorMeta}}}});
 }
 const rec={scene,cols:100,rows:100,grid:[],
   floorSet:new Set(),mapData:{id:'map_i_dev_random_ruin',floor:[]}};
@@ -133,6 +144,8 @@ try{
     showToast:message=>toasts.push(message),tileScale:2,
   });
   assert.equal(native.getState().floors,2);
+  assert(native.getState().perFloor.every(f=>f.reservationVerified));
+  assert.equal(native.records[0].challenges[0].floorY,4.42,'native puzzle height comes from V50 surface metadata');
   assert.equal(native.getState().rooms,8);
   assert.equal(native.getState().hallways,6);
   assert.equal(registered.length,2);
@@ -151,7 +164,7 @@ try{
       assert(grid.isSolid(grid.xToCol(gx+.5),grid.zToRow(gz+.5),0));
       player.x=stage.kind==='pressurePlate'?stage.x:state.place.originX+5;
       player.z=stage.kind==='pressurePlate'?stage.z:state.place.originZ+18;
-      player.y=plan.floors[state.floor].y;
+      player.y=stage.floorY;
       if(stage.kind==='pressurePlate')for(let i=0;i<17;i++)native.tick(.05);
       else if(stage.kind==='melodyEcho')stage.onMelodyResult({id:stage.id,solved:true});
       else if(stage.kind==='dungeonFire'){native.tick(.05);assert(stage.fireRecord.onBurn());}
@@ -160,8 +173,9 @@ try{
       assert(!grid.isSolid(grid.xToCol(gx+.5),grid.zToRow(gz+.5),0));
     }
     const controls=ruin.controls.filter(control=>control.kind==='v50NativeBrazier'
-      &&control.floorY===plan.floors[state.floor].y);
+      &&control.floorY===plan.floors[state.floor].y+.42);
     assert.equal(controls.length,1);
+    player.y=controls[0].floorY;
     controls[0].onPress();
     assert(state.lit,'the actual final V50 room contains one lit wing brazier');
   }

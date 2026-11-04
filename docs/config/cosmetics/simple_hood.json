@@ -1,0 +1,389 @@
+{
+  "slot": "hood",
+  "material": "cloth",
+  "tags": [
+    "material:cloth"
+  ],
+  "portraitAssets": true,
+  "meta": {
+    "name": "Simple Hood",
+    "artwork": "Simplehood base sprite; dyeable ordinary cloth hood. Wearer variants reuse the available shared Tletingan/Mashtzarr hood art; more fitted artwork can be authored later."
+  },
+  "palette": {
+    "colors": {
+      "A": {
+        "h": 150,
+        "s": 0.5,
+        "l": 0.3
+      }
+    },
+    "layers": {
+      "base": "A"
+    }
+  },
+  "speciesVariants": {
+    "tletingan_male": {
+      "parts": {
+        "head": {
+          "layers": {
+            "front": {
+              "layerRole": "base",
+              "image": {
+                "url": "./assets/cosmetics/clothes/hood/simplehood_tl_m.png",
+                "colors": [
+                  "A"
+                ]
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              },
+              "behindImage": {
+                "url": "./assets/cosmetics/clothes/hood/simplehood_tl_m.png"
+              }
+            }
+          }
+        }
+      }
+    },
+    "mashtzarr_male": {
+      "parts": {
+        "head": {
+          "layers": {
+            "front": {
+              "layerRole": "base",
+              "image": {
+                "url": "./assets/cosmetics/clothes/hood/simplehood_mashtz_m.png",
+                "colors": [
+                  "A"
+                ]
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              },
+              "behindImage": {
+                "url": "./assets/cosmetics/clothes/hood/simplehood_mashtz_m.png"
+              }
+            }
+          }
+        }
+      }
+    },
+    "mao-ao_male": {
+      "parts": {
+        "head": {
+          "layers": {
+            "front": {
+              "layerRole": "base",
+              "image": {
+                "url": "./assets/cosmetics/clothes/hood/simplehood_tl_m.png",
+                "colors": [
+                  "A"
+                ]
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              },
+              "behindImage": {
+                "url": "./assets/cosmetics/clothes/hood/simplehood_tl_m.png"
+              }
+            }
+          }
+        }
+      }
+    },
+    "mao-ao_female": {
+      "parts": {
+        "head": {
+          "layers": {
+            "front": {
+              "layerRole": "base",
+              "image": {
+                "url": "./assets/cosmetics/clothes/hood/simplehood_tl_m.png",
+                "colors": [
+                  "A"
+                ]
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              },
+              "behindImage": {
+                "url": "./assets/cosmetics/clothes/hood/simplehood_tl_m.png"
+              }
+            }
+          }
+        }
+      }
+    },
+    "kenkari_male": {
+      "parts": {
+        "head": {
+          "layers": {
+            "front": {
+              "layerRole": "base",
+              "image": {
+                "url": "./assets/cosmetics/clothes/hood/simplehood_tl_m.png",
+                "colors": [
+                  "A"
+                ]
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              },
+              "behindImage": {
+                "url": "./assets/cosmetics/clothes/hood/simplehood_tl_m.png"
+              }
+            }
+          }
+        }
+      }
+    },
+    "kenkari_female": {
+      "parts": {
+        "head": {
+          "layers": {
+            "front": {
+              "layerRole": "base",
+              "image": {
+                "url": "./assets/cosmetics/clothes/hood/simplehood_tl_m.png",
+                "colors": [
+                  "A"
+                ]
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              },
+              "behindImage": {
+                "url": "./assets/cosmetics/clothes/hood/simplehood_tl_m.png"
+              }
+            }
+          }
+        }
+      }
+    },
+    "engh-sho_male": {
+      "parts": {
+        "head": {
+          "layers": {
+            "front": {
+              "layerRole": "base",
+              "image": {
+                "url": "./assets/cosmetics/clothes/hood/simplehood_tl_m.png",
+                "colors": [
+                  "A"
+                ]
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              },
+              "behindImage": {
+                "url": "./assets/cosmetics/clothes/hood/simplehood_tl_m.png"
+              }
+            }
+          }
+        }
+      }
+    },
+    "engh-sho_female": {
+      "parts": {
+        "head": {
+          "layers": {
+            "front": {
+              "layerRole": "base",
+              "image": {
+                "url": "./assets/cosmetics/clothes/hood/simplehood_tl_m.png",
+                "colors": [
+                  "A"
+                ]
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              },
+              "behindImage": {
+                "url": "./assets/cosmetics/clothes/hood/simplehood_tl_m.png"
+              }
+            }
+          }
+        }
+      }
+    },
+    "rakakoan_male": {
+      "parts": {
+        "head": {
+          "layers": {
+            "front": {
+              "layerRole": "base",
+              "image": {
+                "url": "./assets/cosmetics/clothes/hood/simplehood_tl_m.png",
+                "colors": [
+                  "A"
+                ]
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              },
+              "behindImage": {
+                "url": "./assets/cosmetics/clothes/hood/simplehood_tl_m.png"
+              }
+            }
+          }
+        }
+      }
+    },
+    "rakakoan_female": {
+      "parts": {
+        "head": {
+          "layers": {
+            "front": {
+              "layerRole": "base",
+              "image": {
+                "url": "./assets/cosmetics/clothes/hood/simplehood_tl_m.png",
+                "colors": [
+                  "A"
+                ]
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              },
+              "behindImage": {
+                "url": "./assets/cosmetics/clothes/hood/simplehood_tl_m.png"
+              }
+            }
+          }
+        }
+      }
+    },
+    "mashtzarr_female": {
+      "parts": {
+        "head": {
+          "layers": {
+            "front": {
+              "layerRole": "base",
+              "image": {
+                "url": "./assets/cosmetics/clothes/hood/simplehood_mashtz_m.png",
+                "colors": [
+                  "A"
+                ]
+              },
+              "spriteStyle": {
+                "base": {
+                  "xform": {
+                    "head": {
+                      "ax": -0.2,
+                      "ay": 0,
+                      "scaleX": 2.55,
+                      "scaleY": 2.55,
+                      "rotDeg": 0
+                    }
+                  }
+                }
+              },
+              "behindImage": {
+                "url": "./assets/cosmetics/clothes/hood/simplehood_mashtz_m.png"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -81,6 +81,12 @@
     };
   }
 
+  function clearInteractionFocus(type) {
+    // Only clear the owning source's previous focus; a livestock miss must not
+    // erase a branch, nest, or other interaction diagnostic.
+    if (lastInteractionFocusDebug?.type === type) lastInteractionFocusDebug = null;
+  }
+
   function _drawDebugSegment3D(a, b, color, dashed = false, lineWidth = 1.5, alpha = 0.9) {
     const p1 = deps.worldToOverlay(a.x, a.y, a.z);
     const p2 = deps.worldToOverlay(b.x, b.y, b.z);
@@ -739,6 +745,7 @@
     init,
     draw: drawDebugOverlays,
     noteInteractionFocus,
+    clearInteractionFocus,
   };
   window.__hitboxDebug = {
     get actors() { return debugSnapshot(); },

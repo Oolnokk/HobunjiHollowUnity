@@ -148,7 +148,8 @@
     bomb.group?.updateWorldMatrix?.(true,true);
     const position=bomb.group?.getWorldPosition?.(new THREE.Vector3()) || bomb.group?.position;
     if (!position) {window.Shattercasks?.discardBurden?.(bomb);return false;}
-    const x=position.x,z=position.z,y=position.y,mapId=bomb.mapId;
+    const carrier=window.Shattercasks?.backCarrierPosition?.(bomb); // An expired back-carried fuse explodes exactly at the carrier, not the art offset.
+    const x=carrier?.x??position.x,z=carrier?.z??position.z,y=carrier?.y??position.y,mapId=bomb.mapId;
     const scene=bomb.group.parent?.isScene?bomb.group.parent:currentScene();
     window.Shattercasks?.applyBlast?.(mapId,x,z,{
       y,sourceId:bomb.id,

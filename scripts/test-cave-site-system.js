@@ -366,6 +366,41 @@ const census = context.WildlifeSpawn.denNestCensus('map_test_wilds');
 assert.equal(census.caveCount, workspace.animalDens.length, 'wildlife diagnostics expose generic cave total');
 assert.equal(census.denCount, expectedAnimalDens, 'wildlife diagnostics retain true animal-den count');
 
+// Cave cache loot is no longer auto-granted while walking near its rendered chest.
+// The existing aimed cave world action must claim a lock and wait for a victory.
+{
+  const started = []; // Pending Ring Tumblers callbacks inspected without synthetic successes in the cave tick.
+  const lootGranted = []; // Real DevSpawner loot adapter receives the original cache reward only after success.
+  context.ChestLockpicking = {
+    open(options) { started.push(options); return true; },
+  };
+  context.DevSpawner.init({ grantLoot(gained) { lootGranted.push(gained); return Object.keys(gained); } });
+  const chestTile = cacheMap.caveCache; // Authored cache and targeted tile are the same physical object.
+  Object.assign(deps, { getCurrentArea: () => 'map_i_test_cache', showToast() {} });
+  deps.player.x = (chestTile.col + .5) * deps.TILE;
+  deps.player.y = (chestTile.row + .5) * deps.TILE;
+  const cacheProfile = Cave.profileForMapId('map_i_test_cache'); // Saved state owner remains this cavern profile.
+  assert.equal(Cave.__test.runtimeStateBySignature.get(cacheProfile.signature)?.cacheOpened || false, false);
+  const chest = Cave.objectAt('map_i_test_cache', chestTile.col, chestTile.row);
+  assert.equal(chest?.getButtons()?.[0]?.action, 'obj_pick_cave_cache', 'visible cache uses the ordinary targeted world-object action');
+  assert.equal(chest?.onAction('wrong_action')?.ok, false, 'other actions never open the cache');
+  assert.equal(chest.onAction('obj_pick_cave_cache').ok, false, 'starting Ring Tumblers does not immediately grant loot');
+  assert.equal(started.length, 1);
+  assert.equal(started[0].tier, 2, 'cave caches use the three-ring tier');
+  assert.equal(lootGranted.length, 0, 'mere presence or a pending lock cannot award cave loot');
+  started[0].onCancel?.('cancelled');
+  assert.equal(lootGranted.length, 0, 'cancelling cannot loot cave treasure');
+  assert.equal(chest.onAction('obj_pick_cave_cache').ok, false, 'cancelled attempt can be retried');
+  assert.equal(started.length, 2);
+  started[1].onSuccess();
+  assert.equal(Cave.__test.runtimeStateBySignature.get(cacheProfile.signature).cacheOpened, true, 'successful lock updates canonical cacheOpened state');
+  assert.equal(lootGranted.length, 1, 'successful lock grants precisely one original cache reward');
+  assert.equal(Cave.objectAt('map_i_test_cache', chestTile.col, chestTile.row), null, 'opened cache cannot be interacted with again');
+  started[1].onSuccess(); // The original loot function guards its own saved cache flag.
+  assert.equal(lootGranted.length, 1, 'repeating a stale win callback cannot duplicate rewards');
+  deps.getCurrentArea = () => 'map_test_wilds';
+}
+
 // Cave Duskcaps now use ordinary aimed getButtons/onAction picking, never proximity harvest.
 {
   const granted = []; // Captures the isolated legacy loot adapter when no game-owned lightweight grant is injected.

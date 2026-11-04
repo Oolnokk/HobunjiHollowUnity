@@ -417,11 +417,16 @@ for(const side of ['north','east','south','west']){
   const climb={registerGrid:()=>3,clearScope(){}};
   const dev={registerShaftGrid(){},unregisterShaftGrid(){}};
   const occupancy={create(config){return {cols:config.cols,rows:config.rows,getPosition:config.getPlayerPosition}}};
-  const connected=Connector.connect({rec,ruin,seed:23,meta,THREE,makeTile,DynamicSurfaces:DS,
+  const preplanned=Plan.compose({seed:23,anchorX:320,anchorZ:320}); // Deliberately differs from the old post-generation anchor.
+  const connected=Connector.connect({rec,ruin,seed:23,meta,preplanned,THREE,makeTile,DynamicSurfaces:DS,
     ShaftHub:H,ClimbSurfaces:climb,DevRandomRuin:dev,TileOccupancy:occupancy,
     RuinLayerPlan:Plan,RuinShaftCorridor:Corridor,RuinLayerPlayable:Playable,RuinLayerChallenges:Challenges,RuinLayerDefense:Defense,CellGrid3D:G,
     getPlayerPosition:()=>({x:player.x,z:player.z}),getPlayerY:()=>player.y});
   assert(connected.hub.ok,'integrated octagonal room passed reachability');
+  assert.equal(connected.hub.grid.originX+Math.floor(connected.hub.cols/2),preplanned.shaft.anchor.x);
+  assert.equal(connected.hub.grid.originZ+Math.floor(connected.hub.rows/2),preplanned.shaft.anchor.z);
+  assert.equal(ruin.occupancy.cols,rec.cols,'occupancy must include all mounted wings');
+  assert.equal(ruin.occupancy.rows,rec.rows,'occupancy must include all mounted wings');
   assert(ruin.shaftConnection.physical,'the normal ruin entrance is a real corridor');
   assert.equal(ruin.shaftConnection.floorCount,connected.plan.floorCount);
   assert(ruin.shaftConnection.supportRects<100,'hallway support surfaces merged');

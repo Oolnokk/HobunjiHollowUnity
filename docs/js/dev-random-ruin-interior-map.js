@@ -1015,27 +1015,10 @@
         generationMark('generating-native-v50-floors');
         const nativeSnapshots=[]; // Real V50 meshes and room metadata belong to this accepted candidate, never the next reroll.
         ruin.nativeV50Pending=nativeSnapshots;
-        for(let floor=1;floor<planned.floorCount;floor++){
-          let failure=null;
-          for(let retry=0;retry<6;retry++){
-            const seedLabel=window.RuinV50NativeFloors.nativeSeed(candidateSeed,floor,retry);
-            const upper=await api.generateInteriorLocale({
-              seed:seedLabel,size:'small',density:cfg('generation.density',62),
-              roomMin:6,roomMax:8,
-              puzzles:{pressurePlate:false,brazier:false,glyphObelisk:false,
-                stackedObelisk:false,linkedCubePillars:false,nestedRoom:false,maxPerRoom:0},
-              ...(stoneAgeRequested?{pieceSet:'stoneAge',floorProps:'pillarsOnly'}:{}),
-            }); // V50 creates the real rooms, halls and scenery; the normal shared puzzle runtime authors their ordered objectives.
-            const analysis=window.RuinV50NativeFloors.analyze(upper.locale?.meta?.interiorShell);
-            if(!analysis.ok){failure=analysis.reason;continue;}
-            api.snapMechanismState(1); // Native hallway machinery starts OPEN; the real stage-local 3D gates own progression.
-            nativeSnapshots.push({
-              floor,generated:upper,roots:api.takePreviewRoots({snapshot:true,floor}),
-            });
-            failure=null;break;
-          }
-          if(failure)throw new Error('V50 could not generate traversable floor '+floor+': '+failure);
-        }
+        await window.RuinV50NativeFloors.generateFloors({
+          api,plan:planned,seed:candidateSeed,density:cfg('generation.density',62),records:nativeSnapshots,
+          ...(stoneAgeRequested?{pieceSet:'stoneAge',floorProps:'pillarsOnly'}:{}),
+        }); // The native-floor owner validates each reservation and retries before handing meshes to the connector.
         generationMark('composing-preplanned-multifloor-shaft');
         attachShaftHub(rec,candidateSeed,{preplanned:planned,nativeFloors:nativeSnapshots});
         ruin.nativeV50Pending=null; // The mounted native runtime now owns these exact scene roots and their disposal.
@@ -1671,12 +1654,13 @@
     const hachutu=ruin.hachutu?window.DevHachutuRuin?.brief?.():null; // A compact mobile-facing meter; full detailed snapshot remains accessible on the Dev Ruin API.
     setDebugBadgePart('hachutu',hachutu?(' · Hachutu weeds '+hachutu.weeds+'/3, wave '+hachutu.wave+'/3, boss '+hachutu.boss+' · root '+hachutu.tear+(hachutu.issue?' · ERR '+hachutu.issue.slice(0,120):'')):'');
     const layers=ruin.shaftLayerRuntime?.getState?.(); // Visible mobile count reflects instantiated gameplay, never just planning metadata.
+    const nativeState=ruin.nativeV50Runtime?.getState?.(); // Reuse one diagnostics snapshot per badge update.
     const layerBadge=layers?(' · shaft '+layers.floors+' floors · physical hall '+ruin.shaftConnection.length+
       ' cells · '+layers.wings+' wings · gates '+layers.challengesSolved+'/'+layers.challengesTotal+
       ' · braziers '+layers.lit+'/'+layers.braziers+
       ' · rope '+layers.ropeChainsLinked+' ('+layers.floorlessCells+' void tiles)'+
       ' · statue '+layers.defenseRoomsReady+' ready'+
-      (ruin.nativeV50Runtime?' · V50 '+ruin.nativeV50Runtime.getState().rooms+' native rooms / '+ruin.nativeV50Runtime.getState().hallways+' halls':'')+
+      (nativeState?' · V50 '+nativeState.rooms+' native rooms / '+nativeState.hallways+' halls · reserved '+nativeState.perFloor.filter(f=>f.reservationVerified).length+'/'+nativeState.floors:'')+
       (layers.defenseErrors?.length?' · STATUE ERR '+layers.defenseErrors.map(d=>d.id+': '+d.error).slice(0,2).join('; ').slice(0,210):'')+
       (layers.pendingRuntimeLinks?.length?' · HOOK? '+layers.pendingRuntimeLinks.slice(0,4).map(link=>link.kind+'@'+link.wingId).join(','):''))
       :ruin.shaftConnection?(' · shaft '+ruin.shaftConnection.floorCount+' floors · physical hall '+ruin.shaftConnection.length+' cells')

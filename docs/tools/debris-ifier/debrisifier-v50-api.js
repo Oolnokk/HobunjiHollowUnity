@@ -199,7 +199,18 @@
     return tagged;
   }
 
+  function normalizeLayoutReservation(raw) {
+    if (raw == null) return null;
+    const fields = ['x', 'z', 'w', 'd', 'floor', 'y', 'tileScale']; // Allocation crosses the iframe boundary as plain finite numbers.
+    if (!fields.every(key => Number.isFinite(raw[key])) || raw.x < 0 || raw.z < 0
+      || raw.w < 8 || raw.d < 8 || raw.w > 180 || raw.d > 180
+      || !Number.isInteger(raw.floor) || raw.floor < 1 || raw.tileScale !== 2)
+      throw new Error('Invalid native V50 layout reservation');
+    return Object.fromEntries(fields.map(key => [key, raw[key]]));
+  }
+
   async function generateInteriorLocale(options = {}) {
+    window.__devRuinLayoutReservation = normalizeLayoutReservation(options.layoutReservation); // Reset for every call, including ordinary single-floor previews.
     activePillarsOnly=options.floorProps==='pillarsOnly';
     await selectPieceSet(options.pieceSet);
     restorePreviewRoots();
@@ -221,9 +232,18 @@
     syncLocaleEnvironmentControls();
     updateOutputs();
 
+    lastGeneratedLocale = null; // V50 reports generation errors in its status label; never accept a previous floor after a failed attempt.
     await generateRuinsLocalePreview({ keepCurrentSeed: true });
     if (!lastGeneratedLocale || lastGeneratedLocale.meta?.environment !== 'interior') {
       throw new Error($('localeStatus')?.textContent || 'V50 did not produce an interior ruin.');
+    }
+    const reservation = window.__devRuinLayoutReservation; // Persist the accepted generator contract for mounting and mobile diagnostics.
+    if (reservation) {
+      const shell = lastGeneratedLocale.meta.interiorShell; // Final normalized dimensions include V50's exterior wall margin.
+      if (shell.gridCols * shell.cellSize * reservation.tileScale > reservation.w
+        || shell.gridRows * shell.cellSize * reservation.tileScale > reservation.d)
+        throw new Error('V50 generated outside its reserved floor allocation');
+      shell.layoutReservation = { ...reservation };
     }
     hydrateInteriorPlateauLevels();
     const puzzleFurniture = tagPuzzleFurniture(localePreviewRoot);

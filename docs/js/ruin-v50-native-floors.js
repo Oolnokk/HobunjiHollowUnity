@@ -14,6 +14,29 @@
   const RANGED=['glyphObelisk','ceilingRailTargets'];
   const STAGES=['pressurePlate','glyphObelisk','melodyEcho','dungeonFire'];
 
+  function doorwayCells(door,scale=1,originX=0,originZ=0){
+    const across=door.center*scale+(door.axis==='x'?originZ:originX); // Cell centers covered by the actual authored opening.
+    const boundary=Math.floor(door.boundary*scale+(door.axis==='x'?originX:originZ));
+    const half=door.widthCells*scale/2,cells=[]; // Shared by topology validation and runtime voxel gates.
+    for(let n=Math.ceil(across-half-.5);n<Math.ceil(across+half-.5);n++)
+      cells.push(door.axis==='x'?[boundary,n]:[n,boundary]);
+    return cells;
+  }
+  function floorRouteExists(floorSet,from,to,blocked){
+    const start=key(Math.floor(from.col+from.w/2),Math.floor(from.row+from.h/2)); // Flood the real tiles, including unrecorded contacts between rooms.
+    const goal=key(Math.floor(to.col+to.w/2),Math.floor(to.row+to.h/2));
+    const seen=new Set([start]),queue=[start];
+    for(let i=0;i<queue.length;i++){
+      if(queue[i]===goal)return true;
+      const [x,z]=queue[i].split(',').map(Number);
+      for(const [dx,dz] of [[1,0],[-1,0],[0,1],[0,-1]]){
+        const next=key(x+dx,z+dz);
+        if(!seen.has(next)&&floorSet.has(next)&&!blocked.has(next)){seen.add(next);queue.push(next);}
+      }
+    }
+    return false;
+  }
+
   function analyze(meta){
     if(!meta||!Array.isArray(meta.rooms)||!Array.isArray(meta.hallways)
       ||!Array.isArray(meta.doorways)||!Array.isArray(meta.floorCells)
@@ -45,8 +68,9 @@
         hall,doors:roomDoors});
     }
     const stages=chain.slice(0,Math.min(4,chain.length-1));
-    const goalRoom=chain[stages.length];
+    const goalRoom=chain[chain.length-1]; // The brazier belongs at the actual V50 goal, even when the path exceeds the four-stage cap.
     const gates=[];
+    const floorSet=new Set(meta.floorCells.map(([x,z])=>key(x,z))); // Physical connectivity can differ from V50's room graph when rectangles touch.
     for(let i=0;i<stages.length;i++){
       const current=stages[i],next=chain[i+1];
       const edge=edges.find(e=>(e.from===current.id&&e.to===next.id)
@@ -64,6 +88,10 @@
         }
       }
       if(visited.has(next.id))return {ok:false,reason:'Native V50 hallway gate can be bypassed: '+current.id+' -> '+next.id};
+      const blocked=new Set(doorwayCells(entry).map(([x,z])=>key(x,z))); // A sealed door must cut the actual walkable cells too.
+      if(!blocked.size||[...blocked].some(cell=>!floorSet.has(cell))
+        ||!floorRouteExists(floorSet,current,next,new Set())||floorRouteExists(floorSet,current,next,blocked))
+        return {ok:false,reason:'Native V50 physical gate is disconnected or bypassable: '+current.id};
       gates.push({from:current.id,to:next.id,door:entry,hallId:edge.hall.id});
     }
     return {ok:true,start,goal,rooms:meta.rooms.length,hallways:meta.hallways.length,
@@ -75,6 +103,33 @@
   function nativeSeed(seed,floor,attempt=0){
     return 'dev-'+(Number(seed)>>>0).toString(36)+'-v50-floor'+floor+'-try'+attempt;
   }
+  async function generateFloors({api,plan,seed,density=62,pieceSet,floorProps,records=[]}){
+    if(!plan?.ok||!api?.generateInteriorLocale||!api?.takePreviewRoots)
+      throw new Error('Native V50 generation requires a valid plan and generator');
+    for(const floor of plan.floors.filter(item=>item.nativePort)){
+      let failure=null; // Keep retries local to the failed floor; accepted snapshots belong to the caller's cleanup lifecycle.
+      for(let retry=0;retry<6;retry++){
+        try{
+          const generated=await api.generateInteriorLocale({
+            seed:nativeSeed(seed,floor.floor,retry),size:'small',density,roomMin:6,roomMax:8,
+            layoutReservation:{...floor.nativePort.reservation,floor:floor.floor,y:floor.y,tileScale:2},
+            puzzles:{pressurePlate:false,brazier:false,glyphObelisk:false,
+              stackedObelisk:false,linkedCubePillars:false,nestedRoom:false,maxPerRoom:0},
+            ...(pieceSet?{pieceSet,floorProps}:{}),
+          }); // Native geometry keeps the shared stage runtime's single progression authority.
+          const meta=generated.locale?.meta?.interiorShell,analysis=analyze(meta); // Validate before transferring a scene out of the iframe.
+          if(!analysis.ok)throw new Error(analysis.reason);
+          if(!meta.layoutReservation)throw new Error('V50 did not acknowledge its floor reservation');
+          layoutPlacement(meta,floor.nativePort,2);
+          api.snapMechanismState(1); // Shared stage gates own progression; V50 preview machinery stays open.
+          records.push({floor:floor.floor,generated,roots:api.takePreviewRoots({snapshot:true,floor:floor.floor})});
+          failure=null;break;
+        }catch(error){failure=String(error?.message||error);}
+      }
+      if(failure)throw new Error('V50 could not generate traversable floor '+floor.floor+': '+failure);
+    }
+    return records;
+  }
   function layoutPlacement(meta,port,tileScale=2){
     const cs=(Number(meta.cellSize)||.5)*tileScale;
     const width=Math.ceil((Number(meta.gridCols)||0)*cs),depth=Math.ceil((Number(meta.gridRows)||0)*cs);
@@ -85,6 +140,10 @@
     const reservation=port.reservation; // Planner-owned space: no late placement is allowed to claim another wing's footprint.
     if(!reservation||reservation.w<width||reservation.d<depth)
       throw new Error('Native V50 floor has no sufficient pre-generation reservation');
+    const generatedReservation=meta.layoutReservation; // The generator and mount must agree on the exact floor allocation.
+    if(generatedReservation&&(['x','z','w','d'].some(field=>generatedReservation[field]!==reservation[field])
+      ||generatedReservation.floor!==port.floor||generatedReservation.y!==port.y||generatedReservation.tileScale!==tileScale))
+      throw new Error('Native V50 generation and mounting reservations differ');
     const originX=reservation.x;
     const originZ=Math.max(reservation.z,Math.min(reservation.z+reservation.d-depth,
       Math.max(8,Math.floor(port.z-depth/2))));
@@ -307,9 +366,10 @@
           const native=analysis.stages[i],world=nativeRoom(native,place);
           const kind=i===0?'pressurePlate':i===1?RANGED[item.floor%RANGED.length]
             :kinds[(i+item.floor)%kinds.length];
+          const challengeY=floor.y+(heights.get(key(Math.floor(world.x+world.w/2),Math.floor(world.z+world.d/2)))||0); // Match the actual V50 surface under the puzzle.
           let challenge=null;
           challenge=Challenges.compose({
-            THREE,parent:group,room:world,id:'v50-f'+item.floor+'-'+native.id,kind,y:floor.y,
+            THREE,parent:group,room:world,id:'v50-f'+item.floor+'-'+native.id,kind,y:challengeY,
             isActive:()=>!owner.disposed&&record.solved===i,
             getPlayerPosition,getPlayerY,
             addControl,removeControl,
@@ -321,18 +381,12 @@
             },
           });
           challenge.x=world.x+world.w/2;challenge.z=world.z+world.d/2;
-          challenge.floorY=floor.y; // Shared stage diagnostics and native pressure-plate tests use exact V50 room centers.
-          const door=analysis.gates[i].door,span=Math.max(2,Math.round(Number(door.widthCells)||3));
+          challenge.floorY=challengeY; // Shared stage diagnostics and native pressure-plate tests use exact V50 room centers.
+          const door=analysis.gates[i].door,span=Math.max(2,(Number(door.widthCells)||3)*place.cs);
           const x=place.originX+(door.axis==='x'?door.boundary:door.center)*place.cs;
           const z=place.originZ+(door.axis==='x'?door.center:door.boundary)*place.cs;
-          const tiles=[];
-          const start=-Math.floor(span/2);
-          for(let n=0;n<span;n++){
-            const gx=door.axis==='x'?Math.floor(x):Math.floor(x)+(start+n);
-            const gz=door.axis==='x'?Math.floor(z)+(start+n):Math.floor(z);
-            if(!all.has(key(gx,gz)))throw new Error('Native V50 gate does not span a real hallway: '+native.id);
-            tiles.push([gx,gz]);
-          }
+          const tiles=doorwayCells(door,place.cs,place.originX,place.originZ); // Exactly the cells validated against the real V50 floor network.
+          if(tiles.some(([gx,gz])=>!all.has(key(gx,gz))))throw new Error('Native V50 gate does not span a real hallway: '+native.id);
           const object=primitive(group,'v50-native-gate-'+item.floor+'-'+i,
             new THREE.BoxGeometry(door.axis==='x'?.8:span,2.35,door.axis==='x'?span:.8),
             gateMaterial,x,floor.y+1.18,z);
@@ -342,16 +396,17 @@
         }
         const goal=nativeRoom(analysis.goalRoom,place);
         const cx=goal.x+goal.w/2,cz=goal.z+goal.d/2;
+        const goalY=floor.y+(heights.get(key(Math.floor(cx),Math.floor(cz)))||0); // Brazier interactions follow the same support surface as their geometry.
         const pedestal=primitive(group,'v50-native-brazier-'+item.floor,
-          new THREE.CylinderGeometry(.65,.82,.7,8),bronzeMaterial,cx,floor.y+.38,cz);
+          new THREE.CylinderGeometry(.65,.82,.7,8),bronzeMaterial,cx,goalY+.38,cz);
         const flame=primitive(group,'v50-native-brazier-flame-'+item.floor,
-          new THREE.ConeGeometry(.42,1.25,7),flameMaterial,cx,floor.y+1.22,cz);
+          new THREE.ConeGeometry(.42,1.25,7),flameMaterial,cx,goalY+1.22,cz);
         flame.visible=false;record.goalBrazier={pedestal,flame};
         addControl({kind:'v50NativeBrazier',object:pedestal,promptRoot:pedestal,
-          floorY:floor.y,range:1.7,priority:20,touchIcon:'🔥',
+          floorY:goalY,range:1.7,priority:20,touchIcon:'🔥',
           label:()=>record.lit?'Brazier Burning':'Ignite Native Wing Brazier',
           onPress:()=>{
-            if(owner.disposed||record.lit||Math.abs(Number(getPlayerY?.())-floor.y)>.8)return;
+            if(owner.disposed||record.lit||!Number.isFinite(Number(getPlayerY?.()))||Math.abs(Number(getPlayerY())-goalY)>.8)return;
             if(record.solved!==record.challenges.length){
               options.showToast?.('Complete the V50 chambers first.',false);return;
             }
@@ -385,9 +440,11 @@
         floor:r.floor,rooms:r.analysis.rooms,hallways:r.analysis.hallways,
         stages:r.challenges.length,solved:r.solved,lit:r.lit,routeLength:r.route.length,
         routeWallSegments:r.routeWallSegments,
+        allocation:r.place.width+'×'+r.place.depth+' / 180×180',
+        reservationVerified:!!records.find(item=>item.floor===r.floor)?.generated?.locale?.meta?.interiorShell?.layoutReservation,
       })),
     });
     return owner;
   }
-  return Object.freeze({analyze,nativeSeed,layoutPlacement,nativeRoom,cellProjection,mount,isNativeGrid:grid=>nativeGridOwnership.has(grid)});
+  return Object.freeze({analyze,doorwayCells,nativeSeed,generateFloors,layoutPlacement,nativeRoom,cellProjection,mount,isNativeGrid:grid=>nativeGridOwnership.has(grid)});
 });

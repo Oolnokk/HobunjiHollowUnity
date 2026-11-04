@@ -16368,6 +16368,16 @@
         return worldObjects.get(col + ',' + row) || null;
       }
 
+      // Aimed interactions use the rendered livestock planes, not the
+      // reservation tile that is updated at the START of a wandering hop.
+      // Ordinary getWorldObjectAt stays tile-based for occupancy, placement,
+      // collision, and all other world-object consumers.
+      function getAimedFarmInteractionObject(col, row) {
+        const object = getWorldObjectAt(col, row); // Existing furniture/corpse/processor focus retains priority over livestock.
+        if (currentArea !== 'farm' || (object && object.type !== 'animal')) return object;
+        return window.FarmAnimals?.aimedAnimal?.() || null; // A ray miss must not activate an animal merely because its reserved tile is under the ground reticle.
+      }
+
       function worldObjectMorningTick() {
         // Deliver pending orders
         const today = calendar.day;
@@ -19851,7 +19861,7 @@
         // and now sittable furniture — see the mapData.furniture loader).
         return currentArea === 'interior' ? getInteriorInteractableAt(_r.col, _r.row)
           : (_isBuildingArea(currentArea) || currentArea === 'town') ? (_buildingInteractables.get(currentArea + ',' + _r.col + ',' + _r.row) || getCorpseObjectForAction(action, _r.col, _r.row) || getWorldObjectAt(_r.col, _r.row))
-          : getCorpseObjectForAction(action, _r.col, _r.row) || getWorldObjectAt(_r.col, _r.row);
+          : getCorpseObjectForAction(action, _r.col, _r.row) || getAimedFarmInteractionObject(_r.col, _r.row);
       }
 
       function useActiveAction() {
@@ -26955,7 +26965,7 @@
           const label = t.label || (t.target === 'interior' ? 'Enter House' : t.target === 'town' ? 'Leave Farm' : 'Travel');
           const btnsSpot = [];
           btnsSpot.push({ icon, label, action: 'use_spot', style: 'primary', allowed: true });
-          const obj2 = getWorldObjectAt(reticle.col, reticle.row);
+          const obj2 = getAimedFarmInteractionObject(reticle.col, reticle.row);
           if (obj2) obj2.getButtons(reticle).forEach(b => btnsSpot.push(b));
           return btnsSpot;
         }
@@ -27054,7 +27064,7 @@
         // live in _buildingInteractables instead, same as building interiors.
         const obj = currentArea === 'town'
           ? _buildingInteractables.get('town,' + reticle.col + ',' + reticle.row) || getWorldObjectAt(reticle.col, reticle.row)
-          : getWorldObjectAt(reticle.col, reticle.row);
+          : getAimedFarmInteractionObject(reticle.col, reticle.row);
         if (obj) {
           const objBtns = obj.getButtons(reticle);
           objBtns.forEach(b => btns.push(b));
@@ -27173,7 +27183,7 @@
         // Was farm-only (world objects didn't exist elsewhere) — now
         // unconditional so a lootable corpse's identity in any area (zones
         // included) still invalidates the cache and rebuilds its button.
-        const obj = getWorldObjectAt(reticle.col, reticle.row);
+        const obj = getAimedFarmInteractionObject(reticle.col, reticle.row);
         const nearbyNpcKey = nearbyNpcWalker?.rec?.id || nearbyNpcWalker?.root?.uuid || 'none';
         const nearbyNpcActivityKey = nearbyNpcWalker?.currentScheduleTarget?.activity || 'none';
         const nearbyNpcShopKey = nearbyNpcWalker && isSmithyNpcInBronzeworks(nearbyNpcWalker) ? smithyAction()
@@ -27216,7 +27226,7 @@
         }
         const interactionRoot = interactionButton?.promptRoot
           || nearbyNpcWalker?.root
-          || obj?.promptRoot || obj?.root || obj?.group || obj?.mesh
+          || obj?.promptRoot || obj?.root || obj?.group || obj?.avatarRef?.group || obj?.mesh
           || (interactionButton ? _worldInteractionPromptAnchor : null);
         const promptActionIds = ['action1', 'action2', 'action3', 'interact'];
         const promptInputs = promptButtons.map((button, index) => { // Used by each floating row to render its rebound input and matching arch color independently.
@@ -32107,6 +32117,9 @@
       });
 
       window.FarmAnimals?.init({
+        getPlayerInteractionRay: currentPlayerInteractionRay, // Same camera/cursor ray rendered by Show Interaction Raycast.
+        getInteractionFrameTime: () => lastTime, // Stable rAF cache key used to share one livestock pick across input/UI queries.
+        getCurrentArea: () => currentArea, // Livestock ray picking is farm-only.
         COLS,
         ROWS,
         TILE,
