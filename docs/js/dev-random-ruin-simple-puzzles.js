@@ -492,6 +492,32 @@
     const anchorY=(Number(context.meta?.floorSurfaceY)||floorY)+(Number(context.meta?.wallHeight)||3)-.09;
     const ropeLength=anchorY-(floorY+.86);
     if(ropeLength<ROPE_MIN_LENGTH+.05)return reject('rope too short',{ropeLength});
+    // V50 hallway doors begin closed. Their authored collision panels prevent
+    // any first/last rope from swinging past a bank, even if the corridor
+    // itself is perfectly clear. Treat only THIS hallway's two transit doors
+    // as open for the physical validation, restoring both on rejection.
+    const doorStates=[]; // Owns the original door state while attempting this one candidate.
+    const doorwayPoints=[point(start),point(finish)]; // Used to restrict the override to the two ends of the selected hallway.
+    context.root?.traverse?.(object=>{
+      const door=object.userData?.__devRuinTransitDoorState;
+      if(!door?.center||!doorwayPoints.some(p=>Math.hypot(p.x-door.center.x,p.z-door.center.z)<1.3))return;
+      if(!doorStates.some(record=>record.door===door))
+        doorStates.push({door,open:door.open,target:door.target,openingSide:door.openingSide,panelY:door.panel.position.y});
+    });
+    const restoreDoors=()=>{
+      for(const original of doorStates){
+        Object.assign(original.door,{open:original.open,target:original.target,openingSide:original.openingSide});
+        original.door.panel.position.y=original.panelY;
+      }
+      occupancy?.refresh?.();
+    };
+    for(const {door} of doorStates){
+      door.open=1;door.target=1;door.openingSide=0;
+      door.panel.position.y=door.openY;
+    }
+    occupancy?.refresh?.();
+    let keepOpen=false; // Becomes true only after a fully validated rope chain has been committed.
+    try {
     const ropes=[],room={id:'rope_chain_hall_'+hall.id};
     const direction=axis==='x'?0:Math.PI*.5;
     for(let i=0;i<ropeCount;i++){
@@ -572,7 +598,14 @@
     state.ropeChains.push(chain);
     usedHallways.add(hall.id);
     recordModulePlacement('ropeChainAbyss','hallway',hall.id,{ropeCount,checkpointIds:chain.checkpointIds,instantDeath:true});
+    for(const {door} of doorStates){
+      door.keepOpenForRopeChain=true; // The player's rope corridor has no separate entry/exit door interactions.
+      door.door.userData.ropeChainPassage=true;
+      door.door.userData.interactive3D=false;
+    }
+    keepOpen=true;
     return chain;
+    } finally { if(!keepOpen)restoreDoors(); } // Rejected spans never leave unrelated V50 doors open.
   }
 
   function ropeChainPitAt(x,z) {
