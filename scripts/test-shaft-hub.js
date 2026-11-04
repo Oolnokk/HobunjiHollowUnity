@@ -187,7 +187,7 @@ class Geometry {rotateX(){return this}dispose(){}}
 class Mesh extends Group{
   constructor(geometry,material){super();this.geometry=geometry;this.material=material;this.visible=true;
     this.position={x:0,y:0,z:0,set(x,y,z){this.x=x;this.y=y;this.z=z;}};
-    this.scale={x:1,y:1,z:1};} // Position and scale changes are visible to moving targets and melting ice tests.
+    this.scale={x:1,y:1,z:1};this.rotation={x:0,y:0,z:0};} // Include rotation for the horizontal rope-abyss fog plane.
 }
 class Material {clone(){return new Material()}dispose(){}}
 class InstancedMesh {
@@ -196,6 +196,39 @@ class InstancedMesh {
 }
 const THREE={Group,Mesh,BoxGeometry:Geometry,PlaneGeometry:Geometry,Matrix4,
   CylinderGeometry:Geometry,ConeGeometry:Geometry,MeshBasicMaterial:Material,InstancedMesh,FrontSide:0};
+// The rope gap must run wall-to-wall across each radial chamber, leaving
+// exactly two safe banks and never trapping the player in a sealed room.
+{
+  for(const side of ['N','E','S','W']){
+    const room={x:20,z:30,w:15,d:13},pit=Challenges.ropePitForRoom(room,side);
+    assert(pit,'minimum generated room fits a three-or-more rope chain');
+    assert(!pit.contains(room.x+.5,room.z+.5),'one corner is a safe bank or an intact side wall');
+    const along=side==='E'||side==='W'?'x':'z';
+    assert.equal(along==='x'?pit.maxX-pit.minX:pit.maxZ-pit.minZ,
+      (along==='x'?room.w:room.d)-6,'three full safe floor cells at both entry and exit');
+  }
+  const room={x:20,z:30,w:15,d:13},parent=new Group();
+  let player={x:21,z:36},y=8,solved=0,created=0,removed=0;
+  const registry={
+    hasActiveRuinState:()=>true,
+    registerExternalRopeChain(spec){created++;return {external:true,...spec}},
+    removeExternalRopeChain(){removed++;return true}
+  };
+  const crossing=Challenges.compose({THREE,parent,room,side:'E',id:'rope-test',
+    kind:'ropeChain',y:8,getPlayerPosition:()=>player,getPlayerY:()=>y,
+    projectileBus:registry,isActive:()=>true,onSolved:()=>solved++});
+  crossing.tick(.05);
+  assert(crossing.ropeLinked&&created===1,'native V50 riding engine claims authored rope chains');
+  assert(crossing.ropeSpec.anchors.length>=3,'multiple independent mid-air catches are required');
+  assert(crossing.ropeSpec.anchors.every(p=>p.x>crossing.pit.minX&&p.x<crossing.pit.maxX),
+    'all rope anchors remain over the real bottomless opening');
+  player={...crossing.ropeSpec.exit};y=4;crossing.tick(.05);
+  assert.equal(solved,0,'being on the correct XZ but the wrong floor does not solve ropes');
+  y=8;crossing.tick(.05);assert(crossing.solved&&solved===1,
+    'only reaching the opposite supported bank at the right elevation opens the challenge gate');
+  crossing.dispose();assert.equal(removed,1,'rider ropes unregister with the physical chamber');
+}
+
 // Dungeon fire puzzles require a genuinely ignited player projectile to
 // reach a registered heat target; ordinary ranged hits never call onBurn.
 {
@@ -291,6 +324,18 @@ const THREE={Group,Mesh,BoxGeometry:Geometry,PlaneGeometry:Geometry,Matrix4,
   rail.dispose();assert.equal(targets.size,0,'moving rail hits unregister after disposal');
 }
 
+// The actual game builds V50's rope state on the first in-map frame; this
+// test double records the same per-chamber registration/removal boundaries.
+const savedSimplePuzzles=globalThis.DevRandomRuinSimplePuzzles; // Restored at test exit to avoid leaking registry state.
+const liveChains=new Set();
+globalThis.DevRandomRuinSimplePuzzles={
+  hasActiveRuinState:()=>true,
+  registerExternalRopeChain:spec=>{
+    const chain={external:true,...spec};liveChains.add(chain);return chain;
+  },
+  removeExternalRopeChain:chain=>liveChains.delete(chain),
+};
+
 for(const side of ['north','east','south','west']){
   const isX=side==='west'||side==='east';
   const meta={cellSize:.5,worldWidth:54,worldDepth:49,
@@ -345,6 +390,7 @@ for(const side of ['north','east','south','west']){
     if(remaining.kind==='pressurePlate')for(let i=0;i<17;i++)network.tick(.05);
     else if(remaining.kind==='melodyEcho')remaining.onMelodyResult({id:remaining.id,solved:true}); // Canonical flute completion event.
     else if(remaining.kind==='dungeonFire')remaining.fireRecord.onBurn(); // Canonical fire-contact callback; not a normal arrow hit.
+    else if(remaining.kind==='ropeChain'){player={...remaining.ropeSpec.exit};network.tick(.05);} // Same bank condition as native rope traversal.
     else for(let i=0;i<remaining.targetCount;i++)remaining.simulateHit(i); // Dispatch actual projectile onHit callbacks.
     assert(remaining.solved,'the puzzle family must truly unlock its gate: '+remaining.kind);
   }
@@ -364,7 +410,10 @@ for(const side of ['north','east','south','west']){
           challenge.onMelodyResult({id:challenge.id,solved:true});
         else if(challenge.kind==='dungeonFire')
           assert.equal(challenge.fireRecord.onBurn(),true);
-        else for(let j=0;j<challenge.targetCount;j++)challenge.simulateHit(j);
+        else if(challenge.kind==='ropeChain'){
+          network.tick(.05); // Registers the authored ropes into the active native V50 state.
+          player={...challenge.ropeSpec.exit};network.tick(.05);
+        }else for(let j=0;j<challenge.targetCount;j++)challenge.simulateHit(j);
         assert(challenge.solved,'every authored challenge can progress: '+challenge.id);
       }
     }
@@ -393,6 +442,7 @@ for(const side of ['north','east','south','west']){
   if(echo)assert.equal(musicClosed,1,'teardown must close the active stacked-story flute session');
   globalThis.MusicMinigame=oldMusic;
   assert(network.disposed,'all secondary wing collision grids and meshes are disposable');
+  assert.equal(liveChains.size,0,'leaving a generated ruin never leaks rope grabs and mid-air catch records');
 }
 // The special story vault has no V50 `meta.entrance`: its authored southern
 // doorway at (6,27) must still lead to the shared room on ordinary floor tiles.
@@ -419,4 +469,5 @@ for(const side of ['north','east','south','west']){
   assert(rec.floorSet.has('6,28')&&ruin.shaftConnection.physical);
   ruin.shaftConnectorCleanup();
 }
+globalThis.DevRandomRuinSimplePuzzles=savedSimplePuzzles;
 console.log('ok test-shaft-hub: 1000 layouts, '+plannedWings+' layered wings, real gates/braziers, climbable multi-story octagons, four walk-in approaches');
