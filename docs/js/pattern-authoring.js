@@ -67,6 +67,8 @@
     // legacy pre-frame-tool field names (see legacyFrameFields below).
     meshScale: 1, // Normalized whole-pattern scale: 1.00 renders at the pre-normalization 0.25 mesh scale.
     meshRotationDeg: 0,
+    usageOffsetX: 0, // Per-instance completed-pattern translation survives an Author Pattern round trip.
+    usageOffsetY: 0, // Used by the placement renderer and external quick controls.
     overpassClearanceMultiplier: OVERPASS_CLEARANCE_MIN, // Used only when this pattern occupies slot 2; measured against that usage's normal black-outline width.
   });
 
@@ -404,6 +406,8 @@
         frameScale: Number(cfg.frameScale) || 1,
         meshScale: clamp(Number(cfg.meshScale) || 1, PATTERN_SCALE_MIN, PATTERN_SCALE_MAX),
         meshRotationDeg: Number(cfg.meshRotationDeg) || 0,
+        usageOffsetX: clamp(Number(cfg.usageOffsetX) || 0, -4096, 4096), // Keep saved instance placement when reopening the full author.
+        usageOffsetY: clamp(Number(cfg.usageOffsetY) || 0, -4096, 4096),
         overpassClearanceMultiplier: clamp(Number(cfg.overpassClearanceMultiplier) || OVERPASS_CLEARANCE_MIN, OVERPASS_CLEARANCE_MIN, OVERPASS_CLEARANCE_MAX), // Saved on the pattern so every shared renderer and future unlocked slot-2 UI reads the same player-authored gap.
       };
     }
