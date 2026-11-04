@@ -113,15 +113,15 @@
           const generated=await api.generateInteriorLocale({
             seed:nativeSeed(seed,floor.floor,retry),size:'small',density,roomMin:6,roomMax:8,
             layoutReservation:{...floor.nativePort.reservation,floor:floor.floor,y:floor.y,tileScale:2},
-            puzzles:{pressurePlate:false,brazier:false,glyphObelisk:false,
-              stackedObelisk:false,linkedCubePillars:false,nestedRoom:false,maxPerRoom:0},
+            puzzles:{pressurePlate:true,brazier:true,glyphObelisk:true,
+              stackedObelisk:true,linkedCubePillars:true,nestedRoom:true,maxPerRoom:2}, // V50 authors real room puzzles, rather than geometry-only upper floors.
             ...(pieceSet?{pieceSet,floorProps}:{}),
           }); // Native geometry keeps the shared stage runtime's single progression authority.
           const meta=generated.locale?.meta?.interiorShell,analysis=analyze(meta); // Validate before transferring a scene out of the iframe.
           if(!analysis.ok)throw new Error(analysis.reason);
           if(!meta.layoutReservation)throw new Error('V50 did not acknowledge its floor reservation');
           layoutPlacement(meta,floor.nativePort,2);
-          api.snapMechanismState(1); // Shared stage gates own progression; V50 preview machinery stays open.
+          api.snapMechanismState(0); // Preserve genuine unsolved V50 puzzles; the native game bridge now owns their interactive state.
           records.push({floor:floor.floor,generated,roots:api.takePreviewRoots({snapshot:true,floor:floor.floor})});
           failure=null;break;
         }catch(error){failure=String(error?.message||error);}
@@ -179,10 +179,14 @@
     const THREE=options.THREE||root.THREE,DS=options.DynamicSurfaces||root.DynamicSurfaces;
     const CG=options.CellGrid3D||root.CellGrid3D,Corridors=options.RuinShaftCorridor||root.RuinShaftCorridor;
     const Challenges=options.RuinLayerChallenges||root.RuinLayerChallenges;
+    const NativeMechanisms=options.RuinV50NativeMechanisms||root.RuinV50NativeMechanisms; // Bridges V50's genuine signal sources and puzzle mechanics into the parent game.
+    const generatorApi=options.generatorApi||ruin?.api; // The same V50 bridge used by floor zero owns every detached V50 object.
+    const HitPuzzles=options.hitPuzzles||root.DevRandomRuinHitPuzzles;
     const Dev=options.DevRandomRuin||root.DevRandomRuin;
     if(!ruin||!rec?.scene||!plan?.ok||!hub?.ok||!Array.isArray(records)
       ||!THREE?.InstancedMesh||!DS?.registerSurface||!CG?.create
-      ||!Corridors?.route||!Challenges?.compose||!Dev?.registerShaftGrid)
+      ||!Corridors?.route||!Challenges?.compose||!NativeMechanisms?.mount
+      ||!generatorApi?.applyProgress||!HitPuzzles?.registerExternalRoot||!Dev?.registerShaftGrid)
       throw new Error('Native V50 multistory runtime dependencies are missing');
     if(records.length!==plan.nativeFloorCount)
       throw new Error('Reserved V50 floor count differs from actual generated native floors');
@@ -228,6 +232,7 @@
         music.close?.();
       for(const state of owner.records){
         for(const challenge of state.challenges)challenge.dispose?.();
+        state.nativeMechanisms?.dispose?.(); // Unregister the native activator scan before disposing its actual geometry.
         for(const object of [state.nativeRoot,state.particles]){
           const geometries=new Set(),materials=new Set();
           object?.traverse?.(child=>{
@@ -296,6 +301,7 @@
         group.add(nativeRoot);
         if(particles)group.add(particles);
         options.prepareMaterials?.(nativeRoot); // V50's *existing* unlit stone conversion is shared with floor zero.
+        NativeMechanisms.namespace(nativeRoot,item.floor); // Prevent V50's per-generation mechanism IDs colliding across stacked stories.
         let minLocalY=0,maxLocalY=0;
         for(const localY of heights.values()){
           if(!Number.isFinite(localY))throw new Error('V50 emitted an invalid native plateau height');
@@ -380,8 +386,15 @@
           routeZ,new THREE.BoxGeometry(.12,2.24,1));
         const record={floor:item.floor,group,nativeRoot,particles,analysis,place,grid,
           route,routeWallSegments:routeX.length+routeZ.length,
-          solved:0,challenges:[],lit:false,goalBrazier:null};
+          solved:0,challenges:[],lit:false,goalBrazier:null,nativeMechanisms:null};
         owner.records.push(record);
+        record.nativeMechanisms=NativeMechanisms.mount({
+          nativeRoot,floor:item.floor,scope,api:generatorApi,THREE,DynamicSurfaces:DS,
+          getPlayerPosition,getPlayerY,addControl,removeControl,
+          hitPuzzles:HitPuzzles,floorY:floor.y,
+          heightAt:(x,z)=>floor.y+(heights.get(key(Math.floor(x),Math.floor(z)))??0),
+          showToast:options.showToast,onStateChange:options.onStateChange,
+        }); // Native glyphs, braziers, torches, plates, blocks, cubes and motion surfaces are playable on every upper story.
         const kinds=STAGES; // Native V50 generated the real room graph; current shared puzzle runtime supplies stage goals.
         for(let i=0;i<analysis.stages.length;i++){
           const native=analysis.stages[i],world=nativeRoom(native,place);
@@ -403,6 +416,20 @@
           });
           challenge.x=world.x+world.w/2;challenge.z=world.z+world.d/2;
           challenge.floorY=challengeY; // Shared stage diagnostics and native pressure-plate tests use exact V50 room centers.
+          const authored=record.nativeMechanisms.stageCandidate(world); // If V50 authored a real puzzle inside this chamber, solving it also opens the chamber gate.
+          if(authored){
+            challenge.nativeMechanism=authored;
+            const regularTick=challenge.tick;
+            challenge.tick=dt=>{
+              regularTick?.(dt);
+              if(!challenge.solved&&record.nativeMechanisms.isSolved(authored.id)&&record.solved===i){
+                challenge.solved=true;
+                record.solved++;setGate(challenge,false);
+                options.showToast?.('The V50 mechanism unlocks the chamber.',true);
+                options.onStateChange?.();
+              }
+            };
+          }
           const door=analysis.gates[i].door,span=Math.max(2,(Number(door.widthCells)||3)*place.cs);
           const x=place.originX+(door.axis==='x'?door.boundary:door.center)*place.cs;
           const z=place.originZ+(door.axis==='x'?door.center:door.boundary)*place.cs;
@@ -451,6 +478,7 @@
       for(const {floor,root:group} of views)
         group.visible=plan.floors[floor].y<=y+.8;
       for(const record of owner.records){
+        record.nativeMechanisms?.tick?.(dt); // V50 solution signals and moving-support transforms are applied before gates test completion.
         record.challenges[record.solved]?.tick?.(dt);
         for(let i=0;i<record.solved;i++)record.challenges[i]?.animate?.(dt);
       }
@@ -465,6 +493,7 @@
         floor:r.floor,rooms:r.analysis.rooms,hallways:r.analysis.hallways,
         stages:r.challenges.length,solved:r.solved,lit:r.lit,routeLength:r.route.length,
         routeWallSegments:r.routeWallSegments,
+        nativeMechanisms:r.nativeMechanisms?.getState?.()||null,
         allocation:r.place.width+'×'+r.place.depth+' / 180×180',
         reservationVerified:!!records.find(item=>item.floor===r.floor)?.generated?.locale?.meta?.interiorShell?.layoutReservation,
       })),
