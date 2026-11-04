@@ -48,7 +48,7 @@
       throw new Error('Native V50 mechanisms require the original generator bridge, geometry and game interactions');
     const inventory=inspect(nativeRoot);
     const boxScratch=new THREE.Box3(); // Reused when sampling authored doors, push-block bounds and moving-surface support.
-    const states=new Map(),controls=[],surfaceIds=[],blockerIds=[],elevatorBlocks=[]; // Upper-story nested elevator blocks follow the genuine moving dais before the player can push them.
+    const states=new Map(),controls=[],surfaceIds=[],blockerIds=[],elevatorBlocks=[],bridgeDropBlocks=[]; // Upper-story nested movable blocks follow their true elevator or bridge-drop sequence.
     const worldBox=object=>{
       object?.updateWorldMatrix?.(true,true);
       const box=boxScratch.setFromObject(object);
@@ -82,8 +82,8 @@
     const trackBlocker=(id,object,enabled=()=>true)=>{
       DS.registerBlocker({id,scope,bounds:()=>bounds(object),enabled,
         blocksAt:(_x,_z,actorHeight,_rec,_radius,context)=>{
-          const level=levelAt(object),actorY=Number(context?.y??getPlayerY?.());
-          return Number.isFinite(actorY)&&actorY<level+2.65&&actorY+actorHeight>level-.1;
+          const box=worldBox(object),actorY=Number(context?.y??getPlayerY?.());
+          return !!box&&Number.isFinite(actorY)&&actorY<box.max.y+.08&&actorY+actorHeight>box.min.y-.08; // Native collision is evaluated against the live 3D panel/block, including when it rises, retracts or falls.
         }});
       blockerIds.push(id);
     };
@@ -174,11 +174,18 @@
       const drivingDais=elevator?[...states.values()].filter(state=>state.motion==='movingDais')
         .sort((a,b)=>Math.hypot(center(block).x-center(a.object).x,center(block).z-center(a.object).z)
           -Math.hypot(center(block).x-center(b.object).x,center(block).z-center(b.object).z))[0]||null:null; // V50 places the block at the same X/Z as its own nested elevator.
+      const bridgeDriver=block.userData.dropOntoPlateAfterRetraction
+        ?[...states.values()].filter(state=>state.motion==='bridgeSequence')
+          .sort((a,b)=>Math.hypot(block.position.x-a.object.position.x,block.position.z-a.object.position.z)
+            -Math.hypot(block.position.x-b.object.position.x,block.position.z-b.object.position.z))[0]||null:null; // V50 builds the bridge at this block's original bank (same local coordinate system).
       trackBlocker(scope+'-pushblock-'+block.id,block);
       const pushControl=control({kind:'v50NativePushBlock',object:block,promptRoot:block,range:1.8,
         touchIcon:'✋',priority:23,label:elevator?'Push Lift Block':'Push Stone Block',
         onPress:()=>{
           if(step>=route.length-1)return;
+          if(bridgeDriver&&step===route.length-2){
+            showToast?.('Retract the bridge to drop the block onto its plate.',true);return; // V50's last path node is a vertical drop, never a horizontal push.
+          }
           const playerFoot=Number(getPlayerY?.()),blockBottom=worldBox(block)?.min.y;
           if(!Number.isFinite(playerFoot)||!Number.isFinite(blockBottom)||Math.abs(playerFoot-blockBottom)>1.1)return; // The block's real moving elevation matters more than the static floor directly below it.
           if(elevator&&drivingDais){
@@ -212,6 +219,11 @@
       if(elevator&&drivingDais)elevatorBlocks.push({
         block,driver:drivingDais,control:pushControl,pushes:()=>step,lastLift:null,
       }); // The original V50 block preview curve moves it from the lower socket to its upper travel path.
+      if(bridgeDriver)bridgeDropBlocks.push({
+        block,driver:bridgeDriver,control:pushControl,ready:()=>step===route.length-2,
+        target:route[route.length-1],elapsed:0,start:null,complete:false,
+        finish:()=>{step=route.length-1;api.syncPressurePlates(nativeRoot);onStateChange?.();}
+      }); // Once the block reaches the far end, V50's OFF glyph retracts its support and gravity seats the block onto the plate.
     }
     for(const door of inventory.transitDoors){
       const panel=(door.children||[]).find(child=>child?.isMesh&&child.geometry)||door;
@@ -262,6 +274,17 @@
         }
         lift.control.floorY=worldBox(lift.block)?.min.y??lift.control.floorY; // Prompt follows the physical block as the stone dais lifts it.
       }
+      for(const drop of bridgeDropBlocks){
+        if(drop.complete||!drop.ready()||drop.driver.progress>.08)continue;
+        if(!drop.start)drop.start={x:drop.block.position.x,y:drop.block.position.y,z:drop.block.position.z};
+        drop.elapsed+=step;
+        const progress=clamp(drop.elapsed/.35,0,1),start=drop.start,end=drop.target; // A real downward, accelerating V50 burden drop, not an instantaneous occupancy/door flag.
+        drop.block.position.set(start.x+(Number(end.x)-start.x)*progress,
+          start.y+(Number(end.y)-start.y)*progress*progress,
+          start.z+(Number(end.z)-start.z)*progress);
+        drop.control.floorY=worldBox(drop.block)?.min.y??drop.control.floorY;
+        if(progress>=1){drop.complete=true;drop.finish();showToast?.('The stone block settles onto the pressure plate.',true);}
+      }
       for(const state of inventory.transitDoors){
         state.open+=clamp(state.target-state.open,-step*2.4,step*2.4);
         state.panel.position.y=state.closed+(state.height+.12)*(state.open*state.open*(3-2*state.open));
@@ -291,7 +314,9 @@
       getState:()=>({
         mechanisms:states.size,activators:inventory.activators.length,
         pushBlocks:inventory.blocks.length,fixedBlocks:inventory.fixedBlocks.length,
-        nestedElevatorBlocks:elevatorBlocks.length,transitDoors:inventory.transitDoors.length,
+        nestedElevatorBlocks:elevatorBlocks.length,bridgeDropBlocks:bridgeDropBlocks.length,
+        completedBridgeDrops:bridgeDropBlocks.filter(drop=>drop.complete).length,
+        transitDoors:inventory.transitDoors.length,
         solved:[...states.values()].filter(state=>state.solved).length,
         families:[...new Set(inventory.activators.map(item=>item.userData.activatorType))].sort(),
         motions:[...new Set([...states.values()].map(item=>item.motion))].sort(),
