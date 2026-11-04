@@ -80,6 +80,12 @@
     const flameMat=new THREE.MeshBasicMaterial({color:0xffb92a});
     const materials=[material,plateMat,gateMat,brazierMat,flameMat]; // Disposed together with the geometry and owned interactive controls.
     const states=[],gridScopes=[],added=new Set(),surfaces=[]; // Runtime gate/puzzle records, registered voxel scopes, map floor keys and terrain rectangles.
+    const ownedControls=new Set(); // Every wing brazier, fire-source and authored puzzle control is released on reroll or failed setup.
+    function addControl(control){ruin.controls.push(control);ownedControls.add(control);}
+    function removeControl(control){
+      const i=ruin.controls.indexOf(control);if(i>=0)ruin.controls.splice(i,1);
+      ownedControls.delete(control);
+    }
     const floorRoots=new Map(); // Each story owns a presentation group so overhead floors do not conceal the player below.
     let activeRoot=group; // Mesh batching writes into the currently composed story's subscene.
     const owner={group,states,disposed:false,complete:false,lit:0,total:plan.totalBraziers,
@@ -103,6 +109,7 @@
       if(activeId&&states.some(state=>state.challenges.some(challenge=>challenge.kind==='melodyEcho'&&challenge.id===activeId)))
         music.close?.();
       for(const state of states)for(const challenge of state.challenges)challenge.dispose?.();
+      for(const control of [...ownedControls])removeControl(control);
       for(const scopeId of gridScopes)DevRandomRuin?.unregisterShaftGrid?.(scopeId);
       DS.clearScope(scope);group.parent?.remove(group);
       const geometries=new Set();
@@ -202,8 +209,7 @@
             RuinLayerDefense:Defense,mapId:String(rec.mapData?.id||'map_i_dev_random_ruin'),
             isActive:()=>record.solved===i&&!owner.disposed,
             getPlayerPosition,getPlayerY,
-            addControl:control=>ruin.controls.push(control), // One shared interaction resolver owns authored plinth, fire-source and statue controls.
-            removeControl:control=>{const n=ruin.controls.indexOf(control);if(n>=0)ruin.controls.splice(n,1);},
+            addControl,removeControl, // One shared resolver owns these controls, and this network owns their cleanup.
             onFireArmed:()=>options.showToast?.('The next projectile ignites.',true),
             onFireUnavailable:()=>options.showToast?.('Equip a ranged weapon to ignite the next shot.',false),
             onMusicStart:()=>{}, // Zelda-style discovery: pressing the bronze plate plays the tune with no tutorial popup.
@@ -244,7 +250,7 @@
           flameMat,bx,floor.y+1.27,bz);flame.visible=false;
         const brazier={id:wing.goalBrazierId,wingId:wing.id,lit:false,flame,pedestal};
         record.braziers.push(brazier);
-        ruin.controls.push({
+        addControl({
           kind:'layerBrazier',object:pedestal,promptRoot:pedestal,floorY:floor.y,range:1.7,
           priority:20,touchIcon:'🔥',label:()=>brazier.lit?'Brazier Burning':'Ignite Wing Brazier',
           onPress:()=>{
