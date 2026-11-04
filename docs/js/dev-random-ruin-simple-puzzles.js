@@ -667,7 +667,7 @@
     const player=playerWorld();
     if(!player)return;
     for(const chain of state.ropeChains)for(const side of ['start','end']){
-      const point=chain[side],id=chain.checkpointIds[side];
+      const point=side==='start'?chain.entry:chain.exit,id=chain.checkpointIds[side]; // Chain banks are entry/exit; start/end are checkpoint-side labels only.
       if(state.checkpoints.active?.id===id)continue;
       const along=chain.axis==='x'?player.x:player.z,cross=chain.axis==='x'?player.z:player.x;
       const pointAlong=chain.axis==='x'?point.x:point.z;
@@ -2189,7 +2189,7 @@
       for(const chain of state.ropeChains){
         if(!chain.ropes.some(rope=>rope.id===f.ropeId))continue;
         for(const side of ['start','end'])if(ropeBankReached(chain.bounds,chain.axis,side,f)){
-          activateCheckpoint(chain.checkpointIds[side],chain[side],true); // A long but legitimate landing beyond either bank still replaces the opposite checkpoint.
+          activateCheckpoint(chain.checkpointIds[side],side==='start'?chain.entry:chain.exit,true); // A long but legitimate landing beyond either bank still replaces the opposite checkpoint.
           break;
         }
       }
