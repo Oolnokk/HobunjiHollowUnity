@@ -2277,7 +2277,15 @@
       if((!rope.airOnly&&!rope.ropeChainHallId)||rope.attached||rope.id===f.ropeId)continue; // Endpoint ropes remain catchable from the air in either direction.
       if(ropeCatchPoint(rope,f)){catchRopeInFlight(rope,f);return;}
     }
-    const support=sampleSupport(f.x,f.z,f.y+.25);
+    const chain=ropeChainPitAt(f.x,f.z,f.y);
+    // The player must die BEFORE sampling floors lower down the same X/Z:
+    // a missed upper-story catch could otherwise land on a lower deck and
+    // evade the instant-death abyss. Likewise never mistake an overhead
+    // support at another level for the intended landing bank.
+    if(chain&&f.y<chain.floorY-.5){instantRopeChainDeath();return;}
+    const support=state.flight?.layerRopeChain
+      ?DS.sampleSupport?.(f.x,f.z,{minY:f.y-.2,maxY:f.y+.25,pad:.02})
+      :sampleSupport(f.x,f.z,f.y+.25);
     if(support&&f.vy<=0&&f.y<=Number(support.y)+.08){
       f.y=Number(support.y);
       setPlayerWorld(f,true,true);
@@ -2285,8 +2293,6 @@
       state.lastPlayerWorld=clonePoint(f);
       return;
     }
-    const chain=ropeChainPitAt(f.x,f.z,f.y);
-    if(chain&&f.y<chain.floorY-.5){instantRopeChainDeath();return;} // No downed state on a missed airborne rope catch.
     if(f.y<-2.5&&!DS.sampleSupport?.(f.x,f.z,{minY:-60,maxY:f.y+.25,pad:.02})){ // Only a fall out of the world returns to the checkpoint; deep pits and lava are fallen into, not teleported out of.
       respawnAtCheckpoint('rope-fall');
       return;
