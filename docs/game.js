@@ -5315,16 +5315,10 @@
           c.groundShadow.geometry.dispose();
           c.groundShadow.material.dispose();
         }
-        if (c._banditToolHolder) {
-          (c.scene || scene).remove(c._banditToolHolder);
-          c._banditToolHolder.traverse(o => { o.geometry?.dispose(); o.material?.dispose(); });
-          c._banditToolHolder = null;
-        }
-        if (c._banditRangedToolHolder) {
-          (c.scene || scene).remove(c._banditRangedToolHolder);
-          c._banditRangedToolHolder.traverse(o => { o.geometry?.dispose(); o.material?.dispose(); });
-          c._banditRangedToolHolder = null;
-        }
+        disposeBanditWeaponHolder(c._banditToolHolder);
+        c._banditToolHolder = null;
+        disposeBanditWeaponHolder(c._banditRangedToolHolder);
+        c._banditRangedToolHolder = null;
         if (c._banditFlaskToolHolder) {
           c._banditFlaskToolHolder.parent?.remove(c._banditFlaskToolHolder);
           c._banditFlaskToolHolder.traverse(o => { o.geometry?.dispose(); o.material?.map?.dispose(); o.material?.dispose(); });
@@ -5337,6 +5331,18 @@
           c._banditTrailMesh = null;
         }
         window.ResourceRings?.disposeRingHud(c);
+      }
+
+      function disposeBanditWeaponHolder(holder) {
+        if (!holder) return;
+        holder.parent?.remove(holder);
+        // The assembly root stays parented to the holder after scene removal.
+        // Drop it explicitly so it stops ticking and releases its owned layers and fire.
+        for (const weapon of holder.children) window.HobunjiWeaponSpriteAssemblies?.drop(weapon);
+        holder.traverse(object => {
+          if (!object.userData.sharedToolGeometry) object.geometry?.dispose();
+          object.material?.dispose();
+        });
       }
 
       // ── Loot & Shop config (docs/config/loot/loot-pools.json,
@@ -23506,6 +23512,7 @@
           ? window.HobunjiSpritePngSurface.makeMaterial(THREE, toolTextures[itemKey], itemKey, { side: THREE.DoubleSide })
           : new THREE.MeshBasicMaterial({ map: toolTextures[itemKey], transparent: true, alphaTest: 0.08, side: THREE.DoubleSide });
         const plane = new THREE.Mesh(geo, mat);
+        plane.userData.sharedToolGeometry = !!def?.modular; // Enemy teardown leaves cached modular geometry available to other holders.
         // The PNG's fixed -90° X basis makes it lie in the tool's XZ plane.
         // Tool End Flip is an in-plane 180° turn on the visible sprite, so
         // the business end actually swaps with the handle instead of merely

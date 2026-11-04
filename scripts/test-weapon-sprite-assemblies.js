@@ -150,3 +150,59 @@ vm.runInNewContext(fs.readFileSync('docs/js/combat/shared-attack-pose.js', 'utf8
 for (const progress of [0.60, 0.65, 0.72]) assert.equal(window.SharedAttackPose.fourPhaseLerp(progress, 0.16, 0.55, 0.72, -20, 20), 20, 'strike pose stays fixed while momentum is integrated');
 assert.deepEqual(Array.from(api.debugSnapshot()), []); // No active weapon instances on a new page.
 console.log('weapon sprite assemblies: PASS (windup gravity and locomotion, early strike alignment, hold follow-through, editor/player/NPC, scheduler)');
+
+
+async function checkEnemyWeaponCleanup() {
+  // Run the game's ordinary corpse teardown with actual assembly records and
+  // delay the overlay asset until after looting to exercise in-flight setup.
+  const cleanup = { window, scene: { remove() {} } };
+  vm.createContext(cleanup);
+  vm.runInContext(game.slice(game.indexOf('      function disposeCreaturePresentation('),
+    game.indexOf('      // ── Loot & Shop config')), cleanup);
+
+  let finishTexture;
+  const THREE = {
+    Vector3: class { toArray() { return []; } },
+    Quaternion: class {},
+    Matrix4: class {},
+    TextureLoader: class { load(_url, resolve) { finishTexture = resolve; } },
+  };
+  const baseline = api.debugSnapshot().length;
+  const ownedDisposals = [];
+  for (let fight = 0; fight < 20; fight++) {
+    const holder = {
+      parent: { remove(child) { child.parent = null; } },
+      children: [],
+      traverse(visit) {
+        visit(this);
+        for (const weapon of this.children) visit(weapon.userData.toolPlane);
+      },
+      userData: {},
+    };
+    const plane = {
+      userData: { sharedToolGeometry: fight % 2 === 0 },
+      geometry: { dispose() { ownedDisposals.push('geometry'); } },
+      material: {
+        map: { image, dispose() { assert.fail('the shared base texture must survive'); } },
+        dispose() { ownedDisposals.push('material'); },
+      },
+    };
+    const weapon = { parent: holder, userData: { toolPlane: plane } };
+    holder.children.push(weapon);
+    api.decorate(weapon, 'test-enemy-weapon', { spriteLayers: [{ sprite: 'assets/toolsprites/late-test.png' }] }, { THREE });
+    assert.equal(api.debugSnapshot().length, baseline + 1);
+    const corpse = { avatarRef: { group: {}, dispose() {} }, [fight % 2 ? '_banditToolHolder' : '_banditRangedToolHolder']: holder };
+    cleanup.disposeCreaturePresentation(corpse);
+    assert.equal(holder.parent, null);
+    assert.equal(weapon.parent, holder, 'removing the holder leaves the assembly parented');
+    assert.equal(api.debugSnapshot().length, baseline, 'each looted corpse releases its frame-update record');
+  }
+  assert.equal(ownedDisposals.filter(kind => kind === 'geometry').length, 10, 'only private geometries are disposed');
+  assert.equal(ownedDisposals.filter(kind => kind === 'material').length, 20);
+  assert.equal(typeof finishTexture, 'function', 'the asset load is pending during teardown');
+  finishTexture({ image });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(api.debugSnapshot().length, baseline, 'late asset load cannot revive a looted weapon');
+}
+
+checkEnemyWeaponCleanup().catch(error => { console.error(error); process.exitCode = 1; });

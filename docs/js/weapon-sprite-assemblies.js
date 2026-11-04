@@ -138,6 +138,13 @@
     state.dead = true;
     records.delete(state);
     effects?.dispose(state); // Dispose pooled fire sprites before removing their head owner.
+    if (state.ownedBaseMap) {
+      if (state.plane.material.map === state.ownedBaseMap) {
+        state.plane.material.map = state.originalBaseMap;
+        state.plane.material.needsUpdate = true;
+      }
+      state.ownedBaseMap.dispose();
+    }
     for (const child of state.owned) destroyPart(child);
     states.delete(root);
   }
@@ -230,7 +237,8 @@
         if (state.dead) return;
         const source = rawBase?.image || baseImg;
         if (config.base?.material === 'marker' && plane.material?.map) {
-          plane.material.map = plane.material.map.clone(); // Do not recolor the shared in-hand texture used by other actors or inventory previews.
+          state.originalBaseMap = plane.material.map; // Restored if the base plane outlives the assembly.
+          plane.material.map = state.ownedBaseMap = plane.material.map.clone(); // Do not recolor the shared in-hand texture used by other actors or inventory previews.
           plane.material.needsUpdate = true;
           plane.material.map.needsUpdate = true;
         }
@@ -603,6 +611,7 @@
     definitions: DEF, decorate, setAction, tick, drop, debugSnapshot, enchantmentTargets, dualWieldEnchantmentTargets,
     opaqueAt, anchor, definitionFor, stepPendulum, flailDamping, flailStrikeStraightening, flailYawTravel, // Pure phase helpers are covered by deterministic animation regression tests.
   };
+  global.HobunjiCacheAudit?.register('weapon assemblies (active or awaiting cleanup)', () => records.size);
   if (global.RuntimeFrameScheduler?.register) {
     global.RuntimeFrameScheduler.register('weapon-sprite-assemblies', context => tick((context?.deltaMs || 0) / 1000), {
       phase: 'pre-render', owner: 'HobunjiWeaponSpriteAssemblies',

@@ -52,7 +52,7 @@ class Group { // Held sprite parent retains the donor origin.
   add(child) { this.children.push(child); }
 }
 class Mesh { // Both hands/NPCs may share a geometry object.
-  constructor(geometry, material) { this.geometry = geometry; this.material = material; this.rotation = {}; }
+  constructor(geometry, material) { this.geometry = geometry; this.material = material; this.rotation = {}; this.userData = {}; }
 }
 const key = 'modular:dagger:warhammer:nativeCopper', texture = { image: { width: 450, height: 1204 } }, geometries = new Map(); // Simulates a texture that finishes composing after the item is already held.
 const browser = { ...window, HobunjiSpritePngSurface: { makeMaterial: (_three, map) => ({ map }) }, ToolMetalRecolor: { getRecoloredCanvas: async () => ({ width: 1024, height: 1024, modularFrame: { left: -400, top: -700, width: 1500, height: 3200 } }) } }; // Asynchronous recolor retains logical origin and extent.
