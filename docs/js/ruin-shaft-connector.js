@@ -119,6 +119,14 @@
         activators:ruin.activators,pushBlocks:ruin.pushBlocks,
         getPlayerPosition:typeof getPlayerPosition==='function'?getPlayerPosition:()=>({x:-1,z:-1})});
       // Reuse the existing player's position callback for occupancy and mobile input.
+      // The original occupancy builder gives grounded furniture on a moving dais
+      // its own precise footprint. Reconstruct it after replacing the model.
+      for(const mechanism of ruin.mechanisms?.values?.()||[]){
+        if(mechanism.type!=='movingDais')continue;
+        const platform=mechanism.root?.userData?.movingDaisPlatform||mechanism.root;
+        for(const child of platform?.children||[])
+          if(child.userData?.groundedToMovingPlatform)ruin.occupancy.scanSolids?.(child,'dais-feature');
+      }
     }
     ruin.shaftConnectorCleanup=()=>{unmountVisual();DS.clearScope(scope);};
     return {plan,hub:placed,route,registered};
