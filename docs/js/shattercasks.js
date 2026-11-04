@@ -1127,6 +1127,7 @@
     cancelShatterAim(); setHeldRearXray(null);
     burden.carried = false;
     held = null;
+    if(backCarried)setHeldRearXray(backCarried);
     prompt();
     deps()?.refreshActionBar?.();
     lastEvent = 'released ' + burden.id + ' from the hands';
@@ -1159,6 +1160,7 @@
     const world = burden.group.getWorldPosition(carriedWorldPosition);
     burden.col = Math.floor(world.x); burden.row = Math.floor(world.z);
     held = null;
+    if(backCarried)setHeldRearXray(backCarried);
     prompt();
     deps()?.refreshActionBar?.();
     lastEvent = 'placed ' + burden.id + ' on burden plinth ' + burden.plinthSurfaceId;
@@ -1196,6 +1198,7 @@
     cask.group.position.set(cask.col+.5,baseHeight(cask.col,cask.row),cask.row+.5);
     refreshMeshBounds(cask);
     cask.carried=false;held=null;
+    if(backCarried)setHeldRearXray(backCarried);
     try{cask.onDrop?.(cask);}catch(error){console.warn('[burden] drop callback failed',error);}
     prompt(); // Immediately restore nearby normal world interactions.
     deps()?.refreshActionBar?.();
@@ -1371,6 +1374,7 @@
     active.add(c.group);c.group.position.copy(origin);
     c.group.quaternion.copy(quat);c.group.scale.copy(scale);
     c.carried=false;c.flying=true;held=null;cancelShatterAim();
+    if(backCarried)setHeldRearXray(backCarried);
     prompt();deps()?.refreshActionBar?.(); // Return the ordinary actions when the thrown cask leaves the hand.
     const distanceTiles=Math.hypot(target.x-origin.x,target.z-origin.z);
     flight={vase:c,origin,target,distanceTiles,
@@ -1554,8 +1558,9 @@
     const btn=document.getElementById?.('toolBtn');
     if(!btn)return;
     const action=toolArchAction();
-    if(action===lastToolArchAction)return;
-    lastToolArchAction=action;
+    const labelAction=action?(held?'stow':'pickup'):null; // Same controller claim, different contextual button label.
+    if(labelAction===lastToolArchAction)return;
+    lastToolArchAction=labelAction;
     btn.classList?.toggle?.('shattercask-context',!!action);
     if(action){
       btn.dataset.shattercaskIcon=held?'🎒':'✋';
