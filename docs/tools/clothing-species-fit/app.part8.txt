@@ -52,7 +52,7 @@ async function composeRuntimePortrait(){
   fctx.drawImage(runtime.front,0,0);
 
   bctx.drawImage(runtime.back,0,0); // Canonical rear base body is always the backplane foundation.
-  if(routedPatchIsBody()&&mainClothSource()&&E.showBody.checked){
+  if(mode!=='body'&&routedPatchIsBody()&&mainClothSource()&&E.showBody.checked){
     const warpedPatch=currentWarp();
     const patchLayer=await renderRoutedBodyPatchOverlay(
       runtime.profile,warpedPatch,R.patchWorkflow.descriptor,back.width,back.height
