@@ -261,8 +261,11 @@
       // be drawn over the player by the overhead third-person camera. Keep
       // physical collision/supports active; hide ONLY the upper story meshes.
       for(const [floor,rootGroup] of floorRoots)rootGroup.visible=floor*plan.options.floorHeight<=y+.8;
-      for(const record of states)
-        record.challenges[record.solved]?.tick?.(dt); // Only the current room's real mechanism consumes input and ranged targets.
+      for(const record of states){
+        record.challenges[record.solved]?.tick?.(dt); // Only the current room consumes inputs, notes and target hooks.
+        for(let i=0;i<record.solved;i++)
+          record.challenges[i]?.animate?.(dt); // Already-cleared ice may still shrink; no inactive puzzle logic runs.
+      }
     };
     owner.getState=()=>({floors:plan.floorCount,wings:states.length,braziers:owner.total,lit:owner.lit,
       complete:owner.complete,rooms:states.reduce((n,r)=>n+r.challenges.length+1,0),
