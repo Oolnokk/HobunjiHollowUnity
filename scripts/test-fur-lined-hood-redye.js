@@ -79,7 +79,7 @@ async function testRedye() {
   assert.equal(item.furTrimColorName, 'Pale Cream', 'fur color is immutable');
   elements.get('dyePanelApply').onclick();
   assert.equal(item.colorC, null, 'apply does not add an invisible ink dye');
-  assert.deepEqual(item.articleDyeIds, ['red', 'blue'], 'only actually applied fabric dyes are recorded');
+  assert.deepEqual(Array.from(item.articleDyeIds), ['red', 'blue'], 'only actually applied fabric dyes are recorded'); // Normalize the VM-realm array so this test checks dye contents, not prototype identity.
   assert.equal(item.label, 'Pale Cream Fur-lined Hood');
 
   await api.openExtendedRedyePanel(item);
