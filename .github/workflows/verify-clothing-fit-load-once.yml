@@ -1,4 +1,5 @@
 name: Verify clothing fit mobile startup (one shot)
+# Rerun after fixing competing progress updates overwriting a failed request.
 
 on:
   push:
