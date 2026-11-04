@@ -653,7 +653,7 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
         }
 
         let ropeAttach=null;
-        const rope=window.DevRandomRuinSimplePuzzles.snapshot().ropes?.find(candidate=>!candidate.ropeChainHallId)||null; // Traditional platform rope has different assertions from the separate abyss chains.
+        const rope=window.DevRandomRuinSimplePuzzles.snapshot().ropes?.find(candidate=>!candidate.ropeChainHallId&&candidate.grabPoint)||null; // Air-only standalone handoff ropes have no ground grab point and must not be picked for the floor interaction smoke. // Traditional platform rope has different assertions from the separate abyss chains.
         if(rope){
           const weaponSwitch=document.getElementById('btnWeaponSwitch'); // Put a real weapon/tool in hand so rope auto-holster/restoration is exercised, not merely statically asserted.
           weaponSwitch?.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true,cancelable:true,pointerId:811,pointerType:'touch',clientX:8,clientY:8}));
