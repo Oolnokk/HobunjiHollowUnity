@@ -207,11 +207,12 @@
       mesh.userData.devRuinFootprintIgnore=true;parent.add(mesh);return mesh;
     }
     function setGate(stage,blocked){
-      const {grid,tiles,object}=stage.gate;
+      const {grid,tiles,object,surfaceY,height}=stage.gate;
+      const lower=grid.yToLevel(surfaceY+.01),upper=grid.yToLevel(surfaceY+height-.01); // Cover the actual plateau doorway, not the story's nominal Y=0 slice.
+      if(lower<0||upper>=grid.levels)throw new Error('Native V50 gate exceeds its height-aware voxel grid');
       for(const [x,z] of tiles){
         const col=grid.xToCol(x+.5),row=grid.zToRow(z+.5);
-        grid.set(col,row,0,blocked?CG.KIND.SOLID:CG.KIND.AIR);
-        grid.set(col,row,1,blocked?CG.KIND.SOLID:CG.KIND.AIR);
+        grid.fillBox(col,row,lower,col,row,upper,blocked?CG.KIND.SOLID:CG.KIND.AIR);
       }
       object.visible=blocked;
     }
@@ -221,6 +222,10 @@
     }
     owner.dispose=()=>{
       if(owner.disposed)return;owner.disposed=true;
+      const music=options.MusicMinigame||root.MusicMinigame; // Only release a flute session owned by this native ruin, never another room's performance.
+      const activeId=music?.state?.echoChallenge?.id;
+      if(activeId&&owner.records.some(state=>state.challenges.some(challenge=>challenge.kind==='melodyEcho'&&challenge.id===activeId)))
+        music.close?.();
       for(const state of owner.records){
         for(const challenge of state.challenges)challenge.dispose?.();
         for(const object of [state.nativeRoot,state.particles]){
@@ -291,8 +296,16 @@
         group.add(nativeRoot);
         if(particles)group.add(particles);
         options.prepareMaterials?.(nativeRoot); // V50's *existing* unlit stone conversion is shared with floor zero.
+        let minLocalY=0,maxLocalY=0;
+        for(const localY of heights.values()){
+          if(!Number.isFinite(localY))throw new Error('V50 emitted an invalid native plateau height');
+          minLocalY=Math.min(minLocalY,localY);maxLocalY=Math.max(maxLocalY,localY);
+        }
+        const gridBaseY=floor.y+Math.floor(minLocalY); // V50 plateaus may lie above OR below the story datum.
+        const gridLevels=Math.max(3,Math.ceil(floor.y+maxLocalY+2.5-gridBaseY));
+        if(gridLevels>12)throw new Error('Native V50 plateau exceeds the supported story collision envelope');
         const grid=CG.create({originX:xmin-1,originZ:zmin-1,
-          baseY:floor.y,cols:xmax-xmin+3,rows:zmax-zmin+3,levels:3});
+          baseY:gridBaseY,cols:xmax-xmin+3,rows:zmax-zmin+3,levels:gridLevels});
         nativeGridOwnership.add(grid); // Floor support is V50's original fractional plateau metadata.
         const border=new Set();
         for(const [x,z] of tiles){
@@ -304,7 +317,15 @@
         }
         for(const k of border){
           const [x,z]=k.split(',').map(Number),col=grid.xToCol(x+.5),row=grid.zToRow(z+.5);
-          grid.fillBox(col,row,0,col,row,1,CG.KIND.SOLID);
+          const adjacent=[];
+          for(const [dx,dz] of [[1,0],[-1,0],[0,1],[0,-1]]){
+            const neighbor=key(x+dx,z+dz);
+            if(all.has(neighbor))adjacent.push(heights.get(neighbor)??0);
+          }
+          const wallBottom=floor.y+Math.min(0,...adjacent);
+          const wallTop=floor.y+Math.max(0,...adjacent)+2.24;
+          grid.fillBox(col,row,grid.yToLevel(wallBottom+.01),
+            col,row,grid.yToLevel(wallTop-.01),CG.KIND.SOLID);
         }
         const scope='ruin-native-v50-story-'+item.floor;
         const contains=(x,z)=>x>=xmin-1&&x<=xmax+2&&z>=zmin-1&&z<=zmax+2
@@ -386,11 +407,15 @@
           const x=place.originX+(door.axis==='x'?door.boundary:door.center)*place.cs;
           const z=place.originZ+(door.axis==='x'?door.center:door.boundary)*place.cs;
           const tiles=doorwayCells(door,place.cs,place.originX,place.originZ); // Exactly the cells validated against the real V50 floor network.
-          if(tiles.some(([gx,gz])=>!all.has(key(gx,gz))))throw new Error('Native V50 gate does not span a real hallway: '+native.id);
+          const doorHeights=tiles.map(([gx,gz])=>heights.get(key(gx,gz)));
+          if(!tiles.length||doorHeights.some(value=>!Number.isFinite(value)))
+            throw new Error('Native V50 gate does not span actual supported hallway cells: '+native.id);
+          const lowerY=Math.min(...doorHeights),upperY=Math.max(...doorHeights);
+          const surfaceY=floor.y+lowerY,gateHeight=2.35+upperY-lowerY; // The bottom and top of the mesh cover uneven plateau thresholds without a gap.
           const object=primitive(group,'v50-native-gate-'+item.floor+'-'+i,
-            new THREE.BoxGeometry(door.axis==='x'?.8:span,2.35,door.axis==='x'?span:.8),
-            gateMaterial,x,floor.y+1.18,z);
-          challenge.gate={tiles,object,grid};
+            new THREE.BoxGeometry(door.axis==='x'?.8:span,gateHeight,door.axis==='x'?span:.8),
+            gateMaterial,x,surfaceY+gateHeight/2,z);
+          challenge.gate={tiles,object,grid,surfaceY,height:gateHeight};
           setGate(challenge,true);
           record.challenges.push(challenge);
         }
