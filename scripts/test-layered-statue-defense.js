@@ -152,5 +152,5 @@ async function flush(){
   assert(!pending.instance.ready&&!pending.encounters.length&&!pending.nodes.size,
     'leaving the ruin during async preload cannot resurrect enemies, controls, or furniture');
 
-  console.log('ok layered statue defence: real authored plan, 30s objective, replenisheable key statue, enemy waves, retry, teardown');
+  console.log('ok layered statue defence: real authored plan, 30s objective, replenishable key statue, enemy waves, retry, teardown');
 })().catch(error=>{console.error(error);process.exitCode=1;});
