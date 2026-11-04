@@ -80,6 +80,26 @@ for(let seed=1;seed<=1000;seed++){
         for(const room of wing.rooms)assert(seen.has(
           Math.floor(room.x+room.w/2)+','+Math.floor(room.z+room.d/2)),
           'every room must be physically connected to its story portal: '+room.id);
+        // Solvability is not enough: a sealed gate must be a real cut-set
+        // between consecutive challenge rooms. Otherwise players can bypass
+        // the authored mechanism via an overlooked adjacent floor tile.
+        const dir={N:[0,-1],E:[1,0],S:[0,1],W:[-1,0]}[wing.side];
+        for(let stage=0;stage<wing.rooms.length-1;stage++){
+          const end=wing.corridors[stage+1].end;
+          const blocked=new Set(Array.from({length:3},(_,j)=>
+            (end.x+dir[1]*(j-1))+','+(end.z+dir[0]*(j-1))));
+          const open=new Set([start]),edge=[start];
+          for(let n=0;n<edge.length;n++){
+            const [x,z]=edge[n].split(',').map(Number);
+            for(const [dx,dz] of [[1,0],[-1,0],[0,1],[0,-1]]){
+              const next=(x+dx)+','+(z+dz);
+              if(walk.has(next)&&!blocked.has(next)&&!open.has(next)){open.add(next);edge.push(next);}
+            }
+          }
+          const nextRoom=wing.rooms[stage+1],goal=
+            Math.floor(nextRoom.x+nextRoom.w/2)+','+Math.floor(nextRoom.z+nextRoom.d/2);
+          assert(!open.has(goal),'the '+wing.id+' gate '+stage+' cannot be walked around before solving its challenge');
+        }
       }
     }
   }
