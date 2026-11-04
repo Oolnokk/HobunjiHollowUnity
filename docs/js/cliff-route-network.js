@@ -123,10 +123,20 @@
             id: 'cliff-balcony-' + id + '-' + j, routeId: id, nodeId: nodes.length,
             x: anchor.x + tan.x * (j % 2 ? -0.4 : 0.4) + normal.x * 0.19,
             z: anchor.z + tan.z * (j % 2 ? -0.4 : 0.4) + normal.z * 0.19,
-            y: anchor.y, width: 1.25, depth: 0.95, tangent: tan, normal,
-            footprint: [{ c: Math.floor(anchor.x), r: Math.floor(anchor.z), elevation: anchor.y }],
+            y: anchor.y,
+            width: 1.7 + (hash(c.a.c, c.a.r, 64 + j) % 7) * 0.16, // Two-to-three tile micro-plateau width.
+            depth: 1.0 + (hash(c.a.c, c.a.r, 67 + j) % 5) * 0.13, // Narrow overhanging shelf depth.
+            tangent: tan, normal, footprint: [], // Tile/elevation cells never overwrite the ordinary ground grid.
             reward: hash(c.a.c, c.a.r, 94 + j) % 2 ? 'buriedTreasure' : 'oreRock',
           };
+          const extent = Math.ceil(Math.max(shelf.width, shelf.depth)) + 1;
+          for (let dr = -extent; dr <= extent; dr++) for (let dc = -extent; dc <= extent; dc++) {
+            const cc = Math.floor(shelf.x) + dc, rr = Math.floor(shelf.z) + dr;
+            if (cc >= 0 && rr >= 0 && cc < cols && rr < rows &&
+                shelfContains(shelf, cc + 0.5, rr + 0.5, 0.18))
+              shelf.footprint.push({ c: cc, r: rr, elevation: shelf.y });
+          }
+          if (!shelf.footprint.length) shelf.footprint.push({ c: Math.floor(shelf.x), r: Math.floor(shelf.z), elevation: shelf.y });
           nodes.push({ id: shelf.nodeId, x: shelf.x, z: shelf.z, y: shelf.y, links: [idx], balconyId: shelf.id });
           nodes[idx].links.push(shelf.nodeId);
           balconies.push(shelf);
