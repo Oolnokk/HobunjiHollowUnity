@@ -2769,8 +2769,9 @@
     entity.avatarRef?.dispose?.();
     for (const root of [entity.groundShadow, entity._banditToolHolder, entity._banditRangedToolHolder, entity._banditFlaskToolHolder, entity._banditTrailMesh]) {
       root?.parent?.remove?.(root);
+      for (const child of root?.children || []) window.HobunjiWeaponSpriteAssemblies?.drop(child);
       root?.traverse?.(object => {
-        object.geometry?.dispose?.();
+        if (!object.userData?.sharedToolGeometry) object.geometry?.dispose?.();
         if (Array.isArray(object.material)) for (const material of object.material) material?.dispose?.();
         else object.material?.dispose?.();
       });
