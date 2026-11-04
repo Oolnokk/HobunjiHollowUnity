@@ -25,7 +25,7 @@ assert.match(source, /visualOnly:true/, 'replacement scenery must be visual only
 assert.doesNotMatch(source, /diggableRockOre|mineableRocksByTile|oreKey/, 'backdrop rocks must never register as mineable resources');
 assert.match(source, /WEST_LAYER_GAP_MULTIPLIER = 0\.85/, 'deep scenery spacing must remain explicit and map-scaled');
 assert.match(source, /WEST_STACK_SHIFT_MULTIPLIER = 0\.25/, 'the complete default stack must retain its westward shift');
-assert.match(source, /AUTHOR_STORAGE_KEY = 'hobunjiWesternSlopeMountainBackdrops\.v1'/, 'runtime and author tool must share the existing local transform override key');
+assert.match(source, /AUTHOR_STORAGE_KEY = 'hobunjiWesternSlopeMountainBackdrops\.v2'/, 'approved defaults must supersede stale v1 browser-local transforms');
 assert.match(author, /western-slope-mountain-backdrops\.js\?v=[A-Za-z0-9_-]+/, 'Background Scenery Author must load the replacement module');
 assert.match(mountainAuthor, /Western Slope rock ridges/, 'author bridge must identify the replacement scenery');
 const terrainGeometryScript = author.indexOf('../../js/terrain-geometry.js?'); // The standalone author page needs the same mine-rock geometry builder as gameplay.
@@ -232,6 +232,29 @@ vm.runInNewContext(source, { window, console, Promise, Map, WeakSet, Object, Mat
   const api = window.WesternSlopeMountainBackdrops;
   assert(api?.installed, 'public backdrop API missing');
 
+  const approvedLayers = [
+    {layer:1,asset:'assets/backdrops/bd_mountains_1.png',visible:true,transform:{position:[-134,140,100],rotationDeg:[0,0,0],scale:[2.25,0.5,3]}},
+    {layer:2,asset:'assets/backdrops/bd_mountains_2.png',visible:true,transform:{position:[-159,188,175],rotationDeg:[0,0,0],scale:[3,0.6,3]}},
+    {layer:3,asset:'assets/backdrops/bd_mountains_3.png',visible:false,transform:{position:[null,null,null],rotationDeg:[0,0,0],scale:[1,1,1]}},
+  ]; // Approved Western Slope mountainBackdrops layers from the uploaded scenery export; guards gameplay and editor defaults.
+  const defaults = api.defaultAuthorConfig(); // Runtime source of truth: editor resets and untouched game sessions use these layers.
+  assert.equal(defaults.enabled,true,'Western Slope mountain stack remains enabled');
+  assert.deepEqual(defaults.layers,approvedLayers,'committed default layers must reproduce the complete approved export');
+  assert.deepEqual(api.normalizeAuthorConfig({}).layers,approvedLayers,'normalization of absent map settings must keep the committed preset');
+  assert.deepEqual(api.normalizeAuthorConfig(null).layers,approvedLayers,'fresh game sessions must not fall back to the old three-visible preset');
+  defaults.layers[0].transform.position[0]=999; // Verify the editor can freely mutate an export without rewriting the shared preset.
+  assert.equal(api.defaultAuthorConfig().layers[0].transform.position[0],-134,'new default config requests must get independently cloned vectors');
+  localStorageData.set('hobunjiWesternSlopeMountainBackdrops.v1',JSON.stringify({layers:[
+    {visible:true,transform:{position:[999,999,999],rotationDeg:[0,0,0],scale:[1,1,1]}},
+    {},{visible:true}
+  ]})); // Old browser-local author preferences must not override the newly approved game default.
+  assert.deepEqual(api.readAuthorConfig().layers,approvedLayers,'old v1 browser storage must not show the obsolete third mountain or old transforms');
+  const partial = api.normalizeAuthorConfig({layers:[{}, {transform:{position:[null,null,null]}},{}]});
+  assert.deepEqual(partial.layers[0],approvedLayers[0],'missing layer values must inherit the approved first ridge');
+  assert.equal(partial.layers[2].visible,false,'missing third-layer visibility must inherit the approved hidden state');
+  const automaticLayer2=api.resolveLayoutFromSizes(null,200,200,partial)[1]; // Deliberate null still means procedural placement, not the committed authored coordinates.
+  assert.equal(automaticLayer2.position[2],500,'explicit null Z on layer 2 must restore procedural staggering');
+
   const unrelatedScene = new Group();
   window.BorderTerrain.buildZoneBorderTerrain(unrelatedScene, 200, 200, 'map_cloud_forest');
   assert.equal(unrelatedScene.children.length, 0, 'non-Western wilderness must not receive the decorative rocks');
@@ -243,9 +266,10 @@ vm.runInNewContext(source, { window, console, Promise, Map, WeakSet, Object, Mat
   const root = scene.getObjectByName('WesternSlopeMountainBackdrops');
   assert(root, 'Western Slope scenery root missing');
   assert.equal(root.children.length, 3, 'the three original PNG layers must remain three separately authorable ridges');
-  assert.deepEqual(root.children.map(group => group.position.x), [-74, -244, -414], 'all ridges must retain the original westward shift and spacing');
-  assert.deepEqual(root.children.map(group => group.position.z), [100, 500, 100], 'the second ridge must be staggered by one complete doubled mountain length');
-  assert.equal(root.children[1].position.z - root.children[0].position.z, root.children[0].userData.targetWorldLength, 'the second ridge offset must equal the first ridge full north-south length');
+  assert.deepEqual(root.children.map(group => group.position.x), [-134, -159, -414], 'authored X positions must be used for layers 1/2, with procedural X on hidden layer 3');
+  assert.deepEqual(root.children.map(group => group.position.z), [100, 175, 100], 'authored Z positions replace the old automatic stagger on layers 1/2');
+  assert.deepEqual(root.children.map(group => group.visible), [true, true, false], 'the uploaded scenery must render only layers 1 and 2 by default');
+  assert.deepEqual(root.children.map(group => group.userData.authoredScale), [[2.25,0.5,3],[3,0.6,3],[1,1,1]], 'the approved per-layer scales must be used in-game');
   assert(root.children.every(group => Math.abs(group.rotation.y) < 1e-9), 'mine-rock rows must stay upright instead of inheriting the old PNG plane rotation');
   const migratedOldConfig = api.normalizeAuthorConfig({ layers: [{ transform: { rotationDeg: [0, 90, 0] } }] });
   assert.deepEqual(migratedOldConfig.layers[0].transform.rotationDeg, [0, 0, 0], 'saved PNG-facing defaults must migrate to the upright rock-row orientation');
@@ -261,8 +285,9 @@ vm.runInNewContext(source, { window, console, Promise, Map, WeakSet, Object, Mat
   root.children.forEach((group, index) => {
     assert(Math.abs(group.userData.baseWorldWidth - expectedWidths[index]) < 1e-9, 'each rock row must preserve its former PNG reference width');
     assert(group.userData.visualOnly && group.userData.snowCapped, 'each ridge must be marked visual-only and snow-capped');
-    assert(Math.abs(group.userData.worldNorthSouthLength - 400) < 1e-8, 'each completed ridge must span exactly twice the map north-south edge');
-    assert(Math.abs(group.userData.ridgeLocalDepth * group.scale.z - 400) < 1e-8, 'parent-group scaling must fit the generated rock geometry to the target length');
+    const expectedLength=index<2?1200:400; // Approved Z scale 3 triples each visible ridge's 400-unit baseline; hidden layer 3 remains unscaled.
+    assert(Math.abs(group.userData.worldNorthSouthLength - expectedLength) < 1e-8, 'each authored ridge length must apply its per-layer Z scale');
+    assert(Math.abs(group.userData.ridgeLocalDepth * group.scale.z - expectedLength) < 1e-8, 'parent-group scaling must compose with the uploaded Z scale');
     assert.equal(group.children.length, 8, 'ridge scaling must not increase the eight-rock count');
     assert(group.children.every(rock => rock instanceof Group && rock.children.length === 3), 'each rock assembly must contain stone, snow and a boundary line');
     const stoneMaterials = new Set(group.children.map(rock => rock.children[0].material));
