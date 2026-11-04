@@ -30,7 +30,9 @@
     const blocked = opts.blocked || defaultBlocked;
     const walkable = (c, r) => {
       const t = get(c, r);
-      return !!t && !blocked(t) && !opts.isBoundary?.(t);
+      // A caller can add exclusions but cannot accidentally override the
+      // graph's baseline solid-wall/boundary exclusions.
+      return !!t && !defaultBlocked(t) && !blocked(t) && !opts.isBoundary?.(t);
     };
     const component = new Int32Array(cols * rows).fill(-1); // Walkable ground component for route-graph flood fill.
     const components = [];
