@@ -236,7 +236,7 @@ function makeSeededRandom(seed) {
   const farmAnimals = read('docs/js/farm-animals.js');
 
   assert.match(farmAnimals, /husbandryRank[\s\S]{0,200}heartStars/, 'Husbandry amplifies the animal-heart quality bonus in collectResource');
-  assert.match(game, /window\.FarmAnimals\?\.init\(\{[\s\S]{0,900}rollItemStars: window\.LootRolling\.rollItemStars,[\s\S]{0,200}awardFarmingXp:/, 'FarmAnimals.init now receives the quality/XP deps collectResource needs (previously missing, so they silently no-opped)');
+  assert.match(game, /window\.FarmAnimals\?\.init\(\{[\s\S]{0,1500}rollItemStars: window\.LootRolling\.rollItemStars,[\s\S]{0,200}awardFarmingXp:/, 'FarmAnimals.init now receives the quality/XP deps collectResource needs (previously missing, so they silently no-opped)');
   assert.match(game, /efficientProcessingRank[\s\S]{0,300}bonusUnit/, 'Efficient Processing can add a bonus processed unit without consuming another ingredient');
   assert.match(game, /function qualityDisplayForItem/, 'the inventory detail panel can render tracked quality');
   assert.match(game, /Better-made drink tends to produce rather more adventurous blackouts/, 'alcohol flavor text hints at the blackout mechanic without ever exposing its numbers');
