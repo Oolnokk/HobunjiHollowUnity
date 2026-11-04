@@ -114,8 +114,30 @@ E.fitRegion.onchange=()=>{
   if(patchSection)patchSection.hidden=fitRegion()==='headwear';
   refreshAssets();log('Fit region changed to '+fitRegion());
 };
-E.gender.onchange=()=>{++R.garmentSelectionEpoch;refreshAssets()};
-E.species.onchange=()=>{++R.garmentSelectionEpoch;refreshAssets()};
+let lastTargetSelection=''; // Deduplicates mobile select input/change events for the same wearer without losing real changes.
+function syncTargetGenderChoices(){
+  const cfg=R.speciesCfg.get(E.species.value);
+  const authored=(Array.isArray(cfg?.genders)?cfg.genders:[]).filter(gender=>Array.isArray(cfg?.[gender]?.portraitBodyLayers)&&cfg[gender].portraitBodyLayers.length);
+  // Only restrict gender when the selected species actually has target body art.
+  for(const option of E.gender.options)option.disabled=authored.length>0&&!authored.includes(option.value);
+  if(authored.length>0&&!authored.includes(E.gender.value))E.gender.value=authored[0];
+}
+function changeTargetSprite(){
+  syncTargetGenderChoices();
+  const selection=`${E.species.value}::${E.gender.value}`;
+  if(selection===lastTargetSelection)return;
+  lastTargetSelection=selection;
+  ++R.garmentSelectionEpoch;
+  refreshAssets();
+}
+E.gender.oninput=E.gender.onchange=changeTargetSprite;
+E.species.oninput=E.species.onchange=changeTargetSprite;
+E.useStartingAsTarget.onclick=()=>{
+  E.species.value=E.sourceSpecies.value;
+  E.gender.value=E.sourceGender.value;
+  lastTargetSelection=''; // The explicit button also retries the current selection.
+  changeTargetSprite();
+};
 E.garment.onchange=()=>{++R.garmentSelectionEpoch;refreshAssets()}; // Explicit selections win over deferred loading.
 function changeStartingSprite(){
   ++R.garmentSelectionEpoch; // Source-fit changes also cancel restoration of an old garment selection.
