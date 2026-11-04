@@ -770,11 +770,15 @@
     for (const distance of [0.7, 1.2, 1.8, 2.5, 3.2]) {
       const wx = shelf.x + dir.x * distance, wz = shelf.z + dir.y * distance;
       const tile = grid[Math.floor(wz)]?.[Math.floor(wx)];
-      if (!tile || tile.incline || deps.isSolid(tile.type) || window.MapBoundaryGuard?.isBoundaryTile?.(tile)) continue;
-      const floor = deps.tileSurfaceYInArea(tile, deps.getCurrentArea());
-      if (floor >= shelf.y - 0.1) continue;
+      const validGround = !!tile && !tile.incline && !deps.isSolid(tile.type)
+        && !window.MapBoundaryGuard?.isBoundaryTile?.(tile);
+      const floor = validGround ? deps.tileSurfaceYInArea(tile, deps.getCurrentArea()) : -Infinity;
+      // Sample raised supports independently of the ground tile. A balcony
+      // can overhang an otherwise impassable cliff or another balcony.
       const lower = window.CliffRouteNetwork?.highestBelow?.(net, wx, wz, shelf.y, floor);
-      destination = { x: (lower?.x ?? wx) * deps.TILE, y: (lower?.z ?? wz) * deps.TILE,
+      if ((!Number.isFinite(floor) || floor >= shelf.y - 0.1) && !lower) continue;
+      if (validGround && floor >= shelf.y - 0.1) continue; // Do not jump through a plateau roof.
+      destination = { x: wx * deps.TILE, y: wz * deps.TILE,
         surfaceY: lower?.y ?? floor, balconyId: lower?.id || null };
       break;
     }
@@ -803,7 +807,10 @@
       const distance = Math.min(1, length) * 2.1 * Math.max(0, dt);
       const x = player.x / deps.TILE + raw.x / length * distance;
       const z = player.y / deps.TILE + raw.y / length * distance;
-      if (window.CliffRouteNetwork.shelfContains(shelf, x, z, -0.12)) {
+      const supported = window.CliffElevatedSurfaces?.canStandOn
+        ? window.CliffElevatedSurfaces.canStandOn(net, shelf.id, x, z, -0.12)
+        : window.CliffRouteNetwork.shelfContains(shelf, x, z, -0.12);
+      if (supported) {
         player.x = x * deps.TILE; player.y = z * deps.TILE;
       } else jumpFromBalcony(raw);
     }
