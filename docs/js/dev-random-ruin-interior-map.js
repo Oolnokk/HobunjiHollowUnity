@@ -28,10 +28,9 @@
   const PUZZLE_OPTIONS_STORAGE_KEY = 'hobunji.devRandomRuinPuzzleOptions.v2'; // v2 intentionally drops the fragile first-pass mechanisms from the shipped simple-puzzle defaults.
   const DARKNESS_SETTINGS_STORAGE_KEY = 'hobunji.devRandomRuinDarkness.v1'; // Used to persist the test-only darkness toggle and severity without changing real den lighting.
   const DEFAULT_DARKNESS_SETTINGS = Object.freeze({ enabled:false, severity:1 }); // Theme darkness is always active; enabling the dev toggle only permits a severity override.
-  const DEFAULT_PUZZLE_OPTIONS = Object.freeze({ pressurePlate:false, brazier:false, glyphObelisk:true, stackedObelisk:false, linkedCubePillars:false, nestedRoom:false, safePath:true, ropeSwing:true, ropeChain:true, hallwayTraps:true, lavaBasin:true, sanctum:true, maxPerRoom:0 }); // First playable pass keeps only the proven projectile activator from V50; the three parent-runtime families below are intentionally simple and non-locking.
+  const DEFAULT_PUZZLE_OPTIONS = Object.freeze({ pressurePlate:false, brazier:false, glyphObelisk:true, stackedObelisk:false, linkedCubePillars:false, nestedRoom:false, safePath:false, ropeSwing:true, ropeChain:true, hallwayTraps:true, lavaBasin:true, sanctum:true, maxPerRoom:0 }); // First playable pass keeps only the proven projectile activator from V50; the three parent-runtime families below are intentionally simple and non-locking.
   const PUZZLE_OPTION_ROWS = Object.freeze([ // Only the simple-mode families are user-facing; disabled V50 families remain false in the normalized payload.
     ['glyphObelisk','Projectile glyph targets'],
-    ['safePath','Safe-path pressure grids'],
     ['ropeSwing','Rope swing traversal'],
     ['ropeChain','Bottomless rope-to-rope hallways'],
     ['hallwayTraps','Alternating hallway fire / poison traps'],
@@ -1643,7 +1642,7 @@
     optionsRow.setAttribute('data-dev-only','');
     optionsRow.style.display='block';
     const optionMarkup=PUZZLE_OPTION_ROWS.map(([key,label])=>`<label style="display:flex;align-items:center;gap:7px;min-height:28px"><input type="checkbox" data-ruin-puzzle-option="${key}"><span>${label}</span></label>`).join(''); // Used to keep the checkbox list data-driven and mobile-wrappable.
-    optionsRow.innerHTML=`<details id="devRandomRuinPuzzleOptions" style="width:100%"><summary class="settings-name" style="cursor:pointer;user-select:none">Puzzle Generation</summary><div class="settings-desc" style="margin-top:4px">Simple-mode puzzle families. Projectile targets use V50's proven hit runtime; the other three are independent hazards/traversal and never lock the room graph.</div><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:4px 12px;margin-top:8px">${optionMarkup}</div><label style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:8px"><span>Max projectile puzzles per room <small style="opacity:.72">(0 = unlimited)</small></span><input id="devRandomRuinMaxPuzzlesPerRoom" type="number" min="0" max="12" step="1" inputmode="numeric" style="width:74px"></label></details>`;
+    optionsRow.innerHTML=`<details id="devRandomRuinPuzzleOptions" style="width:100%"><summary class="settings-name" style="cursor:pointer;user-select:none">Puzzle Generation</summary><div class="settings-desc" style="margin-top:4px">Simple-mode puzzle families. Rope-chain abyss hallways replace the retired memory-pressure grids; only validated bidirectional crossings are carved.</div><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:4px 12px;margin-top:8px">${optionMarkup}</div><label style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:8px"><span>Max projectile puzzles per room <small style="opacity:.72">(0 = unlimited)</small></span><input id="devRandomRuinMaxPuzzlesPerRoom" type="number" min="0" max="12" step="1" inputmode="numeric" style="width:74px"></label></details>`;
     row.insertAdjacentElement('afterend',optionsRow);
     bindPuzzleOptionsPanel(optionsRow.querySelector('#devRandomRuinPuzzleOptions'));
 
