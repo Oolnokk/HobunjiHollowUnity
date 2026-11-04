@@ -773,9 +773,11 @@
     const length = Math.hypot(raw.x, raw.y);
     const dir = length > 0.25 ? { x: raw.x / length, y: raw.y / length } : { x: shelf.normal.x, y: shelf.normal.z };
     const grid = deps.getActiveGrid();
+    const takeoffX = player.x / deps.TILE, takeoffZ = player.y / deps.TILE; // Jump starts at the actual feet, not the authored balcony center.
     let destination = null;
     for (const distance of [0.7, 1.2, 1.8, 2.5, 3.2]) {
-      const wx = shelf.x + dir.x * distance, wz = shelf.z + dir.y * distance;
+      const wx = takeoffX + dir.x * distance, wz = takeoffZ + dir.y * distance;
+      if (window.CliffRouteNetwork.shelfContains(shelf, wx, wz, 0.02)) continue; // Never drop through the ledge we're standing on.
       const tile = grid[Math.floor(wz)]?.[Math.floor(wx)];
       const validGround = !!tile && !tile.incline && !deps.isSolid(tile.type)
         && !window.MapBoundaryGuard?.isBoundaryTile?.(tile);
