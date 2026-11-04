@@ -142,4 +142,28 @@ for(const side of ['north','east','south','west']){
   assert(rec.mapData.floor.some(([c,r])=>c===connected.route.path.at(-1).x&&r===connected.route.path.at(-1).z));
   ruin.shaftConnectorCleanup();
 }
+// The special story vault has no V50 `meta.entrance`: its authored southern
+// doorway at (6,27) must still lead to the shared room on ordinary floor tiles.
+{
+  const makeTile=walkable=>({type:walkable?'grass':'rock'});
+  const floorSet=new Set();
+  for(let r=13;r<=27;r++)for(let c=5;c<=7;c++)floorSet.add(c+','+r);
+  for(let r=3;r<=12;r++)for(let c=2;c<=10;c++)floorSet.add(c+','+r);
+  const rec={cols:13,rows:30,
+    grid:Array.from({length:30},(_,r)=>Array.from({length:13},(_,c)=>makeTile(floorSet.has(c+','+r)))),
+    floorSet,mapData:{id:'map_i_dev_random_ruin',floor:[...floorSet].map(k=>k.split(',').map(Number))},
+    exits:[{tiles:[[6,27]]}],scene:new Group()};
+  const ruin={storyVault:true,localeRoot:new Group(),mechanisms:new Map(),
+    transitDoors:[],activators:[],pushBlocks:[]};
+  const ds={registerSurface(){},clearScope(){}};
+  const climb={registerGrid:()=>3,clearScope(){}};
+  const dev={registerShaftGrid(){},unregisterShaftGrid(){}};
+  const placed=Connector.connect({rec,ruin,seed:0,meta:{rooms:[{name:'vault'}]},
+    THREE,makeTile,DynamicSurfaces:ds,ShaftHub:H,ClimbSurfaces:climb,
+    DevRandomRuin:dev,RuinLayerPlan:Plan,RuinShaftCorridor:Corridor});
+  assert(placed.route.ok&&placed.route.path[0].x===6&&placed.route.path[0].z===28,
+    'fixed story vault extends physically through its actual southern doorway');
+  assert(rec.floorSet.has('6,28')&&ruin.shaftConnection.physical);
+  ruin.shaftConnectorCleanup();
+}
 console.log('ok test-shaft-hub: 1000 layered layouts, '+plannedWings+' planned wings, 3–5 story octagons, four physical hallway approaches');
