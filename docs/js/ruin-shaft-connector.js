@@ -1,6 +1,6 @@
 // RuinShaftConnector — a real walkable passage to the multi-floor shaft.
 // This replaces the former Enter/Return Shaft Hub teleport prompts; the upper
-// layers are planned separately by RuinLayerPlan and are not spawned here yet.
+// independent 2D layers are now rendered and kept on elevation-aware walkable grids.
 (function(root,factory){
   const api=factory(root);
   if(typeof module==='object'&&module.exports)module.exports=api;
@@ -52,15 +52,20 @@
     parent.add(group);
     return ()=>{group.parent?.remove(group);group.traverse(node=>node.geometry?.dispose?.());floorMat.dispose();wallMat.dispose();};
   }
-  function connect({rec,ruin,seed,meta,pad=2,tileScale=2,THREE,makeTile,DynamicSurfaces:DS,ShaftHub,ClimbSurfaces,DevRandomRuin,TileOccupancy,RuinLayerPlan,RuinShaftCorridor,getPlayerPosition}={}){
-    if(!rec||!ruin||!meta||!THREE||!DS||!ShaftHub||!RuinLayerPlan||!RuinShaftCorridor||!makeTile)
+  function connect({rec,ruin,seed,meta,pad=2,tileScale=2,THREE,makeTile,DynamicSurfaces:DS,ShaftHub,ClimbSurfaces,DevRandomRuin,TileOccupancy,RuinLayerPlan,RuinShaftCorridor,RuinLayerPlayable,CellGrid3D,getPlayerPosition,getPlayerY}={}){
+    if(!rec||!ruin||!meta||!THREE||!DS||!ShaftHub||!RuinLayerPlan||!RuinShaftCorridor||!RuinLayerPlayable||!CellGrid3D||!makeTile)
       throw new Error('Shaft connector dependencies are incomplete.');
     const spacing=64; // Snap multi-story anchors far apart; floor room networks fill the open cells.
-    const anchorX=Math.ceil((rec.cols+spacing)/spacing)*spacing;
-    const anchorZ=Math.max(spacing,Math.round((rec.rows/2)/spacing)*spacing); // Near the dungeon's midline; anchors still align on every future floor.
+    // Reserve enough clearance for up to five freely placed puzzle rooms in
+    // every cardinal direction. The independent stories keep positive 2D map
+    // coordinates while the original V50 room stays at its authored position.
+    const anchorX=Math.ceil(Math.max(rec.cols+spacing,spacing*3)/spacing)*spacing;
+    const anchorZ=Math.ceil(Math.max(rec.rows+spacing,spacing*3)/spacing)*spacing;
     const plan=RuinLayerPlan.compose({seed,spacing,anchorX,anchorZ,shaftSize:33,floorHeight:4});
     if(!plan.ok)throw new Error('Layer plan invalid: '+plan.checks.filter(c=>!c.ok).map(c=>c.name).join(', '));
-    const shaftOptions={seed,floors:plan.floorCount,chambers:false,wall:8,shaft:plan.options.shaftSize,spacing:plan.options.floorHeight,entranceSide:'W'}; // Upper exits terminate at real side-wall thresholds, ready for future wings.
+    const portals=plan.floors.flatMap(f=>f.wings.map(w=>({floor:f.floor,side:w.side}))); // Every generated room chain now receives a separate physical doorway.
+    const shaftOptions={seed,floors:plan.floorCount,chambers:false,wall:plan.options.shaftWall,
+      shaft:plan.options.shaftSize,spacing:plan.options.floorHeight,entranceSide:'W',portals};
     const hub=ShaftHub.compose(shaftOptions); // The real shared room; origin is set below after determining its full masonry shell.
     const originX=anchorX-Math.floor(hub.cols/2),originZ=anchorZ-Math.floor(hub.rows/2);
     const placed=ShaftHub.compose({...shaftOptions,originX,originZ});
@@ -113,6 +118,14 @@
     ruin.shaftConnection.supportRects=corridorSupportRects.length;
     const unmountVisual=visual(route.tiles.filter(([c,r])=>!oldFloor.has(key(c,r))),THREE,rec.scene,placed.grid.baseY,rec.floorSet);
     const registered=ShaftHub.mount(placed,{THREE,parent:rec.scene,ClimbSurfaces,DynamicSurfaces:DS,DevRandomRuin});
+    const layerRuntime=RuinLayerPlayable.mount({
+      rec,ruin,plan,hub:placed,makeTile,THREE,DynamicSurfaces:DS,CellGrid3D,
+      RuinShaftCorridor,DevRandomRuin,getPlayerPosition,getPlayerY
+    }); // Mounts 1–4 stone puzzle wings and one interactive brazier per story-side.
+    ruin.shaftLayerRuntime=layerRuntime;
+    const active=layerRuntime.getState();
+    ruin.shaftConnection.wingsPlayable=active.wings;
+    ruin.shaftConnection.braziersPlayable=active.braziers;
     // Tile occupancy was created before the old post-generation shaft phase.
     // Rebuild it against the enlarged record so the ordinary game can walk all
     // corridor tiles; this is not a separate, invisible movement harness.
@@ -133,8 +146,8 @@
           if(child.userData?.groundedToMovingPlatform)ruin.occupancy.scanSolids?.(child,'dais-feature');
       }
     }
-    ruin.shaftConnectorCleanup=()=>{unmountVisual();DS.clearScope(scope);};
-    return {plan,hub:placed,route,registered};
+    ruin.shaftConnectorCleanup=()=>{layerRuntime.dispose();unmountVisual();DS.clearScope(scope);};
+    return {plan,hub:placed,route,registered,layerRuntime};
   }
   return Object.freeze({entranceOutside,connect});
 });
