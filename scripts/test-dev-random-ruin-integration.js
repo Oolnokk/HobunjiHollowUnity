@@ -47,6 +47,7 @@ const loadOrder = [
   'dev-random-ruin-interior-map.js',
   'dev-random-ruin-motion-runtime.js',
   'dev-random-ruin-dungeon-chests.js',
+  'ruin-melody-glyph-decal.js', // Glyph inscription helper must be loaded before the composer builds its pressure plate.
   'dev-random-ruin-simple-puzzles.js',
   'dev-random-ruin-rope-rewards.js',
   'dev-random-ruin-sanctum.js',
@@ -181,7 +182,9 @@ assert(simplePuzzles.includes("recordModulePlacement('melodyEchoTrigger'") && si
 assert(simplePuzzles.includes("mesh.name='dev_ruin_rope_lava'") && simplePuzzles.includes("textureUrl:'assets/textures/wibbly_surface.png'"), 'rope fall/burn zones must be visibly represented by the existing animated water surface treatment recolored as lava');
 assert(simplePuzzles.includes("HobunjiDrenkirraPellet?.sfx?.acidSizzle"), 'visible lava contact must reuse the Drenkirra pellet acid-sizzle cue');
 assert(simplePuzzles.includes("recordModulePlacement('projectileHallwayTrap'"), 'hallway traps must be represented as reusable module placements');
-assert(simplePuzzles.includes("recordModulePlacement('melodyEchoTrigger'") && simplePuzzles.includes('beginPlayerSession?.({echoChallenge:challenge})'), 'musical echo triggers must be reusable in hallway/room slots and launch the actual five-note instrument');
+assert(simplePuzzles.includes("recordModulePlacement('melodyEchoTrigger'") && simplePuzzles.includes('replayEchoSet(set)') && simplePuzzles.includes("window.addEventListener('hobunji-kurraya-puzzle-note'"), 'musical echo triggers must stay reusable in hallways and rooms, replay on pressure, and listen to ordinary instrument note events');
+assert(simplePuzzles.includes('RuinMelodyGlyphDecal?.create?.(') && simplePuzzles.includes('notes:melody') && simplePuzzles.includes('syncEchoInscription(set)'), 'the exact generated notes must create an in-world Scratchbone clue and remain hot-swappable');
+assert(camera.includes('ruin-melody-glyph-decal.js?'), 'load the procedural inscription renderer before the ruin composer');
 assert(simplePuzzles.includes("recordModulePlacement('stoneCanopy'"), 'stone canopies must exist as independent modules instead of rope-only geometry');
 assert(simplePuzzles.includes("recordModulePlacement('sarcophagusSpawner'"), 'sarcophagus skeleton spawners must exist as independent modules');
 assert(simplePuzzles.includes("recordModulePlacement('lockableStoneDoor'"), 'lockable room doors must exist as independently wired modules');
