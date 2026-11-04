@@ -219,9 +219,9 @@
       // Exhausted instead of blocking the jab (see resource-system.js's
       // spendStamina); Exhausted's reduced speed then slows this jab's own
       // windup/strike down.
-      const spendResult = window.ResourceSystem?.spendStamina(deps.player, requestedCost, def.label) || { spent: 0, excess: 0 };
+      const spendResult = window.ResourceSystem?.spendStamina(deps.player, requestedCost, def.label, { actionKind: 'combatQuickAttack', abilityId: id }) || { spent: 0, excess: 0 };
       const actualCost = round1((Number(spendResult.spent) || 0) + (Number(spendResult.excess) || 0)); // Actual post-perk/alchemy resource commitment used to calculate the conditional refund.
-      const timeScale = 1 / ((window.ResourceSystem?.getExhaustionSpeed(deps.player) ?? 1) * shapeStats.speed);
+      const timeScale = 1 / ((window.ResourceSystem?.getExhaustionSpeed(deps.player) ?? 1) * (shapeStats.speed * (window.DoubleEdgedCombatTrinkets?.attackSpeed?.() || 1)));
       const windupS = WINDUP_S * timeScale;
       const strikeS = STRIKE_S * timeScale;
       const baseAbil = deps.weaponAbility('cut') || { damage: 14, rangePx: deps.TILE * 1.05, knockbackPxS: 360 };
@@ -250,7 +250,7 @@
         pose: quickAttackPose(), // The editor's Quick Attack template.
         windupFrac: windupS / (windupS + strikeS),
         strikeFrac: 1,
-        holdS: HOLD_S / shapeStats.speed,
+        holdS: HOLD_S / (shapeStats.speed * (window.DoubleEdgedCombatTrinkets?.attackSpeed?.() || 1)),
         afflictionIds: Object.keys(attackAfflictions),
         afflictions: attackAfflictions,
         coneRangePx: rangePx,
