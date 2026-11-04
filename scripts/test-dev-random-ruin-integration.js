@@ -485,6 +485,10 @@ assert(interactions.includes('registerWorldClimbProvider') && !interactions.incl
     'rope-chain module must claim an actual bottomless pit');
   assert(simplePuzzles.includes('DS.registerSurface({...cell.record,enabled:false})')
     && simplePuzzles.includes('ropeChainDisabledSurfaces'), 'rope chain must actually disable the existing floor surfaces and retain restoration records');
+  assert(simplePuzzles.includes('i+1<ropes.length?{rope:ropes[i+1]}:exitFloor')
+    && simplePuzzles.includes('i>0?{rope:ropes[i-1]}:entryFloor')
+    && !simplePuzzles.includes('{platform:exitFloor}'),
+    'the final rope release must be tested against real shore bank targets, never the retired synthetic platform wrapper');
   assert(simplePuzzles.includes('const forwardHops=ropes.map(') && simplePuzzles.includes('const reverseHops=ropes.map(')
     && simplePuzzles.includes('forwardHops.every(') && simplePuzzles.includes('reverseHops.every('),
     'every chain requires each individual forward and reverse ballistic hop to pass');
