@@ -40,28 +40,41 @@ assert.match(mountainAuthor, /8 decorative mine rocks/, 'author bridge must no l
 assert.match(mountainAuthor, /mountainPosX/, 'author bridge must retain position controls');
 assert.match(mountainAuthor, /mountainRotY/, 'author bridge must retain rotation controls');
 assert.match(mountainAuthor, /mountainScaleZ/, 'author bridge must retain scale controls');
+assert.match(mountainAuthor, /mountainScaleZ" type="text" inputmode="decimal"/, 'Z scale must use a decimal-friendly text field, not a mobile number input that sanitizes intermediate dots');
 
 // Execute the author field formatter: unset coordinates must display resolved defaults.
 const inputs = Object.fromEntries(['x', 'y', 'z'].map(id => [id, { dataset: {} }]));
-const formatterSource = mountainAuthor.slice(mountainAuthor.indexOf('  function displayVector('), mountainAuthor.indexOf('  function syncUi('));
-const formatterContext = { $: id => inputs[id] };
+const formatterSource = mountainAuthor.slice(mountainAuthor.indexOf('  function writeTransformValue('), mountainAuthor.indexOf('  function syncUi('));
+const formatterContext = { $: id => inputs[id], document: { activeElement: null } };
 vm.createContext(formatterContext);
 vm.runInContext(formatterSource, formatterContext);
 formatterContext.displayVector(['x','y','z'], [null,null,null], [-194,160,100], [0,0,0]);
-assert.deepEqual(Object.values(inputs).map(input => input.value), [-194,160,100], 'automatic coordinates must retain resolved positions');
+assert.deepEqual(Object.values(inputs).map(input => input.value), ['-194','160','100'], 'automatic coordinates must retain resolved positions');
 formatterContext.displayVector(['x','y','z'], [0,-4,12], [-194,160,100], [0,0,0]);
-assert.deepEqual(Object.values(inputs).map(input => input.value), [0,-4,12], 'explicit zero and negative positions must survive');
+assert.deepEqual(Object.values(inputs).map(input => input.value), ['0','-4','12'], 'explicit zero and negative positions must survive');
+formatterContext.document.activeElement = inputs.z;
+inputs.z.value = '1.'; // Simulates the exact mobile edit state that used to turn 1.5 into 15.
+formatterContext.displayVector(['x','y','z'], [8,9,10], [8,9,10], [0,0,0]);
+assert.equal(inputs.z.value, '1.', 'a concurrent scenery preview refresh must not erase the focused input decimal point');
+assert.equal(inputs.x.value, '8', 'unfocused fields must continue updating normally');
+formatterContext.document.activeElement = null;
+formatterContext.displayVector(['x','y','z'], [8,9,1.5], [8,9,1.5], [0,0,0]);
+assert.equal(inputs.z.value, '1.5', 'after blur the committed decimal is displayed as entered');
 
 // The author displays base-relative offsets and updates only the axis actually edited.
 const positionInputs = Object.fromEntries(['pX','pY','pZ'].map(id => [id, { dataset: {} }]));
-const positionFormatSource = mountainAuthor.slice(mountainAuthor.indexOf('  function displayPositionOffsets('), mountainAuthor.indexOf('  function syncUi('));
-const positionFormatContext = { $: id => positionInputs[id] };
+const positionFormatSource = formatterSource;
+const positionFormatContext = { $: id => positionInputs[id], document: { activeElement: null } };
 vm.createContext(positionFormatContext);
 vm.runInContext(positionFormatSource, positionFormatContext);
 positionFormatContext.displayPositionOffsets(['pX','pY','pZ'], [null,null,null], { defaultPosition: [-74,160,100] });
-assert.deepEqual(Object.values(positionInputs).map(input => input.value), [0,0,0], 'automatic position fields must present as zero offsets');
+assert.deepEqual(Object.values(positionInputs).map(input => input.value), ['0','0','0'], 'automatic position fields must present as zero offsets');
 positionFormatContext.displayPositionOffsets(['pX','pY','pZ'], [-65,165,99], { defaultPosition: [-74,160,100] });
-assert.deepEqual(Object.values(positionInputs).map(input => input.value), [9,5,-1], 'offset fields must subtract the automatic map-dependent origin');
+assert.deepEqual(Object.values(positionInputs).map(input => input.value), ['9','5','-1'], 'offset fields must subtract the automatic map-dependent origin');
+positionFormatContext.document.activeElement = positionInputs.pZ;
+positionInputs.pZ.value = '-0.';
+positionFormatContext.displayPositionOffsets(['pX','pY','pZ'], [-65,165,100], { defaultPosition: [-74,160,100] });
+assert.equal(positionInputs.pZ.value, '-0.', 'focused position offset may contain an incomplete signed decimal during rebuild');
 
 const transformEditSource = mountainAuthor.slice(mountainAuthor.indexOf('  const TRANSFORM_FIELDS ='), mountainAuthor.indexOf('  function commitControls('));
 const transformEditContext = {};
@@ -70,10 +83,17 @@ vm.runInContext(transformEditSource, transformEditContext);
 const editableLayer = { transform: { position: [null,null,null], rotationDeg: [0,0,0], scale: [1,1,1] } };
 assert(transformEditContext.editTransformAxis(editableLayer, 'mountainPosY', '10', [-74,160,100]));
 assert.deepEqual(editableLayer.transform.position, [null,170,null], 'editing Y offset must preserve X and Z automatic positions');
+assert(!transformEditContext.editTransformAxis(editableLayer, 'mountainScaleZ', '1.'), 'trailing decimal point is an incomplete input, not a rounded whole number');
+assert.deepEqual(editableLayer.transform.scale, [1,1,1], 'an incomplete decimal must not commit a transient scale');
 assert(transformEditContext.editTransformAxis(editableLayer, 'mountainScaleZ', '1.5'));
 assert.deepEqual(editableLayer.transform.scale, [1,1,1.5], 'editing length must not change thickness or height');
+assert(transformEditContext.editTransformAxis(editableLayer, 'mountainScaleZ', '0.05'));
+assert.deepEqual(editableLayer.transform.scale, [1,1,0.05], 'small positive scale decimals must be accepted');
+assert(transformEditContext.editTransformAxis(editableLayer, 'mountainScaleZ', '1,25'));
+assert.deepEqual(editableLayer.transform.scale, [1,1,1.25], 'locale decimal commas must be accepted by the mobile keyboard');
+assert(!transformEditContext.editTransformAxis(editableLayer, 'mountainScaleZ', '-.'), 'unfinished signed decimal must not mutate the scale');
 assert(!transformEditContext.editTransformAxis(editableLayer, 'mountainScaleY', '-2'), 'negative height scale must be rejected');
-assert.deepEqual(editableLayer.transform.scale, [1,1,1.5], 'rejected input cannot mutate scale');
+assert.deepEqual(editableLayer.transform.scale, [1,1,1.25], 'rejected input cannot mutate scale');
 assert(transformEditContext.editTransformAxis(editableLayer, 'mountainPosY', '', [-74,160,100]));
 assert.deepEqual(editableLayer.transform.position, [null,null,null], 'clearing the edited axis restores automatic positioning');
 
