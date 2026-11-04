@@ -37,10 +37,10 @@ const detonateBody=code.slice(detonateStart,detonateEnd);
 assert(detonateBody.includes('if(!cask||cask.exploded)return false;') &&
   detonateBody.includes("playObjectSfxKey?.('shattercaskBlast')") &&
   code.includes("detonate(c,'throw-impact')") &&
-  code.includes("detonate(vase,'melee')") &&
+  code.includes("detonate(vase,'melee',source)") &&
   code.includes("const handler=burden.impactHandler||BURDEN_IMPACT_HANDLERS.get(burden.kind)||burden.data?.carryable?.impactHandler;") &&
   code.includes("if(typeof handler==='function')return handler(burden,'projectile')!==false;") &&
-  code.includes("return detonate(burden,'projectile');"),
+  code.includes("return detonate(burden,'projectile',source);"),
   'one guarded detonation boundary plays the blast cue for thrown/melee hits, while projectile hits preserve generic Burden handlers and the guarded Shattercask fallback');
 assert.equal((detonateBody.match(/playObjectSfxKey\?\.\('shattercaskBlast'\)/g)||[]).length,1,
   'the central detonation path contains one sound request');
