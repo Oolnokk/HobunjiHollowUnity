@@ -80,7 +80,12 @@ function testRuntime() {
   assert(window.Shattercasks.toolArchTap(),'Tool Select stows an actual physical Burden');
   assert.equal(window.Shattercasks.debugSnapshot().held,null);
   assert.equal(window.Shattercasks.backCarriedInfo()?.id,charge.id);
-  assert(!window.Shattercasks.stowOnBack(),'only one Burden can occupy the back slot');
+  const second=window.Shattercasks.registerBurden({mapId:currentArea,scene,group:new Group(),
+    id:'test-hand-burden',kind:'inertStatue',hanging:false,data:{carryable:{}}});
+  assert(window.Shattercasks.pickUp(second),'hands can still carry a different burden while the back is occupied');
+  assert(!window.Shattercasks.stowOnBack(),'a second held burden cannot overwrite the occupied back slot');
+  assert.equal(window.Shattercasks.backCarriedInfo()?.id,charge.id,'the first back burden remains untouched');
+  assert(window.Shattercasks.discardBurden(second),'clear the extra hand burden before retrieving from back');
   assert(window.Shattercasks.takeFromBack(),'tool-arch selection retrieves the same instance');
   assert.equal(window.Shattercasks.debugSnapshot().held,charge.id);
   assert(window.Shattercasks.stowOnBack());
