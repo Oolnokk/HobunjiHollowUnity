@@ -1180,6 +1180,15 @@
     if (climbSafety) {
       lines.push(`Climb safety: active=${climbSafety.playerClimbing} mount=${climbSafety.mountRideState} lastBlock=${climbSafety.lastBlockReason || 'none'}${climbSafety.lastBlockReason ? `/${climbSafety.lastBlockRideState}` : ''}${Number.isFinite(climbSafety.lastWallFacingAngle) ? ` wallFacing=${climbSafety.lastWallFacingSource || 'unknown'}:${(climbSafety.lastWallFacingAngle * 180 / Math.PI).toFixed(1)}°/${climbSafety.lastWallFacingCardinal || '?'}` : ''}`);
     }
+    const cliffRegistry = window.CliffElevatedSurfaces?.debugSnapshot?.(); // Scoped CellGrid3D + DynamicSurfaces status for mobile, no console required.
+    const cliffGraph = window.CliffRouteNetwork?.debugSnapshot?.(); // Surfaces and route proof must agree after terrain regeneration.
+    if (cliffRegistry?.areas?.length || cliffGraph?.areas?.length) {
+      const support = cliffRegistry?.areas?.[cliffRegistry.areas.length - 1];
+      const route = cliffGraph?.areas?.find?.(item => item.area === support?.area)
+        || cliffGraph?.areas?.[cliffGraph.areas.length - 1];
+      lines.push(`Cliff navigation: area=${support?.area || route?.area || '-'} handholds=${route?.routes ?? '?'} raised=${support?.balconies ?? route?.balconies ?? '?'} supports=${support?.supportRectangles ?? '?'} unreachablePlateaus=${route?.unreachablePlateaus ?? '?'} unreachableBalconies=${route?.unreachableBalconies ?? '?'} invalidHops=${route?.invalidHops ?? '?'} error=${cliffRegistry?.lastError || 'none'}`);
+      if (climbSafety?.balcony) lines.push(`Cliff player: shelf=${climbSafety.balcony} route=${climbSafety.handholdRoute ?? '-'} node=${climbSafety.handholdNode ?? '-'}`);
+    }
     const creatureDeathDebug = window.CreatureDeath?.getDebug?.(); // Used to make interrupted lethal-hit recovery visible in copyable mobile probe reports.
     if (creatureDeathDebug?.lastRecovery) {
       const recovery = creatureDeathDebug.lastRecovery;
