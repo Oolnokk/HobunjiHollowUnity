@@ -1328,11 +1328,11 @@
     const active=scene();if(!active)return;
     if(throwRing.parent!==active)active.add(throwRing);
     const groundY=thrownGround(target.x,target.z); // Same landing surface used by the physical throw.
+    const previewRadius=held?.kind==='soursap'?FRUIT_RADIUS:held?.kind==='looseCrate'?1:RADIUS;
     const changed=throwRing.userData.targetX!==target.x||throwRing.userData.targetZ!==target.z
       ||throwRing.userData.groundY!==groundY
-      ||throwRing.userData.radius!==(held?.kind === 'soursap' ? FRUIT_RADIUS : RADIUS); // Resample only when the target or its terrain height changes.
+      ||throwRing.userData.radius!==previewRadius; // Resample only when the target or its terrain height changes.
     throwRing.position.set(target.x,groundY+.035,target.z);
-    const previewRadius = held?.kind === 'soursap' ? FRUIT_RADIUS : held?.kind === 'looseCrate' ? 1 : RADIUS; // Burden-specific AOE on the same projected reticle.
     throwRing.scale.setScalar(previewRadius);
     if(changed){
       const positions=throwRing.geometry.attributes?.position; // Local Z becomes height after the ground-plane rotation.
