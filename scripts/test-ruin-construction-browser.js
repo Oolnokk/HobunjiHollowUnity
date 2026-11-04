@@ -41,6 +41,7 @@ const URL=process.env.HOBUNJI_TEST_URL||'http://127.0.0.1:8000/index.html?skipIn
     await page.evaluate(()=>window.HobunjiTitleScreen?.start?.());
     await page.waitForFunction(()=>!window.HobunjiTitleScreen?.isActive?.(),null,{timeout:15000});
     const first=await page.evaluate(async()=>{
+      window.DevRandomRuinConfig?.setOverride?.({moduleChances:{burdenOffering:1}}); // Force both replenishable Key Statue feeds to exist in this seed.
       const entered=await window.DevRandomRuin.generate(3,{composedTrial:true,theme:'hronal',rootMechanisms:false,stoneAge:false});
       if(!entered)return {ok:false,phase:window.DevRandomRuin.getGenerationProgress(),audit:window.DevRandomRuin.getLastSolvabilityAudit()};
       const state=window.DevRandomRuin.getState(),context=window.DevRandomRuin.getRuntimeContext();
@@ -67,6 +68,50 @@ const URL=process.env.HOBUNJI_TEST_URL||'http://127.0.0.1:8000/index.html?skipIn
     assert(Math.hypot(first.before.x-first.after.x,first.before.z-first.after.z)>3,'the in-game passage must move the player to the trial wing');
     assert.equal(first.supportBefore,null,'a closed bridge cannot grant support in the gap');
     assert(first.pit,'the chasm must remain a physical fall volume until a bridge opens');
+    assert(first.state.burdenOffering&&first.controls.includes('composed-offering-dispenser'),'this seed must expose both independent Key Statue dispensers');
+    await page.waitForFunction(()=>{
+      const items=window.KeyStatues?.debugSnapshot?.().dispensers?.filter(d=>d.mapId==='map_i_dev_random_ruin')||[];
+      return items.length>=2&&items.every(d=>d.status==='ready');
+    },null,{timeout:30000,polling:150});
+    const defense=await page.evaluate(feedPlinthId=>{
+      const id='map_i_dev_random_ruin',api=window.FurniturePuzzleRuntime,statues=window.KeyStatues;
+      const source=statues.debugSnapshot().dispensers.find(d=>d.feedPlinthId===feedPlinthId);
+      const taken=source&&api.interactKeyStatue(id,source.id);
+      const carried=window.Shattercasks?.heldBurdenInfo?.();
+      const inserted=api.interactBurdenPlate(id,feedPlinthId),node=api.getNode(id,feedPlinthId);
+      const seated=statues.status(id,source?.id),blockedRecall=statues.recall(id,source?.id);
+      const discarded=window.Shattercasks.discardBurden(node?.userData?.burdenPlatePayload);
+      return {sourceId:source?.id,taken,carried,inserted,seated,blockedRecall,discarded,
+        afterLoss:{payload:node?.userData?.burdenPlatePayload?.id||null,complete:node?.userData?.burdenPlateComplete,active:node?.userData?.puzzleActive}};
+    },first.state.feedPlinthId);
+    assert(defense.taken?.ok&&defense.carried?.kind==='keyStatue'&&defense.inserted?.ok,
+      'a dispensed physical Key Statue must fit its actual defense plinth: '+JSON.stringify(defense));
+    assert(defense.seated==='seated'&&defense.blockedRecall?.ok===false,
+      'the dispenser must not recall a statue already seated for defense: '+JSON.stringify(defense));
+    assert(defense.discarded&&defense.afterLoss.payload===null&&defense.afterLoss.complete===false,
+      'destroying a Key Statue must reset the actual defense plinth: '+JSON.stringify(defense));
+    await page.waitForFunction(id=>window.KeyStatues?.status?.('map_i_dev_random_ruin',id)==='ready',defense.sourceId,{timeout:30000,polling:150});
+    const recalled=await page.evaluate(id=>{
+      const mapId='map_i_dev_random_ruin',taken=window.FurniturePuzzleRuntime.interactKeyStatue(mapId,id);
+      const dropped=window.Shattercasks.drop(),before=window.KeyStatues.status(mapId,id),recall=window.KeyStatues.recall(mapId,id);
+      return {taken,dropped,before,recall};
+    },defense.sourceId);
+    assert(recalled.taken?.ok&&recalled.dropped&&recalled.before==='recallable'&&recalled.recall?.ok,
+      'a dropped statue must be recoverable at its dispenser: '+JSON.stringify(recalled));
+    await page.waitForFunction(id=>window.KeyStatues?.status?.('map_i_dev_random_ruin',id)==='ready',defense.sourceId,{timeout:30000,polling:150});
+    const bonus=await page.evaluate(()=>{
+      const mapId='map_i_dev_random_ruin',api=window.FurniturePuzzleRuntime,statues=window.KeyStatues;
+      const source=statues.debugSnapshot().dispensers.find(d=>d.id.startsWith('composed_offering_'));
+      const taken=source&&api.interactKeyStatue(mapId,source.id);
+      const inserted=source&&api.interactBurdenPlate(mapId,source.feedPlinthId);
+      return {sourceId:source?.id,plinthId:source?.feedPlinthId,taken,inserted,status:source&&statues.status(mapId,source.id)};
+    });
+    assert(bonus.taken?.ok&&bonus.inserted?.ok&&bonus.status==='seated',
+      'the optional plinth must use its own physical Key Statue dispenser: '+JSON.stringify(bonus));
+    await page.waitForFunction(id=>window.FurniturePuzzleRuntime?.getNode?.('map_i_dev_random_ruin',id)?.userData?.burdenPlateComplete===true,
+      bonus.plinthId,{timeout:10000,polling:100});
+    await page.waitForFunction(()=>window.DevRandomRuin?.getInteractionControls?.().some(c=>c.kind==='dungeonChest'&&c.object?.name?.includes('composed_offering_')),
+      null,{timeout:10000,polling:100});
     const blast=await page.evaluate(()=>{
       const state=window.DevRandomRuin.getState(),composition=window.RuinComposerPlayable.plan(state.seed).composition;
       const pillar=composition.records.find(record=>record.piece==='crackedPillar');
