@@ -26,6 +26,7 @@
 
   const KURRAYA_TOP_ASSET = { path: 'assets/toolsprites/kurraya_top.png', width: 318, height: 247 };
   const KURRAYA_AUDIO_ASSET = { path: 'assets/audio/music/instruments/sfx_kurraya_pluck.m4a', filename: 'sfx_kurraya_pluck.m4a' }; // Bundled pluck fed into hosted Kurraya samplers unless the user explicitly chose a custom Kurraya source in Music Lab.
+  const FLUTE_AUDIO_ASSET = { path: 'assets/audio/music/instruments/sfx_flute_note.m4a', filename: 'sfx_flute_note.m4a' }; // Optional authored flute recording; performance uses its MIDI-pitched flute fallback until this file exists.
   const KURRAYA_CUSTOM_SAMPLE_KEY = 'hobunji.kurrayaCustomSample.v1'; // Read by hosted-sample startup so an explicitly imported Music Lab Kurraya SFX survives into gameplay.
   const KURRAYA_MUSIC_FRAME_SRC = 'assets/minigames/lyre-performance.html'; // Identifies both the player's visible performance iframe and ambient NPC performance iframes.
   const KURRAYA_MINIMAL_PERFORMANCE_UI = true; // Temporary presentation flag used to leave only notes, Auto Pick/arpeggio selection, and scale selection visible during player performances.
@@ -76,6 +77,9 @@
   function isKurrayaMusicFrame(frame) {
     const src = frame?.getAttribute?.('src') || ''; // Used to ignore unrelated iframes and the player's about:blank teardown load.
     return src.includes(KURRAYA_MUSIC_FRAME_SRC);
+  }
+  function isFluteMusicFrame(frame) {
+    return /(?:[?&])instrument=flute(?:&|$)/.test(frame?.getAttribute?.('src') || ''); // Host and iframe agree on the selected instrument without changing shared performance controls.
   }
 
   function setMinimalElementHidden(element, hidden) {
@@ -190,7 +194,7 @@
     return () => { try { delete input.files; } catch {} };
   }
 
-  async function importBundledSampleIntoFrame(frame, bridge) {
+  async function importBundledSampleIntoFrame(frame, bridge, audioAsset = KURRAYA_AUDIO_ASSET) {
     const frameDocument = frame.contentDocument; // Used to drive the minigame's existing hidden audio-file input and read its diagnostics.
     const frameWindow = frame.contentWindow; // Supplies realm-correct File/DataTransfer constructors for Android and other stricter browsers.
     const readout = frameDocument?.getElementById('analysisReadout'); // Existing Mobile Debug/readout is the source of truth for import and root-analysis completion.
@@ -198,10 +202,11 @@
     if (!frameDocument || !frameWindow || !bridge || !readout || !input) throw new Error('hosted sampler controls were not available');
 
     try { await bridge.wakeAudio?.(); } catch {}
+    const isFlute = audioAsset === FLUTE_AUDIO_ASSET; // Flute performances never read the Kurraya Music Lab's saved custom pluck.
     let customSample = null; // Holds the Music Lab's explicit replacement preference; unrelated sampler imports do not opt into gameplay.
-    try { customSample = JSON.parse(localStorage.getItem(KURRAYA_CUSTOM_SAMPLE_KEY) || 'null'); } catch {}
-    const preferredName = String(customSample?.name || KURRAYA_AUDIO_ASSET.filename); // Used to accept either the explicitly chosen custom source or the normal bundled source from IndexedDB.
-    const restored = await waitForAnalysisText(
+    if (!isFlute) try { customSample = JSON.parse(localStorage.getItem(KURRAYA_CUSTOM_SAMPLE_KEY) || 'null'); } catch {}
+    const preferredName = String(customSample?.name || audioAsset.filename); // Used to accept either the explicitly chosen custom Kurraya source or the normal bundled source from IndexedDB.
+    const restored = isFlute ? false : await waitForAnalysisText(
       readout,
       text => text.includes(`Restored ${preferredName}`),
       customSample ? KURRAYA_CUSTOM_SAMPLE_RESTORE_WAIT_MS : KURRAYA_SAMPLE_RESTORE_WAIT_MS
@@ -215,14 +220,15 @@
       sampleLog(`custom Kurraya sample ${preferredName} was not restorable; reverting to bundled source`, 'warn');
     }
 
-    const response = await fetch(KURRAYA_AUDIO_ASSET.path); // Loads the repo-authored source once when neither the preferred custom sample nor bundled sample was restored.
+    const response = await fetch(audioAsset.path); // Uses each instrument's authored source while sharing the existing note/chord sampler.
+    if (isFlute && response.status === 404) { sampleLog('flute recording not yet bundled; using MIDI flute fallback'); return; }
     if (!response.ok) throw new Error(`sample fetch returned HTTP ${response.status}`);
     const blob = await response.blob(); // Preserves the M4A bytes while allowing the existing file-import handler to decode them normally.
-    const file = new frameWindow.File([blob], KURRAYA_AUDIO_ASSET.filename, { type: blob.type || 'audio/mp4' }); // Makes the repo asset indistinguishable from a user-selected sample to the existing sampler pipeline.
+    const file = new frameWindow.File([blob], audioAsset.filename, { type: blob.type || 'audio/mp4' }); // Makes the repo asset indistinguishable from a user-selected sample to the existing sampler pipeline.
     const cleanupInputFiles = assignFileToInput(input, file, frameWindow); // Removes only the fallback synthetic FileList shim when one was needed.
     const importReady = waitForAnalysisText( // Starts listening before dispatch so very fast decoders cannot race past the readiness check.
       readout,
-      text => text.startsWith(`Ready: ${KURRAYA_AUDIO_ASSET.filename}`) || text.startsWith('Import failed:'),
+      text => text.startsWith(`Ready: ${audioAsset.filename}`) || text.startsWith('Import failed:'),
       KURRAYA_SAMPLE_IMPORT_TIMEOUT_MS
     );
     input.dispatchEvent(new frameWindow.Event('change', { bubbles: true }));
@@ -236,15 +242,16 @@
       text => text.startsWith('Analyzed '),
       KURRAYA_SAMPLE_ANALYSIS_WAIT_MS
     );
-    sampleLog(`loaded ${KURRAYA_AUDIO_ASSET.filename} through the existing sampler`);
+    sampleLog(`loaded ${audioAsset.filename} through the existing sampler`);
   }
 
   function gateHostedMusicBridge(frame) {
     let bridge = null; // Filled from the same-origin minigame window and then wrapped before target-phase iframe load listeners can start playback.
     try { bridge = frame.contentWindow?.HobunjiMusicControlBridge || null; } catch {}
     if (!bridge || bridge.__kurrayaBundledSampleGate) return;
-    const sampleReady = importBundledSampleIntoFrame(frame, bridge).catch(error => { // Shared promise preserves bridge call order and falls back gracefully if this browser cannot decode the M4A.
-      sampleLog(`could not load ${KURRAYA_AUDIO_ASSET.filename}: ${error?.message || error}; using sampler fallback`, 'warn');
+    const audioAsset = isFluteMusicFrame(frame) ? FLUTE_AUDIO_ASSET : KURRAYA_AUDIO_ASSET; // An equipped flute must never import the Kurraya sample into its performance iframe.
+    const sampleReady = importBundledSampleIntoFrame(frame, bridge, audioAsset).catch(error => { // Shared promise preserves bridge call order and falls back gracefully if this browser cannot decode the M4A.
+      sampleLog(`could not load ${audioAsset.filename}: ${error?.message || error}; using sampler fallback`, 'warn');
     });
     Object.defineProperty(bridge, '__kurrayaBundledSampleGate', { configurable: true, value: sampleReady });
 
