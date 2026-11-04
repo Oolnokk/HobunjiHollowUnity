@@ -22,6 +22,18 @@
     wing.corridors.forEach(hall=>hall.rects.forEach(rect=>rectangleTiles(rect,add)));
     return tiles;
   }
+  function selectGrid(registered,x,z,referenceY=0){
+    let best=null,bestDistance=Infinity; // At shared X/Z, choose the wing whose standing level matches the actor.
+    const y=Number(referenceY);
+    for(const [scope,{grid,contains}] of registered||[]){
+      if(!grid?.inBounds(grid.xToCol(x),grid.zToRow(z),0)
+        ||typeof contains==='function'&&!contains(x,z))continue;
+      if(scope==='shaft-hub')return grid; // Hub spans all floors; portal overlap belongs to its complete 3D grid.
+      const distance=Number.isFinite(y)?Math.abs(y-grid.baseY):0;
+      if(distance<bestDistance){bestDistance=distance;best=grid;}
+    }
+    return best;
+  }
   function projectedExtent(plan){
     let maxX=0,maxZ=0,minX=Infinity,minZ=Infinity;
     for(const floor of plan.floors)for(const wing of floor.wings){
@@ -254,5 +266,5 @@
 
     return owner;
   }
-  return Object.freeze({mount,projectedExtent,collect});
+  return Object.freeze({mount,projectedExtent,collect,selectGrid});
 });
