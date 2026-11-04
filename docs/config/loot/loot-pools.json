@@ -1152,7 +1152,8 @@
             ],
             "blunt": [
               "debuff_durationS_12_id_brittle",
-              "stat_damageMul_0p13"
+              "stat_damageMul_0p13",
+              "debuff_durationS_1_id_knockdown"
             ]
           },
           "3": {
@@ -1165,7 +1166,8 @@
             "blunt": [
               "debuff_durationS_12_id_brittle",
               "stat_absorbMul_p0p15",
-              "stat_idleDrainMul_p0p25"
+              "stat_idleDrainMul_p0p25",
+              "debuff_durationS_1_id_knockdown"
             ]
           }
         }
@@ -1204,7 +1206,8 @@
               "stat_damageMul_0p1",
               "stat_damageMul_0p13",
               "stat_idleDrainMul_p0p2",
-              "stat_knockbackMul_0p15"
+              "stat_knockbackMul_0p15",
+              "debuff_durationS_1_id_knockdown"
             ]
           },
           "5": {
@@ -1258,7 +1261,8 @@
               "stat_damageMul_0p12",
               "stat_damageMul_0p15",
               "stat_idleDrainMul_p0p2",
-              "stat_knockbackMul_0p15"
+              "stat_knockbackMul_0p15",
+              "debuff_durationS_1_id_knockdown"
             ]
           }
         }
@@ -1721,7 +1725,8 @@
             "blunt": [
               "debuff_durationS_12_id_brittle",
               "stat_absorbMul_p0p15",
-              "stat_knockbackMul_0p15"
+              "stat_knockbackMul_0p15",
+              "debuff_durationS_1_id_knockdown"
             ]
           },
           "2": {
