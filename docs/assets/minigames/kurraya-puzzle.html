@@ -204,6 +204,7 @@ button:focus-visible { outline: 2px solid #f3e6c8; outline-offset: 2px }
     button?.classList.add('flash');
     setTimeout(() => button?.classList.remove('flash'),110);
     const midi = music.pitchFor(index,tuning);
+    if (!echoChallenge) post({type:'puzzle-note',noteIndex:index}); // Send physical player note events immediately, regardless of audio loading or songbook recognition.
     sampler.play(midi).then(played => {
       if (!played || serial !== playbackSerial) return; // A stale note never triggers a phantom instrument twitch.
       post({type:'sounded-note',performer:'lead',noteIndex:index,midi:midi});
