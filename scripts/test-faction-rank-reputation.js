@@ -9,6 +9,8 @@ const records = [
   { id:'alice', homeId:'unumanuk_household', scheduleHooks:{workBuildingId:'inn'} },
   { id:'bob', homeId:'unumanuk_household', scheduleHooks:{workBuildingId:'smithy'} },
   { id:'cora', homeId:'other_household', scheduleHooks:{workBuildingId:'inn'} },
+  { id:'dara', workBuildingId:'foundry' }, // Some authored NPCs declare their work affiliation without scheduleHooks.
+  { id:'eiko', workBuildingId:'foundry' }, // Must share group rank without inheriting Dara's personal Favor.
 ];
 const states = new Map(); // Runtime relationship ledger for all assertions.
 const favor = id => { if(!states.has(id))states.set(id,{favor:0,memory:[]}); return states.get(id); };
@@ -58,6 +60,11 @@ assert.equal(favor('bob').favor,11,'a reputational setback does not damage anoth
 assert.equal(balance.factionPoints(home),-49);
 assert.equal(balance.factionRank(home),-1,'bad standing has actual negative ranks');
 assert.equal(balance.gainMultiplierForNpc('bob'),.9,'negative rank slows positive gains');
+dialogue.adjustNpcFavor('dara',40,'commission');
+assert.equal(balance.factionRank('work:foundry'),1,'top-level workBuildingId also creates a shared ranked group');
+assert.equal(favor('eiko').favor,0,'same-workplace members do not duplicate commission Favor');
+dialogue.adjustNpcFavor('eiko',10,'commission');
+assert.equal(favor('eiko').favor,11,'top-level workplace rank multiplies gains for a different member');
 const saved = {npcRelationships: dialogue.npcRelationshipsSnapshot()}; // Existing member-scoped save boundary.
 assert.equal(saved.npcRelationships.__factions[home],-49,'independent group reputation is serialized in the world-member snapshot');
 dialogue.loadNpcRelationships(saved);
