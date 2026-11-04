@@ -242,6 +242,8 @@
     function stageCandidate(room){
       if(!room)return null;
       for(const state of states.values()){
+        if(state.linked.some(activator=>['ON','OFF'].includes(activator.userData?.bridgeCommand)))
+          continue; // A bridge toggle is preparatory hardware, not the final solution to the chamber's pressure-plate puzzle.
         for(const activator of state.linked){
           const pos=center(activator);
           if(pos.x>room.x+.25&&pos.x<room.x+room.w-.25
