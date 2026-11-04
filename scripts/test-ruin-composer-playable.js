@@ -145,15 +145,17 @@ const mkTile=walkable=>({type:walkable?'grass':'rock'});
   assert.equal(rec.scene.children.length,0,'wing geometry is detached from the game scene');
   wing.dispose(); // Idempotent: reroll and ruin exit may both request disposal.
   // The original Burden Plinth is separately authored from the long Key Statue defense plinth.
-  // A real pickup charge supplies it; completion (not mere placement) unlocks a bonus chest exactly once.
+  // Its own replenishable Key Statue dispenser supplies it; completion (not mere placement) unlocks a bonus chest exactly once.
   const bonusRec=makeRecord(),revealed=[];
   const bonus=await Playable.mount({rec:bonusRec,ruin:{theme:'hronal'},seed,archetype:'trialHall',burdenOffering:true,
     mapId:'map_i_dev_random_ruin',scope:'bonus_test',makeTile:mkTile,DynamicSurfaces,THREE,originX:3,originZ:24,
     addControl:control=>revealed.push(control),isCurrent:()=>true});
   assert(bonus.offering,'full trial can include the separately authored generic Burden Plinth');
   const offering=[...nodes.entries()].find(([id])=>id.startsWith('composed_offering_'));
-  assert(offering&&offering[1].group.userData.furniturePuzzle.requiredBurdenKind==='shattercask');
-  assert.equal(burdens.size,1,'a physical pickup Shattercask must spawn beside its plinth');
+  assert(offering&&offering[1].group.userData.furniturePuzzle.requiredBurdenKind==='keyStatue');
+  const feed=[...statuary.entries()].find(([id])=>id.startsWith('composed_offering_')&&id.endsWith('_dispenser')); // The bonus plinth owns a different statue source from the defense.
+  assert(feed&&feed[1].feedPlinthId===offering[0],'the short plinth is fed by its own replaceable dispenser');
+  assert(bonus.controls.some(control=>control.kind==='composed-offering-dispenser'),'the dispenser is accessible from the normal world interaction list');
   assert.equal(rewardChests.at(-1).group.visible,false,'reward starts genuinely hidden');
   assert.equal(bonus.update(),false,'merely registering a plinth does not unlock a chest');
   const action=bonus.controls.find(c=>c.kind==='composed-burden-offering');
@@ -163,7 +165,7 @@ const mkTile=walkable=>({type:walkable?'grass':'rock'});
   assert.equal(rewardChests.at(-1).group.visible,true);
   assert.equal(revealed.length,1);assert.equal(revealed[0].kind,'dungeonChest');
   bonus.dispose();
-  assert.equal(burdens.size,0,'ruin exit releases the physical optional Burden');
+  assert(!nodes.has(feed[0]),'ruin exit unregisters the bonus dispenser node');
   assert.equal(bonusRec.scene.children.length,0);
 
   // A defense-only vault is a separate generator archetype: no phantom chasm or inaccessible reward floor.
