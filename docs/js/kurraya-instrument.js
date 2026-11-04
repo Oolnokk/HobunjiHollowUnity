@@ -201,8 +201,17 @@
     const input = frameDocument?.getElementById('audioFile'); // Existing sampler import input owns decode, normalization, pitch analysis, markers, caching, and error handling.
     if (!frameDocument || !frameWindow || !bridge || !readout || !input) throw new Error('hosted sampler controls were not available');
 
-    try { await bridge.wakeAudio?.(); } catch {}
     const isFlute = audioAsset === FLUTE_AUDIO_ASSET; // Flute performances never read the Kurraya Music Lab's saved custom pluck.
+    let fluteResponse = null; // Resolve an absent optional flute file before attempting an autoplay-restricted AudioContext.resume().
+    if (isFlute) {
+      fluteResponse = await fetch(audioAsset.path);
+      if (fluteResponse.status === 404) {
+        sampleLog('flute recording not yet bundled; using MIDI flute fallback');
+        return; // The first real note gesture will wake audio; a suspended iframe load must not block the fallback.
+      }
+      if (!fluteResponse.ok) throw new Error(`sample fetch returned HTTP ${fluteResponse.status}`);
+    }
+    try { await bridge.wakeAudio?.(); } catch {}
     let customSample = null; // Holds the Music Lab's explicit replacement preference; unrelated sampler imports do not opt into gameplay.
     if (!isFlute) try { customSample = JSON.parse(localStorage.getItem(KURRAYA_CUSTOM_SAMPLE_KEY) || 'null'); } catch {}
     const preferredName = String(customSample?.name || KURRAYA_AUDIO_ASSET.filename); // Kurraya restores its saved source; flute skips the cache check and chooses its own audio asset.
@@ -220,8 +229,7 @@
       sampleLog(`custom Kurraya sample ${preferredName} was not restorable; reverting to bundled source`, 'warn');
     }
 
-    const response = await fetch(audioAsset.path); // Uses each instrument's authored source while sharing the existing note/chord sampler.
-    if (isFlute && response.status === 404) { sampleLog('flute recording not yet bundled; using MIDI flute fallback'); return; }
+    const response = fluteResponse || await fetch(audioAsset.path); // Flute preflight reuses its response; Kurraya retains the existing wake-then-fetch order.
     if (!response.ok) throw new Error(`sample fetch returned HTTP ${response.status}`);
     const blob = await response.blob(); // Preserves the M4A bytes while allowing the existing file-import handler to decode them normally.
     const file = new frameWindow.File([blob], audioAsset.filename, { type: blob.type || 'audio/mp4' }); // Makes the repo asset indistinguishable from a user-selected sample to the existing sampler pipeline.
