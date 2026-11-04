@@ -104,6 +104,73 @@
       description: 'Your thrown flasks and Shattercasks you throw, strike, or trigger through your own Shattercask chain gain 25% stronger impacts and 15% wider blast radii.',
       effects: { stats: { flaskPower: 1.25, flaskRadius: 1.15, shatterPower: 1.25, shatterRadius: 1.15 } },
     },
+    // ── Double-edged combat trinkets (definitions only; no acquisition source) ──
+    // Trade-offs consume 1-2 Attunement rather than the 2-3 of pure bonuses.
+    unstableBalance: {
+      id: 'unstableBalance', displayName: 'Unstable Balance', icon: '⚖️', attunementCost: 2,
+      category: 'combat', description: 'Your weapon hits deal 25% more Footing damage, but you receive 25% more Footing damage.',
+      effects: { stats: { outgoingFootingDamage: 1.25, incomingFootingDamage: 1.25 } },
+    },
+    glassFang: {
+      id: 'glassFang', displayName: 'Glass Fang', icon: '🦷', attunementCost: 2,
+      category: 'combat', description: 'Your direct weapon hits deal 40% more Health damage, but you receive 30% more Health damage.',
+      effects: { stats: { outgoingHealthDamage: 1.40, incomingHealthDamage: 1.30 } },
+    },
+    leadKnuckles: {
+      id: 'leadKnuckles', displayName: 'Lead Knuckles', icon: '✊', attunementCost: 2,
+      category: 'combat', description: 'Heavy weapon hits deal 60% more Footing damage, but heavy attacks cost 50% more Stamina.',
+      effects: { stats: { heavyFootingDamage: 1.60, heavyAttackStaminaCost: 1.50 } },
+    },
+    bloodrush: {
+      id: 'bloodrush', displayName: 'Bloodrush', icon: '🩸', attunementCost: 2,
+      category: 'combat', description: 'Weapon attacks are 35% faster, but attack Stamina costs are 35% higher.',
+      effects: { stats: { attackSpeed: 1.35, attackStaminaCost: 1.35 } },
+    },
+    ironAnchor: {
+      id: 'ironAnchor', displayName: 'Iron Anchor', icon: '⚓', attunementCost: 1,
+      category: 'combat', description: 'Receive 60% less knockback, but dodge travel is 40% shorter (invulnerability is unchanged).',
+      effects: { stats: { knockbackDistance: 0.40, dodgeTravel: 0.60 } },
+    },
+    hollowLungs: {
+      id: 'hollowLungs', displayName: 'Hollow Lungs', icon: '🫁', attunementCost: 2,
+      category: 'combat', description: 'Black-Stamina Exhaustion debt recovers 75% faster, but maximum Stamina is reduced by 25%.',
+      effects: { stats: { exhaustionRecovery: 1.75, maxStamina: 0.75 } },
+    },
+    falseCourage: {
+      id: 'falseCourage', displayName: 'False Courage', icon: '🛡️', attunementCost: 2,
+      category: 'combat', description: 'Receive 40% less Health damage, but 60% more Footing damage.',
+      effects: { stats: { incomingHealthDamage: 0.60, incomingFootingDamage: 1.60 } },
+    },
+    fracturedGuard: {
+      id: 'fracturedGuard', displayName: 'Fractured Guard', icon: '🪞', attunementCost: 2,
+      category: 'combat', description: 'Dodge invulnerability lasts 40% longer, but dodges cost twice as much Stamina.',
+      effects: { stats: { dodgeIframe: 1.40, dodgeStaminaCost: 2.00 } },
+    },
+    venomousBlood: {
+      id: 'venomousBlood', displayName: 'Venomous Blood', icon: '🐍', attunementCost: 2,
+      category: 'combat', description: 'Your weapon hits inflict 60% more affliction buildup, but affliction buildup on you is 40% greater.',
+      effects: { stats: { outgoingAffliction: 1.60, incomingAffliction: 1.40 } },
+    },
+    berserkersBargain: {
+      id: 'berserkersBargain', displayName: "Berserker's Bargain", icon: '💀', attunementCost: 2,
+      category: 'combat', description: 'Below 35% Health, your weapon hits deal 50% more damage, but you receive 50% less healing.',
+      effects: { stats: { lowHealthDamage: 1.50, lowHealthHealing: 0.50 } },
+    },
+    shatterheart: {
+      id: 'shatterheart', displayName: 'Shatterheart', icon: '💔', attunementCost: 2,
+      category: 'combat', description: 'Your weapon hits deal double Health damage to prone enemies, but your Footing regenerates 40% slower.',
+      effects: { stats: { proneTargetDamage: 2.00, footingRegen: 0.60 } },
+    },
+    deathsMomentum: {
+      id: 'deathsMomentum', displayName: "Death's Momentum", icon: '🗡️', attunementCost: 2,
+      category: 'combat', description: 'A credited enemy kill by you or your companion restores 40% of maximum Stamina (or 40 black-Stamina points while Exhausted), but ordinary Stamina regenerates 50% slower.',
+      effects: { stats: { killStaminaRestore: 0.40, ordinaryStaminaRegen: 0.50 } },
+    },
+    gamblersEye: {
+      id: 'gamblersEye', displayName: "The Gambler's Eye", icon: '🎯', attunementCost: 2,
+      category: 'combat', description: 'Your ranged weapon projectiles deal 60% more Health damage, but travel 35% slower.',
+      effects: { stats: { rangedDamage: 1.60, rangedProjectileSpeed: 0.65 } },
+    },
     harlyaoReachShard: {
       id: 'harlyaoReachShard', displayName: 'Harlyao Reach Shard', icon: '🦴', attunementCost: 1,
       source: 'harlyaoRuin', category: 'combat',
@@ -444,7 +511,7 @@
     for (const entry of equipped) lines.push(`• ${entry.def?.displayName || entry.id} — ${costOf(entry.id)}`);
     if (!equipped.length) lines.push('• (no trinkets equipped)');
     if (p) {
-      const mods = ['maxHealth', 'maxStamina', 'maxFooting', 'healthRegen', 'healthRegenInCombat', 'staminaRegen', 'footingRegen']
+      const mods = ['maxHealth', 'maxStamina', 'maxFooting', 'healthRegen', 'healthRegenInCombat', 'staminaRegen', 'footingRegen', 'outgoingHealthDamage', 'outgoingFootingDamage', 'incomingHealthDamage', 'incomingFootingDamage', 'attackSpeed', 'attackStaminaCost', 'heavyAttackStaminaCost', 'dodgeTravel', 'dodgeIframe', 'dodgeStaminaCost', 'exhaustionRecovery', 'ordinaryStaminaRegen', 'outgoingAffliction', 'incomingAffliction', 'lowHealthDamage', 'lowHealthHealing', 'proneTargetDamage', 'killStaminaRestore', 'rangedDamage', 'rangedProjectileSpeed']
         .map(key => [key, statMultiplier(p, key)]).filter(([, v]) => v !== 1).map(([k, v]) => `${k} ×${v.toFixed(2)}`);
       if (mods.length) lines.push(`Stat mods: ${mods.join(', ')}`);
     }
