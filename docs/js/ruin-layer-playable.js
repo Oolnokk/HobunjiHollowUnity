@@ -116,15 +116,25 @@
         }),{minX:Infinity,maxX:-Infinity,minZ:Infinity,maxZ:-Infinity});
         const grid=CG.create({originX:localBounds.minX-1,originZ:localBounds.minZ-1,baseY:floor.y,
           cols:localBounds.maxX-localBounds.minX+3,rows:localBounds.maxZ-localBounds.minZ+3,levels:3});
-        grid.fillBox(0,0,0,grid.cols-1,grid.rows-1,2,CG.KIND.SOLID); // Side walls and top stop 2D actors walking through the void.
-        for(const [x,z] of walkCells){
-          grid.fillBox(grid.xToCol(x+.5),grid.zToRow(z+.5),0,
-            grid.xToCol(x+.5),grid.zToRow(z+.5),1,CG.KIND.AIR);
-          added.add(key(x,z));
-        }
-        // The portal tile overlaps the real shaft grid. Its inward face is
-        // intentionally open; all other unoccupied room edges form actual walls.
         const side=SIDES[wing.side],entryKey=key(wing.entry.x,wing.entry.z);
+        // A thin voxel boundary matches the actually drawn stone walls.
+        // Filling the entire room's rectangular allocation with SOLID created
+        // enormous INVISIBLE walls/roofs that swallowed projectiles passing
+        // through perfectly open gaps beside winding corridors.
+        const border=new Set(); // Outside neighbors of real walkable cells, never whole empty rectangle.
+        for(const [x,z] of walkCells){
+          added.add(key(x,z));
+          for(const [dx,dz] of [[1,0],[-1,0],[0,1],[0,-1]]){
+            if(tiles.has(key(x+dx,z+dz)))continue;
+            if(key(x,z)===entryKey&&dx===-side.dx&&dz===-side.dz)continue; // Open the direct shaft-to-wing portal.
+            border.add(key(x+dx,z+dz));
+          }
+        }
+        for(const next of border){
+          const [x,z]=next.split(',').map(Number),c=grid.xToCol(x+.5),r=grid.zToRow(z+.5);
+          grid.fillBox(c,r,0,c,r,1,CG.KIND.SOLID); // Exactly two wall cells tall; no invisible ceiling.
+        }
+        // The wing portal shares the shaft's outward threshold on the proper story; avoid closing its inward face.
         const wallsX=[],wallsZ=[];
         for(const [x,z] of walkCells){
           if(!tiles.has(key(x-1,z))&&!(key(x,z)===entryKey&&side.dx===1))wallsZ.push([x,z+.5]);
