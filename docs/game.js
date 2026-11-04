@@ -7138,6 +7138,11 @@
             beginEnemySearch(c, targetPlayer);
           }
           if (c.state === 'return' && distFromHome < TILE * 0.6) c.state = 'idle';
+          // Scent-marked opponents take priority without bypassing wild animals' existing
+          // aggro, leash, perception or attack-commitment rules.
+          window.AnimalScentTargeting?.prioritizeWild?.(
+            c, players, companionObjects, currentArea, opponent => enemyCanSeeTarget(c, opponent, def.aggroRangePx)
+          );
           if (window.VoorgAssRearKick?.isHoldingKickPose?.(c)) {
             c.state = 'chase'; // Preserve the already-fired rear-kick freeze through the one-second impact pose even if its target died or fled outside the leash.
           }
@@ -8794,6 +8799,11 @@
               }
             }
           }
+          if (isBanditCompanion) {
+            target = window.AnimalScentTargeting?.prioritizeEnemyCompanion?.(
+              c, master, player, companionObjects, currentArea, ALERT_RANGE_PX, target
+            ) || target; // Enemy pets focus marked opponents until the mark has been spent.
+          }
           // Sicced (weapon Flourish, js/combat/combat-enchantments.js) makes
           // one living marked enemy the player companion's exclusive target,
           // overriding the proximity pick above until no Sicced enemy lives.
@@ -8947,7 +8957,7 @@
                         strikeS: BITE_TELEGRAPH_STRIKE_S,
                         onStrike: () => {
                           if (target.health > 0 && Math.hypot(target.x - c.x, target.y - c.y) <= def.attackRangePx) {
-                            const damageOptions = { tag: def.attackTag || 'sharp', afflictionBonuses: window.ResourceSystem?.afflictionBonusesForTag(def.attackTag) }; // Used by either faction's fallback bite damage route.
+                            const damageOptions = { tag: def.attackTag || 'sharp', afflictionBonuses: window.ResourceSystem?.afflictionBonusesForTag(def.attackTag), attacker: c }; // Fallback animal bites retain their attacker identity for scent spending and debuff attribution.
                             if (target === player) damagePlayer(def.attackDamage, c.x, c.y, COMPANION_BITE_KNOCKBACK_PX_S, damageOptions);
                             else if (window.CompanionOffense) window.CompanionOffense.damageCreature(damageCreature, c, target, def.attackDamage, c.x, c.y, COMPANION_BITE_KNOCKBACK_PX_S, damageOptions); // Shared Whistle/Sicced companion empowerment (js/combat/companion-offense.js).
                             else damageCreature(target, def.attackDamage, c.x, c.y, COMPANION_BITE_KNOCKBACK_PX_S, damageOptions);
