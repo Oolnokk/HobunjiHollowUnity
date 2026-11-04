@@ -31,18 +31,24 @@
   const rng = seed => { let a = (seed >>> 0) || 1; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; };
 
   const DEFAULTS = Object.freeze({
-    shaft: 7,        // interior width/depth in cells (odd, so a door sits on the centre line)
+    shaft: 33,       // Comparable to V50's largest chambers (very-large = up to 26 x 36 cells).
     wall: 3,         // thickness of the shell
-    balconies: 3,    // 1..3, one per side; the fourth side is the entrance
+    balconies: 3,    // Four floors by default: entrance floor plus three upper landings.
     spacing: 4,      // levels between balcony floors (>= 3 so each has 2 cells of headroom above it)
     depth: 2,        // how far a balcony reaches into the shaft
     length: 3,       // how wide a balcony is (odd)
+    floors: 4,       // 3–5 physical stories; higher floors remain part of one continuous shaft.
+    octagon: true,   // Both the visible exterior and inner void have chamfered corners.
+    entranceSide: 'N', // The integrated ruin joins via a corridor at ground level.
     climbStyle: 'holds',
     landings: false, // Reserve an enclosed chamber at the end of each balcony corridor.
     chambers: false, // Extend landings into seeded side rooms for the V50 wing.
     seed: 1,
     originX: 0, originZ: 0, baseY: 0,
   });
+
+  // A clipped square, using four straight sides and four 45-degree corners.
+  const inOctagon = (c,r,lo,hi,cut) => c>=lo&&r>=lo&&c<=hi&&r<=hi&&c+r>=2*lo+cut&&c+r<=2*hi-cut&&c-r<=hi-lo-cut&&r-c<=hi-lo-cut;
 
   // Cells of a side's buttress, its door tunnel and the front row (the climbable one), in grid coordinates.
   function sideGeometry(side, o, cols, rows) {
@@ -72,19 +78,28 @@
     const o = { ...DEFAULTS, ...options };
     if (o.chambers) o.landings = true;
     o.wall = Math.max(o.chambers ? 8 : o.landings ? 5 : 1, o.wall | 0);
-    o.shaft = Math.max(5, o.shaft | 0 | 1);             // odd, at least 5
+    o.shaft = Math.max(o.octagon ? 17 : 5, o.shaft | 0 | 1); // Octagons need room for large platforms.
     o.length = Math.min(o.shaft - 2, Math.max(1, o.length | 0 | 1)); // odd and leaving open corners
-    o.balconies = Math.max(1, Math.min(3, o.balconies | 0));
+    o.floors = Math.max(3, Math.min(5, o.floors | 0));
+    o.balconies = o.octagon ? o.floors - 1 : Math.max(1, Math.min(3, o.balconies | 0));
     o.spacing = Math.max(3, o.spacing | 0);
     o.depth = Math.max(1, Math.min(o.depth | 0, (o.shaft - 1) / 2 - Math.floor(o.length / 2))); // buttresses on neighbouring sides must not run into each other
     const cols = o.shaft + 2 * o.wall, rows = cols, topStand = o.spacing * o.balconies, levels = topStand + 3;
     const grid = G.create({ cols, rows, levels, originX: o.originX, originZ: o.originZ, baseY: o.baseY });
     const random = rng(o.seed), turn = Math.floor(random() * 4);
     const sides = [0, 1, 2, 3].map(i => SIDES[(i + turn) % 4]);
-    const balconySides = sides.slice(0, o.balconies), entranceSide = sides[3];
+    const balconySides = sides.slice(0, o.balconies), entranceSide = o.octagon ? o.entranceSide : sides[3];
 
     grid.fillBox(0, 0, 0, cols - 1, rows - 1, levels - 1, KIND.SOLID);                       // the whole mass...
-    grid.fillBox(o.wall, o.wall, 0, o.wall + o.shaft - 1, o.wall + o.shaft - 1, levels - 2, KIND.AIR); // ...hollowed to a shaft under a ceiling
+    grid.fillBox(o.wall, o.wall, 0, o.wall + o.shaft - 1, o.wall + o.shaft - 1, levels - 2, KIND.AIR); // ...hollowed under a ceiling.
+    if (o.octagon) {
+      const innerCut = Math.floor(o.shaft * .19), outerCut = innerCut + o.wall;
+      for (let r=0;r<rows;r++) for (let c=0;c<cols;c++) {
+        if (!inOctagon(c,r,0,cols-1,outerCut)) grid.fillBox(c,r,0,c,r,levels-1,KIND.AIR); // Clip exterior corners.
+        else if (c>=o.wall && r>=o.wall && c<o.wall+o.shaft && r<o.wall+o.shaft &&
+                 !inOctagon(c,r,o.wall,o.wall+o.shaft-1,innerCut)) grid.fillBox(c,r,0,c,r,levels-2,KIND.SOLID); // Eight-sided internal walls.
+      }
+    }
     const balconies = [], doors = [];
     balconySides.forEach((side, k) => {
       const level = o.spacing * (k + 1), geo = sideGeometry(side, o, cols, rows);
@@ -113,10 +128,15 @@
     // ground entrance: same tunnel, level 0
     const eg = sideGeometry(entranceSide, { ...o, depth: 1 }, cols, rows);
     for (const cell of eg.tunnel) grid.fillBox(cell.c, cell.r, 0, cell.c, cell.r, 1, KIND.AIR);
+    // A fifth floor can put an upper buttress on the entrance side. Re-open its central ground passage.
+    const entryButtress = sideGeometry(entranceSide,o,cols,rows);
+    for (const cell of entryButtress.buttress) if ((entranceSide==='N'||entranceSide==='S'?cell.c:cell.r)===entryButtress.mid)
+      grid.fillBox(cell.c,cell.r,0,cell.c,cell.r,1,KIND.AIR);
     const entrance = { side: entranceSide, level: 0, col: eg.edge.c, row: eg.edge.r, inside: eg.tunnel[0], outward: OUTWARD[entranceSide] };
 
     const surfaces = grid.collectClimbSurfaces();
-    const result = { ok: false, options: o, grid, cols, rows, levels, balconies, doors, entrance, surfaces, checks: [] };
+    const result = { ok: false, options: o, grid, cols, rows, levels, balconies, doors, entrance, surfaces, checks: [],
+      stories: Array.from({length:o.balconies+1},(_,floor)=>({floor,level:floor*o.spacing,balconies:balconies.filter(b=>b.level===floor*o.spacing)})) }; // Level map for a subsequent wing composer.
     result.checks = verify(result);
     result.ok = result.checks.every(c => c.ok);
     return result;
@@ -193,15 +213,19 @@
       if (grid.isSolid(c,r,l) && faces.some(([dc,dr,dl]) =>
         !grid.inBounds(c+dc,r+dr,l+dl) || !grid.isSolid(c+dc,r+dr,l+dl))) exposed.push([c,r,l]);
     }
-    const material = new THREE.MeshBasicMaterial({ color: 0x57534d });
+    const material = globalThis.ProceduralFurniture?.makePartMaterial?.({materialTexture:'carved_smooth.png',materialLighting:'unlit',materialFillMode:'never',color:'#7a746b'}) || new THREE.MeshBasicMaterial({color:0x7a746b}); // Exactly the same unlit ruin stone as V50 walls.
     const blocks = new THREE.InstancedMesh(new THREE.BoxGeometry(grid.cellSize,grid.cellHeight,grid.cellSize),material,exposed.length);
     const matrix = new THREE.Matrix4(); // Reused across all exposed solid cells.
     exposed.forEach(([c,r,l],i) => blocks.setMatrixAt(i,matrix.makeTranslation(
       grid.colToX(c+.5),grid.levelToY(l+.5),grid.rowToZ(r+.5))));
     shell.add(blocks);
-    const floor = new THREE.Mesh(new THREE.BoxGeometry(grid.cols*grid.cellSize,.1,grid.rows*grid.cellSize),material);
-    floor.position.set(grid.colToX(grid.cols/2),grid.baseY-.05,grid.rowToZ(grid.rows/2));
-    shell.add(floor);
+    const floorCells=[]; // No rectangular floor visible under the clipped octagon.
+    const lo=result.options.wall,hi=lo+result.options.shaft-1,cut=Math.floor(result.options.shaft*.19);
+    for(let r=0;r<grid.rows;r++) for(let c=0;c<grid.cols;c++)
+      if(grid.canStand(c,r,0)&&(!result.options.octagon||inOctagon(c,r,lo,hi,cut)||result.entrance.side==='N'&&c===result.entrance.col&&r<lo||result.entrance.side==='S'&&c===result.entrance.col&&r>hi||result.entrance.side==='W'&&r===result.entrance.row&&c<lo||result.entrance.side==='E'&&r===result.entrance.row&&c>hi)) floorCells.push([c,r]);
+    const floor=new THREE.InstancedMesh(new THREE.BoxGeometry(grid.cellSize,.1,grid.cellSize),material,floorCells.length);
+    floorCells.forEach(([c,r],i)=>floor.setMatrixAt(i,matrix.makeTranslation(grid.colToX(c+.5),grid.baseY-.05,grid.rowToZ(r+.5))));
+    floor.name='shaft-hub-octagonal-floor'; shell.add(floor);
     if (climb?.buildVisual) for (const surface of result.surfaces) shell.add(climb.buildVisual(THREE,surface));
     return shell;
   }
