@@ -113,10 +113,23 @@ async function updateThreePreview(){
     frameRuntimeRig();
     const cloud=R.speciesCfg.get(E.species.value)?.[E.gender.value]?.portraitOpacityMaskLayer?.url?'arm-cut mask source':'no arm-cut mask source'; // Full-portrait cloud masking was removed from the game.
     const handState=model.userData?.proceduralHandRig?'hands attached':'hands queued';
+    // Commit the paired preview only after the new 3D rig is ready. The 2D
+    // canvas now uses these exact composited front pixels instead of rebuilding
+    // a differently tinted, layered character from raw PNGs.
+    R.three.matchedFront2D={
+      canvas:projectRuntimeFrontToFittingCanvas(avatar.frontComposed),
+      buildGeneration:buildId,
+      assetGeneration:R.assetGeneration,
+      species:E.species.value,
+      gender:E.gender.value
+    };
+    render(false); // Paint the synchronized 2D texture without scheduling a recursive 3D rebuild.
     E.threeStatus.textContent=`Target: ${E.species.value} ${E.gender.value} • Source: ${E.sourceSpecies.value} ${E.sourceGender.value} • Runtime rig: portrait + neck + ${handState} + feet + ${cloud} + garment preset B${R.extendedGroup?' + extended overlay':''}.`;
   }catch(error){
     if(buildId!==R.three.buildGeneration)return;
-    console.error(error);E.threeStatus.textContent=`Target ${E.species.value} ${E.gender.value}: runtime rig failed: ${error.message}`;log('3D RUNTIME ERROR '+error.message);
+    console.error(error);E.threeStatus.textContent=`Target ${E.species.value} ${E.gender.value}: runtime rig failed: ${error.message}`;
+    if(E.match3D.checked)E.match3DStatus.textContent='Game-matched portrait unavailable; showing raw artwork. '+error.message;
+    log('3D RUNTIME ERROR '+error.message);
   }
 }
 function scheduleThreePreview(delay=90){
