@@ -52,7 +52,7 @@
     parent.add(group);
     return ()=>{group.parent?.remove(group);group.traverse(node=>node.geometry?.dispose?.());floorMat.dispose();wallMat.dispose();};
   }
-  function connect({rec,ruin,seed,meta,pad=2,tileScale=2,THREE,makeTile,DynamicSurfaces:DS,ShaftHub,ClimbSurfaces,DevRandomRuin,TileOccupancy,RuinLayerPlan,RuinShaftCorridor,RuinLayerPlayable,CellGrid3D,getPlayerPosition,getPlayerY}={}){
+  function connect({rec,ruin,seed,meta,pad=2,tileScale=2,THREE,makeTile,DynamicSurfaces:DS,ShaftHub,ClimbSurfaces,DevRandomRuin,TileOccupancy,RuinLayerPlan,RuinShaftCorridor,RuinLayerPlayable,CellGrid3D,getPlayerPosition,getPlayerY,showToast,onStateChange}={}){
     if(!rec||!ruin||!meta||!THREE||!DS||!ShaftHub||!RuinLayerPlan||!RuinShaftCorridor||!RuinLayerPlayable||!CellGrid3D||!makeTile)
       throw new Error('Shaft connector dependencies are incomplete.');
     const spacing=64; // Snap multi-story anchors far apart; floor room networks fill the open cells.
@@ -127,7 +127,7 @@
     const registered=ShaftHub.mount(placed,{THREE,parent:rec.scene,ClimbSurfaces,DynamicSurfaces:DS,DevRandomRuin});
     const layerRuntime=RuinLayerPlayable.mount({
       rec,ruin,plan,hub:placed,makeTile,THREE,DynamicSurfaces:DS,CellGrid3D,
-      RuinShaftCorridor,DevRandomRuin,getPlayerPosition,getPlayerY
+      RuinShaftCorridor,DevRandomRuin,getPlayerPosition,getPlayerY,showToast,onStateChange
     }); // Mounts 1–4 stone puzzle wings and one interactive brazier per story-side.
     ruin.shaftLayerRuntime=layerRuntime;
     const active=layerRuntime.getState();
