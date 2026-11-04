@@ -266,6 +266,9 @@
           const vegetationCleared = deps.clearVegetationInAttackCone?.(deps.player.x, deps.player.y, deps.player.angle, rangePx, halfConeRad) || 0; // Used for accurate hit feedback when the cone only cuts growth.
           let hits = 0, lastName = '';
           const ordinaryHitTargets = new Set(); // Used after the ordinary hit loop so Living Gust can affect only the widened peripheral cone without duplicating normal damage.
+          const landedTargets = new Set(); // Used to advance ONLY actually connected hits, not geometric overlaps during an iframe dodge.
+          let specialProcs = 0; // Per-strike count for sound feedback and mobile diagnostics.
+          const bonusPower = Math.max(0, Number(window.Combat.quickAttackData?.BONUS_EFFECT_POWER_MULTIPLIER) || 2); // Share Quick Attack bonus strength, including authored tuning.
           for (const c of deps.hostileObjects) {
             if (c.health <= 0 || c.areaId !== deps.getCurrentArea()) continue;
             if (!window.Combat.meleeHit(deps.player, c, {
@@ -273,9 +276,24 @@
               yaw: deps.player.angle,
               pitch: deps.getPlayerMeleeAimPitch?.() || 0,
             })) continue;
+            if (Number(c.invulnUntil) > performance.now()) continue; // A dodged/iframe-blocked opener cannot seed a finisher.
+            const specialProc = isFinisher && qualifiedTargets.has(c); // Third hit must reconnect with the same enemy that took both openers.
             const vulnerabilityBefore = isFinisher ? powerHitVulnerabilityTotal(c) : 0; // Used before this hit's own affliction payload can replace consumed buildup.
             const healthBefore = Math.max(0, Number(c.health) || 0); // Used to report post-mitigation damage to Mirrored Health and other post-hit observers.
-            deps.damageCreature(c, damage, deps.player.x, deps.player.y, knockbackPxS, {
+            const pronePower = window.ResourceSystem?.getProneAttackMultiplier?.(c) ?? 1; // Snapshot before a possible Knockdown so the proc cannot empower itself.
+            const hitAfflictions = { ...attackAfflictions }; // Never contaminate unqualified Cleave/Long Lunge targets with bonus effects.
+            if (specialProc) {
+              for (const [effectId, amount] of Object.entries(finisherEffects?.quickBonusAfflictions || {})) {
+                hitAfflictions[effectId] = (hitAfflictions[effectId] || 0) + amount * (attackContext.modifiers?.affliction || 1) * bonusPower;
+              }
+              for (const effect of finisherEffects?.quickBonusInstantEffects || []) if (effect.id === 'bleedout') {
+                const amount = Math.max(0, (Number(effect.amount) || 0) * (Number(effect.power) || 1) * bonusPower * pronePower); // Same pre-hit Bleedout calculation as conditional Quick Attacks.
+                window.ResourceSystem?.bleedOut?.(c, amount, { source: 'Combo: Special Finisher' });
+              }
+            }
+            const actualDamage = specialProc ? Math.round(damage * SPECIAL_FINISHER_DAMAGE_MULTIPLIER * (1 + (finisherStats.damageMul || 0))) : damage; // Unqualified targets retain normal third-hit damage.
+            const actualKnockback = specialProc ? knockbackPxS * Math.max(0, 1 + (finisherStats.knockbackMul || 0)) : knockbackPxS;
+            deps.damageCreature(c, actualDamage, deps.player.x, deps.player.y, actualKnockback, {
               abilityId: id, // Identifies the committed hit for authored training objectives.
               tag: dmgType,
               heavy: step.heavy,
@@ -287,22 +305,40 @@
               // already on the target (so stacks can climb past 1).
               appliesDeathMark: step.heavy,
               consumeHealthVulnerability: isFinisher,
-              afflictionBonuses: attackAfflictions,
+              afflictionBonuses: hitAfflictions,
+              specialComboFinisher: specialProc, // Distinguishes the qualified bonus from the ordinary heavy third hit.
             });
+            if (specialProc && c.health > 0) for (const debuff of finisherEffects?.quickBonusDebuffs || []) {
+              window.ResourceSystem?.applyTimedDebuff?.(c, debuff.id, debuff.durationS, {
+                power: (Number(debuff.power) || 1) * (debuff.id === 'knockdown' ? 1 : bonusPower) * pronePower,
+                fromX: deps.player.x, fromY: deps.player.y,
+                source: 'Combo: Special Finisher',
+              }); // Reuse existing timed-debuff stacking, including additive Knockdown durations.
+            }
             ordinaryHitTargets.add(c);
+            landedTargets.add(c);
             window.CombatAttackEvents?.hit?.(attackContext, {
               target: c,
               actualDamage: Math.max(0, healthBefore - (Number(c.health) || 0)),
-              afflictionBonuses: attackAfflictions,
+              afflictionBonuses: hitAfflictions,
               comboStep: comboStep + 1,
               comboFinisher: isFinisher,
+              comboSpecialFinisher: specialProc, // Cross-cutting observers can distinguish an earned special from ordinary Cleave/Long Lunge.
             });
-            const impactSize = isFinisher && vulnerabilityBefore > 0 ? 'huge' : ['small', 'medium', 'large'][comboStep]; // A finisher escalates only when it actually had vulnerability available to consume.
+            const impactSize = specialProc || (isFinisher && vulnerabilityBefore > 0) ? 'huge' : ['small', 'medium', 'large'][comboStep]; // A finisher escalates only when it actually had vulnerability available to consume.
             deps.playWeaponHitSfx?.(dmgType, c.x, c.y, c.areaId, sfxPitch, impactSize);
+            if (specialProc) { specialProcs++; window.AudioSystem?.playQuickAttackBonusSfx?.(c.x, c.y, c.areaId); } // Distinct impact cue for earned specials.
             hits++;
             lastName = c.def.label;
           }
           window.EnchantmentSystem?.applyPeripheralGust?.(attackContext, ordinaryHitTargets);
+          if (comboStep === 0) firstHits = landedTargets; // A miss clears step-one eligibility even if a previous sequence hit.
+          else if (comboStep === 1) secondHits = landedTargets;
+          else {
+            window.Combat.comboData.lastSpecialFinisher = { comboId: id, weaponKey, qualifiedTargets: qualifiedTargets.size, specialProcs, ordinaryHits: hits - specialProcs, at: performance.now() }; // Copyable mobile diagnostics.
+            firstHits.clear();
+            secondHits.clear();
+          }
           const msg = hits > 0
             ? (hits > 1 ? `${step.name}: hit ${hits} creatures!` : `${step.name}: hit the ${lastName}!`)
             : vegetationCleared > 0
@@ -318,7 +354,7 @@
           }
         },
         onComplete: () => { busyAction = null; },
-        onCancel: () => { busyAction = null; },
+        onCancel: () => { busyAction = null; comboIndex = 0; firstHits.clear(); secondHits.clear(); lastTapAt = -99; }, // A stagger/cancel cannot preserve earned setup hits.
         data: {
           comboId: id, comboStep, sfxPitch,
           meleeThreat: window.Combat.playerMeleeThreat(rangePx, halfConeRad, {
