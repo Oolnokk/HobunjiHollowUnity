@@ -40,7 +40,8 @@
   document.write('<script src="js/dev-random-ruin-dungeon-chests.js?v=20261101hachutuchests2"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-ceiling-target-visuals.js?v=20261018targethum1"></scr' + 'ipt>'); // Reused, connected stone block + four glowing decals, for fixed and moving overhead targets.
   if (!window.RopeCore) document.write('<script src="js/rope-core.js?v=1"></scr' + 'ipt>'); // The ruin rope runtime delegates its swing math to RopeCore (also loaded by index.html for other rope users).
-  document.write('<script src="js/dev-random-ruin-simple-puzzles.js?v=20261104ocarina1"></scr' + 'ipt>');
+  document.write('<script src="js/ruin-melody-glyph-decal.js?v=20261104scratchbone1"></scr' + 'ipt>'); // Procedural, non-interactive floor inscription for each generated melody.
+  document.write('<script src="js/dev-random-ruin-simple-puzzles.js?v=20261104scratchbone1"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-rope-rewards.js?v=20261016hd25cc1c"></scr' + 'ipt>'); // Registers rope payoffs + lava basins as a simple-puzzle composer.
   document.write('<script src="js/dev-random-ruin-rope-variants.js?v=20261016ropevariants1"></scr' + 'ipt>'); // Pump-to-height and rope-to-rope standalone rope rooms.
   document.write('<script src="js/dev-random-ruin-rail-targets.js?v=20261018sconceaudit2"></scr' + 'ipt>'); // Ceiling-rail projectile targets that emerge from the walls while the player is in their room.
