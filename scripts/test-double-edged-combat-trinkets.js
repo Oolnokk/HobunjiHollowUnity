@@ -35,11 +35,18 @@ player.footing=100;R.spendFooting(player,20);assert.equal(player.footing,75);unw
 u=wear('glassFang');let h=hit({afflictionBonuses:{bruisedHealth:.4}});
 assert.equal(h.amount,14);assert(Math.abs(h.options.footingDamageMultiplier-1/1.4)<1e-8);
 assert(Math.abs(h.options.afflictionBonuses.bruisedHealth-.4/1.4)<1e-8);
-player.health=100;R.applyDamage(player,10);assert.equal(player.health,87);unwear(u);
+player.health=100;R.applyDamage(player,10);assert.equal(player.health,87);
+assert.equal(hit({environmentalImpact:true}).amount,10,'Environmental collision damage must not inherit wearer bonuses');
+unwear(u);
 u=wear('leadKnuckles');assert.equal(hit({heavy:true}).options.footingDamageMultiplier,1.6);
 assert.equal(hit({heavy:false}).options.footingDamageMultiplier,1);
 player.stamina=100;R.spendStamina(player,10,'Forehand Swing',{actionKind:'combatCombo',heavy:true});
-assert.equal(player.stamina,85);unwear(u);
+assert.equal(player.stamina,85);
+player.stamina=100;R.spendStamina(player,10,'Thrown charge',{actionKind:'offensiveHeldCharge',abilityId:'thrownWeapon'});
+assert.equal(player.stamina,90,'Lead Knuckles must not tax a thrown weapon charge');
+player.stamina=100;R.spendStamina(player,10,'Charged Breaker',{actionKind:'offensiveHeldCharge',abilityId:'chargedBreaker'});
+assert.equal(player.stamina,85,'Lead Knuckles must tax melee-heavy hold charges');
+unwear(u);
 u=wear('bloodrush');assert.equal(E.attackSpeed(),1.35);
 player.stamina=100;R.spendStamina(player,10,'Forehand Swing',{actionKind:'combatCombo'});
 assert.equal(player.stamina,86.5);
@@ -83,7 +90,29 @@ player.exhaustion.active=false;player.exhaustion.blackStamina=100;unwear(u);
 u=wear('gamblersEye');assert.equal(hit({ranged:true,rangedItemKey:'crossbow'}).amount,16);
 assert.equal(hit({ranged:false}).amount,10);
 assert.equal(hit({ranged:true,rangedItemKey:'crossbow',attacker:{}}).amount,10);
-assert.equal(R.statModifier(player,'rangedProjectileSpeed'),.65);unwear(u);
+assert.equal(R.statModifier(player,'rangedProjectileSpeed'),.65);
+// Game initializes RangedWeapons and Combat with different deps objects.
+// Test the production projectile-impact statements rather than mocking the
+// correct central Combat route and assuming RangedWeapons invokes it.
+const rangedCode=read('docs/js/combat/ranged-weapons.js'); // Source of the real player-shot callback statements.
+const impactMarker='const playerDamageCreature = window.Combat?.deps?.damageCreature || deps.damageCreature;';
+const impactStart=rangedCode.indexOf(impactMarker); // Finds the live impact site.
+assert(impactStart>=0,'player shots must use live Combat.deps callback');
+const impactEnd=rangedCode.indexOf('applySpecialAmmoDebuff(c, p.specialAmmoId);',impactStart); // Excludes ammo post-hit routines.
+assert(impactEnd>impactStart,'player projectile hit must invoke selected callback');
+const rangedImpactStatements=rangedCode.slice(impactStart,impactEnd); // Executable real player-shot route.
+const target={health:100,prone:false}; // Creature the separate ranged module just hit.
+let rawRangedCalls=0; // Tracks accidental calls to the unmodified independent callback.
+const rangedDeps={player,damageCreature(){rawRangedCalls++;}}; // Independent RangedWeapons.init injection.
+const projectile={prevX:150,prevY:170,itemKey:'crossbow',ammoId:null,afflictionBonuses:{},footingDamageMultiplier:0}; // Shot is far from the player's position.
+calls.length=0;
+vm.runInNewContext(rangedImpactStatements,{window:w,deps:rangedDeps,c:target,damage:10,
+  p:projectile,knockbackPxS:0}, {filename:'ranged-weapons.js player projectile impact excerpt'});
+assert.equal(rawRangedCalls,0,'player shot must not bypass combat modifiers');
+assert.equal(calls.length,1,'player projectile reaches Combat.damageCreature');
+assert.equal(calls[0].amount,16,"The Gambler's Eye must boost real projectile damage");
+assert.equal(calls[0].options.attacker,player,'player projectile carries explicit source');
+unwear(u);
 assert(read('docs/js/combat/ranged-weapons.js').includes("team === 'player' ? (window.DoubleEdgedCombatTrinkets?.modifier?.('rangedProjectileSpeed') || 1) : 1"));
 assert(read('docs/index.html').includes('src="js/combat/double-edged-combat-trinkets.js?'));
 console.log('13 double-edged combat trinkets: effects, equip/unequip and zero loot sources passed');
