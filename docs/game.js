@@ -26941,7 +26941,7 @@
             const consumeAction = window.HobunjiDrunkGameplayBridge?.getHeldItemAction?.();
             if (consumeAction) return [consumeAction];
             if (heldItem && ITEM_DEFS[heldItem.key]?.isCookedFood) return [{ icon: '🍲', label: `Eat ${ITEM_DEFS[heldItem.key].label}`, action: 'consume_food_item', style: 'primary', allowed: (inventory[heldItem.key] || 0) > 0 }];
-            if (heldItem && ITEM_DEFS[heldItem.key]?.isInstrument) return [{ icon: '🎵', label: 'Play', action: 'play_instrument', style: 'primary', allowed: !!window.MusicMinigame?.getEquippedInstrument?.() }]; // Playing requires the Instrument gear slot (bag copies must be transferred first).
+            if (heldItem && TOOL_ITEM_DEFS[heldItem.key]?.slots?.includes('instrument')) return [{ icon: '🎵', label: 'Play', action: 'play_instrument', style: 'primary', allowed: !!window.MusicMinigame?.getEquippedInstrument?.() }]; // Playing requires the Instrument gear slot (bag copies must be transferred first).
           }
           return [];
         }
@@ -27108,7 +27108,7 @@
         const consumeAction = window.HobunjiDrunkGameplayBridge?.getHeldItemAction?.();
         if (!flaskActions.length && consumeAction) btns.unshift(consumeAction);
         else if (heldItem && ITEM_DEFS[heldItem.key]?.isCookedFood) btns.unshift({ icon: '🍲', label: `Eat ${ITEM_DEFS[heldItem.key].label}`, action: 'consume_food_item', style: 'primary', allowed: (inventory[heldItem.key] || 0) > 0 });
-        else if (heldItem && ITEM_DEFS[heldItem.key]?.isInstrument) btns.unshift({ icon: '🎵', label: 'Play', action: 'play_instrument', style: 'primary', allowed: !!window.MusicMinigame?.getEquippedInstrument?.() });
+        else if (heldItem && TOOL_ITEM_DEFS[heldItem.key]?.slots?.includes('instrument')) btns.unshift({ icon: '🎵', label: 'Play', action: 'play_instrument', style: 'primary', allowed: !!window.MusicMinigame?.getEquippedInstrument?.() });
         else if (heldItem && heldItem.key === 'campfireKitFurniture') btns.unshift({ icon: '🔥', label: 'Set Up Campfire', action: 'place_campfire_kit', style: 'primary', allowed: !!window.WildernessCampfire?.supportsArea?.(currentArea) && (inventory[heldItem.key] || 0) > 0 });
 
         // 2. Context: Plant button if selected item is a seed and tile can accept it
@@ -30155,7 +30155,8 @@
 
       window.MusicMinigame?.init({
         refreshActionBar,
-        getEquippedInstrument: () => gearInventory?.tools?.[equipmentSlots.instrument] && ITEM_DEFS[equipmentSlots.instrument]?.isInstrument ? equipmentSlots.instrument : null,
+        getLastInputDevice: () => lastInputDevice,
+        getEquippedInstrument: () => gearInventory?.tools?.[equipmentSlots.instrument] && TOOL_ITEM_DEFS[equipmentSlots.instrument]?.slots?.includes('instrument') ? equipmentSlots.instrument : null,
         getCurrentArea: () => currentArea,
         listInstrumentPerformers,
         getNpcFootstepSampleUrl: npcFootstepSampleUrl,

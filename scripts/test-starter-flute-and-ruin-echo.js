@@ -97,22 +97,22 @@ async function testMidiFallback() {
 
 async function testIframeEchoInput() {
   const html=read('docs/assets/minigames/kurraya-puzzle.html');
-  const embedded=html.match(/<script>\s*([\s\S]*?)<\/script>/)?.[1]; // Execute the shipped five-note iframe itself, not a simplified imitation.
-  assert(embedded,'five-note puzzle iframe must contain its playable script');
+  const embedded=html.match(/<script>\s*([\s\S]*?)<\/script>/)?.[1]; // Execute the shipped eight-note iframe itself, not a simplified imitation.
+  assert(embedded,'eight-note puzzle iframe must contain its playable script');
   const messages=[], timers=[]; // Captures completion events and advances playback delays without a browser or waiting for real seconds.
   const listeners={};
   const makeNode=()=>({
     textContent:'',value:'',disabled:false,hidden:false,children:[],style:{},
     classList:{add:noop,remove:noop},
     addEventListener(name,fn){(this.events ||= {})[name]=fn;},
-    appendChild(child){this.children.push(child);},
+    appendChild(child){this.children.push(child);this.lastElementChild=child;},
     replaceChildren(){this.children=[];},
     setAttribute:noop,
     querySelector:()=>({textContent:''}),
   });
-  const ids=Object.fromEntries(['scale','tonic','notes','sequence','result','count','songList','debug','echoReplay'].map(name=>[name,makeNode()]));
+  const ids=Object.fromEntries(['notes','result','songList','debug','echoReplay','bookToggle','bookHint','diagnostics'].map(name=>[name,makeNode()]));
   const music={
-    SCALES:{'Pentatonic Major':[0,2,4,7,9]},NOTE_CODES:['KeyA','KeyS','KeyD','KeyF','KeyG'],
+    SCALES:{'Pentatonic Major':[0,2,4,7,9]},NOTE_CODES:require('../docs/js/kurraya-puzzle.js').NOTE_CODES,
     createSampler:()=>({ready:()=>Promise.resolve(),play:()=>Promise.resolve(true),stop:noop,diagnostics:{ready:true}}),
     listSongs:()=>[],settings:()=>({scale:'Pentatonic Major',tonicMidi:60}),noteName:midi=>String(midi),
     pitchFor:index=>60+index,matchSuffix:()=>null,setSettings:noop,
@@ -126,7 +126,7 @@ async function testIframeEchoInput() {
   };
   vm.runInNewContext(embedded,sandbox,{filename:'kurraya-puzzle.html inline'});
   const api=sandbox.window.HobunjiPuzzleInstrument;
-  assert(api.startEchoChallenge('test-puzzle',[0,1,4]));
+  assert(api.startEchoChallenge('test-puzzle',[0,1,7]));
   const settle=async()=>{for(let i=0;i<80;i++)await Promise.resolve();};
   await settle();
   assert.equal(api.getState().echo.phase,'input','challenge example must finish before note input is accepted');
@@ -137,7 +137,7 @@ async function testIframeEchoInput() {
   assert.equal(api.playNote(2),true,'any note button restarts the sample for controller/keyboard users');
   await settle();
   assert.equal(api.getState().echo.phase,'input');
-  for(const note of [0,1,4])assert.equal(api.playNote(note),true);
+  for(const note of [0,1,7])assert.equal(api.playNote(note),true);
   assert.equal(api.getState().echo.phase,'solved');
   assert.equal(messages.filter(entry=>entry.type==='puzzle-echo-result'&&entry.solved).length,1,'the complete phrase unlocks exactly once');
   assert.equal(api.playNote(4),false,'solved challenge cannot send another unlock');
@@ -165,7 +165,7 @@ function testChallengeHandoff() {
     listInstrumentPerformers:()=>[],beginMusicCamera:noop,endMusicCamera:noop,
     refreshActionBar:noop,showToast:noop,
   });
-  assert.equal(win.MusicMinigame.beginPlayerSession({echoChallenge:{id:'test-echo',notes:[4,0,2,1]}}),true);
+  assert.equal(win.MusicMinigame.beginPlayerSession({echoChallenge:{id:'test-echo',notes:[7,0,2,1]}}),true);
   assert.match(frame.src,/instrument=flute/);
   assert.equal(win.MusicMinigame.switchInstrumentMode('performance'),false,'challenge cannot switch to performance mode');
   loads.load();

@@ -57,6 +57,7 @@
     musicBank3: 'Button4',
     musicBank4: 'Button5',
     musicPause: 'Button9',
+    musicModeToggle: 'Button11', // RS click switches between the two player instrument modes.
     musicScalePrev: 'Button14',
     musicScaleNext: 'Button15',
     socialWheel: 'Button15',
@@ -83,6 +84,7 @@
     { id: 'musicBank2', label: 'Music: Bank 2', desktop: null, controller: CANONICAL_CONTROLLER_DEFAULTS.musicBank2, devices: ['controller'], context: 'music' },
     { id: 'musicBank3', label: 'Music: Bank 3', desktop: null, controller: CANONICAL_CONTROLLER_DEFAULTS.musicBank3, devices: ['controller'], context: 'music' },
     { id: 'musicBank4', label: 'Music: Bank 4', desktop: null, controller: CANONICAL_CONTROLLER_DEFAULTS.musicBank4, devices: ['controller'], context: 'music' },
+    { id: 'musicModeToggle', label: 'Music: Switch Instrument Mode', desktop: null, controller: CANONICAL_CONTROLLER_DEFAULTS.musicModeToggle, devices: ['controller'], context: 'music' },
     { id: 'musicPause', label: 'Music: Pause', desktop: null, controller: CANONICAL_CONTROLLER_DEFAULTS.musicPause, devices: ['controller'], context: 'music' },
     { id: 'musicScalePrev', label: 'Music: Previous Scale', desktop: null, controller: CANONICAL_CONTROLLER_DEFAULTS.musicScalePrev, devices: ['controller'], context: 'music' },
     { id: 'musicScaleNext', label: 'Music: Next Scale', desktop: null, controller: CANONICAL_CONTROLLER_DEFAULTS.musicScaleNext, devices: ['controller'], context: 'music' },
@@ -138,6 +140,11 @@
     try {
       const saved = JSON.parse(localStorage.getItem(INPUT_DEFAULTS.storageKey) || 'null');
       const controller = { ...INPUT_DEFAULTS.controller, ...(saved?.controller || {}) }; // Used as the live controller map after adding controller actions introduced after an older save was written.
+      // A pre-existing music remap keeps its button when the mode switch is added to an older save.
+      if (saved?.controller && !Object.prototype.hasOwnProperty.call(saved.controller, 'musicModeToggle') &&
+          Object.entries(saved.controller).some(([action, code]) => code === controller.musicModeToggle && actionContext(action) === 'music')) {
+        controller.musicModeToggle = null;
+      }
       return {
         desktop: { ...INPUT_DEFAULTS.desktop, ...(saved?.desktop || {}) },
         controller,

@@ -1274,8 +1274,9 @@
       root.add(mesh);
       plates.push({index:i,x:p.x,z:p.z,y:Number(support.y),mesh,material,down:false,played:false,pressCount:0});
     }
-    const noteCount=4+(rng()>.7?1:0); // Short, variable-length phrase: four or five notes chosen from the same five buttons as the normal puzzle instrument.
-    const melody=Array.from({length:noteCount},()=>Math.min(4,Math.max(0,Math.floor(rng()*5)))); // Clamp seeded RNG endpoints to the five supported note indices.
+    const noteCount=4+(rng()>.7?1:0); // Short, variable-length phrase: four or five notes chosen from the same eight buttons as the normal puzzle instrument.
+    const noteSlots=window.KurrayaPuzzle?.NOTE_CODES.length ?? 8; // Match the instrument range in game and the standalone ruin preview.
+    const melody=Array.from({length:noteCount},()=>Math.min(noteSlots-1,Math.max(0,Math.floor(rng()*noteSlots))));
     const set={id,slotKind:isHallway?'hallway':'room',root,plates,notes:melody,attempts:0,mistakes:0,solved:false,solveCount:0,onComplete:typeof slot.onComplete==='function'?slot.onComplete:null};
     state.chordPlateSets.push(set); // Retain the established composer reference while replacing its internal musical challenge.
     if(isHallway)usedHallways?.add?.(owner.id);
