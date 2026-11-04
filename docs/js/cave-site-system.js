@@ -510,6 +510,16 @@
     const trapCount = trapCandidates.length ? 1 + (rng() < 0.45 ? 1 : 0) : 0;
     plan.traps = pickSpacedTiles(rng, trapCandidates, trapCount, blockedKeys, 2).map((tile, index) => ({ id: `${plan.cache.id}_trap_${index + 1}`, col: tile.col, row: tile.row, damage: 9 + Math.floor(rng() * 7), tag: rng() < 0.5 ? 'sharp' : 'blunt' }));
     mapData.caveTraps = clone(plan.traps);
+    // Fill the deep chamber with mundane supplies, but leave the chest approach and traps clear.
+    const crateCandidates=candidates.filter(tile=>{
+      const distance=Math.hypot(tile.col-cacheTile.col,tile.row-cacheTile.row);
+      return distance>=1.4&&distance<=4&&!blockedKeys.has(tileKey(tile.col,tile.row));
+    });
+    const crates=pickSpacedTiles(rng,crateCandidates,Math.min(4,Math.max(2,Math.floor(crateCandidates.length/3))),blockedKeys,1.15);
+    for(const [index,tile] of crates.entries()) {
+      const id=plan.cache.id+'_crate_'+(index+1);
+      addProp(mapData,{id,key:'crateStack',col:tile.col,row:tile.row,rotY:Math.floor(rng()*4)*90});
+    }
   }
 
   function addCatacombLayer(mapData, rng, candidates, blockedKeys, plan) {
@@ -623,6 +633,8 @@
     buildMushroomClusters(mapId, mapData, scene);
     const id = String(mapId); // Shared key with the mushroom index and cave profile.
     const propRecord = { scene, groups: new Map() }; // Replaced on rebuild; late async furniture loads cannot register in a stale cave.
+    for(const [propId,group] of propMeshesByMapId.get(id)?.groups||[])if(group.userData?.caveSiteProp?.key==='crateStack')
+      window.CratePiles?.unregisterPile?.(id,propId);
     propMeshesByMapId.set(id, propRecord);
     const A = window.AuthoredFurniture;
     if (!A?.load || !A?.buildGroup || !scene || !mapData?.caveProps?.length) return Promise.resolve(0);
@@ -638,6 +650,10 @@
       group.userData.caveSiteProp = { mapId, id: prop.id, key: prop.key };
       scene.add(group);
       propRecord.groups.set(prop.id, group); // Only actual, scene-attached props become candidate Sense Mode targets.
+      if(prop.key==='crateStack')window.CratePiles?.registerPile?.({
+        id:prop.id,mapId:id,group,scene,lootable:true,
+        count:prop.crateCount??3,onChange:count=>{prop.crateCount=count;},
+      });
       return 1;
     }))).then(built => built.reduce((sum, n) => sum + n, 0));
   }
@@ -933,6 +949,8 @@
     banditPopulatedMaps.delete(mapId);
     for (const oldGroup of mushroomMeshesByMapId.get(mapId)?.values() || []) oldGroup.parent?.remove(oldGroup);
     mushroomMeshesByMapId.delete(mapId);
+    for(const [propId,group] of propMeshesByMapId.get(mapId)?.groups||[])if(group.userData?.caveSiteProp?.key==='crateStack')
+      window.CratePiles?.unregisterPile?.(mapId,propId);
     propMeshesByMapId.delete(mapId); // Do not retain props for an erased or relocated cave.
     mushroomScenesByMapId.delete(mapId);
     mushroomVisualDayByMapId.delete(mapId);

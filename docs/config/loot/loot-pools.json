@@ -1755,7 +1755,296 @@
     "crateJunk": {
       "label": "Smashed Crate Junk",
       "note": "Mundane mixed camp supplies. No metal bars, gold, mastery artifacts, manuals or rare chest generators. Additional agricultural/animal goods are included by canonical inventory key.",
-      "entries": []
+      "entries": [
+        {
+          "id": "crate_junk_needlegrain",
+          "itemKey": "needlegrain",
+          "min": 1,
+          "max": 3,
+          "chance": 0.12,
+          "conditions": {}
+        },
+        {
+          "id": "crate_junk_heftroot",
+          "itemKey": "heftroot",
+          "min": 1,
+          "max": 3,
+          "chance": 0.12,
+          "conditions": {}
+        },
+        {
+          "id": "crate_junk_garlink",
+          "itemKey": "garlink",
+          "min": 1,
+          "max": 3,
+          "chance": 0.12,
+          "conditions": {}
+        },
+        {
+          "id": "crate_junk_ongyums",
+          "itemKey": "ongyums",
+          "min": 1,
+          "max": 3,
+          "chance": 0.12,
+          "conditions": {}
+        },
+        {
+          "id": "crate_junk_blackberries",
+          "itemKey": "blackberries",
+          "min": 1,
+          "max": 3,
+          "chance": 0.12,
+          "conditions": {}
+        },
+        {
+          "id": "crate_junk_blueberries",
+          "itemKey": "blueberries",
+          "min": 1,
+          "max": 3,
+          "chance": 0.12,
+          "conditions": {}
+        },
+        {
+          "id": "crate_junk_redberries",
+          "itemKey": "redberries",
+          "min": 1,
+          "max": 3,
+          "chance": 0.12,
+          "conditions": {}
+        },
+        {
+          "id": "crate_junk_whiteberries",
+          "itemKey": "whiteberries",
+          "min": 1,
+          "max": 3,
+          "chance": 0.12,
+          "conditions": {}
+        },
+        {
+          "id": "crate_junk_yellowberries",
+          "itemKey": "yellowberries",
+          "min": 1,
+          "max": 3,
+          "chance": 0.12,
+          "conditions": {}
+        },
+        {
+          "id": "crate_junk_greenMustard",
+          "itemKey": "greenMustard",
+          "min": 1,
+          "max": 3,
+          "chance": 0.12,
+          "conditions": {}
+        },
+        {
+          "id": "crate_junk_blackMustard",
+          "itemKey": "blackMustard",
+          "min": 1,
+          "max": 3,
+          "chance": 0.12,
+          "conditions": {}
+        },
+        {
+          "id": "crate_junk_cloudHerbs",
+          "itemKey": "cloudHerbs",
+          "min": 1,
+          "max": 3,
+          "chance": 0.12,
+          "conditions": {}
+        },
+        {
+          "id": "crate_junk_mireHerbs",
+          "itemKey": "mireHerbs",
+          "min": 1,
+          "max": 3,
+          "chance": 0.12,
+          "conditions": {}
+        },
+        {
+          "id": "crate_junk_cloudSaffron",
+          "itemKey": "cloudSaffron",
+          "min": 1,
+          "max": 3,
+          "chance": 0.12,
+          "conditions": {}
+        },
+        {
+          "id": "crate_junk_starpepper",
+          "itemKey": "starpepper",
+          "min": 1,
+          "max": 3,
+          "chance": 0.12,
+          "conditions": {}
+        },
+        {
+          "id": "crate_junk_nightCardamom",
+          "itemKey": "nightCardamom",
+          "min": 1,
+          "max": 3,
+          "chance": 0.12,
+          "conditions": {}
+        },
+        {
+          "id": "crate_junk_grassSeeds",
+          "itemKey": "grassSeeds",
+          "min": 1,
+          "max": 3,
+          "chance": 0.12,
+          "conditions": {}
+        },
+        {
+          "id": "crate_junk_needlegrainSeeds",
+          "itemKey": "needlegrainSeeds",
+          "min": 1,
+          "max": 3,
+          "chance": 0.12,
+          "conditions": {}
+        },
+        {
+          "id": "crate_junk_heftrootSeeds",
+          "itemKey": "heftrootSeeds",
+          "min": 1,
+          "max": 2,
+          "chance": 0.085,
+          "conditions": {}
+        },
+        {
+          "id": "crate_junk_ongyumsSeeds",
+          "itemKey": "ongyumsSeeds",
+          "min": 1,
+          "max": 2,
+          "chance": 0.085,
+          "conditions": {}
+        },
+        {
+          "id": "crate_junk_mulch",
+          "itemKey": "mulch",
+          "min": 1,
+          "max": 2,
+          "chance": 0.085,
+          "conditions": {}
+        },
+        {
+          "id": "crate_junk_pineLog",
+          "itemKey": "pineLog",
+          "min": 1,
+          "max": 2,
+          "chance": 0.085,
+          "conditions": {}
+        },
+        {
+          "id": "crate_junk_shadewoodLog",
+          "itemKey": "shadewoodLog",
+          "min": 1,
+          "max": 2,
+          "chance": 0.085,
+          "conditions": {}
+        },
+        {
+          "id": "crate_junk_puktukWool",
+          "itemKey": "puktukWool",
+          "min": 1,
+          "max": 2,
+          "chance": 0.085,
+          "conditions": {}
+        },
+        {
+          "id": "crate_junk_uumkaoiiEgg",
+          "itemKey": "uumkaoiiEgg",
+          "min": 1,
+          "max": 2,
+          "chance": 0.085,
+          "conditions": {}
+        },
+        {
+          "id": "crate_junk_uumkaoiiEggs",
+          "itemKey": "uumkaoiiEggs",
+          "min": 1,
+          "max": 2,
+          "chance": 0.085,
+          "conditions": {}
+        },
+        {
+          "id": "crate_junk_drenkirraEggs",
+          "itemKey": "drenkirraEggs",
+          "min": 1,
+          "max": 2,
+          "chance": 0.085,
+          "conditions": {}
+        },
+        {
+          "id": "crate_junk_nelkEggs",
+          "itemKey": "nelkEggs",
+          "min": 1,
+          "max": 2,
+          "chance": 0.085,
+          "conditions": {}
+        },
+        {
+          "id": "crate_junk_nazgrakuEggs",
+          "itemKey": "nazgrakuEggs",
+          "min": 1,
+          "max": 2,
+          "chance": 0.085,
+          "conditions": {}
+        },
+        {
+          "id": "crate_junk_honey",
+          "itemKey": "honey",
+          "min": 1,
+          "max": 2,
+          "chance": 0.085,
+          "conditions": {}
+        },
+        {
+          "id": "crate_junk_puktukMilk",
+          "itemKey": "puktukMilk",
+          "min": 1,
+          "max": 2,
+          "chance": 0.085,
+          "conditions": {}
+        },
+        {
+          "id": "crate_junk_voorgAssMilk",
+          "itemKey": "voorgAssMilk",
+          "min": 1,
+          "max": 2,
+          "chance": 0.085,
+          "conditions": {}
+        },
+        {
+          "id": "crate_junk_blueDewMilk",
+          "itemKey": "blueDewMilk",
+          "min": 1,
+          "max": 2,
+          "chance": 0.085,
+          "conditions": {}
+        },
+        {
+          "id": "crate_junk_greenDewMilk",
+          "itemKey": "greenDewMilk",
+          "min": 1,
+          "max": 2,
+          "chance": 0.085,
+          "conditions": {}
+        },
+        {
+          "id": "crate_junk_redDewMilk",
+          "itemKey": "redDewMilk",
+          "min": 1,
+          "max": 2,
+          "chance": 0.085,
+          "conditions": {}
+        },
+        {
+          "id": "crate_junk_whiteDew",
+          "itemKey": "whiteDew",
+          "min": 1,
+          "max": 2,
+          "chance": 0.085,
+          "conditions": {}
+        }
+      ]
     }
   }
 }
