@@ -1511,7 +1511,7 @@
         syncRuinPresentationHeight(ruin.supportY);
         return;
       }
-      if(grid.nativeV50){
+      if(window.RuinV50NativeFloors?.isNativeGrid?.(grid)){ 
         // Native V50 plateaus retain their original fractional heights (0.42
         // steps), not the shaft's whole-cube floor datum. The voxel grid owns
         // the masonry walls/gates; V50's own DS heightfields own ground support.
