@@ -205,7 +205,7 @@
     const isFlute = audioAsset === FLUTE_AUDIO_ASSET; // Flute performances never read the Kurraya Music Lab's saved custom pluck.
     let customSample = null; // Holds the Music Lab's explicit replacement preference; unrelated sampler imports do not opt into gameplay.
     if (!isFlute) try { customSample = JSON.parse(localStorage.getItem(KURRAYA_CUSTOM_SAMPLE_KEY) || 'null'); } catch {}
-    const preferredName = String(customSample?.name || audioAsset.filename); // Used to accept either the explicitly chosen custom Kurraya source or the normal bundled source from IndexedDB.
+    const preferredName = String(customSample?.name || KURRAYA_AUDIO_ASSET.filename); // Kurraya restores its saved source; flute skips the cache check and chooses its own audio asset.
     const restored = isFlute ? false : await waitForAnalysisText(
       readout,
       text => text.includes(`Restored ${preferredName}`),
