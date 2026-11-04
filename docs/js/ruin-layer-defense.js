@@ -113,6 +113,9 @@
           node.position.set(origin.x+entry.x,y+(Number(entry.y)||0),origin.z+entry.z);
           node.rotation.y=entry.rotY;
           group.add(node);placements.push(node);
+          if(['plinth','statueDispenser'].includes(entry.piece)
+            &&!node.userData?.furniturePuzzle)
+            throw new Error('Authored '+entry.piece+' lacks required puzzle behaviour: '+entry.key);
           if(node.userData?.furniturePuzzle){
             const inherited=node.userData.furniturePuzzle;
             const override=entry.piece==='plinth'?{
@@ -124,6 +127,7 @@
             placedIds.push(uid);
           }
           if(entry.piece==='statueDispenser'){
+            if(!node.isObject3D)throw new Error('Key Statue dispenser must be a live Three.js scene object: '+uid);
             if(!statues.registerDispenser(mapId,uid,node,node.userData.furniturePuzzle,{
               feedPlinthId:plinthId,
             }))throw new Error('Cannot replenish the Key Statue on retry: '+uid);
