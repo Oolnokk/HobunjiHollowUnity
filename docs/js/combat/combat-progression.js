@@ -205,11 +205,24 @@
     return tree;
   }
 
+  // Uses EXACTLY the Quick Attack mastery payload and unlock identities, including
+  // scroll/tablet lessons; only its third-hit activation condition differs.
+  function comboFinisherTree(levels, isBlunt = false) {
+    return quickAttackTree(levels, isBlunt).map(row => row.map(option => ({
+      ...option,
+      desc: String(option.desc).replace(/Successful condition-bonus procs/g, 'Qualified third combo hits')
+        .replace(/ordinary Quick Attack hits/g, 'ordinary combo finishers')
+        .replace(/A successful Quick Attack condition bonus/g, 'A qualified third combo hit'),
+    })));
+  }
+
   // Ability id -> { sharp: levels, blunt: levels } for weapon-typed
   // abilities, or a flat levels array for the one that isn't (Blink Dodge).
   const TREES = {
     swingCombo: { sharp: sharpTree(), blunt: bluntTree() },
     pokeCombo: { sharp: sharpTree(), blunt: bluntTree() },
+    swingComboFinisher: { sharp: comboFinisherTree(sharpTree()), blunt: comboFinisherTree(bluntTree(), true) },
+    pokeComboFinisher: { sharp: comboFinisherTree(sharpTree()), blunt: comboFinisherTree(bluntTree(), true) },
     opportunistJab: { sharp: quickAttackTree(sharpTree()), blunt: quickAttackTree(bluntTree(), true) },
     exhaustCutter: { sharp: quickAttackTree(exhaustCutterSharpTree()), blunt: quickAttackTree(bluntTree(), true) },
     backstabFlick: { sharp: quickAttackTree(sharpTree()), blunt: quickAttackTree(bluntTree(), true) },
@@ -424,6 +437,8 @@
 
   // Merges every chosen level's ordinary afflictions/stats plus the
   // cooldown-gated Quick Attack bonus payloads for one ability *on this tool*.
+  // Special-finisher tracks use these same bonus fields with a different hit
+  // condition and no Quick Attack cooldown; the combo executor owns activation.
   function getEffects(toolKey, abilityId) {
     const afflictions = {};
     const stats = {};
