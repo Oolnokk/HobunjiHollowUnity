@@ -393,7 +393,7 @@
           onSave: async (patternData, libraryId) => {
             paint.patternLibraryId = libraryId || '';
             const priorOverpass = paintPatternStack(paint)[1]; // Authoring the first slot must preserve its secondary.
-            paint.pattern = clone(libraryId ? (window.PatternLibrary?.getById?.(libraryId) || patternData) : patternData);
+            paint.pattern = clone(patternData); // Keep edited instance placement; libraryId remains provenance, never overrides the authored snapshot.
             if (priorOverpass) paint.patterns = [paint.pattern, priorOverpass];
             else delete paint.patterns;
             if (!paint.dyeHex && !paint.dyeId) {
