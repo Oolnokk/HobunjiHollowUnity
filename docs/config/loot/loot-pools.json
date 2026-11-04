@@ -5,8 +5,22 @@
     "creature_dabinggi-hound": {
       "label": "Dabinggi-hound",
       "entries": [
-        { "id": "meat", "itemKey": "dabinggiHoundMeat", "min": 1, "max": 3, "chance": 1, "conditions": {} },
-        { "id": "hide", "itemKey": "dabinggiHoundHide", "min": 1, "max": 1, "chance": 1, "conditions": {} }
+        {
+          "id": "meat",
+          "itemKey": "dabinggiHoundMeat",
+          "min": 1,
+          "max": 3,
+          "chance": 1,
+          "conditions": {}
+        },
+        {
+          "id": "hide",
+          "itemKey": "dabinggiHoundHide",
+          "min": 1,
+          "max": 1,
+          "chance": 1,
+          "conditions": {}
+        }
       ]
     },
     "creature_uumkaoii": {
@@ -16,199 +30,724 @@
     "creature_grehlr": {
       "label": "Grehlr",
       "entries": [
-        { "id": "meat", "itemKey": "grehlrMeat", "min": 2, "max": 4, "chance": 1, "conditions": {} },
-        { "id": "hide", "itemKey": "grehlrHide", "min": 1, "max": 1, "chance": 1, "conditions": {} }
+        {
+          "id": "meat",
+          "itemKey": "grehlrMeat",
+          "min": 2,
+          "max": 4,
+          "chance": 1,
+          "conditions": {}
+        },
+        {
+          "id": "hide",
+          "itemKey": "grehlrHide",
+          "min": 1,
+          "max": 1,
+          "chance": 1,
+          "conditions": {}
+        }
       ]
     },
     "creature_drenkirra": {
       "label": "Drenkirra",
       "entries": [
-        { "id": "meat", "itemKey": "drenkirraMeat", "min": 2, "max": 3, "chance": 1, "conditions": {} },
-        { "id": "hide", "itemKey": "drenkirraHide", "min": 1, "max": 1, "chance": 1, "conditions": {} }
+        {
+          "id": "meat",
+          "itemKey": "drenkirraMeat",
+          "min": 2,
+          "max": 3,
+          "chance": 1,
+          "conditions": {}
+        },
+        {
+          "id": "hide",
+          "itemKey": "drenkirraHide",
+          "min": 1,
+          "max": 1,
+          "chance": 1,
+          "conditions": {}
+        }
       ]
     },
     "creature_puktuk": {
       "label": "Puktuk",
       "entries": [
-        { "id": "meat", "itemKey": "puktukMeat", "min": 2, "max": 4, "chance": 1, "conditions": {} },
-        { "id": "hide", "itemKey": "puktukHide", "min": 1, "max": 1, "chance": 1, "conditions": {} }
+        {
+          "id": "meat",
+          "itemKey": "puktukMeat",
+          "min": 2,
+          "max": 4,
+          "chance": 1,
+          "conditions": {}
+        },
+        {
+          "id": "hide",
+          "itemKey": "puktukHide",
+          "min": 1,
+          "max": 1,
+          "chance": 1,
+          "conditions": {}
+        }
       ]
     },
     "creature_nelk": {
       "label": "Nelk",
       "entries": [
-        { "id": "meat", "itemKey": "nelkMeat", "min": 2, "max": 4, "chance": 1, "conditions": {} },
-        { "id": "hide", "itemKey": "nelkHide", "min": 1, "max": 1, "chance": 1, "conditions": {} }
+        {
+          "id": "meat",
+          "itemKey": "nelkMeat",
+          "min": 2,
+          "max": 4,
+          "chance": 1,
+          "conditions": {}
+        },
+        {
+          "id": "hide",
+          "itemKey": "nelkHide",
+          "min": 1,
+          "max": 1,
+          "chance": 1,
+          "conditions": {}
+        }
       ]
     },
     "creature_voorg-ass": {
       "label": "Voorg-Ass",
       "entries": [
-        { "id": "meat", "itemKey": "voorgAssMeat", "min": 1, "max": 2, "chance": 1, "conditions": {} },
-        { "id": "hide", "itemKey": "voorgAssHide", "min": 1, "max": 1, "chance": 1, "conditions": {} }
+        {
+          "id": "meat",
+          "itemKey": "voorgAssMeat",
+          "min": 1,
+          "max": 2,
+          "chance": 1,
+          "conditions": {}
+        },
+        {
+          "id": "hide",
+          "itemKey": "voorgAssHide",
+          "min": 1,
+          "max": 1,
+          "chance": 1,
+          "conditions": {}
+        }
       ]
     },
     "creature_gar-wolf": {
       "label": "Gar-wolf",
       "entries": [
-        { "id": "meat", "itemKey": "garWolfMeat", "min": 2, "max": 4, "chance": 1, "conditions": {} },
-        { "id": "hide", "itemKey": "garWolfHide", "min": 1, "max": 1, "chance": 1, "conditions": {} }
+        {
+          "id": "meat",
+          "itemKey": "garWolfMeat",
+          "min": 2,
+          "max": 4,
+          "chance": 1,
+          "conditions": {}
+        },
+        {
+          "id": "hide",
+          "itemKey": "garWolfHide",
+          "min": 1,
+          "max": 1,
+          "chance": 1,
+          "conditions": {}
+        }
       ]
     },
     "creature_gar-wolf-alpha": {
       "label": "Gar-wolf Alpha",
       "entries": [
-        { "id": "meat", "itemKey": "alphaGarWolfMeat", "min": 4, "max": 7, "chance": 1, "conditions": {} },
-        { "id": "hide", "itemKey": "alphaGarWolfHide", "min": 1, "max": 2, "chance": 1, "conditions": {} }
+        {
+          "id": "meat",
+          "itemKey": "alphaGarWolfMeat",
+          "min": 4,
+          "max": 7,
+          "chance": 1,
+          "conditions": {}
+        },
+        {
+          "id": "hide",
+          "itemKey": "alphaGarWolfHide",
+          "min": 1,
+          "max": 2,
+          "chance": 1,
+          "conditions": {}
+        }
       ]
     },
     "creature_uumkaoii-wild": {
       "label": "Wild Uumkao'ii",
       "entries": [
-        { "id": "meat", "itemKey": "uumkaoiiMeat", "min": 1, "max": 2, "chance": 1, "conditions": {} },
-        { "id": "shell", "itemKey": "uumkaoiiShell", "min": 1, "max": 1, "chance": 1, "conditions": {} }
+        {
+          "id": "meat",
+          "itemKey": "uumkaoiiMeat",
+          "min": 1,
+          "max": 2,
+          "chance": 1,
+          "conditions": {}
+        },
+        {
+          "id": "shell",
+          "itemKey": "uumkaoiiShell",
+          "min": 1,
+          "max": 1,
+          "chance": 1,
+          "conditions": {}
+        }
       ]
     },
     "creature_gar-wolf-den-mother": {
       "label": "Gar-wolf Den-Mother",
       "entries": [
-        { "id": "meat", "itemKey": "garWolfMeat", "min": 3, "max": 6, "chance": 1, "conditions": {} },
-        { "id": "hide", "itemKey": "garWolfHide", "min": 1, "max": 2, "chance": 1, "conditions": {} }
+        {
+          "id": "meat",
+          "itemKey": "garWolfMeat",
+          "min": 3,
+          "max": 6,
+          "chance": 1,
+          "conditions": {}
+        },
+        {
+          "id": "hide",
+          "itemKey": "garWolfHide",
+          "min": 1,
+          "max": 2,
+          "chance": 1,
+          "conditions": {}
+        }
       ]
     },
     "creature_uumkaoii-wild-den-mother": {
       "label": "Wild Uumkao'ii Den-Mother",
       "entries": [
-        { "id": "meat", "itemKey": "uumkaoiiMeat", "min": 2, "max": 4, "chance": 1, "conditions": {} },
-        { "id": "shell", "itemKey": "uumkaoiiShell", "min": 1, "max": 2, "chance": 1, "conditions": {} }
+        {
+          "id": "meat",
+          "itemKey": "uumkaoiiMeat",
+          "min": 2,
+          "max": 4,
+          "chance": 1,
+          "conditions": {}
+        },
+        {
+          "id": "shell",
+          "itemKey": "uumkaoiiShell",
+          "min": 1,
+          "max": 2,
+          "chance": 1,
+          "conditions": {}
+        }
       ]
     },
     "creature_grehlr-den-mother": {
       "label": "Grehlr Den-Mother",
       "entries": [
-        { "id": "meat", "itemKey": "grehlrMeat", "min": 3, "max": 6, "chance": 1, "conditions": {} },
-        { "id": "hide", "itemKey": "grehlrHide", "min": 1, "max": 2, "chance": 1, "conditions": {} }
+        {
+          "id": "meat",
+          "itemKey": "grehlrMeat",
+          "min": 3,
+          "max": 6,
+          "chance": 1,
+          "conditions": {}
+        },
+        {
+          "id": "hide",
+          "itemKey": "grehlrHide",
+          "min": 1,
+          "max": 2,
+          "chance": 1,
+          "conditions": {}
+        }
       ]
     },
     "creature_drenkirra-den-mother": {
       "label": "Drenkirra Nestmother",
       "entries": [
-        { "id": "meat", "itemKey": "drenkirraMeat", "min": 3, "max": 5, "chance": 1, "conditions": {} },
-        { "id": "hide", "itemKey": "drenkirraHide", "min": 1, "max": 2, "chance": 1, "conditions": {} }
+        {
+          "id": "meat",
+          "itemKey": "drenkirraMeat",
+          "min": 3,
+          "max": 5,
+          "chance": 1,
+          "conditions": {}
+        },
+        {
+          "id": "hide",
+          "itemKey": "drenkirraHide",
+          "min": 1,
+          "max": 2,
+          "chance": 1,
+          "conditions": {}
+        }
       ]
     },
     "banditTent": {
       "label": "Bandit Tent",
       "entries": [
-        { "id": "gold", "itemKey": "gold", "min": 4, "max": 14, "chance": 1, "conditions": {} },
-        { "id": "scrapMetal", "itemKey": "banditScrapMetal", "min": 0, "max": 2, "chance": 1, "conditions": {} }
+        {
+          "id": "gold",
+          "itemKey": "gold",
+          "min": 4,
+          "max": 14,
+          "chance": 1,
+          "conditions": {}
+        },
+        {
+          "id": "scrapMetal",
+          "itemKey": "banditScrapMetal",
+          "min": 0,
+          "max": 2,
+          "chance": 1,
+          "conditions": {}
+        }
       ]
     },
     "caveSkeletonBody": {
       "label": "Cave Catacomb Skeleton (Body)",
       "note": "Grave goods on the Mao'ao skeleton bodies lying in cave catacombs (docs/js/cave-site-system.js); worn rags are added by the bandit corpse loot path.",
       "entries": [
-        { "id": "gold", "itemKey": "gold", "min": 1, "max": 6, "chance": 0.6, "conditions": {} },
-        { "id": "oreCopper", "itemKey": "ore_copper", "min": 1, "max": 1, "chance": 0.12, "conditions": {} },
-        { "id": "oreTin", "itemKey": "ore_tin", "min": 1, "max": 1, "chance": 0.06, "conditions": {} }
+        {
+          "id": "gold",
+          "itemKey": "gold",
+          "min": 1,
+          "max": 6,
+          "chance": 0.6,
+          "conditions": {}
+        },
+        {
+          "id": "oreCopper",
+          "itemKey": "ore_copper",
+          "min": 1,
+          "max": 1,
+          "chance": 0.12,
+          "conditions": {}
+        },
+        {
+          "id": "oreTin",
+          "itemKey": "ore_tin",
+          "min": 1,
+          "max": 1,
+          "chance": 0.06,
+          "conditions": {}
+        }
       ]
     },
     "bandit_grunt": {
       "label": "Bandit (Grunt)",
       "entries": [
-        { "id": "gold", "itemKey": "gold", "min": 2, "max": 8, "chance": 1, "conditions": {} },
-        { "id": "scrapMetal", "itemKey": "banditScrapMetal", "min": 0, "max": 2, "chance": 1, "conditions": {} }
+        {
+          "id": "gold",
+          "itemKey": "gold",
+          "min": 2,
+          "max": 8,
+          "chance": 1,
+          "conditions": {}
+        },
+        {
+          "id": "scrapMetal",
+          "itemKey": "banditScrapMetal",
+          "min": 0,
+          "max": 2,
+          "chance": 1,
+          "conditions": {}
+        }
       ]
     },
     "bandit_lieutenant": {
       "label": "Bandit (Lieutenant)",
       "entries": [
-        { "id": "gold", "itemKey": "gold", "min": 6, "max": 16, "chance": 1, "conditions": {} },
-        { "id": "scrapMetal", "itemKey": "banditScrapMetal", "min": 1, "max": 3, "chance": 1, "conditions": {} },
-        { "id": "treasureToken", "itemKey": "banditTreasureToken", "min": 0, "max": 1, "chance": 1, "conditions": {} }
+        {
+          "id": "gold",
+          "itemKey": "gold",
+          "min": 6,
+          "max": 16,
+          "chance": 1,
+          "conditions": {}
+        },
+        {
+          "id": "scrapMetal",
+          "itemKey": "banditScrapMetal",
+          "min": 1,
+          "max": 3,
+          "chance": 1,
+          "conditions": {}
+        },
+        {
+          "id": "treasureToken",
+          "itemKey": "banditTreasureToken",
+          "min": 0,
+          "max": 1,
+          "chance": 1,
+          "conditions": {}
+        }
       ]
     },
     "bandit_captain": {
       "label": "Bandit (Captain)",
       "entries": [
-        { "id": "gold", "itemKey": "gold", "min": 15, "max": 35, "chance": 1, "conditions": {} },
-        { "id": "scrapMetal", "itemKey": "banditScrapMetal", "min": 2, "max": 5, "chance": 1, "conditions": {} },
-        { "id": "treasureToken", "itemKey": "banditTreasureToken", "min": 1, "max": 2, "chance": 1, "conditions": {} }
+        {
+          "id": "gold",
+          "itemKey": "gold",
+          "min": 15,
+          "max": 35,
+          "chance": 1,
+          "conditions": {}
+        },
+        {
+          "id": "scrapMetal",
+          "itemKey": "banditScrapMetal",
+          "min": 2,
+          "max": 5,
+          "chance": 1,
+          "conditions": {}
+        },
+        {
+          "id": "treasureToken",
+          "itemKey": "banditTreasureToken",
+          "min": 1,
+          "max": 2,
+          "chance": 1,
+          "conditions": {}
+        }
       ]
     },
     "treasureChest": {
       "label": "Treasure Chest",
       "note": "metalBars/mysteryDye are generator entries (rollTreasureMetalKeys/rollTreasureDyeItemKeys in game.js) always rolled; gold is a plain ranged item roll in steps of 8; potion/combatManual/clothing are generator entries with their own internal randomization gated by this pool's chance.",
       "entries": [
-        { "id": "metalBars", "kind": "generator", "generatorKey": "treasureMetalBars", "chance": 1, "conditions": {} },
-        { "id": "mysteryDye", "kind": "generator", "generatorKey": "treasureMysteryDye", "chance": 1, "conditions": {} },
-        { "id": "gold", "kind": "range", "itemKey": "gold", "min": 10, "max": 42, "step": 8, "chance": 0.7, "conditions": {} },
-        { "id": "potion", "kind": "generator", "generatorKey": "treasurePotion", "chance": 0.35, "conditions": {} },
-        { "id": "combatManual", "kind": "generator", "generatorKey": "combatAbilityManual", "chance": 0.08, "conditions": {} },
-        { "id": "clothing", "kind": "generator", "generatorKey": "treasureDyedClothing", "chance": 0.25, "conditions": {} }
+        {
+          "id": "metalBars",
+          "kind": "generator",
+          "generatorKey": "treasureMetalBars",
+          "chance": 1,
+          "conditions": {}
+        },
+        {
+          "id": "mysteryDye",
+          "kind": "generator",
+          "generatorKey": "treasureMysteryDye",
+          "chance": 1,
+          "conditions": {}
+        },
+        {
+          "id": "gold",
+          "kind": "range",
+          "itemKey": "gold",
+          "min": 10,
+          "max": 42,
+          "step": 8,
+          "chance": 0.7,
+          "conditions": {}
+        },
+        {
+          "id": "potion",
+          "kind": "generator",
+          "generatorKey": "treasurePotion",
+          "chance": 0.35,
+          "conditions": {}
+        },
+        {
+          "id": "combatManual",
+          "kind": "generator",
+          "generatorKey": "combatAbilityManual",
+          "chance": 0.08,
+          "conditions": {}
+        },
+        {
+          "id": "clothing",
+          "kind": "generator",
+          "generatorKey": "treasureDyedClothing",
+          "chance": 0.25,
+          "conditions": {}
+        }
       ]
     },
     "dungeonChest_tier1": {
       "label": "Dungeon Chest — Tier 1 (Weathered)",
       "note": "Rolled by Harlyao ruin Dungeon Chests (docs/js/dev-random-ruin-dungeon-chests.js). metalBars grants 1–3 Town-Value-gated metal bars using the buried-treasure picker; trinket_<id> entries grant a gear trinket through TrinketSystem.claimLoot (docs/js/trinket-system.js) instead of an inventory stack. Tier 4 is also the boss-vault tier; those chests additionally roll a bound Harlyao relic weapon (docs/js/harlyao-relics.js).",
       "entries": [
-        {"id":"harlyaoArtifact", "kind":"generator", "generatorKey":"harlyaoArtifact", "tier":1, "chance":1, "conditions":{}},
-        {"id":"metalBars", "kind":"generator", "generatorKey":"dungeonMetalBars", "chance":1, "conditions":{}},
-        {"id": "trinket_harlyaoReachShard", "itemKey": "trinket_harlyaoReachShard", "min": 1, "max": 1, "chance": 0.08, "conditions": {}},
-        {"id": "trinket_harlyaoStridingBone", "itemKey": "trinket_harlyaoStridingBone", "min": 1, "max": 1, "chance": 0.08, "conditions": {}}
+        {
+          "id": "harlyaoArtifact",
+          "kind": "generator",
+          "generatorKey": "harlyaoArtifact",
+          "tier": 1,
+          "chance": 1,
+          "conditions": {}
+        },
+        {
+          "id": "metalBars",
+          "kind": "generator",
+          "generatorKey": "dungeonMetalBars",
+          "chance": 1,
+          "conditions": {}
+        },
+        {
+          "id": "trinket_harlyaoReachShard",
+          "itemKey": "trinket_harlyaoReachShard",
+          "min": 1,
+          "max": 1,
+          "chance": 0.08,
+          "conditions": {}
+        },
+        {
+          "id": "trinket_harlyaoStridingBone",
+          "itemKey": "trinket_harlyaoStridingBone",
+          "min": 1,
+          "max": 1,
+          "chance": 0.08,
+          "conditions": {}
+        }
       ]
     },
     "dungeonChest_tier2": {
       "label": "Dungeon Chest — Tier 2 (Bronze-bound)",
       "note": "Rolled by Harlyao ruin Dungeon Chests (docs/js/dev-random-ruin-dungeon-chests.js). metalBars grants 1–3 Town-Value-gated metal bars using the buried-treasure picker; trinket_<id> entries grant a gear trinket through TrinketSystem.claimLoot (docs/js/trinket-system.js) instead of an inventory stack. Tier 4 is also the boss-vault tier; those chests additionally roll a bound Harlyao relic weapon (docs/js/harlyao-relics.js).",
       "entries": [
-        {"id":"harlyaoArtifact", "kind":"generator", "generatorKey":"harlyaoArtifact", "tier":2, "chance":1, "conditions":{}},
-        {"id":"metalBars", "kind":"generator", "generatorKey":"dungeonMetalBars", "chance":1, "conditions":{}},
-        {"id": "trinket_harlyaoReachShard", "itemKey": "trinket_harlyaoReachShard", "min": 1, "max": 1, "chance": 0.06, "conditions": {}},
-        {"id": "trinket_harlyaoStridingBone", "itemKey": "trinket_harlyaoStridingBone", "min": 1, "max": 1, "chance": 0.06, "conditions": {}},
-        {"id": "trinket_harlyaoTopplingKnuckle", "itemKey": "trinket_harlyaoTopplingKnuckle", "min": 1, "max": 1, "chance": 0.06, "conditions": {}},
-        {"id": "trinket_harlyaoRootedAnklet", "itemKey": "trinket_harlyaoRootedAnklet", "min": 1, "max": 1, "chance": 0.06, "conditions": {}},
-        {"id": "trinket_harlyaoQuickFang", "itemKey": "trinket_harlyaoQuickFang", "min": 1, "max": 1, "chance": 0.05, "conditions": {}},
-        {"id": "trinket_harlyaoCrushingWeight", "itemKey": "trinket_harlyaoCrushingWeight", "min": 1, "max": 1, "chance": 0.05, "conditions": {}},
-        {"id": "trinket_harlyaoWardingPlate", "itemKey": "trinket_harlyaoWardingPlate", "min": 1, "max": 1, "chance": 0.05, "conditions": {}}
+        {
+          "id": "harlyaoArtifact",
+          "kind": "generator",
+          "generatorKey": "harlyaoArtifact",
+          "tier": 2,
+          "chance": 1,
+          "conditions": {}
+        },
+        {
+          "id": "metalBars",
+          "kind": "generator",
+          "generatorKey": "dungeonMetalBars",
+          "chance": 1,
+          "conditions": {}
+        },
+        {
+          "id": "trinket_harlyaoReachShard",
+          "itemKey": "trinket_harlyaoReachShard",
+          "min": 1,
+          "max": 1,
+          "chance": 0.06,
+          "conditions": {}
+        },
+        {
+          "id": "trinket_harlyaoStridingBone",
+          "itemKey": "trinket_harlyaoStridingBone",
+          "min": 1,
+          "max": 1,
+          "chance": 0.06,
+          "conditions": {}
+        },
+        {
+          "id": "trinket_harlyaoTopplingKnuckle",
+          "itemKey": "trinket_harlyaoTopplingKnuckle",
+          "min": 1,
+          "max": 1,
+          "chance": 0.06,
+          "conditions": {}
+        },
+        {
+          "id": "trinket_harlyaoRootedAnklet",
+          "itemKey": "trinket_harlyaoRootedAnklet",
+          "min": 1,
+          "max": 1,
+          "chance": 0.06,
+          "conditions": {}
+        },
+        {
+          "id": "trinket_harlyaoQuickFang",
+          "itemKey": "trinket_harlyaoQuickFang",
+          "min": 1,
+          "max": 1,
+          "chance": 0.05,
+          "conditions": {}
+        },
+        {
+          "id": "trinket_harlyaoCrushingWeight",
+          "itemKey": "trinket_harlyaoCrushingWeight",
+          "min": 1,
+          "max": 1,
+          "chance": 0.05,
+          "conditions": {}
+        },
+        {
+          "id": "trinket_harlyaoWardingPlate",
+          "itemKey": "trinket_harlyaoWardingPlate",
+          "min": 1,
+          "max": 1,
+          "chance": 0.05,
+          "conditions": {}
+        }
       ]
     },
     "dungeonChest_tier3": {
       "label": "Dungeon Chest — Tier 3 (Gilded)",
       "note": "Rolled by Harlyao ruin Dungeon Chests (docs/js/dev-random-ruin-dungeon-chests.js). metalBars grants 1–3 Town-Value-gated metal bars using the buried-treasure picker; trinket_<id> entries grant a gear trinket through TrinketSystem.claimLoot (docs/js/trinket-system.js) instead of an inventory stack. Tier 4 is also the boss-vault tier; those chests additionally roll a bound Harlyao relic weapon (docs/js/harlyao-relics.js).",
       "entries": [
-        {"id":"harlyaoArtifact", "kind":"generator", "generatorKey":"harlyaoArtifact", "tier":3, "chance":1, "conditions":{}},
-        {"id":"metalBars", "kind":"generator", "generatorKey":"dungeonMetalBars", "chance":1, "conditions":{}},
-        {"id": "trinket_harlyaoTopplingKnuckle", "itemKey": "trinket_harlyaoTopplingKnuckle", "min": 1, "max": 1, "chance": 0.06, "conditions": {}},
-        {"id": "trinket_harlyaoRootedAnklet", "itemKey": "trinket_harlyaoRootedAnklet", "min": 1, "max": 1, "chance": 0.06, "conditions": {}},
-        {"id": "trinket_harlyaoQuickFang", "itemKey": "trinket_harlyaoQuickFang", "min": 1, "max": 1, "chance": 0.06, "conditions": {}},
-        {"id": "trinket_harlyaoCrushingWeight", "itemKey": "trinket_harlyaoCrushingWeight", "min": 1, "max": 1, "chance": 0.06, "conditions": {}},
-        {"id": "trinket_harlyaoWardingPlate", "itemKey": "trinket_harlyaoWardingPlate", "min": 1, "max": 1, "chance": 0.06, "conditions": {}},
-        {"id": "trinket_harlyaoTirelessBead", "itemKey": "trinket_harlyaoTirelessBead", "min": 1, "max": 1, "chance": 0.05, "conditions": {}},
-        {"id": "trinket_harlyaoAfflictionCenser", "itemKey": "trinket_harlyaoAfflictionCenser", "min": 1, "max": 1, "chance": 0.05, "conditions": {}},
-        {"id": "trinket_harlyaoHexSigil", "itemKey": "trinket_harlyaoHexSigil", "min": 1, "max": 1, "chance": 0.05, "conditions": {}},
-        {"id": "trinket_harlyaoBloodPact", "itemKey": "trinket_harlyaoBloodPact", "min": 1, "max": 1, "chance": 0.04, "conditions": {}}
+        {
+          "id": "harlyaoArtifact",
+          "kind": "generator",
+          "generatorKey": "harlyaoArtifact",
+          "tier": 3,
+          "chance": 1,
+          "conditions": {}
+        },
+        {
+          "id": "metalBars",
+          "kind": "generator",
+          "generatorKey": "dungeonMetalBars",
+          "chance": 1,
+          "conditions": {}
+        },
+        {
+          "id": "trinket_harlyaoTopplingKnuckle",
+          "itemKey": "trinket_harlyaoTopplingKnuckle",
+          "min": 1,
+          "max": 1,
+          "chance": 0.06,
+          "conditions": {}
+        },
+        {
+          "id": "trinket_harlyaoRootedAnklet",
+          "itemKey": "trinket_harlyaoRootedAnklet",
+          "min": 1,
+          "max": 1,
+          "chance": 0.06,
+          "conditions": {}
+        },
+        {
+          "id": "trinket_harlyaoQuickFang",
+          "itemKey": "trinket_harlyaoQuickFang",
+          "min": 1,
+          "max": 1,
+          "chance": 0.06,
+          "conditions": {}
+        },
+        {
+          "id": "trinket_harlyaoCrushingWeight",
+          "itemKey": "trinket_harlyaoCrushingWeight",
+          "min": 1,
+          "max": 1,
+          "chance": 0.06,
+          "conditions": {}
+        },
+        {
+          "id": "trinket_harlyaoWardingPlate",
+          "itemKey": "trinket_harlyaoWardingPlate",
+          "min": 1,
+          "max": 1,
+          "chance": 0.06,
+          "conditions": {}
+        },
+        {
+          "id": "trinket_harlyaoTirelessBead",
+          "itemKey": "trinket_harlyaoTirelessBead",
+          "min": 1,
+          "max": 1,
+          "chance": 0.05,
+          "conditions": {}
+        },
+        {
+          "id": "trinket_harlyaoAfflictionCenser",
+          "itemKey": "trinket_harlyaoAfflictionCenser",
+          "min": 1,
+          "max": 1,
+          "chance": 0.05,
+          "conditions": {}
+        },
+        {
+          "id": "trinket_harlyaoHexSigil",
+          "itemKey": "trinket_harlyaoHexSigil",
+          "min": 1,
+          "max": 1,
+          "chance": 0.05,
+          "conditions": {}
+        },
+        {
+          "id": "trinket_harlyaoBloodPact",
+          "itemKey": "trinket_harlyaoBloodPact",
+          "min": 1,
+          "max": 1,
+          "chance": 0.04,
+          "conditions": {}
+        }
       ]
     },
     "dungeonChest_tier4": {
       "label": "Dungeon Chest — Tier 4 (Ancient)",
       "note": "Rolled by Harlyao ruin Dungeon Chests (docs/js/dev-random-ruin-dungeon-chests.js). metalBars grants 1–3 Town-Value-gated metal bars using the buried-treasure picker; trinket_<id> entries grant a gear trinket through TrinketSystem.claimLoot (docs/js/trinket-system.js) instead of an inventory stack. Tier 4 is also the boss-vault tier; those chests additionally roll a bound Harlyao relic weapon (docs/js/harlyao-relics.js).",
       "entries": [
-        {"id":"harlyaoArtifact", "kind":"generator", "generatorKey":"harlyaoArtifact", "tier":4, "chance":1, "conditions":{}},
-        {"id":"metalBars", "kind":"generator", "generatorKey":"dungeonMetalBars", "chance":1, "conditions":{}},
-        {"id": "trinket_harlyaoTirelessBead", "itemKey": "trinket_harlyaoTirelessBead", "min": 1, "max": 1, "chance": 0.1, "conditions": {}},
-        {"id": "trinket_harlyaoAfflictionCenser", "itemKey": "trinket_harlyaoAfflictionCenser", "min": 1, "max": 1, "chance": 0.1, "conditions": {}},
-        {"id": "trinket_harlyaoHexSigil", "itemKey": "trinket_harlyaoHexSigil", "min": 1, "max": 1, "chance": 0.1, "conditions": {}},
-        {"id": "trinket_harlyaoBloodPact", "itemKey": "trinket_harlyaoBloodPact", "min": 1, "max": 1, "chance": 0.08, "conditions": {}},
-        {"id": "trinket_harlyaoWarCrown", "itemKey": "trinket_harlyaoWarCrown", "min": 1, "max": 1, "chance": 0.06, "conditions": {}}
+        {
+          "id": "harlyaoArtifact",
+          "kind": "generator",
+          "generatorKey": "harlyaoArtifact",
+          "tier": 4,
+          "chance": 1,
+          "conditions": {}
+        },
+        {
+          "id": "metalBars",
+          "kind": "generator",
+          "generatorKey": "dungeonMetalBars",
+          "chance": 1,
+          "conditions": {}
+        },
+        {
+          "id": "trinket_harlyaoTirelessBead",
+          "itemKey": "trinket_harlyaoTirelessBead",
+          "min": 1,
+          "max": 1,
+          "chance": 0.1,
+          "conditions": {}
+        },
+        {
+          "id": "trinket_harlyaoAfflictionCenser",
+          "itemKey": "trinket_harlyaoAfflictionCenser",
+          "min": 1,
+          "max": 1,
+          "chance": 0.1,
+          "conditions": {}
+        },
+        {
+          "id": "trinket_harlyaoHexSigil",
+          "itemKey": "trinket_harlyaoHexSigil",
+          "min": 1,
+          "max": 1,
+          "chance": 0.1,
+          "conditions": {}
+        },
+        {
+          "id": "trinket_harlyaoBloodPact",
+          "itemKey": "trinket_harlyaoBloodPact",
+          "min": 1,
+          "max": 1,
+          "chance": 0.08,
+          "conditions": {}
+        },
+        {
+          "id": "trinket_harlyaoWarCrown",
+          "itemKey": "trinket_harlyaoWarCrown",
+          "min": 1,
+          "max": 1,
+          "chance": 0.06,
+          "conditions": {}
+        }
       ]
     },
     "bandit_flasker": {
       "label": "Bandit (Flasker)",
       "note": "Base corpse valuables. The exact two combat flask loadout types are granted separately by bandit-camps.js so death loot always matches what this Flasker was throwing.",
       "entries": [
-        { "id": "gold", "itemKey": "gold", "min": 4, "max": 12, "chance": 1, "conditions": {} },
-        { "id": "scrapMetal", "itemKey": "banditScrapMetal", "min": 0, "max": 2, "chance": 1, "conditions": {} }
+        {
+          "id": "gold",
+          "itemKey": "gold",
+          "min": 4,
+          "max": 12,
+          "chance": 1,
+          "conditions": {}
+        },
+        {
+          "id": "scrapMetal",
+          "itemKey": "banditScrapMetal",
+          "min": 0,
+          "max": 2,
+          "chance": 1,
+          "conditions": {}
+        }
       ]
     },
     "mastery_cave_map_northern_cliffs": {
@@ -1212,6 +1751,11 @@
           }
         }
       }
+    },
+    "crateJunk": {
+      "label": "Smashed Crate Junk",
+      "note": "Mundane mixed camp supplies. No metal bars, gold, mastery artifacts, manuals or rare chest generators. Additional agricultural/animal goods are included by canonical inventory key.",
+      "entries": []
     }
   }
 }
