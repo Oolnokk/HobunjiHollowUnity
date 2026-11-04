@@ -919,6 +919,7 @@
     const world = fruit.group.getWorldPosition(new THREE.Vector3());
     if (held === fruit) {
       cancelShatterAim(); setHeldRearXray(null); held = null;
+      if(backCarried)setHeldRearXray(backCarried); // Dropping hand fruit must not hide the separate back burden.
       prompt(); deps()?.refreshActionBar?.();
     }
     rec.scene.add(fruit.group);
