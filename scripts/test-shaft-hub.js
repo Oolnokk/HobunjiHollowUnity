@@ -333,6 +333,36 @@ for(const side of ['north','east','south','west']){
   for(const p of [connected.route.path[0],connected.route.path.at(-1)])
     assert(rec.floorSet.has(p.x+','+p.z),'both path endpoints are actual walkable tiles');
   assert(rec.mapData.floor.some(([c,r])=>c===connected.route.path.at(-1).x&&r===connected.route.path.at(-1).z));
+  if(side==='north'){ // Prove the whole generated multi-floor goal graph can complete, not just its first room.
+    for(const record of network.states){
+      for(let i=record.solved;i<record.challenges.length;i++){
+        const challenge=record.challenges[i];
+        player={x:challenge.x,z:challenge.z,y:challenge.floorY};
+        if(challenge.kind==='pressurePlate')
+          for(let j=0;j<17;j++)network.tick(.05);
+        else if(challenge.kind==='melodyEcho')
+          challenge.onMelodyResult({id:challenge.id,solved:true});
+        else if(challenge.kind==='dungeonFire')
+          assert.equal(challenge.fireRecord.onBurn(),true);
+        else for(let j=0;j<challenge.targetCount;j++)challenge.simulateHit(j);
+        assert(challenge.solved,'every authored challenge can progress: '+challenge.id);
+      }
+    }
+    const allBrazierControls=ruin.controls.filter(control=>control.kind==='layerBrazier');
+    for(let i=0;i<network.states.length;i++){
+      const state=network.states[i];
+      assert.equal(state.solved,state.challenges.length,'all stages must precede this brazier');
+      player={x:state.challenges.at(-1).x,z:state.challenges.at(-1).z,
+        y:state.challenges.at(-1).floorY};
+      allBrazierControls[i].onPress();
+    }
+    assert.equal(network.getState().lit,network.getState().braziers);
+    assert(network.getState().complete&&ruin.shaftNetworkComplete,
+      'every physical floor wing is required to complete shaft-wide Great Door seals');
+    allBrazierControls.at(-1).onPress();
+    assert.equal(network.getState().lit,network.getState().braziers,'brazier interactions are idempotent');
+  }
+
   const oldMusic=globalThis.MusicMinigame; // Simulate leaving during a shaft melody without closing the flute overlay.
   const echo=network.states.flatMap(state=>state.challenges).find(challenge=>challenge.kind==='melodyEcho');
   let musicClosed=0;
