@@ -70,6 +70,8 @@ const html=fs.readFileSync(path.join(__dirname,'../docs/index.html'),'utf8');
 const mesa=fs.readFileSync(path.join(__dirname,'../docs/js/zone-plateau-mesa.js'),'utf8');
 assert(html.indexOf('cell-grid-3d.js')<html.indexOf('cliff-elevated-surfaces.js'),'module load order');
 assert(mesa.includes('CliffElevatedSurfaces?.mount?.(network'),'register on mesa rebuild');
+assert(mesa.includes('tileY: t => deps.tileSurfaceYInArea(t, mapId)'),
+  'outdoor route nodes use the same ground height as player and wildlife');
 assert(game.includes('CliffElevatedSurfaces?.clear?.(mapId)'),'unregister on area unload');
 assert(game.includes('CliffRouteNetwork?.releaseArea?.(mapId)'),'retire stale world geometry and reward handles');
 assert(game.includes('getCurrentArea: () => currentArea'),'active area predicate provided');
