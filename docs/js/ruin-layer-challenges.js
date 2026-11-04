@@ -7,7 +7,7 @@
   else root.RuinLayerChallenges=api;
 })(typeof self!=='undefined'?self:globalThis,function(root){
   'use strict';
-  const TYPES=Object.freeze(['pressurePlate','glyphObelisk','ceilingRailTargets','melodyEcho']);
+  const TYPES=Object.freeze(['pressurePlate','glyphObelisk','ceilingRailTargets','melodyEcho','dungeonFire']);
   const boneTextures=new Map(); // Shared Scratchbone numeral textures for every generated melody decal.
   function melodyFor(id){
     let seed=2166136261; // Deterministic FNV hash; the same generated chamber always has the same note sequence.
@@ -32,9 +32,11 @@
     const plateMat=basic(0x776452);
     const bus=options.projectileBus||root.DevRandomRuinSimplePuzzles;
     const music=options.music||root.MusicMinigame; // Existing eight-note flute performance/puzzle bridge is authoritative.
+    const fire=options.dungeonFire||root.DungeonFire; // Reuse real ranged-weapon ignition + projectile contact/heat checks.
     const events=options.events||root; // Reuses the standard hobunji-ruin-melody-result event, not a new music input bridge.
     let linkDisposers=[]; // Disposers are returned by the existing modular target hit registry.
     let melodyListener=null; // Removed on the same lifecycle as this authored chamber's other resources.
+    let fireTargetId=null; // Registered only when the correct ruin's projectile runtime is live; removed on teardown.
     const body=(name,geometry,mat,x,py,z)=>{
       const mesh=new THREE.Mesh(geometry,mat);
       mesh.name=name;mesh.position.set(x,py,z);
@@ -73,6 +75,39 @@
         new THREE.BoxGeometry(2.2,.18,2.2),plateMat,cx,y+.05,cz);
       rec.plate=surface;
       rec.requiredSeconds=.8;
+    }else if(kind==='dungeonFire'){
+      // The standard DungeonFire runtime owns shot ignition and plume-to-ice
+      // collision. The room merely authors a source brazier, a heat target,
+      // and a progression gate; it never guesses from a normal arrow hit.
+      const source=body('ruin-fire-source-'+id,
+        new THREE.CylinderGeometry(.65,.8,.65,8),stone,cx-2.3,y+.37,cz);
+      body('ruin-fire-source-flame-'+id,new THREE.ConeGeometry(.38,.95,7),
+        idle,cx-2.3,y+1.18,cz);
+      const frozen=basic(0x9fdaed);
+      const ice=body('ruin-fire-ice-seal-'+id,
+        new THREE.BoxGeometry(2.3,2.1,.75),frozen,cx+2.1,y+1.18,cz);
+      rec.fireSource=source;rec.fireSeal=ice;
+      rec.fireRecord={
+        id:'layer-fire-target-'+id,object:ice,active:true,contactPadding:.16,
+        isActive:()=>!rec.disposed&&!rec.solved&&isActive()
+          &&Number.isFinite(Number(getPlayerY?.()))&&Math.abs(Number(getPlayerY())-y)<.9,
+        onBurn:()=>{
+          if(!rec.fireRecord.isActive())return false;
+          rec.fireRecord.active=false;
+          rec.fireSeal.material=hit;
+          return complete();
+        },
+      };
+      options.addControl?.({
+        kind:'dungeonFireSource',object:source,promptRoot:source,
+        floorY:y,range:1.75,priority:26,touchIcon:'🔥',label:'Ignite Next Shot',
+        onPress:()=>{
+          if(rec.disposed||rec.solved||!isActive()
+            ||Math.abs(Number(getPlayerY?.())-y)>.9)return;
+          if(fire?.armNextProjectile?.()===true)options.onFireArmed?.(rec);
+          else options.onFireUnavailable?.(rec);
+        }
+      });
     }else if(kind==='melodyEcho'){
       // This is the existing melody-echo mini-game: stepping onto the bronze
       // plate plays the generated phrase; step off/on to hear it again, then
@@ -160,6 +195,11 @@
           t.rune.position.set(t.base.position.x,t.base.position.y,t.base.position.z);
         }
       }
+      if(kind==='dungeonFire'&&!rec.solved&&!fireTargetId
+        &&bus?.hasActiveRuinState?.()===true){
+        fireTargetId=fire?.registerTarget?.(rec.fireRecord)||null;
+        rec.fireLinked=!!fireTargetId;
+      }
       // External target registration may precede this module (the V50
       // puzzle runtime initializes on its first *in-map* frame). Retry until
       // the canonical projectile registry becomes available.
@@ -178,6 +218,7 @@
       if(rec.disposed)return;
       rec.disposed=true;
       for(const remove of linkDisposers)remove();
+      if(fireTargetId)fire?.unregisterTarget?.(fireTargetId);
       if(melodyListener)events?.removeEventListener?.('hobunji-ruin-melody-result',melodyListener);
       group.parent?.remove(group);
       for(const m of owned)m.geometry?.dispose?.();
