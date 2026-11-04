@@ -63,6 +63,7 @@
     let linkDisposers=[]; // Disposers are returned by the existing modular target hit registry.
     let melodyListener=null; // Removed on the same lifecycle as this authored chamber's other resources.
     let fireTargetId=null; // Registered only when the correct ruin's projectile runtime is live; removed on teardown.
+    let fireControl=null; // This chamber removes its fire-source interaction when disposed, including on partial mounts.
     let ropeChain=null; // Native V50 rope controller owns all rope physics and checkpoint updates after registration.
     const body=(name,geometry,mat,x,py,z)=>{
       const mesh=new THREE.Mesh(geometry,mat);
@@ -168,7 +169,7 @@
           return complete();
         },
       };
-      options.addControl?.({
+      fireControl={
         kind:'dungeonFireSource',object:source,promptRoot:source,
         floorY:y,range:1.75,priority:26,touchIcon:'🔥',label:'Ignite Next Shot',
         onPress:()=>{
@@ -177,7 +178,8 @@
           if(fire?.armNextProjectile?.()===true)options.onFireArmed?.(rec);
           else options.onFireUnavailable?.(rec);
         }
-      });
+      };
+      options.addControl?.(fireControl);
     }else if(kind==='melodyEcho'){
       // This is the existing melody-echo mini-game: stepping onto the bronze
       // plate plays the generated phrase; step off/on to hear it again, then
@@ -309,6 +311,7 @@
       rec.disposed=true;
       for(const remove of linkDisposers)remove();
       if(fireTargetId)fire?.unregisterTarget?.(fireTargetId);
+      if(fireControl)options.removeControl?.(fireControl);
       if(ropeChain)bus?.removeExternalRopeChain?.(ropeChain);
       if(melodyListener)events?.removeEventListener?.('hobunji-ruin-melody-result',melodyListener);
       group.parent?.remove(group);
