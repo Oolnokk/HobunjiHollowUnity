@@ -28,6 +28,71 @@
   let deps = null;
   function init(injectedDeps) { deps = injectedDeps; }
 
+  // Livestock interaction must follow the *rendered* animal, not its tile
+  // reservation. A wandering animal moves the worldObjects key at the start of
+  // a hop, while its PNG planes take several frames to reach the new tile.
+  const LIVESTOCK_INTERACTION_REACH = 2.25; // Maximum player-to-visible-hit ground distance, in farm tiles.
+  let interactionRaycaster = null; // Lazy Three.js raycaster reused by the farm action-arch and press dispatch.
+  const interactionRayHits = []; // Reused mesh-hit buffer for all visible animals within reach.
+  let aimedAnimalFrame = NaN; // Last game frame for which the camera ray was tested.
+  let aimedAnimalCache = null; // Selection shared by action buttons, prompts, and the press handler in that frame.
+
+  function aimedAnimal() {
+    if (!deps || deps.getCurrentArea?.() !== 'farm') return null;
+    const frame = Number(deps.getInteractionFrameTime?.()); // Reuses game.js's frame clock to avoid repeatedly raycasting for each action-bar query.
+    if (Number.isFinite(frame) && frame > 0 && frame === aimedAnimalFrame) return aimedAnimalCache;
+    aimedAnimalFrame = frame;
+    aimedAnimalCache = null;
+    const ray = deps.getPlayerInteractionRay?.(); // Authoritative cursor/center camera ray, identical to Show Interaction Raycast.
+    const ox = Number(ray?.origin?.x), oy = Number(ray?.origin?.y), oz = Number(ray?.origin?.z); // Camera-space origin, in Three.js world units.
+    const dx = Number(ray?.direction?.x), dy = Number(ray?.direction?.y), dz = Number(ray?.direction?.z); // Camera-space direction, normalized below.
+    const directionLength = Math.hypot(dx, dy, dz); // Guard against missing/zero vectors rather than guessing a ground tile.
+    if (![ox, oy, oz, dx, dy, dz, directionLength].every(Number.isFinite) || directionLength < 1e-8 || !THREE?.Raycaster) {
+      window.DebugHitboxes?.clearInteractionFocus?.('livestock');
+      return null;
+    }
+    if (!interactionRaycaster) interactionRaycaster = new THREE.Raycaster();
+    interactionRaycaster.ray.origin.set(ox, oy, oz);
+    interactionRaycaster.ray.direction.set(dx / directionLength, dy / directionLength, dz / directionLength);
+    interactionRaycaster.near = 0;
+    interactionRaycaster.far = Infinity;
+    const playerX = Number(deps.player?.x) / Number(deps.TILE), playerZ = Number(deps.player?.y) / Number(deps.TILE); // Player location converted from gameplay pixels to Three.js tile units.
+    if (![playerX, playerZ].every(Number.isFinite)) return null;
+    let nearestDistance = Infinity; // Chooses the frontmost rendered animal when sprites overlap in the camera view.
+    let nearestPoint = null; // Exact mesh hit used by the existing in-game raycast diagnostic overlay.
+    for (const animal of deps.animalObjects || []) {
+      const avatar = animal?.avatarRef; // Uses the same live plane model that the game actually draws.
+      const root = avatar?.group; // World transform changes continuously even while the animal's reserved tile stays fixed.
+      if (!root?.visible || !root.parent || animal._barnHome || animal._vatWorkPose) continue;
+      const scale = Math.max(Math.abs(Number(root.scale?.x) || 1), Math.abs(Number(root.scale?.y) || 1), Math.abs(Number(root.scale?.z) || 1)); // Coarse rejection includes authored large animals.
+      const visualExtent = Math.max(Number(animal.modelWidth) || 1, Number(animal.modelHeight) || 1) * scale * 0.5; // Conservative bounds; actual selection is based on the mesh intersection below.
+      if (Math.hypot((Number(root.position?.x) || 0) - playerX, (Number(root.position?.z) || 0) - playerZ) > LIVESTOCK_INTERACTION_REACH + visualExtent) continue;
+      root.updateMatrixWorld?.(true); // Refresh after the animal's moving/rotating/squashing animation before evaluating its visible planes.
+      interactionRayHits.length = 0;
+      if (avatar.frontPlane?.isMesh && avatar.frontPlane.visible) interactionRaycaster.intersectObject(avatar.frontPlane, false, interactionRayHits);
+      if (avatar.backPlane?.isMesh && avatar.backPlane.visible) interactionRaycaster.intersectObject(avatar.backPlane, false, interactionRayHits);
+      for (const hit of interactionRayHits) {
+        if (!hit?.point || !Number.isFinite(hit.distance) || hit.distance >= nearestDistance) continue;
+        // Only the part of the sprite inside interaction reach may be selected;
+        // giant creatures cannot be activated from across the farm.
+        if (Math.hypot(hit.point.x - playerX, hit.point.z - playerZ) > LIVESTOCK_INTERACTION_REACH) continue;
+        nearestDistance = hit.distance;
+        aimedAnimalCache = animal;
+        nearestPoint = hit.point;
+      }
+    }
+    if (aimedAnimalCache && nearestPoint) {
+      window.DebugHitboxes?.noteInteractionFocus?.({
+        candidate: { type: 'livestock', id: aimedAnimalCache.livestockId },
+        point: nearestPoint,
+        distanceWorld: nearestDistance,
+      }); // Show Interaction Raycast marks the actual selected plane, usable on mobile without devtools.
+    } else {
+      window.DebugHitboxes?.clearInteractionFocus?.('livestock');
+    }
+    return aimedAnimalCache;
+  }
+
   // ── Heart levels (0-5, in 1/5-heart steps) ──────────────────────────
   // A housed animal's heart level rises or falls by one step per day
   // depending on whether its assigned trough held feed it actually eats
@@ -1709,6 +1774,7 @@
 
   window.FarmAnimals = {
     init,
+    aimedAnimal,
     canSpawnAt,
     queueItemGenotype,
     addFromItem,
