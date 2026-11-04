@@ -64,6 +64,7 @@
       return {...pattern, renderRasterScale:raster,
         tiling:placement.tiling !== false,
         usageScaleMultiplier:finite(pattern.usageScaleMultiplier,1) * Math.max(.1, Math.min(20,finite(placement.scale,1))),
+         motifScale: Math.max(.05, Math.min(20, finite(pattern.motifScale,1) * finite(placement.motifScale,1))), // Instance-only motif zoom.
         usageRotationDeg:finite(pattern.usageRotationDeg,0) + finite(placement.rotationDeg,0),
         usageOffsetX:finite(pattern.usageOffsetX,0) * raster + finite(placement.offsetX,0) * TILE_PX / record.scale * raster,
         usageOffsetY:finite(pattern.usageOffsetY,0) * raster + finite(placement.offsetY,0) * TILE_PX / record.scale * raster}; // Offsets are surface tile units, independent of atlas resolution.
@@ -81,12 +82,13 @@
       [0,1].map(index => `<fieldset><legend>${index ? 'Overpass' : 'Primary pattern'}</legend>${index ? '<label>Overpass pattern <select data-overpass></select></label>' : ''}
         <label><input data-repeat-${index} type="checkbox" checked>Repeat / tile</label>
         <label>Scale multiplier <input data-zoom-${index} type="range" min="0.1" max="20" step="0.1" value="1" aria-label="${index ? "Overpass" : "Primary"} pattern scale"></label><output data-zoom-value-${index}>1.0×</output>
+        <label>Motif scale <input data-motif-${index} type="range" min="0.1" max="3" step="0.05" value="1" aria-label="${index ? "Overpass" : "Primary"} motif scale"></label><output data-motif-value-${index}>1.00×</output>
         <label>Rotation (degrees) <input data-rotation-${index} type="range" min="-180" max="180" step="1" value="0" aria-label="${index ? "Overpass" : "Primary"} pattern rotation"></label><output data-rotation-value-${index}>0°</output>
         <label>X offset <input data-x-${index} type="range" min="-10" max="10" step="0.05" value="0" aria-label="${index ? "Overpass" : "Primary"} pattern X offset"></label><output data-x-value-${index}>0.00</output>
         <label>Y offset <input data-y-${index} type="range" min="-10" max="10" step="0.05" value="0" aria-label="${index ? "Overpass" : "Primary"} pattern Y offset"></label><output data-y-value-${index}>0.00</output></fieldset>`).join('');
     host.appendChild(controls);
     const field = name => controls.querySelector(`[data-${name}]`); // Scoped fields allow multiple authoring panels without ID collisions.
-    for(let index=0;index<2;index++) for(const name of ['zoom','rotation','x','y']) field(`${name}-${index}`)?.addEventListener?.('input',()=>{const output=field(`${name}-value-${index}`),value=Number(field(`${name}-${index}`).value);if(output)output.textContent=name==='zoom'?`${value.toFixed(1)}×`:name==='rotation'?`${value}°`:value.toFixed(2);});
+    for(let index=0;index<2;index++) for(const name of ['zoom','motif','rotation','x','y']) field(`${name}-${index}`)?.addEventListener?.('input',()=>{const output=field(`${name}-value-${index}`),value=Number(field(`${name}-${index}`).value);if(output)output.textContent=name==='zoom'?`${value.toFixed(1)}×`:name==='motif'?`${value.toFixed(2)}×`:name==='rotation'?`${value}°`:value.toFixed(2);});
     const dyes = () => window.DyeSystem?.getCatalog?.() || window.ScratchbonesAccount?.getDyeCatalog?.() || window.SCRATCHBONES_CONFIG?.game?.dyes?.catalog || [];
     const populate = (select, entries, first, selected) => {
       select.replaceChildren(); select.add(new Option(first,''));
@@ -108,7 +110,7 @@
         for(let index=0;index<2;index++) {
           const transform=record.layerTransforms?.[index] || {}, pattern=record.patterns?.[index] || (index===0 ? resolvePattern(record) : null);
           field(`repeat-${index}`).checked=transform.tiling ?? pattern?.tiling !== false;
-          for(const [name,key,fallback] of [['zoom','scale',1],['rotation','rotationDeg',0],['x','offsetX',0],['y','offsetY',0]]) { const value=finite(transform[key],fallback),input=field(`${name}-${index}`); if(name==='rotation'){input.min=Math.min(-180,value);input.max=Math.max(180,value);} else if(name==='x'||name==='y'){input.min=Math.min(-10,value);input.max=Math.max(10,value);} input.value=value; const output=field(`${name}-value-${index}`); if(output)output.textContent=name==='zoom'?`${value.toFixed(1)}×`:name==='rotation'?`${value}°`:value.toFixed(2); }
+          for(const [name,key,fallback] of [['zoom','scale',1],['motif','motifScale',1],['rotation','rotationDeg',0],['x','offsetX',0],['y','offsetY',0]]) { const value=finite(transform[key],fallback),input=field(`${name}-${index}`); if(name==='rotation'){input.min=Math.min(-180,value);input.max=Math.max(180,value);} else if(name==='x'||name==='y'){input.min=Math.min(-10,value);input.max=Math.max(10,value);} input.value=value; const output=field(`${name}-value-${index}`); if(output)output.textContent=name==='zoom'?`${value.toFixed(1)}×`:name==='motif'?`${value.toFixed(2)}×`:name==='rotation'?`${value}°`:value.toFixed(2); }
         }
       },
       read(record) {
@@ -116,7 +118,7 @@
         if(!id)patterns.length=1;
         else if(id!==(record.overpassPatternId || '__custom') || !patterns[1])patterns[1]=resolvePattern({patternId:id});
         const layerTransforms=[0,1].map(index=>({tiling:field(`repeat-${index}`).checked,
-          scale:Math.max(.1,Math.min(20,finite(field(`zoom-${index}`).value,1))),rotationDeg:finite(field(`rotation-${index}`).value,0),
+          scale:Math.max(.1,Math.min(20,finite(field(`zoom-${index}`).value,1))),motifScale:Math.max(.1,Math.min(3,finite(field(`motif-${index}`).value,1))),rotationDeg:finite(field(`rotation-${index}`).value,0),
           offsetX:finite(field(`x-${index}`).value,0),offsetY:finite(field(`y-${index}`).value,0)}));
         return {...record,patterns,overpassPatternId:id || null,layerTransforms}; // Snapshot + transforms serialize with the existing part/instance record.
       }
