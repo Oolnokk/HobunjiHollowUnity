@@ -16,6 +16,7 @@ function read(file) { return fs.readFileSync(file, 'utf8'); }
 load('docs/js/combat/resource-system.js');
 load('docs/js/amphibious-fishing.js');
 load('docs/js/combat/animal-scent-targeting.js');
+load('docs/js/wildlife-spawn.js');
 load('docs/js/combat/combat-progression.js');
 const rs = ctx.ResourceSystem;
 const targeting = ctx.AnimalScentTargeting;
@@ -53,6 +54,23 @@ victim = actor({ health: 12, maxHealth: 100 });
 rs.addAffliction(victim, 'scentMarkedHealth', 20);
 rs.applyDamage(victim, 0, { attacker: wildSource, wildlifeSkirmishFloor: 12 });
 approximately(victim.health, 12, 'wildlife on its Health floor receives no further damage');
+
+// Exercise the real wildlife-skirmish entry point as well as ResourceSystem:
+// ecology caps the damage, while player-owned animal companions take real combat hits.
+const wildlife = ctx.WildlifeSpawn;
+wildlife.init({
+  CREATURE_DB: {}, HOSTILE_BITE_KNOCKBACK_PX_S: 0,
+  damageCreature: (target, damage, x, y, knockback, opts) => rs.applyDamage(target, damage, opts),
+});
+const animalSource = { ...wildSource, x: 0, y: 0, def: { attackTag: 'sharp' } };
+victim = actor({ health: 25, maxHealth: 100 });
+rs.addAffliction(victim, 'scentMarkedHealth', 30);
+wildlife.applyWildlifeSkirmishDamage(animalSource, victim, 13);
+approximately(victim.health, 12, 'actual wildlife sparring maintains the nonlethal floor with scent');
+const friendlyAnimal = actor({ isCompanion: true, health: 25, maxHealth: 100 });
+rs.addAffliction(friendlyAnimal, 'scentMarkedHealth', 30);
+wildlife.applyWildlifeSkirmishDamage(animalSource, friendlyAnimal, 13);
+approximately(friendlyAnimal.health, 0, 'predator attacks on player companions use the full damage path, not the wildlife floor');
 
 victim = actor();
 rs.addAffliction(victim, 'scentMarkedHealth', 8);
