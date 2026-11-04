@@ -730,7 +730,7 @@
 
   function activate() {
     const panel = activePanel();
-    if (!panel) return;
+    if (!panel || panelOwnsAction(panel, 'confirm')) return; // Opt-in reader panels own semantic Confirm; they do not click the focused DOM button.
     const intendedTarget = currentTarget; // Captures the user's selected button before dynamic panel updates can recover focus elsewhere.
     refreshFocusIfStale();
     if (intendedTarget && currentTarget !== intendedTarget) {
@@ -741,7 +741,7 @@
       lastBlockedActivation = { action: 'confirm', id: currentTarget.id || null, tag: currentTarget.tagName || null, reason: 'off-screen' };
       return; // Selection can remain focused after right-stick scrolling; never fire it while outside the visible area.
     }
-    if (panelOwnsAction(panel, 'confirm') || !currentTarget) return;
+    if (!currentTarget) return;
     if (isGroup(currentTarget)) {
       if (currentTarget !== navigationRoot(panel)) enterGroup(currentTarget, panel);
       return;
