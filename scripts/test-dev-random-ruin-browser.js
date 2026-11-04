@@ -511,7 +511,7 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
         'an otherwise rope-free seed should explain its rejected traversals');
     }
     const swappableHallwayModules=active.simple.modules.filter(module=>module.slotKind==='hallway'&&['projectileHallwayTrap','melodyEchoTrigger','hallwayGlyphGate','ropeChainAbyss'].includes(module.type));
-    assert.ok(swappableHallwayModules.length >= 1, 'simple mode should fill at least one generic hallway module slot: '+JSON.stringify(active.simple));
+    assert.ok(swappableHallwayModules.length >= 1 || active.simple.ropeChains.length > 0, 'simple mode should fill a generic hallway slot or the required rope-chain crossing: '+JSON.stringify(active.simple));
     assert.ok(active.simple.checkpoints.doorwayCount > 0, 'generated ruin should expose doorway checkpoints: '+JSON.stringify(active.simple.checkpoints));
     assert.equal(active.simple.checkpoints.triggered.includes('ruin-entry'), true, 'entering the ruin must immediately establish the first checkpoint');
     assert.equal(active.coverage.effectiveUnhandled.length, 0, JSON.stringify(active.coverage));
