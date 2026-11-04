@@ -131,6 +131,7 @@ async function refreshAssets(){
   C.clearRect(0,0,E.stage.width,E.stage.height);
   E.label.textContent=`Loading target: ${species} ${gender} (source: ${sourceSpecies} ${sourceGender})…`;
   E.threeStatus.textContent=`Loading target rig: ${species} ${gender}…`;
+  E.match3DStatus.textContent=`Loading ${species} ${gender} artwork and matched portrait…`;
   E.sourceLayerStatus.textContent=`Loading ${species} ${gender} target body and ${sourceSpecies} ${sourceGender} garment…`;
   try{
     if(R.patchWorkflow.active||R.patchWorkflow.canvas){
@@ -165,6 +166,7 @@ async function refreshAssets(){
     E.sourceLayerStatus.textContent=`Cannot show target ${species} ${gender}: ${error.message}`;
     E.label.textContent=`Target unavailable: ${species} ${gender}`;
     E.threeStatus.textContent=`No rig for ${species} ${gender}: target art failed to load (see source status).`;
+    E.match3DStatus.textContent=`Cannot match target ${species} ${gender}: artwork failed to load.`;
     status('Refresh failed: '+error.message);log('ERROR '+error.message);console.error(error);
   }
 }
