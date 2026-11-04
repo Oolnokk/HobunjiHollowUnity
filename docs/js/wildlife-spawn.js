@@ -175,6 +175,14 @@
   // below threshold before this hit.
   function applyWildlifeSkirmishDamage(attacker, target, amount) {
     if (target?.isNpcWalker) return window.WildlifeFoodWeb?.npcWalkerStrike?.(attacker, target) || false; // Named scheduling walkers lack Combat Health; defend/scare without inflicting fabricated damage.
+    // A scented player-owned animal companion is a genuine opponent, not wildlife
+    // sparring prey: use its real Health/downed pipeline and allow lethal attacks.
+    if (target?.isCompanion && !target.banditCompanion) {
+      deps.damageCreature(target, Math.max(0, amount), attacker.x, attacker.y, deps.HOSTILE_BITE_KNOCKBACK_PX_S, {
+        tag: attacker.def?.attackTag || 'sharp', attacker,
+      });
+      return;
+    }
     const factionTarget = target?.isBandit === true || target?.isTribeHunter === true || target?.isPorakanekiHunter === true || target?.banditCompanion === true;
     if (factionTarget) {
       // Predator-vs-humanoid encounters are real observed combat, not the
