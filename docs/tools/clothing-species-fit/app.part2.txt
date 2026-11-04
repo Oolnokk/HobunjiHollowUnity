@@ -174,6 +174,7 @@ function rebuildSelectors(){
   }
   if([...E.sourceSpecies.options].some(o=>o.value===wantedSource))E.sourceSpecies.value=wantedSource;
   E.sourceGender.value=A.settings?.sourceGender||A.settings?.gender||E.gender.value;
+  syncTargetGenderChoices(); // Keep the wearer gender valid when changing to a species with only one authored body.
   rebuildGarmentSelector();
 }
 function sourceHasGarmentArt(garment,species,gender){
