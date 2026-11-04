@@ -32,7 +32,7 @@
   // browser that already cached an older lyre-performance.html under this
   // exact URL would keep serving it indefinitely after an update, since
   // nothing about the request ever changes.
-  const MUSIC_MINIGAME_SRC = 'assets/minigames/lyre-performance.html?v=20261104puzzleHud1';
+  const MUSIC_MINIGAME_SRC = 'assets/minigames/lyre-performance.html?v=20261103flutePerformance1';
   const PUZZLE_MINIGAME_SRC = 'assets/minigames/kurraya-puzzle.html?v=20261104puzzleHud2'; // The default eight-note puzzle surface, independent of the performance engine.
   // The ONE songbook entry the ported app currently knows (see
   // lyre-performance.html's SONGBOOK) — surfaced to the compact song
@@ -473,7 +473,7 @@
     frameEl.src = next === 'puzzle'
       ? PUZZLE_MINIGAME_SRC + (playerSession.instrumentKey === 'flute' ? '&instrument=flute' : '') +
         (/(?:[?&])debugMusic=1(?:&|$)/.test(window.location?.search || '') ? '&debugMusic=1' : '')
-      : MUSIC_MINIGAME_SRC; // The flute sample is resolved inside the same eight-note iframe; other instruments retain Kurraya audio.
+      : MUSIC_MINIGAME_SRC + (playerSession.instrumentKey === 'flute' ? '&instrument=flute' : ''); // Performance retains its chords, arpeggios and song controls while the iframe selects the flute's own sound.
     return true;
   }
   modeBtnEl?.addEventListener('click',event => {
@@ -592,10 +592,10 @@
         // was torn down for the duration — see beginPlayerSession — so this
         // is the only place those notes are still observable) and 'backup'
         // notes are the player's own input.
-        if (data.performer === 'backup') { deps?.triggerPlayerKurrayaTwitch?.(); announcePlayerPlaying(); }
+        if (data.performer === 'backup') { if (playerSession.instrumentKey !== 'flute') deps?.triggerPlayerKurrayaTwitch?.(); announcePlayerPlaying(); } // A mouth-played flute does not twitch Kurraya strings.
         else if (playerSession.npcId) deps?.triggerNpcKurrayaTwitch?.(playerSession.npcId);
       } else {
-        deps?.triggerPlayerKurrayaTwitch?.();
+        if (playerSession?.instrumentKey !== 'flute') deps?.triggerPlayerKurrayaTwitch?.();
         announcePlayerPlaying();
       }
       return;
