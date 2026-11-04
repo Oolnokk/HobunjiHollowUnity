@@ -111,7 +111,15 @@ async function main() {
     corpseObjects: new Set(),
     despawnCreature() {},
   });
-  vm.runInContext(gameSource.slice(corpseStart, corpseEnd), corpseContext, { filename: 'game-corpse-interaction.js' });
+  const corpseSource = gameSource.slice(corpseStart, corpseEnd); // Keep the extracted production implementation available for failure diagnostics.
+  vm.runInContext(corpseSource, corpseContext, { filename: 'game-corpse-interaction.js' });
+  function lootCorpseWithSourceDiagnostics(corpse) {
+    try { return corpse.onAction('obj_loot_corpse'); }
+    catch (error) {
+      console.error('Real corpse implementation at failure:\n' + corpseSource.split('\n').slice(0, 100).map((line, i) => (i + 1) + ': ' + line).join('\n'));
+      throw error;
+    }
+  }
   windowStub.AnimalHides.restore(null, {}); // Clear the manually recorded hides so this assertion proves the real corpse interaction recorded them.
   for (const [creatureKey, poolId, hideKey] of [
     ['puktuk', 'creature_puktuk', 'puktukHide'],
@@ -125,7 +133,7 @@ async function main() {
       genotype: { base: { color: '#776655' }, belly: { enabled: true, copies: 2, color: '#aabbcc' } },
     }; // The corpse action should snapshot this particular wild animal's coat without rerolling it.
     const corpse = corpseContext.makeCorpseWorldObject(creature);
-    assert.equal(corpse.onAction('obj_loot_corpse').ok, true, creatureKey + ' corpse must be lootable');
+    assert.equal(lootCorpseWithSourceDiagnostics(corpse).ok, true, creatureKey + ' corpse must be lootable');
     assert.equal(corpseInventory[hideKey], beforeCount + 1, creatureKey + ' corpse must award one hide into Pack');
     const record = windowStub.AnimalHides.groupsFor(hideKey, corpseInventory[hideKey])
       .map(group => group.hideRecord).find(hide => hide?.sourceKind === creatureKey);
@@ -139,7 +147,7 @@ async function main() {
   ]) {
     const before = corpseInventory.uumkaoiiShell || 0;
     const corpse = corpseContext.makeCorpseWorldObject({ id: 'test-' + creatureKey, creatureKey, def: { label: creatureKey, lootPool: poolId } });
-    assert.equal(corpse.onAction('obj_loot_corpse').ok, true);
+    assert.equal(lootCorpseWithSourceDiagnostics(corpse).ok, true);
     assert((corpseInventory.uumkaoiiShell || 0) > before, creatureKey + ' corpse must award shell to Pack');
   }
   assert.equal(windowStub.AnimalHides.getDebug().pack.uumkaoiiShell, undefined, 'Shell loot does not create hide metadata');
