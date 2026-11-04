@@ -86,6 +86,55 @@ async function main() {
   assert.equal(windowStub.AnimalHides.isHide('uumkaoiiShell'), false, 'Shells cannot become fur hoods');
   assert.equal(windowStub.AnimalHides.recordFromCreature('uumkaoiiShell', { creatureKey: 'uumkaoii' }, 1, 18), null);
   assert.deepEqual(pools.pools.creature_uumkaoii.entries, [], 'Companion Uumkao\'ii keeps its intentionally empty loot table');
+
+  // Exercise game.js's actual corpse interaction, rather than only calling the hide API by hand.
+  // This also catches a missing item definition, a wrong lootPool id or a death-handler integration regression.
+  const gameSource = read('docs/game.js'); // Live game owner: this function is called by ordinary corpse interactions.
+  const corpseStart = gameSource.indexOf('function makeCorpseWorldObject(c)');
+  const corpseEnd = gameSource.indexOf('function getCorpseObjectAt(', corpseStart);
+  assert(corpseStart >= 0 && corpseEnd > corpseStart, 'The production corpse interaction is available');
+  const corpseInventory = {}; // Actual loot additions are verified here before looking up per-hide metadata.
+  const corpseContext = vm.createContext({
+    window: windowStub,
+    inventory: corpseInventory,
+    ITEM_DEFS: Object.fromEntries(Object.keys(index).map(key => [key, { label: index[key].label, icon: index[key].icon, sellPrice: 24 }])),
+    itemIconForKey: () => '🟫',
+    corpseObjects: new Set(),
+    despawnCreature() {},
+  });
+  vm.runInContext(gameSource.slice(corpseStart, corpseEnd), corpseContext, { filename: 'game-corpse-interaction.js' });
+  windowStub.AnimalHides.restore(null, {}); // Clear the manually recorded hides so this assertion proves the real corpse interaction recorded them.
+  for (const [creatureKey, poolId, hideKey] of [
+    ['puktuk', 'creature_puktuk', 'puktukHide'],
+    ['voorg-ass', 'creature_voorg-ass', 'voorgAssHide'],
+    ['nelk', 'creature_nelk', 'nelkHide'],
+    ['voorg-ass-herd-mother', 'creature_voorg-ass', 'voorgAssHide'],
+  ]) {
+    const beforeCount = corpseInventory[hideKey] || 0;
+    const creature = {
+      id: 'test-' + creatureKey, creatureKey, def: { label: creatureKey, lootPool: poolId },
+      genotype: { base: { color: '#776655' }, belly: { enabled: true, copies: 2, color: '#aabbcc' } },
+    }; // The corpse action should snapshot this particular wild animal's coat without rerolling it.
+    const corpse = corpseContext.makeCorpseWorldObject(creature);
+    assert.equal(corpse.onAction('obj_loot_corpse').ok, true, creatureKey + ' corpse must be lootable');
+    assert.equal(corpseInventory[hideKey], beforeCount + 1, creatureKey + ' corpse must award one hide into Pack');
+    const record = windowStub.AnimalHides.groupsFor(hideKey, corpseInventory[hideKey])
+      .map(group => group.hideRecord).find(hide => hide?.sourceKind === creatureKey);
+    assert(record, creatureKey + ' corpse must save its own genetic provenance');
+    assert.equal(record.genotype.base.color, '#776655');
+    assert(windowStub.FurHoodLeatherworking.fromHide(record), creatureKey + ' corpse hide must be craftable');
+  }
+  for (const [creatureKey, poolId] of [
+    ['uumkaoii-wild', 'creature_uumkaoii-wild'],
+    ['uumkaoii-wild-den-mother', 'creature_uumkaoii-wild-den-mother'],
+  ]) {
+    const before = corpseInventory.uumkaoiiShell || 0;
+    const corpse = corpseContext.makeCorpseWorldObject({ id: 'test-' + creatureKey, creatureKey, def: { label: creatureKey, lootPool: poolId } });
+    assert.equal(corpse.onAction('obj_loot_corpse').ok, true);
+    assert((corpseInventory.uumkaoiiShell || 0) > before, creatureKey + ' corpse must award shell to Pack');
+  }
+  assert.equal(windowStub.AnimalHides.getDebug().pack.uumkaoiiShell, undefined, 'Shell loot does not create hide metadata');
+
   console.log('Wildlife shell, genotype hides and fur-hood crafting integration regression passed.');
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });
