@@ -27,15 +27,7 @@
   const cfg = (path, fallback) => window.DevRandomRuinConfig?.get?.(path, fallback) ?? fallback; // docs/config/random-ruin/ruin-config.json // Standalone pit lift footprint; the rest of the pit floor stays open for its chest.
   const COMPOUND_ELEVATOR_TOP_RISE = .88; // Balcony→rope→elevator compositions begin as a visibly elevated landing before the glyph starts the descent cycle.
   const GRID_WALL_CLEARANCE = 0.52; // Used by safe-path grids so every plate center clears the ruin player's 0.28u collision radius plus the authored wall thickness.
-  const HALL_FIRE_BURNING = 18;
-  const HALL_POISON = 16;
-  const HALL_SHOT_PERIOD = 0.9;
   const CANOPY_MIN_HEADROOM = 1.6; // Clear height required under a canopy slab anywhere it overhangs.
-  const HALL_CHARGE_SECONDS = 0.45; // Each emitter's mouth heats up over this window before it fires, so the rhythm can be read and dodged.
-  const HALL_TRAP_COLORS = Object.freeze({
-    fire:{ dim:0x4a1e0e, hot:0xffa040, shot:0xff6a22 },
-    poison:{ dim:0x1f3a18, hot:0xa6ff5c, shot:0x9cff5a },
-  });
   const ROPE_FALL_BURNING = 14;
   const ROPE_GRAB_RADIUS = RopeCore.GRAB_RADIUS;
   const ROPE_BODY_RADIUS = RopeCore.BODY_RADIUS; // Gives the traversal rope real world-space thickness instead of a screen-space one-pixel THREE.Line.
@@ -1100,112 +1092,6 @@
     return null;
   }
 
-  // side is -1/+1 across the hallway; the glowing mouth faces the hallway
-  // centre and is tinted by what this emitter shoots.
-  const hallTrapHot = new THREE.Color();
-  function createEmitterFixture(id,x,y,z,axis,side,kind) {
-    const mesh=naturalizeStone(new THREE.Mesh(sharedBoxGeometry(.24,.24,.24),makeBasic(0x808080)));
-    mesh.name=id;
-    mesh.position.set(x,y+.42,z);
-    mesh.userData.devRandomRuinHallTrapEmitter=true;
-    const colors=HALL_TRAP_COLORS[kind];
-    const mouthMaterial=makeBasic(colors.dim);
-    const mouth=new THREE.Mesh(axis==='x'?sharedBoxGeometry(.17,.17,.02):sharedBoxGeometry(.02,.17,.17),mouthMaterial);
-    mouth.name=id+'_mouth';
-    mouth.userData.devRuinFootprintIgnore=true;
-    if(axis==='x')mouth.position.z=-side*.125;else mouth.position.x=-side*.125;
-    mesh.add(mouth);
-    state.group.add(mesh);
-    return { mesh, mouthMaterial, kind, colors };
-  }
-
-  function spawnTrapProjectile(trap, station) {
-    const fire = (station.sequence++ % 2) === 0;
-    station.side *= -1;
-    const side = station.side;
-    const cross = trap.crossHalf + .08;
-    let x=station.x, z=station.z, vx=0, vz=0;
-    if (trap.axis === 'x') {
-      z=trap.centerCross+cross*side;
-      vz=-side*4.8;
-    } else {
-      x=trap.centerCross+cross*side;
-      vx=-side*4.8;
-    }
-    let mesh;
-    if (fire) {
-      mesh=new THREE.Mesh(sharedSphereGeometry(.13,8,6),makeBasic(HALL_TRAP_COLORS.fire.shot));
-    } else {
-      mesh=new THREE.Mesh(sharedBoxGeometry(.4,.08,.08),makeBasic(HALL_TRAP_COLORS.poison.shot));
-      mesh.rotation.y=trap.axis==='x'?Math.PI*.5:0;
-    }
-    mesh.name='dev_ruin_hall_projectile_'+trap.id+'_'+station.index+'_'+station.sequence;
-    mesh.position.set(x,station.y+.42,z); // Leaves from the emitter mouth instead of above it.
-    mesh.userData.devRandomRuinHallTrapProjectile=fire?'fire':'poison';
-    state.group.add(mesh);
-    state.projectiles.push({
-      mesh,
-      kind:fire?'fire':'poison',
-      x,z,y:station.y+.42,
-      vx,vz,
-      age:0,
-      maxAge:Math.max(1.1,(trap.crossHalf*2+.8)/4.8+.35),
-      trapId:trap.id,
-    });
-  }
-
-  function buildHallwayTraps(context, rng, usedHallways = new Set(), forcedHallways = null) {
-    const hallways=(context.meta?.hallways||[])
-      .filter(hall => !usedHallways.has(hall.id) && (hall.axis==='x'?Number(hall.w):Number(hall.h))>=5)
-      .sort((a,b)=>(b.axis==='x'?Number(b.w):Number(b.h))-(a.axis==='x'?Number(a.w):Number(a.h)));
-    const selected=Array.isArray(forcedHallways)?forcedHallways.filter(Boolean):shuffle(hallways,rng).slice(0,Math.min(2,hallways.length));
-    const cs=worldCellSize(context.meta);
-    for(const hall of selected){
-      const axis=hall.axis==='z'?'z':'x';
-      const longStart=PAD+(axis==='x'?Number(hall.col):Number(hall.row))*cs;
-      const longLength=(axis==='x'?Number(hall.w):Number(hall.h))*cs;
-      const crossStart=PAD+(axis==='x'?Number(hall.row):Number(hall.col))*cs;
-      const crossWidth=(axis==='x'?Number(hall.h):Number(hall.w))*cs;
-      const centerCross=crossStart+crossWidth*.5;
-      const crossHalf=Math.max(.45,crossWidth*.5-.16);
-      const stations=[];
-      for(let index=0;index<3;index++){
-        const u=(index+1)/4;
-        const along=longStart+longLength*u;
-        const x=axis==='x'?along:centerCross;
-        const z=axis==='x'?centerCross:along;
-        const support=sampleSupport(x,z);
-        if(!support)continue;
-        const y=Number(support.y);
-        const fixtureOffset=crossHalf+.02;
-        const side=index%2?1:-1,sequence=index;
-        // spawnTrapProjectile flips side and alternates fire/poison on every
-        // shot, so each emitter always shoots the same kind: the first shot
-        // comes from -side with the kind of this station's starting sequence.
-        const firstKind=sequence%2===0?'fire':'poison',otherKind=firstKind==='fire'?'poison':'fire';
-        const kindFor=emitterSide=>emitterSide===-side?firstKind:otherKind;
-        const emitters={};
-        for(const [suffix,emitterSide] of [['a',-1],['b',1]]){
-          const ex=axis==='x'?x:centerCross+emitterSide*fixtureOffset,ez=axis==='x'?centerCross+emitterSide*fixtureOffset:z;
-          emitters[emitterSide]=createEmitterFixture('dev_ruin_hall_emitter_'+hall.id+'_'+index+'_'+suffix,ex,y,ez,axis,emitterSide,kindFor(emitterSide));
-        }
-        stations.push({index,x,z,y,side,sequence,nextAt:.38+index*.28,emitters});
-      }
-      if(!stations.length)continue;
-      state.trapHallways.push({
-        id:String(hall.id),
-        axis,
-        centerCross,
-        crossHalf,
-        longStart,
-        longLength,
-        stations,
-      });
-      usedHallways.add(hall.id);
-      recordModulePlacement('projectileHallwayTrap','hallway',hall.id,{axis}); // Ordinary alternating wall traps now occupy the same generic hallway-module slot as other procedural pieces.
-    }
-  }
-
   // Trigger spots on fixed V50 floor cells at one height, clear of props:
   // never on a dais, bridge, lift or other surface that moves.
   function squareOnStaticFloor(points) {
@@ -1785,25 +1671,17 @@
   }
 
   function buildSwappableHallwayModules(context,rng,usedHallways) {
-    const allowTraps=context.puzzleOptions?.hallwayTraps!==false; // Keeps legacy glyph/melody/trap hallway modules independently optional.
-    const allowChains=context.puzzleOptions?.ropeChain!==false; // Makes rope-chain hallway toggles effective even when trap hallways are disabled.
+    const allowChains=context.puzzleOptions?.ropeChain!==false; // Optional rope traversal stays available; removed wall-fire/poison courses cannot be selected.
     const candidates=shuffle((context.meta?.hallways||[]).filter(hall=>!usedHallways.has(hall.id)&&(hall.axis==='x'?Number(hall.w):Number(hall.h))>=5),rng);
-    const selected=candidates.slice(0,Math.min(2,candidates.length)); // Two generic hallway slots replace the previous unconditional two-trap pass.
+    const selected=candidates.slice(0,Math.min(2,candidates.length)); // Keep two independent hallway module slots, but use only the existing rope, melody and glyph mechanics.
     for(const hall of selected){
       const roll=rng();
-      if(allowChains&&(!allowTraps||roll<.3)){
-        const chain=buildRopeChainHallway(context,rng,hall,usedHallways);
-        if(chain)continue;
-      }
-      if(!allowTraps)continue;
-      if(roll<.5){
-        const chord=buildChordPlateSet(context,rng,{kind:'hallway',owner:hall},usedHallways);
-        if(chord)continue;
-      }else if(roll<.72){
-        const glyph=buildHallwayGlyphGate(context,hall,usedHallways);
-        if(glyph)continue;
-      }
-      buildHallwayTraps(context,rng,usedHallways,[hall]);
+      const builders=allowChains&&roll<.33
+        ? [()=>buildRopeChainHallway(context,rng,hall,usedHallways),()=>buildChordPlateSet(context,rng,{kind:'hallway',owner:hall},usedHallways),()=>buildHallwayGlyphGate(context,hall,usedHallways)]
+        : roll<.65
+          ? [()=>buildChordPlateSet(context,rng,{kind:'hallway',owner:hall},usedHallways),()=>buildHallwayGlyphGate(context,hall,usedHallways),...allowChains?[()=>buildRopeChainHallway(context,rng,hall,usedHallways)]:[]]
+          : [()=>buildHallwayGlyphGate(context,hall,usedHallways),()=>buildChordPlateSet(context,rng,{kind:'hallway',owner:hall},usedHallways),...allowChains?[()=>buildRopeChainHallway(context,rng,hall,usedHallways)]:[]];
+      for(const build of builders)if(build())break;
     }
   }
 
@@ -2086,7 +1964,7 @@
         freeRooms.splice(freeRooms.indexOf(room),1);usedRooms.add(room.id);break;
       }
     }
-    if(options.hallwayTraps!==false||options.ropeChain!==false)buildSwappableHallwayModules(context,rng,usedHallways);
+    buildSwappableHallwayModules(context,rng,usedHallways); // Wall-projectile obstacle courses are retired; hallway slots now prefer useful puzzles.
     for(const composer of composers){ // Late composers take whatever rooms the standalone modules left free.
       try{composer.buildLate?.(kit,context,rng,usedRooms,options);}catch(error){console.warn('[Random Test Ruin] composer buildLate failed',error);}
     }
@@ -2372,50 +2250,13 @@
     updateRopeHazards(now); // No proximity auto-grab: walking near a hanging rope caught players unintentionally; ropes are taken only through the 'Grab Rope' prompt.
   }
 
-  function updateHallwayTraps(dt) {
-    state.elapsed+=dt;
-    for(const trap of state.trapHallways){
-      for(const station of trap.stations){
-        if(state.elapsed>=station.nextAt){
-          spawnTrapProjectile(trap,station);
-          station.nextAt+=HALL_SHOT_PERIOD;
-        }
-        const charge=Math.max(0,Math.min(1,1-(station.nextAt-state.elapsed)/HALL_CHARGE_SECONDS));
-        for(const [emitterSide,emitter] of Object.entries(station.emitters||{})){
-          const next=Number(emitterSide)===-station.side; // The emitter that fires next heats up; the other stays at its dim tint.
-          emitter.mouthMaterial.color.setHex(emitter.colors.dim).lerp(hallTrapHot.setHex(emitter.colors.hot),next?charge*charge:0);
-        }
-      }
-    }
-    const player=playerWorld();
-    for(let index=state.projectiles.length-1;index>=0;index--){
-      const projectile=state.projectiles[index];
-      projectile.age+=dt;
-      projectile.x+=projectile.vx*dt;projectile.z+=projectile.vz*dt;
-      projectile.mesh.position.x=projectile.x;projectile.mesh.position.z=projectile.z;
-      let hit=false;
-      if(player&&Math.hypot(player.x-projectile.x,player.z-projectile.z)<.34&&Math.abs(player.y-projectile.y)<1.05){
-        if(projectile.kind==='fire')window.ResourceSystem?.addAffliction?.(deps.player,'burningHealth',HALL_FIRE_BURNING);
-        else window.ResourceSystem?.addAffliction?.(deps.player,'poisonedHealth',HALL_POISON);
-        deps.showToast?.(projectile.kind==='fire'?'Scorched by a wall trap!':'Poisoned by a wall dart!',false);
-        hit=true;
-      }
-      if(hit||projectile.age>=projectile.maxAge){
-        projectile.mesh.parent?.remove?.(projectile.mesh);
-        disposeOwnedGeometry(projectile.mesh.geometry);
-        projectile.mesh.material?.dispose?.();
-        state.projectiles.splice(index,1);
-      }
-    }
-  }
-
   function updateBadge(force=false) {
     if(!state)return;
     const now=performance.now();
     if(!force&&now-lastBadgeAt<250)return; // Diagnostics are human-readable, not simulation state; 4 Hz is plenty and avoids a layout-affecting DOM mutation every frame.
     lastBadgeAt=now;
     const cp=state.checkpoints;
-    const segment=' · simple G'+state.safeGrids.length+' R'+state.ropes.length+' T'+state.trapHallways.length+' CP '+cp.triggered.size+'/'+(cp.doorwayCount+1);
+    const segment=' · simple G'+state.safeGrids.length+' R'+state.ropes.length+' CP '+cp.triggered.size+'/'+(cp.doorwayCount+1);
     window.DevRandomRuin?.setDebugBadgePart?.('simple',segment); // Never compose from a previous badge string.
   }
 
@@ -2440,7 +2281,6 @@
     updateOssuaryComposers();
     updateRopes(now,dt);
     for(const composer of composers){if(context.hachutu===true&&composer.id!=='hachutuTemple')continue;try{composer.update?.(state.kit,now,dt);}catch(error){console.warn('[Random Test Ruin] composer update failed',error);}}
-    updateHallwayTraps(dt);
     updateDoorwayCheckpoints();
     updateRopeChainCheckpoints(); // Side checkpoint claims override other doorway updates in the same frame.
     updateBadge();
