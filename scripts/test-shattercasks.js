@@ -233,6 +233,10 @@ class Vector3 {
   add(v){this.x+=v.x;this.y+=v.y;this.z+=v.z;return this;}
   addScaledVector(v,k){this.x+=v.x*k;this.y+=v.y*k;this.z+=v.z*k;return this;}
   multiplyScalar(v){this.x*=v;this.y*=v;this.z*=v;return this;}
+  multiply(v){this.x*=v.x;this.y*=v.y;this.z*=v.z;return this;} // Used by the portrait-parent transform fixture.
+  divide(v){this.x/=v.x||1;this.y/=v.y||1;this.z/=v.z||1;return this;}
+  sub(v){this.x-=v.x;this.y-=v.y;this.z-=v.z;return this;}
+  applyQuaternion(q){const y=Number(q?.yaw)||0,x=this.x,z=this.z;this.x=x*Math.cos(y)+z*Math.sin(y);this.z=z*Math.cos(y)-x*Math.sin(y);return this;}
   lengthSq(){return this.x*this.x+this.y*this.y+this.z*this.z;}
   length(){return Math.sqrt(this.lengthSq());}
   normalize(){return this.multiplyScalar(1/(this.length()||1));}
@@ -240,11 +244,40 @@ class Vector3 {
   distanceTo(v){return Math.hypot(this.x-v.x,this.y-v.y,this.z-v.z);}
 }
 function vector() {return new Vector3();}
+class Euler {
+  constructor(x=0,y=0,z=0){this.set(x,y,z);} // Exercises production carry offsets in their authored Euler order.
+  set(x,y,z){this.x=x;this.y=y;this.z=z;return this;}
+}
+class Quaternion {
+  constructor(){this.yaw=0;} // This suite needs yaw composition; the separate portrait test covers parent transforms explicitly.
+  setFromEuler(e){this.yaw=e.y;return this;}
+  copy(q){this.yaw=q.yaw;return this;}
+  multiply(q){this.yaw+=q.yaw;return this;}
+  premultiply(q){this.yaw+=q.yaw;return this;}
+  invert(){this.yaw=-this.yaw;return this;}
+  clone(){const q=new Quaternion();return q.copy(this);}
+}
 class Node {
-  constructor(){this.children=[];this.position=vector();this.scale=vector();this.rotation=vector();this.userData={};this.parent=null;}
-  add(other){this.children.push(other);other.parent=this;}
+  constructor(){
+    this.children=[];this.position=vector();this.scale=new Vector3(1,1,1);
+    this.rotation=vector();this.quaternion=new Quaternion();this.userData={};this.parent=null;this.isObject3D=true;
+  }
+  add(other){other.parent?.remove?.(other);this.children.push(other);other.parent=this;}
   remove(other){this.children=this.children.filter(child=>child!==other);other.parent=null;}
   traverse(callback){callback(this);for(const child of this.children)child.traverse(callback);}
+  updateWorldMatrix(){}
+  localToWorld(point){for(let node=this;node;node=node.parent)point.multiply(node.scale).applyQuaternion(node.quaternion).add(node.position);return point;}
+  worldToLocal(point){
+    const chain=[];for(let node=this;node;node=node.parent)chain.unshift(node);
+    for(const node of chain)point.sub(node.position).applyQuaternion(node.quaternion.clone().invert()).divide(node.scale);
+    return point;
+  }
+  getWorldPosition(target){return this.localToWorld(target.set(0,0,0));}
+  getWorldScale(target){target.set(1,1,1);for(let node=this;node;node=node.parent)target.multiply(node.scale);return target;}
+  getWorldQuaternion(target){
+    const chain=[];for(let node=this;node;node=node.parent)chain.unshift(node);
+    target.yaw=0;for(const node of chain)target.multiply(node.quaternion);return target;
+  }
   getObjectByProperty(key,value){
     if(this[key]===value)return this;
     for(const child of this.children){const match=child.getObjectByProperty(key,value);if(match)return match;}
@@ -302,7 +335,7 @@ function authoredGroup() {
   group.userData.meshById=new Map([['silhouette',mesh]]);
   return group;
 }
-const THREE = {Group:Node,Mesh,SkinnedMesh,InstancedMesh,Object3D,Vector3,Raycaster,RingGeometry,
+const THREE = {Group:Node,Mesh,SkinnedMesh,InstancedMesh,Object3D,Vector3,Euler,Quaternion,Raycaster,RingGeometry,
   TetrahedronGeometry:Geometry,SphereGeometry:Geometry,CylinderGeometry:Geometry,DodecahedronGeometry:Geometry,
   MeshBasicMaterial:Material,MeshLambertMaterial:Material,DoubleSide:2,AdditiveBlending:3,
   TextureLoader:class{load(){return{dispose(){}};}}};
