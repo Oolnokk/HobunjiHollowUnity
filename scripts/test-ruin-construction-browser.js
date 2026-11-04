@@ -81,15 +81,16 @@ const URL=process.env.HOBUNJI_TEST_URL||'http://127.0.0.1:8000/index.html?skipIn
       return node?.userData?.puzzleProgress>=.99;
     },blast.pillarId,{timeout:25000,polling:100});
     const afterBlast=await page.evaluate(({x,z})=>{
-      const support=window.DynamicSurfaces.sampleSupport(x,z,{minY:-.5,maxY:2});
-      const entered=support&&window.DevRandomRuin.setPlayerWorldPoint({x,y:support.y,z},{grounded:true});
       const puzzleNode=window.FurniturePuzzleRuntime.debug().flatMap(graph=>graph.nodes).find(n=>n.id.includes('crackedPillar'));
       const node=puzzleNode&&window.FurniturePuzzleRuntime.getNode('map_i_dev_random_ruin',puzzleNode.id);
       const part=node?.userData.puzzlePartMeshes?.get?.(node.userData.furniturePuzzle.standingSurface?.partId);
       const box=part&&new THREE.Box3().setFromObject(part);
-      const ray=new THREE.Raycaster(new THREE.Vector3(x,(box?.max.y??0)+.2,z),new THREE.Vector3(0,-1,0));
+      const walkZ=box?(box.min.z+box.max.z)/2:z; // The authored 97-degree fallen pillar shifts its upper shaft to the side of the room centerline.
+      const support=window.DynamicSurfaces.sampleSupport(x,walkZ,{minY:-.5,maxY:2});
+      const entered=support&&window.DevRandomRuin.setPlayerWorldPoint({x,y:support.y,z:walkZ},{grounded:true});
+      const ray=new THREE.Raycaster(new THREE.Vector3(x,(box?.max.y??0)+.2,walkZ),new THREE.Vector3(0,-1,0));
       const hits=part?ray.intersectObject(part,true):[];
-      return {supportY:support?.y??null,source:support?.id||null,entered,
+      return {walkZ,supportY:support?.y??null,source:support?.id||null,entered,
         standing:window.DevRandomRuin.getPlayerSupportY?.()??null,
         pillar:puzzleNode?.progress??null,standingSurface:puzzleNode?.standingSurface,
         mesh:part?{visible:part.visible,kind:part.type,box:{min:box.min.toArray(),max:box.max.toArray()},hits:hits.length,
