@@ -7,7 +7,15 @@
   else root.RuinLayerChallenges=api;
 })(typeof self!=='undefined'?self:globalThis,function(root){
   'use strict';
-  const TYPES=Object.freeze(['pressurePlate','glyphObelisk','ceilingRailTargets']);
+  const TYPES=Object.freeze(['pressurePlate','glyphObelisk','ceilingRailTargets','melodyEcho']);
+  const boneTextures=new Map(); // Shared Scratchbone numeral textures for every generated melody decal.
+  function melodyFor(id){
+    let seed=2166136261; // Deterministic FNV hash; the same generated chamber always has the same note sequence.
+    for(const ch of String(id))seed=Math.imul(seed^ch.charCodeAt(0),16777619)>>>0;
+    const size=4+(seed&1),notes=[];
+    for(let i=0;i<size;i++){seed=(Math.imul(seed,1664525)+1013904223)>>>0;notes.push(seed%8);}
+    return notes;
+  }
   const TARGET_COLORS=Object.freeze({idle:0xff9e42,hit:0x55e886,stone:0x777267});
   function compose(options={}){
     const {THREE,parent,room,id,kind,y,isActive,onSolved,getPlayerPosition,getPlayerY}=options;
@@ -23,7 +31,10 @@
     const stone=basic(TARGET_COLORS.stone),idle=basic(TARGET_COLORS.idle),hit=basic(TARGET_COLORS.hit);
     const plateMat=basic(0x776452);
     const bus=options.projectileBus||root.DevRandomRuinSimplePuzzles;
+    const music=options.music||root.MusicMinigame; // Existing eight-note flute performance/puzzle bridge is authoritative.
+    const events=options.events||root; // Reuses the standard hobunji-ruin-melody-result event, not a new music input bridge.
     let linkDisposers=[]; // Disposers are returned by the existing modular target hit registry.
+    let melodyListener=null; // Removed on the same lifecycle as this authored chamber's other resources.
     const body=(name,geometry,mat,x,py,z)=>{
       const mesh=new THREE.Mesh(geometry,mat);
       mesh.name=name;mesh.position.set(x,py,z);
@@ -62,6 +73,39 @@
         new THREE.BoxGeometry(2.2,.18,2.2),plateMat,cx,y+.05,cz);
       rec.plate=surface;
       rec.requiredSeconds=.8;
+    }else if(kind==='melodyEcho'){
+      // This is the existing melody-echo mini-game: stepping onto the bronze
+      // plate plays the generated phrase; step off/on to hear it again, then
+      // play the note sequence using the equipped flute. No WRONG overlay.
+      const plate=body('ruin-melody-trigger-'+id,
+        new THREE.BoxGeometry(1.35,.14,1.35),plateMat,cx,y+.07,cz);
+      rec.plate=plate;
+      rec.notes=melodyFor(id);
+      rec.lastDown=false;rec.attempts=0;
+      if(THREE.TextureLoader&&THREE.PlaneGeometry){
+        for(let i=0;i<rec.notes.length;i++){
+          const number=rec.notes[i]+1; // Actual Scratchbone 1–8 sprites match the generated instrument notes.
+          let texture=boneTextures.get(number);
+          if(!texture){
+            texture=new THREE.TextureLoader().load('assets/hud/2DScratchbone'+number+'.png');
+            if(THREE.SRGBColorSpace)texture.colorSpace=THREE.SRGBColorSpace;
+            boneTextures.set(number,texture);
+          }
+          const material=new THREE.MeshBasicMaterial({
+            map:texture,color:0xf5ead9,transparent:true,depthWrite:false,side:THREE.DoubleSide,
+          });
+          materials.push(material); // Textures are immutable and shared; only the decal material is owned by this room.
+          const decal=body('scratchbone-note-'+id+'-'+i,
+            new THREE.PlaneGeometry(.65,.75),material,
+            cx+(i-(rec.notes.length-1)/2)*.8,y+1.8,room.z+.55);
+          decal.userData.devRuinScratchboneMelodyNote=number;
+        }
+      }
+      melodyListener=event=>{
+        if(rec.disposed||rec.solved||event?.detail?.id!==id)return;
+        if(event.detail.solved===true){rec.plate.material=hit;complete();}
+      };
+      events?.addEventListener?.('hobunji-ruin-melody-result',melodyListener);
     }else if(kind==='glyphObelisk'){
       // Three separate real projectile targets spaced around the room.
       // Each uses the existing ranged weapon's world-space hit sweep.
@@ -94,6 +138,18 @@
         rec.elapsed=standing?rec.elapsed+Math.min(.05,Math.max(0,dt)):0;
         if(rec.elapsed>=rec.requiredSeconds){rec.plate.material=hit;complete();}
       }
+      if(kind==='melodyEcho'&&!rec.solved){
+        const down=isActive()&&player&&Number.isFinite(currentY)&&Math.abs(currentY-y)<.75
+          &&Math.abs(player.x-cx)<.58&&Math.abs(player.z-cz)<.58;
+        if(down&&!rec.lastDown){
+          const started=music?.beginPlayerSession?.({echoChallenge:{id,notes:rec.notes}});
+          if(started){
+            rec.attempts++;
+            options.onMusicStart?.(rec);
+          }else options.onMusicUnavailable?.(rec);
+        }
+        rec.lastDown=!!down; // Step off and on to replay the phrase, including after an incomplete attempt.
+      }
       if(kind==='ceilingRailTargets'&&!rec.solved){
         rec.elapsed+=Math.min(.05,Math.max(0,dt));
         for(const t of targets){
@@ -121,6 +177,7 @@
       if(rec.disposed)return;
       rec.disposed=true;
       for(const remove of linkDisposers)remove();
+      if(melodyListener)events?.removeEventListener?.('hobunji-ruin-melody-result',melodyListener);
       group.parent?.remove(group);
       for(const m of owned)m.geometry?.dispose?.();
       for(const mat of materials)mat.dispose?.();
@@ -132,5 +189,5 @@
     };
     return rec;
   }
-  return Object.freeze({TYPES,compose});
+  return Object.freeze({TYPES,compose,melodyFor});
 });
