@@ -404,6 +404,7 @@
           const nestedChain=(meta.movingParts||[]).find(part=>part.type==='nestedPuzzleChain'
             &&String(part.roomId)===String(native.id)); // V50 exports the actual final mechanism for nested room-spanning puzzles.
           const authored=record.nativeMechanisms.stageCandidate(world,nestedChain?.finalMechanismId||null); // A preparatory bridge, lift or stair cannot open the stage gate ahead of its real final objective.
+          if(nestedChain&&!authored)throw new Error('V50 nested chamber final mechanism has no playable authored signal: '+nestedChain.finalMechanismId);
           const challengeId='v50-f'+item.floor+'-'+native.id;
           let challenge=null;
           if(authored){
