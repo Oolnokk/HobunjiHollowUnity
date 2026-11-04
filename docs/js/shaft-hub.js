@@ -100,6 +100,28 @@
                  !inOctagon(c,r,o.wall,o.wall+o.shaft-1,innerCut)) grid.fillBox(c,r,0,c,r,levels-2,KIND.SOLID); // Eight-sided internal walls.
       }
     }
+    // Upper floors share a continuous octagonal walkway. Keep the approach cells
+    // inside climbing faces open all the way up, otherwise a gallery would cut off
+    // the surface one cell below its mantle point.
+    const ringCellsByLevel = [];
+    if (o.octagon) {
+      const lo=o.wall,hi=lo+o.shaft-1,cut=Math.floor(o.shaft*.19),width=3;
+      const approaches=new Set(); // All climb lanes, across every story.
+      for(const side of balconySides){
+        const g=sideGeometry(side,o,cols,rows),out=OUTWARD[side];
+        for(const f of g.front)approaches.add((f.c-out.c)+','+(f.r-out.r));
+      }
+      for(let floor=1;floor<=o.balconies;floor++){
+        const level=o.spacing*floor, gallery=[];
+        for(let r=lo;r<=hi;r++)for(let c=lo;c<=hi;c++){
+          const perimeter=inOctagon(c,r,lo,hi,cut)&&!inOctagon(c,r,lo+width,hi-width,Math.max(0,cut-width*2));
+          if(!perimeter||approaches.has(c+','+r))continue;
+          grid.set(c,r,level-1,KIND.SOLID);
+          gallery.push({col:c,row:r});
+        }
+        ringCellsByLevel.push({floor,level,cells:gallery});
+      }
+    }
     const balconies = [], doors = [];
     balconySides.forEach((side, k) => {
       const level = o.spacing * (k + 1), geo = sideGeometry(side, o, cols, rows);
@@ -136,7 +158,7 @@
 
     const surfaces = grid.collectClimbSurfaces();
     const result = { ok: false, options: o, grid, cols, rows, levels, balconies, doors, entrance, surfaces, checks: [],
-      stories: Array.from({length:o.balconies+1},(_,floor)=>({floor,level:floor*o.spacing,balconies:balconies.filter(b=>b.level===floor*o.spacing)})) }; // Level map for a subsequent wing composer.
+      stories: Array.from({length:o.balconies+1},(_,floor)=>({floor,level:floor*o.spacing,balconies:balconies.filter(b=>b.level===floor*o.spacing),gallery:ringCellsByLevel.find(r=>r.floor===floor)?.cells||[]})) }; // Level map for a subsequent wing composer.
     result.checks = verify(result);
     result.ok = result.checks.every(c => c.ok);
     return result;
