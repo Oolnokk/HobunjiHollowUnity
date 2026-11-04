@@ -19126,7 +19126,8 @@
         if (tool === 'weapon' || tool === 'ranged') return true;
         // Mini-cliffs are real separate floor layers. Never let terrain
         // tools edit the ground tile beneath an elevated balcony.
-        if (player.onCliffBalcony && ['pick', 'shovel', 'hoe', 'axe', 'machete', 'seeds'].includes(tool)) return false;
+        if (typeof player !== 'undefined' && player?.onCliffBalcony &&
+            ['pick', 'shovel', 'hoe', 'axe', 'machete', 'seeds'].includes(tool)) return false;
         const tile = window.GridTileAccessors.getActiveGrid()?.[row]?.[col]; // Terrain tools require an actual aimed tile.
         if (!tile) return false;
         // A mineable ore rock is the one ROCK-tile exception to the blanket
