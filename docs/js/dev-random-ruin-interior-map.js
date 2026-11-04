@@ -24,6 +24,7 @@
   const TRANSITION_FALLBACK_MS = 1600; // Dev-only escape hatch when the normal fade lifecycle is unavailable (e.g. title/dev harness state).
   const GENERATOR_FRAME_TIMEOUT_MS = 30000; // Gives the hidden V50 iframe enough time to finish parser/startup work on slower browsers and CI before reporting a real bootstrap failure.
   const MAX_SOLVABILITY_ATTEMPTS = 6; // Rejects impossible candidates before entry while keeping generation bounded.
+  const moduleRoll=(seed,salt)=>((Math.imul((Number(seed)>>>0)^salt,1664525)+1013904223)>>>0)/4294967296; // Independent deterministic rolls for post-generation encounter and offering selection.
   const PUZZLE_OPTIONS_STORAGE_KEY = 'hobunji.devRandomRuinPuzzleOptions.v2'; // v2 intentionally drops the fragile first-pass mechanisms from the shipped simple-puzzle defaults.
   const DARKNESS_SETTINGS_STORAGE_KEY = 'hobunji.devRandomRuinDarkness.v1'; // Used to persist the test-only darkness toggle and severity without changing real den lighting.
   const DEFAULT_DARKNESS_SETTINGS = Object.freeze({ enabled:false, severity:1 }); // Theme darkness is always active; enabling the dev toggle only permits a severity override.
@@ -963,7 +964,7 @@
         const meta=generated.locale?.meta?.interiorShell; if(!meta) throw new Error('V50 generated no interiorShell metadata.');
         api.snapMechanismState(0); api.pausePreviewLoop(); const roots=api.takePreviewRoots();
         const rec=makeMapRecord(candidateSeed,generated,roots,meta); buildingScenes.set(MAP_ID,rec);
-        ruin={seed:candidateSeed,hachutu:requestedRuinType==='hachutu',theme,specialBoss:!!specialDef,ruinName:generationLabel,requestedSeed,sourceSeed:generated.seed,api,locale:generated.locale,meta,puzzleOptions:{...puzzleOptions},puzzleGeneration:generated.puzzleGeneration,...rec,mechanisms:new Map(),controls:[],activators:[],pushBlocks:[],supportId:null,supportY:0,falling:null,generationAttempt:attempt+1,stoneAgeRequested,stoneAge:false}; // Keep parent-runtime safe-path/rope/trap flags that the V50 API correctly ignores.
+        ruin={seed:candidateSeed,hachutu:requestedRuinType==='hachutu',theme,specialBoss:!!specialDef,ruinName:generationLabel,requestedSeed,sourceSeed:generated.seed,api,locale:generated.locale,meta,puzzleOptions:{...puzzleOptions},puzzleGeneration:generated.puzzleGeneration,...rec,mechanisms:new Map(),controls:[],activators:[],pushBlocks:[],supportId:null,supportY:0,falling:null,generationAttempt:attempt+1,stoneAgeRequested,stoneAge:false,composedTrialForced:opts.composedTrial===true,composedArchetypeForced:opts.composedArchetype||null}; // Rerolls only retain explicit overrides, never an automatically selected encounter. // Keep parent-runtime safe-path/rope/trap flags that the V50 API correctly ignores.
         registerFloor(meta); discoverRuntimeObjects();
 
         generationMark('auditing-solvability-'+(attempt+1));
@@ -1001,10 +1002,14 @@
           ruin.vestibuleRootMs=Math.round(performance.now()-started);
           ruin.vestibuleStone=window.DevHachutuVestibuleStone?.swapDoors?.(ruin,{seed:ruin.sourceSeed})||null; // Unbound doors get rockified stone-age skins too.
         }else if(rootMechanismsRequested)await prepareRootMechanisms(ruin,opts.rootRecipe||{});
-        const shaftRequested=opts.shaftWing===true||(opts.site===true&&theme==='hronal'&&candidateSeed%5===1); // Seeded optional wing also appears at real wilderness sites.
-        if(shaftRequested&&!ruin.hachutu)attachShaftWing(rec,candidateSeed);
-        const trialRequested=opts.composedTrial===true||(opts.site===true&&theme==='hronal'&&candidateSeed%5===2); // One in five Hronal sites contains the actual composed rope-bomb + defence challenge.
-        if(trialRequested&&!ruin.hachutu)await attachComposedTrialWing(rec,candidateSeed);
+        generationMark('composing-required-shaft-hub');
+        attachShaftHub(rec,candidateSeed); // Every generated ruin, including Hachutu, gets the same proven multi-level shaft and return passage.
+        const trialChance=Math.max(0,Math.min(1,Number(cfg(opts.site?'moduleChances.composedTrialSite':'moduleChances.composedTrialDev',opts.site?.55:.48))||0)); // Hronal encounters can roll at real sites and ordinary dev generation; old opt-in is still supported.
+        const trialRequested=!ruin.hachutu&&(opts.composedTrial===true||(opts.composedTrial!==false&&theme==='hronal'&&moduleRoll(candidateSeed,0x735281ac)<trialChance));
+        const trialArchetype=['trialHall','vaultHall'].includes(opts.composedArchetype)?opts.composedArchetype
+          :opts.composedTrial===true?'trialHall':moduleRoll(candidateSeed,0x452b9813)<.78?'trialHall':'vaultHall'; // Explicit dev trial retains the full original challenge; natural generation varies.
+        const burdenOffering=trialArchetype==='trialHall'&&moduleRoll(candidateSeed,0x94a75513)<Math.max(0,Math.min(1,Number(cfg('moduleChances.burdenOffering',.7))||0));
+        if(trialRequested)await attachComposedTrialWing(rec,candidateSeed,{archetype:trialArchetype,burdenOffering});
         lastGenerationAudit.acceptedSeed=candidateSeed;
         generationMark('entering-ruin');
         await enterRuin(); updateBadge();
@@ -1158,6 +1163,7 @@
         lastAcceptedPx:{x:spawn.x*deps.TILE,y:spawn.z*deps.TILE},
         lastSafePx:{x:spawn.x*deps.TILE,y:spawn.z*deps.TILE}};
       decalImage.src='assets/textures/decals/footprint_hachutu.png';
+      attachShaftHub(rec,0); // The fixed story vault is a ruin too; its authored corridor and quest content remain unchanged.
       await enterRuin();
       deps.showToast?.('A ruined entrance leads to a silent, empty Harlyao vault.', true);
       return true;
@@ -1169,7 +1175,7 @@
     }
   }
 
-  function attachShaftWing(rec,seed){
+  function attachShaftHub(rec,seed){
     const hub=window.ShaftHub?.compose({seed,chambers:true,originX:1,originZ:rec.rows+1});
     if(!hub?.ok)throw new Error('Shaft wing failed its reachability proof.');
     const {grid:shaft,entrance}=hub;
@@ -1189,7 +1195,7 @@
       }
     }
     Object.assign(rec,{cols,rows});
-    Object.assign(ruin,{cols,rows,shaftWing:true});
+    Object.assign(ruin,{cols,rows,shaftWing:true,shaftHub:true}); // Legacy shaftWing flag remains readable; shaftHub drives universal ruin diagnostics.
     Object.assign(rec.mapData,{cols,rows});
     const passage=(label,point,target)=>({
       kind:'shaft-passage',label,point,range:1.25,priority:105,
@@ -1198,22 +1204,23 @@
         return runSceneTransition(()=>{if(ruin===owner&&deps.getCurrentArea?.()===MAP_ID)setPlayerWorldPoint(target);});
       },
     });
-    ruin.controls.push(passage('Enter Shaft Wing',v50Point,shaftPoint),passage('Return to V50 Ruin',shaftPoint,v50Point));
+    ruin.controls.push(passage('Enter Shaft Hub',v50Point,shaftPoint),passage('Return to Ruin',shaftPoint,v50Point));
     window.ShaftHub.mount(hub,{THREE,parent:rec.scene,ClimbSurfaces:window.ClimbSurfaces,DynamicSurfaces:DS,DevRandomRuin:window.DevRandomRuin});
   }
 
-  async function attachComposedTrialWing(rec,seed) {
+  async function attachComposedTrialWing(rec,seed,selection={}) {
     if(!window.RuinComposerPlayable?.mount)throw new Error('Playable ruin composer did not load.');
     const owner=ruin; // Guards every asynchronous authored furniture load against an abandoned generation.
     const homePoint={...rec.spawn,y:DS.sampleSupport(rec.spawn.x,rec.spawn.z,{minY:-4,maxY:5,pad:.02})?.y??0};
     owner.sanctumMapSize ||= {cols:rec.cols,rows:rec.rows}; // Sanctum reserves its original V50 footprint, not this extra wing.
     const wing=await window.RuinComposerPlayable.mount({
-      rec,ruin:owner,seed,mapId:MAP_ID,scope:SCOPE+'-composed',
+      rec,ruin:owner,seed,mapId:MAP_ID,scope:SCOPE+'-composed',archetype:selection.archetype||'trialHall',burdenOffering:selection.burdenOffering===true,
       originX:3,originZ:rec.rows+4,makeTile,THREE,DynamicSurfaces:DS,
       isCurrent:()=>ruin===owner,showToast:(message,ok)=>deps.showToast?.(message,ok),
+      addControl:control=>{if(ruin===owner)owner.controls.push(control);}, // Optional Burden Plinth treasure appears only after completion.
     });
     if(ruin!==owner){wing.dispose();throw Object.assign(new Error('Ruin generation replaced.'),{name:'AbortError'});}
-    owner.cols=rec.cols;owner.rows=rec.rows;owner.composedWing=wing;owner.composedTrial=true; // Published for map and mobile diagnostics.
+    owner.cols=rec.cols;owner.rows=rec.rows;owner.composedWing=wing;owner.composedTrial=true;owner.composedArchetype=wing.composition.archetype; // Published for map and mobile diagnostics.
     owner.controls.push(...wing.controls);
     const passage=(label,point,target)=>({
       kind:'composed-passage',label,point,range:1.5,priority:105,
@@ -1552,7 +1559,7 @@
     }
     if(ruin.occupancy?.refresh())updateBadge();
   }
-  DS.addBeforeRenderClient(()=>{if(!ruin)return;if(deps.getCurrentArea?.()!==MAP_ID)return;const now=performance.now(),dt=clamp((now-frameLastMs)/1000,0,.05);frameLastMs=now;updateTransitDoors(dt);updateMechanisms(dt);reconcilePlayer(now);});
+  DS.addBeforeRenderClient(()=>{if(!ruin)return;if(deps.getCurrentArea?.()!==MAP_ID)return;const now=performance.now(),dt=clamp((now-frameLastMs)/1000,0,.05);frameLastMs=now;updateTransitDoors(dt);updateMechanisms(dt);ruin.composedWing?.update?.();reconcilePlayer(now);}); // Polls only the optional Burden Plate's completed animation for its reward.
 
   const BADGE_PART_ORDER=['base','hooks','motion','simple','hachutu','lich','coverage','shaft'];
   function setDebugBadgePart(part,text){
@@ -1599,7 +1606,7 @@
     const darknessLabel=darkness.enabled?(Math.round(darkness.severity*100)+'% override'):'themed';
     const hachutu=ruin.hachutu?window.DevHachutuRuin?.brief?.():null; // A compact mobile-facing meter; full detailed snapshot remains accessible on the Dev Ruin API.
     setDebugBadgePart('hachutu',hachutu?(' · Hachutu weeds '+hachutu.weeds+'/3, wave '+hachutu.wave+'/3, boss '+hachutu.boss+' · root '+hachutu.tear+(hachutu.issue?' · ERR '+hachutu.issue.slice(0,120):'')):'');
-    setDebugBadgePart('shaft',ruin.shaftWing?' · V50 Shaft Wing: connected via entrance passage':ruin.shaftGrids?.size?' · Shaft Hub: elevation-aware walls, climbs and balcony landings':'');
+    setDebugBadgePart('shaft',ruin.shaftHub?' · Shaft Hub: connected, climbable balconies':ruin.shaftGrids?.size?' · Shaft Hub: elevation-aware walls, climbs and balcony landings':'');
     setDebugBadgePart('base',MAP_ID+' · seed '+ruin.seed+' · '+(ruin.meta.rooms?.length||0)+' rooms · '+solvabilityLabel+' · puzzles '+maxRoomPuzzles+'/'+capLabel+' max-room · tiles R'+(occupancy?.blocked.length||0)+' G'+(occupancy?.causes.length||0)+' B'+(occupancy?.effects.length||0)+' · cliff '+(ruin.denMaterialMeshCount||0)+' · oldstone '+(ruin.legacyStoneMaterialCount||0)+' · unlit +'+(ruin.unlitConvertedMaterialCount||0)+'/lit '+(ruin.remainingLitMaterialCount||0)+' · combat '+(ruin.wallStyle==='cavern'?'✓':'?')+' · '+ruin.theme+' · dark '+darknessLabel+' · rev '+(occupancy?.revision||0));
     b.style.display='';
   }
@@ -1618,9 +1625,6 @@
     const shaftButton=document.createElement('button'); // Mobile-accessible shaft test entry.
     shaftButton.type='button';shaftButton.className='settings-small-btn';shaftButton.textContent='Shaft Hub';
     shaftButton.addEventListener('click',generateShaftTest);row.appendChild(shaftButton);
-    const shaftWingButton=document.createElement('button'); // Opt-in V50 generation so ordinary ruins keep their existing topology.
-    shaftWingButton.type='button';shaftWingButton.className='settings-small-btn';shaftWingButton.textContent='V50 + Shaft Wing';
-    shaftWingButton.addEventListener('click',()=>generate(randomSeed(),{shaftWing:true}));row.appendChild(shaftWingButton);
     const composedButton=document.createElement('button'); // Mobile-accessible generated bridge + statue defence trial.
     composedButton.type='button';composedButton.className='settings-small-btn';composedButton.textContent='V50 + Composed Trial';
     composedButton.addEventListener('click',()=>generate(randomSeed(),{composedTrial:true,theme:'hronal'}));row.appendChild(composedButton);
@@ -1647,5 +1651,5 @@
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',installSettingsButton,{once:true});else installSettingsButton();
 
-  window.DevRandomRuin=Object.freeze({getVestibuleRoots:()=>ruin?{stone:ruin.vestibuleStone||null,props:ruin.stoneAgeStats?.props||0,bindings:ruin.rootGrowthBindings?.length||0,rooted:!!ruin.rootedMechanisms,ms:ruin.vestibuleRootMs||0,error:ruin.vestibuleRootError||null}:null,generate,generateStoryVault,reroll:()=>ruin?.shaftTest?generateShaftTest():generate(randomSeed(),{hachutu:ruin?.hachutu===true,rootMechanisms:ruin?.rootedMechanisms===true,stoneAge:ruin?.stoneAgeRequested===true,shaftWing:ruin?.shaftWing===true,composedTrial:ruin?.composedTrial===true}),clear:()=>{if(deps?.getCurrentArea?.()===MAP_ID)leaveRuin();else clearRuntime(true);},leave:leaveRuin,exitTo,getInteractionControls:()=>ruin?ruin.controls.filter(control=>control.kind!=='story-vault-pedestal'||window.DelversGuild?.vaultPhase?.()==='search').map(control=>({...control,range:Number.isFinite(Number(control.range))?Number(control.range):CONTROL_RANGE})):[],getRuntimeContext:()=>ruin?{scene:ruin.scene,grid:ruin.grid,root:ruin.localeRoot,meta:ruin.meta,floorSet:ruin.floorSet,ceilingY:ruin.ceilingY,spawn:{...ruin.spawn},cols:ruin.cols,rows:ruin.rows,sanctumMapSize:ruin.sanctumMapSize,seed:ruin.seed,theme:ruin.theme,specialBoss:ruin.specialBoss,ruinName:ruin.ruinName,hachutu:!!ruin.hachutu,stoneAge:!!ruin.stoneAge,stoneAgeStats:ruin.stoneAgeStats||null,puzzleOptions:{...ruin.puzzleOptions}}:null,getPuzzleGenerationOptions:()=>readPuzzleGenerationOptions(),setPuzzleGenerationOptions:options=>savePuzzleGenerationOptions(options),getOccupancySnapshot:()=>ruin?.occupancy?.snapshot?.()||null,getLastSolvabilityAudit:()=>lastGenerationAudit?JSON.parse(JSON.stringify(lastGenerationAudit)):null,getGenerationProgress:()=>({phase:generationPhase,elapsedS:+((performance.now()-generationStartedMs)/1000).toFixed(1),attempts:lastGenerationAudit?.attempts?.length||0}),getDarknessSettings,setDebugBadgePart,getOcclusionMeshes:()=>ruin?.occlusionMeshes||null,setPlayerWorldPoint,getPlayerSupportY,getPlayerGroundSupportY,shaftSegmentHit,shaftCreatureCanEnter,syncShaftCreatureFloor,registerShaftGrid,unregisterShaftGrid:scope=>ruin?.shaftGrids?.delete(scope),setLevelRelativeSupport:on=>{if(ruin)ruin.levelRelativeSupport=on!==false;return !!ruin?.levelRelativeSupport;},getGroundSupportYAt,setMechanismTarget,lockMechanism,unlockMechanism,mechanismInfo,syncPlayerPresentationHeight:syncRuinPresentationHeight,getState:()=>ruin?{mapId:MAP_ID,storyVault:ruin.storyVault ? {footprints:ruin.storyVaultFootprintCount,doorBlocks:false,puzzles:0,decalReady:ruin.storyVaultDecalReady,decalError:ruin.storyVaultDecalError||null} : null,seed:ruin.seed,theme:ruin.theme,specialBoss:ruin.specialBoss,ruinName:ruin.ruinName,hachutu:!!ruin.hachutu,requestedSeed:ruin.requestedSeed,sourceSeed:ruin.sourceSeed,tileScale:RUIN_TILE_SCALE,wallStyle:ruin.wallStyle||null,stoneAge:!!ruin.stoneAge,stoneAgeRequested:!!ruin.stoneAgeRequested,stoneAgeStats:ruin.stoneAgeStats||null,rootedMechanisms:!!ruin.rootedMechanisms,rootedMechanismCount:ruin.rootGrowthBindings?.length||0,darkness:getDarknessSettings(),materialStats:{stoneMeshes:ruin.denMaterialMeshCount||0,cliffMeshes:ruin.denMaterialMeshCount||0,converted:ruin.unlitConvertedMaterialCount||0,remainingLit:ruin.remainingLitMaterialCount||0,legacyStone:ruin.legacyStoneMaterialCount||0,totalMeshes:ruin.totalRuinMeshCount||0,ceilingCells:ruin.ceilingCellCount||0,ceilingY:ruin.ceilingY??null,ceilingTextured:!!(Array.isArray(ruin.ceilingMesh?.material)?ruin.ceilingMesh.material:ruin.ceilingMesh?.material)?.map,ceilingMaterialTexture:ruin.ceilingMesh?.material?.map?.userData?.furnitureTexture||null,ceilingNaturalSurface:(Array.isArray(ruin.ceilingMesh?.material)?ruin.ceilingMesh.material[0]:ruin.ceilingMesh?.material)?.userData?.naturalSurface||null,occlusionMeshes:ruin.occlusionMeshes?.length||0},rooms:ruin.meta.rooms?.length||0,composedTrial:ruin.composedWing?{seed:ruin.composedWing.composition.seed,placements:ruin.composedWing.placed,checks:ruin.composedWing.composition.checks.length,entry:ruin.composedWing.entry}:null,controls:ruin.controls.length,shaftNavigation:[...(ruin.shaftGrids?.entries()||[])].map(([scope,entry])=>({scope,cols:entry.grid.cols,rows:entry.grid.rows,levels:entry.grid.levels,playerLevel:entry.grid.yToLevel(ruin.supportY)})),authoredPuzzleNodes:window.FurniturePuzzleRuntime?.debug?.().find(record=>record.mapId===MAP_ID)?.nodes||[],mechanisms:[...ruin.mechanisms.values()].map(m=>({id:m.id,type:m.type,progress:m.progress,target:m.target,externalTarget:m.externalTarget??null})),transitDoors:(ruin.transitDoorStates||[]).map(state=>({id:state.door?.id||null,open:+state.open.toFixed(3),target:state.target,axis:state.crossingAxis,center:state.center?{x:+state.center.x.toFixed(3),z:+state.center.z.toFixed(3)}:null})),puzzleOptions:ruin.puzzleOptions,puzzleGeneration:ruin.puzzleGeneration,solvability:ruin.solvability,generationAttempt:ruin.generationAttempt,presentation:presentationSnapshot(),occupancy:ruin.occupancy?.snapshot?.(),dynamic:DS.debugSnapshot()}:null});
+  window.DevRandomRuin=Object.freeze({getVestibuleRoots:()=>ruin?{stone:ruin.vestibuleStone||null,props:ruin.stoneAgeStats?.props||0,bindings:ruin.rootGrowthBindings?.length||0,rooted:!!ruin.rootedMechanisms,ms:ruin.vestibuleRootMs||0,error:ruin.vestibuleRootError||null}:null,generate,generateStoryVault,reroll:()=>ruin?.shaftTest?generateShaftTest():generate(randomSeed(),{hachutu:ruin?.hachutu===true,rootMechanisms:ruin?.rootedMechanisms===true,stoneAge:ruin?.stoneAgeRequested===true,composedTrial:ruin?.composedTrialForced===true?true:undefined,composedArchetype:ruin?.composedArchetypeForced||undefined}),clear:()=>{if(deps?.getCurrentArea?.()===MAP_ID)leaveRuin();else clearRuntime(true);},leave:leaveRuin,exitTo,getInteractionControls:()=>ruin?ruin.controls.filter(control=>control.kind!=='story-vault-pedestal'||window.DelversGuild?.vaultPhase?.()==='search').map(control=>({...control,range:Number.isFinite(Number(control.range))?Number(control.range):CONTROL_RANGE})):[],getRuntimeContext:()=>ruin?{scene:ruin.scene,grid:ruin.grid,root:ruin.localeRoot,meta:ruin.meta,floorSet:ruin.floorSet,ceilingY:ruin.ceilingY,spawn:{...ruin.spawn},cols:ruin.cols,rows:ruin.rows,sanctumMapSize:ruin.sanctumMapSize,seed:ruin.seed,theme:ruin.theme,specialBoss:ruin.specialBoss,ruinName:ruin.ruinName,hachutu:!!ruin.hachutu,stoneAge:!!ruin.stoneAge,stoneAgeStats:ruin.stoneAgeStats||null,shaftHub:!!ruin.shaftHub,puzzleOptions:{...ruin.puzzleOptions}}:null,getPuzzleGenerationOptions:()=>readPuzzleGenerationOptions(),setPuzzleGenerationOptions:options=>savePuzzleGenerationOptions(options),getOccupancySnapshot:()=>ruin?.occupancy?.snapshot?.()||null,getLastSolvabilityAudit:()=>lastGenerationAudit?JSON.parse(JSON.stringify(lastGenerationAudit)):null,getGenerationProgress:()=>({phase:generationPhase,elapsedS:+((performance.now()-generationStartedMs)/1000).toFixed(1),attempts:lastGenerationAudit?.attempts?.length||0}),getDarknessSettings,setDebugBadgePart,getOcclusionMeshes:()=>ruin?.occlusionMeshes||null,setPlayerWorldPoint,getPlayerSupportY,getPlayerGroundSupportY,shaftSegmentHit,shaftCreatureCanEnter,syncShaftCreatureFloor,registerShaftGrid,unregisterShaftGrid:scope=>ruin?.shaftGrids?.delete(scope),setLevelRelativeSupport:on=>{if(ruin)ruin.levelRelativeSupport=on!==false;return !!ruin?.levelRelativeSupport;},getGroundSupportYAt,setMechanismTarget,lockMechanism,unlockMechanism,mechanismInfo,syncPlayerPresentationHeight:syncRuinPresentationHeight,getState:()=>ruin?{mapId:MAP_ID,storyVault:ruin.storyVault ? {footprints:ruin.storyVaultFootprintCount,doorBlocks:false,puzzles:0,decalReady:ruin.storyVaultDecalReady,decalError:ruin.storyVaultDecalError||null} : null,seed:ruin.seed,theme:ruin.theme,specialBoss:ruin.specialBoss,ruinName:ruin.ruinName,hachutu:!!ruin.hachutu,shaftHub:!!ruin.shaftHub,requestedSeed:ruin.requestedSeed,sourceSeed:ruin.sourceSeed,tileScale:RUIN_TILE_SCALE,wallStyle:ruin.wallStyle||null,stoneAge:!!ruin.stoneAge,stoneAgeRequested:!!ruin.stoneAgeRequested,stoneAgeStats:ruin.stoneAgeStats||null,rootedMechanisms:!!ruin.rootedMechanisms,rootedMechanismCount:ruin.rootGrowthBindings?.length||0,darkness:getDarknessSettings(),materialStats:{stoneMeshes:ruin.denMaterialMeshCount||0,cliffMeshes:ruin.denMaterialMeshCount||0,converted:ruin.unlitConvertedMaterialCount||0,remainingLit:ruin.remainingLitMaterialCount||0,legacyStone:ruin.legacyStoneMaterialCount||0,totalMeshes:ruin.totalRuinMeshCount||0,ceilingCells:ruin.ceilingCellCount||0,ceilingY:ruin.ceilingY??null,ceilingTextured:!!(Array.isArray(ruin.ceilingMesh?.material)?ruin.ceilingMesh.material:ruin.ceilingMesh?.material)?.map,ceilingMaterialTexture:ruin.ceilingMesh?.material?.map?.userData?.furnitureTexture||null,ceilingNaturalSurface:(Array.isArray(ruin.ceilingMesh?.material)?ruin.ceilingMesh.material[0]:ruin.ceilingMesh?.material)?.userData?.naturalSurface||null,occlusionMeshes:ruin.occlusionMeshes?.length||0},rooms:ruin.meta.rooms?.length||0,composedTrial:ruin.composedWing?{seed:ruin.composedWing.composition.seed,archetype:ruin.composedWing.composition.archetype,burdenOffering:!!ruin.composedWing.offering,placements:ruin.composedWing.placed,checks:ruin.composedWing.composition.checks.length,entry:ruin.composedWing.entry,feedPlinthId:ruin.composedWing.feedPlinthId}:null,controls:ruin.controls.length,shaftNavigation:[...(ruin.shaftGrids?.entries()||[])].map(([scope,entry])=>({scope,cols:entry.grid.cols,rows:entry.grid.rows,levels:entry.grid.levels,playerLevel:entry.grid.yToLevel(ruin.supportY)})),keyStatueDispensers:(window.KeyStatues?.debugSnapshot?.().dispensers||[]).filter(state=>state.mapId===MAP_ID),authoredPuzzleNodes:window.FurniturePuzzleRuntime?.debug?.().find(record=>record.mapId===MAP_ID)?.nodes||[],mechanisms:[...ruin.mechanisms.values()].map(m=>({id:m.id,type:m.type,progress:m.progress,target:m.target,externalTarget:m.externalTarget??null})),transitDoors:(ruin.transitDoorStates||[]).map(state=>({id:state.door?.id||null,open:+state.open.toFixed(3),target:state.target,axis:state.crossingAxis,center:state.center?{x:+state.center.x.toFixed(3),z:+state.center.z.toFixed(3)}:null})),puzzleOptions:ruin.puzzleOptions,puzzleGeneration:ruin.puzzleGeneration,solvability:ruin.solvability,generationAttempt:ruin.generationAttempt,presentation:presentationSnapshot(),occupancy:ruin.occupancy?.snapshot?.(),dynamic:DS.debugSnapshot()}:null});
 })();

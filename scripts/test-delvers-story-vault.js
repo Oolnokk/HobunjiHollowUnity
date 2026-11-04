@@ -138,10 +138,26 @@ for (const name of ['delvers-guild-story','ruin-sites','dev-random-ruin-interior
   let area=zone, imageSource=null;
   const buildingScenes=new Map(),player={x:22*32,y:23*32,vx:0,vy:0};
   const DS={clearScope(){},registerSurface(){},sampleSupport:()=>({id:'floor',y:0}),addBeforeRenderClient(){}};
+  let shaftMounts=0; // Tests the fixed vault's additional composed hub without requiring three.js or GPU geometry.
+  const ShaftHub={
+    compose({originX,originZ}){
+      const grid={cols:1,rows:1,baseY:0,
+        colToX:col=>originX+col,rowToZ:row=>originZ+row,
+        xToCol:x=>Math.floor(x-originX),zToRow:z=>Math.floor(z-originZ),
+        inBounds:(col,row,level)=>col===0&&row===0&&level===0,
+        floorLevelAt:()=>0,yToLevel:()=>0};
+      return {ok:true,grid,entrance:{col:0,row:0}};
+    },
+    mount(hub,{DevRandomRuin}){
+      shaftMounts++;
+      DevRandomRuin.registerShaftGrid('shaft-hub',hub.grid,()=>{});
+      return {floors:1,surfaces:3};
+    },
+  };
   const ruinRuntimeWindow={
     DynamicSurfaces:DS,DevSpawner:{init(){}},GridTileAccessors:{init(){}},
     DevRandomRuinTileOccupancy:{},DevRandomRuinSolvability:{},
-    DelversGuild:{hasTalisman:()=>true,vaultPhase:()=> 'search'},
+    DelversGuild:{hasTalisman:()=>true,vaultPhase:()=> 'search'},ShaftHub,
   };
   const areaDeps={player,TILE:32,getCurrentArea:()=>area,setCurrentArea:id=>{area=id;},
     startSceneTransition:callback=>callback(),getActiveScene:()=>buildingScenes.get(area)?.scene||null,
@@ -157,13 +173,17 @@ for (const name of ['delvers-guild-story','ruin-sites','dev-random-ruin-interior
   assert.equal(await ruin.generateStoryVault({returnAnchor:{area:zone,x:player.x,y:player.y}}),true);
   const current=ruin.getRuntimeContext();
   assert.equal(area,'map_i_dev_random_ruin');
-  assert.equal(current.floorSet.size,135);
+  assert.equal(current.floorSet.size,136); // The 135 authored vault tiles stay untouched; the mock shaft adds one ground landing.
+  assert.equal(current.shaftHub,true);
+  assert.equal(shaftMounts,1,'fixed story vault must mount one shaft hub');
   const names=[];
   current.root.traverse(node=>{if(node.name)names.push(node.name);});
   assert.equal(names.filter(n=>n.startsWith('hachutu_bird_footprint_')).length,66);
   assert.equal(names.filter(n=>n.startsWith('noncolliding_great_door_fragment_')).length,18);
   assert(names.includes('story_vault_empty_altar'));
-  assert.equal(ruin.getInteractionControls().length,1);
+  assert.equal(ruin.getInteractionControls().length,3);
+  assert(ruin.getInteractionControls().some(c=>c.label==='Enter Shaft Hub'));
+  assert(ruin.getInteractionControls().some(c=>c.label==='Return to Ruin'));
   assert.equal(imageSource,'assets/textures/decals/footprint_hachutu.png');
   assert.equal(current.puzzleOptions.sanctum,undefined);
   assert.equal(current.specialBoss,false);

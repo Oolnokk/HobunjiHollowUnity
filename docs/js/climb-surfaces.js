@@ -171,7 +171,8 @@
   }
   // Returns an Object3D placed in world space (tile units / world y), oriented to the wall's normal.
   // The caller owns adding it to a scene and disposing it.
-  function buildVisual(THREE, surface) {
+  function buildVisual(THREE, raw) {
+    const surface = normalize(raw); // The shaft composer passes raw CellGrid3D faces; visual orientation needs the same tangent as registered climb surfaces.
     const style = getStyle(surface.style), holder = new THREE.Group();
     const inner = style.build ? style.build(THREE, surface, style) : null;
     const body = buildPlane(THREE, surface, style.color, inner ? 0.35 : 0.85);
