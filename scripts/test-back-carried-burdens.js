@@ -11,14 +11,37 @@ class Vector3 {
   constructor(x=0,y=0,z=0) { Object.assign(this,{x,y,z}); }
   copy(v) { Object.assign(this,{x:v.x,y:v.y,z:v.z}); return this; }
   set(x,y,z) { return this.copy({x,y,z}); }
+  add(v) { this.x+=v.x;this.y+=v.y;this.z+=v.z;return this; }
+  sub(v) { this.x-=v.x;this.y-=v.y;this.z-=v.z;return this; }
+  multiplyScalar(s) { this.x*=s;this.y*=s;this.z*=s;return this; }
+  applyQuaternion(q) {
+    const yaw=Number(q?.yaw)||0,c=Math.cos(yaw),s=Math.sin(yaw),x=this.x,z=this.z;
+    this.x=x*c+z*s;this.z=z*c-x*s;return this; // Yaw is sufficient for root-vs-neck parentage regression.
+  }
+}
+class Euler {
+  constructor(x=0,y=0,z=0) { this.set(x,y,z); }
+  set(x,y,z) { Object.assign(this,{x,y,z});return this; }
+}
+class Quaternion {
+  constructor() { this.yaw=0; }
+  setFromEuler(euler) { this.yaw=euler.y;return this; }
+  invert() { this.yaw=-this.yaw;return this; }
+  copy(other) { this.yaw=other.yaw;return this; }
 }
 class Group {
   constructor() {
     this.isObject3D=true;this.userData={};this.position=new Vector3();this.children=[];this.parent=null;
+    this.quaternion=new Quaternion(); // Used to verify back mounting ignores head/neck yaw but inherits body yaw.
+    this.scale={x:1,y:1,z:1,setScalar(v){this.x=this.y=this.z=v;}};
   }
   add(child) { child.parent?.remove?.(child);this.children.push(child);child.parent=this; }
   remove(child) { this.children=this.children.filter(item=>item!==child);child.parent=null; }
-  getWorldPosition(target) { return target.copy(this.position); }
+  getWorldPosition(target) {
+    target.copy(this.position);
+    for(let ancestor=this.parent;ancestor;ancestor=ancestor.parent)target.applyQuaternion(ancestor.quaternion).add(ancestor.position);
+    return target;
+  }
   traverse(callback) { callback(this);for(const child of this.children)child.traverse?.(callback); }
   updateWorldMatrix() {}
 }
@@ -55,8 +78,16 @@ function testRuntime() {
   let clock=1000; // Deterministic fuse clock for the witch-bomb behavior.
   const deps={player,TILE:64,getCurrentArea:()=>currentArea,getActiveScene:()=>activeScene,
     worldSurfaceY:()=>0,refreshActionBar(){},showToast(){},hostileObjects:new Set(),npcWalkers:new Set()};
+  const bodyRoot=new Group();bodyRoot.name='player_body_root'; // Canonical composer root for back attachment.
+  const headJoint=new Group();headJoint.name='player_neck_joint'; // Deliberately incorrect held-item dependency to catch accidental neck parenting.
+  bodyRoot.add(headJoint);
+  headJoint.position.set(.25,.3,.15);
+  let currentBodyRoot=bodyRoot; // Simulates an asynchronously rebuilt avatar root.
+  deps.playerMesh=headJoint;
   const window={
-    THREE:{Vector3,Group},Combat:{deps,update(){},init(){}},
+    THREE:{Vector3,Group,Euler,Quaternion},Combat:{deps,update(){},init(){}},
+    ProceduralHandAttachments:{gameDeps:deps},
+    PlayerBodyTransformComposer:{getPlayerMesh:()=>currentBodyRoot,getPosteriorY:()=>.42},
     GridTileAccessors:{getActiveScene:()=>activeScene,getCurrentArea:()=>currentArea,getActiveGrid:()=>grid},
     __farmLog(){},WorldEvents:{emit(){}},AudioSystem:{playObjectSfxKey(){}},
     ResourceSystem:{spendFooting(){}},ActionArcUI:{stowForCarry(){}},
@@ -67,7 +98,10 @@ function testRuntime() {
   const causes=[]; // Tracks the custom impact callback invoked by the real carrier-damage path.
   const charge=window.Shattercasks.registerBurden({mapId:'map_back_test',scene,group:new Group(),
     id:'test-carrier-charge',kind:'otherExplosive',hanging:false,
-    data:{carryable:{explodeOnHit:true}},
+    data:{carryable:{explodeOnHit:true,backCarry:{
+      position:{x:.13,y:.22,z:-.16},rotation:{x:0,y:12,z:0},
+      posteriorOffset:{x:.08,y:0,z:.18},size:1,
+    }}},
     onImpact:(burden,cause)=>{
       causes.push(cause);
       window.Shattercasks.discardBurden(burden);
@@ -80,6 +114,27 @@ function testRuntime() {
   assert(window.Shattercasks.toolArchTap(),'Tool Select stows an actual physical Burden');
   assert.equal(window.Shattercasks.debugSnapshot().held,null);
   assert.equal(window.Shattercasks.backCarriedInfo()?.id,charge.id);
+  assert.equal(charge.group.parent,bodyRoot,'back burden is parented to the authoritative body root, not the neck/head dependency');
+  assert.equal(window.Shattercasks.debugSnapshot().backCarryMount.rigRootAttached,true);
+  const originalWorld=charge.group.getWorldPosition(new Vector3()); // Baseline for independent head motion.
+  headJoint.position.set(-1,.9,.75);
+  headJoint.quaternion.setFromEuler(new Euler(0,Math.PI*.7,0));
+  window.Shattercasks.tick(.02);
+  const afterHeadMotion=charge.group.getWorldPosition(new Vector3());
+  for(const axis of ['x','y','z'])assert(Math.abs(afterHeadMotion[axis]-originalWorld[axis])<1e-8,
+    'neck pose must not move the stowed burden along '+axis);
+  bodyRoot.position.set(2,.5,-1);
+  bodyRoot.quaternion.setFromEuler(new Euler(0,Math.PI/2,0));
+  window.Shattercasks.tick(.02);
+  const afterBodyMotion=charge.group.getWorldPosition(new Vector3());
+  const expectedBodyMotion=new Vector3().copy(charge.group.position)
+    .applyQuaternion(bodyRoot.quaternion).add(bodyRoot.position);
+  for(const axis of ['x','y','z'])assert(Math.abs(afterBodyMotion[axis]-expectedBodyMotion[axis])<1e-8,
+    'the burden follows the rotated/moved character root along '+axis);
+  currentBodyRoot=new Group();currentBodyRoot.name='player_rebuilt_body_root';
+  window.Shattercasks.tick(.02);
+  assert.equal(charge.group.parent,currentBodyRoot,'avatar rebuild reparents stowed burden to the new body root');
+  assert.equal(window.Shattercasks.debugSnapshot().backCarryMount.rigRootAttached,true);
   const second=window.Shattercasks.registerBurden({mapId:currentArea,scene,group:new Group(),
     id:'test-hand-burden',kind:'inertStatue',hanging:false,data:{carryable:{}}});
   assert(window.Shattercasks.pickUp(second),'hands can still carry a different burden while the back is occupied');
