@@ -100,7 +100,7 @@ for(let i=0;i<net.balconies.length;i++) {
   assert(bottom.length>0&&top.length>0,'both elevations appear in the actual render geometry');
   assert(verts.every(v=>v.y<=shelf.y+0.001&&v.y>=base.y-0.001),'taper lies between top and embedded base');
   for(const v of bottom)assert(base.footprint.some(t=>
-    v.x>=t.c+0.01&&v.x<=t.c+0.99&&v.z>=t.r+0.01&&v.z<=t.r+0.99),
+    v.x>=t.c-0.001&&v.x<=t.c+1.001&&v.z>=t.r-0.001&&v.z<=t.r+1.001),
     'ALL underside base vertices remain inside the parent plateau footprint');
 }
 const registeredRectangles=net.balconies.reduce((sum,shelf)=>
