@@ -310,7 +310,7 @@
   <script src="js/farm-world-settings.js?v=20261013h4299425"></script>
   <script src="onboarding.js?v=20261104hMetalUi5"></script>
   <!-- Combat system modules (windup/strike pipeline, loadout, abilities) -->
-  <script src="js/combat/resource-system.js?v=20261104doubleedge2"></script>
+  <script src="js/combat/resource-system.js?v=20261104doubleedge3"></script>
   <script src="js/sacred-ground.js?v=20261026sacred1"></script> <!-- Global sacred-ground provider registry for totems, temple and future blessings. -->
   <script src="js/combat/knockback-collision-impact.js?v=20260930h6c19d61"></script>
   <!-- Burning Health presentation: reuses the authored campfire fire emitter on afflicted player/enemy avatar roots. -->
@@ -370,7 +370,7 @@
   <script src="js/area-footprint-blockers.js?v=20260929shotfloor1"></script>
   <!-- Sub-stepped sliding move extracted out of game.js; must load before game.js. -->
   <script src="js/swept-move.js?v=20260927footprints1"></script>
-  <script src="js/combat/ranged-weapons.js?v=20261104doubleedge1"></script>
+  <script src="js/combat/ranged-weapons.js?v=20261104doubleedge2"></script>
   <script src="js/combat/ranged-hud-reticle.js?v=20261020hitcolor2"></script>
   <script src="js/combat/melee-hud-reticle.js?v=20261031aoeWidth1"></script>
   <!-- Bandit gang combat AI + weapon visuals (window.BanditCombat) — must
@@ -414,11 +414,11 @@
   <script src="js/skill-system.js?v=20261015h31a0bda"></script>
   <script src="js/perk-system.js?v=20261031aoeWidth1"></script>
   <!-- Trinkets + shared 8-point Attunement budget; registers stat/perk/companion providers. -->
-  <script src="js/trinket-system.js?v=20261104doubleedge1"></script>
+  <script src="js/trinket-system.js?v=20261104doubleedge2"></script>
   <!-- Combat-specific trinket dodge/knockback hooks; loaded before game.js initializes Combat. -->
   <script src="js/combat/specialized-combat-trinket-hooks.js?v=20261104doubleedge1"></script>
   <!-- Unassigned combat trade-off trinkets: wearer-owned hit attribution and kill refunds only. -->
-  <script src="js/combat/double-edged-combat-trinkets.js?v=20261104doubleedge1"></script>
+  <script src="js/combat/double-edged-combat-trinkets.js?v=20261104doubleedge2"></script>
   <script src="js/cooking-data.js?v=20261021hb2f8016"></script>
   <script src="js/food-processing.js?v=20261015hc6ddbcf"></script>
   <script src="js/cooking-system.js?v=20261102-food24h2"></script>
@@ -428,7 +428,7 @@
        init(), so load order relative to the other systems above doesn't
        matter; must load before game.js, which calls
        window.AlchemySystem.init(...) during its own setup. -->
-  <script src="js/alchemy-system.js?v=20261104doubleedge1"></script>
+  <script src="js/alchemy-system.js?v=20261104doubleedge2"></script>
   <!-- Banubu's Tea Grinder delegates trait legality/targeting to AlchemySystem
        but outputs cooking Tea Blends, so it must load after both systems. -->
   <script src="js/tea-grinder.js?v=20261019h0edeaef"></script>
