@@ -114,6 +114,18 @@ function testRuntime() {
   assert.equal(window.Shattercasks.getBurden('same-room-local-id','map_back_test'),null,
     'the original room no longer owns the carried object');
   assert.equal(window.Shattercasks.backCarriedInfo()?.id,travel.id);
+  // The next room has not generated its static furniture yet. It must still
+  // be free to generate an original Shattercask using the ordinary room ID.
+  const thirdScene=new Group(); // Simulates the async load order used by authored ruin placements.
+  currentArea='map_back_destination_late';
+  activeScene=thirdScene;
+  window.Shattercasks.tick(.2);
+  assert(window.Shattercasks.getBurden(travel.id,currentArea)===travel);
+  const lateStatic=window.Shattercasks.registerBurden({mapId:currentArea,scene:thirdScene,group:new Group(),
+    id:'same-room-local-id',kind:'shattercask',hanging:false,data:{carryable:{}}});
+  assert(lateStatic,'late static registration must remain possible');
+  assert.equal(window.Shattercasks.getBurden(lateStatic.id,currentArea),lateStatic);
+  assert.notEqual(travel.id,lateStatic.id,'traveling ID is independent of unspawned static ID');
   window.Shattercasks.discardBurden(travel);
   currentArea='map_back_test';
   activeScene=scene;
