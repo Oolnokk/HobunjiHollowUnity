@@ -88,6 +88,7 @@
       supportCount: 0,
     };
     const isActive = options.isActive || (() => true); // Caller supplies its current-area check to exclude overlapping offscreen zones.
+    state.isActive = isActive; // Movement queries share the support registry's area-enabled policy.
     try {
       for (const shelf of (network.balconies || [])) {
         if (!Number.isFinite(shelf?.y) || !Array.isArray(shelf.footprint) || !shelf.footprint.length) continue;
@@ -165,7 +166,7 @@
 
   function canStandOn(network, shelfId, x, z, pad = -0.10) {
     const state = stateFor(network), record = state?.byId.get(shelfId);
-    if (!record || ![x, z].every(Number.isFinite)) return false;
+    if (!record || !state.isActive() || ![x, z].every(Number.isFinite)) return false;
     const shelf = record.shelf, grid = record.grid;
     const c = grid.xToCol(x), r = grid.zToRow(z);
     if (!insideShelf(shelf, x, z, pad) || !grid.inBounds(c, r, 1) ||
