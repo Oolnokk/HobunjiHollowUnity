@@ -654,7 +654,7 @@
         const profile=sitesByMapId.get(id); // Cache cave crate counts in its existing world-save state.
         const saved=profile?stateFor(profile):null;
         const count=saved?.crateCounts?.[prop.id]??prop.crateCount??3;
-        window.CratePiles?.registerPile?.({id:prop.id,mapId:id,group,scene,lootable:true,
+        window.CratePiles?.registerPile?.({id:prop.id,mapId:id,group,scene,lootable:true,persistViaParent:true,
           count,onChange:remaining=>{
             prop.crateCount=remaining;
             if(saved){saved.crateCounts||={};saved.crateCounts[prop.id]=remaining;persistState(true);}

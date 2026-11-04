@@ -9,6 +9,7 @@
   const savedCounts = new Map(); // Wilderness camp supplies survive reentry and reload.
   const restoredScenes = new Map(); // Track one rehydration pass per active area scene.
   let persistenceIdentity = null; // World and Tothal cycle, partitioned like Shattercasks.
+  let identityPollSeconds = 0; // Avoid repeatedly reading world-settings storage on every combat frame.
   const bursts = []; // Bounded translucent-texture (opaque material) wood shard effects.
   const shardCount = 42; // Instanced crate-textured debris per individual crate.
   const maxBursts = 10; // GPU/CPU cap for chain reactions in combat.
@@ -304,7 +305,8 @@
       if(record.mapId===mapId)scatterJunk(mapId,scene,record.x,record.z,record.y,record.loot,record.id);
   }
   function tick(dt=0) {
-    ensurePersistence();
+    identityPollSeconds+=Math.max(0,Math.min(.2,Number(dt)||0));
+    if(!persistenceIdentity||identityPollSeconds>=2){identityPollSeconds=0;ensurePersistence();}
     const area=currentArea();
     restoreAreaDrops(area,window.GridTileAccessors?.getActiveScene?.());
 

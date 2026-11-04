@@ -1012,6 +1012,7 @@
     const tracked = _banditCampInstances.get(zoneId) || [];
     for (const rec of clearedRecs) {
       window.WildernessMap?.forgetDiscoveredThreat?.(rec.discoveryKey);
+      for(const obj of rec.props||[])if(obj.key==='crateStack')window.CratePiles?.forgetPile?.(zoneId,obj.id);
       for (const id of rec.instance.stampedObjectIds) removeBanditCampProp(zoneId, id);
       window.TemporaryLocales.release(view, rec.instance);
       _syncBanditFlora(zoneId, rec.instance.removedObjectSnapshots, true);
