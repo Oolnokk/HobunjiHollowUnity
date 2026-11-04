@@ -341,8 +341,10 @@
     // the multi-story shaft. The pure graph fallback keeps headless tests
     // and early unmounted-world generation independent of renderer state.
     const bridge = typeof globalThis === 'object' ? globalThis.CliffElevatedSurfaces : null;
-    const support = bridge?.highestBelow?.(network, x, z, fromY, baseY);
-    if (support) return support;
+    // Once the area has an authoritative mounted registry, its null result
+    // is definitive: a disabled/offscreen or removed shelf must NOT be
+    // resurrected by the legacy geometry fallback.
+    if (bridge?.ownsArea?.(network?.area)) return bridge.highestBelow(network, x, z, fromY, baseY);
     let found = null;
     for (const s of (network?.balconies || [])) {
       if (s.y < fromY - 0.08 && s.y > baseY + 0.08 && shelfContains(s, x, z) && (!found || s.y > found.y)) found = s;
