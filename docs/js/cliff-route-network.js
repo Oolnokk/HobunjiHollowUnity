@@ -23,6 +23,50 @@
   const surface = (t, opts) => Number(opts.tileY?.(t) ?? ((t.elevTier || 0) * (opts.plateauUnit || 2.5)));
   const defaultBlocked = t => !t || t.incline || t.borderEscarpment || t.distantBoundaryLandscape || t.type === 'rock' || t.type === 'wall';
 
+  // The lower face of a miniature overhang is a separate, VISUAL-ONLY
+  // tile footprint. Every cell must belong to the actual higher parent
+  // plateau and lie below its walkable top; it never registers as support.
+  function embeddedMiniCliffBase(candidate, shelf, grid, components, cols, rows, opts) {
+    const containsParent = (col, row) => {
+      if (col < 0 || row < 0 || col >= cols || row >= rows ||
+          components[row * cols + col] !== candidate.bComp) return false;
+      const tile = grid[row]?.[col];
+      return !!tile && tile.type !== 'ramp' &&
+        Number.isFinite(surface(tile, opts)) && surface(tile, opts) > shelf.y + 0.2;
+    };
+    const parentInterior = (col, row) => containsParent(col, row) &&
+      DIRS.every(d => containsParent(col + d.x, row + d.z));
+    const centers = []; // Parent-owned tiles toward the plateau interior, nearest eligible first.
+    for (let distance = 1; distance <= 8; distance++) {
+      for (let lateral = -3; lateral <= 3; lateral++) {
+        const col = candidate.b.c + candidate.dir.x * distance - candidate.dir.z * lateral;
+        const row = candidate.b.r + candidate.dir.z * distance + candidate.dir.x * lateral;
+        if (!parentInterior(col, row)) continue;
+        centers.push({ c: col, r: row, score: distance * 2 + Math.abs(lateral) * 3 });
+      }
+    }
+    if (!centers.length) return null; // Never put an embedded base in empty space or the outside cliff face.
+    centers.sort((a, b) => a.score - b.score || hash(a.c, a.r, 103) - hash(b.c, b.r, 103));
+    const center = centers[0];
+    const upperY = surface(grid[center.r][center.c], opts);
+    const baseY = Math.max(candidate.y0 + 0.12, Math.min(shelf.y - 0.54, upperY - 0.40));
+    if (!(baseY < shelf.y - 0.19 && baseY < upperY - 0.19)) return null;
+    const footprint = [{ c: center.c, r: center.r, elevation: baseY }]; // Always entirely inside the parent's walkable footprint.
+    const neighbors = DIRS.filter(d => parentInterior(center.c + d.x, center.r + d.z));
+    if (neighbors.length) {
+      const direction = neighbors[hash(center.c, center.r, 55) % neighbors.length];
+      footprint.push({ c: center.c + direction.x, r: center.r + direction.z, elevation: baseY });
+    }
+    const minC = Math.min(...footprint.map(cell => cell.c)), maxC = Math.max(...footprint.map(cell => cell.c));
+    const minR = Math.min(...footprint.map(cell => cell.r)), maxR = Math.max(...footprint.map(cell => cell.r));
+    return {
+      x: (minC + maxC + 1) / 2, z: (minR + maxR + 1) / 2,
+      y: baseY, elevation: baseY, footprint, // Explicit lower tile elevations parallel the top footprint entries.
+      parentComponent: candidate.bComp, // Validation: lower face is inside the owning upper plateau.
+      inset: 0.17, // Underside mesh stays within the parent-owned base cells.
+    };
+  }
+
   function build(grid, opts = {}) {
     if (!Array.isArray(grid)) throw new TypeError('CliffRouteNetwork.build requires a row-major grid');
     const rows = grid.length, cols = Math.max(0, ...grid.map(r => r?.length || 0));
@@ -164,6 +208,10 @@
             return px >= 0.05 && pz >= 0.05 && px <= cols - 0.05 && pz <= rows - 0.05;
           }));
           if (!fitsMap || !shelf.footprint.length) continue;
+          // The bottom of this upside-down-plateau form must be BURIED in the
+          // upper plateau's rock; it cannot act as a second ledge or collision plane.
+          shelf.base = embeddedMiniCliffBase(c, shelf, grid, component, cols, rows, opts);
+          if (!shelf.base) continue;
           nodes.push({ id: shelf.nodeId, x: shelf.x, z: shelf.z, y: shelf.y, links: [idx], balconyId: shelf.id });
           nodes[idx].links.push(shelf.nodeId);
           balconies.push(shelf);
@@ -192,7 +240,7 @@
   function verifyReachability(network) {
     if (!network?.components?.length) return {
       ok: true, groundComponents: 0, checkedComponents: 0,
-      unreachablePlateaus: [], unreachableBalconies: [], invalidHops: [],
+      unreachablePlateaus: [], unreachableBalconies: [], invalidHops: [], invalidEmbeddedBases: [],
     };
     const tiers = network.components.map(c => Number(c.tier) || 0);
     const groundTier = Math.min(...tiers);
@@ -234,11 +282,17 @@
         const route = network.routes[s.routeId];
         return !route || !reached.has(route.aComp) || !disconnectedNodes.get(s.routeId)?.has(s.nodeId);
       }).map(s => s.id);
+    const invalidEmbeddedBases = network.balconies
+      .filter(s => !s.base?.footprint?.length || s.base.footprint.some(cell =>
+        componentAt(network, cell.c, cell.r) !== s.base.parentComponent ||
+        !(cell.elevation < s.y) ||
+        !(cell.elevation < Number(s.base?.y + 0.001)))) // A lower tile cannot rise above its authored base Y.
+      .map(s => s.id);
     return {
-      ok: !unreachablePlateaus.length && !unreachableBalconies.length && !invalidHops.length,
+      ok: !unreachablePlateaus.length && !unreachableBalconies.length && !invalidHops.length && !invalidEmbeddedBases.length,
       groundComponents: groundSources.length,
       checkedComponents: network.components.length,
-      unreachablePlateaus, unreachableBalconies, invalidHops,
+      unreachablePlateaus, unreachableBalconies, invalidHops, invalidEmbeddedBases,
     };
   }
 
@@ -487,6 +541,7 @@
       unreachablePlateaus: n.verification?.unreachablePlateaus?.length ?? null,
       unreachableBalconies: n.verification?.unreachableBalconies?.length ?? null,
       invalidHops: n.verification?.invalidHops?.length ?? null,
+      invalidEmbeddedBases: n.verification?.invalidEmbeddedBases?.length ?? null,
     })) }),
   });
 });
