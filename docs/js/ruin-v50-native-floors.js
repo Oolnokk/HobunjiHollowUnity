@@ -82,8 +82,14 @@
       throw new Error('Invalid native V50 layer dimensions or reserved east doorway');
     // Reserve a full clear grid slot beyond the shaft's eastern masonry, far
     // enough that north/south/west challenge wings never share this space.
-    const originX=Math.floor(port.x)+28;
-    const originZ=Math.max(8,Math.floor(port.z-depth/2));
+    const reservation=port.reservation; // Planner-owned space: no late placement is allowed to claim another wing's footprint.
+    if(!reservation||reservation.w<width||reservation.d<depth)
+      throw new Error('Native V50 floor has no sufficient pre-generation reservation');
+    const originX=reservation.x;
+    const originZ=Math.max(reservation.z,Math.min(reservation.z+reservation.d-depth,
+      Math.max(8,Math.floor(port.z-depth/2))));
+    if(originX+width>reservation.x+reservation.w||originZ+depth>reservation.z+reservation.d)
+      throw new Error('Native V50 scene escaped its reserved upper-story footprint');
     const e=meta.entrance,d=SIDES[e.side];
     if(!d)throw new Error('Native V50 has no usable exterior entrance side');
     const cx=originX+(e.axis==='x'?e.boundary:e.center)*cs;
