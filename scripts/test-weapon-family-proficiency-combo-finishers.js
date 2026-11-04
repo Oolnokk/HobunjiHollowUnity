@@ -6,7 +6,7 @@ const vm = require('node:vm');
 const source = path => fs.readFileSync(path, 'utf8'); // Loads production modules, never a reimplemented combat fixture.
 
 async function testFamilyProficiency() {
-  const gear = { toolMastery: {}, weaponFamilyProficiency: { axes: { xp: 39 } } }; // Starts one point before the first weapon-family rank.
+  let gear = { toolMastery: {}, weaponFamilyProficiency: { axes: { xp: 39 } } }; // Reassigned later to verify old-save migration and character isolation.
   const slots = { weapon: 'hatchet', ranged: 'crossbow' }; // Proves kills credit the actual weapon and not a different ranged slot.
   const defs = { // Each real shape family and a nonqualifying ranged weapon are represented.
     hatchet: { label: 'Hatchet', shapeKey: 'hatchet', slots: ['axe', 'weapon'] },
@@ -35,6 +35,12 @@ async function testFamilyProficiency() {
   for (const [item, family] of [['hatchet','axes'], ['fishingspear','polearms'], ['dagger','blades'], ['warhammer','bludgeons'], ['pickshovel','improvised'], ['crossbow',null]]) {
     assert.equal(policy.weaponFamily(item), family, 'weapon classification: ' + item);
   }
+  const shapesWindow = {}; // The real weapon-shape registry is the authoritative finite set of currently supported melee donors.
+  vm.runInContext(source('docs/js/combat/weapon-shape-stats.js'), { window: shapesWindow });
+  for (const shape of Object.keys(shapesWindow.WeaponShapeStats.SHAPES)) {
+    defs[shape] = { shapeKey: shape, slots: ['weapon'] }; // Exercises every shipped donor against the actual policy classifier.
+    assert.ok(policy.weaponFamily(shape), 'no shipped melee weapon shape should lack a proficiency: ' + shape);
+  }
   runtime.ModularWeapons = { decode: key => key === 'forged' ? { shaft: 'long', head: 'hammer' } : null,
     getConfig: () => ({ heads: { hammer: { sourceShape: 'warhammer' } } }) };
   assert.equal(policy.weaponFamily('forged'), 'bludgeons', 'the forged head, not its pole shaft, determines family');
@@ -49,6 +55,15 @@ async function testFamilyProficiency() {
   policy.awardToolUse('hatchet', 1, 'axe');
   assert.equal(gear.toolMastery.hatchet.xp, 3.73, 'ordinary axe work stays at its historical unboosted XP rate');
   assert.equal(gear.weaponFamilyProficiency.axes.xp, 41.6, 'ordinary tool work does not train combat proficiency');
+  const originalCharacterGear = gear; // Restored below to verify another character cannot inherit this character's ranks.
+  gear = { toolMastery: {} }; // Older save without the new proficiency map initializes lazily on the first qualifying kill.
+  slots.weapon = 'fishingspear';
+  combatDeps.damageCreature(enemy(), 20);
+  assert.equal(gear.weaponFamilyProficiency.polearms.xp, 1.3, 'old saves receive an independent family XP record');
+  assert.equal(policy.proficiencyForWeapon('fishingspear').level, 0, 'new character starts at zero despite previous character progress');
+  gear.weaponFamilyProficiency.bludgeons = { xp: 'Infinity' };
+  assert.equal(policy.proficiencyForFamily('bludgeons').level, 0, 'malformed imported XP cannot fabricate a maximum rank');
+  gear = originalCharacterGear;
   slots.weapon = 'dagger';
   combatDeps.damageCreature(enemy(), 20);
   assert.equal(gear.weaponFamilyProficiency.blades.xp, 2.5, 'a dedicated blade earns blade experience only');
