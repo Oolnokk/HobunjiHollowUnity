@@ -917,6 +917,8 @@
 
   window.DevRandomRuinHitPuzzles = Object.freeze({
     registerExternalRoot,
+    getNativeRoots:()=>[...extraNativeRoots], // The ordinary stone-ladder and semantic interaction provider reuses the active native story roots.
+    distanceToWorldObject:worldDistanceTo, // One authoritative physical reach calculation for torches, glyphs and native ladder prompts.
     isCarryingTorch:() => !!carriedTorch,
     dropTorch:() => carriedTorch ? dropTorch(carriedTorch, 'dropped') : false,
     debugActivateGlyph(object = null) {
