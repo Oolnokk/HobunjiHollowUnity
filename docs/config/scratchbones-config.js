@@ -150,6 +150,8 @@ window.SCRATCHBONES_CONFIG = {
         "fine_poncho": "assets/cosmetics/clothes/overwear/portrait/poncho1_mao_m.png",
         "fine_bodywrap": "assets/cosmetics/clothes/overwear/portrait/tankanbodywrap_mao-ao.png",
         "fine_hood": "assets/cosmetics/clothes/hood/finehood-base_m.png",
+        "simple_hood": "assets/cosmetics/clothes/hood/simplehood_tl_m.png",
+        "fur_lined_hood": "assets/cosmetics/clothes/hood/simplehood_tl_m.png",
         "facewrap": "assets/cosmetics/clothes/hood/facewrap_m.png",
         "pants_basic": "assets/cosmetics/clothes/legs/pants_basic.png",
         "draped_pants": "assets/cosmetics/clothes/legs/pants_basic.png",
@@ -998,7 +1000,9 @@ window.SCRATCHBONES_CONFIG = {
         { "id": "rugged_poncho", "label": "Rugged Poncho", "price": 70, "category": "overwear", "description": "A reinforced poncho layered with a rugged body wrap.", "material": "cloth" },
         { "id": "rounded_pauldron", "label": "Rounded Pauldrons", "price": 0, "category": "pauldron", "description": "Smith-forged shoulder armor whose color and patina come from its metal.", "material": "metal", "smithOnly": true, "dyeable": false },
         { "id": "fine_poncho", "label": "Fine Poncho", "price": 80, "category": "overwear", "description": "A finely trimmed cloth poncho.", "material": "cloth" },
-        { "id": "fine_hood",        "label": "Fine Hood",         "price": 60, "category": "hood",     "description": "A finely crafted hood with trim." }
+        { "id": "fine_hood",        "label": "Fine Hood",         "price": 60, "category": "hood",     "description": "A finely crafted hood with trim." },
+        { "id": "simple_hood", "label": "Simple Hood", "price": 40, "category": "hood", "material": "cloth", "description": "A plain hood; its fabric takes one cloth dye." },
+        { "id": "fur_lined_hood", "label": "Fur-lined Hood", "price": 0, "category": "hood", "material": "leather", "description": "A dyeable cloth hood with naturally colored fur trim, crafted at a loom with one hide." }
       ]
     },
     "dyes": {

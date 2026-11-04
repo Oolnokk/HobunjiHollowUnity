@@ -146,7 +146,7 @@ async function main(){
   assert.match(loom,/preserveProtectedColors\?\.\(shadingSource,img,furHood,role\)/,'loom/icon source exclusions are role aware');
   assert.match(loom,/preserveProtectedColors\?\.\(img,decorated,descriptor\.furHood,descriptor\.role\)/,'worn-portrait motif exclusions are role aware');
   assert.match(loom,/isProtectedSourcePixel\?\.\(pixels\.data,i,excludedSet\)/,'direct-paint masks use exact role exclusion set');
-  assert.match(loom,/if \(!descriptor\.furHood && !weavingPatternsForRole/,'motif-free fur layers still enter portrait tint resolver');
+  assert.match(loom,/if \(!descriptor\.furHood && !\(descriptor\.furTrimColorName && role === 'trim'\) && !weavingPatternsForRole/,'motif-free fur layers still enter portrait tint resolver');
   assert.match(loom,/if \(furHood\) await window\.FurHoodLeatherworking\?\.ensureManifest/,'fur-hood icon rendering waits for species routing before caching');
   const portrait=read('docs/js/portrait-utils.js');
   assert.match(portrait,/tintForAnimalPart=part=>/,'portrait fallback independently resolves natural animal colors');
