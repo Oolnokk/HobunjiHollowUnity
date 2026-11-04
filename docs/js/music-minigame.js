@@ -33,7 +33,7 @@
   // exact URL would keep serving it indefinitely after an update, since
   // nothing about the request ever changes.
   const MUSIC_MINIGAME_SRC = 'assets/minigames/lyre-performance.html?v=20261103flutePerformance1';
-  const PUZZLE_MINIGAME_SRC = 'assets/minigames/kurraya-puzzle.html?v=20261104puzzleHud2'; // The default eight-note puzzle surface, independent of the performance engine.
+  const PUZZLE_MINIGAME_SRC = 'assets/minigames/kurraya-puzzle.html?v=20261104ocarina1'; // The default eight-note puzzle surface, independent of the performance engine.
   // The ONE songbook entry the ported app currently knows (see
   // lyre-performance.html's SONGBOOK) — surfaced to the compact song
   // picker below alongside Free Play and the built-in practice patterns.
@@ -542,6 +542,11 @@
     const data = event.data;
     if (data?.source !== 'hobunji-music-minigame') return;
     if (data.type === 'exit-requested') close();
+    if (data.type === 'puzzle-note' && playerSession?.instrumentMode === 'puzzle' &&
+        Number.isInteger(data.noteIndex) && data.noteIndex >= 0 && data.noteIndex < (window.KurrayaPuzzle?.NOTE_CODES?.length ?? 8)) {
+      const detail = {noteIndex:data.noteIndex,area:playerSession.area,instrumentKey:playerSession.instrumentKey}; // The active player's normal instrument publishes notes; ruin listeners never receive example playback or NPC notes.
+      window.dispatchEvent(new CustomEvent('hobunji-kurraya-puzzle-note',{detail}));
+    }
     if (data.type === 'puzzle-echo-result' && playerSession?.instrumentMode === 'puzzle' &&
         playerSession.echoChallenge?.id === data.id) {
       const detail = {id:data.id,solved:data.solved === true,
@@ -1477,7 +1482,7 @@
     // js/music-system.js, which ducks the game's ambient bgm/cues for as
     // long as either this or the player session is active.
     get ambientActive() { return ambientFrames.size > 0; },
-    diagnostics: () => ({latestChange:'NPC-only generated performances ignore physical input; visible player sessions keep their own controls.',
+    diagnostics: () => ({latestChange:'Puzzle instrument publishes player note events for passive ruin melody listeners; ordinary instrument modes stay independent.',
       player:playerSession?{mode:playerSession.mode,instrumentMode:playerSession.instrumentMode,instrumentKey:playerSession.instrumentKey,echoChallengeId:playerSession.echoChallenge?.id||null,npcId:playerSession.npcId||null}:null,
       lastPuzzleSong:lastPuzzleSong,
       flute:window.KurrayaInstrument?.fluteDiagnostics?.()||null,
