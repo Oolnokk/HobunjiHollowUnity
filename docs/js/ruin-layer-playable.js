@@ -179,6 +179,9 @@
             THREE,parent:activeRoot,room,y:floor.y,id:room.id,kind:room.challenge,
             isActive:()=>record.solved===i&&!owner.disposed,
             getPlayerPosition,getPlayerY,
+            addControl:control=>ruin.controls.push(control), // The canonical world interaction resolver owns Fire-source input.
+            onFireArmed:()=>options.showToast?.('The next projectile ignites.',true),
+            onFireUnavailable:()=>options.showToast?.('Equip a ranged weapon to ignite the next shot.',false),
             onMusicStart:()=>{}, // Zelda-style discovery: pressing the bronze plate plays the tune with no tutorial popup.
             onMusicUnavailable:()=>options.showToast?.('The bronze plate remains silent.',false),
             onSolved:()=>{
@@ -187,6 +190,7 @@
               setGate(challenge,false);
               options.showToast?.(challenge.kind==='pressurePlate'?'A stone gate opens.'
                 :challenge.kind==='melodyEcho'?'The stone answers your melody — a gate opens.'
+                :challenge.kind==='dungeonFire'?'The ice recedes — a stone gate opens.'
                 :'The last target falls — the stone gate opens.',true);
               options.onStateChange?.();
             }
