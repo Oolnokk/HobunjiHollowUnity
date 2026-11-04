@@ -175,6 +175,37 @@ class InstancedMesh {
 }
 const THREE={Group,Mesh,BoxGeometry:Geometry,PlaneGeometry:Geometry,Matrix4,
   CylinderGeometry:Geometry,ConeGeometry:Geometry,MeshBasicMaterial:Material,InstancedMesh,FrontSide:0};
+// A generated Scratchbone melody belongs to the game's existing eight-note
+// flute session, and a failed or unrelated melody cannot unlock the gate.
+{
+  const handlers=new Map(),started=[]; // Event bus and captured challenge payload from the real MusicMinigame signature.
+  const events={addEventListener:(name,fn)=>handlers.set(name,fn),removeEventListener:(name,fn)=>{
+    if(handlers.get(name)===fn)handlers.delete(name);
+  }};
+  const music={beginPlayerSession:arg=>{started.push(arg);return true;}};
+  let floor=4,player={x:27,z:29},done=0;
+  const melody=Challenges.compose({THREE,parent:new Group(),room:{x:20,z:22,w:14,d:14},
+    id:'melody-test',kind:'melodyEcho',y:4,isActive:()=>true,
+    getPlayerPosition:()=>player,getPlayerY:()=>floor,
+    music,events,onSolved:()=>done++});
+  assert.equal(melody.notes.length,Challenges.melodyFor('melody-test').length);
+  assert(melody.notes.every(n=>Number.isInteger(n)&&n>=0&&n<8));
+  melody.tick(.05);
+  assert.equal(started.length,1,'stepping onto bronze plate plays one existing flute echo session');
+  for(let i=0;i<10;i++)melody.tick(.05);
+  assert.equal(started.length,1,'standing still does not restart the melody');
+  handlers.get('hobunji-ruin-melody-result')({detail:{id:'someone-else',solved:true}});
+  handlers.get('hobunji-ruin-melody-result')({detail:{id:'melody-test',solved:false}});
+  assert.equal(done,0,'wrong and unrelated melodies do not complete a room');
+  player={x:20,z:22};melody.tick(.05);player={x:27,z:29};melody.tick(.05);
+  assert.equal(started.length,2,'stepping off and on replays this fixed note sequence');
+  assert.deepEqual(started[0].echoChallenge.notes,started[1].echoChallenge.notes);
+  floor=0;melody.tick(.05);assert.equal(started.length,2,'lower story cannot trigger this floor plate');
+  floor=4;handlers.get('hobunji-ruin-melody-result')({detail:{id:'melody-test',solved:true}});
+  assert(melody.solved&&done===1,'real instrument success opens the gate once');
+  melody.dispose();assert(!handlers.size,'melody result event listener removed on ruin exit');
+}
+
 // Real projectile challenges share the canonical ranged-hit bus; a stale
 // session must unregister every target and a projectile from another story
 // must never complete the current room.
@@ -259,6 +290,7 @@ for(const side of ['north','east','south','west']){
   for(const remaining of first.challenges.slice(1)){
     player={x:remaining.x,z:remaining.z,y:remaining.floorY};
     if(remaining.kind==='pressurePlate')for(let i=0;i<17;i++)network.tick(.05);
+    else if(remaining.kind==='melodyEcho')remaining.onMelodyResult({id:remaining.id,solved:true}); // Canonical flute completion event.
     else for(let i=0;i<remaining.targetCount;i++)remaining.simulateHit(i); // Dispatch actual projectile onHit callbacks.
     assert(remaining.solved,'the puzzle family must truly unlock its gate: '+remaining.kind);
   }
