@@ -697,6 +697,7 @@
   function moveOrAdjust(dir) {
     // Focused range controls consume horizontal input, so gamepad D-pad and stick can adjust pattern/size sliders without moving focus away.
     if (currentTarget?.tagName === 'INPUT' && currentTarget.type === 'range' && (dir === 'left' || dir === 'right')) {
+      if (!controlOnScreen(currentTarget)) return true; // A scrolled-out selected slider must not change value either.
       const min = currentTarget.min === '' ? 0 : Number(currentTarget.min);
       const max = currentTarget.max === '' ? 100 : Number(currentTarget.max);
       const step = Number(currentTarget.step) > 0 ? Number(currentTarget.step) : 1;
@@ -730,9 +731,14 @@
   function activate() {
     const panel = activePanel();
     if (!panel) return;
+    const intendedTarget = currentTarget; // Captures the user's selected button before dynamic panel updates can recover focus elsewhere.
     refreshFocusIfStale();
+    if (intendedTarget && currentTarget !== intendedTarget) {
+      lastBlockedActivation = { action: 'confirm', id: intendedTarget.id || null, tag: intendedTarget.tagName || null, reason: 'focus-recovered' };
+      return; // Never activate a different button on the press intended for a hidden, removed, or rebuilt selection.
+    }
     if (currentTarget && !controlOnScreen(currentTarget)) {
-      lastBlockedActivation = { action: 'confirm', id: currentTarget.id || null, tag: currentTarget.tagName || null };
+      lastBlockedActivation = { action: 'confirm', id: currentTarget.id || null, tag: currentTarget.tagName || null, reason: 'off-screen' };
       return; // Selection can remain focused after right-stick scrolling; never fire it while outside the visible area.
     }
     if (panelOwnsAction(panel, 'confirm') || !currentTarget) return;
