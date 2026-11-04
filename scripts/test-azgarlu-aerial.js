@@ -47,6 +47,7 @@ now=3500;tick(.15);
 assert(Math.abs(actor._specialHoverOffsetWorld)<Math.abs(held),'Height returns to baseline after combo continuation and strike Hold');
 actor._specialComboStep=2;actor._specialComboUntilMs=now+1800;actor._specialMeleeCooldown=0;actor._specialLunge=null;ai();
 assert.equal(actions.length,3,'Third swing is the authored combo finisher');
+for(let i=0;i<30;i++){now+=16;ai();tick();} // Advance the actual lunge through its windup/strike before firing the staged impact.
 actions[2].onStrike();actions[2].onComplete();
 assert.equal(actor._specialComboUntilMs,0,'Finisher does not create a phantom fourth step');
 const finishingHeight=actor._specialHoverOffsetWorld; // Retained through the finisher Hold despite no further combo continuation.
