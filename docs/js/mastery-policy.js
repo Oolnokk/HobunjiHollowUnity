@@ -205,7 +205,8 @@
 
   function proficiencyForFamily(family) {
     if (!Object.prototype.hasOwnProperty.call(PROFICIENCY_LABELS, family)) return null;
-    const xp = Math.max(0, Number(currentGear()?.weaponFamilyProficiency?.[family]?.xp) || 0); // Character-persisted experience, re-read on save/character switches.
+    const storedXp = Number(currentGear()?.weaponFamilyProficiency?.[family]?.xp); // May be absent or malformed in old/imported character saves.
+    const xp = Number.isFinite(storedXp) ? Math.max(0, storedXp) : 0; // Invalid data must not produce an Infinity-rank record.
     const level = masteryLevel(xp);
     return { family, label: PROFICIENCY_LABELS[family], xp, level, maxLevel: THRESHOLDS.length, nextThreshold: THRESHOLDS[level] ?? null,
       masteryXpMultiplier: round2(1 + level * PROFICIENCY_XP_BONUS_PER_RANK) };
@@ -215,7 +216,8 @@
   function awardFamilyProficiency(gear, family, amount) {
     if (!gear || !Object.prototype.hasOwnProperty.call(PROFICIENCY_LABELS, family) || !(amount > 0)) return;
     const familyXp = gear.weaponFamilyProficiency ||= {}; // Persistent character-wide track distinct from individual toolMastery.
-    const previous = Math.max(0, Number(familyXp[family]?.xp) || 0); // Rank-up comparison before the combat award.
+    const storedXp = Number(familyXp[family]?.xp); // The saved family record can come from an older/imported profile.
+    const previous = Number.isFinite(storedXp) ? Math.max(0, storedXp) : 0; // Resume from zero rather than propagating Infinity or NaN.
     const after = round2(previous + amount);
     familyXp[family] = { xp: after };
     const previousRank = masteryLevel(previous), nextRank = masteryLevel(after);
