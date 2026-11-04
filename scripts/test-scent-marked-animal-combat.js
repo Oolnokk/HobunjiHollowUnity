@@ -42,6 +42,18 @@ rs.applyDamage(victim, 6, { attacker: petSource });
 approximately(victim.health, 88, 'animal companion spends scent');
 approximately(rs.getAffliction(victim, 'scentMarkedHealth'), 2, 'companion uses limited budget');
 
+// Wildlife-on-wildlife bites are skirmishes, not lethal enemy attacks. Scent
+// must never use the leftover mark to punch through WildlifeSpawn's 12% floor.
+victim = actor({ health: 25, maxHealth: 100 });
+rs.addAffliction(victim, 'scentMarkedHealth', 30);
+rs.applyDamage(victim, 13, { attacker: wildSource, wildlifeSkirmishFloor: 12 });
+approximately(victim.health, 12, 'scented wildlife skirmish respects the 12% Health floor');
+assert(rs.getAffliction(victim, 'scentMarkedHealth') < 30, 'wildlife skirmish still consumes a portion of scent');
+victim = actor({ health: 12, maxHealth: 100 });
+rs.addAffliction(victim, 'scentMarkedHealth', 20);
+rs.applyDamage(victim, 0, { attacker: wildSource, wildlifeSkirmishFloor: 12 });
+approximately(victim.health, 12, 'wildlife on its Health floor receives no further damage');
+
 victim = actor();
 rs.addAffliction(victim, 'scentMarkedHealth', 8);
 rs.applyDamage(victim, 6, { fromCompanion: petSource });
@@ -106,5 +118,9 @@ assert.match(read('docs/js/combat/ranged-weapons.js'), /onlyRangedType: 'blowgun
 assert.match(read('docs/js/combat/ranged-weapon-archetypes.js'), /'poisonedHealth', 'scentMarkedHealth'/);
 assert.match(read('docs/game.js'), /AnimalScentTargeting\?\.prioritizeWild\?\./);
 assert.match(read('docs/game.js'), /AnimalScentTargeting\?\.prioritizeEnemyCompanion\?\./);
+assert.match(read('docs/game.js'), /targetPlayer = c\.targetPlayer; \/\/ The chosen scent opponent must own movement/,
+  'wild animals must actually use the new target during this same AI frame');
+assert.match(read('docs/js/wildlife-spawn.js'), /wildlifeSkirmishFloor: floor/,
+  'wildlife skirmish bites carry their nonlethal Health floor into the central payout path');
 assert.match(read('docs/index.html'), /js\/combat\/animal-scent-targeting\.js/);
 console.log('scent-marked animal combat tests passed');
