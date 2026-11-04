@@ -175,6 +175,35 @@ class InstancedMesh {
 }
 const THREE={Group,Mesh,BoxGeometry:Geometry,PlaneGeometry:Geometry,Matrix4,
   CylinderGeometry:Geometry,ConeGeometry:Geometry,MeshBasicMaterial:Material,InstancedMesh,FrontSide:0};
+// Dungeon fire puzzles require a genuinely ignited player projectile to
+// reach a registered heat target; ordinary ranged hits never call onBurn.
+{
+  const controls=[],targets=new Map(),removed=[],bus={hasActiveRuinState:()=>true};
+  const fire={
+    armNextProjectile:()=>true,
+    registerTarget:t=>{targets.set(t.id,t);return t.id;},
+    unregisterTarget:id=>{removed.push(id);return targets.delete(id);}
+  };
+  let currentY=4,solved=0;
+  const challenge=Challenges.compose({THREE,parent:new Group(),room:{x:20,z:22,w:14,d:14},
+    id:'ice-test',kind:'dungeonFire',y:4,isActive:()=>true,
+    getPlayerPosition:()=>({x:27,z:29}),getPlayerY:()=>currentY,
+    projectileBus:bus,dungeonFire:fire,addControl:control=>controls.push(control),
+    onSolved:()=>solved++});
+  challenge.tick(.05);
+  assert(challenge.fireLinked&&targets.has('layer-fire-target-ice-test'));
+  assert.equal(controls[0].kind,'dungeonFireSource');
+  currentY=0;
+  controls[0].onPress();
+  assert.equal(targets.get('layer-fire-target-ice-test').isActive(),false,
+    'ignition sources and heat targets belong to a particular story elevation');
+  assert.equal(challenge.fireRecord.onBurn(),false);
+  currentY=4;controls[0].onPress();
+  assert.equal(challenge.fireRecord.onBurn(),true,'native fire collision burns the seal');
+  assert(challenge.solved&&solved===1);
+  challenge.dispose();assert.equal(targets.size,0,'fire contact target must unregister on reroll');
+}
+
 // A generated Scratchbone melody belongs to the game's existing eight-note
 // flute session, and a failed or unrelated melody cannot unlock the gate.
 {
@@ -291,6 +320,7 @@ for(const side of ['north','east','south','west']){
     player={x:remaining.x,z:remaining.z,y:remaining.floorY};
     if(remaining.kind==='pressurePlate')for(let i=0;i<17;i++)network.tick(.05);
     else if(remaining.kind==='melodyEcho')remaining.onMelodyResult({id:remaining.id,solved:true}); // Canonical flute completion event.
+    else if(remaining.kind==='dungeonFire')remaining.fireRecord.onBurn(); // Canonical fire-contact callback; not a normal arrow hit.
     else for(let i=0;i<remaining.targetCount;i++)remaining.simulateHit(i); // Dispatch actual projectile onHit callbacks.
     assert(remaining.solved,'the puzzle family must truly unlock its gate: '+remaining.kind);
   }
