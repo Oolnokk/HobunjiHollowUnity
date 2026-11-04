@@ -6180,6 +6180,17 @@
         // Map-boundary escarpments are airtight to creatures too (fromX/Y lets
         // one that is already standing on one walk off it).
         if (window.MapBoundaryGuard?.blocksCreatureStep?.(window.GridTileAccessors.getActiveGrid(), TILE, fromX, fromY, wx, wy)) return false;
+        if (_isZoneArea(currentArea)) {
+          const g = actor?.areaGrid || window.GridTileAccessors.getActiveGrid();
+          const toTile = g?.[row]?.[col];
+          if (toTile?.incline && !actor?._cliffClimb) return false; // Faces require selected handholds, even for animals with canClimb.
+          if (!toTile) return false;
+          if (Number.isFinite(fromX) && Number.isFinite(fromY) && !actor?._cliffClimb) {
+            const fromTile = g?.[Math.floor(fromY / TILE)]?.[Math.floor(fromX / TILE)];
+            if (fromTile && fromTile !== toTile && fromTile.type !== TileType.RAMP && toTile.type !== TileType.RAMP &&
+                Math.abs(tileSurfaceYInArea(toTile, currentArea) - tileSurfaceYInArea(fromTile, currentArea)) > 0.55) return false;
+          }
+        }
         return true;
       }
 
@@ -6235,6 +6246,9 @@
         // silently false rather than throwing, and c.x/c.y would end up
         // permanently NaN with nothing downstream ever catching it directly.
         if (!Number.isFinite(tx) || !Number.isFinite(ty)) { c.vx = 0; c.vy = 0; return false; }
+        // One central navigation entry for herds, prey, companions and
+        // returning wildlife. The route graph prevents shortcutting vertically.
+        if (window.CreatureCliffClimb?.navigate?.(c, tx, ty, speed, dt)) return true;
         const dx = tx - c.x, dy = ty - c.y;
         const dist = Math.hypot(dx, dy);
         if (dist < 1) { c.vx = 0; c.vy = 0; return false; }
@@ -31755,6 +31769,7 @@
         getActiveGrid: window.GridTileAccessors.getActiveGrid,
         getActiveCols: window.GridTileAccessors.getActiveCols,
         getActiveRows: window.GridTileAccessors.getActiveRows,
+        creatureCanEnterTile,
       });
 
       window.LungeTargeting?.init({ player, getHostiles: () => hostileObjects, getCurrentArea: () => currentArea });
