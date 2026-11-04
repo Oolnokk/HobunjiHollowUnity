@@ -148,6 +148,9 @@
         add(wing.id+'-corridors',wing.corridors.length===wing.rooms.length&&wing.corridors.every(c=>
           c.length>0&&c.rects.length>=1&&c.rects.some(r=>inRect(c.start,r))&&
           c.rects.some(r=>inRect(c.end,r))&&c.rects.every((r,i)=>i===0||connectedRects(r,c.rects[i-1]))));
+        add(wing.id+'-roomJunctions',wing.corridors.every((hall,i)=>
+          hall.rects.some(r=>connectedRects(r,wing.rooms[i]))&&
+          (i===0||hall.rects.some(r=>connectedRects(r,wing.rooms[i-1])))));
         add(wing.id+'-roomsSeparate',wing.rooms.every((room,i)=>floor.rooms.every((other,j)=>other.id===room.id||!intersects(room,other)||j<=i&&other.wingId===wing.id&&other===room)));
       }
     }
