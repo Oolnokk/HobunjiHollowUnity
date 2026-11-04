@@ -284,6 +284,77 @@ async function main() {
   assert.deepEqual(gridOnlyPortrait.frontComposed.draws, ['baseFront'],
     'Grid Only cannot display clothing on 3D while 2D hides it');
 
-  console.log('clothing fit/game portrait, 2D/3D texture parity, grid-only, species switching and depth tests passed');
+  // The game's full-portrait cloud mask was retired. A fitted torso texture
+  // must NOT be destination-out clipped by an obsolete preview-only helper.
+  const rawSource = sourceBetween(part(7) + '\n' + eight,
+    'async function rawGarmentToRuntimeLayer(', 'function targetGarmentLayerXform()');
+  let obsoleteMaskCalls = 0; // Any call is a regression: it removes valid clothing pixels.
+  const canvasDraws = [];
+  const makeDrawingCanvas = () => ({
+    width: 0, height: 0, getContext: () => ({
+      drawImage: (...args) => canvasDraws.push(args),
+      imageSmoothingEnabled: false, globalAlpha: 1
+    })
+  });
+  const garmentLayer = new Function('R','document','window','targetGarmentLayerXform',
+    'portraitLayerRect','fitRegion','applyRuntimeCloudMask',
+    rawSource + '\nreturn rawGarmentToRuntimeLayer;'
+  )(
+    { body: { width: 234, height: 173 } }, { createElement: makeDrawingCanvas },
+    { SCRATCHBONES_CONFIG: { game: { assets: { pngPlaneAvatar: { previewPortraitCanvasSize: 200 } } } } },
+    garmentXform,portraitLayerRect,() => 'body', () => { obsoleteMaskCalls++; }
+  );
+  const raw = { width: 234, height: 173 };
+  const renderedGarment = await garmentLayer(raw,0.8);
+  assert.equal(renderedGarment.width,200,'garment preview renders in the game portrait coordinate space');
+  assert.equal(canvasDraws[0][0],raw,'garment preview uses the current fitted PNG');
+  assert.equal(obsoleteMaskCalls,0,'runtime garment overlay must not erase pixels with the old cloud mask');
+
+  // The canonical game's torso and head are both B. An A-preset reference
+  // misaligns 2D head/hood fitting even when 3D is otherwise correct.
+  const bodyXformSource=sourceBetween(six,'function targetBodyLayerXform()', 'function routedBodyTintSlot(');
+  const bodyXform=new Function('window','normalizedLayerXform',
+    bodyXformSource+'\nreturn targetBodyLayerXform;')(
+      { getPortraitXformPreset:()=>presetB }, value=>({ ...value })
+    );
+  assert.deepEqual(bodyXform(),presetB,'body/head reference inverse projection must use game preset B');
+
+  const headRefCode=sourceBetween(part(2),'async function buildHeadReferenceCanvas(', 'async function buildVariantGarmentCanvas(');
+  const headDraws=[];
+  const headRef=new Function('R','window','document','loadImage','assetUrl',
+    'portraitLayerRect','normalizedLayerXform','log',
+    headRefCode+'\nreturn buildHeadReferenceCanvas;'
+  )(
+    { speciesCfg: new Map([['tletingan', { male: {
+      headSprite: 'tletingan.png',
+      portraitBodyLayers: [{ id: 'torso', xform: { ax:-0.2, ay:0, sx:2.55, sy:2.55 } }]
+    }}]]) },
+    { getPortraitXformPreset:()=>presetB },
+    { createElement: () => ({ getContext: () => ({ drawImage: (...args) => headDraws.push(args) }) }) },
+    async()=>({width:234,height:173,naturalWidth:234,naturalHeight:173}),
+    url=>url,portraitLayerRect,value=>({...value}),()=>{}
+  );
+  await headRef('tletingan','male',234,173);
+  assert.equal(headDraws.length,1,'head reference renders from the selected target');
+  for(const [i,n] of [0,0,234,173].entries()) {
+    assert(Math.abs(headDraws[0][i+1]-n)<1e-7,
+      'headwear reference and game base torso must share preset B on axis '+i);
+  }
+
+  // Extended custom art must also remain unaffected by the retired mask.
+  const extendedCode=sourceBetween(eight,'async function extendedRuntimeCanvas()','function disposeObjectTree(');
+  const extended=new Function('R','window','document','currentExtendedWarp','targetBodyLayerXform',
+    'portraitLayerRect','applyRuntimeCloudMask',extendedCode+'\nreturn extendedRuntimeCanvas;')(
+    { extendedSource:{}, body:{width:234,height:173} },
+    { SCRATCHBONES_CONFIG: { game: { assets: { pngPlaneAvatar: { previewPortraitCanvasSize:200 } } } } },
+    { createElement:makeDrawingCanvas },
+    ()=>({width:234,height:290}),bodyXform,portraitLayerRect,
+    ()=>{obsoleteMaskCalls++;}
+  );
+  const ext=await extended();
+  assert(ext&&ext.width===200&&ext.height>200,'extended art stays in game portrait width and may grow downward');
+  assert.equal(obsoleteMaskCalls,0,'extended art must not be destroyed by the removed cloud mask');
+
+  console.log('clothing fit/game portrait, head/body B alignment, retired cloud mask, 2D/3D parity, grid-only and switching tests passed');
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });
