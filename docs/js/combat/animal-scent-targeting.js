@@ -55,7 +55,7 @@
     stats.wildReleases++;
   }
 
-  function prioritizeWild(creature, players, companions, areaId, canSee) {
+  function prioritizeWild(creature, players, companions, areaId, canSee, leashReenterFraction = 0.85) {
     if (!creature || creature.isCompanion || creature.isBandit || creature.maskboundTroop) return null;
     const previousFocus = creature._scentTarget;
     if (previousFocus && (!(scent(previousFocus) > 0) ||
@@ -74,6 +74,7 @@
     const radius = Math.max(0, Number(creature.def?.aggroRangePx) || 0);
     const leash = Math.max(0, Number(creature.def?.leashRangePx) || 0);
     if (!radius || !leash || Math.hypot(creature.x - creature.homeX, creature.y - creature.homeY) > leash) return null;
+    if (!engaged && Math.hypot(creature.x - creature.homeX, creature.y - creature.homeY) > leash * leashReenterFraction) return null; // Match existing wildlife leash-reentry hysteresis; scent cannot force new combat just inside the outer leash.
     const opposingCompanions = [...(companions || [])].filter(p => p.isCompanion && !p.banditCompanion); // Enemy-owned pets are allies, never scent targets.
     const opponents = [...(players || []), ...opposingCompanions];
     if (creature.targetCreature && !opponents.includes(creature.targetCreature)) opponents.push(creature.targetCreature); // Preserve ecological skirmish opponents, never recruit arbitrary neighboring wildlife.
