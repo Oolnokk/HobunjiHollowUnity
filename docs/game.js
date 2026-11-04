@@ -10173,6 +10173,7 @@
         if (climb && (climb.type === 'branchJumpDown' || dodgeInputIsForward())) { window.ClimbSystem.startClimb(climb); return; }
         const worldClimb = window.ClimbSystem.getWorldClimbTarget?.(); // Non-grid ledges (ruins) climb from the same forward dodge.
         if (worldClimb && dodgeInputIsForward()) { worldClimb.start(); return; }
+        if (player.onCliffBalcony && window.ClimbSystem?.jumpFromBalcony?.()) return; // Side/back dodge leaps from the raised ledge to the highest lower support.
         performDodge();
       }
 
@@ -18381,6 +18382,10 @@
           return;
         }
 
+        // Real stacked mini-cliff footprints own movement while the player
+        // stands on them, independently of any underlying ground tile.
+        if (player.onCliffBalcony && window.ClimbSystem?.updateBalcony?.(dt)) return;
+
         if (player.onBranch) {
           window.ClimbSystem.updateBranchMovement(dt);
           return;
@@ -24940,6 +24945,7 @@
         // flips (see startClimb/updateClimb).
         const ruinStandY = window.DevRandomRuin?.getPlayerSupportY?.(); // Used by the Random Test Ruin to feed dynamic multi-level support into the canonical body, shadow, resource-ring, held-equipment, and shoulder-pet render path.
         const ordinaryStandY = player.onBranch ? player.branchSurfaceY
+          : player.onCliffBalcony ? player._cliffBalconyY
           : player.onClimbSurface ? player.wallClimbY
           : player.climbing ? player.climbSurfaceY
           : Number.isFinite(ruinStandY) ? ruinStandY
