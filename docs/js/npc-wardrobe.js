@@ -19,6 +19,7 @@
   let deps = null;
   const stored = {}; // npcId -> [clothing instance] persisted as the NPC's wardrobe contents.
   const outfitOverrides = {}; // npcId -> { equippedCosmetics, appliedDyes, wornClothingBySlot } persisted after gifted/manual outfit changes.
+  const pickedStorageLocks = Object.create(null); // Exact NPC/area/furniture lock victories, saved with each player's existing NPC wardrobe data.
   const wornClothingByNpc = {}; // npcId -> { slot: full clothing instance }; preserves weaving/colorC/player-origin metadata while an item is actually worn.
   const defaultTraitSets = {}; // npcId -> Set(trait ids) snapshotted once so later gifted clothes never redefine taste.
   let activeWardrobeContext = null; // Only a physically assigned spouse wardrobe can grant the spouse-only clothing override.
@@ -612,16 +613,44 @@
     return true;
   }
 
+  function storageLockKey(npcId, area, furnitureId) {
+    const parts = [npcId, area, furnitureId].map(value => String(value ?? '').trim()); // Exact owner and furniture identity prevents accidental access to neighboring chests.
+    return parts.every(Boolean) ? JSON.stringify(parts) : null;
+  }
+  function hasPickedStorageLock(npcId, area, furnitureId) {
+    const key = storageLockKey(npcId, area, furnitureId); // The ordinary furniture prompt consults these saved victories.
+    return !!key && pickedStorageLocks[key] === true;
+  }
+  function recordPickedStorageLock(npcId, area, furnitureId) {
+    const key = storageLockKey(npcId, area, furnitureId); // Recorded only after a legitimate completed lock and opened NPC wardrobe.
+    if (!key) return false;
+    if (pickedStorageLocks[key] === true) return true;
+    pickedStorageLocks[key] = true;
+    deps?.saveMemberWorldData?.(); // Reuse the NPC wardrobe per-character save rather than a global storage key.
+    return true;
+  }
+
   function serialize() {
-    return { version: 3, stored, outfits: outfitOverrides };
+    return { version: 4, stored, outfits: outfitOverrides, storageLocks: pickedStorageLocks };
   }
   function restore(data) {
     Object.keys(stored).forEach(k => delete stored[k]);
+    Object.keys(pickedStorageLocks).forEach(k => delete pickedStorageLocks[k]); // A newly loaded character cannot inherit another player's picks.
     Object.keys(outfitOverrides).forEach(k => delete outfitOverrides[k]);
     Object.keys(wornClothingByNpc).forEach(k => delete wornClothingByNpc[k]);
     if (!data || typeof data !== 'object') return;
+    if (data.storageLocks && typeof data.storageLocks === 'object' && !Array.isArray(data.storageLocks)) {
+      for (const [key, picked] of Object.entries(data.storageLocks)) {
+        if (picked !== true) continue;
+        try {
+          const parts = JSON.parse(key); // Ignore malformed save entries rather than broadening an unlock.
+          if (Array.isArray(parts) && parts.length === 3 && parts.every(part => typeof part === 'string' && part.trim()))
+            pickedStorageLocks[key] = true;
+        } catch (_) { /* Old or edited invalid save keys do not break loading. */ }
+      }
+    }
 
-    const isV2 = Number(data.version) >= 2 && data.stored && typeof data.stored === 'object'; // V3 is a strict superset; legacy stored-only saves still follow the old branch.
+    const isV2 = Number(data.version) >= 2 && data.stored && typeof data.stored === 'object'; // V4 adds optional locks while reading all legacy saved wardrobe formats.
     Object.assign(stored, isV2 ? data.stored : data);
     for (const npcId of Object.keys(stored)) adoptLegacyStoredClothing(npcId, stored[npcId]);
     if (!isV2 || !data.outfits || typeof data.outfits !== 'object') return;
@@ -658,5 +687,7 @@
     clothingColorsForSlot: clothingColorsFromWorn, // Lets the editor keep pattern-bearing garment colors synchronized with ordinary dye controls.
     serialize,
     restore,
+    hasPickedStorageLock,
+    recordPickedStorageLock,
   };
 })();

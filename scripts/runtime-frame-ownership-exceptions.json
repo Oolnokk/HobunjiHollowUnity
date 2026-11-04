@@ -51,7 +51,7 @@
     "function": "cutsceneRotationTick",
     "reason": "Eases previewed actors' facing every frame for the scene's lifetime, gated on the same running flag every other preview RAF loop checks, so stopping the preview stops it too.",
     "migrationStage": "not-planned",
-    "line": 33595
+    "line": 33927
   },
   {
     "file": "docs/js/action-arc-ui.js",
@@ -142,6 +142,24 @@
     "reason": "Classic eased-tween RAF loop (self-continuing at line 670) that runs only until progress t reaches 1, then resolves and stops - a bounded, self-terminating UI animation for the sleep/wait iris transition.",
     "migrationStage": "not-planned",
     "line": 758
+  },
+  {
+    "file": "docs/js/chest-lockpicking.js",
+    "owner": "ChestLockpicking",
+    "classification": "bounded-animation",
+    "function": "frame (active ring-tumbler re-arm)",
+    "reason": "The dial physics and pin indicators advance via RAF only while a player has an active chest-lock minigame session. The frame callback stops immediately when session becomes null, and close() cancels its pending request; no session-lifetime idle loop remains after a chest is picked or cancelled.",
+    "migrationStage": "not-planned",
+    "line": 250
+  },
+  {
+    "file": "docs/js/chest-lockpicking.js",
+    "owner": "ChestLockpicking",
+    "classification": "bounded-animation",
+    "function": "open (start ring-tumbler session)",
+    "reason": "A single requestAnimationFrame starts the ring-dial animation when the overlay opens. All later frames are owned by frame(), and the registered animation is canceled on close, cancellation, invalid chest or completed lock. It is not an independent perpetual gameplay ticker.",
+    "migrationStage": "not-planned",
+    "line": 334
   },
   {
     "file": "docs/js/combat/combat-input.js",
