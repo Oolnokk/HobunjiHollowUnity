@@ -1072,14 +1072,14 @@
 
     function populatePatternSelect(select, selectedId, customLabel = '') {
       select.innerHTML = '<option value="">None</option>';
-      if (customLabel) select.add(new Option(customLabel, '__custom')); // Preserve custom snapshots without pretending a library entry exists.
+      if (customLabel) { const choice = document.createElement('option'); choice.value = '__custom'; choice.textContent = customLabel; select.appendChild(choice); } // Native option node works in both browsers and lightweight DOM fixtures.
       for (const entry of patternLibraryEntries()) {
         const option = document.createElement('option');
         option.value = entry.id;
         option.textContent = entry.label;
         select.appendChild(option);
       }
-      if (selectedId && !Array.from(select.options).some(option => option.value === selectedId)) select.add(new Option('Saved pattern (' + selectedId + ')', selectedId)); // Missing library entries must not hide an item-owned snapshot.
+      if (selectedId && !Array.from(select.options || []).some(option => option.value === selectedId)) { const choice = document.createElement('option'); choice.value = selectedId; choice.textContent = 'Saved pattern (' + selectedId + ')'; select.appendChild(choice); } // Keep orphaned library ids visible without relying on the Option constructor.
       select.value = selectedId || (customLabel ? '__custom' : '');
     }
 
