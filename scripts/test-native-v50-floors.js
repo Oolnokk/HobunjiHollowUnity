@@ -114,6 +114,14 @@ const scene=new Group(),floors=[],nativeRoots=[];
 for(let floor=1;floor<3;floor++){
   const root=new Group();root.name='v50-real-render-root-'+floor;
   root.add(new Mesh(new Geometry(),new Material())); // Preserve genuine produced geometry, never replace it with mocked stone-room boxes.
+  if(floor===2){
+    const authoredDoor=new Group();authoredDoor.userData={mechanismId:'doorway-two',
+      doorwayId:'room_1->hall_1',previewMotion:{type:'stoneDoor'}}; // This native door belongs to the actual outgoing hallway, regardless of nearby incidental V50 puzzles.
+    const authoredPlate=new Group();authoredPlate.userData={activatorType:'pressurePlate',
+      linkedMechanismId:'doorway-two',weightProgress:0};
+    authoredDoor.userData.linkedPressurePlateRoot=authoredPlate;
+    root.add(authoredDoor);root.add(authoredPlate);
+  }
   nativeRoots.push(root);
   const levels={'8,18':1,'62,18':1}; // Test native objective height and both positive and negative doorway plateaus.
   for(let z=16;z<20;z++)levels[(floor===1?'20':'38')+','+z]=floor===1?3:-2;
@@ -175,8 +183,11 @@ try{
   assert.equal(native.getState().perFloor[0].nativeAuthoredStages,1);
   assert.equal(nativeScanRoots.size,2,'both upper-floor V50 roots join the real glyph/torch runtime');
   assert.equal(cubeRegistrations,2,'each native upper story re-registers the original linked-cube solver');
-  assert(native.getState().perFloor.every(record=>record.nativeMechanisms?.mechanisms===0),
-    'an empty fixture still mounts and disposes its independent native mechanism bridge');
+  assert.equal(native.getState().perFloor[0].nativeMechanisms?.mechanisms,0);
+  assert.equal(native.getState().perFloor[1].nativeMechanisms?.mechanisms,1,
+    'the authored outgoing V50 doorway is mounted as a genuine native mechanism');
+  assert.equal(native.records[1].challenges[0].nativeMechanism?.id,'native-v50-f2-doorway-two',
+    'the first second-story stage must unlock through its actual outgoing hallway door');
   assert.equal(native.getState().hallways,6);
   assert.equal(registered.length,2);
   assert(registered.every(v=>Native.isNativeGrid(v.grid)),

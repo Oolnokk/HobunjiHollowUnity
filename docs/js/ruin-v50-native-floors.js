@@ -407,8 +407,12 @@
           const challengeY=floor.y+(heights.get(key(Math.floor(world.x+world.w/2),Math.floor(world.z+world.d/2)))||0); // Match the actual V50 surface under the puzzle.
           const nestedChain=(meta.movingParts||[]).find(part=>part.type==='nestedPuzzleChain'
             &&String(part.roomId)===String(native.id)); // V50 exports the actual final mechanism for nested room-spanning puzzles.
-          const authored=record.nativeMechanisms.stageCandidate(world,nestedChain?.finalMechanismId||null); // A preparatory bridge, lift or stair cannot open the stage gate ahead of its real final objective.
-          if(nestedChain&&!authored)throw new Error('V50 nested chamber final mechanism has no playable authored signal: '+nestedChain.finalMechanismId);
+          const authoredExitId=native.id+'->'+analysis.gates[i].hallId; // V50's own room-to-hall puzzle entrance door, not the opposite transit exit.
+          const authoredExit=[...record.nativeMechanisms.states.values()].find(state=>
+            String(state.object.userData?.doorwayId||'')===authoredExitId);
+          const expectedFinal=nestedChain?.finalMechanismId||authoredExit?.id||null;
+          const authored=record.nativeMechanisms.stageCandidate(world,expectedFinal); // Prefer the exact V50 exit-door puzzle over any incidental mechanism in this same chamber.
+          if(expectedFinal&&!authored)throw new Error('V50 chamber has an authored exit/final mechanism without a playable solution: '+expectedFinal);
           const challengeId='v50-f'+item.floor+'-'+native.id;
           let challenge=null;
           if(authored){
