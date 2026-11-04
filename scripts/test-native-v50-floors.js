@@ -136,6 +136,14 @@ const music={state:{echoChallenge:null},closed:0,close(){this.closed++;this.stat
 const nativeScanRoots=new Set(),hitPuzzles={registerExternalRoot(root){
   nativeScanRoots.add(root);return ()=>nativeScanRoots.delete(root);
 }}; // The shared source glyph/torch runtime follows the exact story-root lifetime.
+const authoredSolved=new Set(); // Synthetic V50 mechanism signal used to prove the old substitute puzzle cannot bypass a real authored stage.
+const nativeAdapter={...NativeMechanisms,mount(options){
+  const runtime=NativeMechanisms.mount(options),choose=runtime.stageCandidate,solved=runtime.isSolved;
+  return {...runtime,
+    stageCandidate:room=>options.floor===1&&room.id==='room_1'
+      ?{id:'authored-gate-1',kind:'glyphObelisk'}:choose(room),
+    isSolved:id=>authoredSolved.has(id)||solved(id)};
+}};
 const oldBus=globalThis.DevRandomRuinSimplePuzzles,oldFire=globalThis.DungeonFire;
 globalThis.DevRandomRuinSimplePuzzles={
   registerExternalProjectileTarget(t){targets.set(t.id,t);return ()=>targets.delete(t.id)},
@@ -151,7 +159,7 @@ try{
     hub:{ok:true,cols:49},records:floors,makeTile:open=>({type:open?'grass':'rock'}),
     THREE,DynamicSurfaces:DS,CellGrid3D:CG,RuinShaftCorridor:Corridors,
     RuinLayerPlayable:Playable,RuinLayerChallenges:Challenges,MusicMinigame:music,
-    RuinV50NativeMechanisms:NativeMechanisms,hitPuzzles,
+    RuinV50NativeMechanisms:nativeAdapter,hitPuzzles,
     DevRandomRuin:Dev,getPlayerPosition:()=>player,getPlayerY:()=>player.y,
     showToast:message=>toasts.push(message),tileScale:2,
   });
@@ -159,6 +167,8 @@ try{
   assert(native.getState().perFloor.every(f=>f.reservationVerified));
   assert.equal(native.records[0].challenges[0].floorY,4.42,'native puzzle height comes from V50 surface metadata');
   assert.equal(native.getState().rooms,8);
+  assert.equal(native.records[0].challenges[0].kind,'v50Authored','a V50-authored signal is the chamber gate authority when one exists');
+  assert.equal(native.getState().perFloor[0].nativeAuthoredStages,1);
   assert.equal(nativeScanRoots.size,2,'both upper-floor V50 roots join the real glyph/torch runtime');
   assert(native.getState().perFloor.every(record=>record.nativeMechanisms?.mechanisms===0),
     'an empty fixture still mounts and disposes its independent native mechanism bridge');
@@ -193,7 +203,12 @@ try{
       player.x=stage.kind==='pressurePlate'?stage.x:state.place.originX+5;
       player.z=stage.kind==='pressurePlate'?stage.z:state.place.originZ+18;
       player.y=stage.floorY;
-      if(stage.kind==='pressurePlate')for(let i=0;i<17;i++)native.tick(.05);
+      if(stage.kind==='v50Authored'){
+        native.tick(.05);
+        assert.equal(state.solved,before,'an unsolved V50 puzzle cannot be bypassed with a substitute challenge');
+        authoredSolved.add(stage.nativeMechanism.id);
+        native.tick(.05);
+      }else if(stage.kind==='pressurePlate')for(let i=0;i<17;i++)native.tick(.05);
       else if(stage.kind==='melodyEcho')stage.onMelodyResult({id:stage.id,solved:true});
       else if(stage.kind==='dungeonFire'){native.tick(.05);assert(stage.fireRecord.onBurn());}
       else for(let i=0;i<stage.targetCount;i++){native.tick(.05);stage.simulateHit(i);}
