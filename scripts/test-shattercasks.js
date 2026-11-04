@@ -414,7 +414,9 @@ async function arenaScenario() {
   const player={x:4.5*64,y:4.5*64,angle:0,health:100};
   const deps={TILE:64,player,getCurrentArea:()=>currentArea,getActiveScene:()=>activeScene,
     worldSurfaceY:()=>0,hostileObjects:new Set(),showToast(){}};
+  const blasts=[]; // Captures the canonical WorldEvents blast origin to check carrier-centered detonation.
   const game={console,THREE,localStorage,__hobunjiPlayerProfile:{worldId:'arena-regression'},
+    WorldEvents:{emit:(type,detail)=>{if(type==='blast')blasts.push(detail);}},
     EnvironmentSurfaceMicroPlateau:{bindGroundProjection(mesh){groundProjectionBinds++;mesh.userData.environmentGroundProjection=true;}},
     Combat:{deps,init(){},update(){},beginStagedAction(){},spawnMeleeTrail(){}},
     GridTileAccessors:{getActiveScene:()=>activeScene,getActiveGrid:()=>tiles,
@@ -589,6 +591,8 @@ async function arenaScenario() {
   game.Combat.update(.016);
   assert.equal(game.Shattercasks.debugSnapshot().backCarried,null,'taking a hit detonates the back charge');
   assert.equal(game.Shattercasks.getBurden(spare.id,currentArea),null,'the real charge is consumed exactly once');
+  assert.equal(blasts.at(-1)?.x,player.x/64,'back explosion uses the carrier exact world X');
+  assert.equal(blasts.at(-1)?.z,player.y/64,'back explosion uses the carrier exact world Z');
   for(let r=1;r<8;r++)for(let c=1;c<8;c++)tiles[r][c]={type:'rock'};
   await assert.rejects(game.Shattercasks.spawnRandomInDevArena(),/No unoccupied walkable tile/);
   assert.equal(modelBuilds,4,'no art created for rejected requests');
