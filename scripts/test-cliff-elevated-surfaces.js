@@ -42,6 +42,18 @@ assert(!elevated.canStandOn(network,'lower',9,3.5),'do not walk outside footprin
 
 active=false;
 assert.equal(elevated.highestBelow(network,4.5,3.5,9,0),null,'offscreen zones cannot affect the active world');
+const previousBridge=globalThis.CliffElevatedSurfaces; // Node-only bridge injection exercises the real graph's fallback decision.
+globalThis.CliffElevatedSurfaces=elevated;
+try {
+  assert.equal(route.highestBelow(network,4.5,3.5,9,0),null,
+    'network-level fallback must not resurrect an offscreen registered balcony');
+  active=true;
+  assert.equal(route.highestBelow(network,4.5,3.5,9,0)?.id,'upper',
+    'network-level falls use the registered world-height support authority');
+} finally {
+  if (previousBridge === undefined) delete globalThis.CliffElevatedSurfaces;
+  else globalThis.CliffElevatedSurfaces=previousBridge;
+}
 active=true;
 DS.registerSurface({id:'shaft-unrelated',scope:'shaft-hub',bounds:{minX:4,maxX:5,minZ:3,maxZ:4},topY:12});
 const rerolled={area:network.area,balconies:[lower]};
@@ -59,6 +71,7 @@ const mesa=fs.readFileSync(path.join(__dirname,'../docs/js/zone-plateau-mesa.js'
 assert(html.indexOf('cell-grid-3d.js')<html.indexOf('cliff-elevated-surfaces.js'),'module load order');
 assert(mesa.includes('CliffElevatedSurfaces?.mount?.(network'),'register on mesa rebuild');
 assert(game.includes('CliffElevatedSurfaces?.clear?.(mapId)'),'unregister on area unload');
+assert(game.includes('CliffRouteNetwork?.releaseArea?.(mapId)'),'retire stale world geometry and reward handles');
 assert(game.includes('getCurrentArea: () => currentArea'),'active area predicate provided');
 assert(typeof route.verifyReachability==='function','ShaftHub-style connectivity proof available');
 console.log('PASS wilderness stacked support, fractional heights, dungeon isolation, remount and cleanup');
