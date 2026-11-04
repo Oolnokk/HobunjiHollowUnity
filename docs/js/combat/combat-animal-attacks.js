@@ -268,7 +268,7 @@
   // one they were chasing).
   function gatherTargets(c, deps) {
     const out = [];
-    if (c.isCompanion) {
+    if (c.isCompanion && !c.banditCompanion) {
       for (const h of deps.hostileObjects) {
         if (h.health > 0 && h.areaId === c.areaId) out.push({ isPlayer: false, ref: h });
       }
@@ -283,7 +283,7 @@
         // ground position — never a legitimate independent target for a
         // leap/charge cone (see combat-drenkirra-pellet.js's gatherTargets
         // for the same exclusion and reasoning).
-        if (comp.stableRole === 'shoulderPet') continue;
+        if (comp.stableRole === 'shoulderPet' || (c.banditCompanion && comp.banditCompanion)) continue; // Enemy pets can strike player companions, never their allied Beastmaster pets.
         if (comp.health > 0 && comp.areaId === c.areaId) out.push({ isPlayer: false, ref: comp });
       }
     }
