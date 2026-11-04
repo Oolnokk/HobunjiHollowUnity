@@ -67,7 +67,7 @@ console.log(`ok real V50 reservations: 200 full layouts, ${accepted} stage paths
         floorCells:[...network.floorSet].map(k=>k.split(',').map(Number)),dungeonProgression:network.progression,
         layoutReservation:{...options.layoutReservation}}}}};
     },
-    snapMechanismState(value){assert.equal(value,1);},
+    snapMechanismState(value){assert.equal(value,0,'native V50 puzzle actors must remain unsolved after being transferred to the game');},
     takePreviewRoots(options){snapshots.push(options);return {localeRoot:{floor:options.floor}};},
   };
   assert.equal(await Native.generateFloors({api,plan,seed:22,records,pieceSet:'stoneAge',floorProps:'pillarsOnly'}),records);
@@ -78,6 +78,9 @@ console.log(`ok real V50 reservations: 200 full layouts, ${accepted} stage paths
     const floor=plan.floors[call.layoutReservation.floor];
     assert.deepEqual(call.layoutReservation,{...floor.nativePort.reservation,floor:floor.floor,y:floor.y,tileScale:2});
     assert.equal(call.pieceSet,'stoneAge');assert.equal(call.floorProps,'pillarsOnly');
+    assert.deepEqual(call.puzzles,{pressurePlate:true,brazier:true,glyphObelisk:true,
+      stackedObelisk:true,linkedCubePillars:true,nestedRoom:true,maxPerRoom:2},
+      'each V50 upper floor should independently author the entire original puzzle repertoire');
   }
   let failures=0;
   await assert.rejects(Native.generateFloors({api:{...api,async generateInteriorLocale(){failures++;throw new Error('no room');}},plan,seed:22}),/no room/);
