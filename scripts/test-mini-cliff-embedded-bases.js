@@ -6,6 +6,7 @@
 const assert=require('node:assert/strict');
 const routes=require('../docs/js/cliff-route-network.js');
 const elevated=require('../docs/js/cliff-elevated-surfaces.js');
+const cubic=require('../docs/js/cell-grid-3d.js'); // Actual dungeon support footprint API; underside must not be registered.
 
 function buildGrid(rows=28, upperThird=false) {
   return Array.from({length:rows},()=>Array.from({length:upperThird?19:14},(_,col)=>({
@@ -109,4 +110,18 @@ const notRegistered=net.balconies.reduce((sum,shelf)=>
   sum+elevated.groupedRectangles(shelf.base.footprint).length,0);
 assert(registeredRectangles>0&&notRegistered>0,'both independently authored tile profiles exist');
 assert(!rock.userData.walkableBase,'visual underside does not advertise an additional walkable deck');
-console.log('PASS visual-only inverted mini-plateaus: separate top/base tiles, parent embedding, tapered mesh');
+const registered=[]; // Captures only top footprints sent to the shared gameplay support registry.
+const dynamic={
+  registerSurface(record){registered.push(record);},
+  sampleSupport(){return null;},
+  clearScope(scope){for(let i=registered.length-1;i>=0;i--)if(registered[i].scope===scope)registered.splice(i,1);},
+};
+const mounted=elevated.mount(net,{DynamicSurfaces:dynamic,CellGrid3D:cubic});
+assert(mounted.ok, mounted.reason);
+assert.equal(mounted.supportCount,registeredRectangles,
+  'base footprint introduces no additional gameplay collision rectangles');
+assert(registered.every(r=>r.shelfId&&r.topY===net.balconies.find(s=>s.id===r.shelfId)?.y),
+  'all registered surfaces are authored TOP elevations, never underside base elevations');
+assert(elevated.clear(net.area),'cleanup releases only registered top surfaces');
+assert.equal(registered.length,0,'no lower surface registration survives unloading');
+console.log('PASS visual-only inverted mini-plateaus: separate top/base tiles, parent embedding, tapered mesh and top-only collision');
