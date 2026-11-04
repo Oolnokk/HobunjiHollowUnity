@@ -76,10 +76,11 @@ function harness(){
 
   const changed=harness();
   await changed.load();
+  changed.E.garment.value='filler_5'; // Models a user's newer garment choice in the initial twenty-item catalog.
   changed.R.garmentSelectionEpoch++;
   changed.gate.resolve();
-  await until(()=>changed.messages.some(m=>m.includes('2D editor ready:')));
-  assert.equal(changed.E.garment.value,'basic','An explicit new selection must not be overwritten by saved fallback');
+  await until(()=>changed.messages.some(m=>m.includes('21 items.'))); // Wait for the deferred batch, not the first ready status.
+  assert.equal(changed.E.garment.value,'filler_5','An explicit new selection must not be overwritten by saved fallback');
   assert.equal(changed.assetLoads,1,'Deferred catalog must not reload art when user chose another garment');
 
   console.log('OK: queued garment restoration, user selection priority, and repository reload invalidation');
