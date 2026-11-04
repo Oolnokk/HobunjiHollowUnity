@@ -39,6 +39,7 @@
     const g = typeof deps.npcGridForArea === 'function' ? deps.npcGridForArea(area) : (area === 'interior' ? deps.getInteriorGrid() : area === 'town' ? deps.getTownGrid() : deps.getGrid());
     const tile = g?.[r]?.[c];
     if (!tile || deps.isSolid(tile.type) || tile.crop || tile.type === deps.TileType.TRENCH || tile.type === deps.TileType.RIVER || tile.type === deps.TileType.STREAM) return false;
+    if (deps.isZoneArea(area) && tile.incline) return false; // Cliff faces may be crossed only by selected route-hops.
     if (area === 'farm' && (deps.worldObjects.has(c + ',' + r) || deps.isHouseFootprint(c, r))) return false;
     if (area === 'town' && deps.isTownBuildingCollisionTile(c, r)) return false;
     // skipFloor means the mesa's continuous lid owns the floor, NOT an absent walkable surface.
@@ -124,9 +125,16 @@
       : Math.min(Number.isFinite(configuredStep) && configuredStep > 0 ? configuredStep : 0.25, Math.max(0.08, npcCollisionRadiusTiles() * 0.75));
     const samples = Math.max(1, Math.ceil(dist / step));
     const ignoredEndTile = ignoreFurnitureTile || (ignoreFurnitureAtEnd ? { c: Math.floor(toX), r: Math.floor(toZ) } : null); // Explicit seat tiles stay stable across small per-frame steps; path edges may derive theirs from the edge endpoint.
+    const zoneGrid = deps.isZoneArea(area) ? deps.npcGridForArea(area) : null; // Used for same-elevation swept checks, not just horizontal occupancy.
+    let lastTile = zoneGrid?.[Math.floor(fromZ)]?.[Math.floor(fromX)] || null;
     for (let i = 0; i <= samples; i++) {
       const t = i / samples;
       const x = fromX + (toX - fromX) * t, z = fromZ + (toZ - fromZ) * t;
+      const currentTile = zoneGrid?.[Math.floor(z)]?.[Math.floor(x)] || null;
+      if (zoneGrid && i && lastTile && currentTile && currentTile !== lastTile &&
+          lastTile.type !== deps.TileType.RAMP && currentTile.type !== deps.TileType.RAMP &&
+          Math.abs((currentTile.elevTier || 0) - (lastTile.elevTier || 0)) > 0) return false;
+      if (currentTile) lastTile = currentTile;
       const clear = structuralOnly
         ? isNpcPositionStructurallyWalkable(area, x, z)
         : isNpcPositionWalkable(area, x, z, npcCollisionRadiusTiles(), { ignoreFurniture: i === 0, ignoreFurnitureTile: ignoredEndTile });
@@ -404,6 +412,72 @@
     return false;
   }
 
+  const cliffDebug = { started: 0, completed: 0, replanFailures: 0 }; // On-device diagnostic for scheduled NPC cliff routes.
+  function cliffNetwork(area) {
+    const g = deps?.isZoneArea(area) && deps.npcGridForArea(area);
+    return g && window.CliffRouteNetwork?.forGrid?.(g, {
+      area,
+      blocked: t => !t || t.incline || deps.isSolid(t.type) || t.type === deps.TileType.TRENCH || t.type === deps.TileType.STREAM || t.type === deps.TileType.RIVER,
+      isBoundary: t => window.MapBoundaryGuard?.isBoundaryTile?.(t) || false,
+      tileY: t => deps.npcSurfaceY(area, t.c, t.r),
+    });
+  }
+
+  function npcCliffEdge(walker, toC, toR) {
+    const net = cliffNetwork(walker.area);
+    if (!net || !walker.root?.position) return null;
+    const fromC = Math.floor(walker.root.position.x), fromR = Math.floor(walker.root.position.z);
+    const edge = window.CliffRouteNetwork?.toward?.(net, fromC, fromR, toC, toR);
+    return edge ? { edge, net } : null;
+  }
+
+  function beginNpcCliff(walker, edge) {
+    walker._npcCliffClimb = {
+      route: edge.route, entry: edge.entry,
+      index: edge.entry, exit: edge.entry === 0 ? edge.route.upperNode : 0,
+      elapsed: 0, start: null, end: null,
+    };
+    walker._npcCliffGoal = null;
+    walker._gridPath = null; walker.routePath = null;
+    cliffDebug.started++;
+  }
+
+  function updateCliffClimb(walker, dt) {
+    const climb = walker?._npcCliffClimb;
+    if (!climb) return false;
+    const root = walker.root;
+    if (!root?.position || !deps?.isZoneArea(walker.area)) { walker._npcCliffClimb = null; return false; }
+    if (climb.index === climb.exit && !climb.start) {
+      walker._npcCliffClimb = null;
+      walker._cliffNpcY = null;
+      walker.state = 'idle';
+      cliffDebug.completed++;
+      return false;
+    }
+    if (!climb.start) {
+      const from = climb.route.nodes[climb.index], to = climb.route.nodes[climb.index + Math.sign(climb.exit - climb.index)];
+      if (!from || !to || !from.links.includes(to.id)) { walker._npcCliffClimb = null; return false; }
+      climb.start = { x: root.position.x, z: root.position.z, y: Number.isFinite(walker._cliffNpcY) ? walker._cliffNpcY : from.y };
+      climb.end = to;
+      climb.elapsed = 0;
+    }
+    const cycle = 0.46, active = 0.32; // Matches the player's short hop and deliberate between-hop pause.
+    climb.elapsed = Math.min(cycle, climb.elapsed + Math.max(0, dt || 0));
+    const t = Math.min(1, climb.elapsed / active);
+    const eased = 1 - (1 - t) * (1 - t);
+    root.position.x = climb.start.x + (climb.end.x - climb.start.x) * eased;
+    root.position.z = climb.start.z + (climb.end.z - climb.start.z) * eased;
+    walker._cliffNpcY = climb.start.y + (climb.end.y - climb.start.y) * eased + (t < 1 ? Math.sin(t * Math.PI) * 0.3 : 0);
+    root.position.y = walker._cliffNpcY;
+    if (climb.elapsed >= cycle) {
+      climb.index = climb.end.id;
+      root.position.set(climb.end.x, climb.end.y, climb.end.z);
+      walker._cliffNpcY = climb.end.y;
+      climb.start = null; climb.end = null;
+    }
+    return true;
+  }
+
   function decorateWalkerCollision(walker) {
     if (!walker || decoratedWalkers.has(walker) || typeof walker.moveToward !== 'function') return walker;
     decoratedWalkers.add(walker);
@@ -412,6 +486,28 @@
     const originalMoveToward = walker.moveToward;
     walker.moveToward = function collisionAwareNpcMoveToward(tx, tz, dt) {
       if (!deps || !this.root?.position) return originalMoveToward.call(this, tx, tz, dt);
+      if (this._npcCliffClimb) return false; // The NPC update loop owns each successive hop.
+      const goal = this._npcCliffGoal || { c: Math.floor(tx), r: Math.floor(tz) };
+      const crossing = npcCliffEdge(this, goal.c, goal.r);
+      if (crossing) {
+        const { edge } = crossing, node = edge.route.nodes[edge.entry];
+        const near = Math.hypot(this.root.position.x - node.x, this.root.position.z - node.z);
+        if (near < 0.33) { beginNpcCliff(this, edge); return false; }
+        // Follow normal footpath waypoints, not a straight line through an
+        // inconvenient mountain. The collision wrapper still validates it.
+        const key = this.area + ':' + edge.route.id + ':' + edge.entry;
+        if (this._npcCliffApproachKey !== key || !this._npcCliffApproach?.length) {
+          this._npcCliffApproachKey = key;
+          this._npcCliffApproach = findNpcPath(this.area, this.root.position.x, this.root.position.z,
+            Math.floor(node.x), Math.floor(node.z), { padding: 12, maxNodes: 7500 }) || [];
+        }
+        const wp = this._npcCliffApproach[0];
+        if (!wp) { cliffDebug.replanFailures++; return false; }
+        tx = wp.col + 0.5; tz = wp.row + 0.5;
+        if (Math.hypot(this.root.position.x - tx, this.root.position.z - tz) < 0.23) this._npcCliffApproach.shift();
+      } else {
+        this._npcCliffApproach = null; this._npcCliffApproachKey = null;
+      }
       const startX = this.root.position.x, startZ = this.root.position.z;
       const arrived = originalMoveToward.call(this, tx, tz, dt);
       const desiredX = this.root.position.x, desiredZ = this.root.position.z;
@@ -455,14 +551,18 @@
         const failKey = this.area + '|' + target.c + ',' + target.r + '|' + Math.floor(this.root.position.x) + ',' + Math.floor(this.root.position.z) + '|' + targetOccupiesFurniture(target);
         const now = Date.now();
         if (this._npcPathFailKey === failKey && now < this._npcPathFailUntil) { debugStats.pathFailuresSkipped++; return false; }
-        const path = findNpcPathWithFallbacks(this.area, this.root.position.x, this.root.position.z, target, targetOccupiesFurniture(target));
-        if (!path?.length) {
+        const edge = npcCliffEdge(this, target.c, target.r);
+        const foot = edge?.edge.route.nodes[edge.edge.entry];
+        const waypointTarget = foot ? { c: Math.floor(foot.x), r: Math.floor(foot.z) } : target;
+        const path = findNpcPathWithFallbacks(this.area, this.root.position.x, this.root.position.z, waypointTarget, foot ? false : targetOccupiesFurniture(target));
+        if (foot) this._npcCliffGoal = { c: target.c, r: target.r }; // Used by moveToward even when the next grid waypoint is on the lower tier.
+        if (!path?.length && !foot) {
           this._npcPathFailKey = failKey;
           this._npcPathFailUntil = now + PATH_FAILURE_RETRY_MS;
           return false;
         }
         this._npcPathFailKey = null;
-        this._gridPath = path;
+        this._gridPath = path?.length ? path : [waypointTarget]; // One final entry check if already standing at the climb foot.
         this._gridPathTargetKey = target.routeId + '|' + target.c + ',' + target.r;
         debugStats.pathReplans++;
         return true;
@@ -577,6 +677,7 @@
   function debugSnapshot() {
     return {
       ...debugStats,
+      cliffRoutes: { ...cliffDebug },
       collisionRadiusTiles: npcCollisionRadiusTiles(),
       latestChange: 'Wilderness NPC paths read zone terrain, preserve walkable skipFloor mesa lids, reject map-boundary cliffs and revalidate deferred zone entry spawns.',
     };
@@ -597,5 +698,6 @@
     areaLinksFrom,
     findNpcAreaLink,
     debugSnapshot,
+    updateCliffClimb,
   };
 })();
