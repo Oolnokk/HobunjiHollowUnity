@@ -1,0 +1,79 @@
+{
+  "sourceFitKey": "from::tletingan_male::headwear::tletingan_male",
+  "scaleX": 0.835,
+  "scaleY": 0.835,
+  "translateX": -3.5,
+  "translateY": -11.25,
+  "gridSize": 6,
+  "localOffsetCountNonzero": 0,
+  "canvas": [
+    234,
+    173
+  ],
+  "interpolation": "nearest-neighbor via inverse pixel-center lookup",
+  "missingUnchanged": [
+    "furhood_nelk-back_tl_m.png"
+  ],
+  "files": [
+    {
+      "file": "furhood-base_tl_m.png",
+      "beforeGitBlob": "c461f492faf651364f173e4c41c6e4495a431f50",
+      "afterGitBlob": "6267b1de33cee85456c3ebb0617769af44b29764"
+    },
+    {
+      "file": "furhood-behind_tl_m.png",
+      "beforeGitBlob": "7c48d5cc9dcf238b8024c8eb984abb24c8eae649",
+      "afterGitBlob": "30efe0d8ec808bd0b6aea1a2d3d4c919fb3c012d"
+    },
+    {
+      "file": "furhood-trim_tl_m.png",
+      "beforeGitBlob": "c9014501ed44bedaa1cad68429152422641872f7",
+      "afterGitBlob": "4db462bcfaafc84d3a230531080cc91a727ed6a5"
+    },
+    {
+      "file": "furhood_drenkirra-front_tl_m.png",
+      "beforeGitBlob": "7f6001408d4586df7baed332b35f7efd77870856",
+      "afterGitBlob": "faa90baf68c8c1f3cb18c99cee4ad6f7724b4f11"
+    },
+    {
+      "file": "furhood_gar-wolf-back_tl_m.png",
+      "beforeGitBlob": "a1e2b0e081bff40098bdcea85341086c1eaee04e",
+      "afterGitBlob": "42cf7fa7a517b2e468d683ec00d8c76b927c61cd"
+    },
+    {
+      "file": "furhood_gar-wolf-front_tl_m.png",
+      "beforeGitBlob": "d9ccd1219b8adf4dd463d87a8da691732ffee4f0",
+      "afterGitBlob": "f2b995b2f893eae054e5e72d4b552ab920427b83"
+    },
+    {
+      "file": "furhood_grehlr-back_tl_m.png",
+      "beforeGitBlob": "8d091436310e3b3c353aeac19b0ab3440a54f6a2",
+      "afterGitBlob": "81a7dc36e22fab2c8cae2d6f90d765026ab62593"
+    },
+    {
+      "file": "furhood_grehlr-front_tl_m.png",
+      "beforeGitBlob": "86ce910ffa550d3071af93b930b4619ce6985cdd",
+      "afterGitBlob": "a796b6b880ea9dac992dfa7d0a587973dc056ea9"
+    },
+    {
+      "file": "furhood_nelk-front_tl_m.png",
+      "beforeGitBlob": "99d73123c824161816105179bfe6ac7d89d02a46",
+      "afterGitBlob": "ec9dcb6af51596e973ea336bb5aa7716377f6a32"
+    },
+    {
+      "file": "furhood_puktuk-front_tl_m.png",
+      "beforeGitBlob": "6747950f5f22f2c3bd0de8e56d398bf2723de4e7",
+      "afterGitBlob": "cb7d252386820453574146d4c63301a8bae8c736"
+    },
+    {
+      "file": "furhood_voorg-ass-back_tl_m.png",
+      "beforeGitBlob": "7809e165994bca438b712d97aef68d705a750082",
+      "afterGitBlob": "e02ea506eeae5c6bf666e086e776b35d72effa9e"
+    },
+    {
+      "file": "furhood_voorg-ass-front_tl_m.png",
+      "beforeGitBlob": "8498db956ecf40a3279766c0f7aadae07db06051",
+      "afterGitBlob": "8a4a5b4a4374487930b96a91cc64f35ea9600cdc"
+    }
+  ]
+}
