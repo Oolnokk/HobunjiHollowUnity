@@ -109,6 +109,7 @@ assert.equal(R.statModifier(player,'rangedProjectileSpeed'),.65);
 // Test the production projectile-impact statements rather than mocking the
 // correct central Combat route and assuming RangedWeapons invokes it.
 const rangedCode=read('docs/js/combat/ranged-weapons.js'); // Source of the real player-shot callback statements.
+assert(rangedCode.includes("rangedTrinketDamageMultiplier: team === 'player' ?"),'Gambler power and speed must both snapshot on player projectile launch');
 const impactMarker='const playerDamageCreature = window.Combat?.deps?.damageCreature || deps.damageCreature;';
 const impactStart=rangedCode.indexOf(impactMarker); // Finds the live impact site.
 assert(impactStart>=0,'player shots must use live Combat.deps callback');
@@ -118,7 +119,7 @@ const rangedImpactStatements=rangedCode.slice(impactStart,impactEnd); // Executa
 const target={health:100,prone:false}; // Creature the separate ranged module just hit.
 let rawRangedCalls=0; // Tracks accidental calls to the unmodified independent callback.
 const rangedDeps={player,damageCreature(){rawRangedCalls++;}}; // Independent RangedWeapons.init injection.
-const projectile={prevX:150,prevY:170,itemKey:'crossbow',ammoId:null,afflictionBonuses:{},footingDamageMultiplier:0}; // Shot is far from the player's position.
+const projectile={prevX:150,prevY:170,itemKey:'crossbow',ammoId:null,afflictionBonuses:{},footingDamageMultiplier:0,rangedTrinketDamageMultiplier:1.6}; // Shot is far from the player's position.
 calls.length=0;
 vm.runInNewContext(rangedImpactStatements,{window:w,deps:rangedDeps,c:target,damage:10,
   p:projectile,knockbackPxS:0}, {filename:'ranged-weapons.js player projectile impact excerpt'});
@@ -126,7 +127,17 @@ assert.equal(rawRangedCalls,0,'player shot must not bypass combat modifiers');
 assert.equal(calls.length,1,'player projectile reaches Combat.damageCreature');
 assert.equal(calls[0].amount,16,"The Gambler's Eye must boost real projectile damage");
 assert.equal(calls[0].options.attacker,player,'player projectile carries explicit source');
+projectile.rangedTrinketDamageMultiplier=1; // Represents a normal-speed launch before Gambler was equipped.
+calls.length=0;
+vm.runInNewContext(rangedImpactStatements,{window:w,deps:rangedDeps,c:target,damage:10,
+  p:projectile,knockbackPxS:0}, {filename:'ranged-weapons.js unbuffed projectile impact'});
+assert.equal(calls[0].amount,10,'equipping Gambler after firing cannot empower a fast projectile');
 unwear(u);
+projectile.rangedTrinketDamageMultiplier=1.6; // Represents the Gambler power sampled at firing before removing it.
+calls.length=0;
+vm.runInNewContext(rangedImpactStatements,{window:w,deps:rangedDeps,c:target,damage:10,
+  p:projectile,knockbackPxS:0}, {filename:'ranged-weapons.js prebuffed projectile impact'});
+assert.equal(calls[0].amount,16,'unequipping Gambler in flight does not erase its slower-shot power');
 assert(read('docs/js/combat/ranged-weapons.js').includes("team === 'player' ? (window.DoubleEdgedCombatTrinkets?.modifier?.('rangedProjectileSpeed') || 1) : 1"));
 assert(read('docs/index.html').includes('src="js/combat/double-edged-combat-trinkets.js?'));
 console.log('13 double-edged combat trinkets: effects, equip/unequip and zero loot sources passed');
