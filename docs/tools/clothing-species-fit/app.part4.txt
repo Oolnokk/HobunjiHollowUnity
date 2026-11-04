@@ -124,6 +124,7 @@ async function refreshAssets(){
   // image, or slower response must never leave Mao-ao (or another old wearer)
   // pretending to be the newly selected species.
   R.three.buildGeneration++;
+  R.three.matchedFront2D=null; // A newly selected wearer must never inherit the previous species' synchronized 2D portrait.
   clearTimeout(R.three.buildTimer);
   disposeRuntimeRig();
   C.setTransform(1,0,0,1,0,0);
