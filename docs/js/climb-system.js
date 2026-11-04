@@ -94,8 +94,15 @@
       // route: neither their face nor their top can be climbed.
       if (window.MapBoundaryGuard?.isBoundaryTile?.(t)) return null;
       if (!t.incline) {
-        if (wallTiles === 0) return null; // nothing but open ground ahead
         if (deps.isSolid(t.type)) return null;
+        if (wallTiles === 0) {
+          // A direct discontinuity can still be a legitimate cliff, even
+          // without a painted incline tile. It may only be crossed if the
+          // shared route graph generated an actual handhold entrance.
+          const net = currentCliffNetwork();
+          const edge = net && window.CliffRouteNetwork.crossing(net, startCol, startRow, col, row);
+          return edge ? { type: 'cliffRoute', dir, route: edge.route, entry: edge.entry } : null;
+        }
         if ((t.elevTier || 0) === startElevTier) return null;
         const landElevTier = t.elevTier || 0;
         const network = currentCliffNetwork(); // Stops unrestricted auto-ascent at every unmarked cliff face.
