@@ -133,7 +133,7 @@ async function updateThreePreview(){
       gender:E.gender.value
     };
     render(false); // Paint the synchronized 2D texture without scheduling a recursive 3D rebuild.
-    E.threeStatus.textContent=`Target: ${E.species.value} ${E.gender.value} • Source: ${E.sourceSpecies.value} ${E.sourceGender.value} • Runtime rig: portrait + neck + ${handState} + feet + ${cloud} + garment preset B${R.extendedGroup?' + extended overlay':''}.`;
+    E.threeStatus.textContent=`Target: ${E.species.value} ${E.gender.value} • Source: ${E.sourceSpecies.value} ${E.sourceGender.value} • Runtime rig: portrait + neck + ${handState} + feet + ${cloud} + garment preset B${R.three.extendedGroup?' + extended overlay':''}.`;
   }catch(error){
     if(buildId!==R.three.buildGeneration)return;
     try{pendingFeet?.dispose?.()}catch{}
@@ -169,7 +169,9 @@ function render(scheduleRig=true){
     :!E.showBody.checked
       ?'Body hidden for 2D editing. Enable body to see the game-matched portrait; the 3D rig remains complete.'
       :matched
-        ?'Game-matched: both views use the same front portrait pixels. 3D adds neck, hands, feet and perspective.'
+        ?(R.extendedSource&&E.showExtended3D?.checked
+          ?'Game-matched: front portrait shared; imported extended sprite planes appear in 3D only.'
+          :'Game-matched: both views share the same front portrait artwork, inverse-projected for the 2D fit grid. 3D adds neck, hands, feet and perspective.')
         :'Rendering game-matched front portrait; showing raw art until the rig is ready…';
   if(matched){
     C.drawImage(matched,0,0); // Display pixels only: neither grids nor fitted PNG exports are rewritten.
