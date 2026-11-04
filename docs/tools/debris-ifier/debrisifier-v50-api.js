@@ -277,10 +277,20 @@
     };
   }
 
-  function takePreviewRoots() {
+  function takePreviewRoots(options = {}) {
     detachObject(localePreviewRoot);
     detachObject(mechanismParticleRoot);
-    return { localeRoot: localePreviewRoot, particleRoot: mechanismParticleRoot };
+    if (options.snapshot !== true)
+      return { localeRoot: localePreviewRoot, particleRoot: mechanismParticleRoot };
+    // V50 uses persistent preview roots. Transfer native children to
+    // distinct owners before another floor's generation clears those roots.
+    const locale=new THREE.Group(),particles=new THREE.Group();
+    locale.name='v50_native_floor_'+String(options.floor??'');
+    particles.name='v50_native_particles_'+String(options.floor??'');
+    while(localePreviewRoot.children.length)locale.add(localePreviewRoot.children[0]);
+    while(mechanismParticleRoot.children.length)particles.add(mechanismParticleRoot.children[0]);
+    locale.userData.v50DetachedFloor=options.floor??null;
+    return { localeRoot:locale,particleRoot:particles };
   }
 
   function pausePreviewLoop() {
