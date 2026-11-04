@@ -93,10 +93,12 @@
         const c=record.grid.xToCol(x+.5),r=record.grid.zToRow(z+.5);
         record.grid.set(c,r,0,blocked?CG.KIND.SOLID:CG.KIND.AIR);
         record.grid.set(c,r,1,blocked?CG.KIND.SOLID:CG.KIND.AIR);
-        if(rec.grid[z]?.[x])rec.grid[z][x]=makeTile(!blocked);
+        // Never stamp a gate into the shared 2D rec.grid: another story
+        // can have a perfectly open room at the same X/Z. Only this wing's
+        // height-specific voxel grid owns the door's collision.
       }
       record.gate.object.visible=blocked;
-      ruin.occupancy?.refresh?.();
+
     }
     try{
       for(const floor of plan.floors)for(const wing of floor.wings){
@@ -191,11 +193,9 @@
       }
       rec.cols=cols;rec.rows=rows;rec.mapData.cols=cols;rec.mapData.rows=rows;
       ruin.cols=cols;ruin.rows=rows;
-      // Opening the flat occupancy grid is a separate operation from filling
-      // the elevation-aware voxel slices. Reapply authored puzzle gates after
-      // all room tiles have been mapped into rec.grid.
-      for(const record of states)for(const challenge of record.challenges)
-        if(challenge.gate)setGate(challenge,true);
+      // The flat projection intentionally stays open even where a floor
+      // above or below has a closed stone gate. CellGrid3D is the authority
+      // for every individual story's passage blockers.
     }catch(error){
       owner.dispose?.();
       // Rollback for a failed startup is handled by clearRuntime(), which
