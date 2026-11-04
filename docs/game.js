@@ -12607,6 +12607,7 @@
         furnitureBlocksMovementAt,
         npcGridForArea,
         npcSurfaceY, // Cliff route graph uses the same tier surface as scheduled NPCs.
+        tileSurfaceYInArea, // Injected so graph builds never depend on tile coordinate metadata.
         npcMovementConfig,
         npcTransitionPool,
         buildingScenes: _buildingScenes,
