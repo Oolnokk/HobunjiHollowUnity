@@ -164,15 +164,16 @@
         const brazier={id:wing.goalBrazierId,wingId:wing.id,lit:false,flame,pedestal};
         record.braziers.push(brazier);
         ruin.controls.push({
-          kind:'layerBrazier',object:pedestal,promptRoot:pedestal,range:1.7,
+          kind:'layerBrazier',object:pedestal,promptRoot:pedestal,floorY:floor.y,range:1.7,
           priority:20,touchIcon:'🔥',label:()=>brazier.lit?'Brazier Burning':'Ignite Wing Brazier',
           onPress:()=>{
-            if(brazier.lit)return;
+            if(brazier.lit||Math.abs(Number(getPlayerY?.())-floor.y)>.8)return; // A brazier on floor 4 cannot be lit through the deck from a lower floor.
             if(record.solved<record.challenges.length){options.showToast?.('Complete the wing challenges first.',false);return;}
             brazier.lit=true;flame.visible=true;owner.lit++;
             owner.complete=owner.lit===owner.total;
             ruin.shaftNetworkComplete=owner.complete;
             options.showToast?.(owner.complete?'All shaft braziers are lit.':'Wing brazier ignited.',true);
+            options.onStateChange?.();
           }
         });
       }
@@ -217,6 +218,7 @@
         challenge.plate.material=flameMat;
         setGate(challenge,false);
         options.showToast?.('A stone gate opens.',true);
+        options.onStateChange?.();
       }
     };
     owner.getState=()=>({floors:plan.floorCount,wings:states.length,braziers:owner.total,lit:owner.lit,
