@@ -190,6 +190,7 @@
             onFireUnavailable:()=>options.showToast?.('Equip a ranged weapon to ignite the next shot.',false),
             onMusicStart:()=>{}, // Zelda-style discovery: pressing the bronze plate plays the tune with no tutorial popup.
             onMusicUnavailable:()=>options.showToast?.('The bronze plate remains silent.',false),
+            onLink:()=>options.onStateChange?.(), // Report native ranged/fire registry readiness without a dev console.
             onSolved:()=>{
               if(owner.disposed||record.solved!==i)return;
               record.solved++;
@@ -279,6 +280,13 @@
       challengesTotal:states.reduce((n,r)=>n+r.challenges.length,0),
       challengeKinds:states.flatMap(r=>r.challenges.map(c=>c.kind)),
       projectileTargetsLinked:states.reduce((n,r)=>n+r.challenges.filter(c=>c.linked).length,0),
+      pendingRuntimeLinks:states.flatMap(record=>{
+        const stage=record.challenges[record.solved];
+        if(!stage)return [];
+        const ranged=['glyphObelisk','ceilingRailTargets'].includes(stage.kind);
+        return ranged&&!stage.linked||stage.kind==='dungeonFire'&&!stage.fireLinked
+          ?[{wingId:record.wingId,stage:stage.id,kind:stage.kind}]:[];
+      }),
       perFloor:plan.floors.map(f=>({floor:f.floor,y:f.y,wings:states.filter(r=>r.floor===f.floor).map(r=>({
         side:r.side,solved:r.solved,total:r.challenges.length,lit:r.braziers[0]?.lit===true
       }))}))});
