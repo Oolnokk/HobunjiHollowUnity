@@ -50,8 +50,9 @@
     const THREE=options.THREE||root.THREE,DS=options.DynamicSurfaces||root.DynamicSurfaces;
     const CG=options.CellGrid3D||root.CellGrid3D,DevRandomRuin=options.DevRandomRuin||root.DevRandomRuin;
     const Corridors=options.RuinShaftCorridor||root.RuinShaftCorridor;
+    const Challenges=options.RuinLayerChallenges||root.RuinLayerChallenges; // Owns actual stage inputs and canonical projectile hit registrations.
     if(!rec?.scene||!ruin||!plan?.ok||!hub?.ok||!THREE?.InstancedMesh
-      ||!DS?.registerSurface||!CG?.create||!Corridors?.rectangles
+      ||!DS?.registerSurface||!CG?.create||!Corridors?.rectangles||!Challenges?.compose
       ||typeof makeTile!=='function'||typeof getPlayerPosition!=='function')
       throw new Error('Ruin layer physical runtime dependencies are missing.');
     const extent=projectedExtent(plan); // Verifies 2D slices have nonnegative world positions before any mutation.
@@ -83,6 +84,7 @@
     const owner={group,states,disposed:false,complete:false,lit:0,total:plan.totalBraziers,geometryCount:0}; // Exposed to mobile diagnostics.
     owner.dispose=()=>{
       if(owner.disposed)return;owner.disposed=true;
+      for(const state of states)for(const challenge of state.challenges)challenge.dispose?.();
       for(const scopeId of gridScopes)DevRandomRuin?.unregisterShaftGrid?.(scopeId);
       DS.clearScope(scope);group.parent?.remove(group);
       const geometries=new Set();
@@ -171,11 +173,22 @@
           challenges:[],braziers:[],walkable:walkCells.length}; // One physical wing with ordered challenge→goal activation.
         states.push(record);
         for(let i=0;i<wing.rooms.length-1;i++){
-          const room=wing.rooms[i];
-          const cx=room.x+room.w/2,cz=room.z+room.d/2;
-          const plate=mesh('ruin-challenge-plate-'+room.id,
-            new THREE.BoxGeometry(2.2,.18,2.2),plateMat,cx,floor.y+.04,cz);
-          const challenge={id:room.id,x:cx,z:cz,floorY:floor.y,plate,elapsed:0,solved:false,gate:null};
+          const room=wing.rooms[i],cx=room.x+room.w/2,cz=room.z+room.d/2;
+          let challenge=null; // Created by the shared mechanism runtime; its onSolved opens this chamber's real next gate.
+          challenge=Challenges.compose({
+            THREE,parent:activeRoot,room,y:floor.y,id:room.id,kind:room.challenge,
+            isActive:()=>record.solved===i&&!owner.disposed,
+            getPlayerPosition,getPlayerY,
+            onSolved:()=>{
+              if(owner.disposed||record.solved!==i)return;
+              record.solved++;
+              setGate(challenge,false);
+              options.showToast?.(challenge.kind==='pressurePlate'
+                ?'A stone gate opens.':'The last target falls — the stone gate opens.',true);
+              options.onStateChange?.();
+            }
+          });
+          challenge.x=cx;challenge.z=cz;challenge.floorY=floor.y;challenge.gate=null;
           const next=wing.corridors[i+1];
           if(next){
             const {dx,dz}=side,cx=next.end.x,cz=next.end.z;
@@ -241,25 +254,15 @@
       // be drawn over the player by the overhead third-person camera. Keep
       // physical collision/supports active; hide ONLY the upper story meshes.
       for(const [floor,rootGroup] of floorRoots)rootGroup.visible=floor*plan.options.floorHeight<=y+.8;
-      for(const record of states){
-        const challenge=record.challenges[record.solved];
-        if(!challenge)continue;
-        if(Math.abs(y-challenge.floorY)>.75||Math.hypot(player.x-challenge.x,player.z-challenge.z)>1.15){
-          challenge.elapsed=0;continue;
-        }
-        challenge.elapsed+=Math.min(.05,Math.max(0,dt));
-        if(challenge.elapsed<.8)continue;
-        challenge.solved=true;record.solved++;
-        challenge.plate.material=flameMat;
-        setGate(challenge,false);
-        options.showToast?.('A stone gate opens.',true);
-        options.onStateChange?.();
-      }
+      for(const record of states)
+        record.challenges[record.solved]?.tick?.(dt); // Only the current room's real mechanism consumes input and ranged targets.
     };
     owner.getState=()=>({floors:plan.floorCount,wings:states.length,braziers:owner.total,lit:owner.lit,
       complete:owner.complete,rooms:states.reduce((n,r)=>n+r.challenges.length+1,0),
       challengesSolved:states.reduce((n,r)=>n+r.solved,0),
       challengesTotal:states.reduce((n,r)=>n+r.challenges.length,0),
+      challengeKinds:states.flatMap(r=>r.challenges.map(c=>c.kind)),
+      projectileTargetsLinked:states.reduce((n,r)=>n+r.challenges.filter(c=>c.linked).length,0),
       perFloor:plan.floors.map(f=>({floor:f.floor,y:f.y,wings:states.filter(r=>r.floor===f.floor).map(r=>({
         side:r.side,solved:r.solved,total:r.challenges.length,lit:r.braziers[0]?.lit===true
       }))}))});
