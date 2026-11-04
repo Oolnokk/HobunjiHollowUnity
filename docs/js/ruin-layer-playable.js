@@ -130,7 +130,11 @@
           floorRoots.set(floor.floor,rootGroup);group.add(rootGroup);
         }
         activeRoot=floorRoots.get(floor.floor);
-        const tiles=collect(wing),walkCells=[...tiles].map(k=>k.split(',').map(Number)); // Each stage is reachable on its own 2D level.
+        const tiles=collect(wing),walkCells=[...tiles].map(k=>k.split(',').map(Number)); // Room/wall footprint keeps the original shape around floorless interiors.
+        const ropePits=wing.rooms.filter(room=>room.challenge==='ropeChain').map(room=>Challenges.ropePitForRoom(room,wing.side));
+        if(ropePits.some(pit=>!pit))throw new Error('Invalid authored rope-pit footprint in '+wing.id);
+        const supportedCells=walkCells.filter(([x,z])=>!ropePits.some(pit=>pit.contains(x+.5,z+.5))); // Draw floor and register support only on the actual safe banks.
+        const voidCells=walkCells.length-supportedCells.length; // Exposed in mobile diagnostics to prove the bottomless gap is not merely painted black.
         const localBounds=walkCells.reduce((a,[x,z])=>({
           minX:Math.min(a.minX,x),maxX:Math.max(a.maxX,x),minZ:Math.min(a.minZ,z),maxZ:Math.max(a.maxZ,z)
         }),{minX:Infinity,maxX:-Infinity,minZ:Infinity,maxZ:-Infinity});
@@ -163,10 +167,10 @@
           if(!tiles.has(key(x,z+1))&&!(key(x,z)===entryKey&&side.dz===-1))wallsX.push([x+.5,z+1]);
         }
         const wingName='floor'+floor.floor+'-'+wing.side;
-        instance(wingName+'-floor',new THREE.BoxGeometry(1,.12,1),walkCells,material,([x,z])=>({x:x+.5,y:floor.y-.06,z:z+.5}));
+        instance(wingName+'-floor',new THREE.BoxGeometry(1,.12,1),supportedCells,material,([x,z])=>({x:x+.5,y:floor.y-.06,z:z+.5}));
         instance(wingName+'-wall-ns',new THREE.BoxGeometry(1,2.3,.14),wallsX,material,([x,z])=>({x,y:floor.y+1.15,z}));
         instance(wingName+'-wall-ew',new THREE.BoxGeometry(.14,2.3,1),wallsZ,material,([x,z])=>({x,y:floor.y+1.15,z}));
-        const rectangles=Corridors.rectangles(walkCells);
+        const rectangles=Corridors.rectangles(supportedCells); // The abyss has NO physical floor and NO DynamicSurfaces standing rectangle.
         rectangles.forEach((r,i)=>{
           const spec={id:scope+'-'+wing.id+'-'+i,scope,priority:1,
             bounds:{minX:r.minC,maxX:r.maxC+1,minZ:r.minR,maxZ:r.maxR+1},topY:floor.y};
@@ -176,13 +180,13 @@
         const occupied=(x,z)=>tiles.has(key(Math.floor(x),Math.floor(z))); // Avoid selecting the wing's empty rectangular allocation when other floors overlap X/Z.
         DevRandomRuin?.registerShaftGrid?.(gridScope,grid,()=>owner.dispose(),occupied);
         const record={wingId:wing.id,floor:floor.floor,side:wing.side,grid,solved:0,
-          challenges:[],braziers:[],walkable:walkCells.length}; // One physical wing with ordered challenge→goal activation.
+          challenges:[],braziers:[],walkable:supportedCells.length,voidCells}; // Physical room stage and missing support cells are tracked separately.
         states.push(record);
         for(let i=0;i<wing.rooms.length-1;i++){
           const room=wing.rooms[i],cx=room.x+room.w/2,cz=room.z+room.d/2;
           let challenge=null; // Created by the shared mechanism runtime; its onSolved opens this chamber's real next gate.
           challenge=Challenges.compose({
-            THREE,parent:activeRoot,room,y:floor.y,id:room.id,kind:room.challenge,
+            THREE,parent:activeRoot,room,y:floor.y,id:room.id,kind:room.challenge,side:wing.side,
             isActive:()=>record.solved===i&&!owner.disposed,
             getPlayerPosition,getPlayerY,
             addControl:control=>ruin.controls.push(control), // The canonical world interaction resolver owns Fire-source input.
@@ -280,11 +284,14 @@
       challengesTotal:states.reduce((n,r)=>n+r.challenges.length,0),
       challengeKinds:states.flatMap(r=>r.challenges.map(c=>c.kind)),
       projectileTargetsLinked:states.reduce((n,r)=>n+r.challenges.filter(c=>c.linked).length,0),
+      floorlessCells:states.reduce((n,r)=>n+r.voidCells,0),
+      ropeChainsLinked:states.reduce((n,r)=>n+r.challenges.filter(c=>c.ropeLinked).length,0),
       pendingRuntimeLinks:states.flatMap(record=>{
         const stage=record.challenges[record.solved];
         if(!stage)return [];
         const ranged=['glyphObelisk','ceilingRailTargets'].includes(stage.kind);
         return ranged&&!stage.linked||stage.kind==='dungeonFire'&&!stage.fireLinked
+          ||stage.kind==='ropeChain'&&!stage.ropeLinked
           ?[{wingId:record.wingId,stage:stage.id,kind:stage.kind}]:[];
       }),
       perFloor:plan.floors.map(f=>({floor:f.floor,y:f.y,wings:states.filter(r=>r.floor===f.floor).map(r=>({
