@@ -199,7 +199,7 @@
     }
     const floor = target.maxHealth * WILDLIFE_HP_FLOOR_FRACTION;
     const clamped = Math.max(0, Math.min(amount, target.health - floor));
-    if (clamped > 0) deps.damageCreature(target, clamped, attacker.x, attacker.y, deps.HOSTILE_BITE_KNOCKBACK_PX_S, { tag: attacker.def?.attackTag || 'sharp', attacker }); // Gives defensive wildlife the actual skirmish attacker instead of confusing it with the player.
+    if (clamped > 0) deps.damageCreature(target, clamped, attacker.x, attacker.y, deps.HOSTILE_BITE_KNOCKBACK_PX_S, { tag: attacker.def?.attackTag || 'sharp', attacker, wildlifeSkirmishFloor: floor }); // The scent payout also obeys the nonlethal wildlife floor; ordinary skirmishes keep their existing clamp.
     if (target.health > 0 && target.health / target.maxHealth <= WILDLIFE_FLEE_HP_THRESHOLD) {
       target.state = 'fleeing-low-health';
       target.targetCreature = null;
