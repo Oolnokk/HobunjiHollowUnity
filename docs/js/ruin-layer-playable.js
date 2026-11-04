@@ -51,8 +51,9 @@
     const CG=options.CellGrid3D||root.CellGrid3D,DevRandomRuin=options.DevRandomRuin||root.DevRandomRuin;
     const Corridors=options.RuinShaftCorridor||root.RuinShaftCorridor;
     const Challenges=options.RuinLayerChallenges||root.RuinLayerChallenges; // Owns actual stage inputs and canonical projectile hit registrations.
+    const Defense=options.RuinLayerDefense||root.RuinLayerDefense; // Composed authored plinth, statue dispenser and enemy waves.
     if(!rec?.scene||!ruin||!plan?.ok||!hub?.ok||!THREE?.InstancedMesh
-      ||!DS?.registerSurface||!CG?.create||!Corridors?.rectangles||!Challenges?.compose
+      ||!DS?.registerSurface||!CG?.create||!Corridors?.rectangles||!Challenges?.compose||!Defense?.create
       ||typeof makeTile!=='function'||typeof getPlayerPosition!=='function')
       throw new Error('Ruin layer physical runtime dependencies are missing.');
     const extent=projectedExtent(plan); // Verifies 2D slices have nonnegative world positions before any mutation.
@@ -187,14 +188,17 @@
           let challenge=null; // Created by the shared mechanism runtime; its onSolved opens this chamber's real next gate.
           challenge=Challenges.compose({
             THREE,parent:activeRoot,room,y:floor.y,id:room.id,kind:room.challenge,side:wing.side,
+            RuinLayerDefense:Defense,mapId:String(rec.mapData?.id||'map_i_dev_random_ruin'),
             isActive:()=>record.solved===i&&!owner.disposed,
             getPlayerPosition,getPlayerY,
-            addControl:control=>ruin.controls.push(control), // The canonical world interaction resolver owns Fire-source input.
+            addControl:control=>ruin.controls.push(control), // One shared interaction resolver owns authored plinth, fire-source and statue controls.
+            removeControl:control=>{const n=ruin.controls.indexOf(control);if(n>=0)ruin.controls.splice(n,1);},
             onFireArmed:()=>options.showToast?.('The next projectile ignites.',true),
             onFireUnavailable:()=>options.showToast?.('Equip a ranged weapon to ignite the next shot.',false),
             onMusicStart:()=>{}, // Zelda-style discovery: pressing the bronze plate plays the tune with no tutorial popup.
             onMusicUnavailable:()=>options.showToast?.('The bronze plate remains silent.',false),
-            onLink:()=>options.onStateChange?.(), // Report native ranged/fire registry readiness without a dev console.
+            onLink:()=>options.onStateChange?.(), // Report native projectile/fire/defence registration without a dev console.
+            onError:challenge=>{options.showToast?.('Statue defence unavailable: '+challenge.error,false);options.onStateChange?.();},
             onSolved:()=>{
               if(owner.disposed||record.solved!==i)return;
               record.solved++;
@@ -202,6 +206,8 @@
               options.showToast?.(challenge.kind==='pressurePlate'?'A stone gate opens.'
                 :challenge.kind==='melodyEcho'?'The stone answers your melody — a gate opens.'
                 :challenge.kind==='dungeonFire'?'The ice recedes — a stone gate opens.'
+                :challenge.kind==='statueDefense'?'The defended statue sinks into the plinth — a stone gate opens.'
+                :challenge.kind==='ropeChain'?'The far bank releases the stone gate.'
                 :'The last target falls — the stone gate opens.',true);
               options.onStateChange?.();
             }
@@ -286,12 +292,16 @@
       projectileTargetsLinked:states.reduce((n,r)=>n+r.challenges.filter(c=>c.linked).length,0),
       floorlessCells:states.reduce((n,r)=>n+r.voidCells,0),
       ropeChainsLinked:states.reduce((n,r)=>n+r.challenges.filter(c=>c.ropeLinked).length,0),
+      defenseRoomsReady:states.reduce((n,r)=>n+r.challenges.filter(c=>c.kind==='statueDefense'&&c.ready).length,0),
+      defenseErrors:states.flatMap(r=>r.challenges.filter(c=>c.kind==='statueDefense'&&c.error)
+        .map(c=>({id:c.id,error:c.error,attempts:c.attempts}))),
       pendingRuntimeLinks:states.flatMap(record=>{
         const stage=record.challenges[record.solved];
         if(!stage)return [];
         const ranged=['glyphObelisk','ceilingRailTargets'].includes(stage.kind);
         return ranged&&!stage.linked||stage.kind==='dungeonFire'&&!stage.fireLinked
           ||stage.kind==='ropeChain'&&!stage.ropeLinked
+          ||stage.kind==='statueDefense'&&!stage.ready
           ?[{wingId:record.wingId,stage:stage.id,kind:stage.kind}]:[];
       }),
       perFloor:plan.floors.map(f=>({floor:f.floor,y:f.y,wings:states.filter(r=>r.floor===f.floor).map(r=>({
