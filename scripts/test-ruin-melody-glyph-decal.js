@@ -87,6 +87,18 @@ assert.equal(loaded.length,8,'each of the eight Scratchbone PNGs loads only once
 assert.equal(configured.length,8,'each number PNG uses the canonical color/filter pipeline');
 assert(madeMaterials.length>=next.length+first.length,'real glyph decals use canonical sprite materials rather than ad hoc UI textures');
 
+const edge=api.create({root:new Group(),plate,notes:[0,1,2,3],bounds,sampleSupport:(x,z)=>z>1?null:{y:0},
+  blockedAt:()=>false}); // A floor missing only the outermost plaque strip must not accept that face.
+assert(edge,'an opposite supported face must remain usable');
+assert(edge.group.position.z<0,'placement checks the actual stone corners, not just samples inset from the edges');
+assert.equal(edge.diagnostics().fallback,false,'a fully supported opposite side is normal placement');
+
+const shifted=api.create({root:new Group(),plate,notes:[0,1,2,3],bounds,sampleSupport,
+  blockedAt:(x,z)=>(Math.abs(x)<.12&&Math.abs(z)<1.5)||(Math.abs(z)<.12&&Math.abs(x)<2)});
+assert(shifted,'the clue must search slightly farther rather than covering the trigger when all four nearby faces are obstructed');
+assert.equal(shifted.diagnostics().fallback,false,'an offset spot with a clear full footprint is preferable to an emergency fallback');
+assert(Math.abs(shifted.group.position.x)>.7&&Math.abs(shifted.group.position.z)>.4,'the offset plaque is beside, not atop, the bronze plate');
+
 const tight=api.create({root:new Group(),plate,notes:[4,3,2,1],bounds:{minX:-.4,maxX:.4,minZ:-.4,maxZ:.4},
   sampleSupport,blockedAt:()=>true}); // Cramped generation cannot suppress its sequence clue entirely.
 assert.equal(tight.diagnostics().fallback,true);
