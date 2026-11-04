@@ -463,21 +463,27 @@
   }
   function backCarryPortrait(body){
     if(!body?.traverse)return null;
-    if(backPortraitCache?.body===body&&backPortraitCache.plane?.parent
-      &&isUnderBody(backPortraitCache.plane,body))return backPortraitCache.plane;
+    const activeAvatar=window.WorldPortraitLife?.getPlayerAvatar?.()?.group||null; // Canonical current player portrait, even while the previous PNG still belongs to this rig.
+    if(activeAvatar){
+      if(!isUnderBody(activeAvatar,body)){backPortraitCache=null;return null;} // During a rebuild, never mount onto a stale sibling.
+      if(backPortraitCache?.body===body&&backPortraitCache.avatar===activeAvatar
+        &&backPortraitCache.plane?.parent&&isUnderBody(backPortraitCache.plane,activeAvatar))return backPortraitCache.plane;
+    }else if(backPortraitCache?.body===body&&!backPortraitCache.avatar
+      &&backPortraitCache.plane?.parent&&isUnderBody(backPortraitCache.plane,body))return backPortraitCache.plane;
+    const searchRoot=activeAvatar||body; // When game.js has a live avatar, scope detection to it so an old visible portrait cannot win.
     let skinned=null,front=null;
-    const liveRig=window.PNGPlaneAvatar?.resolveSkinnedPortraitRoot?.(body)?.userData?.neckRig;
-    if(liveRig?.skinnedPlane?.isSkinnedMesh&&isUnderBody(liveRig.skinnedPlane,body))
-      skinned=liveRig.skinnedPlane; // Reuse the canonical skinned player portrait when its rig is ready.
-    if(!skinned)body.traverse(node=>{
+    const directRig=activeAvatar?.userData?.neckRig;
+    if(directRig?.skinnedPlane?.isSkinnedMesh&&isUnderBody(directRig.skinnedPlane,searchRoot))
+      skinned=directRig.skinnedPlane;
+    if(!skinned)searchRoot.traverse(node=>{
       if(!node?.isMesh||node.userData?.shattercaskRearOverlay)return;
       if(!skinned&&node.isSkinnedMesh&&node.material?.[1]?.name==='npc_avatar_skinned_back_material')
         skinned=node;
       if(!front&&(node.name==='npc_avatar_front_plane'||node.name==='player_avatar_front_plane'))
-        front=node; // Legacy rigid avatars use the forward-facing plane, never the reversed back plane.
+        front=node; // Legacy avatars need the forward-facing plane, never the reversed back plane.
     });
     const plane=skinned||front||null;
-    backPortraitCache=plane?{body,plane}:null;
+    backPortraitCache=plane?{body,avatar:activeAvatar,plane}:null;
     return plane;
   }
   function worldRigQuaternion(node){
