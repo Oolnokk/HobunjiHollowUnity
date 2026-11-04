@@ -46,17 +46,26 @@
     const offsets = hallway
       ? [[along,alongDistance],[along,-alongDistance],[across,acrossDistance],[across,-acrossDistance]]
       : [[across,acrossDistance],[across,-acrossDistance],[along,alongDistance],[along,-alongDistance]];
-    return offsets.map(([vector,distance])=>({
+    const candidates = offsets.map(([vector,distance])=>({
       x:plate.x + vector.x * distance,
       z:plate.z + vector.z * distance,
-    }));
+    })); // Try the four immediately adjacent faces first, keeping the working trigger clear.
+    const lateralStep = Math.max(.65,layout.width * .6); // If adjacent faces are obstructed, slide along their edges before falling back onto the trigger.
+    for (const [vector,distance] of offsets) for (const side of [-1,1]) {
+      const perpendicular = {x:-vector.z,z:vector.x};
+      candidates.push({
+        x:plate.x + vector.x * distance + perpendicular.x * lateralStep * side,
+        z:plate.z + vector.z * distance + perpendicular.z * lateralStep * side,
+      });
+    }
+    return candidates;
   }
 
   function choosePlacement(plate, layout, axis, hallway, bounds, sampleSupport, blockedAt) {
     const yaw = axis === 'z' ? Math.PI / 2 : 0; // The local glyph row becomes a line of notes along world Z in a north/south hall.
     const cos = Math.cos(yaw), sin = Math.sin(yaw);
     const points = candidatePoints(plate,layout,axis,hallway); // Try adjacent floor in a stable order before using the embedded fallback.
-    const samples = [[0,0],[-.42,0],[.42,0],[0,-.38],[0,.38],[-.42,-.38],[.42,-.38],[-.42,.38],[.42,.38]];
+    const samples = [[-.5,-.5],[-.5,0],[-.5,.5],[0,-.5],[0,0],[0,.5],[.5,-.5],[.5,0],[.5,.5]]; // Check the actual stone corners and edges, not inset points that can leave a visible strip through a wall.
     const fits = (position, strict) => samples.every(([u,v]) => {
       if (!strict && (u || v)) return true; // The emergency placement only requires its center to be supported.
       const localX=u * layout.width, localZ=v * layout.depth;
