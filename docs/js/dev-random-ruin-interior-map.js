@@ -1348,8 +1348,10 @@
     }
   }
 
-  function registerShaftGrid(scope,grid,dispose){
-    if(ruin)(ruin.shaftGrids??=new Map()).set(scope,{grid,dispose});
+  function registerShaftGrid(scope,grid,dispose,contains=null){
+    // contains selects the real footprint of a stacked wing, rather than
+    // treating its whole rectangular voxel allocation as a playable room.
+    if(ruin)(ruin.shaftGrids??=new Map()).set(scope,{grid,dispose,contains});
   }
 
   function shaftSegmentHit(start,end,radius,intersect){
@@ -1362,18 +1364,27 @@
     return first;
   }
 
-  function shaftAt(x,z){
-    for(const {grid} of ruin.shaftGrids?.values()||[]){
-      if(grid.inBounds(grid.xToCol(x),grid.zToRow(z),0))return grid;
+  function shaftAt(x,z,referenceY=0){
+    let best=null,bestDistance=Infinity; // Nearest vertical story at a given X/Z; lower and upper wings may overlap in plan view.
+    const y=Number(referenceY);
+    for(const [scope,{grid,contains}] of ruin?.shaftGrids||[]){
+      if(!grid.inBounds(grid.xToCol(x),grid.zToRow(z),0)
+        ||typeof contains==='function'&&!contains(x,z))continue;
+      // The central shared shaft owns its entire X/Z footprint at every
+      // elevation, including the physical overlap at each wing portal.
+      if(scope==='shaft-hub')return grid;
+      const distance=Number.isFinite(y)?Math.abs(y-grid.baseY):0;
+      if(distance<bestDistance){bestDistance=distance;best=grid;}
     }
-    return null;
+    return best;
   }
 
   function shaftActorFloor(actor,x,z,maxDrop=1){
     if(!ruin?.shaftGrids?.size||deps.getCurrentArea?.()!==MAP_ID)return undefined;
-    const grid=shaftAt(x,z); // No shaft here means the ordinary movement rules own this cell.
+    const source=actor?.shaftSupportY??actor?.surfaceYOverride?.()??actor?.supportY;
+    const ref=Number.isFinite(Number(source))&&source!==null?Number(source):0; // Actor's own elevation selects between superimposed stories.
+    const grid=shaftAt(x,z,ref); // No stacked floor here means ordinary movement owns this tile.
     if(!grid)return undefined;
-    const ref=actor?.shaftSupportY??actor?.surfaceYOverride?.()??grid.baseY;
     const col=grid.xToCol(x),row=grid.zToRow(z),level=grid.yToLevel(ref+1e-5);
     const floor=grid.walkDestinationLevel(col,row,level,{maxDrop});
     return floor<0?null:grid.levelToY(floor);
@@ -1384,7 +1395,7 @@
     const x=wx/deps.TILE,z=wz/deps.TILE; // Convert game pixels to grid world coordinates.
     const floor=shaftActorFloor(actor,x,z,walkingPath?0:1);
     if(floor===null)return false;
-    if(floor===undefined && actor && shaftAt(actor.x/deps.TILE,actor.y/deps.TILE)){
+    if(floor===undefined && actor && shaftAt(actor.x/deps.TILE,actor.y/deps.TILE,actor.shaftSupportY??actor?.surfaceYOverride?.()??0)){
       // A shaft edge may join ordinary ground, but its rock padding is not a route.
       return ruin.floorSet.has(Math.floor(x)+','+Math.floor(z));
     }
@@ -1440,7 +1451,7 @@
       return;
     }
     const x=deps.player.x/deps.TILE,z=deps.player.y/deps.TILE; // World position proposed by ordinary ground movement.
-    const grid=shaftAt(x,z);
+    const grid=shaftAt(x,z,ruin.supportY);
     let info;
     if(grid){
       const level=grid.yToLevel(ruin.supportY+1e-5);
