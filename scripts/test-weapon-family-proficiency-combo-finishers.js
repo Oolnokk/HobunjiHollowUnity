@@ -67,6 +67,7 @@ function testSpecialFinishers() {
   const pending = []; // Staged actions are resolved by the test on demand.
   let damage = []; // Per-target outgoing damage and flags from the production combo executor.
   let sfx = 0; // Counts special-finisher confirmation cues, independently of ordinary weapon impacts.
+  const lungeStops = []; // Checks that special reach cannot stop movement on an unqualified bystander.
   const target = id => ({ id, def: { label: id }, x: 10, y: 0, health: 500, areaId: 'test' });
   const a = target('a'), b = target('b'), player = { x: 0, y: 0, angle: 0 };
   let weapon = 'hatchet'; // Weapon ownership can change between combo taps.
@@ -91,7 +92,8 @@ function testSpecialFinishers() {
     toolMasteryLevel: () => 5, weaponDamageTypeForTool: () => 'sharp', spendMotesOfProwess: () => true,
     weaponAbility: () => ({ damage: 20, rangePx: 100, knockbackPxS: 400 }), hostileObjects: new Set([a,b]),
     getCurrentArea: () => 'test', getPlayerMeleeAimPitch: () => 0, clearVegetationInAttackCone: () => 0,
-    beginCombatLunge() {}, triggerWeaponSwingVisual() {}, playWeaponHitSfx() {}, showToast() {}, awardWeaponMasteryXp() {},
+    beginCombatLunge(_distance, _duration, _start, geometry) { lungeStops.push(geometry); }, // Observe the actual movement owner's stop cone.
+    triggerWeaponSwingVisual() {}, playWeaponHitSfx() {}, showToast() {}, awardWeaponMasteryXp() {},
     damageCreature(enemy, amount, _x, _y, _knockback, options) {
       damage.push({ target: enemy.id, amount, special: !!options.specialComboFinisher, afflictions: options.afflictionBonuses });
       enemy.health -= amount;
@@ -144,6 +146,7 @@ function testSpecialFinishers() {
   delete a.requiredRangePx;
   delete b.requiredRangePx;
   assert.deepEqual(damage.map(h => [h.target, h.special]), [['a', false],['a', false],['a', true]], 'special reach is target-qualified rather than a blanket cone enlargement');
+  assert.equal(lungeStops.at(-1).rangePx, 69, 'lunge stopping must use Cleave’s normal reach, not a bonus radius that includes unqualified enemies');
   reset();
   tap('swingCombo', [a], 1003);
   tap('swingCombo', [], 1003.5);
