@@ -16627,7 +16627,7 @@
         ITEM_DEFS[key] = {
           icon: '🪨', label: ore.label, cat: 'material', sellPrice: 2,
           tags: ['Material', 'Ore', oreKey],
-          desc: oreKey === 'tin' ? 'Cassiterite, a natural tin mineral. Smelt into tin or high-tin bronze; can also alloy with native copper.' : 'Raw mineral ore. Smelt five matching ore into a bar or use discovered recipes to alloy metals.',
+          desc: oreKey === 'tin' ? 'Cassiterite, a natural tin mineral. Smelt into tin or high-tin bronze; can also alloy with copper.' : 'Raw mineral ore. Smelt five matching ore into a bar or use discovered recipes to alloy metals.',
         };
       });
 
