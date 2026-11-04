@@ -1544,11 +1544,10 @@
     }
     return result;
   }
-  function toolArchAction(){return held&&!backCarried?'stow':!held&&facedShattercask()?'pickup':null;}
-  function toolArchTap(){
-    const action=toolArchAction();
-    return action==='stow'?stowOnBack():action==='pickup'?pickUp(facedShattercask()):false;
-  }
+  // The existing gameplay controller dispatcher recognizes the literal 'pickup' claim.
+  // Keep that claim for back-stow too, so pointer, key and pad all use one Tool Select owner.
+  function toolArchAction(){return held&&!backCarried?'pickup':!held&&facedShattercask()?'pickup':null;}
+  function toolArchTap(){return toolArchAction()==='pickup'&&(held?stowOnBack():pickUp(facedShattercask()));}
   let lastToolArchAction=null;
   function syncToolArchPickup() {
     if(typeof document==='undefined')return;
@@ -1559,8 +1558,8 @@
     lastToolArchAction=action;
     btn.classList?.toggle?.('shattercask-context',!!action);
     if(action){
-      btn.dataset.shattercaskIcon=action==='stow'?'🎒':'✋';
-      const label=action==='stow'?'Store '+held.displayName+' on back':'Pick up '+facedShattercask().displayName;
+      btn.dataset.shattercaskIcon=held?'🎒':'✋';
+      const label=held?'Store '+held.displayName+' on back':'Pick up '+facedShattercask().displayName;
       btn.setAttribute?.('aria-label',label);
       btn.title=label;
     }else{
