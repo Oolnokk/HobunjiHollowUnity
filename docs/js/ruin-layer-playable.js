@@ -84,6 +84,12 @@
     const owner={group,states,disposed:false,complete:false,lit:0,total:plan.totalBraziers,geometryCount:0}; // Exposed to mobile diagnostics.
     owner.dispose=()=>{
       if(owner.disposed)return;owner.disposed=true;
+      // The V50 music composer only closes *its own* echo sessions. A shaft
+      // melody can outlive scene removal unless this module releases it too.
+      const music=options.MusicMinigame||root.MusicMinigame;
+      const activeId=music?.state?.echoChallenge?.id;
+      if(activeId&&states.some(state=>state.challenges.some(challenge=>challenge.kind==='melodyEcho'&&challenge.id===activeId)))
+        music.close?.();
       for(const state of states)for(const challenge of state.challenges)challenge.dispose?.();
       for(const scopeId of gridScopes)DevRandomRuin?.unregisterShaftGrid?.(scopeId);
       DS.clearScope(scope);group.parent?.remove(group);
