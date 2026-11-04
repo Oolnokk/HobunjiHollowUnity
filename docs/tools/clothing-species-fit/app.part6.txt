@@ -158,8 +158,7 @@ function targetBodyLayerRecord(descriptor=null){
   return layers.find(layer=>String(layer.id||'').toLowerCase()==='torso')||layers[0]||null;
 }
 function targetBodyLayerXform(){
-  const torso=targetBodyLayerRecord({layerId:'torso'});
-  return normalizedLayerXform(torso?.xform||{ax:-.2,ay:0,scaleX:2.55,scaleY:2.55});
+  return normalizedLayerXform(window.getPortraitXformPreset?.('B')||{ax:-.0983,ay:-.0809,sx:2.49,sy:2.49}); // The live game overrides base body layers with B too; do not inverse-project the canonical head or extended art through the obsolete torso A transform.
 }
 function routedBodyTintSlot(descriptor){
   const layer=targetBodyLayerRecord(descriptor);
