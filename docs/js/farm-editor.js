@@ -477,10 +477,11 @@
               localRow: Number.isFinite(localRow) ? localRow : owner.localRow, ...(dimensions || {}) };
             restoredObject.tableId = tableId || ''; restoredObject.tableAttachment = window.TableChairPlacement?.normalize?.(tableAttachment) || null; restoredObject.npcStationId = npcStationId || null; restoredObject.surfaceItems = surfaceItems || null; restoredObject.serviceId = serviceId || '';
             if ((key === 'wardrobe' || key === 'chest') && npcWardrobeFor) restoredObject.npcWardrobeFor = String(npcWardrobeFor); // Restores family wardrobe links before furniture registration.
-            window.FurnitureTableSystem?.registerPlacement(decorArea, restoredObject, restoredObject.mesh, def); // Restores map-local relationships only after the stable furniture id exists.
             restoredObject.patternOverrides = patternOverrides || null;
             window.FurniturePatternSurfaces?.applyOverrides?.(restoredObject.mesh, patternOverrides);
             deps.interiorFurnitureObjects.push(restoredObject);
+            // Publish the parent record before registration can move any chairs already restored.
+            window.FurnitureTableSystem?.registerPlacement(decorArea, restoredObject, restoredObject.mesh, def);
             if (wallPlacement) {
               const pendingWallRestore = window.WallOrnamentPlacement?.setPlayerPlacement?.(restoredObject.id, wallPlacement, { notify: false, apply: true }); // Restores both transform and houseWindowLink without firing pair sync before house pieces finish loading.
               pendingWallRestore?.catch?.(err => console.error('[farm-editor] failed to restore wall placement', { id: restoredObject.id, key }, err));
@@ -490,7 +491,14 @@
             const size = deps.decorativeFurnitureSize(key, rotYDeg || 0);
             deps.registerSitWorldObject(key, col, row, size.fw, size.fd, rotYDeg || 0);
           }
-          if (result) restoredObject.npcStationId = deps.registerChairNpcStation(key, restoredObject.col, restoredObject.row, restoredObject.rotYDeg || 0, deps.normalizeNpcArea(decorArea), null, null, restoredObject.id, restoredObject.npcStationId);
+          if (restoredObject) {
+            // Attached chairs navigate from the rendered center, including when the saved transform already matches.
+            const position = restoredObject.tableAttachment ? restoredObject.mesh.position : null;
+            restoredObject.npcStationId = deps.registerChairNpcStation(key,
+              position?.x ?? restoredObject.col, position?.z ?? restoredObject.row,
+              restoredObject.rotYDeg || 0, deps.normalizeNpcArea(decorArea), null, null,
+              restoredObject.id, restoredObject.npcStationId);
+          }
         } catch (err) {
           console.error('[farm-editor] failed to restore decorative furniture', { key, col, row, area }, err);
         }
