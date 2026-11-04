@@ -68,8 +68,10 @@ const SEEDS=[0x5eed1234,0x13579bdf,0x2468ace0,0x51a7cafe]; // Deterministic fall
         return {ok,phase:window.DevRandomRuin.getGenerationProgress(),audit:window.DevRandomRuin.getLastSolvabilityAudit()};
       },seed);
       assert.equal(result.ok,true,'ruin generation failed for seed '+seed+': '+JSON.stringify(result));
-      await page.waitForFunction(()=>window.DevRandomRuinSimplePuzzles?.snapshot?.()?.active===true,
-        null,{timeout:30000});
+      await page.waitForFunction(()=>{
+        try{return window.DevRandomRuinSimplePuzzles?.snapshot?.()?.active===true;}
+        catch(error){window.__ropeChainSnapshotError=String(error);return false;}
+      },null,{timeout:30000,polling:250}); // Headless WebGL can pause rAF; poll the real snapshot periodically instead.
       const summary=await page.evaluate(()=>{
         const snap=window.DevRandomRuinSimplePuzzles.snapshot();
         return {chain:snap.ropeChains.find(chain=>chain.mandatoryTraversal)||null,
@@ -185,6 +187,7 @@ const SEEDS=[0x5eed1234,0x13579bdf,0x2468ace0,0x51a7cafe]; // Deterministic fall
       generation:window.DevRandomRuin?.getGenerationProgress?.(),
       simple:window.DevRandomRuinSimplePuzzles?.snapshot?.()?.ropeChains,
       rejects:window.DevRandomRuinSimplePuzzles?.snapshot?.()?.ropeChainRejects,
+      snapshotError:window.__ropeChainSnapshotError||null,
       checkpoints:window.DevRandomRuinSimplePuzzles?.snapshot?.()?.checkpoints,
       playerDowned:window.PlayerDowned?.isDowned?.(),
     })).catch(()=>null);
