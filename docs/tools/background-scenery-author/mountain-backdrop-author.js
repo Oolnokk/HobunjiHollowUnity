@@ -244,6 +244,9 @@
     const config = ensureConfig();
     const defaults = Backdrops.defaultAuthorConfig();
     config.layers[selectedLayer] = defaults.layers[selectedLayer];
+    activeConfig.mountainBackdrops = config;
+    activeMap.backgroundScenery = activeMap.backgroundScenery || {};
+    activeMap.backgroundScenery.mountainBackdrops = config; // Keep the edited map in sync so subsequent UI refreshes cannot restore the previous layer.
     Backdrops.saveAuthorConfig(config);
     const root = activeRoot();
     if (root) resolvedLayout = Backdrops.applyAuthorConfigToGroup(root, activeMap.cols, activeMap.rows, config);
@@ -334,7 +337,7 @@
         <h2 style="margin:0">Western Slope rock ridges</h2>
         <label class="pill" style="display:flex;gap:5px;align-items:center"><input id="mountainEnabled" type="checkbox" checked> enabled</label>
       </div>
-      <p class="muted" style="margin:6px 0">Each layer contains eight mine-style rocks. Position controls are offsets from the automatic placement (zero = original position); X is east/west, Y is up, Z runs along the ridge. Scale Z = 1 spans twice the map length. Y scaling keeps the ridge base in place. Changes save locally and in scenery exports.</p>
+      <p class="muted" style="margin:6px 0">Each layer contains eight mine-style rocks. Position controls are offsets from the procedural placement (zero = procedural center); the exported JSON stores absolute coordinates. X is east/west, Y is up, Z runs along the ridge. Scale Z = 1 spans twice the map length. Y scaling keeps the ridge base in place. Reset layer restores the approved Western Slope settings.</p>
       <div class="g2">
         <div class="field"><label>Layer</label><select id="mountainLayerSelect"><option value="0">Layer 1 · near</option><option value="1">Layer 2 · middle</option><option value="2">Layer 3 · far</option></select></div>
         <div class="field"><label>Scenery</label><input id="mountainAsset" type="text" readonly value="8 decorative mine rocks"><label><input id="mountainVisible" type="checkbox" checked> Layer visible</label></div>
