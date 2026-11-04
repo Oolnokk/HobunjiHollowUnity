@@ -30,6 +30,9 @@
 
   function init(injectedDeps) {
     deps = injectedDeps;
+    Promise.all([window.AuthoredFurniture?.load?.('crateStack'),window.AuthoredFurniture?.load?.('looseCrate')]).then(() => {
+      for (const zoneId of _banditCampInstances.keys()) ensureBanditCampMeshes(zoneId);
+    });
     _loadBanditTentPiece().then(piece => {
       if (!piece) return;
       for (const zoneId of _banditCampInstances.keys()) ensureBanditCampMeshes(zoneId);
@@ -267,6 +270,7 @@
 
   function _disposeBanditProp(zoneId, entry) {
     _restoreBanditTentGridCollision(zoneId, entry);
+    if(entry.propId)window.CratePiles?.unregisterPile?.(zoneId,entry.propId);
     const zScene = deps.zoneScenes.get(zoneId)?.scene;
     if (zScene) {
       zScene.remove(entry.mesh);
@@ -316,6 +320,17 @@
           const sfxDef = window.Music?.resolveFurnitureSfx?.({ sfxKey: 'fireplace' });
           const sfxSource = window.Music?.registerFurnitureSfxSource?.(zoneId, center.x / deps.TILE, center.y / deps.TILE, sfxDef);
           meshes.set(obj.id, { mesh, light, sfxSource, collisionTiles: [], propId: obj.id });
+        } else if (obj.key === 'crateStack') {
+          // Do not create a non-interactive placeholder while the authored recipe loads.
+          // init() invokes ensureBanditCampMeshes again after that promise resolves.
+          const recipe=window.AuthoredFurniture?.peek?.('crateStack');
+          if(!recipe)continue;
+          const mesh=window.AuthoredFurniture.buildGroup(recipe);
+          mesh.position.set(obj.x+.5,y,obj.y+.5);
+          deps.markOutline(mesh);zi.scene.add(mesh);
+          meshes.set(obj.id,{mesh,light:null,sfxSource:null,collisionTiles:[],propId:obj.id});
+          window.CratePiles?.registerPile?.({id:obj.id,mapId:zoneId,scene:zi.scene,group:mesh,
+            count:obj.crateCount??3,lootable:true,onChange:count=>{obj.crateCount=count;}});
         } else if (obj.key && window.ProceduralFurniture) {
           const result = deps.makeDecorativeFurnitureMesh(obj.x, obj.y, obj.key, zi.scene, zoneId);
           if (!result) continue;
@@ -997,6 +1012,7 @@
     const tracked = _banditCampInstances.get(zoneId) || [];
     for (const rec of clearedRecs) {
       window.WildernessMap?.forgetDiscoveredThreat?.(rec.discoveryKey);
+      for(const obj of rec.props||[])if(obj.key==='crateStack')window.CratePiles?.forgetPile?.(zoneId,obj.id);
       for (const id of rec.instance.stampedObjectIds) removeBanditCampProp(zoneId, id);
       window.TemporaryLocales.release(view, rec.instance);
       _syncBanditFlora(zoneId, rec.instance.removedObjectSnapshots, true);
@@ -1008,6 +1024,8 @@
   }
 
   function forgetZoneBanditState(zoneId) {
+    for(const rec of _banditCampInstances.get(zoneId)||[])for(const obj of rec.props||[])
+      if(obj.key==='crateStack')window.CratePiles?.unregisterPile?.(zoneId,obj.id);
     _banditCampMeshes.delete(zoneId);
     _banditCampInstances.delete(zoneId);
     _banditZoneViews.delete(zoneId);

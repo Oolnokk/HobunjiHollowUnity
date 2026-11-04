@@ -1239,14 +1239,17 @@
   }
   function nearInteraction() {
     const p=playerPosition(),rec=records.get(area());
-    if(!p||!rec)return null;
+    if(!p)return null; // Interactive crate piles need not have any Shattercask spawns in this area.
     let choice=null,smallest=1.65;
-    for(const vase of rec.vases.values()) {
+    for(const vase of rec?.vases.values()||[]) {
       if(vase.exploded||vase.carried||vase.flying||vase.hanging||vase.plinthAttached)continue;
       const d=distance(p,{x:vase.col+.5,z:vase.row+.5});
       if(d<smallest){smallest=d;choice={type:'vase',obj:vase};}
     }
-    for(const pile of rec.piles.values()) {
+    const crates=window.CratePiles?.nearestInteractable?.(area(),p.x,p.z);
+    if(crates){const pos=crates.group.getWorldPosition(new THREE.Vector3());const d=distance(p,{x:pos.x,z:pos.z});
+      if(d<smallest){smallest=d;choice={type:'cratePile',obj:crates};}}
+    for(const pile of rec?.piles.values()||[]) {
       const d=distance(p,{x:pile.x??pile.col+.5,z:pile.z??pile.row+.5});
       if(d<smallest){smallest=d;choice={type:'pile',obj:pile};}
     }
@@ -1325,11 +1328,11 @@
     const active=scene();if(!active)return;
     if(throwRing.parent!==active)active.add(throwRing);
     const groundY=thrownGround(target.x,target.z); // Same landing surface used by the physical throw.
+    const previewRadius=held?.kind==='soursap'?FRUIT_RADIUS:held?.kind==='looseCrate'?1:RADIUS;
     const changed=throwRing.userData.targetX!==target.x||throwRing.userData.targetZ!==target.z
       ||throwRing.userData.groundY!==groundY
-      ||throwRing.userData.radius!==(held?.kind === 'soursap' ? FRUIT_RADIUS : RADIUS); // Resample only when the target or its terrain height changes.
+      ||throwRing.userData.radius!==previewRadius; // Resample only when the target or its terrain height changes.
     throwRing.position.set(target.x,groundY+.035,target.z);
-    const previewRadius = held?.kind === 'soursap' ? FRUIT_RADIUS : RADIUS; // Burden-specific AOE on the same projected reticle.
     throwRing.scale.setScalar(previewRadius);
     if(changed){
       const positions=throwRing.geometry.attributes?.position; // Local Z becomes height after the ground-plane rotation.
@@ -1454,6 +1457,10 @@
     Object.freeze({icon:'↗',label:'Throw Shattercask',action:'shattercask_throw',inputAction:'action1',style:'primary',allowed:true}),
     Object.freeze({icon:'⬇',label:'Drop Shattercask',action:'shattercask_drop',inputAction:'action2',style:'secondary',allowed:true}),
   ]); // Shared by computeActionButtonsImpl while carrying; no per-frame allocations.
+  const CARRIED_CRATE_ACTION_BUTTONS=Object.freeze([
+    Object.freeze({...CARRIED_ACTION_BUTTONS[0],label:'Throw Wooden Crate'}),
+    Object.freeze({...CARRIED_ACTION_BUTTONS[1],label:'Drop Wooden Crate'}),
+  ]);
   const CARRIED_FRUIT_ACTION_BUTTONS=Object.freeze([
     Object.freeze({icon:'↗',label:'Throw Soursap Fruit',action:'shattercask_throw',inputAction:'action1',style:'primary',allowed:true}),
     Object.freeze({icon:'⬇',label:'Drop Soursap Fruit',action:'shattercask_drop',inputAction:'action2',style:'secondary',allowed:true}),
@@ -1461,10 +1468,12 @@
   const HANG_ACTION_BUTTON=Object.freeze({icon:'↟',label:'Hang on Rope',action:'shattercask_drop',inputAction:'action2',style:'secondary',allowed:true});
   const CARRIED_HANG_ACTION_BUTTONS=Object.freeze([CARRIED_ACTION_BUTTONS[0],HANG_ACTION_BUTTON]);
   const CARRIED_FRUIT_HANG_ACTION_BUTTONS=Object.freeze([CARRIED_FRUIT_ACTION_BUTTONS[0],HANG_ACTION_BUTTON]);
+  const CARRIED_CRATE_HANG_ACTION_BUTTONS=Object.freeze([CARRIED_CRATE_ACTION_BUTTONS[0],HANG_ACTION_BUTTON]);
   function actionButtons(){
     if(!held)return null;
     const canHang=window.HangingRopes?.findHook?.(held); // The release action and its label share the same hook search.
     if(held.kind==='soursap')return canHang?CARRIED_FRUIT_HANG_ACTION_BUTTONS:CARRIED_FRUIT_ACTION_BUTTONS;
+    if(held.kind==='looseCrate')return canHang?CARRIED_CRATE_HANG_ACTION_BUTTONS:CARRIED_CRATE_ACTION_BUTTONS;
     return canHang?CARRIED_HANG_ACTION_BUTTONS:CARRIED_ACTION_BUTTONS;
   }
   function grantLoot(items) {
@@ -1553,6 +1562,7 @@
     if(held)return window.HangingRopes?.tryHang?.(held)===true||drop(); // Near a rope with a free hook, the carry-release action hangs the burden on it.
     const target=nearInteraction();
     if(target?.type==='vase')return pickUp(target.obj);
+    if(target?.type==='cratePile')return !!window.CratePiles?.takeCrate?.(target.obj);
     if(target?.type==='pile')return collectPile(target.obj);
     return false;
   }
@@ -1614,9 +1624,12 @@
     // Interact or the optional, normally unbound Action 4/5 inputs. A nearby
     // intact cask claims Interact; rubble is an ordinary arch button instead
     // (see contextButtons) so touch players can collect it too.
-    const vase=nearVase();
+    // Prompt the same nearest object that interact() will actually operate on.
+    const target=held?null:nearInteraction();
+    const vase=target?.type==='vase'?target.obj:null;
+    const crate=target?.type==='cratePile'?target.obj:null;
     const hang=held&&window.HangingRopes?.findHook?.(held); // Refresh the input label when a hook enters or leaves reach.
-    const claim=held?'carried:'+held.id+(hang?':hang':''):vase?'vase:'+vase.id:'';
+    const claim=held?'carried:'+held.id+(hang?':hang':''):vase?'vase:'+vase.id:crate?'crate:'+crate.id:'';
     if(claim!==promptClaim){
       if(held)window.WorldActionInputClaims?.setClaims?.('shattercask',[
         {actionId:'action1',label:'Throw ' + held.displayName,priority:810,
@@ -1625,8 +1638,14 @@
       ]);
       else if(vase)window.WorldActionInputClaims?.setClaims?.('shattercask',
         [{actionId:'interact',label:'Pick up ' + vase.displayName,priority:410,onPress:interact}]);
+      else if(crate)window.WorldActionInputClaims?.setClaims?.('shattercask',
+        [{actionId:'interact',label:'Take Wooden Crate',priority:410,onPress:interact}]);
       else window.WorldActionInputClaims?.clearClaims?.('shattercask');
       promptClaim=claim;
+      if(crate&&!crate.promptButtons)crate.promptButtons=Object.freeze([Object.freeze({
+        icon:'📦',label:'Take Wooden Crate',action:'shattercask_pickup_prompt',allowed:true,
+        worldInteraction:true,inputAction:'interact',promptRoot:crate.group,
+      })]);
       if(vase&&!vase.promptButtons)vase.promptButtons=Object.freeze([Object.freeze({
         icon:'✋',label:'Pick up ' + vase.displayName,action:'shattercask_pickup_prompt',allowed:true,
         worldInteraction:true,inputAction:'interact',promptRoot:vase.group,
@@ -1637,9 +1656,13 @@
   // module used to draw its own WorldPopupText list, which game.js's
   // per-frame sync cleared ~120ms later: the visible prompt flicker.
   function promptButtons() {
-    if(held||!promptClaim.startsWith('vase:'))return null;
+    if(held||!promptClaim)return null;
     if(window.WorldActionInputClaims?.claimFor?.('interact')?.ownerId!=='shattercask')return null;
-    const vase=records.get(area())?.vases.get(promptClaim.slice(5));
+    if(promptClaim.startsWith('crate:')){
+      const p=playerPosition(),crate=p&&window.CratePiles?.nearestInteractable?.(area(),p.x,p.z);
+      return crate?.id===promptClaim.slice(6)?crate.promptButtons||null:null;
+    }
+    const vase=promptClaim.startsWith('vase:')?records.get(area())?.vases.get(promptClaim.slice(5)):null;
     return vase&&!vase.exploded&&!vase.carried?vase.promptButtons||null:null;
   }
   function baseHeight(col,row) {
@@ -1847,7 +1870,7 @@
     for(const actor of d?.npcWalkers||[])targets.push(actor);
     const seen=new Set();
     for(const actor of targets) {
-      if(!actor||seen.has(actor)||actor.health<=0||actor.areaId && actor.areaId!==mapId||actor.area&&actor.area!==mapId)continue;
+      if(!actor||actor===options.excludeActor||seen.has(actor)||actor.health<=0||actor.areaId && actor.areaId!==mapId||actor.area&&actor.area!==mapId)continue;
       seen.add(actor);
       const ax=Number(actor.x)/t, az=Number(actor.y)/t;
       if(!Number.isFinite(ax)||!Number.isFinite(az))continue;
@@ -1958,11 +1981,11 @@
     window.__farmLog?.('[burden] '+lastEvent,'world');
     return true;
   }
-  function detonate(cask,cause='weapon') {
+  function detonate(cask,cause='weapon',attacker=null) {
     if(!cask||cask.exploded)return false;
     if(cask.kind!=='soursap'&&cask.kind!=='shattercask') {
       const handler=cask.impactHandler||BURDEN_IMPACT_HANDLERS.get(cask.kind)||cask.data?.carryable?.impactHandler;
-      return typeof handler==='function'?handler(cask,cause)!==false:false; // Future physical Burdens own their impact; they are never mistaken for explosive pottery.
+      return typeof handler==='function'?handler(cask,cause,attacker)!==false:false; // Future physical Burdens own their impact; they are never mistaken for explosive pottery.
     }
     if(cask.kind==='soursap')return detonateFruit(cask,cause);
     cask.exploded=true;
@@ -1996,6 +2019,7 @@
     if(held && opts.actor===deps()?.player)drop();
     const collider=window.Combat?.meleeColliderVolume?.(opts.actor,opts);
     if(!collider)return;
+    window.CratePiles?.sweepMelee?.(collider,opts);
     for(const vase of allActive().values()) {
       // Hanging Soursap must be plucked from its branch or knocked down by a
       // ranged projectile; a melee swing through the canopy cannot bypass the fall.
@@ -2019,7 +2043,7 @@
         try{handled=vase.strikeHandler(vase,{attacker:opts.actor,source:'melee'})===true;}catch(error){console.warn('[burden] strike handler failed',error);}
         if(handled)break;
       }
-      detonate(vase,'melee');break;
+      detonate(vase,'melee',opts.actor);break;
     }
   }
   function projectileHit(start,end,radius,limit,mapId) {
@@ -2130,6 +2154,7 @@
     updateShatterThrow(dt);
     updateFruitFalls(Math.min(.1,Math.max(0,Number(dt)||0)));
     updateBurdenFalls(dt); // Net/icicle payloads share the same timed tick and live collision helpers as player-thrown Burdens.
+    window.CratePiles?.tick?.(dt); // Wood shards and walk-over supply drops share the Burden combat frame.
     window.HronalWitchBombs?.tick?.(dt); // Spawn-time fuse and carrier-drop state share the normal Burden combat frame.
     trackCarrierDamage(); // Catches direct game.js health hits as well as Combat delegates.
     window.KeyStatues?.tick?.(dt); // Detached Key Statues are restored through their original dispenser.
@@ -2341,11 +2366,11 @@
     registerHangingBurden,registerBurden:registerHangingBurden,createHangingBurden,createHangingShattercask,releaseBurdenDownward,releaseBurdenWithVelocity,detachHeldBurden,refreshBurdenBounds,discardBurden,registerBurdenFactory,registerBurdenImpactHandler,
     getBurden:(id,mapId=area())=>records.get(String(mapId))?.vases.get(String(id))||null,
     activeBurdenRecords:(mapId=area())=>[...(records.get(String(mapId))?.vases.values()||[])],
-    applyBlast,triggerBurdenBlastAt,
+    applyBlast,triggerBurdenBlastAt,grantBurdenLoot:grantLoot,
     contextButtons,collectAimedPile,promptButtons,RUBBLE_YIELD,
     startShatterAim,releaseShatterAim,cancelShatterAim,detonate,heldHandTarget,
     projectileHit,hitProjectile,senseTargets,sweepMelee,tick,attachRuntime,
-    debugSnapshot:()=>({lastEvent,latestChange:'Single back-mounted Burden follows the avatar, tool arch, hit reactions, and fuse.',backCarried:backCarriedInfo(),fruitCarryProfile:fruitCarryTemplate===FRUIT_CARRY_FALLBACK?'fallback':'authored',area:area(),held:held?.id||null,emittingVases:[...allActive().values()].filter(v=>v.emitters?.length).length,
+    debugSnapshot:()=>({lastEvent,latestChange:'Single back-mounted Burden follows the avatar, tool arch, hit reactions, and fuse.',crates:window.CratePiles?.debugSnapshot?.()||null,backCarried:backCarriedInfo(),fruitCarryProfile:fruitCarryTemplate===FRUIT_CARRY_FALLBACK?'fallback':'authored',area:area(),held:held?.id||null,emittingVases:[...allActive().values()].filter(v=>v.emitters?.length).length,
       vases:[...allActive().values()].map(v=>({id:v.id,kind:v.kind,col:v.col,row:v.row,carried:v.carried,hanging:!!v.hanging,flying:!!v.flying,plinthAttached:!!v.plinthAttached,hangingMechanismId:v.hangingMechanismId||null})),
       fruitFalls:[...fallingFruits.values()].map(f=>({id:f.fruit.id,y:f.fruit.group.position.y,cause:f.cause})),
       downwardBurdenFalls:[...downwardFalls.values()].map(f=>({id:f.burden.id,y:f.burden.group.position.y,velocity:+f.velocity.toFixed(2),cause:f.cause})),

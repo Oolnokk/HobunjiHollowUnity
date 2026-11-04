@@ -107,6 +107,7 @@
       })));
     }
     window.FoliageGenerator?.applySurfaceGrowth(group, data.surfaceGrowth);
+    setRuntimeValues(group, { [data.runtimeVariants?.valueKey]: data.runtimeVariants?.defaultValue });
     return group;
   }
 
@@ -657,6 +658,28 @@
       : 0.12;
   }
 
+  // Authored furniture can declare named runtime values and per-value part visibility.
+  // State belongs to each instance, never to the cached canonical furniture recipe.
+  function setRuntimeValues(group, values = {}) {
+    const data = group?.userData?.authoredFurnitureData;
+    const spec = data?.runtimeVariants;
+    if (!spec?.valueKey || !Array.isArray(spec.states)) return null;
+    const previous = group.userData.authoredRuntimeValues || {};
+    const update = values && typeof values === 'object' ? values : { [spec.valueKey]: values };
+    const next = { ...previous, ...update };
+    const value = next[spec.valueKey] ?? spec.defaultValue;
+    const state = spec.states.find(entry => String(entry.value) === String(value))
+      || spec.states.find(entry => String(entry.value) === String(spec.defaultValue));
+    if (!state) return null;
+    const hidden = new Set((state.hiddenPartIds || []).map(String));
+    for (const [id, mesh] of group.userData.meshById || []) {
+      mesh.visible = !hidden.has(String(id));
+    }
+    group.userData.authoredRuntimeValues = { ...next, [spec.valueKey]: state.value };
+    group.userData.authoredRuntimeVariant = state.label || String(state.value);
+    return state;
+  }
+
   function seatCount(data) {
     return data && Array.isArray(data.seatAnchors) ? data.seatAnchors.length : 0;
   }
@@ -665,6 +688,7 @@
     load,
     peek,
     buildGroup,
+    setRuntimeValues,
     setItemPlacements,
     addFurniturePlacement,
     createSurfaceAnchor,
