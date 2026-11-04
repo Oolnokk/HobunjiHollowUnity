@@ -11,7 +11,17 @@
 
   function start() {
     const rigAPI = window.FlyingAnimalRig; // Shared rig validation and rendering.
-    const draftKey = 'hobunji_flying_animal_rig_v1'; // Local editor draft.
+    const draftKey = 'hobunji_flying_animal_rig_v1'; // Last open rig, retained for older browser drafts.
+    const presetSelect = get('rigPreset'); // Species preset currently shown by the editor.
+    const presetPaths = Object.freeze({ // A preset is identified by all three art assets.
+      tzatzul: 'creaturesprites/tzatzul_',
+      skeeri: 'creaturesprites/skeeri_',
+    });
+    const presetConfig = '../../config/creatures/skeeri-flying-rig.json'; // Repository-owned Skeeri data.
+    const presetForRig = candidate => Object.keys(presetPaths).find(name =>
+      ['flying', 'perched', 'wings'].every(key =>
+        candidate[key] === presetPaths[name] + key + '.png')) || 'custom';
+    const speciesDraftKey = name => `${draftKey}:${name}`; // Keep each species' changes separate.
     const canvas = get('viewport'), diagram = get('wings');
     const debug = get('debug'); // Preview transforms shown without devtools.
     const ctx = diagram.getContext('2d');
@@ -45,7 +55,9 @@
 
     function saveDraft() {
       try {
-        localStorage.setItem(draftKey, JSON.stringify(rig));
+        const serialized = JSON.stringify(rig);
+        localStorage.setItem(draftKey, serialized);
+        localStorage.setItem(speciesDraftKey(presetForRig(rig)), serialized);
         status.textContent = 'Preview ready. Draft saved on this browser.';
       } catch {
         status.textContent = 'Preview ready. Browser draft storage is unavailable. Export JSON to keep the rig.';
@@ -165,13 +177,52 @@
         if (id !== loadId) return;
         rebuild(nextRig, Object.fromEntries(entries));
         showSettings();
+        presetSelect.value = presetForRig(rig);
         saveDraft();
       } catch (error) {
-        if (id === loadId) status.textContent = error.message;
+        if (id === loadId) {
+          presetSelect.value = presetForRig(rig);
+          status.textContent = error.message;
+        }
       } finally {
         if (id === loadId) loading = false;
       }
     }
+
+    async function loadPreset(name, restoreDraft = true) {
+      const id = ++loadId; // Invalidate an earlier JSON request or pending image load.
+      loading = true;
+      status.textContent = `Loading ${name} rig preset…`;
+      try {
+        if (!Object.hasOwn(presetPaths, name)) throw new Error('Select a supported species preset.');
+        let authored = null;
+        if (restoreDraft) {
+          try {
+            const saved = localStorage.getItem(speciesDraftKey(name));
+            if (saved) {
+              const candidate = JSON.parse(saved);
+              if (presetForRig(candidate) === name) authored = candidate;
+            }
+          } catch { /* Missing or damaged browser data must not hide the shipped preset. */ }
+        }
+        if (!authored && name === 'tzatzul') authored = rigAPI.defaults;
+        if (!authored && name === 'skeeri') {
+          const response = await fetch(presetConfig);
+          if (!response.ok) throw new Error(`Skeeri preset could not be fetched (HTTP ${response.status}).`);
+          authored = await response.json();
+        }
+        if (id !== loadId) return;
+        await load(authored);
+      } catch (error) {
+        if (id === loadId) {
+          loading = false;
+          presetSelect.value = presetForRig(rig);
+          status.textContent = `Could not load preset. ${error.message}`;
+        }
+      }
+    }
+
+    presetSelect.addEventListener('change', () => loadPreset(presetSelect.value));
 
     function setNumber(key, value) {
       if (!assembly || loading || value === rig[key]) return;
@@ -221,7 +272,8 @@
       event.preventDefault();
       load({ ...rig, ...Object.fromEntries(Object.entries(fields).map(([key, input]) => [key, input.value.trim()])) });
     });
-    get('reset').addEventListener('click', () => load(rigAPI.defaults));
+    get('reset').addEventListener('click', () =>
+      loadPreset(presetSelect.value === 'custom' ? 'tzatzul' : presetSelect.value, false));
     get('open').addEventListener('click', () => get('file').click());
     get('file').addEventListener('change', async event => {
       const file = event.target.files[0];
