@@ -106,7 +106,7 @@
     const { room, composition } = plan(options.seed, options.archetype);
     const feedPlinthId=composition.records.find(record=>record.piece==='plinth')?.id||null; // Each authored statue dispenser feeds its own encounter objective, not a global map channel.
     const origin = {x:Math.ceil(Number(options.originX)||3),z:Math.ceil(Number(options.originZ)||rec.rows+4)}; // Isolated south wing with a return prompt.
-    const keys = [...new Set([...composition.records.map(record=>record.key).filter(Boolean),...(options.burdenOffering===true&&options.archetype!=='vaultHall'?['burdenPlinth','shattercaskBlasting']:[])])]; // Load the optional self-contained Burden offering before mutating the ruin.
+    const keys = [...new Set([...composition.records.map(record=>record.key).filter(Boolean),...(options.burdenOffering===true&&options.archetype!=='vaultHall'?['burdenPlinth','keyStatueDispenser']:[])])]; // Load the optional self-contained Burden offering before mutating the ruin.
     const data = new Map(); // Preload every authored piece before touching the live map: never build half a puzzle.
     for (const key of keys) {
       const item=await A.load(key);
@@ -115,7 +115,7 @@
     }
     if (options.isCurrent?.()===false) throw new Error('Playable ruin generation was superseded.');
     const scope=String(options.scope||'composed-ruin-wing'); // Private terrain scope; it must be removed on exit/reroll.
-    const owner={ root:null, generated:[], materials:[], placed:[], placementIds:[], blockerTiles:new Map(), blockerStates:new Map(), controls:[], ropes:[], burdens:[], offering:null, applied:null, disposed:false }; // Owns optional carryables, unlocks and every authored node during teardown. // Tracks authored collisions and restores original walkable tiles on rollback.
+    const owner={ root:null, generated:[], materials:[], placed:[], placementIds:[], blockerTiles:new Map(), blockerStates:new Map(), controls:[], ropes:[], offering:null, applied:null, disposed:false }; // Owns optional carryables, unlocks and every authored node during teardown. // Tracks authored collisions and restores original walkable tiles on rollback.
     let result=null;
     try {
       extendGrid(rec,origin,room,makeTile);
@@ -209,28 +209,39 @@
       });
       if (owner.applied.skipped.length) throw new Error('Composer skipped actual placements: '+owner.applied.skipped.join(', '));
       if(options.burdenOffering===true&&composition.archetype==='trialHall'){
-        if(!G.Shattercasks?.registerHangingBurden||!G.DevRandomRuinDungeonChests?.create)
-          throw new Error('Burden offering requires the physical Burden and dungeon chest runtimes.');
-        const id='composed_offering_'+(Number(options.seed)>>>0); // Isolates this short plate from the 30-second Key Statue defense.
+        if(!G.KeyStatues?.registerDispenser||!G.DevRandomRuinDungeonChests?.create)
+          throw new Error('Burden offering requires the Key Statue dispenser and dungeon chest runtimes.');
+        const id='composed_offering_'+(Number(options.seed)>>>0); // Each optional reward plinth has its own independent replaceable Key Statue.
+        const dispenserId=id+'_dispenser'; // Its physical Key Statue can be recalled without disrupting the timed defense plinth.
         const z=origin.z+room.bounds.maxZ-2.5;
         const plinth=A.buildGroup(data.get('burdenPlinth'));plinth.name=id;plinth.position.set(origin.x+3.3,0,z);
         owner.root.add(plinth);owner.placed.push(plinth);owner.placementIds.push(id);
-        if(!P.registerNode(mapId,{id,key:'burdenPlinth',puzzle:{channel:'Offering-'+id,completionChannel:'Offering-Done-'+id}},plinth))
-          throw new Error('Could not register optional Burden Plinth.');
-        const charge=A.buildGroup(data.get('shattercaskBlasting'));charge.name=id+'_charge';
-        charge.position.set(origin.x+5.1,.18,z);owner.root.add(charge);
-        const burden=G.Shattercasks.registerHangingBurden({id:id+'_charge',mapId,scene:rec.scene,group:charge,data:data.get('shattercaskBlasting'),kind:'shattercask',hanging:false,displayName:'Shattercask'});
-        if(!burden)throw new Error('Could not register the Burden Plinth\'s pickup Shattercask.');
-        owner.burdens.push(burden);
+        if(!P.registerNode(mapId,{id,key:'burdenPlinth',puzzle:{requiredBurdenKind:'keyStatue',channel:'Offering-'+id,completionChannel:'Offering-Done-'+id}},plinth))
+          throw new Error('Could not register optional Key Statue Burden Plinth.');
+        const dispenser=A.buildGroup(data.get('keyStatueDispenser'));dispenser.name=dispenserId;dispenser.position.set(origin.x+5.1,0,z);
+        owner.root.add(dispenser);owner.placed.push(dispenser);owner.placementIds.push(dispenserId);
+        if(!P.registerNode(mapId,{id:dispenserId,key:'keyStatueDispenser'},dispenser)
+          ||!G.KeyStatues.registerDispenser(mapId,dispenserId,dispenser,dispenser.userData.furniturePuzzle,{feedPlinthId:id}))
+          throw new Error('Could not register the offering\'s replenishable Key Statue dispenser.');
         const chest=G.DevRandomRuinDungeonChests.create({id:id+'_reward',tier:2,theme:ruin.theme,x:origin.x+7.4,y:0,z,parent:owner.root});
-        chest.group.visible=false; // Only a completed physical Burden insertion reveals the optional reward.
-        owner.offering={id,plinth,burden,chest,unlocked:false};
+        chest.group.visible=false; // The short insertion animation must complete before its treasure becomes accessible.
+        owner.offering={id,plinth,dispenserId,dispenser,chest,unlocked:false};
         owner.controls.push({
           kind:'composed-burden-offering',point:{x:origin.x+3.3,z},promptRoot:plinth,range:1.7,priority:98,
-          label:()=>P.burdenPlateButtons(mapId,id)?.[0]?.label||'Insert Shattercask',
+          label:()=>P.burdenPlateButtons(mapId,id)?.[0]?.label||'Insert Key Statue',
           onPress:()=>{
             const button=P.burdenPlateButtons(mapId,id)?.[0];
             const response=P.interactBurdenPlate(mapId,id,button?.action);
+            if(response?.message)options.showToast?.(response.message,!!response.ok);
+            return response;
+          },
+        },{
+          kind:'composed-offering-dispenser',point:{x:origin.x+5.1,z},promptRoot:dispenser,range:1.7,priority:98,
+          label:()=>P.keyStatueButtons(mapId,dispenserId)?.[0]?.label||'Restore Key Statue',
+          onPress:()=>{
+            const button=P.keyStatueButtons(mapId,dispenserId)?.[0];
+            if(button?.allowed===false)return {ok:false,message:'The Key Statue is already in use.'};
+            const response=P.interactKeyStatue(mapId,dispenserId,button?.action);
             if(response?.message)options.showToast?.(response.message,!!response.ok);
             return response;
           },
@@ -261,7 +272,6 @@
         const [col,row]=key.split(',').map(Number); // Restore original cells when a generation aborts after placement.
         if(rec.grid[row]?.[col])rec.grid[row][col]=tile;
       }
-      for(const burden of owner.burdens)G.Shattercasks?.discardBurden?.(burden); // Never strand a physical offering in another generated ruin.
       for (const id of owner.placementIds) P.unregisterNode?.(mapId,id); // Releases surface listeners, active statue dispensers and pending motions.
       for (const id of owner.ropes) G.HangingRopes?.removeRope?.(id);
       for (const group of owner.placed) group.parent?.remove(group);
