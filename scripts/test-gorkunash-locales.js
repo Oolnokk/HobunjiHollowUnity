@@ -247,6 +247,11 @@ assert.equal(api.feastMenu()[6].label,'Your Special stew','the player contributi
 api.addFestivalFun('sloomi',5);
 api.update();
 civilDay++;
+const pendingFunPay = W.DialogueContent.adjustNpcFavor; // A world may advance a day before the relationship module has hydrated.
+W.DialogueContent.adjustNpcFavor = undefined;
+realMs+=1000;api.update();
+assert.equal(api.serialize().festivalFun.sloomi,5,'offline Favor authority keeps all five earned Fun pending rather than marking it paid');
+W.DialogueContent.adjustNpcFavor = pendingFunPay;
 realMs+=1000;api.update();
 assert(awarded.some(e=>e.id==='sloomi'&&e.amount===1&&e.reason==='festival_fun_rollover'),'5 Festival Fun converts to 1 permanent Favor after midnight');
 assert.equal(api.serialize().festivalFun.sloomi,undefined,'settled Festival Fun is cleared while lifetime earned points persist');
