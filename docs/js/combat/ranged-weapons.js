@@ -1416,7 +1416,7 @@
         return { kind: 'cover', t: coverHit.t, coverHit };
       }
       if (shatterHit && (!nearest || shatterHit.t <= nearest.interval.enter)) {
-        window.Shattercasks.hitProjectile(shatterHit);
+        window.Shattercasks.hitProjectile(shatterHit, true); // The player projectile branch proves wearer ownership for Flaskmaster; enemy projectiles never pass true.
         playProjectileImpactSfx(p,shatterHit.t);
         return {kind:'actor',t:shatterHit.t,shattercask:true};
       }
