@@ -452,6 +452,18 @@
     return rotateLinkedCubeControl(root, Number(controlIndex) || 0, direction < 0 ? -1 : 1);
   }
 
+  function registerDetachedCubeRoots(nativeRoot) {
+    if(!nativeRoot?.traverse)throw new Error('Detached V50 puzzle registration needs a traversable native root');
+    const registered=[]; // Tracks the original V50 linked-cube actors transferred to this story; next-floor generation clears V50's private registry.
+    nativeRoot.traverse(object=>{
+      if(object.userData?.activatorType!=='linkedCubePillars'
+        ||object.userData?.previewMotion?.type!=='linkedCubePair'
+        ||!object.userData?.interactive3D)return;
+      linkedCubePuzzleRoots.add(object);registered.push(object); // Reuse V50's original solver and visual animator without changing the SHA-verified generator.
+    });
+    let disposed=false; // The owning game story releases its solver actors on regeneration/map exit.
+    return ()=>{if(disposed)return;disposed=true;for(const object of registered)linkedCubePuzzleRoots.delete(object);};
+  }
   function tickRuntime(dt) {
     const safeDt = clamp(Number(dt) || 0, 0, .05);
     updateLinkedCubePuzzles(safeDt);
@@ -557,6 +569,7 @@
       mechanismTargetState,
       previewLoopPaused,
       previewRootAttachedToTool: localePreviewRoot.parent === scene,
+      linkedCubeSolverRoots:linkedCubePuzzleRoots.size, // Debug count includes detached upper stories.
       runtimeWallPlanes: runtimeWallPlaneState(),
       runtimeHallways: runtimeHallwayState(),
       puzzleOptions: cloneJson(window.__devRuinPuzzleOptions || null),
@@ -580,6 +593,7 @@
     createRootMechanismKeyframes,captureRootMechanismKeyframes,
     syncPressurePlates,
     rotateLinkedCube,
+    registerDetachedCubeRoots,
     tickRuntime,
     createRuntimeStoneLadder,
     inspectRuntimeTags,

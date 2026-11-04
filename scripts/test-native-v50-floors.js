@@ -125,7 +125,9 @@ for(let floor=1;floor<3;floor++){
 }
 const rec={scene,cols:100,rows:100,grid:[],
   floorSet:new Set(),mapData:{id:'map_i_dev_random_ruin',floor:[]}};
-const ruin={controls:[],api:{applyProgress(){},syncPressurePlates(){}},
+let cubeRegistrations=0,cubeReleases=0; // Verifies native floors restore their genuine V50 solver registry entries and release them on teardown.
+const ruin={controls:[],api:{applyProgress(){},syncPressurePlates(){},
+  registerDetachedCubeRoots(){cubeRegistrations++;return ()=>cubeReleases++;}},
   shaftLayerRuntime:{calls:[],setNativeGoalState(total,lit){this.calls.push({total,lit})}}}; // V50's original pose bridge is required even when this fixture has no authored activators.
 const registered=[],surfaces=[],cleared=[],toasts=[],player={x:0,z:0,y:0};
 const DS={registerSurface:r=>surfaces.push(r),registerBlocker:r=>surfaces.push(r),
@@ -172,6 +174,7 @@ try{
   assert.equal(native.records[0].challenges[0].kind,'v50Authored','a V50-authored signal is the chamber gate authority when one exists');
   assert.equal(native.getState().perFloor[0].nativeAuthoredStages,1);
   assert.equal(nativeScanRoots.size,2,'both upper-floor V50 roots join the real glyph/torch runtime');
+  assert.equal(cubeRegistrations,2,'each native upper story re-registers the original linked-cube solver');
   assert(native.getState().perFloor.every(record=>record.nativeMechanisms?.mechanisms===0),
     'an empty fixture still mounts and disposes its independent native mechanism bridge');
   assert.equal(native.getState().hallways,6);
@@ -238,6 +241,7 @@ try{
   assert.equal(targets.size,0);
   assert.equal(fireTargets.size,0);
   assert.equal(nativeScanRoots.size,0,'native glyph and torch roots must unregister when the dungeon closes');
+  assert.equal(cubeReleases,2,'each upper-story solver unregisters on teardown');
   console.log('ok preplanned native V50: real room graphs, 2 upper stories, plateau-aware 3D gates, physical halls, native braziers, cleanup');
 }finally{
   native?.dispose();

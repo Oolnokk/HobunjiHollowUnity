@@ -1215,6 +1215,10 @@
       onStateChange:()=>updateBadge(),
     });
     ruin.shaftConnector=linked; // Exposed to in-game diagnostics and cleaned through shaftConnectorCleanup on reroll.
+    if(nativeFloors.length){
+      if(typeof ruin.api?.registerDetachedCubeRoots!=='function')throw new Error('The V50 entrance-floor linked-cube solver cannot be reattached.');
+      ruin.v50EntryCubeRelease=ruin.api.registerDetachedCubeRoots(ruin.localeRoot); // Authoring upper floors cleared V50's global cube registry: restore the entrance-floor actors after all generation.
+    }
   }
 
   async function attachComposedTrialWing(rec,seed,selection={}) {
@@ -1332,6 +1336,7 @@
     window.FurniturePuzzleRuntime?.clearMap?.(MAP_ID); // The map ID is reused on reroll: release authored support, inputs and pending animations before scene disposal.
     for(const burden of window.Shattercasks?.activeBurdenRecords?.(MAP_ID)||[])window.Shattercasks?.discardBurden?.(burden); // The reusable map must never inherit loose bombs or statues from an old scene.
     for(const shaft of ruin?.shaftGrids?.values()||[])shaft.dispose();
+    ruin?.v50EntryCubeRelease?.(); // Release entrance-floor V50 puzzle solvers before regenerating the shared iframe.
     ruin?.shaftConnectorCleanup?.(); // Corridor stone, side walls, native V50 story meshes and support scopes do not survive regeneration.
     if(ruin?.nativeV50Pending?.length&&!ruin.nativeV50Runtime){
       for(const item of ruin.nativeV50Pending){

@@ -36,6 +36,7 @@ let pressureSyncs=0; // Confirms real authored weight signals are recalculated w
 const generator={
   applyProgress(object,value){calls.push({object,value});},
   syncPressurePlates(object){assert.equal(object,root);pressureSyncs++;},
+  registerDetachedCubeRoots(){return ()=>{};},
   rotateLinkedCube(object,index){object.userData.solveProgress=1;object.userData.lastTurn=index;},
 };
 const player={x:1,y:4,z:1},getPlayerY=()=>player.y;
@@ -154,7 +155,8 @@ assert.equal(removed.length,surfaces.length+blockers.length,'no 3D supports or b
       raisedBlock.position.y=-.8+(.13+.8)*Math.min(1,local/.45);
       if(local>.45)raisedBlock.position.x=25+(local-.45)/.55;
     },
-    syncPressurePlates(){pressureSyncs++;}
+    syncPressurePlates(){pressureSyncs++;},
+    registerDetachedCubeRoots(){return ()=>{};}
   };
   const liftRuntime=Native.mount({nativeRoot:liftRoot,floor:2,scope:'lift-story',api:liftGenerator,THREE,
     DynamicSurfaces:DS,getPlayerPosition:()=>player,getPlayerY,addControl,removeControl,
@@ -192,6 +194,7 @@ assert.equal(removed.length,surfaces.length+blockers.length,'no 3D supports or b
   for(const object of [bridge,onGlyph,dropBlock,plate,door])dropRoot.add(object);
   let dropsSynced=0;const api={
     applyProgress(){},
+    registerDetachedCubeRoots(){return ()=>{};},
     syncPressurePlates(){
       dropsSynced++;
       plate.userData.weightProgress=Math.abs(dropBlock.position.y+1.1)<.01?1:0;

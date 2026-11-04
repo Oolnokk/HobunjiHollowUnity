@@ -242,6 +242,8 @@
     const unreg=options.hitPuzzles?.registerExternalRoot?.(nativeRoot);
     if(typeof unreg!=='function')
       throw new Error('Original V50 glyph and torch hit runtime could not register the native floor');
+    if(typeof api.registerDetachedCubeRoots!=='function'){unreg();throw new Error('Original V50 linked-cube solver is unavailable for this story');}
+    const releaseCubes=api.registerDetachedCubeRoots(nativeRoot); // Restore source-owned solver actors lost during subsequent floor generations.
     let disposed=false; // All interactions, external glyphs, dynamic support and blockers have one floor-scoped owner.
     function tick(dt){
       if(disposed)return;
@@ -315,7 +317,7 @@
       return null;
     }
     function dispose(){
-      if(disposed)return;disposed=true;unreg();
+      if(disposed)return;disposed=true;unreg();releaseCubes();
       for(const record of controls)removeControl?.(record);
       for(const id of [...surfaceIds,...blockerIds])DS.remove?.(id);
     }
