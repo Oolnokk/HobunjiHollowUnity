@@ -82,7 +82,18 @@
     const states=[],gridScopes=[],added=new Set(),surfaces=[]; // Runtime gate/puzzle records, registered voxel scopes, map floor keys and terrain rectangles.
     const floorRoots=new Map(); // Each story owns a presentation group so overhead floors do not conceal the player below.
     let activeRoot=group; // Mesh batching writes into the currently composed story's subscene.
-    const owner={group,states,disposed:false,complete:false,lit:0,total:plan.totalBraziers,geometryCount:0}; // Exposed to mobile diagnostics.
+    const owner={group,states,disposed:false,complete:false,lit:0,total:plan.totalBraziers,
+      nativeTotal:plan.nativeFloorCount||0,nativeLit:0,geometryCount:0}; // The Great Door requires BOTH composed wings and real V50 floor braziers. // Exposed to mobile diagnostics.
+    owner.updateCompletion=()=>{
+      owner.complete=owner.lit+owner.nativeLit===owner.total+owner.nativeTotal;
+      ruin.shaftNetworkComplete=owner.complete;
+    };
+    owner.setNativeGoalState=(total,lit)=>{
+      if(total!==owner.nativeTotal||!Number.isInteger(lit)||lit<0||lit>total)
+        throw new Error('Native V50 braziers disagree with the reserved floor plan');
+      owner.nativeLit=lit;
+      owner.updateCompletion();
+    };
     owner.dispose=()=>{
       if(owner.disposed)return;owner.disposed=true;
       // The V50 music composer only closes *its own* echo sessions. A shaft
@@ -240,8 +251,7 @@
             if(brazier.lit||Math.abs(Number(getPlayerY?.())-floor.y)>.8)return; // A brazier on floor 4 cannot be lit through the deck from a lower floor.
             if(record.solved<record.challenges.length){options.showToast?.('Complete the wing challenges first.',false);return;}
             brazier.lit=true;flame.visible=true;owner.lit++;
-            owner.complete=owner.lit===owner.total;
-            ruin.shaftNetworkComplete=owner.complete;
+            owner.updateCompletion();
             options.showToast?.(owner.complete?'All shaft braziers are lit.':'Wing brazier ignited.',true);
             options.onStateChange?.();
           }
@@ -284,7 +294,9 @@
           record.challenges[i]?.animate?.(dt); // Already-cleared ice may still shrink; no inactive puzzle logic runs.
       }
     };
-    owner.getState=()=>({floors:plan.floorCount,wings:states.length,braziers:owner.total,lit:owner.lit,
+    owner.getState=()=>({floors:plan.floorCount,wings:states.length+owner.nativeTotal,
+      braziers:owner.total+owner.nativeTotal,lit:owner.lit+owner.nativeLit,
+      nativeFloors:owner.nativeTotal,nativeBraziers:owner.nativeLit,
       complete:owner.complete,rooms:states.reduce((n,r)=>n+r.challenges.length+1,0),
       challengesSolved:states.reduce((n,r)=>n+r.solved,0),
       challengesTotal:states.reduce((n,r)=>n+r.challenges.length,0),
@@ -304,7 +316,8 @@
           ||stage.kind==='statueDefense'&&!stage.ready
           ?[{wingId:record.wingId,stage:stage.id,kind:stage.kind}]:[];
       }),
-      perFloor:plan.floors.map(f=>({floor:f.floor,y:f.y,wings:states.filter(r=>r.floor===f.floor).map(r=>({
+      perFloor:plan.floors.map(f=>({floor:f.floor,y:f.y,nativeV50:!!f.nativePort,
+        wings:states.filter(r=>r.floor===f.floor).map(r=>({
         side:r.side,solved:r.solved,total:r.challenges.length,lit:r.braziers[0]?.lit===true
       }))}))});
 
