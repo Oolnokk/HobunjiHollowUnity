@@ -512,6 +512,13 @@
     return network&&!network.complete?network:null;
   }
 
+  function sealedDoorLabel(){
+    const local=s?.braziers?.filter(b=>b.lit).length||0,total=s?.braziers?.length||0;
+    const pending=shaftSealsPending();
+    return pending&&local===total
+      ?'Great Door (Shaft '+pending.lit+'/'+pending.braziers+')'
+      :'Great Door (Sealed '+local+'/'+total+')';
+  }
   function awakeDoorLabel(){
     const pending=shaftSealsPending(); // One read per context-menu refresh, not three redundant deep snapshots.
     return pending?'Great Door (Shaft '+pending.lit+'/'+pending.braziers+')':'Open the Great Door';
@@ -534,7 +541,7 @@
     }, null, kit.SCOPE);
     door.control = {
       kind:'greatDoor', object:door.group, promptRoot:door.group, range:2.3, priority:24, claimAction1:true, touchIcon:'🚪',
-      label:() => door.state === 'sealed' ? `Great Door (Sealed ${s.braziers.filter(b => b.lit).length}/${s.braziers.length})`
+      label:() => door.state === 'sealed' ? sealedDoorLabel()
         : door.state === 'awake' ? awakeDoorLabel()
         : door.state === 'opening' ? 'The Great Door is opening…'
         : 'Enter the Sanctum',
@@ -568,8 +575,10 @@
     const door = s?.door;
     if (!door) return;
     if (door.state === 'sealed') {
-      const lit = s.braziers.filter(b => b.lit).length;
-      deps?.showToast?.(`The Great Door is sealed. ${lit}/${s.braziers.length} of its seals glow — light the blue braziers at the end of each puzzle.`, false);
+      const lit = s.braziers.filter(b => b.lit).length,pending=shaftSealsPending();
+      if(pending&&lit===s.braziers.length)
+        deps?.showToast?.('The shaft braziers still bind the Great Door ('+pending.lit+'/'+pending.braziers+').',false);
+      else deps?.showToast?.(`The Great Door is sealed. ${lit}/${s.braziers.length} of its blue seals glow.`,false);
       return;
     }
     if (door.state === 'awake') {
