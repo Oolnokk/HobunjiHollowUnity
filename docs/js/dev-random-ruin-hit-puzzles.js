@@ -14,6 +14,8 @@
 
   const MAP_ID = 'map_i_dev_random_ruin';
   const CONTROL_RANGE = 1.65;
+  const PLAYER_REACH_HEIGHT = 1.65; // Used by torch pickup, rung restrictions and hit-driven prompt suppression, measured above the actual supported feet.
+  const PLAYER_REACH_BELOW = .18; // A dropped torch just below the supporting surface remains reachable; adjacent stories do not.
   const TORCH_BURN_MS = 12000;
   const TORCH_SPRITE = 'assets/toolsprites/harpoon_fishingmace.png';
   const TORCH_PLANE_WIDTH = 0.50 * 1.15; // Fishing-mace baseline weapon scale.
@@ -93,11 +95,14 @@
     return { x: deps.player.x / deps.TILE, z: deps.player.y / deps.TILE };
   }
   function currentSupportY() {
-    const p = currentPlayerWorld();
-    if (!p) return 0;
-    const meshY = Number(devDeps?.playerMesh?.position?.y);
-    if (Number.isFinite(meshY)) return meshY;
-    return DS.sampleSupport(p.x, p.z, { minY:-8, maxY:12, pad:.02 })?.y || 0;
+    const physical=window.DevRandomRuin?.getPlayerGroundSupportY?.(); // The authoritative height is ruin.supportY, not a sinking/jumping visual mesh or the highest overlapping DynamicSurfaces floor.
+    if(typeof physical==='number'&&Number.isFinite(physical))return physical;
+    const presented=window.DevRandomRuin?.getPlayerSupportY?.();
+    if(typeof presented==='number'&&Number.isFinite(presented))return presented;
+    const meshY=devDeps?.playerMesh?.position?.y;
+    if(typeof meshY==='number'&&Number.isFinite(meshY))return meshY;
+    const p=currentPlayerWorld();
+    return p?DS.sampleSupport(p.x,p.z,{minY:-8,maxY:24,pad:.02})?.y??0:0;
   }
   function boxFor(object) {
     if (!object) return null;
@@ -110,10 +115,14 @@
     return boxFor(object)?.getCenter(new THREE.Vector3()) || new THREE.Vector3();
   }
   function worldDistanceTo(object) {
-    const p = currentPlayerWorld();
-    if (!p || !object) return Infinity;
-    const c = centerFor(object);
-    return Math.hypot(c.x - p.x, c.z - p.z);
+    const p=currentPlayerWorld(),y=currentSupportY();
+    if(!p||!object||!Number.isFinite(y))return Infinity;
+    const box=boxFor(object);
+    if(!box)return Infinity;
+    const gap=(value,min,max)=>Math.max(min-value,0,value-max); // Clamps the player to an actual physical target, not its potentially distant center point.
+    const dx=gap(p.x,box.min.x,box.max.x),dz=gap(p.z,box.min.z,box.max.z);
+    const dy=Math.max(box.min.y-(y+PLAYER_REACH_HEIGHT),0,(y-PLAYER_REACH_BELOW)-box.max.y);
+    return Math.hypot(dx,dy,dz); // An upper-floor torch cannot be reached through its floor even at identical X/Z.
   }
   function rootContainsActivatorDescendant(object, type) {
     let found = false;
@@ -600,18 +609,22 @@
 
   function nearestPickupControl() {
     if (carriedTorch || !root) return null;
-    const p = currentPlayerWorld();
-    if (!p) return null;
-    let nearest = null;
-    let best = CONTROL_RANGE*CONTROL_RANGE;
-    for (const source of torchSources) {
-      const c = centerFor(source), d=(c.x-p.x)**2+(c.z-p.z)**2;
-      if (d <= best) { best=d; nearest={kind:'torchSource',object:source,label:'Take Lit Torch',onPress:()=>spawnSourceTorch(source)}; }
+    if(!currentPlayerWorld())return null;
+    let nearest=null;
+    let best=CONTROL_RANGE;
+    for(const source of torchSources){
+      const distance=worldDistanceTo(source);
+      if(distance>best)continue;
+      best=distance;nearest={kind:'torchSource',object:source,
+        label:'Take Lit Torch',onPress:()=>worldDistanceTo(source)<=CONTROL_RANGE&&spawnSourceTorch(source)};
     }
-    for (const record of temporaryTorches) {
-      if (record.status !== 'dropped') continue;
-      const c = centerFor(record.group), d=(c.x-p.x)**2+(c.z-p.z)**2;
-      if (d <= best) { best=d; nearest={kind:'droppedTorch',object:record.group,label:record.lit?'Pick Up Lit Torch':'Pick Up Torch',onPress:()=>pickupDroppedTorch(record)}; }
+    for(const record of temporaryTorches){
+      if(record.status!=='dropped')continue;
+      const distance=worldDistanceTo(record.group);
+      if(distance>best)continue;
+      best=distance;nearest={kind:'droppedTorch',object:record.group,
+        label:record.lit?'Pick Up Lit Torch':'Pick Up Torch',
+        onPress:()=>worldDistanceTo(record.group)<=CONTROL_RANGE&&pickupDroppedTorch(record)};
     }
     return nearest;
   }
@@ -928,6 +941,9 @@
       activeSwing:!!activeSwing,
       signalStates:[...mechanismSignals.values()].map(state => ({ mechanismId:state.mechanismId, progress:state.progress, target:state.target, glyphRequired:state.glyphRequired, glyphActive:state.glyphTargets.filter(target=>target.active).length, ignitionLit:state.ignitionTargets.some(target=>target.lit) })),
       suppressedBaseInteract,
+      proximity:{playerGroundY:currentSupportY(),nearestPickup:nearestPickupControl()?.kind||null,
+        nearestLadder:nearestLadderDistance(),nearestHitDriven:nearestHitDrivenDistance(),
+        registeredNativeRoots:extraNativeRoots.size}, // In-game/mobile diagnostics for stacked-floor reach and cross-floor input suppression.
       hitSerial,
       hooks:{ inputBindingGuard:installedInputBindingGuard, rangedProjectile:installedRangedHook, combatAbility:installedCombatAbility },
     }),
