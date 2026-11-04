@@ -282,9 +282,14 @@
           window.CliffRouteNetwork.componentAt(net, col, row) === component &&
           deps.creatureCanEnterTile(c.def, (col + 0.5) * deps.TILE, (row + 0.5) * deps.TILE, NaN, NaN, c, true);
       }, { bounds: window.TilePathfinding.boxAround(startCol, startRow, endCol, endRow, 10), maxNodes: 6500 });
-      c._cliffEntryPath = path || [];
+      // The tile pathfinder correctly returns [] when already inside the
+      // entrance's tile, but the creature may still be >0.36 tiles from
+      // its exact sub-tile handhold coordinate. Walk to the tile center
+      // instead of treating an empty successful route as an unreachable wall.
+      const sameTile = startCol === endCol && startRow === endRow;
+      c._cliffEntryPath = path?.length ? path : (sameTile ? [{ col: endCol, row: endRow }] : []);
       c._cliffEntryKey = entryKey;
-      if (!path?.length) { entryDebug.failures++; return false; }
+      if (!c._cliffEntryPath.length) { entryDebug.failures++; return false; }
     }
     const waypoint = c._cliffEntryPath?.[0];
     if (!waypoint) return false;
