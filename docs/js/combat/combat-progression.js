@@ -221,12 +221,12 @@
   const TREES = {
     swingCombo: { sharp: sharpTree(), blunt: bluntTree() },
     pokeCombo: { sharp: sharpTree(), blunt: bluntTree() },
-    swingComboFinisher: { sharp: comboFinisherTree(sharpTree()), blunt: comboFinisherTree(bluntTree(), true) },
-    pokeComboFinisher: { sharp: comboFinisherTree(sharpTree()), blunt: comboFinisherTree(bluntTree(), true) },
     opportunistJab: { sharp: quickAttackTree(sharpTree()), blunt: quickAttackTree(bluntTree(), true) },
     exhaustCutter: { sharp: quickAttackTree(exhaustCutterSharpTree()), blunt: quickAttackTree(bluntTree(), true) },
     backstabFlick: { sharp: quickAttackTree(sharpTree()), blunt: quickAttackTree(bluntTree(), true) },
     mercySpike: { sharp: quickAttackTree(mercySpikeSharpTree()), blunt: quickAttackTree(bluntTree(), true) },
+    swingComboFinisher: { sharp: comboFinisherTree(sharpTree()), blunt: comboFinisherTree(bluntTree(), true) },
+    pokeComboFinisher: { sharp: comboFinisherTree(sharpTree()), blunt: comboFinisherTree(bluntTree(), true) },
     chargedBreaker: { sharp: sharpTree(), blunt: bluntTree() },
     acceleratingFlurry: { sharp: sharpTree(), blunt: bluntTree() },
     counterShield: {
