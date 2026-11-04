@@ -183,6 +183,12 @@ try{
     'native floor collision is independent from the existing 2D V50 entry grid');
   assert(nativeRoots.every(root=>root.parent?.name?.startsWith('native-v50-story-')),
     'authentic V50 meshes are transferred intact to their owning physical floors');
+  assert(floors.every(item=>{
+    const stone=item.roots.localeRoot,particles=item.roots.particleRoot;
+    return particles.parent===stone.parent&&particles.position.x===stone.position.x
+      &&particles.position.y===stone.position.y&&particles.position.z===stone.position.z
+      &&particles.scale.x===stone.scale.x&&particles.scale.z===stone.scale.z;
+  }),'V50 native particle snapshots must share the exact story transform of their original stone geometry');
   const raised=native.records[0].challenges[0],lowered=native.records[1].challenges[1]; // Both doors must obstruct at their actual plateau, not at a nominal story elevation.
   assert(Math.abs(raised.gate.surfaceY-(plan.floors[1].y+1.26))<1e-6);
   assert(Math.abs(lowered.gate.surfaceY-(plan.floors[2].y-.84))<1e-6);

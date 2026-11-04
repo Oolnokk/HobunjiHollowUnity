@@ -299,7 +299,11 @@
         nativeRoot.position.set(place.originX+place.width/2,floor.y,
           place.originZ+place.depth/2);
         group.add(nativeRoot);
-        if(particles)group.add(particles);
+        if(particles){
+          particles.scale.x*=options.tileScale||2;particles.scale.z*=options.tileScale||2;
+          particles.position.set(nativeRoot.position.x,nativeRoot.position.y,nativeRoot.position.z); // Snapshot emitters were authored in V50 preview coordinates; align them to the same upper-story placement as their original host meshes.
+          group.add(particles);
+        }
         options.prepareMaterials?.(nativeRoot); // V50's *existing* unlit stone conversion is shared with floor zero.
         NativeMechanisms.namespace(nativeRoot,item.floor); // Prevent V50's per-generation mechanism IDs colliding across stacked stories.
         let minLocalY=0,maxLocalY=0;

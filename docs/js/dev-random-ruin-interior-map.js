@@ -814,7 +814,9 @@
     roots.localeRoot.name=`dev_v50_ruin_${seed}`; scene.add(roots.localeRoot);
     const ceilingMesh=buildTexturedCeiling(meta); // Gives the rope mounts and support pillars a real visible stone ceiling at the exact wall-top datum they already target.
     if(ceilingMesh)scene.add(ceilingMesh);
-    roots.particleRoot.position.set(0,0,0); scene.add(roots.particleRoot);
+    roots.particleRoot.scale.x*=RUIN_TILE_SCALE;roots.particleRoot.scale.z*=RUIN_TILE_SCALE;
+    roots.particleRoot.position.set(roots.localeRoot.position.x,0,roots.localeRoot.position.z); // Snapshotted V50 sprites are in the original 2D world coordinate system and need the same horizontal projection as stone meshes.
+    scene.add(roots.particleRoot);
 
     const spawn=spawnInsideEntrance(meta);
     const exitTile=[clamp(Math.floor(spawn.x),0,projected.cols-1),clamp(Math.floor(spawn.z),0,projected.rows-1)];

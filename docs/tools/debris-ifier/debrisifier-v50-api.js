@@ -467,7 +467,7 @@
   function tickRuntime(dt) {
     const safeDt = clamp(Number(dt) || 0, 0, .05);
     updateLinkedCubePuzzles(safeDt);
-    updateMechanismParticleEffects(safeDt);
+    if(!previewLoopPaused)updateMechanismParticleEffects(safeDt); // The game has detached its scene roots: emitting to V50's hidden iframe particleRoot wastes memory/CPU and is never visible in the game.
   }
 
   // Runtime-generated recovery access deliberately calls V50's real ladder
