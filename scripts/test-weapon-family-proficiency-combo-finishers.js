@@ -38,7 +38,7 @@ async function testFamilyProficiency() {
   const shapesWindow = {}; // The real weapon-shape registry is the authoritative finite set of currently supported melee donors.
   vm.runInContext(source('docs/js/combat/weapon-shape-stats.js'), { window: shapesWindow });
   for (const shape of Object.keys(shapesWindow.WeaponShapeStats.SHAPES)) {
-    defs[shape] = { shapeKey: shape, slots: ['weapon'] }; // Exercises every shipped donor against the actual policy classifier.
+    defs[shape] ||= { shapeKey: shape, slots: ['weapon'] }; // Preserve the fixture's real dual-role axe/spear slots when adding other authored donors.
     assert.ok(policy.weaponFamily(shape), 'no shipped melee weapon shape should lack a proficiency: ' + shape);
   }
   runtime.ModularWeapons = { decode: key => key === 'forged' ? { shaft: 'long', head: 'hammer' } : null,
