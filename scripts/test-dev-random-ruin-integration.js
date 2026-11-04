@@ -493,6 +493,9 @@ assert(interactions.includes('registerWorldClimbProvider') && !interactions.incl
     'the real player floor reconciliation must take the fatal chain path before recoverable footing falls');
   assert(simplePuzzles.includes('updateRopeChainCheckpoints();') && simplePuzzles.includes("'rope-chain-'+hall.id+'-start'")
     && simplePuzzles.includes("'rope-chain-'+hall.id+'-end'"), 'both bank checkpoints must mutually replace the active ruin checkpoint');
+  assert(simplePuzzles.includes('if(options.hallwayTraps!==false||options.ropeChain!==false)buildSwappableHallwayModules(')
+    && simplePuzzles.includes('if(!allowTraps)continue;'),
+    'turning off old hallway traps must not disable separately selected rope-chain hallways or silently add projectile traps');
   assert(interior.includes("['ropeChain','Bottomless rope-to-rope hallways']") && interior.includes('ropeChain:true'),
     'mobile puzzle settings must offer the new hallway type without removing the existing safe-path grid');
   assert(!simplePuzzles.slice(simplePuzzles.indexOf('function buildRopeChainHallway('),simplePuzzles.indexOf('function ropeChainPitAt(')).includes('createPlatform('),
