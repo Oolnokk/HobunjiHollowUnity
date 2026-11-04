@@ -297,7 +297,14 @@
       tileY: t => Number.isFinite(t?.surfaceY) ? t.surfaceY
         : (deps.NORMAL_TOP + (t?.elevTier || 0) * deps.PLATEAU_UNIT),
     });
-    if (network) meshes.push(...window.CliffRouteNetwork.render(THREE, zScene, network));
+    if (network) {
+      // The dungeon's registered-support system is authoritative for all
+      // mini-cliffs, including overlapping X/Z across multiple Y levels.
+      window.CliffElevatedSurfaces?.mount?.(network, {
+        isActive: () => deps.getCurrentArea?.() === mapId, // Offscreen zones cannot change an interior's support.
+      });
+      meshes.push(...window.CliffRouteNetwork.render(THREE, zScene, network));
+    }
     scheduleMesaRenderBatching(zScene, mapId, meshes);
     return meshes;
   }
