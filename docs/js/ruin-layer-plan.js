@@ -62,7 +62,11 @@
     shaft.shape='octagon';shaft.floors=floorCount;
     shaft.anchor={x:cx,z:cz};
     const floors=[];
-    const puzzles=['ropeChain','glyphObelisk','ceilingRailTargets','statueDefense','dungeonFire','pressurePlate']; // Planner placeholders; runtime puzzle composer chooses concrete playable configurations.
+    // ONLY puzzle families backed by an implemented real runtime may be
+    // selected. Advanced rope/defence/fire variants will be added as their
+    // actual mechanics are integrated, never disguised as plain floor plates.
+    const puzzles=['pressurePlate','glyphObelisk','ceilingRailTargets'];
+    const rangedPuzzles=['glyphObelisk','ceilingRailTargets'];
     for(let floor=0;floor<floorCount;floor++){
       const y=floor*o.floorHeight; // Physical y datum for this otherwise ordinary 2D map.
       const shuffled=DIRS.map(d=>({d,roll:rng()})).sort((a,b)=>a.roll-b.roll).map(x=>x.d);
@@ -91,7 +95,9 @@
           const isGoal=stage===challengeCount+1;
           const id=`${wingId}-room${stage}`;
           const room={id,kind:isGoal?'brazier-chamber':'challenge-room',...area,y,wingId,
-            challenge:isGoal?null:puzzles[integer(rng,0,puzzles.length-1)]};
+            challenge:isGoal?null:stage===1?'pressurePlate'
+              :stage===2?rangedPuzzles[integer(rng,0,rangedPuzzles.length-1)]
+              :puzzles[integer(rng,0,puzzles.length-1)]};
           nodes.push(room);rooms.push(room);
           // Thresholds derive from the actual rectangle bounds, not the
           // conceptual centre. Even-width rooms otherwise leave a one-cell
@@ -140,6 +146,9 @@
       add(`floor${floor.floor}-uniqueSides`,new Set(floor.wings.map(w=>w.side)).size===floor.wings.length);
       for(const wing of floor.wings){
         add(wing.id+'-challenges',wing.rooms.length>=3&&wing.rooms.length<=5);
+        add(wing.id+'-playableMechanisms',wing.rooms.slice(0,-1).every(
+          r=>puzzles.includes(r.challenge))&&wing.rooms[0].challenge==='pressurePlate'
+          &&rangedPuzzles.includes(wing.rooms[1].challenge));
         add(wing.id+'-portalConnected', wing.corridors[0]?.start.x===wing.entry.x&&wing.corridors[0]?.start.z===wing.entry.z);
         const shellRadius=Math.floor((plan.options.shaftSize+plan.options.shaftWall*2)/2);
         add(wing.id+'-clearShaft', wing.rooms.every(room=>!
