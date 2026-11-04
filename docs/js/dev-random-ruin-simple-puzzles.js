@@ -223,7 +223,16 @@
     for(let step=1;step<=steps;step++){
       const t=step/steps;
       const point={x:Number(from.x)+dx*t,y:Number(from.y)+(Number(to.y)-Number(from.y))*t,z:Number(from.z)+dz*t};
-      if(ropeBlockedAt(point.x,point.z,radius,point.y))return{blocked:true,last,point};
+      // Ordinary V50 occupancy is one 2D slice. A rope traveller in a
+      // stacked wing must also respect this floor's real SOLID voxel gates,
+      // or ballistic release could bypass an unsolved challenge while
+      // reconcilePlayer deliberately yields movement ownership to the rope.
+      const layeredMotion=!!state?.activeRope?.externalRopeChain||!!state?.flight?.layerRopeChain;
+      const shaftHit=layeredMotion?window.DevRandomRuin?.shaftSegmentHit?.(
+        {x:last.x,y:last.y+.8,z:last.z},{x:point.x,y:point.y+.8,z:point.z},
+        radius,(start,end,hitbox,hitRadius)=>segmentBoxInterval(start,end,hitbox.box,hitRadius)):null;
+      if(ropeBlockedAt(point.x,point.z,radius,point.y)||shaftHit!==null&&shaftHit!==undefined)
+        return{blocked:true,last,point};
       last=point;
     }
     return{blocked:false,last:to,point:null};
@@ -731,6 +740,7 @@
     const player=playerWorld();
     if(!player)return;
     for(const chain of state.ropeChains)for(const side of ['start','end']){
+      if(chain.external&&Math.abs(player.y-chain.floorY)>.85)continue; // Different stacked story at the same X/Z must not overwrite this wing's fatal-void checkpoint.
       const point=side==='start'?chain.entry:chain.exit,id=chain.checkpointIds[side];
       if(state.checkpoints.active?.id===id)continue;
       const along=chain.axis==='x'?player.x:player.z,cross=chain.axis==='x'?player.z:player.x;
@@ -826,7 +836,8 @@
   function releaseRope(rope) {
     if (!rope?.attached) return false;
     const bob = updateRopeVisual(rope);
-    state.flight = { ...RopeCore.releaseFlight(rope, bob), ropeId:rope.id };
+    state.flight = { ...RopeCore.releaseFlight(rope, bob), ropeId:rope.id,
+      layerRopeChain:rope.externalRopeChain===true }; // Preserve 3D gate collision authority after rope release.
     rope.attached = false;
     rope.braking = false;
     state.activeRope = null;
