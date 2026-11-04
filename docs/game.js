@@ -1099,31 +1099,67 @@
         return Number.isFinite(resolved) ? Math.max(0, resolved) : Math.max(0, Number(entity?.maxFooting) || 0); // Legacy/no-ResourceSystem actors still use literal max Footing.
       }
 
-      // Zero-Footing transition — called only once applyHitStagger's own
-      // spendFooting has already driven entity.footing to 0. Both the player
-      // and any creature/bandit go fully prone here (immune to further
-      // Footing loss — see resource-system.js's spendFooting), then
-      // automatically recover once Footing reaches the same full unshambled
-      // target — the player uses updateProneState's in-place recovery arc,
-      // while creature AI uses beginCreatureSomersaultRecovery below.
-      // Creature planes use the same authored clips through
-      // ImpactRagdollPlayback's quarter-turned body-only adapter; humanoid leg
-      // channels remain player-only. Both kinds use a dedicated prone-throw
-      // displacement so compatibility adapters can still clear stale ordinary
-      // knockback without erasing the intentional knockdown launch.
-      function enterProneIfFootingDepleted(entity, isPlayer, direction) {
-        if (entity.footing > 0 || entity.prone) return;
+      // The same full breakThrow knockdown (launch, action interruption and
+      // pose hold) is shared by depleted Footing and the short timed Knockdown
+      // debuff. Temporary knockdown does not modify the target's Footing.
+      function enterPronePose(entity, isPlayer, direction, temporary) {
+        if (entity.prone) return false;
+        entity._temporaryKnockdownProne = temporary === true; // Used by prone recovery and the two distinct prone attack multipliers.
         entity.prone = true;
-        // damageCreature already cancelled any in-progress attack; the
-        // creature playback holds its final breakThrow frame until recovery.
         if (!isPlayer) {
           window.ImpactRagdollPlayback?.triggerCreature(entity, 'breakThrow', direction, { durationMultiplier: 1 });
-          return;
+          return true;
         }
         player.somersaultRecovering = false;
         player.vx = 0; player.vy = 0;
         window.Combat?.cancelAllStaged?.();
         window.ImpactRagdollPlayback?.trigger('breakThrow', direction, { durationMultiplier: 1 });
+        return true;
+      }
+
+      // Normal 0-Footing hits have already launched the victim in applyHitStagger.
+      // Their recovery still needs a full refill, irrespective of any timed debuff.
+      function enterProneIfFootingDepleted(entity, isPlayer, direction) {
+        if (entity.footing > 0 || entity.prone) return;
+        enterPronePose(entity, isPlayer, direction, false);
+      }
+
+      function enterTimedKnockdown(entity, options = {}) {
+        if (!entity || !(entity.health > 0) || entity._downed || entity.prone) return false;
+        const isPlayer = entity === player; // Only the local player uses the procedural humanoid ragdoll channel.
+        const facingAngle = isPlayer ? (Number(entity.angle) || 0) : (Number(entity.facing) || 0);
+        const direction = hitDirectionRelativeToFacing(facingAngle, entity.x, entity.y, options.fromX, options.fromY);
+        if (isPlayer) {
+          _nestHoldT = 0;
+          player._nestTakeActive = false;
+          window.BanditCamps?.interruptTentHold?.();
+          window.CorpseHoldLoot?.interrupt?.();
+        } else {
+          // Direct perk/buff applications must perform the same instantaneous
+          // attack cancellation as a 0-Footing hit, even without damageCreature.
+          window.Combat?.telegraph?.cancel?.(entity);
+          window.Combat?.animalAttacks?.cancel?.(entity);
+          window.EnemyDodge?.cancel?.(entity);
+          if (entity.isBandit) {
+            entity._banditAction?.cancel?.();
+            entity._banditAction = null;
+            entity.telegraphState = null;
+            entity._banditComboIndex = 0;
+            window.RangedWeapons?.cancelBanditAction?.(entity);
+            window.BanditCombat?.cancelLunge?.(entity);
+          }
+        }
+        startProneThrow(entity, isPlayer, facingAngle, direction);
+        return enterPronePose(entity, isPlayer, direction, true);
+      }
+
+      window.HobunjiKnockdown = { enter: enterTimedKnockdown }; // Called only on first timed Knockdown application by ResourceSystem.
+
+      function proneRecoveryReady(entity) {
+        if (window.ResourceSystem?.hasTimedDebuff?.(entity, 'knockdown')) return false; // Duration must end before either prone source may recover.
+        return entity._temporaryKnockdownProne === true
+          ? (Number(entity.footing) > 0) // The timed effect never drains Footing, so no full-refill requirement.
+          : entity.footing >= proneRecoveryFootingTarget(entity); // Genuine Footing breaks keep their original full-refill rule.
       }
 
       // Called from updateHostiles once a prone creature's Footing reaches
@@ -1135,6 +1171,7 @@
       // chaining falls out of that existing call for free.
       function beginCreatureSomersaultRecovery(c, targetPlayer) {
         c.prone = false;
+        c._temporaryKnockdownProne = false; // The departing actor no longer has a timed-prone source.
         c.state = 'chase';
         c.targetPlayer = targetPlayer;
         window.ResourceSystem?.spendStamina(c, SOMERSAULT_STAMINA_COST, 'somersault recovery');
@@ -5572,6 +5609,7 @@
           amount = banditTryGuard(c, amount, actorAttacker || player);
           if (!actorAttacker && !c.combatTutorialTarget) window.SkillSystem?.award?.('combat', window.SkillSystem?.XP_GAINS?.combatHit || 1, 'landed hit');
         }
+        if (!environmentalImpact) amount *= window.ResourceSystem?.getProneAttackMultiplier?.(c) ?? 1; // 1.75x temporary, 2.5x true Footing-break; scales direct damage and attack afflictions once.
         const resourceDamage = environmentalImpact ? { health: amount, footing: 0 } : hitResourceDamage(amount, dmgOpts);
         const impactMultiplier = environmentalImpact ? 1 : (window.AlchemySystem?.getFootingDamageMultiplier?.() || 1) * (1 + (window.PerkSystem?.rank('combat', 'increaseFootingDamage') || 0) * 0.1); // Collision profiles are already authored at final strength.
         resourceDamage.footing *= impactMultiplier;
@@ -5661,6 +5699,7 @@
           amount *= window.ResourceSystem?.timedDebuffModifier?.(attacker, 'outgoingDamage') ?? 1;
           amount *= window.SkillSystem?.damageTakenMultiplier?.() || 1;
         }
+        if (!environmentalImpact) amount *= window.ResourceSystem?.getProneAttackMultiplier?.(player) ?? 1; // Same prone vulnerability for the player; collision damage remains unchanged.
         const resourceDamage = environmentalImpact ? { health: amount, footing: 0 } : hitResourceDamage(amount, dmgOpts);
         // Lets a held defensive ability (Counter Shield) absorb the hit and
         // riposte instead of applying damage normally — only one hold
@@ -5756,6 +5795,8 @@
           player.stamina = player.maxStamina;
           if (Number.isFinite(player.maxFooting)) player.footing = player.maxFooting; // Death reset should not strand an arena test subject prone at the entry point.
           player.prone = false;
+          player._temporaryKnockdownProne = false;
+          window.ResourceSystem?.clearTimedDebuff?.(player, 'knockdown'); // Arena respawns cannot preserve the previous knockdown lock.
           if (player.staggered) { player.staggered.active = false; player.staggered.endsAt = 0; }
           for (const id of Object.keys(window.ResourceSystem?.AFFLICTIONS || {})) {
             const buildup = window.ResourceSystem?.getAffliction?.(player, id) || 0; // Clears lethal/punishing carry-over so the test respawn cannot immediately die again from the previous bout.
@@ -7140,7 +7181,7 @@
             // as ordinary knockback. ImpactRagdollPlayback simultaneously
             // drives the quarter-turned animal/bandit breakThrow pose.
             advanceCreatureProneThrow(c, entityDt);
-            if (c.footing >= proneRecoveryFootingTarget(c) && !(c.proneThrowT > 0) && !c._knockbackLedgeFall) beginCreatureSomersaultRecovery(c, targetPlayer);
+            if (proneRecoveryReady(c) && !(c.proneThrowT > 0) && !c._knockbackLedgeFall) beginCreatureSomersaultRecovery(c, targetPlayer);
           } else if (c.knockbackT > 0) {
             // Reeling from a hit; let the impulse play out before resuming AI.
             // Per-axis canOccupyAt check (same primitive/radius convention as
@@ -8803,8 +8844,9 @@
             _clearCompanionTreasureCue(c, dt, 'prone');
             _clearCompanionWatchIdle(c, 'prone');
             advanceCreatureProneThrow(c, dt);
-            if (c.footing >= proneRecoveryFootingTarget(c) && !(c.proneThrowT > 0) && !c._knockbackLedgeFall) {
+            if (proneRecoveryReady(c) && !(c.proneThrowT > 0) && !c._knockbackLedgeFall) {
               c.prone = false;
+              c._temporaryKnockdownProne = false; // Companion standing back up also clears the temporary prone source.
               window.ResourceSystem?.spendStamina(c, SOMERSAULT_STAMINA_COST, 'somersault recovery');
               c.retreatT = Math.max(c.retreatT || 0, FORCED_SOMERSAULT_RETREAT_S);
             }
@@ -10050,7 +10092,7 @@
         // (and any ledge fall it can become) prevents the roll from cancelling
         // displacement that still has to resolve.
         if (!(player.proneThrowT > 0) && !player._knockbackLedgeFall
-            && player.footing >= proneRecoveryFootingTarget(player)) {
+            && proneRecoveryReady(player)) {
           beginSomersaultRecovery();
         }
       }
@@ -10067,13 +10109,15 @@
       const SOMERSAULT_RECOVERY_DUR_S = 0.5;
       function beginSomersaultRecovery() {
         if (!player.prone || player.somersaultRecovering) return false;
-        if (player.footing < proneRecoveryFootingTarget(player)) {
-          showToast("Footing hasn't recovered enough yet.", false);
+        if (!proneRecoveryReady(player)) {
+          if (!window.ResourceSystem?.hasTimedDebuff?.(player, 'knockdown'))
+            showToast("Footing hasn't recovered enough yet.", false);
           return false;
         }
         player.somersaultRecovering = true;
         window.ImpactRagdollPlayback?.beginRecoveryArc(SOMERSAULT_RECOVERY_DUR_S, () => {
           player.prone = false;
+          player._temporaryKnockdownProne = false; // Reset the 1.75x state after the normal in-place get-up arc.
           player.somersaultRecovering = false;
         });
         return true;
@@ -30802,7 +30846,7 @@
         resetPractice: (gapTiles = 2, practice) => { // Oddclaw stands at row 11.5; melee exercises start within reach.
           player.health = player.maxHealth; player.stamina = player.maxStamina; player.footing = player.maxFooting;
           player.afflictions = {}; player.exhaustion = { active: false, blackStamina: 100 };
-          player.prone = false; player.staggered = { active: false, endsAt: 0 };
+          player.prone = false; player._temporaryKnockdownProne = false; window.ResourceSystem?.clearTimedDebuff?.(player, 'knockdown'); player.staggered = { active: false, endsAt: 0 };
           player.knockbackT = 0; player.dodging = false; player.dodgeCooldownT = 0;
           player.x = (practice?.c ?? 10.5) * TILE; player.y = ((practice?.r ?? 11.5) + gapTiles) * TILE;
           player.vx = 0; player.vy = 0;
