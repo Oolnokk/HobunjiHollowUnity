@@ -263,6 +263,7 @@
   const authoredHitboxWorld = THREE.Box3 && new THREE.Box3();
   const hitboxMin = THREE.Vector3 && new THREE.Vector3(), hitboxMax = THREE.Vector3 && new THREE.Vector3();
   function worldHitbox(vase) {
+    if(vase===backCarried)return null; // Carrier collision, not the Burden's authored collider, owns stowed-hit detection.
     const h=vase?.data?.carryable?.hitbox;
     if(!h?.enabled || !authoredHitboxWorld || !hitboxMin || !hitboxMax)return null;
     const c=h.center||{},size=h.size||{};
@@ -2395,6 +2396,7 @@
       position:()=>({x:burden.col+.5,z:burden.row+.5}),
       hasCap:cap=>cap==='burden'||(cap==='hangable'&&!!burden.hanging)||(cap==='explosive'&&TARGETABLE_EXPLOSIVE_KINDS.has(burden.kind))||(cap==='lungeStop'&&burden.lungeStop===true),
       hitbox:()=>{
+        if(burden===backCarried)return null; // Invalidate even previously cached Targetables wrappers while stowed.
         const box=worldHitbox(burden)||(burden.meshBounds&&!burden.meshBounds.isEmpty()?burden.meshBounds:null);
         if(!box||!targetableCenter)return null;
         box.getCenter(targetableCenter);
