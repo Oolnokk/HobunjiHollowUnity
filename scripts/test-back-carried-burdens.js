@@ -121,8 +121,10 @@ function testRuntime() {
   let activeAvatar=firstAvatar; // Canonical WorldPortraitLife instance used to distinguish current portrait from stale ancestors.
   let currentBodyRoot=bodyRoot; // Simulates an asynchronously rebuilt avatar root.
   deps.playerMesh=headJoint;
+  const targetSources=new Map(); // Holds actual Targetables source functions so stale entries can be tested after state transitions.
   const window={
     THREE:{Vector3,Group,Euler,Quaternion,MeshBasicMaterial,SkinnedMesh},Combat:{deps,update(){},init(){}},
+    Targetables:{addSource:(key,fn)=>targetSources.set(key,fn),makeActor:entry=>({entry})},
     ProceduralHandAttachments:{gameDeps:deps},
     PlayerBodyTransformComposer:{getPlayerMesh:()=>currentBodyRoot,getPosteriorY:()=>.42},
     WorldPortraitLife:{getPlayerAvatar:()=>({group:activeAvatar})},
@@ -147,6 +149,9 @@ function testRuntime() {
     },
   });
   assert(charge);
+  charge.meshBounds={isEmpty:()=>false,getCenter:target=>target.set(4,.5,3)}; // Legacy cached geometric target, not a carrier-hitbox proxy.
+  const originalTarget=targetSources.get('shattercasks')('map_back_test').find(entry=>entry.owner===charge);
+  assert(originalTarget?.hitbox(),'the same physical Burden is independently targetable before being carried');
   assert(window.Shattercasks.pickUp(charge));
   assert.equal(window.Shattercasks.toolArchAction(),'pickup','Tool Select owns the context before back stow');
   assert(window.Shattercasks.toolArchTap(),'Tool Select stows an actual physical Burden');
@@ -155,6 +160,9 @@ function testRuntime() {
   assert.equal(charge.group.parent,portrait,'stowed burden is a DIRECT child of the live skinned portrait plane');
   assert.equal(window.Shattercasks.debugSnapshot().backCarryMount.portraitAttached,true);
   assert.equal(window.Shattercasks.debugSnapshot().backCarryMount.collision,'carrier-hitbox');
+  assert.equal(originalTarget.hitbox(),null,'stowing also invalidates hitboxes exposed by previously cached Targetables entries');
+  assert(!targetSources.get('shattercasks')('map_back_test').some(entry=>entry.owner===charge),
+    'the targetables source cannot serve a separately hittable stowed burden');
   assert(!window.Shattercasks.senseTargets(scene).includes(charge.group),
     'back Burden disappears from world-raycast targets while the carrier is exposed');
   assert.equal(window.Shattercasks.hitProjectile({vase:charge}),false,
@@ -222,6 +230,7 @@ function testRuntime() {
   assert(window.Shattercasks.discardBurden(second),'clear the extra hand burden before retrieving from back');
   assert(window.Shattercasks.takeFromBack(),'tool-arch selection retrieves the same instance');
   assert.equal(window.Shattercasks.debugSnapshot().held,charge.id);
+  assert(originalTarget.hitbox(),'retrieval restores the held burden own hitbox, separate from stowed carrier hits');
   assert.equal(charge.group.parent,headJoint,'retrieval restores the ORIGINAL held-object mount');
   assert(window.Shattercasks.stowOnBack());
   assert.equal(charge.group.parent,rigidPortrait,'restowing reattaches directly to the rebuilt portrait');
