@@ -616,6 +616,8 @@
     if (Math.hypot(x - Number(oldDen.x), y - Number(oldDen.y)) < DEN_RELOCATION_MIN_DISTANCE_TILES) return false;
     if (activeZone && deps.player && Math.hypot((x + w * .5) - deps.player.x / deps.TILE, (y + h * .5) - deps.player.y / deps.TILE) < DEN_RELOCATION_PLAYER_CLEARANCE_TILES) return false;
     const candidate = { x, y, w, h: h + 1 };
+    const cliffRoutes = window.CliffRouteNetwork; // A relocated cave must also clear the existing climbable cliff mesh.
+    if (cliffRoutes?.overlapsClimb(cliffRoutes.forArea(zoneId), { x: x - 0.75, y: y - 0.75, w: w + 1.5, h: h + 2.5 })) return false;
     for (const other of (layout.caveAnchors || layout.dens || [])) { // caveAnchors: every cave (js/cave-site-system.js), not just the animal dens this tick sees.
       if (!other || String(other.id) === String(den.id)) continue;
       if (rectsOverlap(candidate, { x:Number(other.x), y:Number(other.y), w:Math.max(1,Number(other.w)||1), h:Math.max(1,Number(other.h)||1)+1 }, 4)) return false;
