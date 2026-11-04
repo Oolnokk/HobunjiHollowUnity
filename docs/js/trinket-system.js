@@ -61,6 +61,49 @@
 
     // ── Harlyao ruins (dungeon chests) — Combat perk vocabulary ───────
     // Functional names; ids are stable so display names can change freely.
+    // ── Specialized combat trinkets; all modifiers are composed by the existing providers. ──
+    evasion: {
+      id: 'evasion', displayName: 'Evasion', icon: '💨', attunementCost: 3,
+      source: 'harlyaoRuin', category: 'combat',
+      description: 'Dodge travel duration and invulnerability last 15% longer.',
+      effects: { stats: { dodgeEfficacy: 1.15 } },
+    },
+    companionPoise: {
+      id: 'companionPoise', displayName: 'Companion Poise', icon: '🐾', attunementCost: 2,
+      source: 'harlyaoRuin', category: 'combat',
+      description: 'Your animal companion deals 40% more Footing damage.',
+      effects: { companion: { footing: 1.40 } },
+    },
+    rapidRecovery: {
+      id: 'rapidRecovery', displayName: 'Rapid Recovery', icon: '🌱', attunementCost: 3,
+      source: 'harlyaoRuin', category: 'combat',
+      description: 'Naturally recovering afflictions recover 40% faster (not Bleeding or Poison).',
+      effects: { stats: { afflictionRecovery: 1.40 } },
+    },
+    unshaken: {
+      id: 'unshaken', displayName: 'Unshaken', icon: '🪨', attunementCost: 2,
+      source: 'harlyaoRuin', category: 'combat',
+      description: 'Footing recovery begins 0.9 seconds after a hit, rather than 1.5 seconds.',
+      effects: { stats: { footingRecoveryDelay: 0.60 } },
+    },
+    secondBreath: {
+      id: 'secondBreath', displayName: 'Second Breath', icon: '🫁', attunementCost: 2,
+      source: 'harlyaoRuin', category: 'combat',
+      description: 'Black-Stamina Exhaustion debt recovers 35% faster; ordinary Stamina regeneration is unchanged.',
+      effects: { stats: { exhaustionRecovery: 1.35 } },
+    },
+    counterweight: {
+      id: 'counterweight', displayName: 'Counterweight', icon: '⚓', attunementCost: 2,
+      source: 'harlyaoRuin', category: 'combat',
+      description: 'Incoming knockback travel is reduced by 30%; Footing damage is unchanged.',
+      effects: { stats: { knockbackDistance: 0.70 } },
+    },
+    flaskmaster: {
+      id: 'flaskmaster', displayName: 'Flaskmaster', icon: '🧨', attunementCost: 3,
+      source: 'harlyaoRuin', category: 'combat',
+      description: 'Your thrown flasks and Shattercasks you throw, strike, or trigger through your own Shattercask chain gain 25% stronger impacts and 15% wider blast radii.',
+      effects: { stats: { flaskPower: 1.25, flaskRadius: 1.15, shatterPower: 1.25, shatterRadius: 1.15 } },
+    },
     harlyaoReachShard: {
       id: 'harlyaoReachShard', displayName: 'Harlyao Reach Shard', icon: '🦴', attunementCost: 1,
       source: 'harlyaoRuin', category: 'combat',
@@ -457,6 +500,7 @@
     grant,
     claimLoot,
     statMultiplier,
+    combatMultiplier: key => statMultiplier(player(), key), // Shared player-only combat-effect read for collision, flask, and dodge adapters.
     perkBonusRanks,
     companionModifiers,
     ensureCollections,
