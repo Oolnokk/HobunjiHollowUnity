@@ -348,6 +348,7 @@
   function activateGlyph(target) {
     if (!target || target.active) return false;
     target.active = true;
+    window.DevRandomRuinGlyphCircuits?.refreshActivatedGlyph?.(target); // Immediate source tint; render-loop pulses and hit flash still follow.
     hitSerial++;
     const state = mechanismSignals.get(target.mechanismId);
     const active = state?.glyphTargets.filter(entry => entry.active).length || 0;
