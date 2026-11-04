@@ -255,7 +255,9 @@
     if(!['keydown','keyup'].includes(event.type))return;
     const ring=KEYS.indexOf(event.code);
     if(ring<0 && event.code!=='Escape' && event.code!=='KeyB') {
-      // Do not let gameplay keyboard hotkeys fire through the overlay.
+      // Let key releases reach gameplay so keys held before opening cannot stick after closing.
+      // Key presses are still swallowed, and CharacterActionLocks blocks movement/actions.
+      if(event.type==='keyup')return;
       event.preventDefault();event.stopImmediatePropagation();return;
     }
     event.preventDefault();event.stopImmediatePropagation();
