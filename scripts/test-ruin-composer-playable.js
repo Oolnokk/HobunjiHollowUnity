@@ -52,6 +52,7 @@ globalThis.FurniturePuzzleRuntime={
     return true;
   },
   unregisterNode(_mapId,id){return nodes.delete(id);},
+  getNode(_mapId,id){return nodes.get(id)?.group||null;}, // Offering reward unlock reads the real puzzle completion flag.
   burdenPlateButtons:(_mapId,id)=>[{label:'Insert Key Statue',action:'obj_burden_plate_'+id,allowed:true}],
   keyStatueButtons:(_mapId,id)=>[{label:'Take Key Statue',action:'obj_key_statue_'+id,allowed:true}],
   interactBurdenPlate:()=>({ok:true,message:'Burden plinth engaged.'}),
@@ -66,6 +67,18 @@ globalThis.HronalWitchBombs={
   dispenseFromMechanism:async()=>({id:'witch-bomb-test'}),
 };
 globalThis.KeyStatues={registerDispenser(_map,id,root){statuary.set(id,root);return true;}};
+const burdens=new Map(),rewardChests=[]; // Tracks the optional physical Shattercask source and its reward chest.
+globalThis.Shattercasks={
+  registerHangingBurden(options){const burden={...options,exploded:false};burdens.set(burden.id,burden);return burden;},
+  discardBurden(burden){burden.exploded=true;burden.group?.parent?.remove(burden.group);burdens.delete(burden.id);return true;},
+};
+globalThis.DevRandomRuinDungeonChests={
+  create(options){
+    const group=new Group();options.parent.add(group);
+    const chest={...options,group,opened:false,control:{kind:'dungeonChest',label:()=>'Open bonus chest',onPress:()=>true}};
+    rewardChests.push(chest);return chest;
+  },
+};
 globalThis.RuinEncounters={
   create(options){encounters.set(options.id,options);return options;},
   remove(id){return encounters.delete(id);},
@@ -129,6 +142,40 @@ const mkTile=walkable=>({type:walkable?'grass':'rock'});
   assert.equal(surfaces.size,0);assert.equal(pits.size,0);
   assert.equal(rec.scene.children.length,0,'wing geometry is detached from the game scene');
   wing.dispose(); // Idempotent: reroll and ruin exit may both request disposal.
+  // The original Burden Plinth is separately authored from the long Key Statue defense plinth.
+  // A real pickup charge supplies it; completion (not mere placement) unlocks a bonus chest exactly once.
+  const bonusRec=makeRecord(),revealed=[];
+  const bonus=await Playable.mount({rec:bonusRec,ruin:{theme:'hronal'},seed,archetype:'trialHall',burdenOffering:true,
+    mapId:'map_i_dev_random_ruin',scope:'bonus_test',makeTile:mkTile,DynamicSurfaces,THREE,originX:3,originZ:24,
+    addControl:control=>revealed.push(control),isCurrent:()=>true});
+  assert(bonus.offering,'full trial can include the separately authored generic Burden Plinth');
+  const offering=[...nodes.entries()].find(([id])=>id.startsWith('composed_offering_'));
+  assert(offering&&offering[1].group.userData.furniturePuzzle.requiredBurdenKind==='shattercask');
+  assert.equal(burdens.size,1,'a physical pickup Shattercask must spawn beside its plinth');
+  assert.equal(rewardChests.at(-1).group.visible,false,'reward starts genuinely hidden');
+  assert.equal(bonus.update(),false,'merely registering a plinth does not unlock a chest');
+  const action=bonus.controls.find(c=>c.kind==='composed-burden-offering');
+  assert(action&& (await action.onPress()).ok,'the bonus plinth is interactive through normal gameplay');
+  offering[1].group.userData.burdenPlateComplete=true; // Same flag set by FurniturePuzzleRuntime only after its real motion ends.
+  assert.equal(bonus.update(),true);assert.equal(bonus.update(),false,'completion only unlocks once');
+  assert.equal(rewardChests.at(-1).group.visible,true);
+  assert.equal(revealed.length,1);assert.equal(revealed[0].kind,'dungeonChest');
+  bonus.dispose();
+  assert.equal(burdens.size,0,'ruin exit releases the physical optional Burden');
+  assert.equal(bonusRec.scene.children.length,0);
+
+  // A defense-only vault is a separate generator archetype: no phantom chasm or inaccessible reward floor.
+  const vaultRec=makeRecord();
+  const vault=await Playable.mount({rec:vaultRec,ruin:{theme:'hronal'},seed,archetype:'vaultHall',
+    mapId:'map_i_dev_random_ruin',scope:'vault_test',makeTile:mkTile,DynamicSurfaces,THREE,originX:3,originZ:24});
+  assert.equal(vault.composition.archetype,'vaultHall');
+  assert(vault.composition.records.some(r=>r.piece==='plinth'));
+  assert(!vault.composition.records.some(r=>r.piece==='crackedPillar'),'a vault-only encounter does not need a falling bridge');
+  assert.equal(pits.size,0,'a vault-only hall has no invisible lethal gap');
+  assert.equal([...surfaces.values()].filter(x=>x.scope==='vault_test').length,1,'a vault-only hall has one continuous support plane');
+  assert(vaultRec.floorSet.has('15,32'),'defense-only center is walkable, not a former chasm');
+  vault.dispose();
+
   const before=makeRecord();
   const nativeLoad=AuthoredFurniture.load;
   AuthoredFurniture.load=async key=>key==='ruinPillarBridge'?null:nativeLoad(key);
