@@ -48,7 +48,7 @@
     const tribe = ['porakaneki','omgurku'].find(id => String(npcId) === id + '_chief'
       || rec?.species === id || rec?.appearance?.speciesId === id || rec?.tags?.includes(id)); // Hunter/chief factions work even when a procedural member has no household.
     if (!rec) return tribe ? ['faction:' + tribe] : [];
-    const keys = [tribe && 'faction:' + tribe, rec.homeId && 'home:' + rec.homeId, rec.scheduleHooks?.workBuildingId && 'work:' + rec.scheduleHooks.workBuildingId,
+    const keys = [tribe && 'faction:' + tribe, rec.homeId && 'home:' + rec.homeId, (rec.workBuildingId || rec.scheduleHooks?.workBuildingId) && 'work:' + (rec.workBuildingId || rec.scheduleHooks.workBuildingId),
       (rec.factionId || rec.socialFactionId) && 'faction:' + (rec.factionId || rec.socialFactionId)]; // An NPC can participate in multiple independent groups.
     return [...new Set(keys.filter(id => typeof id === 'string' && /^(home|work|faction):[a-z0-9_-]+$/i.test(id)))];
   }
@@ -90,7 +90,8 @@
     for (const other of records) {
       if (!other?.id || other.id === npcId) continue;
       const sameHome = source.homeId && other.homeId === source.homeId;
-      const sameWork = source.scheduleHooks?.workBuildingId && other.scheduleHooks?.workBuildingId === source.scheduleHooks.workBuildingId;
+      const workId = source.workBuildingId || source.scheduleHooks?.workBuildingId; // Authored NPCs may use either top-level or schedule-level workplace metadata.
+      const sameWork = workId && (other.workBuildingId || other.scheduleHooks?.workBuildingId) === workId;
       if (sameHome || sameWork) bonds.set(other.id, Math.max(bonds.get(other.id) || 0, sameHome ? .25 : .15));
     }
     return [...bonds.entries()];
