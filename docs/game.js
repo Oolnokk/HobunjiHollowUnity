@@ -1125,8 +1125,10 @@
       }
 
       function enterTimedKnockdown(entity, options = {}) {
-        if (!entity || !(entity.health > 0) || entity._downed || entity.prone) return false;
+        if (!entity || !(entity.health > 0) || entity._downed) return false;
         const isPlayer = entity === player; // Only the local player uses the procedural humanoid ragdoll channel.
+        const interruptingGetUp = isPlayer && entity.prone && player.somersaultRecovering; // A new hit must supersede an unfinished recovery arc.
+        if (entity.prone && !interruptingGetUp) return false; // Already prone: only the expiry timer should extend, never replay the fall.
         const facingAngle = isPlayer ? (Number(entity.angle) || 0) : (Number(entity.facing) || 0);
         const direction = hitDirectionRelativeToFacing(facingAngle, entity.x, entity.y, options.fromX, options.fromY);
         if (isPlayer) {
@@ -1150,7 +1152,14 @@
           }
         }
         startProneThrow(entity, isPlayer, facingAngle, direction);
-        return enterPronePose(entity, isPlayer, direction, true);
+        if (interruptingGetUp) {
+          player.somersaultRecovering = false; // The old get-up callback must no longer clear prone while Knockdown is active.
+          player.vx = 0; player.vy = 0;
+          window.Combat?.cancelAllStaged?.();
+          window.ImpactRagdollPlayback?.trigger('breakThrow', direction, { durationMultiplier: 1 }); // Replaces the in-flight recovery arc with a fresh full fall.
+          return true;
+        }
+        return enterPronePose(entity, isPlayer, direction, !(Number(entity.footing) <= 0)); // A victim already at 0 Footing keeps the stronger genuine prone source.
       }
 
       window.HobunjiKnockdown = { enter: enterTimedKnockdown }; // Called only on first timed Knockdown application by ResourceSystem.
