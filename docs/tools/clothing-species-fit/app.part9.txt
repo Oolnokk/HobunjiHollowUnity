@@ -111,9 +111,9 @@ async function updateThreePreview(){
     rigGroup.updateMatrixWorld(true);
     R.three.group.rotation.set(R.three.rotX,R.three.rotY,0);
     frameRuntimeRig();
-    const cloud=R.speciesCfg.get(E.species.value)?.[E.gender.value]?.portraitOpacityMaskLayer?.url?'cloud mask active':'no species cloud mask';
+    const cloud=R.speciesCfg.get(E.species.value)?.[E.gender.value]?.portraitOpacityMaskLayer?.url?'arm-cut mask source':'no arm-cut mask source'; // Full-portrait cloud masking was removed from the game.
     const handState=model.userData?.proceduralHandRig?'hands attached':'hands queued';
-    E.threeStatus.textContent=`Runtime rig: portrait + neck + ${handState} + feet + ${cloud}${R.extendedGroup?' + extended overlay':''}.`;
+    E.threeStatus.textContent=`Runtime rig: portrait + neck + ${handState} + feet + ${cloud} + garment preset B${R.extendedGroup?' + extended overlay':''}.`;
   }catch(error){
     if(buildId!==R.three.buildGeneration)return;
     console.error(error);E.threeStatus.textContent='Runtime rig preview failed: '+error.message;log('3D RUNTIME ERROR '+error.message);
