@@ -29,6 +29,18 @@ const pool=JSON.parse(read('docs/config/loot/loot-pools.json')).pools.crateJunk.
 assert.equal(authored.parts.length,3);
 assert.deepEqual(authored.runtimeVariants.states.map(s=>s.hiddenPartIds.length),[0,1,2,3]);
 assert.deepEqual(single.carryable.handTargets,bomb.carryable.handTargets);
+const runtime=read('docs/js/authored-furniture-runtime.js'); // Real authored state visibility, not a copied implementation.
+const begin=runtime.indexOf('function setRuntimeValues('),end=runtime.indexOf('\\n  function seatCount(',begin);
+assert.ok(begin>0&&end>begin,'authored runtime exposes state-value setter');
+const setRuntimeValues=vm.runInNewContext('('+runtime.slice(begin,end).trim()+')');
+const parts=new Map(authored.parts.map(part=>[part.id,{visible:true}]));
+const runtimeGroup={userData:{authoredFurnitureData:authored,meshById:parts}};
+for(const count of [3,2,1,0]){
+  const state=setRuntimeValues(runtimeGroup,{crateCount:count});
+  assert.equal(state.value,count);
+  assert.equal([...parts.values()].filter(mesh=>!mesh.visible).length,3-count);
+}
+assert.equal(setRuntimeValues(runtimeGroup,{crateCount:99}).value,3,'unknown values use the authored default');
 for(const entry of pool)assert.ok(index[entry.itemKey],entry.itemKey);
 for(const key of ['puktukWool','uumkaoiiEgg','mireHerbs','heftroot'])
  assert.ok(pool.some(p=>p.itemKey===key));
@@ -39,11 +51,13 @@ const pile=window.CratePiles.registerPile({mapId:'wild',id:'camp',group:furnitur
  assert.equal(pile.count,2);assert.equal(burdens[0].kind,'looseCrate');
  assert.equal(window.CratePiles.shatterBurden(burdens[0],'thrown'),true);
  assert.equal(damage[0][3].footingDamage,90);assert.equal(damage[0][3].radius,1);
+ assert.equal(damage[0][3].footingDamageMultiplier,0,'crate health damage must not double-count footing damage');
  assert.equal(window.CratePiles.debugSnapshot().looseJunk,1);
  window.CratePiles.tick(.016);assert.equal(loot.length,1);
  assert.equal(window.CratePiles.debugSnapshot().looseJunk,0);
  const collider={origin:{x:3,y:.5,z:5.5},yaw:0,horizontalRangeWorld:2,verticalRiseWorld:0,halfConeRad:.5,halfHeightWorld:.8};
- assert.equal(window.CratePiles.sweepMelee(collider),true);
+ assert.equal(window.CratePiles.sweepMelee(collider,{actor:window.Combat.deps.player}),true);
+ assert.equal(damage[1][3].excludeActor,window.Combat.deps.player,'melee attacker is immune to its own smashed crate');
  assert.equal(pile.count,1);
  assert.equal(await window.CratePiles.takeCrate(pile),true);
  assert.equal(pile.count,0);
@@ -52,6 +66,7 @@ const pile=window.CratePiles.registerPile({mapId:'wild',id:'camp',group:furnitur
  const sh=read('docs/js/shattercasks.js'),camp=read('docs/js/bandit-camps.js'),cave=read('docs/js/cave-site-system.js'),editor=read('docs/tools/furniture-avatar-author/index.html');
  assert.ok(sh.includes('CratePiles?.takeCrate'));
  assert.ok(camp.includes('CratePiles?.registerPile'));
+ assert.ok(camp.includes('if(!recipe)continue'),'camp must not cache a non-interactive crate before authored art finishes');
  assert.ok(cave.includes('saved.crateCounts'));
  assert.ok(editor.includes('runtimeVariants:state.runtimeVariants'));
  console.log('PASS crates: triple stack, authoring, pickup, thrown shatter, melee, footing, auto-loot and saves');
