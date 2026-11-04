@@ -881,7 +881,7 @@
       const label = String(reason || ''); // Legacy combat actions that don't yet supply a type still retain their costs.
       const dodge = actionKind === 'combatDodge' || /\bdodge\b/i.test(label); // Fractured Guard taxes dodges, not movement or weapon attacks.
       const attacking = !dodge && (/^(combatCombo|combatQuickAttack|offensiveHeldCharge|offensiveHeldFlurry|rangedWeaponLoad|rangedWeaponFire|combatWeaponAttack)$/.test(actionKind) || (!actionKind && /attack|swing|strike|breaker|flurry|quick|jab|stab|shot|reload|heavy/i.test(label)));
-      const heavy = transaction?.heavy === true || /^(offensiveHeldCharge|offensiveHeldFlurry)$/.test(actionKind); // Lead Knuckles applies only to heavy attacks, not other weapon actions.
+      const heavy = transaction?.heavy === true || (actionKind === 'offensiveHeldCharge' && transaction?.abilityId === 'chargedBreaker') || (actionKind === 'offensiveHeldFlurry' && transaction?.abilityId === 'acceleratingFlurry'); // Heavy melee abilities pay Lead Knuckles tax; a charged thrown/ranged projectile is not a knuckle attack.
       if (dodge) amount *= statModifier(entity, 'dodgeStaminaCost');
       if (attacking) amount *= statModifier(entity, 'attackStaminaCost') * (heavy ? statModifier(entity, 'heavyAttackStaminaCost') : 1);
     }
