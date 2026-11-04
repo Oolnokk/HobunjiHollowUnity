@@ -93,7 +93,13 @@
           const room={id,kind:isGoal?'brazier-chamber':'challenge-room',...area,y,wingId,
             challenge:isGoal?null:puzzles[integer(rng,0,puzzles.length-1)]};
           nodes.push(room);rooms.push(room);
-          const door={x:rx-dir.dx*Math.floor(rw/2),z:rz-dir.dz*Math.floor(rd/2)};
+          // Thresholds derive from the actual rectangle bounds, not the
+          // conceptual centre. Even-width rooms otherwise leave a one-cell
+          // invisible gap between their floors and the adjoining hallway.
+          const door={
+            x:dir.dx>0?area.x:dir.dx<0?area.x+area.w-1:Math.floor(area.x+area.w/2),
+            z:dir.dz>0?area.z:dir.dz<0?area.z+area.d-1:Math.floor(area.z+area.d/2)
+          };
           const along=dir.dx?'x':'z';
           const approach={x:door.x-dir.dx,z:door.z-dir.dz};
           const bend=dir.dx!==0?{x:previous.x,z:approach.z}:{x:approach.x,z:previous.z}; // Preserve signed coordinates in west/north doglegs.
@@ -106,7 +112,10 @@
             start:{...previous},end:{...approach},bend:{...bend},length:Math.abs(previous.x-approach.x)+Math.abs(previous.z-approach.z)};
           corridors.push(hall);hallways.push(hall);
           doorways.push({from:hall.from,to:id,side:dir.side,point:{...door},floor});
-          previous={x:rx+dir.dx*Math.floor((dir.dx?rw:rd)/2),z:rz+dir.dz*Math.floor((dir.dx?rw:rd)/2)};
+          previous={
+            x:dir.dx>0?area.x+area.w-1:dir.dx<0?area.x:Math.floor(area.x+area.w/2),
+            z:dir.dz>0?area.z+area.d-1:dir.dz<0?area.z:Math.floor(area.z+area.d/2)
+          };
           if(isGoal)braziers.push({id:`${wingId}-brazier`,wingId,roomId:id,
             x:rx,z:rz,y,requires:nodes.filter(n=>n.challenge).map(n=>n.id)});
         }
