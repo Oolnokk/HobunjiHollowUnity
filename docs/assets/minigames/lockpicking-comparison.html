@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#151512">
+<title>Hobunji Hollow · Four Lockpicking Experiments</title>
+<style>
+:root { color-scheme:dark; --bg:#151512; --panel:#211e19; --panel2:#2d2821; --brass:#e5b86d; --bright:#ffebae; --text:#f3e5ca; --muted:#b9a78b; --line:#6d5a40; --cyan:#94cfce; --good:#a9e0ad; --bad:#e89d86; }
+* { box-sizing:border-box; }
+[hidden] { display:none!important; }
+html, body { margin:0; min-height:100%; }
+body { font:15px/1.45 Georgia,'Times New Roman',serif; color:var(--text); background:radial-gradient(ellipse at 50% 31%,#403327 0,#221d18 43%,var(--bg) 100%); }
+button { font:inherit; color:inherit; cursor:pointer; touch-action:manipulation; }
+button:focus-visible, details:focus-visible { outline:2px solid var(--bright); outline-offset:3px; }
+main { margin:0 auto; padding:clamp(14px,3vmin,24px) 12px max(23px,env(safe-area-inset-bottom)); width:min(860px,100%); display:grid; gap:12px; justify-items:stretch; }
+header { text-align:center; }
+.kicker { color:var(--brass); letter-spacing:.2em; font:700 11px system-ui,sans-serif; text-transform:uppercase; }
+h1 { margin:4px 0 0; font-weight:400; letter-spacing:.04em; font-size:clamp(26px,4.6vmin,41px); }
+.subtitle { color:var(--muted); margin:4px auto 0; font-size:clamp(12px,2.2vmin,14px); max-width:650px; }
+.mode-tabs { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:6px; }
+.mode-tab { min-height:66px; padding:8px 4px 7px; border:1px solid #65523c; border-radius:5px; background:#201c18; color:var(--muted); font:600 clamp(11px,2.2vmin,13px)/1.2 system-ui,sans-serif; }
+.mode-tab span { display:block; font:700 10px system-ui,sans-serif; color:#927a55; margin-bottom:4px; }
+.mode-tab[aria-selected=true] { border:1px solid var(--brass); background:linear-gradient(160deg,#57432c,#30271d); color:var(--bright); box-shadow:0 0 12px #b88b3f25; }
+.mode-tab[aria-selected=true] span { color:#f3cc86; }
+.settings { display:flex; justify-content:center; align-items:center; gap:9px 15px; flex-wrap:wrap; font:600 12px system-ui,sans-serif; }
+.settings .group { display:flex; align-items:center; gap:5px; }
+.settings .caption { color:var(--muted); margin-right:3px; }
+.small-btn { border:1px solid var(--line); border-radius:4px; background:#27221c; padding:6px 9px; font:600 12px system-ui,sans-serif; min-height:35px; }
+.small-btn[aria-pressed=true] { border-color:var(--brass); background:#51402b; color:var(--bright); }
+.board { position:relative; border:1px solid #806a49; border-radius:10px; background:radial-gradient(ellipse at 50% 44%,#3b362f 0,#24221e 58%,#171613 100%); box-shadow:inset 0 0 0 4px #151512,0 12px 22px #07060577; min-width:0; overflow:hidden; }
+.board:before { position:absolute; inset:8px; border:1px dashed #8a704635; content:''; pointer-events:none; border-radius:6px; }
+.board-title { padding:9px 14px 0; text-align:center; }
+h2 { margin:0; color:var(--bright); font-size:clamp(17px,3vmin,23px); font-weight:400; }
+#mechanic { margin:1px 14px 0; min-height:26px; text-align:center; color:var(--muted); font:12px/1.4 system-ui,sans-serif; }
+.stage { width:min(100%,560px); height:clamp(202px,38dvh,345px); margin:0 auto; padding:0 8px; }
+#visual { display:block; width:100%; height:100%; filter:drop-shadow(0 10px 7px #0008); }
+.status-row { text-align:center; padding:0 15px 8px; }
+#status { min-height:29px; color:var(--bright); font-size:clamp(17px,3.8vmin,23px); }
+#status.good { color:var(--good); }
+#status.bad { color:var(--bad); }
+#detail { color:var(--muted); font:12px/1.5 system-ui,sans-serif; min-height:19px; }
+.meters { display:flex; justify-content:center; align-items:center; gap:5px; flex-wrap:wrap; margin:4px 0 0; }
+.meter { width:24px; height:10px; border-radius:2px; border:1px solid #8e7450; background:#26221d; }
+.meter.complete { background:#a8d9b6; border-color:#d5efc3; box-shadow:0 0 8px #c4ffad33; }
+.meter.current { background:#d9a85d; box-shadow:0 0 9px #e9c57655; }
+.meter-label { color:#b3a38a; font:10px system-ui,sans-serif; margin-right:5px; }
+.action-row { display:flex; justify-content:center; align-items:stretch; gap:10px; flex-wrap:wrap; }
+.big-btn { border:2px solid #d4a968; border-radius:7px; background:linear-gradient(160deg,#665036,#342b21); box-shadow:0 4px 0 #0c0a07; color:var(--bright); padding:10px 20px; min-width:min(59vw,235px); min-height:62px; font-size:clamp(17px,3vmin,21px); user-select:none; -webkit-user-select:none; }
+.big-btn:active, .big-btn.held { box-shadow:0 1px 0 #090805; transform:translateY(3px); background:linear-gradient(160deg,#957046,#564029); }
+.big-btn small { display:block; font:11px system-ui,sans-serif; margin-top:2px; color:#f3d59c; }
+.dual-controls { display:flex; justify-content:center; gap:8px; width:100%; }
+.dual-controls .big-btn { min-width:0; flex:1; max-width:215px; }
+.dual-controls .big-btn:nth-child(2) { border-color:#8cc5c2; background:linear-gradient(160deg,#436060,#1e3534); }
+#restart { min-height:48px; border:1px solid #8b7152; border-radius:5px; background:#29241e; padding:9px 16px; font:600 13px system-ui,sans-serif; }
+.instructions { text-align:center; color:var(--muted); margin:0; font:12px/1.6 system-ui,sans-serif; }
+.instructions strong { color:var(--bright); }
+.instructions span { display:inline-block; margin:0 5px; }
+#diagnostics { border:1px solid #564a39; background:#14120fdd; border-radius:5px; padding:8px 12px; font:11px/1.5 ui-monospace,monospace; }
+#diagnostics summary { cursor:pointer; color:var(--brass); }
+#debug { white-space:pre-wrap; overflow-wrap:anywhere; max-height:235px; overflow:auto; }
+#selfTest { white-space:pre-wrap; color:#a6e4b2; }
+#diagnostics button { margin-top:5px; }
+svg text { font-family:Georgia,'Times New Roman',serif; fill:#ead5a6; text-anchor:middle; }
+@media (max-width:440px) { main { gap:9px; } .stage { height:clamp(196px,33dvh,280px); } .board-title { padding-top:8px; } .mode-tab { min-height:60px; } .dual-controls .big-btn { padding-inline:7px; } }
+@media (max-height:760px) { .stage { height:clamp(188px,31dvh,250px); } main { gap:8px; } }
+@media (prefers-reduced-motion:reduce) { *,*:before,*:after { transition-duration:0s!important; animation-duration:0s!important; } }
+</style>
+</head>
+<body>
+<main>
+  <header><div class="kicker">Hobunji Hollow · Standalone prototypes</div><h1>Four ways to pick a lock</h1><p class="subtitle">Different mechanics, same goal. Try each and decide which feels best on a controller.</p></header>
+  <nav class="mode-tabs" id="modeTabs" aria-label="Lockpicking designs">
+    <button class="mode-tab" type="button" data-mode="hammer" aria-selected="true"><span>01</span>Strike Pins</button>
+    <button class="mode-tab" type="button" data-mode="torque" aria-selected="false"><span>02</span>Spring Tension</button>
+    <button class="mode-tab" type="button" data-mode="dual" aria-selected="false"><span>03</span>Twin Tumblers</button>
+    <button class="mode-tab" type="button" data-mode="echo" aria-selected="false"><span>04</span>Echo Code</button>
+  </nav>
+  <div class="settings"><div class="group"><span class="caption">Difficulty</span><button type="button" class="small-btn" data-difficulty="easy" aria-pressed="false">Easy</button><button type="button" class="small-btn" data-difficulty="normal" aria-pressed="true">Normal</button><button type="button" class="small-btn" data-difficulty="hard" aria-pressed="false">Hard</button></div><button type="button" id="soundToggle" class="small-btn" aria-pressed="true">Sound: On</button></div>
+  <section class="board" aria-label="Interactive lockpicking game"><div class="board-title"><h2 id="modeTitle">Strike Pins</h2><p id="mechanic"></p></div><div class="stage"><svg id="visual" viewBox="0 0 500 310" role="img" aria-label="Animated lock mechanism"></svg></div><div class="status-row"><div id="status" role="status" aria-live="polite">Ready</div><div id="detail"></div><div class="meters" id="meters"></div></div></section>
+  <div class="action-row" id="actions"><button type="button" id="primary" class="big-btn">Start<small>A · Space · Tap</small></button><div id="dualButtons" class="dual-controls" hidden><button type="button" id="innerButton" class="big-btn">Catch Inner<small>LB · Q</small></button><button type="button" id="outerButton" class="big-btn">Catch Outer<small>RB · E</small></button></div><button type="button" id="restart">Restart</button></div>
+  <p class="instructions"><span><strong>Controller:</strong> A = action, LB/RB = twin rings, B = restart, D-pad ←/→ = change game</span><span><strong>Keyboard:</strong> Space, Q/E, R, ←/→ or 1–4</span><span><strong>Touch:</strong> use large buttons</span></p>
+  <details id="diagnostics"><summary>Diagnostics &amp; self-test (mobile-friendly)</summary><pre id="debug"></pre><pre id="selfTest"></pre><button type="button" class="small-btn" id="runTests">Run self-test</button><button type="button" class="small-btn" id="copyDebug">Copy debug</button></details>
+</main>
+<script>
+(() => {
+'use strict';
+const $ = id => document.getElementById(id); // DOM lookup for one-time element caching.
+const ui = { visual:$('visual'), title:$('modeTitle'), mechanic:$('mechanic'), status:$('status'), detail:$('detail'), meters:$('meters'), primary:$('primary'), dual:$('dualButtons'), inner:$('innerButton'), outer:$('outerButton'), restart:$('restart'), debug:$('debug'), test:$('selfTest'), diagnostics:$('diagnostics'), sound:$('soundToggle') }; // UI nodes read by the four independent games.
+const MODES = ['hammer','torque','dual','echo']; // Ordered comparison modes for D-pad and arrow-key switching.
+const LABELS = { hammer:'Strike Pins', torque:'Spring Tension', dual:'Twin Tumblers', echo:'Echo Code' }; // Header/diagnostics labels for each mode.
+const SETTINGS = { easy:{pins:3,hammerTravel:1600,hammerWindow:190,torqueSpeed:.40,torqueWindow:.085,dualSpeed:105,dualWindow:18,dualLimit:4200,echoSteps:5,echoNotes:3,echoBeat:720,echoWindow:220}, normal:{pins:4,hammerTravel:1280,hammerWindow:140,torqueSpeed:.52,torqueWindow:.064,dualSpeed:145,dualWindow:14,dualLimit:3250,echoSteps:6,echoNotes:4,echoBeat:610,echoWindow:170}, hard:{pins:5,hammerTravel:1050,hammerWindow:110,torqueSpeed:.67,torqueWindow:.048,dualSpeed:190,dualWindow:10,dualLimit:2500,echoSteps:7,echoNotes:5,echoBeat:530,echoWindow:135} }; // Shared difficulty presets for independent tuning.
+const game = { mode:'hammer', difficulty:'normal', phase:'ready', elapsed:0, stage:0, misses:0, attempts:0, clock:0, activeDevice:'none', lastInput:'-', lastError:'', model:null, sound:true }; // A single active game prevents background mechanisms and input conflicts.
+const padPrevious = new Map(); // Gamepad-edge history; holding buttons never repeats an action.
+const keysDown = new Set(); // Keyboard-edge history also supports true hold/release on the tension prototype.
+const pointers = new Map(); // Pointer IDs keep touch hold/release balanced when fingers leave the screen.
+let audio = null; // Lazily instantiated on gesture for browsers' autoplay rules.
+let lastFrame = 0; // Clock origin; frame delta is capped when resuming from a hidden tab.
+let nextDebug = 0; // Diagnostic sampling rate limiter so mobile DOM writes stay low.
+const wrap = angle => ((angle % 360) + 360) % 360; // Circular angle normalization for tumblers.
+const circularDistance = (a,b) => ((wrap(a-b)+540)%360)-180; // Signed smallest angular separation for judgment.
+const clamp = (n,min,max) => Math.min(max,Math.max(min,n)); // Shared safe bounds for rendering and time windows.
+const cfg = () => SETTINGS[game.difficulty]; // Read the currently selected difficulty from one authority.
+const random = (a,b) => a + Math.random()*(b-a); // Target placement; results are reflected in the visible mechanism.
+function point(cx,cy,r,angle) { const t=(angle-90)*Math.PI/180; return [cx+Math.cos(t)*r,cy+Math.sin(t)*r]; }
+function arc(cx,cy,r,a,b) { const p=point(cx,cy,r,a),q=point(cx,cy,r,b),delta=b-a; return `M ${p[0].toFixed(2)} ${p[1].toFixed(2)} A ${r} ${r} 0 ${delta>180?1:0} 1 ${q[0].toFixed(2)} ${q[1].toFixed(2)}`; }
+function svgBase(content) { ui.visual.innerHTML=`<defs><radialGradient id="plate"><stop stop-color="#726147"/><stop offset=".7" stop-color="#42372c"/><stop offset="1" stop-color="#1a1714"/></radialGradient><linearGradient id="steel" x1="0" x2="1"><stop stop-color="#5f655f"/><stop offset=".5" stop-color="#b4b2a0"/><stop offset="1" stop-color="#424747"/></linearGradient></defs><rect x="18" y="12" width="464" height="284" rx="21" fill="#211e18" stroke="#9e8151" stroke-width="5"/><rect x="27" y="21" width="446" height="266" rx="17" fill="url(#plate)" stroke="#463628" stroke-width="3"/>${content}`; }
+function message(title,detail='',tone='') { ui.status.textContent=title; ui.status.className=tone; ui.detail.textContent=detail; }
+function beep(freq=430,duration=.09,vol=.09,type='triangle') { if(!game.sound) return; try { const AudioCtx=window.AudioContext||window.webkitAudioContext; if(!AudioCtx)return; if(!audio)audio=new AudioCtx(); if(audio.state==='suspended')audio.resume().catch(()=>{}); const t=audio.currentTime,osc=audio.createOscillator(),gain=audio.createGain(); osc.type=type;osc.frequency.setValueAtTime(freq,t);gain.gain.setValueAtTime(Math.max(.0001,vol),t);gain.gain.exponentialRampToValueAtTime(.0001,t+duration);osc.connect(gain);gain.connect(audio.destination);osc.start(t);osc.stop(t+duration+.01); } catch(e) { game.lastError='Audio: '+e.message; } }
+function vibrate(duration=22) { try { const p=navigator.getGamepads?.();for(const item of p||[]){ if(item?.vibrationActuator?.playEffect){ item.vibrationActuator.playEffect('dual-rumble',{duration,startDelay:0,weakMagnitude:.16,strongMagnitude:.09}).catch(()=>{}); break;} } } catch(_) {} }
+function successFX() { beep(650,.09,.11);beep(960,.11,.06);vibrate(); }
+function missFX() { beep(125,.18,.08,'sawtooth');vibrate(50); }
+function setStageMeter() { const total=cfg().pins; let html='<span class="meter-label">LOCK</span>';for(let i=0;i<total;i++)html+=`<span class="meter${i<game.stage?' complete':i===game.stage?' current':''}" aria-label="${i<game.stage?'Complete':i===game.stage?'Current':'Unfinished'} stage ${i+1}"></span>`;html+=`<span class="meter-label" style="margin-left:10px">MISSES ${game.misses}</span>`;ui.meters.innerHTML=html; }
+function strike(reason) { game.misses++;game.attempts++;missFX();message('Missed the timing',reason,'bad');setStageMeter(); }
+function completeStage() { game.stage++;game.attempts++;successFX();setStageMeter();if(game.stage>=cfg().pins){game.phase='won';message('The lock opens!',`Completed ${LABELS[game.mode]} in ${game.attempts} attempts.`,'good');return true;}return false; }
+function freezeReady() { game.phase='ready';message('Ready to pick', game.mode==='dual'?'Press LB/RB or tap either ring button to begin.':'Press A or tap Start.');ui.primary.firstChild.textContent='Start';ui.primary.classList.remove('held'); }
+const hammer = {
+  // A series of physical pins drops to the strike line. Hit A once as each touches the anvil.
+  reset() { game.model={ arrival:cfg().hammerTravel, pause:0, pinY:50 }; svgBase(`<g id="hammerTracks"></g><rect x="50" y="232" width="400" height="13" rx="3" fill="#171714" stroke="#c3a36c" stroke-width="2"/><rect x="50" y="227" width="400" height="5" fill="#f2d894" opacity=".75"/><rect x="54" y="215" width="392" height="26" fill="#d5efbf" opacity=".07"/><g id="movingPin"><rect x="-16" y="-29" width="32" height="53" rx="5" fill="url(#steel)" stroke="#f8df9b" stroke-width="2"/><path d="M-12 0 H12 M-12 8 H12" stroke="#4b4438" stroke-width="3"/></g><text x="250" y="270" font-size="14">STRIKE EACH PIN ON THE ANVIL</text>`);const tracks=$('hammerTracks');for(let i=0;i<cfg().pins;i++){const x=85+i*(330/Math.max(1,cfg().pins-1));tracks.insertAdjacentHTML('beforeend',`<rect x="${x-23}" y="40" width="46" height="194" rx="7" fill="#1a1b1a" stroke="#746247" stroke-width="3"/><rect x="${x-12}" y="47" width="24" height="176" rx="4" fill="#3b3630"/><text x="${x}" y="33" font-size="17">${i+1}</text>`);} this.prepare(); },
+  prepare() { game.model.arrival=game.elapsed+cfg().hammerTravel;game.model.pause=0; },
+  tick(dt) { if(game.phase!=='playing')return;const m=game.model; if(m.pause>0){m.pause-=dt; if(m.pause<=0)this.prepare();return;} if(game.elapsed>m.arrival+cfg().hammerWindow){strike('A pin struck the anvil before you caught it.');if(game.misses>=3){game.stage=Math.max(0,game.stage-1);game.misses=0;message('One pin slipped!', 'Three misses cost one set pin.','bad');setStageMeter();}m.pause=440;} },
+  primaryDown() { if(game.phase!=='playing'||game.model.pause>0)return;const off=Math.abs(game.elapsed-game.model.arrival);if(off<=cfg().hammerWindow){const won=completeStage();game.model.pause=won?0:480;if(!won)message('Pin caught!',`Next pin: ${game.stage+1} of ${cfg().pins}.`,'good');}else{strike(off>cfg().hammerWindow?'Strike closer to the impact line.':'');if(game.misses>=3){game.stage=Math.max(0,game.stage-1);game.misses=0;setStageMeter();}game.model.pause=430;} },
+  draw() {const m=game.model;if(!m)return;const idx=Math.min(game.stage,cfg().pins-1),x=85+idx*(330/Math.max(1,cfg().pins-1)),until=m.arrival-game.elapsed,progress=clamp(1-until/cfg().hammerTravel,0,1.1),y=60+progress*171;const pin=$('movingPin');pin?.setAttribute('transform',`translate(${x} ${y.toFixed(2)})`);pin?.setAttribute('opacity',game.phase==='won'?'0':'1');const tracks=$('hammerTracks')?.children||[];for(let i=0;i<tracks.length;i+=3){const bar=tracks[i];bar?.setAttribute('stroke',i/3===idx?'#ecd194':'#746247');} },
+};
+const torque = {
+  // Hold to wind, release while the moving pressure indicator is in the narrow release groove.
+  reset() {game.model={ pressure:0,held:false,target:random(.48,.78),cooldown:0 };svgBase(`<circle cx="250" cy="157" r="115" fill="#181916" stroke="#aa8958" stroke-width="15"/><circle cx="250" cy="157" r="97" fill="#4b4133" stroke="#806a4a" stroke-width="3"/><circle cx="250" cy="157" r="74" fill="#24221e" stroke="#c3a170" stroke-width="4"/><g id="torqueTicks"></g><path id="torqueTarget" stroke="#ffe6a8" stroke-width="20" fill="none" stroke-linecap="round"/><path id="torqueSweep" stroke="#b8d9c7" stroke-width="8" fill="none" stroke-linecap="round"/><g id="torqueNeedle"><path d="M250 157 L241 72 L250 54 L259 72 Z" fill="#f5e1a9" stroke="#6c5537" stroke-width="3"/><circle cx="250" cy="157" r="17" fill="#d9b67d" stroke="#37291b" stroke-width="4"/></g><text x="250" y="162" font-size="11">TENSION</text><text id="torquePercent" x="250" y="184" font-size="19">0%</text><text x="250" y="270" font-size="13">HOLD TO WIND  ·  RELEASE IN GOLD</text>`);const ticks=$('torqueTicks');for(let i=0;i<=22;i++){let [x1,y1]=point(250,157,98,220+i*280/22),[x2,y2]=point(250,157,106,220+i*280/22);ticks.insertAdjacentHTML('beforeend',`<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="#c6a77a" stroke-width="2"/>`);} },
+  primaryDown() { if(game.phase!=='playing'||game.model.cooldown>0)return;game.model.held=true; },
+  primaryUp() { const m=game.model;if(!m?.held)return;m.held=false;if(game.phase!=='playing')return;const off=Math.abs(m.pressure-m.target);if(off<=cfg().torqueWindow){const won=completeStage();if(!won){message('Tumbler released!', 'Let the spring relax, then wind again.','good');m.cooldown=380;m.target=random(.47,.8);}}else{strike(m.pressure<m.target?'Released before the notch.':'Held past the notch.');m.cooldown=400;}m.pressure=0; },
+  tick(dt) {const m=game.model;if(game.phase!=='playing')return;if(m.cooldown>0){m.cooldown-=dt;return;}if(!m.held)return;const gain=cfg().torqueSpeed*(dt/1000)*(1+.7*m.pressure);m.pressure+=gain;if(m.pressure>=1){m.held=false;m.pressure=0;m.cooldown=530;strike('The spring over-wound and snapped back.');}},
+  draw() {const m=game.model;if(!m)return;const angle=p=>220+280*p,half=cfg().torqueWindow;$('torqueTarget')?.setAttribute('d',arc(250,157,115,angle(m.target-half),angle(m.target+half)));$('torqueSweep')?.setAttribute('d',arc(250,157,115,220,angle(Math.max(.001,m.pressure))));$('torqueNeedle')?.setAttribute('transform',`rotate(${(angle(m.pressure)).toFixed(2)} 250 157)`);$('torquePercent').textContent=`${Math.round(m.pressure*100)}%`;ui.primary.classList.toggle('held',!!m.held);},
+};
+const dual = {
+  // Independent shoulder-button timing: stop one spinning ring, then catch the other before the first slips.
+  reset() {game.model={ rings:[], firstCatch:-1, pause:0 };svgBase(`<circle cx="250" cy="159" r="123" fill="#1a1e1e" stroke="#c69d61" stroke-width="15"/><circle cx="250" cy="159" r="94" fill="#33362f" stroke="#74614a" stroke-width="3"/><circle cx="250" cy="159" r="80" fill="#1d2929" stroke="#89c0bd" stroke-width="15"/><circle cx="250" cy="159" r="49" fill="#24241f" stroke="#716648" stroke-width="3"/><circle cx="250" cy="159" r="28" fill="#a58e66" stroke="#3a3225" stroke-width="5"/><path id="outerTarget" stroke="#ffe7ad" stroke-width="17" stroke-linecap="round" fill="none"/><path id="innerTarget" stroke="#aaf0ea" stroke-width="17" stroke-linecap="round" fill="none"/><g id="outerMarker"><rect x="244" y="33" width="12" height="27" rx="3" fill="#ffe0a0"/></g><g id="innerMarker"><rect x="244" y="71" width="12" height="21" rx="3" fill="#b8eee8"/></g><text x="250" y="165" font-size="12">LB  ·  RB</text><text id="dualTimer" x="250" y="189" font-size="12"></text><text x="250" y="271" font-size="13">FREEZE BOTH RINGS BEFORE EITHER SLIPS</text>`);this.newStage();},
+  newStage() {const m=game.model;m.firstCatch=-1;m.rings=[{angle:random(0,360),target:random(0,360),speed:cfg().dualSpeed,frozen:false},{angle:random(0,360),target:random(0,360),speed:-cfg().dualSpeed*.79,frozen:false}];},
+  altDown(which) {const m=game.model;if(game.phase!=='playing'||m.pause>0)return;const r=m.rings[which];if(!r||r.frozen)return;const off=Math.abs(circularDistance(r.angle,r.target));if(off>cfg().dualWindow){strike(`The ${which===0?'outer':'inner'} tumbler missed its notch.`);if(game.misses>=3){game.misses=0;game.stage=Math.max(0,game.stage-1);setStageMeter();}return;}r.frozen=true;beep(which===0?520:740,.09,.11);vibrate();if(m.firstCatch<0)m.firstCatch=game.elapsed;if(m.rings.every(ring=>ring.frozen)){const won=completeStage();if(!won){message('Both tumblers caught!', 'The mechanism clicks forward.','good');m.pause=620;}}else message(`${which===0?'Outer':'Inner'} ring caught!`,'Catch the other ring before the first slips.','good'); },
+  tick(dt) {const m=game.model;if(game.phase!=='playing')return;if(m.pause>0){m.pause-=dt;if(m.pause<=0)this.newStage();return;}for(const r of m.rings)if(!r.frozen)r.angle=wrap(r.angle+r.speed*dt/1000);if(m.firstCatch>=0&&game.elapsed-m.firstCatch>cfg().dualLimit){strike('The first ring slipped while you hunted for the second.');this.newStage();}},
+  draw() {const m=game.model;if(!m)return;for(const [i,label] of ['outer','inner'].entries()){const r=m.rings[i];const radius=i===0?123:80;$(`${label}Target`)?.setAttribute('d',arc(250,159,radius,r.target-cfg().dualWindow,r.target+cfg().dualWindow));const needle=$(`${label}Marker`);needle?.setAttribute('transform',`rotate(${r.angle.toFixed(3)} 250 159)`);needle?.setAttribute('opacity',r.frozen?'0.55':'1');}const left=m.firstCatch<0?null:Math.max(0,cfg().dualLimit-(game.elapsed-m.firstCatch));$('dualTimer').textContent=left==null?'':'SLIP IN '+(left/1000).toFixed(1)+'s';},
+};
+const echo = {
+  // Call-and-response code: listen to a pattern, then reproduce the same timed knocks on the replay timeline.
+  reset() {game.model={ phase:'ready',sequence:[],time:0,litStep:-1,playedStep:-1,cursor:0,nextExpected:0,cooldown:0 };svgBase(`<g id="echoSlots"></g><path d="M65 202 H435" stroke="#8d7854" stroke-width="4"/><path d="M65 202 H435" stroke="#dbc292" stroke-width="1" stroke-dasharray="6 6"/><g id="echoCursor"><path d="M0 0 L-10 -15 L10 -15 Z" fill="#ffedae"/><line y1="-16" y2="28" stroke="#fff0b8" stroke-width="4"/></g><circle cx="250" cy="88" r="52" fill="#24231e" stroke="#bba16f" stroke-width="7"/><path d="M221 94 Q250 36 279 94 L265 127 H235 Z" fill="#7b684b" stroke="#f5db9c" stroke-width="3"/><circle id="echoBell" cx="250" cy="91" r="12" fill="#d6bd87"/><text x="250" y="271" font-size="13">LISTEN, THEN COPY THE RHYTHM</text>`);this.prepare();},
+  prepare() {const m=game.model,n=cfg().echoSteps,notes=cfg().echoNotes;const seq=[];while(seq.length<notes){const idx=Math.floor(Math.random()*n);if(!seq.includes(idx))seq.push(idx);}seq.sort((a,b)=>a-b);m.sequence=seq;m.nextExpected=0;m.phase='listen';m.time=0;m.playedStep=-1;m.litStep=-1;m.cursor=0;this.populateSlots();message('Listen to the knock code',`Remember ${notes} knocks. Then repeat them in time.`);},
+  populateSlots() {const slots=$('echoSlots');slots.replaceChildren();const n=cfg().echoSteps;for(let i=0;i<n;i++){const x=65+370*(i+.5)/n;slots.insertAdjacentHTML('beforeend',`<g id="slot${i}"><rect x="${x-15}" y="176" width="30" height="47" rx="5" fill="#2e2923" stroke="#9c845d" stroke-width="2"/><text x="${x}" y="237" font-size="14">${i+1}</text></g>`);} },
+  primaryDown() {const m=game.model;if(game.phase!=='playing'||m.phase!=='repeat')return;const n=m.sequence[m.nextExpected],target=(n+.5)*cfg().echoBeat,off=Math.abs(m.time-target);if(n===undefined)return;if(off<=cfg().echoWindow){m.nextExpected++;beep(620,.09,.12);vibrate();message('Right on the beat!', `${m.nextExpected} of ${m.sequence.length} knocks matched.`,'good');if(m.nextExpected===m.sequence.length){m.phase='settle';m.cooldown=540;const won=completeStage();if(!won)message('Code accepted!', `Mechanism ${game.stage} of ${cfg().pins} released.`,'good');}}else{this.fail('That knock was off the remembered beat.');}},
+  fail(reason) {const m=game.model;strike(reason);m.phase='retry';m.cooldown=900;},
+  tick(dt) {const m=game.model;if(game.phase!=='playing')return;const beat=cfg().echoBeat,steps=cfg().echoSteps;if(m.phase==='retry'||m.phase==='settle'){m.cooldown-=dt;if(m.cooldown<=0&&game.phase==='playing')this.prepare();return;}m.time+=dt;
+    if(m.phase==='listen'){const slot=Math.floor((m.time-beat/2)/beat);if(slot!==m.playedStep&&slot<steps&&slot>=0){m.playedStep=slot;m.litStep=slot;if(m.sequence.includes(slot))beep(510,.14,.12,'sine');else beep(180,.035,.025,'sine');}if(m.time>=steps*beat+400){m.phase='countdown';m.time=0;m.playedStep=-1;m.litStep=-1;message('Your turn soon', 'Two beats of count-in, then copy the knocks.');}}
+    else if(m.phase==='countdown'){const step=Math.floor(m.time/beat);if(step!==m.playedStep&&step<2){m.playedStep=step;beep(320,.05,.04);}if(m.time>=2*beat){m.phase='repeat';m.time=0;m.playedStep=-1;message('Repeat the knock code!', 'Tap exactly when each remembered beat reaches the marker.');}}
+    else if(m.phase==='repeat'){const next=m.sequence[m.nextExpected];if(next!==undefined&&m.time>(next+.5)*beat+cfg().echoWindow){this.fail('You missed a knock in the pattern.');}else if(m.time>steps*beat+beat){this.fail('The code was not completed in time.');}}
+  },
+  draw() {const m=game.model;if(!m)return;const n=cfg().echoSteps,beat=cfg().echoBeat,slot=m.phase==='listen'?m.litStep:-1;for(let i=0;i<n;i++){const el=$('slot'+i);if(!el)continue;const rect=el.firstElementChild;const reveal=m.phase==='listen'&&m.sequence.includes(i)&&slot===i;const matched=(m.phase==='repeat'||m.phase==='settle')&&m.sequence.slice(0,m.nextExpected).includes(i);rect.setAttribute('fill',reveal?'#e6c37c':matched?'#7fac9a':'#2e2923');rect.setAttribute('stroke',reveal?'#fff0bd':matched?'#c2e8bf':'#9c845d');}const show=m.phase==='repeat',progress=clamp(m.time/(n*beat),0,1);$('echoCursor')?.setAttribute('transform',`translate(${65+370*progress} 202)`);$('echoCursor')?.setAttribute('opacity',show?'1':'0');$('echoBell')?.setAttribute('fill',m.phase==='listen'&&slot>=0&&m.sequence.includes(slot)&&m.time%beat<150?'#fff4bd':'#d6bd87');},
+};
+const variants = { hammer, torque, dual, echo }; // Mode dictionary used only for active-game tick/draw/input calls.
+function changeMode(next) {if(!MODES.includes(next))return;if(game.model?.held)variants[game.mode].primaryUp?.();game.mode=next;game.stage=0;game.misses=0;game.attempts=0;game.elapsed=0;game.phase='ready';game.model=null;ui.title.textContent=LABELS[next];ui.mechanic.textContent={hammer:'A single well-timed strike catches each falling pin.',torque:'Hold tension, then release at the precise spring notch.',dual:'Use LB and RB to catch two independently rotating rings.',echo:'Memorize the knock pattern and replay it with perfect timing.'}[next];const isDual=next==='dual';ui.primary.hidden=isDual;ui.dual.hidden=!isDual;ui.primary.firstChild.textContent='Start';ui.primary.querySelector('small').textContent=next==='torque'?'Hold A / Space, then release':'A · Space · Tap';ui.outer.textContent='Catch Outer';ui.outer.insertAdjacentHTML('beforeend','<small>LB · Q</small>');ui.inner.textContent='Catch Inner';ui.inner.insertAdjacentHTML('beforeend','<small>RB · E</small>');document.querySelectorAll('[data-mode]').forEach(el=>el.setAttribute('aria-selected',String(el.dataset.mode===next)));variants[next].reset();freezeReady();setStageMeter();try{const url=new URL(location.href);url.searchParams.set('mode',next);history.replaceState(null,'',url.pathname+url.search+url.hash);}catch(_){} }
+function changeDifficulty(next) {if(!Object.hasOwn(SETTINGS,next))return;game.difficulty=next;document.querySelectorAll('[data-difficulty]').forEach(el=>el.setAttribute('aria-pressed',String(el.dataset.difficulty===next)));changeMode(game.mode);}
+function start() {if(game.phase==='playing')return;if(game.phase==='won'){changeMode(game.mode);}game.phase='playing';game.elapsed=0;game.misses=0;game.stage=0;game.attempts=0;variants[game.mode].reset();setStageMeter();if(game.mode==='echo'){game.model.phase='listen';}else message('Lock engaged',game.mode==='torque'?'Hold, then release in the gold notch.':game.mode==='dual'?'Use LB and RB to catch the rings.':'Tap when the pin reaches the bright anvil.');ui.primary.firstChild.textContent=game.mode==='torque'?'Hold & Release':game.mode==='echo'?'Knock':'Strike';beep(390,.07,.04);}
+function restart() {if(game.model?.held){game.model.held=false;ui.primary.classList.remove('held');}changeMode(game.mode);game.lastInput='Restart';}
+function press(kind,source) {game.lastInput=source+' → '+kind;game.activeDevice=source;if(kind==='restart'){restart();return;}if(kind==='switch-left'||kind==='switch-right'){const idx=MODES.indexOf(game.mode);changeMode(MODES[(idx+(kind==='switch-left'?-1:1)+MODES.length)%MODES.length]);return;}if(kind==='primary'||kind==='outer'||kind==='inner'){if(game.phase!=='playing'){start();if(game.mode!=='torque')return;}if(game.mode==='dual'){if(kind==='outer')dual.altDown(0);else if(kind==='inner')dual.altDown(1);return;}if(kind==='primary')variants[game.mode].primaryDown?.();}}
+function release(kind,source){game.lastInput=source+' ↑ '+kind;if(kind==='primary'&&game.mode==='torque')torque.primaryUp();}
+function setupPointer(button,kind) {button.addEventListener('pointerdown',event=>{if(event.button!==0)return;event.preventDefault();button.setPointerCapture?.(event.pointerId);pointers.set(event.pointerId,kind);press(kind,'touch');});const finish=event=>{if(pointers.get(event.pointerId)!==kind)return;pointers.delete(event.pointerId);release(kind,'touch');};button.addEventListener('pointerup',finish);button.addEventListener('pointercancel',finish);button.addEventListener('lostpointercapture',finish);button.addEventListener('click',event=>{event.preventDefault();if(event.detail===0){press(kind,'accessibility');release(kind,'accessibility');}});}
+setupPointer(ui.primary,'primary');setupPointer(ui.outer,'outer');setupPointer(ui.inner,'inner');setupPointer(ui.restart,'restart');
+document.querySelectorAll('[data-mode]').forEach(el=>el.addEventListener('click',()=>changeMode(el.dataset.mode)));
+document.querySelectorAll('[data-difficulty]').forEach(el=>el.addEventListener('click',()=>changeDifficulty(el.dataset.difficulty)));
+ui.sound.addEventListener('click',()=>{game.sound=!game.sound;ui.sound.textContent=`Sound: ${game.sound?'On':'Off'}`;ui.sound.setAttribute('aria-pressed',String(game.sound));if(game.sound)beep();});
+const keyActions={Space:'primary',Enter:'primary',KeyQ:'outer',KeyE:'inner',KeyR:'restart',ArrowLeft:'switch-left',ArrowRight:'switch-right'}; // Explicit keys avoid browser focus navigation stealing gameplay actions.
+window.addEventListener('keydown',event=>{if(event.target instanceof HTMLInputElement||event.target instanceof HTMLTextAreaElement)return;if(event.code==='KeyD'){ui.diagnostics.open=!ui.diagnostics.open;return;}if(/^Digit[1-4]$/.test(event.code)){changeMode(MODES[Number(event.code.slice(-1))-1]);return;}const kind=keyActions[event.code];if(!kind)return;event.preventDefault();if(keysDown.has(event.code))return;keysDown.add(event.code);press(kind,'keyboard');});
+window.addEventListener('keyup',event=>{const kind=keyActions[event.code];if(!kind)return;keysDown.delete(event.code);release(kind,'keyboard');});
+window.addEventListener('blur',()=>{for(const code of keysDown)release(keyActions[code],'keyboard-blur');keysDown.clear();if(game.mode==='torque'&&game.model?.held)torque.primaryUp();});
+const buttonKind={0:'primary',1:'restart',4:'outer',5:'inner',14:'switch-left',15:'switch-right'}; // Standard Gamepad API button numbers for controller A/B/LB/RB/D-pad.
+function pollGamepads(){try{const pads=navigator.getGamepads?.()||[];let active=null;for(const pad of pads){if(!pad||pad.connected===false)continue;if(!active)active=pad;if([...Object.keys(buttonKind)].some(i=>pad.buttons?.[Number(i)]?.pressed)){active=pad;break;}}const codeNow=new Set();if(active){for(const [index,kind] of Object.entries(buttonKind)){const code=Number(index);if(active.buttons?.[code]?.pressed||Number(active.buttons?.[code]?.value)>0.55)codeNow.add(code);}for(const code of codeNow)if(!padPrevious.has(code))press(buttonKind[code],'controller');for(const code of padPrevious.keys())if(!codeNow.has(code))release(buttonKind[code],'controller');game.activeDevice='controller';}else{for(const code of padPrevious.keys())release(buttonKind[code],'disconnect');}padPrevious.clear();for(const code of codeNow)padPrevious.set(code,true);}catch(e){game.lastError='Gamepad: '+e.message;}}
+function draw() {variants[game.mode].draw?.();}
+function tick(dt) {if(game.phase!=='playing')return;game.elapsed+=dt;variants[game.mode].tick?.(dt);}
+function frame(now) {const dt=lastFrame?clamp(now-lastFrame,0,50):16;lastFrame=now;pollGamepads();tick(dt);draw();if(now>=nextDebug&&ui.diagnostics.open){const m=game.model||{};ui.debug.textContent=JSON.stringify({mode:game.mode,difficulty:game.difficulty,phase:game.phase,stage:game.stage,misses:game.misses,attempts:game.attempts,device:game.activeDevice,lastInput:game.lastInput,controllerButtons:[...padPrevious.keys()],elapsedMs:Math.round(game.elapsed),mechanism:{...m,rings:m.rings?.map(r=>({...r,angle:+r.angle.toFixed(1)}))},lastError:game.lastError},null,2);nextDebug=now+220;}requestAnimationFrame(frame);}
+function advanceForTest(ms) {
+  // Test-only deterministic clock advancement; gameplay still uses the shared browser animation frame.
+  let remaining=clamp(Number(ms)||0,0,30000);
+  while(remaining>0){const slice=Math.min(20,remaining);tick(slice);remaining-=slice;}
+  draw();
+}
+function runTests(){
+  const checks=[]; // Collect mobile-readable assertions instead of relying on a developer console.
+  const check=(name,passed)=>checks.push(`${passed?'PASS':'FAIL'} ${name}`);
+  const before=game.mode, beforeLevel=game.difficulty, beforeSound=game.sound; // Restore the player's selected design and sound preference.
+  game.sound=false;
+  check('Shortest angular wrap',circularDistance(359,1)===-2);
+  check('Angle normalization',wrap(-10)===350);
+  check('Target window inclusion',Math.abs(circularDistance(359,1))<=3);
+  check('Timing window exclusion',Math.abs(400-600)>SETTINGS.normal.hammerWindow);
+  check('All mode implementations present',MODES.every(m=>typeof variants[m].tick==='function'&&typeof variants[m].draw==='function'));
+  check('All three difficulties valid',Object.values(SETTINGS).every(s=>s.pins>1&&s.dualWindow>0&&s.echoWindow<s.echoBeat/2));
+  for(const mode of MODES){
+    changeMode(mode);check(mode+' reset is ready',game.phase==='ready'&&game.stage===0);
+    start();check(mode+' start transitions to playing',game.phase==='playing'&&!!game.model);
+  }
+  changeMode('hammer');start();advanceForTest(cfg().hammerTravel);press('primary','test');
+  check('Strike Pins successful timing seats one pin',game.stage===1);
+  changeMode('torque');start();press('primary','test');
+  while(game.model.pressure<game.model.target&&game.phase==='playing')advanceForTest(10);
+  release('primary','test');check('Spring Tension successful release seats one tumbler',game.stage===1);
+  changeMode('dual');start();game.model.rings[0].angle=game.model.rings[0].target;press('outer','test');
+  game.model.rings[1].angle=game.model.rings[1].target;press('inner','test');
+  check('Twin Tumblers requires and accepts both catches',game.stage===1);
+  changeMode('echo');start();game.model.phase='repeat';game.model.time=0;
+  for(const note of [...game.model.sequence]){
+    advanceForTest((note+.5)*cfg().echoBeat-game.model.time);
+    press('primary','test');
+  }
+  check('Echo Code accepts the copied rhythm',game.stage===1);
+  changeMode(before);game.difficulty=beforeLevel;game.sound=beforeSound;
+  ui.test.textContent=checks.join('\n')+`\n${checks.every(v=>v.startsWith('PASS'))?'ALL CHECKS PASS':'TESTS FAILED'}`;
+  return checks;
+}
+$('runTests').addEventListener('click',runTests);$('copyDebug').addEventListener('click',()=>{const content=ui.debug.textContent+'\n'+ui.test.textContent;const fallback=()=>{ui.test.textContent='Copy unavailable; the text above is selectable.';};try{navigator.clipboard?.writeText(content).catch(fallback)||fallback();}catch(_){fallback();}});
+window.LockpickingLab=Object.freeze({snapshot:()=>({mode:game.mode,phase:game.phase,stage:game.stage,misses:game.misses,elapsed:game.elapsed,difficulty:game.difficulty,model:JSON.parse(JSON.stringify(game.model||{}))}),select:changeMode,difficulty:changeDifficulty,start,press,release,restart,selfTest:runTests,advanceForTest}); // Developer/QA API is optional and never required for play.
+const query=new URLSearchParams(location.search);const initial=query.get('mode');changeMode(MODES.includes(initial)?initial:'hammer');if(query.get('debug')==='1')ui.diagnostics.open=true;if(query.get('selftest')==='1'){ui.diagnostics.open=true;runTests();}requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
