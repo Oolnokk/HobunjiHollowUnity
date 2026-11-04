@@ -155,6 +155,7 @@
           });
           for(const geo of geometries)geo.dispose?.();
           for(const mat of materials)mat.dispose?.();
+          object?.parent?.remove?.(object); // Do not traverse and dispose native mesh resources again with the corridor root.
         }
       }
       for(const control of [...controls])removeControl(control);
@@ -234,7 +235,7 @@
             &&z>=place.originZ-1&&z<=place.originZ+place.depth+1
             ||all.has(key(Math.floor(x),Math.floor(z)))
             ||border.has(key(Math.floor(x),Math.floor(z))));
-        Dev.registerShaftGrid(scope,grid,null,contains);
+        Dev.registerShaftGrid(scope,grid,()=>{},contains); // Legacy clearRuntime calls every shaft-grid dispose() before scene teardown.
         scopes.push(scope);
         const heightGroups=new Map();
         for(const [k,localY] of heights){
