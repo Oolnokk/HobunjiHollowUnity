@@ -164,7 +164,7 @@
     deathsMomentum: {
       id: 'deathsMomentum', displayName: "Death's Momentum", icon: '🗡️', attunementCost: 2,
       category: 'combat', description: 'A credited enemy kill by you or your companion restores 40% of maximum Stamina (or 40 black-Stamina points while Exhausted), but ordinary Stamina regenerates 50% slower.',
-      effects: { stats: { killStaminaRestore: 0.40, ordinaryStaminaRegen: 0.50 } },
+      effects: { stats: { killStaminaRestore: 1.40, ordinaryStaminaRegen: 0.50 } },
     },
     gamblersEye: {
       id: 'gamblersEye', displayName: "The Gambler's Eye", icon: '🎯', attunementCost: 2,
