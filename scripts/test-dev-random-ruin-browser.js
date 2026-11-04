@@ -129,7 +129,7 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
   });
   assert.equal(puzzlePanel.present, true, JSON.stringify(puzzlePanel));
   assert.equal(puzzlePanel.open, false, JSON.stringify(puzzlePanel));
-  assert.equal(puzzlePanel.checkboxCount, 6, JSON.stringify(puzzlePanel)); // glyphObelisk, safePath, ropeSwing, hallwayTraps, lavaBasin, sanctum
+  assert.equal(puzzlePanel.checkboxCount, 7, JSON.stringify(puzzlePanel)); // glyphObelisk, safePath, ropeSwing, ropeChain, hallwayTraps, lavaBasin, sanctum
   assert.equal(puzzlePanel.maxPresent, true, JSON.stringify(puzzlePanel));
   assert.equal(puzzlePanel.darknessEnabled, false, JSON.stringify(puzzlePanel));
   assert.equal(puzzlePanel.darknessSeverity, 100, JSON.stringify(puzzlePanel));
