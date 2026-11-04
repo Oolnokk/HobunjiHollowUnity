@@ -158,6 +158,7 @@
 
   function forGrid(grid, opts = {}) {
     if (!grid) return null;
+    if (opts.rebuild) cache.delete(grid); // Terrain edits rebuild the authoritative climb topology.
     let network = cache.get(grid);
     if (!network) {
       network = build(grid, opts);
