@@ -9,6 +9,40 @@
   const currentScene=()=>window.GridTileAccessors?.getActiveScene?.()||window.Combat?.deps?.getActiveScene?.()||null;
   const currentGrid=()=>window.GridTileAccessors?.getActiveGrid?.()||null;
   const clamp=(n,min,max)=>Math.max(min,Math.min(max,Number(n)||0));
+  function linkedPlinth(state) {
+    return state.feedPlinthId ? window.FurniturePuzzleRuntime?.getNode?.(state.mapId,state.feedPlinthId)||null : null;
+  }
+  function isSeated(state) {
+    const node=linkedPlinth(state),payload=state.payload; // Prevents recall while the timed defense is legitimately in progress.
+    return !!node&&node.userData?.burdenPlatePayload===payload&&!payload.exploded&&payload.group?.parent===node.userData?.burdenPlateAnchor;
+  }
+  function status(mapId,id) {
+    const state=dispensers.get(String(id));
+    if(!state||state.disposed||state.mapId!==String(mapId))return 'missing';
+    const payload=state.payload;
+    if(payload&&!payload.exploded){
+      if(isSeated(state))return 'seated';
+      if(payload.carried)return 'carried';
+      if(payload.keyStatueMounted&&payload.group?.parent===state.anchor)return 'ready';
+      if(payload.group?.parent)return 'recallable'; // A dropped, thrown or misplaced statue is never a permanent softlock.
+    }
+    return 'restoring';
+  }
+  function recall(mapId,id) {
+    const state=dispensers.get(String(id)),current=status(mapId,id);
+    if(!state||current==='missing')return {ok:false,message:'That dispenser is no longer available.'};
+    if(current==='ready')return {ok:false,message:'The Key Statue is already on its dispenser.'};
+    if(current==='carried')return {ok:false,message:'You are already carrying the Key Statue.'};
+    if(current==='seated')return {ok:false,message:'The Key Statue is seated in its plinth. Retrieve it there.'};
+    if(current==='restoring'){
+      if(!state.respawning)queueRespawn(state,'manual-retry');
+      return {ok:true,message:'The dispenser is restoring its Key Statue.'};
+    }
+    if(!window.Shattercasks?.discardBurden?.(state.payload))
+      return {ok:false,message:'The old Key Statue could not be recalled.'};
+    // discardBurden invokes onLost, which releases the old payload and queues exactly one replacement.
+    return {ok:true,message:'The lost Key Statue is returning to the dispenser.'};
+  }
   function tileHazard(mapId,x,z) {
     if(String(mapId)!==currentArea()||!currentGrid())return '';
     const tile=currentGrid()?.[Math.floor(z)]?.[Math.floor(x)];
@@ -43,6 +77,8 @@
   }
   function lostStatue(state,burden,reason='lost') {
     if(!state||state.disposed||state.payload!==burden)return false;
+    const node=linkedPlinth(state);
+    if(node?.userData?.burdenPlatePayload===burden)window.FurniturePuzzleRuntime?.cancelBurdenPlate?.(state.mapId,state.feedPlinthId); // A destroyed statue reverses its plinth, even after a prior completed press.
     state.payload=null;
     state.root.userData.keyStatuePayload=null;
     if(state.respawning)return true;
@@ -97,16 +133,17 @@
     }
     return false; // A Key Statue survives ordinary floor/weapon contact; only a lost object is replaced.
   }
-  function registerDispenser(mapId,id,root,puzzle={}) {
+  function registerDispenser(mapId,id,root,puzzle={},options={}) {
     if(!root?.isObject3D)return false;
     const key=String(id||root.userData?.puzzleInstanceId||root.id);
     const existing=dispensers.get(key);
     if(existing?.root===root){
       existing.puzzle=puzzle;
+      existing.feedPlinthId=String(options.feedPlinthId||existing.feedPlinthId||'');
       getOrCreateAnchor(existing);
       return true;
     }
-    const state={id:key,mapId:String(mapId||currentArea()),root,puzzle,anchor:null,payload:null,respawning:false,disposed:false};
+    const state={id:key,mapId:String(mapId||currentArea()),root,puzzle,feedPlinthId:String(options.feedPlinthId||''),anchor:null,payload:null,respawning:false,disposed:false}; // Each dispenser owns exactly one physical statue, even after recovery.
     dispensers.set(key,state);
     root.userData.keyStatueDispenserId=key;
     getOrCreateAnchor(state);
@@ -149,10 +186,10 @@
   function debugSnapshot() {
     return {latestChange:'Key Statue is mounted from spawn; pickup animates the plinth down; loss respawns the statue low and animates the plinth back up.',
       dispensers:[...dispensers.values()].map(state=>({
-        id:state.id,mapId:state.mapId,taken:!!state.root.userData.keyStatueTaken,
+        id:state.id,mapId:state.mapId,taken:!!state.root.userData.keyStatueTaken,feedPlinthId:state.feedPlinthId||null,status:status(state.mapId,state.id),
         payload:state.payload?.id||null,payloadParent:state.payload?.group?.parent?.name||null,
         progress:Number(state.root.userData.puzzleProgress)||0,respawning:state.respawning,
       }))};
   }
-  window.KeyStatues=Object.freeze({installed:true,registerDispenser,unregisterDispenser,take,tick,debugSnapshot});
+  window.KeyStatues=Object.freeze({installed:true,registerDispenser,unregisterDispenser,take,status,recall,tick,debugSnapshot});
 })();
