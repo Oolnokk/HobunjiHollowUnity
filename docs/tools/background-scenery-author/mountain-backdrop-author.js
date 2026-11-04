@@ -120,6 +120,19 @@
     });
   }
 
+  function displayPositionOffsets(inputIds, rawVector, layout) {
+    const base = layout?.defaultPosition || [0, 0, 0]; // Automatic ridge centers define the origin of all three offset controls.
+    inputIds.forEach((id, axis) => {
+      const input = $(id);
+      if (!input) return;
+      const absolute = rawVector?.[axis];
+      const offset = absolute == null ? 0 : Number(absolute) - base[axis];
+      input.value = Number((Number.isFinite(offset) ? offset : 0).toFixed(3));
+      input.dataset.autoValue = String(base[axis]);
+      input.title = `Offset from automatic world center ${base[axis].toFixed(2)} (clear to restore automatic placement)`;
+    });
+  }
+
   function syncUi() {
     const section = $('mountainBackdropSection');
     if (!section) return;
@@ -130,6 +143,7 @@
     if (!western) return;
 
     const config = ensureConfig();
+    resolvedLayout = Backdrops.resolveLayoutFromSizes(null, activeMap.cols, activeMap.rows, config); // Resolve defaults for the actual loaded map before the 3D preview exists.
     const layer = config.layers[selectedLayer];
     const resolved = currentResolvedLayer();
     if ($('mountainEnabled')) $('mountainEnabled').checked = config.enabled !== false;
@@ -138,12 +152,7 @@
     if ($('mountainAsset')) $('mountainAsset').value = '8 decorative mine rocks';
     if ($('mountainAssetThumb')) $('mountainAssetThumb').style.display = 'none';
 
-    displayVector(
-      ['mountainPosX','mountainPosY','mountainPosZ'],
-      layer.transform.position,
-      resolved?.position,
-      [-(Math.max(activeMap.cols, activeMap.rows) * 0.12), resolved?.height ? resolved.height * 0.5 : 0, activeMap.rows * 0.5]
-    );
+    displayPositionOffsets(['mountainPosX','mountainPosY','mountainPosZ'], layer.transform.position, resolved);
     displayVector(
       ['mountainRotX','mountainRotY','mountainRotZ'],
       layer.transform.rotationDeg,
@@ -160,37 +169,56 @@
     const size = $('mountainResolvedSize');
     if (size) {
       size.textContent = resolved
-        ? `8 rocks · footprint ${resolved.width.toFixed(1)} × ${resolved.height.toFixed(1)} world · final ${(resolved.width * resolved.scale[0]).toFixed(1)} × ${(resolved.height * resolved.scale[1]).toFixed(1)}`
+        ? `8 rocks · X thickness ~${(resolved.width / Backdrops.constants.ROCKS_PER_LAYER * resolved.scale[0]).toFixed(1)} · Y height ~${(resolved.height * resolved.scale[1]).toFixed(1)} · Z length ${(resolved.targetLength * resolved.scale[2]).toFixed(1)} (2× map at scale 1)`
         : '3D preview reports the eight-rock ridge footprint.';
     }
   }
 
-  function readVector(ids) {
-    return ids.map(id => {
-      const value = Number($(id)?.value);
-      return Number.isFinite(value) ? value : 0;
-    });
+  const TRANSFORM_FIELDS = Object.freeze({
+    mountainPosX:['position',0], mountainPosY:['position',1], mountainPosZ:['position',2],
+    mountainRotX:['rotationDeg',0], mountainRotY:['rotationDeg',1], mountainRotZ:['rotationDeg',2],
+    mountainScaleX:['scale',0], mountainScaleY:['scale',1], mountainScaleZ:['scale',2],
+  }); // Maps each edited input to only its own stored axis, preserving unedited automatic coordinates.
+
+  function editTransformAxis(layer, id, rawInput, defaultPosition = [0,0,0]) {
+    const field = TRANSFORM_FIELDS[id];
+    if (!field) return false;
+    const [kind, axis] = field;
+    const raw = String(rawInput ?? '').trim();
+    if (!raw) { // Clearing a field restores only its own axis.
+      layer.transform[kind][axis] = kind === 'position' ? null : kind === 'scale' ? 1 : 0;
+      return true;
+    }
+    const value = Number(raw);
+    if (!Number.isFinite(value) || (kind === 'scale' && value <= 0)) return false;
+    layer.transform[kind][axis] = kind === 'position' ? Number(defaultPosition[axis] || 0) + value : value;
+    return true;
   }
 
-  function commitControls() {
+  function commitControls(event) {
     if (!isWestern()) return;
     const config = ensureConfig();
     const layer = config.layers[selectedLayer];
+    const id = event?.target?.id;
+    if (TRANSFORM_FIELDS[id]) {
+      const baseline = Backdrops.resolveLayoutFromSizes(null, activeMap.cols, activeMap.rows, config)[selectedLayer]?.defaultPosition;
+      if (!editTransformAxis(layer, id, event.target.value, baseline)) {
+        if (event.type === 'change') syncUi();
+        return; // Do not persist intermediate '-' typing or invalid scales.
+      }
+    }
     config.enabled = $('mountainEnabled')?.checked !== false;
     layer.visible = $('mountainVisible')?.checked !== false;
-    layer.transform.position = readVector(['mountainPosX','mountainPosY','mountainPosZ']);
-    layer.transform.rotationDeg = readVector(['mountainRotX','mountainRotY','mountainRotZ']);
-    layer.transform.scale = readVector(['mountainScaleX','mountainScaleY','mountainScaleZ']).map(value => Math.max(0.001, value));
     activeConfig.mountainBackdrops = config;
     activeMap.backgroundScenery = activeMap.backgroundScenery || {};
     activeMap.backgroundScenery.mountainBackdrops = config;
     Backdrops.saveAuthorConfig(config);
 
     const root = activeRoot();
-    if (root) {
-      resolvedLayout = Backdrops.applyAuthorConfigToGroup(root, activeMap.cols, activeMap.rows, config);
-      syncUi();
-    }
+    resolvedLayout = root
+      ? Backdrops.applyAuthorConfigToGroup(root, activeMap.cols, activeMap.rows, config)
+      : Backdrops.resolveLayoutFromSizes(null, activeMap.cols, activeMap.rows, config);
+    if (event?.type !== 'input') syncUi(); // Preserve mobile caret and intermediate number input until change/blur.
     window.dispatchEvent(new CustomEvent('hobunji-western-slope-backdrop-author-change', {
       detail: { config: clone(config), layer: selectedLayer + 1 },
     }));
@@ -291,12 +319,12 @@
         <h2 style="margin:0">Western Slope rock ridges</h2>
         <label class="pill" style="display:flex;gap:5px;align-items:center"><input id="mountainEnabled" type="checkbox" checked> enabled</label>
       </div>
-      <p class="muted" style="margin:6px 0">Each former mountain plane is now a row of eight oversized mine-style rocks. Transforms here apply to the complete ridge and are saved as a browser-local author override plus normal scenery export data.</p>
+      <p class="muted" style="margin:6px 0">Each layer contains eight mine-style rocks. Position controls are offsets from the automatic placement (zero = original position); X is east/west, Y is up, Z runs along the ridge. Scale Z = 1 spans twice the map length. Y scaling keeps the ridge base in place. Changes save locally and in scenery exports.</p>
       <div class="g2">
         <div class="field"><label>Layer</label><select id="mountainLayerSelect"><option value="0">Layer 1 · near</option><option value="1">Layer 2 · middle</option><option value="2">Layer 3 · far</option></select></div>
         <div class="field"><label>Scenery</label><input id="mountainAsset" type="text" readonly value="8 decorative mine rocks"><label><input id="mountainVisible" type="checkbox" checked> Layer visible</label></div>
       </div>
-      <div class="field"><label>Position X / Y / Z</label><div class="g2" style="grid-template-columns:repeat(3,minmax(0,1fr))"><input id="mountainPosX" type="number" step="0.25"><input id="mountainPosY" type="number" step="0.25"><input id="mountainPosZ" type="number" step="0.25"></div></div>
+      <div class="field"><label>Position offset X / Y / Z (world units; clear = auto)</label><div class="g2" style="grid-template-columns:repeat(3,minmax(0,1fr))"><input id="mountainPosX" type="number" step="0.25"><input id="mountainPosY" type="number" step="0.25"><input id="mountainPosZ" type="number" step="0.25"></div></div>
       <div class="field"><label>Rotation X / Y / Z (degrees)</label><div class="g2" style="grid-template-columns:repeat(3,minmax(0,1fr))"><input id="mountainRotX" type="number" step="1"><input id="mountainRotY" type="number" step="1"><input id="mountainRotZ" type="number" step="1"></div></div>
       <div class="field"><label>Scale X / Y / Z</label><div class="g2" style="grid-template-columns:repeat(3,minmax(0,1fr))"><input id="mountainScaleX" type="number" min="0.001" step="0.05"><input id="mountainScaleY" type="number" min="0.001" step="0.05"><input id="mountainScaleZ" type="number" min="0.001" step="0.05"></div></div>
       <div id="mountainResolvedSize" class="muted" style="line-height:1.35;margin:5px 0">Load Western Slope to resolve the rock-ridge footprint.</div>
