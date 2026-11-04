@@ -103,7 +103,7 @@ try{
   assert.equal(native.getState().rooms,8);
   assert.equal(native.getState().hallways,6);
   assert.equal(registered.length,2);
-  assert(registered.every(v=>v.grid.nativeV50),
+  assert(registered.every(v=>Native.isNativeGrid(v.grid)),
     'native floor collision is independent from the existing 2D V50 entry grid');
   assert(nativeRoots.every(root=>root.parent?.name?.startsWith('native-v50-story-')),
     'authentic V50 meshes are transferred intact to their owning physical floors');
