@@ -530,12 +530,12 @@
     if (!def || playerAction) return false;
     const loaded = isLoaded(itemKey);
     const kind = loaded ? 'fire' : 'load';
-    if (kind === 'fire' && def.rangedType !== 'thrown') window.ResourceSystem?.spendStamina?.(deps.player, def.staminaCost, `${def.label} fire`);
+    if (kind === 'fire' && def.rangedType !== 'thrown') window.ResourceSystem?.spendStamina?.(deps.player, def.staminaCost, `${def.label} fire`, { actionKind: 'rangedWeaponFire', abilityId: String(itemKey || 'rangedWeapon') });
     if (kind === 'load') {
       spendRangedLoadStamina(deps.player, itemKey, def);
       setRangedLoadRegenBlocked(deps.player, true);
     }
-    const durationS = kind === 'fire' ? def.fireDurationS : def.reloadDurationS;
+    const durationS = (kind === 'fire' ? def.fireDurationS : def.reloadDurationS) / (window.DoubleEdgedCombatTrinkets?.attackSpeed?.() || 1);
     const pose = poseForAction(def, kind);
     const rawDamageScale = Number(options?.damageScale);
     const damageScale = Number.isFinite(rawDamageScale) ? Math.max(0, Math.min(1, rawDamageScale)) : 1;
@@ -943,7 +943,7 @@
     scene.add(mesh);
 
     const flightStats = projectileFlightStats(def); // Resolves every generic per-weapon flight/persistence stat exactly once at launch.
-    const projectileSpeedPxS = def.speedPxS * flightStats.speedMultiplier; // Per-weapon speed multiplier; legacy definitions still receive the shared 1.15 fallback.
+    const projectileSpeedPxS = def.speedPxS * flightStats.speedMultiplier * (team === 'player' ? (window.DoubleEdgedCombatTrinkets?.modifier?.('rangedProjectileSpeed') || 1) : 1); // Per-weapon speed multiplier; legacy definitions still receive the shared 1.15 fallback.
     const horizSpeedPxS = projectileSpeedPxS * Math.cos(pitch); // Used by the X/Z velocity components below.
     const direction = new THREE.Vector3(
       Math.cos(angle) * Math.cos(pitch),
@@ -981,6 +981,7 @@
       vx: Math.cos(angle) * horizSpeedPxS, vy: Math.sin(angle) * horizSpeedPxS,
       vyWorld: Math.sin(pitch) * (projectileSpeedPxS / deps.TILE),
       projectileSpeedPxS,
+      rangedTrinketDamageMultiplier: team === 'player' ? (window.DoubleEdgedCombatTrinkets?.modifier?.('rangedDamage') || 1) : 1, // Snapshots The Gambler's Eye on launch, when its velocity drawback was applied.
       projectileSpeedMultiplier: flightStats.speedMultiplier,
       dropStartPx: Number.isFinite(flightStats.dropStartTiles) ? flightStats.dropStartTiles * deps.TILE : Infinity,
       projectileDropStartTiles: flightStats.dropStartTiles,
@@ -1424,7 +1425,9 @@
       const c = nearest.creature;
       const healthBefore = Math.max(0, Number(c?.health) || 0); // Used after damage to detect the exact lethal ranged transition even though RangedWeapons owns its own damageCreature reference.
       playProjectileImpactSfx(p, nearest.interval.enter);
-      deps.damageCreature(c, damage, p.prevX, p.prevY, knockbackPxS, { tag: 'sharp', ranged: true, rangedItemKey: p.itemKey, ammoId: p.ammoId, afflictionBonuses: p.afflictionBonuses, footingDamageMultiplier: p.footingDamageMultiplier });
+      // RangedWeapons.init receives separate deps from Combat.init. Use the live Combat damage adapter for player shots so wearable combat modifiers, skill/mastery interceptors, and damage attribution see the same hit. Enemy friendly-fire remains on the original independent callback.
+      const playerDamageCreature = window.Combat?.deps?.damageCreature || deps.damageCreature; // Live player-shot damage route; the bare callback is a safe fallback during isolated module tests.
+      playerDamageCreature(c, damage, p.prevX, p.prevY, knockbackPxS, { tag: 'sharp', ranged: true, rangedItemKey: p.itemKey, ammoId: p.ammoId, attacker: deps.player, rangedTrinketDamageMultiplier: p.rangedTrinketDamageMultiplier, afflictionBonuses: p.afflictionBonuses, footingDamageMultiplier: p.footingDamageMultiplier });
       applySpecialAmmoDebuff(c, p.specialAmmoId);
       const killed = healthBefore > 0 && Math.max(0, Number(c?.health) || 0) <= 0; // Used to route mastery only on kills, matching mastery-policy's combat progression contract.
       const masteryPolicy = window.HobunjiMasteryPolicy; // Used to bypass the absent production awardRangedMastery callback while retaining it as a compatibility fallback.

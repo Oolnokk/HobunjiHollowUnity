@@ -180,8 +180,8 @@
       // then slows this swing's own windup/strike/return down instead,
       // same as the source demo's "the same multiplier slows attack
       // cooldown" rule.
-      window.ResourceSystem?.spendStamina(deps.player, (step.staminaCost * (1 + (effects.stats.staminaCostMul || 0)) / shapeStats.efficiency), step.name);
-      const timeScale = 1 / ((window.ResourceSystem?.getExhaustionSpeed(deps.player) ?? 1) * shapeStats.speed);
+      window.ResourceSystem?.spendStamina(deps.player, (step.staminaCost * (1 + (effects.stats.staminaCostMul || 0)) / shapeStats.efficiency), step.name, { actionKind: 'combatCombo', abilityId: id, heavy: !!step.heavy });
+      const timeScale = 1 / ((window.ResourceSystem?.getExhaustionSpeed(deps.player) ?? 1) * (shapeStats.speed * (window.DoubleEdgedCombatTrinkets?.attackSpeed?.() || 1)));
       const windupS = step.windupS * timeScale;
       const strikeS = step.strikeS * timeScale;
       const returnS = (step.returnS || 0) * timeScale;
@@ -221,7 +221,7 @@
         strikeFrac: (windupS + strikeS) / totalVisual,
         power: 1, // poseFor already applied the editor's power rule to this pose.
         pose: comboStepPose(id, step),
-        holdS: (step.holdS || 0) / shapeStats.speed,
+        holdS: (step.holdS || 0) / (shapeStats.speed * (window.DoubleEdgedCombatTrinkets?.attackSpeed?.() || 1)),
         afflictionIds: Object.keys(attackAfflictions),
         afflictions: attackAfflictions,
         coneRangePx: rangePx,

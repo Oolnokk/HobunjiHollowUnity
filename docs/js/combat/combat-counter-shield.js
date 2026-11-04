@@ -701,7 +701,7 @@
     function triggerCounter(effects) {
       const t = now();
       const shapeStats = (window.WeaponShapeStats?.current?.() || { power: 1, speed: 1, range: 1, efficiency: 1 }); // Separate counter lockout must follow the visual attack tempo.
-      const cooldownS = COUNTER_COOLDOWN_S * (1 + (effects.stats.cooldownMul || 0)) / shapeStats.speed;
+      const cooldownS = COUNTER_COOLDOWN_S * (1 + (effects.stats.cooldownMul || 0)) / (shapeStats.speed * (window.DoubleEdgedCombatTrinkets?.attackSpeed?.() || 1));
       if (t - lastCounterAt < cooldownS) return;
       const deps = window.Combat.deps;
       if (window.Combat.isStaggered(deps.player)) return;
@@ -727,24 +727,24 @@
       const knockbackPxS = (attackContext.knockbackPxS ?? baseKnockbackPxS) * (attackContext.modifiers?.knockback || 1);
       const attackAfflictions = window.CombatAttackEvents?.scaleAfflictions?.(attackContext.afflictionBonuses || effects.afflictions, attackContext.modifiers?.affliction || 1)
         || effects.afflictions;
-      const counterDurationS = (COUNTER_WINDUP_S + COUNTER_STRIKE_S) / shapeStats.speed;
+      const counterDurationS = (COUNTER_WINDUP_S + COUNTER_STRIKE_S) / (shapeStats.speed * (window.DoubleEdgedCombatTrinkets?.attackSpeed?.() || 1));
 
       deps.triggerWeaponSwingVisual(counterDurationS, {
         anim: 'thrust',
-        windupFrac: COUNTER_WINDUP_S / counterDurationS,
+        windupFrac: COUNTER_WINDUP_S / Math.max(0.001, COUNTER_WINDUP_S + COUNTER_STRIKE_S), // Preserve the authored windup fraction when Bloodrush shortens both phases equally.
         strikeFrac: 1,
-        holdS: COUNTER_HOLD_S / shapeStats.speed,
+        holdS: COUNTER_HOLD_S / (shapeStats.speed * (window.DoubleEdgedCombatTrinkets?.attackSpeed?.() || 1)),
         afflictionIds: Object.keys(attackAfflictions),
         coneRangePx: rangePx,
         coneHalfConeRad: halfConeRad,
         coneAngle: deps.player.angle,
       });
       const counterReturnTailS = Math.max(0.12, counterDurationS * 0.35);
-      reassertBlockAt = now() + counterDurationS + counterReturnTailS + COUNTER_HOLD_S / shapeStats.speed;
+      reassertBlockAt = now() + counterDurationS + counterReturnTailS + COUNTER_HOLD_S / (shapeStats.speed * (window.DoubleEdgedCombatTrinkets?.attackSpeed?.() || 1));
 
       window.Combat.beginStagedAction({
-        windupS: COUNTER_WINDUP_S / shapeStats.speed,
-        strikeS: COUNTER_STRIKE_S / shapeStats.speed,
+        windupS: COUNTER_WINDUP_S / (shapeStats.speed * (window.DoubleEdgedCombatTrinkets?.attackSpeed?.() || 1)),
+        strikeS: COUNTER_STRIKE_S / (shapeStats.speed * (window.DoubleEdgedCombatTrinkets?.attackSpeed?.() || 1)),
         recoverS: 0,
         onStrike: () => {
           deps.clearVegetationInAttackCone?.(
