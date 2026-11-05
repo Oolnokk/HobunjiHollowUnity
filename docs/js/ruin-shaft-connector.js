@@ -52,7 +52,9 @@
     buildWalls(wallsX,new THREE.BoxGeometry(1,2.3,.12),'ruin-corridor-north-south-walls');
     buildWalls(wallsZ,new THREE.BoxGeometry(.12,2.3,1),'ruin-corridor-east-west-walls');
     parent.add(group);
-    return ()=>{group.parent?.remove(group);group.traverse(node=>node.geometry?.dispose?.());floorMat.dispose();wallMat.dispose();};
+    return ()=>{group.parent?.remove(group);group.traverse(node=>node.geometry?.dispose?.());
+      const textures=new Set([floorMat.map,wallMat.map].filter(Boolean)); // Shared clones must be released once after their owning corridor materials.
+      floorMat.dispose();wallMat.dispose();textures.forEach(texture=>texture.dispose?.());};
   }
   function connect({rec,ruin,seed,meta,pad=2,tileScale=2,THREE,makeTile,DynamicSurfaces:DS,ShaftHub,ClimbSurfaces,DevRandomRuin,TileOccupancy,RuinLayerPlan,RuinShaftCorridor,RuinLayerPlayable,RuinLayerChallenges,RuinLayerDefense,RuinV50NativeFloors,preplanned=null,nativeFloors=[],prepareMaterials=null,CellGrid3D,getPlayerPosition,getPlayerY,showToast,onStateChange}={}){
     if(!rec||!ruin||!meta||!THREE||!DS||!ShaftHub||!RuinLayerPlan||!RuinShaftCorridor||!RuinLayerPlayable||!RuinLayerChallenges||!RuinLayerDefense||!CellGrid3D||preplanned?.nativeFloorCount&&!RuinV50NativeFloors||!makeTile)
