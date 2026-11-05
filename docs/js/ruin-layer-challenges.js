@@ -7,7 +7,7 @@
   else root.RuinLayerChallenges=api;
 })(typeof self!=='undefined'?self:globalThis,function(root){
   'use strict';
-  const TYPES=Object.freeze(['pressurePlate','glyphObelisk','ceilingRailTargets','melodyEcho','dungeonFire','ropeChain','statueDefense']);
+  const TYPES=Object.freeze(['pressurePlate','glyphObelisk','ceilingRailTargets','melodyEcho','dungeonFire','ropeChain','statueDefense','timedMelody']);
   const boneTextures=new Map(); // Shared Scratchbone numeral textures for every generated melody decal.
   function melodyFor(id){
     let seed=2166136261; // Deterministic FNV hash; the same generated chamber always has the same note sequence.
@@ -62,6 +62,7 @@
     const events=options.events||root; // Reuses the standard hobunji-ruin-melody-result event, not a new music input bridge.
     let linkDisposers=[]; // Disposers are returned by the existing modular target hit registry.
     let melodyListener=null; // Removed on the same lifecycle as this authored chamber's other resources.
+    let timedNoteListener=null; // A timed exterior-door challenge listens to real player notes, never the ruin's echo-result messages.
     let fireTargetId=null; // Registered only when the correct ruin's projectile runtime is live; removed on teardown.
     let fireControl=null; // This chamber removes its fire-source interaction when disposed, including on partial mounts.
     let ropeChain=null; // Native V50 rope controller owns all rope physics and checkpoint updates after registration.
@@ -180,6 +181,71 @@
         }
       };
       options.addControl?.(fireControl);
+    }else if(kind==='timedMelody'){
+      // Cliff-door score: visible Scratchbone notation on a stone gate, no audible example.
+      // The generated score's beat clock advances only while the player stays on the large plate.
+      const composer=options.puzzleCaveMelody||root.PuzzleCaveMelody; // One generator/judge for both exterior and interior puzzle cave doors.
+      if(!composer?.generate||!composer?.createSession)throw new Error('PuzzleCaveMelody is not installed.');
+      const song=composer.generate(id,options.songOptions||{}); // The cave's stable ID fixes the tune and reward tier on reload.
+      const plate=body('puzzle-cave-music-plate-'+id,
+        new THREE.CylinderGeometry(1.18,1.18,.15,32),plateMat,cx,y+.08,cz-1.6);
+      rec.plate=plate;rec.song=song;rec.attempts=0;rec.lastDown=false;rec.musicOpened=false;rec.musicClosing=0;
+      const gate=body('puzzle-cave-stone-door-'+id,
+        new THREE.BoxGeometry(4.7,3.4,.32),stone,cx,y+1.75,room.z+room.d-1.05);
+      const backdrop=body('puzzle-cave-door-darkness-'+id,
+        new THREE.BoxGeometry(5.05,3.65,.025),basic(0x050404),cx,y+1.82,room.z+room.d-.84);
+      gate.userData.puzzleCaveDoor=true;backdrop.userData.puzzleCaveBackdrop=true;
+      rec.door=gate;rec.glyphs=[];
+      const columns=Math.min(8,song.notes.length),rows=Math.ceil(song.notes.length/columns);
+      for(let i=0;i<song.notes.length;i++){
+        const note=song.notes[i],number=note.index+1;
+        let texture=boneTextures.get(number);
+        if(!texture&&THREE.TextureLoader){
+          texture=new THREE.TextureLoader().load('assets/hud/scratchbone'+number+'.png');
+          if(THREE.SRGBColorSpace)texture.colorSpace=THREE.SRGBColorSpace;
+          boneTextures.set(number,texture);
+        }
+        const glyphMat=texture?new THREE.MeshBasicMaterial({
+          map:texture,color:0xc6baab,transparent:true,depthWrite:false,side:THREE.DoubleSide
+        }):basic(0xc6baab);
+        if(texture)materials.push(glyphMat);
+        const glyph=new THREE.Mesh(new THREE.PlaneGeometry(.43,.48),glyphMat);
+        glyph.name='puzzle-cave-timed-note-'+i;
+        glyph.position.set((i%columns-(columns-1)/2)*.53,
+          .59-(Math.floor(i/columns)-(rows-1)/2)*.61,-.17);
+        glyph.userData.puzzleCaveNote={index:note.index,duration:note.lengthTicks};
+        gate.add(glyph);owned.push(glyph);rec.glyphs.push(glyph);
+      }
+      const baseY=gate.position.y; // Door opening lifts the same slab and its inscriptions, leaving the black aperture fixed.
+      rec.animate=dt=>{
+        if(!rec.solved)return;
+        rec.doorRise=Math.min(1,(rec.doorRise||0)+Math.max(0,Number(dt)||0)/.85);
+        gate.position.y=baseY+3.6*rec.doorRise;
+        if(rec.musicClosing>0){
+          rec.musicClosing=Math.max(0,rec.musicClosing-Math.max(0,Number(dt)||0));
+          if(rec.musicClosing===0&&rec.musicOpened){music?.close?.();rec.musicOpened=false;}
+        }
+      };
+      rec.session=composer.createSession(song,{
+        onSolved:()=>{
+          rec.plate.material=hit;
+          rec.musicClosing=.48; // Allow the last played flute note to sound before the overlay closes.
+          complete();
+        },
+        onChanged:snapshot=>{
+          for(let i=0;i<rec.glyphs.length;i++){
+            const material=rec.glyphs[i].material;
+            const color=i===snapshot.activeIndex?0xffda70:0xc6baab;
+            material.color?.setHex?.(color); // One glyph glows during its full written duration; silence means none glows.
+          }
+          rec.melodyState=snapshot; // Exposed in the existing mobile ruin diagnostics.
+        },
+      });
+      timedNoteListener=event=>{
+        if(rec.disposed||rec.solved||!isActive()||options.area&&event?.detail?.area!==options.area)return;
+        rec.session.note(event?.detail?.noteIndex);
+      };
+      events?.addEventListener?.('hobunji-kurraya-puzzle-note',timedNoteListener);
     }else if(kind==='melodyEcho'){
       // This is the existing melody-echo mini-game: stepping onto the bronze
       // plate plays the generated phrase; step off/on to hear it again, then
@@ -245,6 +311,20 @@
           &&Math.hypot(player.x-cx,player.z-cz)<1.15;
         rec.elapsed=standing?rec.elapsed+Math.min(.05,Math.max(0,dt)):0;
         if(rec.elapsed>=rec.requiredSeconds){rec.plate.material=hit;complete();}
+      }
+      if(kind==='timedMelody'){
+        const down=!rec.solved&&isActive()&&player&&Number.isFinite(currentY)&&Math.abs(currentY-y)<.75
+          &&Math.hypot(player.x-cx,player.z-(cz-1.6))<=1.18;
+        rec.session.step(dt,down);
+        if(down&&!rec.lastDown){
+          rec.musicOpened=!!music?.beginPlayerSession?.(); // Native flute instrument, including mobile/controller bindings.
+          if(rec.musicOpened){rec.attempts++;options.onMusicStart?.(rec);}
+          else options.onMusicUnavailable?.(rec);
+        }
+        if(!down&&rec.lastDown&&rec.musicOpened&&!rec.solved){
+          music?.close?.();rec.musicOpened=false;
+        }
+        rec.lastDown=!!down;
       }
       if(kind==='melodyEcho'&&!rec.solved){
         const down=isActive()&&player&&Number.isFinite(currentY)&&Math.abs(currentY-y)<.75
@@ -314,6 +394,8 @@
       if(fireControl)options.removeControl?.(fireControl);
       if(ropeChain)bus?.removeExternalRopeChain?.(ropeChain);
       if(melodyListener)events?.removeEventListener?.('hobunji-ruin-melody-result',melodyListener);
+      if(timedNoteListener)events?.removeEventListener?.('hobunji-kurraya-puzzle-note',timedNoteListener);
+      if(rec.musicOpened)music?.close?.();
       group.parent?.remove(group);
       for(const m of owned)m.geometry?.dispose?.();
       for(const mat of materials)mat.dispose?.();
