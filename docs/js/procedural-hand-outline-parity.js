@@ -134,6 +134,7 @@
     markHeldXray(mesh, rigState, side);
     meshRigStates.set(mesh, rigState); // Overlay scissor prep uses the same rig owner as the visible hand callback.
     if (mesh.userData?.__hobunjiHandOutlineParity) return false;
+    if (global.DevTestingSwitchbox?.flags?.noHandOutlineMatrixParity) return false; // Keep held-overlay tagging above, omit draw-time matrix hooks.
 
     const previousBefore = typeof mesh.onBeforeRender === 'function' ? mesh.onBeforeRender : null;
     const previousAfter = typeof mesh.onAfterRender === 'function' ? mesh.onAfterRender : null;
