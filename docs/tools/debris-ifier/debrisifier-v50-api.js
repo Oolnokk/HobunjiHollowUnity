@@ -215,6 +215,7 @@
     await selectPieceSet(options.pieceSet);
     restorePreviewRoots();
     await loadRepoFurnitureLibrary();
+    window.__devRuinSingleRoomPreset = options.singleRoom === true && ['medium','large','veryLarge'].includes(options.roomPreset) ? options.roomPreset : null; // Standalone Rope Chain uses a reachable large V50 chamber; statue defense keeps vast geometry.
     window.__devRuinSingleRoomLarge = options.singleRoom === true && options.roomPreset === 'veryLarge'; // Root preview opts into the generator's existing vast chamber preset.
     window.__devRuinSingleRoom = options.singleRoom === true; // Explicit root-author preview option; every ordinary generation restores the normal minimum.
 
