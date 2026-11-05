@@ -160,6 +160,7 @@
   const AFFLICTION_LABEL = {
     bleedingHealth: 'Bleeding Health', woundedStamina: 'Wounded Stamina', poisonedHealth: 'Poisoned Health', infectedStamina: 'Infected Stamina',
     bruisedHealth: 'Bruised Health', windedStamina: 'Winded Stamina', congealedHealth: 'Congealed Health', shatteredStamina: 'Shattered Stamina',
+    scentMarkedHealth: 'Scent-marked Health',
   };
 
   function quickDebuff(id, label, desc, durationS = 12) {
@@ -204,6 +205,11 @@
     if (isBlunt) for (const row of tree) row.push(
       quickDebuff('knockdown', 'Knockdown', 'A successful Quick Attack condition bonus knocks the target prone for 1 second. Assign at multiple mastery levels to add 1 second per level.', 1)
     ); // Append only after built-in choices: existing save indexes (especially rank-three Exposed/Sapped/Unsteady) never shift.
+    for (const row of tree) row.push({
+      label: 'Scent Brand',
+      desc: 'A successful Quick Attack condition bonus adds Scent-marked Health. Animal attacks consume it for bonus damage and hostile animals prioritize marked opponents.',
+      quickBonusAfflictions: { scentMarkedHealth: 0.55 },
+    }); // Always append after old choices, including Blunt Knockdown; scroll IDs and historical save indexes stay stable.
     return tree;
   }
 

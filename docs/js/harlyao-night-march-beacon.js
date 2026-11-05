@@ -135,6 +135,7 @@
   install();
   window.Ghostify?.registerGlowSource?.(() => marker && targetState() ? {
     x: marker.x, y: marker.y + 5, z: marker.z, radiusTiles: 5, intensity: 0.85,
+    keepVisibleAtDistance: true, // Deliberate directional beacon stays visible at long range; ordinary wilderness light sources do not.
     color: config?.visuals?.beaconGlowColor || '#b0f0ff',
   } : null); // Reuses the existing darkness-mask owner; the beacon itself is a real 3D object.
 })();

@@ -7077,7 +7077,7 @@
           // humanoid a live actor target and zeroes its player aggro; chase,
           // leash and sight below must follow that actor, not the player.
           const chunkCombatTarget = c.isBandit && c._chunkCombatTarget?.health > 0 && c._chunkCombatTarget.areaId === c.areaId ? c._chunkCombatTarget : null;
-          const targetPlayer = chunkCombatTarget || c.targetPlayer || nearestPlayer(c.x, c.y);
+          let targetPlayer = chunkCombatTarget || c.targetPlayer || nearestPlayer(c.x, c.y); // Scent priority can change this frame's active chase target before movement/attack.
           if (window.ClimbSystem?.updateBranchDefender?.(c, entityDt, targetPlayer)) continue;
           // Attackers scale cliffs after a target that climbed away from them
           // (js/creature-cliff-climb.js); the scripted climb owns position.
@@ -7088,8 +7088,8 @@
           // entirely this frame" escape hatch, gated on its own per-creature
           // marker so it never touches the Nestmother's branch-defend flow.
           if (c.onBranch && window.HobunjiCloudForestWildlife?.updateBranchDweller?.(c, entityDt)) continue;
-          const dxp = targetPlayer.x - c.x, dyp = targetPlayer.y - c.y;
-          const distToPlayer = Math.hypot(dxp, dyp);
+          let dxp = targetPlayer.x - c.x, dyp = targetPlayer.y - c.y; // Refreshed when scent chooses a different player in this same AI tick.
+          let distToPlayer = Math.hypot(dxp, dyp);
           const distFromHome = Math.hypot(c.x - c.homeX, c.y - c.homeY);
           const visuallyLodSleeping = updateWildlifeVisualLod(c, distToPlayer / TILE); // Rechecks after target selection before choosing the resource cadence.
           if (!tickCreatureResources(c, entityDt, visuallyLodSleeping)) continue;
@@ -7152,6 +7152,16 @@
             beginEnemySearch(c, targetPlayer);
           }
           if (c.state === 'return' && distFromHome < TILE * 0.6) c.state = 'idle';
+          // Scent-marked opponents take priority without bypassing wild animals' existing
+          // aggro, leash, perception or attack-commitment rules.
+          window.AnimalScentTargeting?.prioritizeWild?.(
+            c, players, companionObjects, currentArea, opponent => enemyCanSeeTarget(c, opponent, def.aggroRangePx), LEASH_REENTER_FRAC
+          );
+          if (c.state === 'chase' && c.targetPlayer && c.targetPlayer !== targetPlayer) {
+            targetPlayer = c.targetPlayer; // The chosen scent opponent must own movement, alignment and strikes immediately.
+            dxp = targetPlayer.x - c.x; dyp = targetPlayer.y - c.y;
+            distToPlayer = Math.hypot(dxp, dyp);
+          }
           if (window.VoorgAssRearKick?.isHoldingKickPose?.(c)) {
             c.state = 'chase'; // Preserve the already-fired rear-kick freeze through the one-second impact pose even if its target died or fled outside the leash.
           }
@@ -8808,6 +8818,11 @@
               }
             }
           }
+          if (isBanditCompanion) {
+            target = window.AnimalScentTargeting?.prioritizeEnemyCompanion?.(
+              c, master, player, companionObjects, currentArea, ALERT_RANGE_PX, target
+            ) || target; // Enemy pets focus marked opponents until the mark has been spent.
+          }
           // Sicced (weapon Flourish, js/combat/combat-enchantments.js) makes
           // one living marked enemy the player companion's exclusive target,
           // overriding the proximity pick above until no Sicced enemy lives.
@@ -8961,7 +8976,7 @@
                         strikeS: BITE_TELEGRAPH_STRIKE_S,
                         onStrike: () => {
                           if (target.health > 0 && Math.hypot(target.x - c.x, target.y - c.y) <= def.attackRangePx) {
-                            const damageOptions = { tag: def.attackTag || 'sharp', afflictionBonuses: window.ResourceSystem?.afflictionBonusesForTag(def.attackTag) }; // Used by either faction's fallback bite damage route.
+                            const damageOptions = { tag: def.attackTag || 'sharp', afflictionBonuses: window.ResourceSystem?.afflictionBonusesForTag(def.attackTag), attacker: c }; // Fallback animal bites retain their attacker identity for scent spending and debuff attribution.
                             if (target === player) damagePlayer(def.attackDamage, c.x, c.y, COMPANION_BITE_KNOCKBACK_PX_S, damageOptions);
                             else if (window.CompanionOffense) window.CompanionOffense.damageCreature(damageCreature, c, target, def.attackDamage, c.x, c.y, COMPANION_BITE_KNOCKBACK_PX_S, damageOptions); // Shared Whistle/Sicced companion empowerment (js/combat/companion-offense.js).
                             else damageCreature(target, def.attackDamage, c.x, c.y, COMPANION_BITE_KNOCKBACK_PX_S, damageOptions);

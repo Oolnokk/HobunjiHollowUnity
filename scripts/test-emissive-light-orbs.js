@@ -72,6 +72,21 @@ assert.deepEqual(api.collect(scene), [eye], 'only emissive lights in the active 
   assert.equal(api.drawOrbs(ctx, off, [eye], 1000), 0, 'invisible projections are skipped');
 }
 
+// The runtime canvas sits above darkness, so it must explicitly use the shared outdoor fade.
+{
+  const { ctx } = recorder();
+  assert.equal(api.drawOrbs(ctx, projection, [eye], 1000, { visibilityAt: () => 0 }), 0,
+    'fully distant emissive orbs cannot survive above the night overlay');
+}
+{
+  const { ctx, calls } = recorder();
+  assert.equal(api.drawOrbs(ctx, projection, [eye], 1000, { visibilityAt: () => 0.5 }), 1,
+    'orbs transition gradually rather than popping as they approach the player');
+  assert.equal(calls.arcs, 2, 'the faded orb preserves its existing core/halo structure');
+}
+assert.match(read('docs/js/emissive-light-orbs.js'), /visibilityAt = global\.CloudForestFog\?\.outdoorLightVisibilityAt/,
+  'the live topmost canvas must supply the same visibility policy as the world lighting layer');
+
 // Wiring.
 assert.match(read('docs/js/png-plane-avatar.js'), /light\.userData\.emissiveOrb = \{ radius:/, 'the mask glow light is flagged emissive (its fake-light aura is unchanged)');
 assert.match(read('docs/js/weather-fx.js'), /getProjection: \(\) => deps/, 'WeatherFX exposes its projection to layers above the lighting canvas');

@@ -84,6 +84,7 @@
     { id: 'bruisedHealth', label: 'Bruised Health', desc: 'Each bolt applies a small amount of Bruised Health.', afflictionId: 'bruisedHealth' },
     { id: 'shatteredStamina', label: 'Shattered Stamina', desc: 'Each bolt applies a small amount of Shattered Stamina.', afflictionId: 'shatteredStamina' },
     { id: 'poisonedHealth', label: 'Poisoned Health', desc: 'Each bolt applies a small amount of Poisoned Health.', afflictionId: 'poisonedHealth' },
+    { id: 'scentMarkedHealth', label: 'Scent-marked Health', desc: 'B\'shuakauitl darts scent-mark opponents for wild animals and enemy companions to hunt; their attacks consume the mark for bonus Health damage.', afflictionId: 'scentMarkedHealth', onlyRangedType: 'blowgun' },
     { id: 'knockback', label: 'Knockback Boost', desc: 'Bolts deal 25% more knockback.', knockbackMul: 0.25 },
   ]);
   const SPECIAL_AMMO_TYPES = Object.freeze({
@@ -211,7 +212,7 @@
 
   function setBasicEffect(itemKey, rank, effectId) {
     if (![1, 3, 5].includes(Number(rank)) || rangedMastery(itemKey) < Number(rank)) return false;
-    if (!BASIC_AMMO_EFFECTS.some(effect => effect.id === effectId)) return false;
+    if (!BASIC_AMMO_EFFECTS.some(effect => effect.id === effectId && (!effect.onlyRangedType || defFor(itemKey)?.rangedType === effect.onlyRangedType))) return false;
     ammoLoadout(itemKey).basicEffects[rank] = effectId;
     notifyAmmoChanged();
     return true;
@@ -302,7 +303,7 @@
     for (const rank of [1, 3, 5]) {
       if (mastery < rank) continue;
       const effect = BASIC_AMMO_EFFECTS.find(entry => entry.id === loadout.basicEffects[rank]);
-      if (effect?.afflictionId) afflictionBonuses[effect.afflictionId] = (afflictionBonuses[effect.afflictionId] || 0) + 0.15;
+      if (effect?.afflictionId && (!effect.onlyRangedType || defFor(itemKey)?.rangedType === effect.onlyRangedType)) afflictionBonuses[effect.afflictionId] = (afflictionBonuses[effect.afflictionId] || 0) + 0.15; // Invalid old loadouts cannot leak blowgun-only scent onto other weapon types.
       knockbackMul += effect?.knockbackMul || 0;
     }
     return { ammoId: 'basic', afflictionBonuses, knockbackMul, footingDamageMultiplier: 0 };
