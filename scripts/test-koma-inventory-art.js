@@ -45,6 +45,12 @@ assert.equal(catalog.applyAll({ ITEM_DEFS: definitions, inventoryItems }), 2);
 assert.equal(definitions.combatManualBlinkDodge.spriteMode, 'layered-scroll:7cff4f');
 assert.equal(inventoryItems[0].spriteIcon, 'scroll.png');
 assert.equal(inventoryItems[1].spriteIcon, 'ore.png');
+const tierDefs = { techniqueScrollTier1: { label: 'Tier 1 Technique Scroll', techniqueScrollTier: 1 } };
+const tierEntries = [{ key: 'techniqueScrollTier1', label: 'Tier 1 Technique Scroll' }];
+catalog.applyAll({ ITEM_DEFS: tierDefs, inventoryItems: tierEntries });
+assert.equal(tierDefs.techniqueScrollTier1.spriteMode, 'layered-scroll:7cff4f');
+assert.equal(tierEntries[0].spriteMode, 'layered-scroll:7cff4f', 'Metadata-light item entry must inherit canonical defensive-held binding color');
+assert.equal(catalog.ensure('techniqueScrollTier1', tierEntries[0]).spriteMode, 'layered-scroll:7cff4f', 'Repainting a Pack/arch cell must not overwrite canonical binding tint');
 assert.ok(catalog.getDebug().patched >= 4, 'Mobile debug snapshot records registered art');
 
 const grid = Array.from({ length: 20 }, () => Array.from({ length: 20 }, () => ({ type: 'grass' })));
