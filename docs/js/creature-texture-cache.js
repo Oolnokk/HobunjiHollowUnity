@@ -43,6 +43,7 @@
     let evictions = 0; // Reported in the existing mobile performance snapshot.
 
     function inWorkingSet(key, entry) {
+      if (window.DevTestingSwitchbox?.flags?.noUnusedAnimalTextureCache) return false; // Memory A/B: live refs stay pinned; idle frames do not.
       return (setOwners.get(frameSetOf(key)) || 0) > 0 && now() - entry.lastUsedAt < WORKING_SET_MS;
     }
 
@@ -61,8 +62,10 @@
     }
 
     function trim(protectedKey = null) {
+      const idleLimit = window.DevTestingSwitchbox?.flags?.noUnusedAnimalTextureCache ? 0 : UNUSED_BYTES_LIMIT; // Optional strict no-idle retention for diagnosis.
+      const entryLimit = window.DevTestingSwitchbox?.flags?.noUnusedAnimalTextureCache ? 0 : UNUSED_ENTRY_LIMIT;
       for (const [key, entry] of unused) {
-        if (unusedBytes <= UNUSED_BYTES_LIMIT && unused.size <= UNUSED_ENTRY_LIMIT) break;
+        if (unusedBytes <= idleLimit && unused.size <= entryLimit) break;
         if (key === protectedKey) continue; // Give a newly completed compose a chance to bind before it can be evicted.
         if (inWorkingSet(key, entry)) continue; // An on-screen animal is still cycling through this frame.
         unused.delete(key);
@@ -195,5 +198,6 @@
       for (const cache of caches) cache.release(owner);
     },
     snapshot: () => Array.from(caches, cache => cache.snapshot()),
+    trimUnused: () => { for (const cache of caches) cache.trim(); return Array.from(caches, cache => cache.snapshot()); }, // Safe manual cleanup: never disposes referenced frames.
   };
 })();
