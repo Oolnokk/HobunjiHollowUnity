@@ -748,6 +748,7 @@
       const list=node.userData?.decalMaterials;
       if(Array.isArray(list))node.userData.decalMaterials=list.map(material=>replaced.get(material)||material);
     });
+    window.DevRandomRuinCubePillars?.normalize?.(root,{tileScale:RUIN_TILE_SCALE}); // V50's linked cube pairs: arch-aware spacing, true cubes, distinct icon faces (js/dev-random-ruin-cube-pillars.js).
 
     let remainingLitMaterials=0,legacyStoneMaterials=0;
     root.traverse(object=>{
