@@ -52,6 +52,7 @@
   }
 
   function canSleepBandit(c) {
+    if (c?._flyingCarriedBy) return false; // A lifted bandit must remain visible and cannot enter the distant-idle sleep bucket.
     if (!c?.isBandit || c.health <= 0) return false;
     // Restrict sleeping to the genuinely quiescent state. A bandit that is
     // chasing, retreating, returning home, staggered, knocked down, guarding,
