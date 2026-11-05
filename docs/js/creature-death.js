@@ -409,6 +409,7 @@
     if (c.avatarRef.frontPlane) c.avatarRef.frontPlane.rotation.y = Math.PI / 2; // Same clean flat face as a settled ragdoll (see beginInternal).
     if (c.avatarRef.backPlane) c.avatarRef.backPlane.rotation.y = -Math.PI / 2;
     if (c.avatarRef.legsPivot) { c.avatarRef.legsPivot.rotation.y = 0; c.avatarRef.syncHandFrame?.(); }
+    grp.rotation.set(0, Number(c.deathRestRotY) || 0, 0); // The group keeps the facing it had when it fell (deathRestRotY); the recorded pose below is applied on the pivot beneath it.
     let recorded = false;
     if (c.deathRecorded && window.ImpactRagdollPlayback?.startCreatureDeath) {
       recorded = (window.ImpactRagdollPlayback.startCreatureDeath(c, c.deathDirection || 'front') || 0) > 0; // Rebuilds the pivot on the new rig.
