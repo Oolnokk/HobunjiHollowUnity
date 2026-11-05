@@ -19,7 +19,7 @@
   const PATH_FAILURE_RETRY_MS = 750; // How long a walker waits before repeating a grid search that just failed from the same tile.
   const FURNITURE_SAMPLE_OFFSETS = Object.freeze([[0, 0], [-1, 0], [1, 0], [0, -1], [0, 1], [-1, -1], [1, -1], [-1, 1], [1, 1]]); // Reused by every per-frame footprint probe instead of allocating nine offsets per check.
 
-  function init(injectedDeps) { deps = injectedDeps; }
+  function init(injectedDeps) { deps = injectedDeps; window.TzatzulFlight?.initPathfinding?.(injectedDeps); } // Flying predators reuse the canonical live NPC-walker and cavern-scene lookups.
 
   function npcCollisionRadiusTiles() {
     const configured = Number(deps?.npcMovementConfig?.().collisionRadiusTiles);
