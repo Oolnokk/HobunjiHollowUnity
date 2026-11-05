@@ -58,8 +58,21 @@
     // Ordinary avatar code can re-enable its canonical sprite after a genotype
     // animation or visual promotion. Keep it hidden only while our rig exists.
     for (const { node } of state.originals) if (node?.parent === state.group) node.visible = false;
-    if (camera?.getWorldPosition && state.rig.root?.parent === state.group) {
-      try { state.rig.update(camera, pose, seconds, !!actor.tzatzulCarrying); }
+    if (state.rig.root?.parent === state.group) {
+      // On a few zone-load paths a creature mounts before an active Camera is
+      // injected. Always choose one authored pose, or flying/perched/wing
+      // sprites all overlap until the next camera transition.
+      const fallback = {
+        getWorldPosition(vector) {
+          const unit = Math.max(1, Number(deps?.TILE) || 64);
+          const perspective = deps?.player || actor;
+          return vector.set((Number(perspective.x) || 0) / unit,
+            (Number(actor.branchSurfaceY) || 0) + 3,
+            (Number(perspective.y) || 0) / unit + 2);
+        },
+      }; // Cheap game-space viewpoint; no additional scene camera or RAF.
+      try { state.rig.update(camera?.getWorldPosition ? camera : fallback,
+        pose, seconds, !!actor.tzatzulCarrying); }
       catch (error) { debug.lastError = String(error); }
     }
     state.lastPose = pose;
