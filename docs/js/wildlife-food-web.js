@@ -84,6 +84,7 @@
   }
   const scanStats = { guardCalls: 0, guardCandidates: 0, preyCalls: 0, preyCandidates: 0 }; // Cumulative entity scan counters without retaining actor references.
   function scanPrey(c, actors, tile) {
+    if (window.DevTestingSwitchbox?.flags?.noWildlifePreyScans) return null; // A/B test: suppress only prey acquisition, not skirmish damage/cleanup.
     const rule = profile(c);
     if (!rule?.hunts?.length) return null;
     const maxD2 = (rule.huntRadiusTiles * tile) ** 2;
@@ -114,6 +115,7 @@
     return proxy;
   }
   function scanGuardThreat(c, actors, players, walkers, ctx) {
+    if (window.DevTestingSwitchbox?.flags?.noWildlifeGuardScans) return null; // A/B test: disable threat acquisition, not already-established combat.
     const s = stateFor(c), spot = ensureFoodSpot(c, s, ctx), radius = ctx.tile * GUARD_RADIUS_TILES;
     if (!spot) return null;
     let best = null, bestD2 = radius * radius;
