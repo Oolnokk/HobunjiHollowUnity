@@ -8,7 +8,7 @@
   const SPRITE_ASPECT = 152 / 2164; // PNG's original pixel aspect; preserves rope thickness as lengths change.
   const DEFAULT_LENGTH = 1; // The rope plane's unit length is scaled by updateRopePlane.
   const ROPE_END_DIAMETER = .30; // Matches the former 0.15-radius ruin grip sphere; used for the brush-tip's XY footprint.
-  const ROPE_END_NECK_FRACTION = .40; // The upper edge stays narrow where the end plane joins the rope, while the lower edge flares out.
+  const ROPE_END_NECK_FRACTION = .40; // Narrow toward the anchor, widening beyond the moving bob like the bristles of a brush.
   const NET_ATLAS_SIZE = 512; // Single transparent atlas for every four-sided hanging net.
   const direction = new THREE.Vector3(); // Reused by updateRopePlane to align the plane with its physical pendulum.
   const midpoint = new THREE.Vector3(); // Reused by updateRopePlane to place the visual between anchor and bob.
@@ -60,11 +60,11 @@
 
   function createRopeEndPlane(name) {
     const half = ROPE_END_DIAMETER * .5; // Four quad corners stay within the old sphere's 0.3-by-0.3 silhouette.
-    const neck = half * ROPE_END_NECK_FRACTION; // Tapered top joins the narrow rope while the lower edge makes the paintbrush-like fan.
+    const neck = half * ROPE_END_NECK_FRACTION; // Local -Y points up toward the anchor; local +Y points down toward the swinging bob.
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.Float32BufferAttribute([
-      -neck, half, 0, -half, -half, 0, neck, half, 0,
-       neck, half, 0, -half, -half, 0, half, -half, 0,
+      -half, half, 0, -neck, -half, 0, half, half, 0,
+       half, half, 0, -neck, -half, 0, neck, -half, 0,
     ], 3));
     geometry.setAttribute('uv', new THREE.Float32BufferAttribute([
       0, 1, 0, 0, 1, 1,
@@ -75,7 +75,7 @@
     tip.name = name + '_brush_end';
     tip.userData.dungeonRopeBrushEnd = true;
     tip.userData.dungeonRopeSprite = SPRITE_URL;
-    tip.position.set(0, -DEFAULT_LENGTH * .5, .003); // Center the new 0.3x0.3 plane on the physical bob.
+    tip.position.set(0, DEFAULT_LENGTH * .5, .003); // The rope plane's local +Y follows anchor-to-bob; center the tip at the swinging end.
     tip.frustumCulled = true; // Cull tips outside the view; the small quad's bounding sphere still contains every camera-facing orientation.
     // Keep the rope's default transparent render order: forcing a higher order makes distant tips paint over nearer ropes.
     return tip;
