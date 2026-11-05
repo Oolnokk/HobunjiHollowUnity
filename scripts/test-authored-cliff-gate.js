@@ -59,7 +59,7 @@ assert.equal(gate.puzzle.behavior, door.puzzle.behavior);
 assert.equal(gate.puzzle.blocksMovement, true);
 assert.equal(gate.puzzle.channel, 'cliffGate', 'a separate mechanism channel must not move Cliff Door');
 assert.notEqual(gate.puzzle.channel, door.puzzle.channel);
-assert.equal(gate.puzzle.motion.durationSeconds, sourceMotion ? door.puzzle.motion.durationSeconds : 0.95);
+assert.equal(gate.puzzle.motion.durationSeconds, door.puzzle.motion.durationSeconds);
 assert.equal(gate.puzzle.motion.reversalSeconds, door.puzzle.motion.reversalSeconds);
 assert.equal(gate.puzzle.motion.collisionOpenProgress, door.puzzle.motion.collisionOpenProgress);
 assert.deepEqual(Object.keys(gate.puzzle.motion.parts), ['cliff_gate_slab'], 'the backing and frame stay fixed');
