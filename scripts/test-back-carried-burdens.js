@@ -88,14 +88,18 @@ function testEditorAuthoring() {
   assert.equal(defaultBack.rotation.y,200,'legacy furniture defaults to 180 degrees around portrait vertical');
   assert.equal(defaultBack.posteriorOffset.z,.3);
   assert.equal(defaultBack.size,1.2);
+  assert.equal(defaultBack.portraitAnchor.x,0);
+  assert.equal(defaultBack.portraitAnchor.y,0);
+  assert.equal(defaultBack.portraitAnchor.z,0);
   const customBack=normalize({billboardAnchor:original,backCarry:{
     position:{x:-.4,y:.8,z:.7},rotation:{x:11,y:93,z:4},
-    posteriorOffset:{x:.2,y:-.3,z:.4},size:.75,
+    posteriorOffset:{x:.2,y:-.3,z:.4},portraitAnchor:{x:.1,y:.15,z:-.2},size:.75,
   }}).backCarry;
   assert.equal(customBack.position.x,-.4,'back attachment position can be authored independently');
   assert.equal(customBack.rotation.y,93,'back rotation is stored without the fallback flip');
   assert.equal(customBack.posteriorOffset.y,-.3);
   assert.equal(customBack.size,.75);
+  assert.equal(customBack.portraitAnchor.y,.15);
 }
 
 function testRuntime() {
@@ -140,7 +144,7 @@ function testRuntime() {
     id:'test-carrier-charge',kind:'otherExplosive',hanging:false,
     data:{carryable:{explodeOnHit:true,backCarry:{
       position:{x:.13,y:.22,z:-.16},rotation:{x:0,y:12,z:0},
-      posteriorOffset:{x:.08,y:0,z:.18},size:1,
+      posteriorOffset:{x:.08,y:0,z:.18},portraitAnchor:{x:.12,y:-.08,z:.04},size:1,
     }}},
     onImpact:(burden,cause)=>{
       causes.push(cause);
@@ -158,6 +162,10 @@ function testRuntime() {
   assert.equal(window.Shattercasks.debugSnapshot().held,null);
   assert.equal(window.Shattercasks.backCarriedInfo()?.id,charge.id);
   assert.equal(charge.group.parent,portrait,'stowed burden is a DIRECT child of the live skinned portrait plane');
+  const authoredBurdenPoint=new Vector3(.13,.22,-.16).multiply(charge.group.scale).applyQuaternion(charge.group.quaternion);
+  const actualAttachment=charge.group.position.clone().add(authoredBurdenPoint);
+  for(const [axis,expected] of Object.entries({x:.12,y:-.08,z:.04}))
+    assert(Math.abs(actualAttachment[axis]-expected)<1e-8,'back burden anchor follows portrait-local author coordinate on '+axis);
   assert.equal(window.Shattercasks.debugSnapshot().backCarryMount.portraitAttached,true);
   assert.equal(window.Shattercasks.debugSnapshot().backCarryMount.collision,'carrier-hitbox');
   assert.equal(originalTarget.hitbox(),null,'stowing also invalidates hitboxes exposed by previously cached Targetables entries');
@@ -250,6 +258,9 @@ function testRuntime() {
     id:'same-room-local-id',kind:'shattercask',hanging:false,data:{carryable:{}}});
   assert(window.Shattercasks.pickUp(travel));
   assert(window.Shattercasks.stowOnBack());
+  assert.equal(travel.group.parent,rigidPortrait,'default back stow mounts to the available rigid portrait');
+  for(const axis of ['x','y','z'])assert(Math.abs(travel.group.position[axis])<1e-8,
+    'a burden without authored back coordinates defaults to the exact portrait center on '+axis);
   const secondScene=new Group(); // Mimics a destination ruin with a static object using the same local ID.
   currentArea='map_back_destination';
   activeScene=secondScene;

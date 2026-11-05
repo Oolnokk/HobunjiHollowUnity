@@ -27,7 +27,8 @@
         position:vector(back.position,vector(pos,{x:0,y:.53,z:0})),
         rotation:vector(back.rotation,{x:Number(rot.x)||0,y:(Number(rot.y)||0)+180,z:Number(rot.z)||0}),
         posteriorOffset:vector(back.posteriorOffset,vector(anchor.posteriorOffset,{x:0,y:0,z:0})),
-        size:Math.max(.1,Number(back.size)||Number(anchor.size)||1)
+        size:Math.max(.1,Number(back.size)||Number(anchor.size)||1),
+        portraitAnchor:vector(back.portraitAnchor,{x:0,y:0,z:0}) // Portrait-local attachment point; the default is its center.
       },
       hitbox:{enabled:hitbox.enabled!==false,
         center:vector(hitbox.center,{x:0.025,y:.25,z:0}),
@@ -80,12 +81,18 @@
     '<label>Roll<input id="carryRZ" type="number" step="1"></label>',
     '</div><label id="carrySizeRow">Billboard size <input id="carrySize" type="number" min="0.1" max="10" step="0.05"></label>',
     '</div>',
-    '<p class="muted">Offset FROM avatar posterior (character X/Y/Z). Held and back-carry mounts are independent; the back mount defaults to 180° around the vertical portrait axis.</p>',
+    '<p class="muted">Held: offset from avatar posterior. Back-stowed: use Portrait X/Y/Z instead; the old hip offsets do not affect its live portrait mount.</p>',
     '<div class="g3">',
     '<label>From hip X<input id="carryPosteriorX" type="number" step="0.01"></label>',
     '<label>From hip Y<input id="carryPosteriorY" type="number" step="0.01"></label>',
     '<label>From hip Z<input id="carryPosteriorZ" type="number" step="0.01"></label>',
     '</div>',
+    '<div id="carryPortraitAnchorRow"><p class="muted">Back-stowed attachment coordinate on the portrait plane (X/Y/Z). Defaults to the center (0, 0, 0), and follows portrait rotation.</p>',
+    '<div class="g3">',
+    '<label>Portrait X<input id="carryPortraitX" type="number" step="0.01"></label>',
+    '<label>Portrait Y<input id="carryPortraitY" type="number" step="0.01"></label>',
+    '<label>Portrait Z<input id="carryPortraitZ" type="number" step="0.01"></label>',
+    '</div></div>',
     '<div class="section"><h2>Held avatar preview</h2>',
     '<label class="row"><input type="checkbox" id="carryShowAvatar" checked> Show Mao’ao avatar holding this object</label>',
     '<button type="button" id="carryFrameHoldingPose">Frame holding pose</button>',
@@ -128,15 +135,18 @@
     previewActor.scale.setScalar(scale);
     previewActor.quaternion.copy(tempRotation);
     const offset=a.posteriorOffset||{};
-    tempOffset.copy(previewPosterior).add(new THREE.Vector3(
-      Number(offset.x)||0,Number(offset.y)||0,Number(offset.z)||0))
-      .multiplyScalar(scale).applyQuaternion(tempRotation);
+    const portraitPoint=a.portraitAnchor||{}; // Preview location of the authored back attachment on the portrait.
+    const mountPoint=isBack?new THREE.Vector3(Number(portraitPoint.x)||0,Number(portraitPoint.y)||0,Number(portraitPoint.z)||0):previewPosterior;
+    tempOffset.copy(mountPoint);
+    if(!isBack)tempOffset.add(new THREE.Vector3(Number(offset.x)||0,Number(offset.y)||0,Number(offset.z)||0));
+    tempOffset.multiplyScalar(scale).applyQuaternion(tempRotation);
     previewActor.position.set(p.x,p.y,p.z).sub(tempOffset);
-    if(posteriorMarker)posteriorMarker.position.copy(previewPosterior);
+    if(posteriorMarker)posteriorMarker.position.copy(mountPoint);
     if(attachmentMarker){
-      attachmentMarker.position.copy(previewPosterior).add(new THREE.Vector3(
+      attachmentMarker.position.copy(mountPoint);
+      if(!isBack)attachmentMarker.position.add(new THREE.Vector3(
         Number(offset.x)||0,Number(offset.y)||0,Number(offset.z)||0));
-      attachmentLine?.geometry?.setFromPoints?.([previewPosterior,attachmentMarker.position]);
+      attachmentLine?.geometry?.setFromPoints?.([mountPoint,attachmentMarker.position]);
     }
     previewActor.updateWorldMatrix(true,true);
     if(previewHands){
@@ -250,9 +260,13 @@
       if(document.activeElement!==field)field.value=Number(c.hitbox.size[axis.toLowerCase()]).toFixed(3);
     }
     el('carrySizeRow').hidden=id!=='anchor'&&id!=='back';
+    el('carryPortraitAnchorRow').hidden=id!=='back';
+    for(const axis of ['X','Y','Z'])el('carryPosterior'+axis).disabled=id==='back'; // Hip offsets apply only to held items; back stow uses portrait coordinates.
     for(const axis of ['X','Y','Z']){
       const input=el('carryR'+axis);
       if(document.activeElement!==input)input.value=Number(r[axis.toLowerCase()]||0).toFixed(2);
+      const portraitInput=el('carryPortrait'+axis);
+      if(document.activeElement!==portraitInput)portraitInput.value=Number(c.backCarry.portraitAnchor[axis.toLowerCase()]||0).toFixed(3);
       const offsetInput=el('carryPosterior'+axis);
       if(document.activeElement!==offsetInput)offsetInput.value=Number((id==='back'?c.backCarry:c.billboardAnchor).posteriorOffset?.[axis.toLowerCase()]||0).toFixed(3);
     }
@@ -360,6 +374,10 @@
       const n=Number(el('carryPosterior'+axis).value);
       if(Number.isFinite(n))(id==='back'?state.carryable.backCarry:state.carryable.billboardAnchor).posteriorOffset[axis.toLowerCase()]=n;
     }
+    for(const axis of ['X','Y','Z']){
+      const n=Number(el('carryPortrait'+axis).value);
+      if(id==='back'&&Number.isFinite(n))state.carryable.backCarry.portraitAnchor[axis.toLowerCase()]=n;
+    }
     refreshGuides();
     syncHoldingPreview();
     queueUndoHistory('carryable guide edit');
@@ -402,7 +420,7 @@
     queueUndoHistory('carryable toggle');
     renderControls();
   };
-  for(const id of ['carryX','carryY','carryZ','carryRX','carryRY','carryRZ','carrySize','carryPosteriorX','carryPosteriorY','carryPosteriorZ','carryHitboxSX','carryHitboxSY','carryHitboxSZ'])
+  for(const id of ['carryX','carryY','carryZ','carryRX','carryRY','carryRZ','carrySize','carryPosteriorX','carryPosteriorY','carryPosteriorZ','carryPortraitX','carryPortraitY','carryPortraitZ','carryHitboxSX','carryHitboxSY','carryHitboxSZ'])
     el(id).addEventListener('change',fromInputs);
   transform.addEventListener?.('objectChange',fromGizmo);
 

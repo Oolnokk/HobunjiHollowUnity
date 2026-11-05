@@ -497,7 +497,7 @@
     for(const part of chain)quaternion.multiply(part.quaternion);
     return quaternion;
   }
-  function moveBackBurdenToPortrait(vase,body,portrait){
+  function moveBackBurdenToPortrait(vase,body,portrait,backConfig){
     body.updateWorldMatrix?.(true,false);
     portrait.updateWorldMatrix?.(true,false);
     const worldPosition=body.localToWorld(vase.group.position.clone()); // Solve once at mount; repeated solving would cancel the portrait's own deadzone yaw.
@@ -513,6 +513,14 @@
     vase.group.position.copy(portrait.worldToLocal(worldPosition));
     vase.group.quaternion.copy(inversePortraitRotation.multiply(worldRotation));
     vase.group.scale.copy(localScale);
+    // Portrait-local attachment coordinate, defaulting to the center of the portrait.
+    // The burden's authored anchor is moved onto this point rather than inheriting
+    // the body-root posterior position. Its rotation continues following the plane.
+    const anchor=backConfig?.portraitAnchor||{}; // Authored attachment coordinate on the carrier portrait.
+    const burdenPoint=backConfig?.position||{}; // Point on the burden that must meet the portrait anchor.
+    const localBurdenPoint=new THREE.Vector3(finite(burdenPoint.x),finite(burdenPoint.y),finite(burdenPoint.z))
+      .multiply(vase.group.scale).applyQuaternion(vase.group.quaternion);
+    vase.group.position.set(finite(anchor.x),finite(anchor.y),finite(anchor.z)).sub(localBurdenPoint);
   }
   function heldItemHolder(){
     const d=carryDeps();
@@ -580,7 +588,7 @@
     heldAnchorOffset.set(finite(a.x),finite(a.y),finite(a.z))
       .multiplyScalar(vase.group.scale.x).applyQuaternion(vase.group.quaternion);
     vase.group.position.copy(posteriorLocal).add(posteriorOffset).sub(heldAnchorOffset);
-    if(isBack&&portrait)moveBackBurdenToPortrait(vase,body,portrait);
+    if(isBack&&portrait)moveBackBurdenToPortrait(vase,body,portrait,cfg);
     const base=aimingThrow?.socketBase;
     if(aimingThrow?.vase===vase&&base){
       const live=currentThrowSocketPose();
