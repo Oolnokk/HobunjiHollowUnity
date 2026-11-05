@@ -78,6 +78,8 @@ assert(fullReveal > 0 && fullTint > 0 && fullGlow > 0, 'nearby lamps retain dark
 fixtures[0].x = 15; // Fixture radius 4 + 8 full-bright margin + 6 fade tiles: midpoint at 15.
 stats = draw();
 assert.equal(stats.fading, 1, 'fixture entering the outdoor fade ring is tracked');
+near(lightingWindow.CloudForestFog.outdoorLightVisibilityAt(15, 0, 0, 4), 0.5,
+  'shared secondary glow policy uses the same eased midpoint');
 near(firstAlpha(mask('destination-out', 4)), fullReveal * 0.5, 'darkness removal fades smoothly');
 near(firstAlpha(mask('multiply', 4)), fullTint * 0.5, 'weather-tint restoration fades in sync');
 near(firstAlpha(mask('source-over', 4 * 0.62)), fullGlow * 0.5, 'colored source glow fades in sync');
@@ -86,6 +88,8 @@ fixtures[0].x = 30; // Beyond the 18-tile limit for a radius-4 fire.
 stats = draw();
 assert.equal(stats.considered, 1);
 assert.equal(stats.culled, 1, 'far-off wilderness lights are culled before creating gradients');
+assert.equal(lightingWindow.CloudForestFog.outdoorLightVisibilityAt(30, 0, 0, 4), 0,
+  'secondary glow owners share the same outdoor visibility limit');
 assert(!mask('destination-out', 4) && !mask('multiply', 4) && !mask('source-over', 4 * 0.62),
   'a distant lamp cannot leave an overlay halo or a punched-out spot');
 
@@ -121,5 +125,7 @@ fixtures = [{ x: 30, y: 0, z: 0, distance: 4, intensity: 1, color: { r: 255, g: 
 stats = draw();
 assert(mask('destination-out', 10), 'interior lamps keep their 2.5x wide pool independent of player distance');
 assert.equal(stats.considered, 0, 'interior lamps are never counted as outdoor-culling candidates');
+assert.equal(lightingWindow.CloudForestFog.outdoorLightVisibilityAt(30, 0, 0, 4), 1,
+  'secondary glows retain full brightness in enclosed rooms');
 
 console.log('Outdoor light visibility distance, three-pass fading, elevation, and interior isolation passed');
