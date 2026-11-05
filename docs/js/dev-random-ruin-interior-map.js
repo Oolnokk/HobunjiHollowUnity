@@ -1727,6 +1727,28 @@
 
   window.DevRandomRuin=Object.freeze({getVestibuleRoots:()=>ruin?{stone:ruin.vestibuleStone||null,props:ruin.stoneAgeStats?.props||0,bindings:ruin.rootGrowthBindings?.length||0,rooted:!!ruin.rootedMechanisms,ms:ruin.vestibuleRootMs||0,error:ruin.vestibuleRootError||null}:null,generate,generateStoryVault,reroll:()=>ruin?.shaftTest?generateShaftTest():generate(randomSeed(),{hachutu:ruin?.hachutu===true,rootMechanisms:ruin?.rootedMechanisms===true,stoneAge:ruin?.stoneAgeRequested===true,composedTrial:ruin?.composedTrialForced===true?true:undefined}),clear:()=>{if(deps?.getCurrentArea?.()===MAP_ID)leaveRuin();else clearRuntime(true);},leave:leaveRuin,exitTo,getInteractionControls:()=>ruin?ruin.controls.filter(control=>control.kind!=='story-vault-pedestal'||window.DelversGuild?.vaultPhase?.()==='search').map(control=>({...control,range:Number.isFinite(Number(control.range))?Number(control.range):CONTROL_RANGE})):[],getNativeV50TestRuntime:()=>devModeEnabled()?ruin?.nativeV50Runtime||null:null, // Developer-mode-only diagnostic handle for Playwright to exercise the actual generated puzzle controls and stage gates; not a gameplay solver.
     getRuntimeContext:()=>ruin?{scene:ruin.scene,grid:ruin.grid,root:ruin.localeRoot,meta:ruin.meta,floorSet:ruin.floorSet,ceilingY:ruin.ceilingY,spawn:{...ruin.spawn},cols:ruin.cols,rows:ruin.rows,sanctumMapSize:ruin.sanctumMapSize,seed:ruin.seed,theme:ruin.theme,specialBoss:ruin.specialBoss,ruinName:ruin.ruinName,hachutu:!!ruin.hachutu,stoneAge:!!ruin.stoneAge,stoneAgeStats:ruin.stoneAgeStats||null,shaftHub:!!ruin.shaftHub,puzzleOptions:{...ruin.puzzleOptions}}:null,getPuzzleGenerationOptions:()=>readPuzzleGenerationOptions(),setPuzzleGenerationOptions:options=>savePuzzleGenerationOptions(options),getOccupancySnapshot:()=>ruin?.occupancy?.snapshot?.()||null,getLastSolvabilityAudit:()=>lastGenerationAudit?JSON.parse(JSON.stringify(lastGenerationAudit)):null,getShaftNetworkState:()=>ruin?.shaftLayerRuntime?.getState?.()||null,
+    getShaftCollisionMap:(requestedFloor=0)=>{
+      if(!ruin?.shaftGrids?.size)return null;
+      const count=ruin.shaftHubPlan?.floorCount||1;
+      const floor=Math.max(0,Math.min(count-1,Math.floor(Number(requestedFloor)||0)));
+      const y=floor*(ruin.shaftHubPlan?.options?.floorHeight||4);
+      const blocked=new Set(),open=new Set(); // A floor-specific projection of the ACTUAL CellGrid3D solids; the old occupancy legend cannot see these voxels.
+      for(const [scope,entry] of ruin.shaftGrids){
+        const grid=entry.grid,level=grid.yToLevel(y+.05);
+        if(level<0||level>=grid.levels)continue;
+        for(let row=0;row<grid.rows;row++)for(let col=0;col<grid.cols;col++){
+          if(!grid.inBounds(col,row,level))continue;
+          const x=grid.colToX(col+.5),z=grid.rowToZ(row+.5);
+          const cx=Math.floor(x),cz=Math.floor(z);
+          if(cx<0||cz<0||cx>=ruin.cols||cz>=ruin.rows||entry.contains&&!entry.contains(x,z))continue;
+          const key=cx+','+cz;
+          if(grid.isSolid(col,row,level))blocked.add(key);
+          else if(grid.canStand(col,row,level))open.add(key);
+        }
+      }
+      for(const key of blocked)open.delete(key);
+      return {floor,floorCount:count,y,blocked:[...blocked],open:[...open]};
+    },
     isShaftNetworkComplete:()=>ruin?.shaftLayerRuntime?ruin.shaftNetworkComplete===true:true, // No allocation in the hot Sanctum Great Door update path.
     getGenerationProgress:()=>({phase:generationPhase,elapsedS:+((performance.now()-generationStartedMs)/1000).toFixed(1),attempts:lastGenerationAudit?.attempts?.length||0}),getDarknessSettings,setDebugBadgePart,getOcclusionMeshes:()=>ruin?.occlusionMeshes||null,setPlayerWorldPoint,getPlayerSupportY,getPlayerGroundSupportY,shaftSegmentHit,shaftCreatureCanEnter,syncShaftCreatureFloor,registerShaftGrid,unregisterShaftGrid:scope=>ruin?.shaftGrids?.delete(scope),setLevelRelativeSupport:on=>{if(ruin)ruin.levelRelativeSupport=on!==false;return !!ruin?.levelRelativeSupport;},getGroundSupportYAt,setMechanismTarget,lockMechanism,unlockMechanism,mechanismInfo,syncPlayerPresentationHeight:syncRuinPresentationHeight,getState:()=>ruin?{mapId:MAP_ID,storyVault:ruin.storyVault ? {footprints:ruin.storyVaultFootprintCount,doorBlocks:false,puzzles:0,decalReady:ruin.storyVaultDecalReady,decalError:ruin.storyVaultDecalError||null} : null,seed:ruin.seed,theme:ruin.theme,specialBoss:ruin.specialBoss,ruinName:ruin.ruinName,hachutu:!!ruin.hachutu,shaftHub:!!ruin.shaftHub,shaftConnection:ruin.shaftConnection||null,shaftLayerRuntime:ruin.shaftLayerRuntime?.getState?.()||null,
     nativeV50Runtime:ruin.nativeV50Runtime?.getState?.()||null,
