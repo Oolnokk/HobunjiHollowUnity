@@ -231,4 +231,20 @@ assert(frame.debug.cliffCrawl.active, 'cliff crawl reclaims a healthy rig after 
 restore(frame.undo);
 assert(contacts.getDebug().hookInstalled, 'mobile diagnostics expose hook installation');
 
+// Lateral and downhill edges sample the same generated face coordinates; there is no world-up bounce.
+const lateral = {
+  player: { x: 32, y: 32, climbSurfaceY: 2, climbStartX: 0, climbEndX: 0,
+    climbStartY: 0, climbEndY: 64, climbSurfaceStartY: 2, climbSurfaceEndY: 2 },
+  moving: true, progress: 0.65, tileSize: 64,
+};
+const normal = new Vec(-1, 0, 0); // Horizontal wall pointing outward along negative world X.
+const lateralLeft = contacts.surfaceContact(lateral, normal, 'left', 'hand', 1);
+const lateralRight = contacts.surfaceContact(lateral, normal, 'right', 'hand', 1);
+assert(lateralLeft.z > lateralRight.z, 'staggered hands advance independently across sideways cliff edges');
+assert(Math.abs(lateralLeft.y - lateralRight.y) < 1e-8, 'sideways reach does not add an artificial vertical hop');
+const downhill = { ...lateral, player: { ...lateral.player,
+  climbSurfaceStartY: 2, climbSurfaceEndY: 0.8 } };
+const downhillContact = contacts.surfaceContact(downhill, normal, 'left', 'foot', 1);
+assert(downhillContact.y < 2, 'downward climbing contacts move down the face using the same solver');
+
 console.log('cliff crawl presentation: all targeted checks passed');
