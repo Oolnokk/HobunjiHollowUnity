@@ -111,10 +111,8 @@
     return null;
   }
 
-  function ensure(key, def) {
-    if (!def || typeof def !== 'object') return null;
-    const art = classify(key, def);
-    if (!art) return null;
+  function assignArt(key, def, art) {
+    if (!def || !art) return null;
     const signature = art.spriteIcon + '|' + art.spriteMode + '|' + art.spriteColor;
     if (seen.get(def) === signature) return art;
     try {
@@ -130,6 +128,18 @@
     return art;
   }
 
+  function ensure(key, def) {
+    if (!def || typeof def !== 'object') return null;
+    const alreadyAssigned = def.spriteIcon === 'scroll.png' && /^layered-scroll:[0-9a-f]{6}$/i.test(def.spriteMode || '')
+      && !def.combatManualAbilityId && !def.techniqueScrollTier && !def.masteryUnlock && !def.attackCategory;
+    // Selectable item-wheel entries lack the canonical item's attack metadata.
+    // Preserve the previously copied slot tint instead of guessing "combo" from the entry's short title.
+    const art = alreadyAssigned
+      ? { spriteIcon: def.spriteIcon, spriteColor: def.spriteColor, spriteMode: def.spriteMode }
+      : classify(key, def);
+    return assignArt(key, def, art);
+  }
+
   function applyAll(deps) {
     const definitions = deps?.ITEM_DEFS; // Canonical metadata; the catalogue never creates or changes owned quantities.
     if (!definitions) return 0;
@@ -137,7 +147,7 @@
     for (const [key, def] of Object.entries(definitions)) if (ensure(key, def)) count++;
     for (const entry of deps.inventoryItems || []) if (entry?.key && definitions[entry.key]) {
       const art = classify(entry.key, definitions[entry.key]);
-      if (art) ensure(entry.key, entry); // Keep item-wheel entries consistent with Pack/held icon metadata.
+      if (art) assignArt(entry.key, entry, art); // Copy exact canonical category/color, even if this selectable entry has only a key/label.
     }
     return count;
   }
