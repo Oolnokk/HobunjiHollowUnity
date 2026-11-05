@@ -144,8 +144,8 @@
       topY:placed.grid.baseY,priority:1}));
     ruin.shaftConnection.supportRects=corridorSupportRects.length;
     const unmountVisual=visual(route.tiles.filter(([c,r])=>!oldFloor.has(key(c,r))),THREE,rec.scene,placed.grid.baseY,rec.floorSet);
-    let layerRuntime=null,nativeRuntime=null; // Install cleanup before any later floor mount can fail.
-    ruin.shaftConnectorCleanup=()=>{nativeRuntime?.dispose();layerRuntime?.dispose();unmountVisual();DS.clearScope(scope);};
+    let layerRuntime=null,nativeRuntime=null,styleCleanup=null; // Gameplay and V50 decorative masonry share session cleanup.
+    ruin.shaftConnectorCleanup=()=>{styleCleanup?.();nativeRuntime?.dispose();layerRuntime?.dispose();unmountVisual();DS.clearScope(scope);};
     const registered=ShaftHub.mount(placed,{THREE,parent:rec.scene,ClimbSurfaces,DynamicSurfaces:DS,DevRandomRuin});
     layerRuntime=RuinLayerPlayable.mount({
       rec,ruin,plan,hub:placed,makeTile,THREE,DynamicSurfaces:DS,CellGrid3D,
@@ -159,6 +159,8 @@
       prepareMaterials,tileScale,
     }):null; // Each real upper V50 graph gets its own collision, stage gates, brazier and render root.
     ruin.nativeV50Runtime=nativeRuntime;
+    if(plan.options.groundEntranceSide)
+      styleCleanup=root.RuinMultifloorV50Style?.apply?.({rec,ruin,hub:placed,seed,THREE})||null;
     const active=layerRuntime.getState();
     ruin.shaftConnection.wingsPlayable=active.wings;
     ruin.shaftConnection.braziersPlayable=active.braziers;
