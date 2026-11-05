@@ -56,6 +56,11 @@ assert.equal(catalog.applyAll({ ITEM_DEFS: definitions, inventoryItems }), 2);
 assert.equal(definitions.combatManualBlinkDodge.spriteMode, 'layered-scroll:7cff4f');
 assert.equal(inventoryItems[0].spriteIcon, 'scroll.png');
 assert.equal(inventoryItems[1].spriteIcon, 'ore.png');
+const herbDefs = { cliffHerbLeaf: { label: 'Cliff Herb Leaves' } }; // Leaf art path is rewritten on the authoritative definition.
+const herbEntries = [{ key: 'cliffHerbLeaf', label: 'Cliff Herb Leaves' }]; // The selectable entry does not carry its parent definition fields.
+catalog.applyAll({ ITEM_DEFS: herbDefs, inventoryItems: herbEntries });
+assert.equal(herbDefs.cliffHerbLeaf.spriteIcon, '../leaves/speartip_leaf.png');
+assert.equal(herbEntries[0].spriteIcon, herbDefs.cliffHerbLeaf.spriteIcon, 'Leaf art must survive canonical resolution into the item wheel');
 const tierDefs = { techniqueScrollTier1: { label: 'Tier 1 Technique Scroll', techniqueScrollTier: 1 } };
 const tierEntries = [{ key: 'techniqueScrollTier1', label: 'Tier 1 Technique Scroll' }];
 catalog.applyAll({ ITEM_DEFS: tierDefs, inventoryItems: tierEntries });
