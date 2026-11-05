@@ -75,7 +75,7 @@
        extracted out of game.js. Must load before game.js, which calls
        window.DenNestSystem.init(...) (binds its own devTeleportDenBtn/
        wildlifeDenList listeners) during its own setup. -->
-  <script src="js/den-nest-system.js?v=20261027sense1"></script>
+  <script src="js/den-nest-system.js?v=20261104tzatzul1"></script>
   <script src="js/corpse-hold-loot.js?v=20261031honey3d1"></script>
   <script src="js/companion-downed.js?v=20261024downed1"></script> <!-- Downed animal companion: auto-revive timer, held revive, Root Totem recall. Initialised by game.js. -->
   <script src="js/player-downed.js?v=20261103downedhold3"></script> <!-- Player downed/Second Wind state. Initialised by game.js. -->
@@ -233,7 +233,7 @@
   <script src="js/creature-genetics-render.js?v=20261104nelkRig1"></script>
   <script src="js/honeyfuzzle-swarm.js?v=20261031honey3dz2"></script> <!-- Honeyfuzzle swarm renderer: instanced translucent fly-pose blend plus genotype-tinted tail/spectacles; wild and stable creatures link through shared Combat deps. -->
   <script src="js/honeyfuzzle-colors.js?v=20261026honeyEggGenes3"></script> <!-- Honeyfuzzle body colors by region (temperate / tropical / ominous) and egg color queue. -->
-  <script src="js/honeyfuzzle-hives.js?v=20261102h1b814fe"></script> <!-- Hive stumps: swarm spawn/return, long-hold harvest (eggs + honey), collapse. Initialised by game.js. -->
+  <script src="js/honeyfuzzle-hives.js?v=20261104tzatzul1"></script> <!-- Hive stumps: swarm spawn/return, long-hold harvest (eggs + honey), collapse. Initialised by game.js. -->
   <!-- Shared per-frame "where is this creature/character's head" cache — see
        its own file header for why. No dependencies of its own; must load
        before anything that calls window.CreatureHeadCache. -->
@@ -583,7 +583,8 @@
        aside from deps injected via init(), so load order relative to the
        other systems above doesn't matter; must load before game.js, which
        calls window.ClimbSystem.init(...) during its own setup. -->
-  <script src="js/cliff-route-network.js?v=20261105hcd658a0"></script> <!-- Shared graph for selected exterior handholds, balcony terrain and wildlife routes. -->
+  <script src="js/cliff-route-network.js?v=20261104tzatzul1"></script> <!-- Shared graph for selected exterior handholds, balcony terrain and wildlife routes. -->
+  <script src="js/tzatzul-spires.js?v=20261104tzatzul1"></script> <!-- Layered cliff spires and true Y-layer nest shelves before mesa support builds. -->
   <script src="js/climb-system.js?v=20261104cliffAudit1"></script>
   <script src="js/creature-cliff-climb.js?v=20261104cliffAudit1"></script>
   <!-- Cubic 3D cell grid (window.CellGrid3D): the tile grid plus a level axis.
@@ -618,6 +619,10 @@
        above doesn't matter; must load before game.js, which calls
        window.PerpRotation.init(...) during its own setup. -->
   <script src="js/perp-rotation.js?v=20261026h7f6f691"></script>
+  <script src="js/animal-shoulder-spline.js?v=20261104tzatzul1"></script> <!-- Authored seven-point Tzatzul perch deformation. -->
+  <script src="js/flying-animal-rig.js?v=20261104tzatzul1"></script> <!-- Shared wing hinges, yaw/pitch deadzone and talon socket. -->
+  <script src="js/tzatzul-nest-interior.js?v=20261104tzatzul1"></script> <!-- Native cave interiors with guarded eggs and mixed-corpse loot. -->
+  <script src="js/tzatzul-flight.js?v=20261104tzatzul1"></script> <!-- Flight AI, ranged visibility, prey lifting and voluntary player escort. -->
   <!-- Funji & Son's General Store (window.GeneralStore) — self-contained
        aside from deps injected via init(), and reads window.DyeSystem/
        window.ConditionRegistry at render time (already global by then), so
@@ -679,7 +684,7 @@
        at call time (already global by then), so load order relative to the
        other systems above doesn't matter; must load before game.js, which
        calls window.WildlifeSpawn.init(...) during its own setup. -->
-  <script src="js/wildlife-spawn.js?v=20261104scent1439c"></script>
+  <script src="js/wildlife-spawn.js?v=20261104tzatzul1"></script>
   <!-- Town/zone building mesh spawning + decorative furniture/prop spawning
        (window.TownZoneBuildings) — reads globally-loaded HousePieceGen/
        WallBuilder/BuildingDoor/window.ProceduralFurniture/window.Music at
@@ -868,7 +873,7 @@
        window.ZonePlateauMesa.buildPlateauMesa(...) lazily, whenever a
        zone with tiered plateaus is first built or a plateau-top tile
        changes at runtime — never synchronously during initial boot. -->
-  <script src="js/zone-plateau-mesa.js?v=20261105hGrassTops2"></script>
+  <script src="js/zone-plateau-mesa.js?v=20261104tzatzul1"></script>
   <script src="js/wilderness-bedrock.js?v=20261027a"></script>
   <!-- One world-UV texture-backed mesh per water surface group. Dynamic
        flood/trench meshes are rebuilt only when the water simulation ticks;
@@ -890,7 +895,7 @@
        synchronously during initial boot. -->
   <script src="js/locale-cave-runtime.js?v=20261010h40fea5e"></script>
   <!-- Promotes wilderness den anchors into generic cave sites; wraps WildlifeSpawn/CavernGenerator/DevSpawner, all loaded above. -->
-  <script src="js/cave-site-system.js?v=20261104he3456d4"></script>
+  <script src="js/cave-site-system.js?v=20261104tzatzul1"></script>
   <!-- Two-necked Shattercask runtime. Loaded after Combat/DevSpawner/CaveSiteSystem so their
        hooks bind before game.js initializes the subsystems; also handles touch prompts. -->
   <!-- Capability/event substrate (window.WorldEvents, window.Targetables): pure registries with no
@@ -2844,7 +2849,7 @@
   <!-- NPC walkability/beeline checks + area-graph pathfinding
        (window.NpcPathfinding) — must load before game.js, which calls
        window.NpcPathfinding.init(...) during its own setup. -->
-  <script src="js/npc-pathfinding.js?v=20261104cliffAudit1"></script>
+  <script src="js/npc-pathfinding.js?v=20261104tzatzul1"></script>
   <script src="js/npc-route-graph.js?v=20261009h41465f3"></script>
   <!-- Cutscene Director "Preview in game" one-shot handoff — must run
        BEFORE game.js so window.__hobunjiPlayerProfile is already set when
