@@ -19,6 +19,7 @@
   let _shopStock = {};
   let _lootShopConfigPromise = null;
   let lastMasteryRoll = null; // Exposed through the existing diagnostics for mobile inspection of source, rank, type and outcome.
+  let lastMixedRoll = null; // Mobile-readable source selection and empty-source exclusions for authored mixed pools.
 
   function masteryPoolForLoot(poolId, context = {}) {
     const entity = context.entity; // Actual corpse supplies its weapon and semantic enemy type, rather than the inherited bandit loot table.
@@ -116,8 +117,46 @@
   // (default 1 = always, matching every migrated creature/bandit table),
   // then contributes a `min..max` quantity (or a `min..max` in steps of
   // `step`, for discrete-increment rolls like the treasure chest's gold).
-  function rollLootPool(poolId, context = {}) {
+  function rollLootPool(poolId, context = {}, ancestry = []) {
     const pool = _lootPools[poolId];
+    // Shared composition is data-driven so later puzzle-cave tables can be
+    // populated without touching Tzatzul AI or making new loot grant paths.
+    if (pool?.kind === 'mixed') {
+      const parentIds = Array.isArray(ancestry) ? ancestry : []; // Recursion guard; cyclic edited tables never hang the game.
+      if (parentIds.includes(poolId) || parentIds.length >= 8) return {};
+      const sources = (Array.isArray(pool.sourcePools) ? pool.sourcePools : [])
+        .filter(source => source && typeof source.poolId === 'string' && source.poolId !== poolId
+          && !parentIds.includes(source.poolId) && Number.isFinite(Number(source.weight))
+          && Number(source.weight) > 0 && _lootPools[source.poolId]
+          && (_lootPools[source.poolId].kind === 'mixed'
+            || Array.isArray(_lootPools[source.poolId].entries) && _lootPools[source.poolId].entries.length > 0));
+      const gained = {}; // Flat inventory stacks; the caller's clothingDrops side-channel stores rich garment records.
+      const selected = []; // Bound-sized diagnostics for test UI / mobile.
+      const draws = Math.max(0, Math.min(10, Math.floor(Number(pool.rolls) || 1)));
+      const random = typeof context.random === 'function' ? context.random
+        : () => window.GameRandom?.random?.() ?? Math.random();
+      const total = sources.reduce((sum, source) => sum + Number(source.weight), 0);
+      for (let draw = 0; draw < draws && total > 0; draw++) {
+        let remaining = Math.max(0, Math.min(0.999999999, Number(random()) || 0)) * total;
+        let source = sources[sources.length - 1]; // Floating-point fallback preserves last source's weight.
+        for (const candidate of sources) {
+          remaining -= Number(candidate.weight);
+          if (remaining < 0) { source = candidate; break; }
+        }
+        selected.push(source.poolId);
+        const rolled = rollLootPool(source.poolId, context, [...parentIds, poolId]);
+        for (const [itemKey, amount] of Object.entries(rolled || {}))
+          if (Number.isFinite(Number(amount)) && Number(amount) > 0)
+            gained[itemKey] = (gained[itemKey] || 0) + Number(amount);
+      }
+      lastMixedRoll = { poolId, selected, availableSources: sources.map(source => source.poolId),
+        deferredSources: (pool.sourcePools || []).map(source => source?.poolId)
+          .filter(id => id && !sources.some(source => source.poolId === id)),
+        rolledItems: Object.keys(gained).length }; // No persistent entity references or expensive per-frame scanning.
+      return gained;
+    }
+    if (poolId === 'treasureChest' && typeof window.WildTreasure?.rollTreasureLootAsItems === 'function')
+      return window.WildTreasure.rollTreasureLootAsItems(context); // Reuse complete chest bundle including generators.
     if (pool?.mastery) return rollMasteryPool(poolId, context);
     const masteryPool = masteryPoolForLoot(poolId, context); // Select the semantic source before ordinary pool inheritance obscures its identity.
     if (!pool) return masteryPool ? rollMasteryPool(masteryPool, context) : {};
@@ -167,6 +206,8 @@
     lootShopWorldState: _lootShopWorldState,
     getLootPools: () => _lootPools,
     getShopStock: () => _shopStock,
+    getMixedLootDebug: () => lastMixedRoll && { ...lastMixedRoll, selected: [...lastMixedRoll.selected],
+      availableSources: [...lastMixedRoll.availableSources], deferredSources: [...lastMixedRoll.deferredSources] },
     masteryPoolForLoot, rollMasteryPool,
     getMasteryDebug: () => ({ lastRoll: lastMasteryRoll && { ...lastMasteryRoll }, pools: Object.entries(_lootPools).filter(([, pool]) => pool.mastery).map(([id, pool]) => ({ id, ...pool.mastery })) }),
   };

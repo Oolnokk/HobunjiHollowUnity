@@ -528,9 +528,30 @@
     }
   }
 
+  // Ordinary chest openings retain their richer bundle format. Mixed corpse
+  // tables need inventory stacks, so adapt that exact generator output here
+  // rather than independently approximating its metal/dye/manual chances.
+  function rollTreasureLootAsItems(context = {}) {
+    const bundle = _rollTreasureLootBundle();
+    const gained = {}; // Individual quantity stacks consumed by LootRolling and corpse containers.
+    const add = (key, amount = 1) => {
+      if (typeof key !== 'string' || !key || !(Number(amount) > 0)) return;
+      gained[key] = (gained[key] || 0) + Number(amount);
+    };
+    for (const key of bundle.metalKeys || []) add(key);
+    for (const key of bundle.dyeItemKeys || []) add(key);
+    add('gold', bundle.gold);
+    for (const key of [bundle.potionKey, bundle.recipeItemKey, bundle.combatManualKey]) add(key);
+    // Clothing needs its complete dyed item record, not a fabricated inventory
+    // key. Callers that can store garments supply the optional out-array.
+    if (bundle.clothing && Array.isArray(context.clothingDrops)) context.clothingDrops.push(bundle.clothing);
+    return gained;
+  }
+
   window.WildTreasure = {
     init,
     weekIndex,
+    rollTreasureLootAsItems,
     rollTreasureMetalBarLoot,
     ensureZone,
     syncZoneInteractivity,
