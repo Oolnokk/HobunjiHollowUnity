@@ -20773,7 +20773,7 @@
           // Preserve the original escape exception for an actor already on
           // a boundary tile; it does not give ordinary walkers a route up.
           if (tile.mapBoundary && intersectsCliff
-            && !window.GridTileAccessors.getActiveGrid()[Math.floor(player.y / TILE)]?.[Math.floor(player.x / TILE)]?.mapBoundary) return null;
+            && (projectile || !window.GridTileAccessors.getActiveGrid()[Math.floor(player.y / TILE)]?.[Math.floor(player.x / TILE)]?.mapBoundary)) return null; // Only actors stuck on old-save boundary tiles may step off; shots never inherit their escape exception.
         }
         // Rivers/streams are swimmable, not blocked — the player has no
         // canSwim tag of their own (see CREATURE_DB's comment on the flag),
