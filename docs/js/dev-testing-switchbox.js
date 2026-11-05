@@ -92,6 +92,18 @@
       label: '⚔ Layered Weapon Decorations',
       hint: 'Skips creating multi-sprite weapon assemblies. Weapon action logic and original tool plane remain, but layered weapon art may be absent.',
     },
+    noPortraitDepthMatrixParity: {
+      label: '▤ Portrait Depth Matrix Sync',
+      hint: 'Skips per-mesh portrait matrix capture/restore around depth replays. May introduce temporary outline/depth jitter.',
+    },
+    noHandOutlineMatrixParity: {
+      label: '✋ Hand Outline Matrix Sync',
+      hint: 'Skips hand mesh outline matrix callback hooks, while retaining normal hand attachment and held overlay tagging.',
+    },
+    noFootOutlineMatrixParity: {
+      label: '🦶 Foot Outline Matrix Sync',
+      hint: 'Skips foot mesh outline callback hooks, preserving leg animation and water-occluded mesh registration.',
+    },
   });
 
   function readFlags() {
@@ -135,7 +147,8 @@
   const COMPANION_SAFE_SWITCHES = Object.freeze([
     'noShellOutlines', 'noGrass', 'noWind', 'lowPolyFoliage',
     'noBrickWalls', 'noShingleGlbs', 'noSkySphere', 'noAudio', 'noVerdigris',
-    'noCharacterGroundShadows', 'noPngAvatarOcclusion', 'noCorpseVisuals', 'noLayeredWeaponDecorations'
+    'noCharacterGroundShadows', 'noPngAvatarOcclusion', 'noCorpseVisuals', 'noLayeredWeaponDecorations',
+    'noPortraitDepthMatrixParity', 'noHandOutlineMatrixParity', 'noFootOutlineMatrixParity'
   ]); // Deliberately excludes AI and water simulation: disabling them alters active gameplay state.
 
   const PAINTERLY_BACKUP_KEY = 'hobunji-dev-companion-painterly-previous-v1'; // Restores the user's selected quality after a temporary A/B disable.
