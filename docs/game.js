@@ -5037,7 +5037,7 @@
       window.HobunjiCacheAudit?.register('game.creatureTexCache', () => _creatureTexCache.front.size);
       function _getCreatureFrontTexture(url) {
         if (!_creatureTexCache.front.has(url)) {
-          const tex = new THREE.TextureLoader().load(url);
+          const tex = new THREE.TextureLoader().load(url, window.CreatureTextureCache?.capLoadedTexture); // Oversized art (grehlr 3000x2250) is scaled once at load; see creature-texture-cache.js.
           tex.colorSpace = THREE.SRGBColorSpace;
           _creatureTexCache.front.set(url, tex);
         }
@@ -5045,7 +5045,7 @@
       }
       function _getCreatureBackTexture(url) {
         if (!_creatureTexCache.back.has(url)) {
-          const tex = new THREE.TextureLoader().load(url);
+          const tex = new THREE.TextureLoader().load(url, window.CreatureTextureCache?.capLoadedTexture); // Same cap as the front texture.
           tex.colorSpace = THREE.SRGBColorSpace;
           tex.wrapS = THREE.RepeatWrapping;
           tex.repeat.set(-1, 1);
@@ -5348,6 +5348,7 @@
       function despawnCreature(c) {
         if (c?.maskboundTroop === 'headtaker') window.MaskboundHeadtaker?.cancel?.(c, 'despawn'); // Release the player's neck/input lock before removing this attacker and its visual rig.
         clearKnockbackLedgeMotion(c);
+        window.AnimalVocalizations?.releaseCreature?.(c); // Drops the scheduler's strong tracking-set reference; without this every despawned wild animal (and its whole rig object graph) stayed reachable forever.
         disposeCreaturePresentation(c); // Ordinary despawns and data-only retirement share one visual disposal owner.
       }
 
@@ -5544,6 +5545,7 @@
         if (c.isBandit) { c._banditAction = null; window.RangedWeapons?.cancelBanditAction?.(c); window.BanditCombat?.cancelLunge?.(c); }
         hostileObjects.delete(c);
         companionObjects.delete(c);
+        window.AnimalVocalizations?.releaseCreature?.(c); // A dead creature is never ticked again, so nothing else would ever drop it from the vocalization scheduler's strong set.
         const mineDeathArea = window.TownMine?.floorFromMapId?.(c.areaId) ? c.areaId : c.zoneId;
         if (!c.isCompanion && !c._mineDescentDeathRolled && window.TownMine?.floorFromMapId?.(mineDeathArea)) {
           c._mineDescentDeathRolled = true;
