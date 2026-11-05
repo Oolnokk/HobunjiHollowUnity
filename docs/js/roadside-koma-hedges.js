@@ -34,18 +34,16 @@
   function hedgeAxis(grid, col, row) {
     for (const [dc, dr] of [[1, 0], [0, 1], [1, 1], [1, -1]]) {
       let sides = 0; // Counts actual other bushes along one coherent line, allowing a small gap.
-      let opposite = 0; // Ensures a line rather than an isolated clump.
       for (const sign of [-1, 1]) {
         for (let offset = 1; offset <= HEDGE_SPAN; offset++) {
           const c = col + dc * offset * sign, r = row + dr * offset * sign;
           if (!bushAt(grid, c, r)) continue;
           if (!nearRoad(grid, c, r)) continue;
           sides++;
-          if (sign < 0) opposite++;
           break;
         }
       }
-      if (sides >= 2 || (sides === 1 && opposite >= 0 && countAxisBushes(grid, col, row, dc, dr) >= 3)) return true;
+      if (sides === 2 || (sides === 1 && countAxisBushes(grid, col, row, dc, dr) >= 3)) return true; // Three or more related roadside bushes, not isolated scrub.
     }
     return false;
   }
