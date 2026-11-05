@@ -1092,7 +1092,7 @@
         fogColor: fogResultColor ? `#${fogResultColor.getHexString()}` : null,
         skydomeSuppressed: !!isNoSkyArea(debugArea),
         undergroundLanternArea: isUndergroundLanternArea(debugArea),
-        latestChange: 'Interior light pools use a wider eased fade and fade through animated closed-door blockers; farmhouse and authored rooms share the same compositor.',
+        latestChange: 'Outdoor point-light glows and watch lanterns fade with player distance; indoor light pools retain their existing eased fades and door transmission.',
         interiorLightRadiusMultiplier: INTERIOR_LIGHT_RADIUS_MULTIPLIER,
         interiorLightFalloff: 'ease-out',
         undergroundDarknessKind: enclosedDarknessKind(debugArea),
