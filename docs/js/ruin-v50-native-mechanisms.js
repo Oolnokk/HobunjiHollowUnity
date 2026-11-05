@@ -21,7 +21,14 @@
       .sort((a,b)=>priority.indexOf(a.userData.activatorType)-priority.indexOf(b.userData.activatorType))[0]||null;
   }
   function inspect(nativeRoot){
-    const mechanisms=new Map(),activators=[],blocks=[],fixedBlocks=[],transitDoors=[]; // Fixed V50 push-route shapers must block upper-story players, not just the movable burden.
+    const mechanisms=new Map(),activators=[],blocks=[],fixedBlocks=[],transitDoors=[];
+    const inherited=(object,key)=>{
+      for(let node=object;node;node=node.parent){
+        if(node.userData?.[key]!=null)return node.userData[key];
+        if(node===nativeRoot)break;
+      }
+      return null;
+    }; // Match HitPuzzles' V50 ancestor lookup: helpers can inherit a circuit ID without duplicating it on their immediate parent. // Fixed V50 push-route shapers must block upper-story players, not just the movable burden.
     nativeRoot?.traverse?.(object=>{
       const d=object.userData||{},motion=d.previewMotion?.type;
       if(d.mechanismId&&MOTIONS.has(motion))mechanisms.set(String(d.mechanismId),object);
@@ -33,7 +40,7 @@
         const parent=object.parent?.userData;
         if((d.activatorType==='torch'||d.activatorType==='brazier')
           &&parent?.activatorType===d.activatorType
-          &&String(parent.linkedMechanismId)===String(d.linkedMechanismId))return;
+          &&String(inherited(object.parent,'linkedMechanismId'))===String(inherited(object,'linkedMechanismId')))return;
         // Retain the deepest glyph-set leaves and authored cube controls.
         activators.push(object);
       }
