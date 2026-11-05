@@ -162,6 +162,7 @@
   // Returns true when the swarm is hive-controlled this frame (flying home,
   // or tucked inside the stump) so the generic AI must be skipped.
   function control(c, dt) {
+    if (window.TzatzulFlight?.control?.(c, dt)) return true; // Shared pre-ground-AI seam for flying birds and nest hatchlings.
     if (!c.hiveKey || c.health <= 0) return false;
     const night = isNight();
     const T = deps.TILE;
