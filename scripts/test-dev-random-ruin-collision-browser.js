@@ -86,7 +86,18 @@ const TEST_URL = process.env.HOBUNJI_TEST_URL || 'http://127.0.0.1:8000/index.ht
     const canvas = document.getElementById('wildernessMapCanvas');
     const legend=document.querySelector('#mpMap .wmap-legend')?.textContent||'';
     const voxel=window.DevRandomRuin?.getShaftCollisionMap?.(0)||null; // Actual 3D collision must be present even if V50's vestibule has no puzzle doors.
-    const floorTabCount=document.querySelectorAll('[data-ruin-floor]').length; // A mobile user must be able to inspect the distinct story collisions.
+    const floorTabs=[...document.querySelectorAll('[data-ruin-floor]')]; // These are the real mobile/controller focusable floor tabs.
+    const floorTabCount=floorTabs.length;
+    const nextFloor=floorTabs[1]||null;
+    let floorSelectionWorks=false,focusPreserved=false;
+    if(nextFloor){
+      nextFloor.focus();nextFloor.click();
+      floorSelectionWorks=canvas.dataset.ruinFloor==='1'
+        &&nextFloor.classList.contains('active');
+      focusPreserved=document.activeElement===nextFloor
+        &&document.querySelector('[data-ruin-floor="1"]')===nextFloor;
+      floorTabs[0].click(); // Restore the entrance before testing V50's original red occupancy and diagnostic legend.
+    }
 
     // Move one authored push block by a full runtime tile and refresh explicitly;
     // its red source must move without registering a new object blocker.
@@ -115,7 +126,8 @@ const TEST_URL = process.env.HOBUNJI_TEST_URL || 'http://127.0.0.1:8000/index.ht
     return {
       hiddenPatternOverlays,
       counts:{blocked:first.blocked.length,causes:first.causes.length,effects:first.effects.length},
-      voxelBlocked:voxel?.blocked?.length||0,voxelFloorCount:voxel?.floorCount||0,floorTabCount,
+      voxelBlocked:voxel?.blocked?.length||0,voxelFloorCount:voxel?.floorCount||0,
+      floorTabCount,floorSelectionWorks,focusPreserved,
       aggregate:aggregate.length,
       legacy:legacy.length,
       blockedHit:blockedHit?.id || null,
@@ -132,6 +144,8 @@ const TEST_URL = process.env.HOBUNJI_TEST_URL || 'http://127.0.0.1:8000/index.ht
   assert.ok(result.counts.blocked>0||result.voxelBlocked>0,JSON.stringify(result));
   assert.ok(result.voxelBlocked>0&&result.voxelFloorCount>=3,JSON.stringify(result));
   assert.equal(result.floorTabCount,result.voxelFloorCount,JSON.stringify(result));
+  assert(result.floorSelectionWorks,'the map must actually select an upper floor');
+  assert(result.focusPreserved,'switching floors must not destroy the focused controller button');
   assert.equal(result.aggregate, 1, JSON.stringify(result));
   assert.equal(result.legacy, 0, JSON.stringify(result));
   if(result.counts.blocked>0)assert.equal(result.blockedHit,'devruin-tile-occupancy',JSON.stringify(result));
