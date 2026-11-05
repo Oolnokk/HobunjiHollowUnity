@@ -41,7 +41,7 @@ for(const needle of ['roomMax:singleVestibule?1','if(singleVestibule&&meta.rooms
 for(const needle of ['if(context.singleRoomTrial){','return; // Never run other composers','Challenge.compose({','Challenge.ropePitForRoom(room,side)','state.singleRoomChallenge?.dispose?.()','state.singleRoomChallenge?.tick?.(dt)'])
   assert.ok(simple.includes(needle),'puzzle lifecycle: '+needle);
 assert.ok(defense.includes('noLoot:options.noLoot===true'));
-assert.ok(encounters.includes('entity.ruinNoLoot=enc.noLoot===true'));
+assert.ok(encounters.includes('if(enc.noLoot)entity.ruinNoLoot=true'));
 assert.ok(corpses.includes('if (c.ruinNoLoot===true)return [];')||corpses.includes('if(c.ruinNoLoot===true)return [];'));
 assert.ok(corpses.includes('if(c.ruinNoLoot===true)return {ok:false'));
 assert.ok(interior.includes('singleRoomLab:singleRoomTrial'));
