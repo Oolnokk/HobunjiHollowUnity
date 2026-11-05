@@ -95,7 +95,8 @@ const THREE={
   TextureLoader:class{load(){return {};}},
 };
 const net=layouts[1],scene={objects:[],add(mesh){this.objects.push(mesh);}};
-const meshes=routes.render(THREE,scene,net);
+const grassTopMaterial={name:'plateau-grass'}, stoneSideMaterial={name:'cliff-rock'}; // Verifies the same separate material slots used by zone-plateau-mesa.
+const meshes=routes.render(THREE,scene,net,stoneSideMaterial,grassTopMaterial);
 const rock=meshes.find(m=>m.userData?.cliffGenerated);
 assert(rock,'a single merged rock shell replaces every old flat box top');
 assert.equal(meshes.filter(m=>m.userData?.cliffGenerated).length,1,'no per-mini-cliff draw-call growth');
@@ -106,6 +107,8 @@ const TOP_FLOATS_PER_SHELF=8*3*3, ROCK_FLOATS_PER_SHELF=32*3*3; // One top fan +
 assert.equal(coordinates.length,net.balconies.length*(TOP_FLOATS_PER_SHELF+ROCK_FLOATS_PER_SHELF),
   'every mini-plateau is tessellated as one top and an embedded tapered underside');
 assert.equal(rock.material.length,2,'mini-cliff mesh has independently selectable top and rock materials');
+assert.equal(rock.material[0],grassTopMaterial,'top triangles use the resolved plateau surface material');
+assert.equal(rock.material[1],stoneSideMaterial,'rock underside keeps its cliff material');
 assert.equal(rock.geometry.groups.length,2,'one batch each for grass cap and rocky shell');
 assert.equal(rock.geometry.groups[0].count,net.balconies.length*TOP_FLOATS_PER_SHELF/3,
   'grass material covers all upward-facing cap triangles');
@@ -151,6 +154,16 @@ const dynamic={
 };
 const mounted=elevated.mount(net,{DynamicSurfaces:dynamic,CellGrid3D:cubic});
 assert(mounted.ok, mounted.reason);
+for(const shelf of net.balconies){
+  assert(elevated.canStandOn(net,shelf.id,shelf.x,shelf.z,0),'registered top is walkable at its center');
+  for(const u of [-0.9,0,0.9]){
+    const i=u<0?0:1,t=u<0?u+1:u,along=u*shelf.width/2;
+    const front=-shelf.depth/2+shelf.overhangDepths[i]+(shelf.overhangDepths[i+1]-shelf.overhangDepths[i])*t;
+    const x=shelf.x+shelf.tangent.x*along+shelf.normal.x*(front+0.06);
+    const z=shelf.z+shelf.tangent.z*along+shelf.normal.z*(front+0.06);
+    assert(!elevated.canStandOn(net,shelf.id,x,z,0),'support registry rejects the missing part of a varied overhang');
+  }
+}
 assert.equal(mounted.supportCount,registeredRectangles,
   'base footprint introduces no additional gameplay collision rectangles');
 assert(registered.every(r=>r.shelfId&&r.topY===net.balconies.find(s=>s.id===r.shelfId)?.y),
