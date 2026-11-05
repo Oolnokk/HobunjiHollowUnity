@@ -69,7 +69,7 @@
     }
     const special=ruin.specialBoss?{
       specialBoss:true,
-      patternId:root.SpecialHarlyaoLiches?.defFor?.(ruin.theme)?.glyph,
+      patternId:ruin.specialGlyph,
       ink:ruin.specialBodyColor3,
     }:undefined; // Named-lich masonry shares the original wall-ink selection.
     const ids=root.FurniturePatternSurfaces?.decorateRuin?.(accents,seed,special)||[];
