@@ -35,7 +35,7 @@
 
   function begin(entity, speedPxS, durationS) {
     if (!entity) return null;
-    if (Math.abs(finite(speedPxS)) > 0 && entity.onPerch) window.PerchSupport?.release?.(entity, 'knocked from perch');
+    if (Math.abs(finite(speedPxS)) > 0 && entity.onPerch && !entity.onBranch) window.PerchSupport?.release?.(entity, 'knocked from perch'); // Branch-compatible perches are released by the game's authoritative branch knockback path, avoiding double ledge damage.
     const speed = Math.max(0, Math.abs(finite(speedPxS)));
     const duration = Math.max(0, finite(durationS));
     entity._knockbackCollisionImpact = { // Used only while this knockback is in flight to measure the actual lost travel at first collision.

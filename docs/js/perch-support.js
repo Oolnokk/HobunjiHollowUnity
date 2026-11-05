@@ -16,7 +16,7 @@
   }
   function fromBranch(branch) {
     if (!branch) return null;
-    return line(branch.id || [branch.col, branch.row].join(','), {
+    return line('shadewood:' + (branch.id || [branch.col, branch.row].join(',')), {
       x: branch.baseX, y: branch.baseY, worldY: branch.baseWorldY,
     }, { x: branch.tipX, y: branch.tipY, worldY: branch.tipWorldY });
   }
@@ -37,20 +37,42 @@
     byArea.set(area, entries);
     return true;
   }
+  function unregister(area, id) {
+    const entries = byArea.get(area); // World streaming drops old branch supports without touching separately authored rock perches.
+    if (!entries) return false;
+    const removed = entries.delete(id);
+    if (!entries.size) byArea.delete(area);
+    return removed;
+  }
   function clearArea(area) { byArea.delete(area); }
+  function branchAdapter(perch) {
+    const start = sample(perch, 0), end = sample(perch, 1); // Converts 0D/1D support to the existing renderer's exact branch-height representation.
+    const length = Math.max(1e-6, Math.hypot(end.x - start.x, end.y - start.y)); // Point supports have a zero tangent; nonzero divisor keeps all native branch movement finite.
+    return {
+      id: perch.id, perchSupport: true,
+      baseX: start.x, baseY: start.y, baseWorldY: start.worldY,
+      tipX: end.x, tipY: end.y, tipWorldY: end.worldY, length,
+    };
+  }
   function attach(entity, perch, t = 0) {
-    if (!entity || !perch || ![0, 1].includes(perch.dimension)) return false;
-    const p = sample(perch, t);
+    if (!entity || !perch || ![0, 1].includes(perch.dimension) || entity.prone || Number(entity.health) <= 0) return false;
+    const u = perch.dimension === 0 ? 0 : clamp(t); // A point has no axis to walk along.
+    const p = sample(perch, u);
     if (!p) return false;
-    entity.onPerch = perch; entity.perchT = clamp(t); entity.perchWorldY = p.worldY;
+    const branch = branchAdapter(perch); // Existing player/creature branch renderers consume onBranch and branchSurfaceY.
+    entity.onPerch = perch; entity.perchT = u; entity.perchWorldY = p.worldY;
+    entity.onBranch = branch; entity.branchT = u; entity.branchSurfaceY = p.worldY;
     entity.x = p.x; entity.y = p.y;
     return true;
   }
   function constrain(entity) {
     if (!entity?.onPerch) return false;
-    const p = sample(entity.onPerch, entity.perchT);
+    const t = entity.onBranch?.perchSupport ? entity.branchT : entity.perchT; // Native 1D branch walks advance branchT, not the editor-only perchT.
+    const p = sample(entity.onPerch, t);
     if (!p) return false;
+    entity.perchT = entity.onPerch.dimension === 0 ? 0 : clamp(t);
     entity.x = p.x; entity.y = p.y; entity.perchWorldY = p.worldY;
+    if (entity.onBranch?.perchSupport) entity.branchSurfaceY = p.worldY;
     return true;
   }
   function support(entity) {
@@ -83,7 +105,7 @@
     return { fell: true, x: entity.x, y: entity.y, height, support: held };
   }
   window.PerchSupport = Object.freeze({
-    point, line, fromBranch, sample, register, clearArea, attach, constrain, support, release,
+    point, line, fromBranch, sample, register, unregister, clearArea, attach, constrain, support, release,
     debugSnapshot: () => ({ areas: [...byArea].map(([id, items]) => ({ id, supports: items.size })), lastDrop: lastDrop && { ...lastDrop } }),
   });
 })();

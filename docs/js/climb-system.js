@@ -40,10 +40,15 @@
   // px (player.x/y convention); baseWorldY/tipWorldY are THREE-unit heights
   // (player.climbSurfaceY/branchSurfaceY convention).
   const branchesByArea = new Map();
-  function resetAreaBranches(mapId) { branchesByArea.set(mapId, []); }
+  function resetAreaBranches(mapId) {
+    for (const branch of branchesByArea.get(mapId) || [])
+      if (branch) window.PerchSupport?.unregister?.(mapId, window.PerchSupport.fromBranch(branch).id);
+    branchesByArea.set(mapId, []); // Clears Shadewood only; independently registered rock perches survive a foliage rebuild.
+  }
   function registerBranch(mapId, branch) {
     if (!branchesByArea.has(mapId)) branchesByArea.set(mapId, []);
     branchesByArea.get(mapId).push(branch);
+    if (branch) window.PerchSupport?.register?.(mapId, window.PerchSupport.fromBranch(branch));
   }
   function removeBranchesInBounds(mapId, bounds) {
     const branches = branchesByArea.get(mapId);
@@ -54,6 +59,11 @@
       return col < bounds.colStart || col >= bounds.colEnd || row < bounds.rowStart || row >= bounds.rowEnd;
     });
     const removed = branches.length - kept.length;
+    if (removed && window.PerchSupport?.unregister) {
+      const live = new Set(kept);
+      for (const branch of branches) if (branch && !live.has(branch))
+        window.PerchSupport.unregister(mapId, window.PerchSupport.fromBranch(branch).id);
+    }
     branchesByArea.set(mapId, kept);
     return removed;
   }
@@ -602,7 +612,7 @@
   const BRANCH_KNOCKBACK_DUR_S = 0.18; // Mirrors game.js's own KNOCKBACK_DUR_S so a shove off a branch covers the same distance a ground knockback would.
   function resolveBranchKnockback(entity, fromX, fromY, speedPxS) {
     const branch = entity.onBranch;
-    if (branch && Number(speedPxS) > 0 && window.PerchSupport?.release) {
+    if (branch && Math.abs(Number(speedPxS) || 0) > 0 && window.PerchSupport?.release) {
       return window.PerchSupport.release(entity, 'knocked from Shadewood perch', { deferLegacyKnockback: true });
     }
     if (!branch) return null;
