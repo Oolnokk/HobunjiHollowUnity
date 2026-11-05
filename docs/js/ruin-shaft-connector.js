@@ -14,8 +14,10 @@
     const e=meta?.entrance,side=SIDES[e?.side];
     if(!e||!side)return null;
     const cs=(Number(meta.cellSize)||.5)*tileScale; // Matches V50's 2x horizontal floor projection.
-    const x=pad+(e.axis==='x'?Number(e.boundary):Number(e.center))*cs;
-    const z=pad+(e.axis==='x'?Number(e.center):Number(e.boundary))*cs;
+    const padX=typeof pad==='object'?Number(pad.x):Number(pad);
+    const padZ=typeof pad==='object'?Number(pad.z):Number(pad);
+    const x=padX+(e.axis==='x'?Number(e.boundary):Number(e.center))*cs;
+    const z=padZ+(e.axis==='x'?Number(e.center):Number(e.boundary))*cs;
     if(!Number.isFinite(x)||!Number.isFinite(z))return null;
     // Half a tile outside the existing V50 doorway: players can walk straight
     // back inside, rather than being dropped at the spawn by an interaction.
@@ -50,7 +52,9 @@
     buildWalls(wallsX,new THREE.BoxGeometry(1,2.3,.12),'ruin-corridor-north-south-walls');
     buildWalls(wallsZ,new THREE.BoxGeometry(.12,2.3,1),'ruin-corridor-east-west-walls');
     parent.add(group);
-    return ()=>{group.parent?.remove(group);group.traverse(node=>node.geometry?.dispose?.());floorMat.dispose();wallMat.dispose();};
+    return ()=>{group.parent?.remove(group);group.traverse(node=>node.geometry?.dispose?.());
+      const textures=new Set([floorMat.map,wallMat.map].filter(Boolean)); // Shared clones must be released once after their owning corridor materials.
+      floorMat.dispose();wallMat.dispose();textures.forEach(texture=>texture.dispose?.());};
   }
   function connect({rec,ruin,seed,meta,pad=2,tileScale=2,THREE,makeTile,DynamicSurfaces:DS,ShaftHub,ClimbSurfaces,DevRandomRuin,TileOccupancy,RuinLayerPlan,RuinShaftCorridor,RuinLayerPlayable,RuinLayerChallenges,RuinLayerDefense,RuinV50NativeFloors,preplanned=null,nativeFloors=[],prepareMaterials=null,CellGrid3D,getPlayerPosition,getPlayerY,showToast,onStateChange}={}){
     if(!rec||!ruin||!meta||!THREE||!DS||!ShaftHub||!RuinLayerPlan||!RuinShaftCorridor||!RuinLayerPlayable||!RuinLayerChallenges||!RuinLayerDefense||!CellGrid3D||preplanned?.nativeFloorCount&&!RuinV50NativeFloors||!makeTile)
@@ -62,7 +66,7 @@
     const anchorX=Math.ceil(Math.max(rec.cols+spacing,spacing*3)/spacing)*spacing;
     const anchorZ=Math.ceil(Math.max(rec.rows+spacing,spacing*3)/spacing)*spacing;
     const plan=preplanned||RuinLayerPlan.compose({seed,spacing,anchorX,anchorZ,shaftSize:33,floorHeight:4});
-    if(preplanned&&(preplanned.shaft.anchor.x<rec.cols+spacing||preplanned.shaft.anchor.z<rec.rows+spacing))
+    if(preplanned&&!preplanned.options.groundEntranceSide&&(preplanned.shaft.anchor.x<rec.cols+spacing||preplanned.shaft.anchor.z<rec.rows+spacing))
       throw new Error('Reserved native V50 shaft overlaps the original entry-floor V50 footprint');
     if(!plan.ok)throw new Error('Layer plan invalid: '+plan.checks.filter(c=>!c.ok).map(c=>c.name).join(', '));
     const portals=plan.floors.flatMap(f=>[
@@ -70,7 +74,7 @@
       ...(f.nativePort?[{floor:f.floor,side:f.nativePort.side}]:[]),
     ]); // All E-side native V50 entrances are reserved before V50 emits any floor scene. // Every generated room chain now receives a separate physical doorway.
     const shaftOptions={seed,floors:plan.floorCount,chambers:false,wall:plan.options.shaftWall,
-      shaft:plan.options.shaftSize,spacing:plan.options.floorHeight,entranceSide:'W',portals};
+      shaft:plan.options.shaftSize,spacing:plan.options.floorHeight,entranceSide:plan.options.groundEntranceSide||'W',portals};
     const hub=ShaftHub.compose(shaftOptions); // The real shared room; origin is set below after determining its full masonry shell.
     const originX=plan.shaft.anchor.x-Math.floor(hub.cols/2),originZ=plan.shaft.anchor.z-Math.floor(hub.rows/2); // The pre-generation anchor owns every portal and wing, including the rendered shaft.
     const placed=ShaftHub.compose({...shaftOptions,originX,originZ});
@@ -85,6 +89,10 @@
       ?{minX:0,minZ:0,maxX:oldCols,maxZ:authoredExit[1]+1} // The fixed vault's authored walls end at its single south opening.
       :null; // V50 entrance is at a ROOM edge, not necessarily the full layout edge. Existing occupied cells, not the overall rectangle, are the obstacles.
     const shaftBounds={minX:originX,minZ:originZ,maxX:originX+placed.cols,maxZ:originZ+placed.rows};
+    if(plan.options.groundEntranceSide&&[...oldFloor].some(cell=>{
+      const [x,z]=cell.split(',').map(Number);
+      return x>=shaftBounds.minX&&x<shaftBounds.maxX&&z>=shaftBounds.minZ&&z<shaftBounds.maxZ;
+    }))throw new Error('V50 vestibule or sanctum intrudes into the shaft masonry');
     // The entrance hallway must not be routed through the *ground-level*
     // challenge rooms that are about to be materialized. Upper floors can
     // legitimately cross its 2D projection because their collision is height
@@ -92,10 +100,48 @@
     const reservedGround=new Set(oldFloor);
     for(const wing of plan.floors[0].wings)
       for(const tile of RuinLayerPlayable.collect(wing))reservedGround.add(tile);
-    const route=RuinShaftCorridor.route({start:entrance,end:mouth,width:3,existing:reservedGround,mainBounds,shaftBounds,maxX:cols,maxZ:rows});
+    const route=RuinShaftCorridor.route({start:entrance,end:mouth,width:3,existing:reservedGround,mainBounds,shaftBounds,maxX:cols,maxZ:rows,entryClearance:plan.options.groundEntranceSide?3:0});
+    if(route.ok&&plan.options.groundEntranceSide&&(route.corners!==0||route.length>12))
+      throw new Error('V50 vestibule requires one short straight approach to the shaft, not a winding hallway');
     if(!route.ok)throw new Error('Shaft must connect physically: '+route.reason+
       ' (entry '+entrance.x+','+entrance.z+' → '+mouth.x+','+mouth.z+
       '; main cells '+oldCols+'×'+oldRows+'; blocked floors '+oldFloor.size+')');
+    // V50's exterior door is metadata-centred; its actual walkable threshold
+    // can begin 1–3 cells farther inside. Join these cells explicitly, or the
+    // new corridor wall would seal an otherwise valid-looking doorway.
+    if(plan.options.groundEntranceSide){
+      const facing=SIDES[entrance.side]; // Inward direction starts opposite this V50 exterior normal.
+      const contact=[0,1,2,3].find(step=>
+        oldFloor.has(key(entrance.x-facing.dx*step,entrance.z-facing.dz*step)));
+      if(contact===undefined)throw new Error('V50 vestibule corridor has no physical entry-floor contact');
+      const routeKeys=new Set(route.tiles.map(([x,z])=>key(x,z)));
+      for(let step=1;step<contact;step++){
+        const x=entrance.x-facing.dx*step,z=entrance.z-facing.dz*step;
+        const tile=key(x,z);
+        if(!routeKeys.has(tile)){route.tiles.push([x,z]);routeKeys.add(tile);}
+      }
+      const connected=new Set([...oldFloor,...routeKeys]); // Union of actual V50 floor, door threshold, and shaft corridor.
+      const spawnKey=key(Math.floor(ruin.spawn.x),Math.floor(ruin.spawn.z));
+      const mouthKey=key(mouth.x,mouth.z);
+      const solidType=makeTile(false).type;
+      const physical=k=>{
+        if(!oldFloor.has(k))return false;
+        const [x,z]=k.split(',').map(Number);
+        return rec.grid[z]?.[x]?.type===solidType
+          ||!!ruin.occupancy?.blocksBox?.(x+.5,z+.5,.08,placed.grid.baseY);
+      };
+      const seen=new Set([spawnKey]),queue=[spawnKey];
+      for(let head=0;head<queue.length&&!seen.has(mouthKey);head++){
+        const [x,z]=queue[head].split(',').map(Number);
+        for(const [dx,dz] of [[1,0],[-1,0],[0,1],[0,-1]]){
+          const next=key(x+dx,z+dz);
+          if(!connected.has(next)||seen.has(next)||physical(next))continue;
+          seen.add(next);queue.push(next);
+        }
+      }
+      if(!seen.has(mouthKey))
+        throw new Error('V50 entrance room cannot physically reach the shaft across its doorway');
+    }
     // Avoid mutating the real map until the entire shaft/route has passed its proofs.
     const added=new Set(); // Used by the visual, support registration and mobile debug.
     const mark=(c,r)=>{const id=key(c,r);if(oldFloor.has(id)||added.has(id))return;added.add(id);};
@@ -121,7 +167,9 @@
     ruin.shaftHub=true;ruin.shaftWing=true;ruin.shaftHubPlan=plan;
     ruin.shaftConnection={length:route.length,corners:route.corners,physical:true,entrance,mouth,
       floorCount:plan.floorCount,totalWingsPlanned:plan.totalWings,braziersPlanned:plan.totalBraziers,
-      hallwayTiles:route.tiles.length,addedFloorTiles:allFloor.length};
+      hallwayTiles:route.tiles.length,addedFloorTiles:allFloor.length,
+      straightVestibule:!!plan.options.groundEntranceSide,
+      thresholdConnected:!!plan.options.groundEntranceSide};
     const scope='dev-ruin-shaft-corridor'; // Distinct disposal scope from normal V50 floor supports.
     const corridorSupportRects=RuinShaftCorridor.rectangles(route.tiles); // Group adjacent stone into broad collision supports.
     corridorSupportRects.forEach((bounds,i)=>DS.registerSurface({id:scope+'-support-'+i,scope,
@@ -129,8 +177,8 @@
       topY:placed.grid.baseY,priority:1}));
     ruin.shaftConnection.supportRects=corridorSupportRects.length;
     const unmountVisual=visual(route.tiles.filter(([c,r])=>!oldFloor.has(key(c,r))),THREE,rec.scene,placed.grid.baseY,rec.floorSet);
-    let layerRuntime=null,nativeRuntime=null; // Install cleanup before any later floor mount can fail.
-    ruin.shaftConnectorCleanup=()=>{nativeRuntime?.dispose();layerRuntime?.dispose();unmountVisual();DS.clearScope(scope);};
+    let layerRuntime=null,nativeRuntime=null,styleCleanup=null; // Gameplay and V50 decorative masonry share session cleanup.
+    ruin.shaftConnectorCleanup=()=>{styleCleanup?.();nativeRuntime?.dispose();layerRuntime?.dispose();unmountVisual();DS.clearScope(scope);};
     const registered=ShaftHub.mount(placed,{THREE,parent:rec.scene,ClimbSurfaces,DynamicSurfaces:DS,DevRandomRuin});
     layerRuntime=RuinLayerPlayable.mount({
       rec,ruin,plan,hub:placed,makeTile,THREE,DynamicSurfaces:DS,CellGrid3D,
@@ -144,6 +192,9 @@
       prepareMaterials,tileScale,
     }):null; // Each real upper V50 graph gets its own collision, stage gates, brazier and render root.
     ruin.nativeV50Runtime=nativeRuntime;
+    if(plan.options.groundEntranceSide)
+      styleCleanup=root.RuinMultifloorV50Style?.apply?.({rec,ruin,hub:placed,seed,THREE,getPlayerY,routeTiles:route.tiles})||null;
+    ruin.shaftStyleTick=styleCleanup?.tick||null; // The existing frame client keeps higher-story engravings hidden with the puzzle-wing visuals.
     const active=layerRuntime.getState();
     ruin.shaftConnection.wingsPlayable=active.wings;
     ruin.shaftConnection.braziersPlayable=active.braziers;

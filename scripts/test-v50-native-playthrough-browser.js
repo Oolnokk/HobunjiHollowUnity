@@ -50,6 +50,15 @@ const cdn={
       null,{timeout:120000});
     await page.evaluate(()=>window.HobunjiTitleScreen?.start?.());
     await page.waitForFunction(()=>!window.HobunjiTitleScreen?.isActive?.(),null,{timeout:15000});
+    // The playthrough advances puzzle owners directly; software-WebGL redraws add minutes without coverage.
+    const rendererPaused=await page.evaluate(()=>{
+      const renderer=window.__hobunjiGameRenderer;
+      if(!renderer||typeof renderer.render!=='function')return false;
+      window.__v50AutoplayOriginalRender=renderer.render;
+      renderer.render=()=>{};
+      return true;
+    });
+    assert(rendererPaused,'V50 autoplay requires the live renderer before suspending software-WebGL drawing');
     for(const seed of seeds){
       const start=Date.now(); // Per-seed generation + puzzle runtime budget is visible in CI failure logs.
       const built=await page.evaluate(async selectedSeed=>{
@@ -120,7 +129,14 @@ const cdn={
       braziers:results.reduce((n,row)=>n+row.braziers,0)}));
   }catch(error){
     console.error('V50_NATIVE_AUTOPLAY_FAILURE '+String(error?.stack||error));
-    try{await page.screenshot({path:'/tmp/v50-native-playthrough-failure.png',fullPage:true,timeout:15000});}
+    try{
+      await page.evaluate(()=>{
+        const renderer=window.__hobunjiGameRenderer;
+        if(renderer&&window.__v50AutoplayOriginalRender)
+          renderer.render=window.__v50AutoplayOriginalRender;
+      });
+      await page.screenshot({path:'/tmp/v50-native-playthrough-failure.png',fullPage:true,timeout:15000});
+    }
     catch(_){/* Retain the explicit failure trace even when software-WebGL cannot screenshot. */}
     throw error;
   }finally{await browser.close();}

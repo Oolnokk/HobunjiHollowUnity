@@ -9,7 +9,7 @@
   'use strict';
   const dirs=[[1,0],[0,1],[-1,0],[0,-1]];
   const key=(x,z)=>x+','+z;
-  function route({start,end,width=3,existing=new Set(),mainBounds,shaftBounds,maxX,maxZ}={}){
+  function route({start,end,width=3,existing=new Set(),mainBounds,shaftBounds,maxX,maxZ,entryClearance=0}={}){
     const a={x:Math.floor(Number(start?.x)),z:Math.floor(Number(start?.z))};
     const b={x:Math.floor(Number(end?.x)),z:Math.floor(Number(end?.z))};
     const w=Math.max(1,Math.min(5,Math.floor(Number(width)||3)));
@@ -21,7 +21,7 @@
     const goal=key(b.x,b.z),origin=key(a.x,a.z);
     const adjacentToExisting=p=>dirs.some(([dx,dz])=>existing.has(key(p.x+dx,p.z+dz)));
     const pass=p=>bounds(p)&&(key(p.x,p.z)===origin||key(p.x,p.z)===goal||
-      (!within(p,mainBounds)&&!within(p,shaftBounds)&&!existing.has(key(p.x,p.z))&&!adjacentToExisting(p)));
+      (!within(p,mainBounds)&&!within(p,shaftBounds)&&!existing.has(key(p.x,p.z))&&(!adjacentToExisting(p)||Math.abs(p.x-a.x)+Math.abs(p.z-a.z)<=entryClearance)));
     const queue=[a],parents=new Map([[origin,null]]);
     let head=0;
     while(head<queue.length&&!parents.has(goal)){

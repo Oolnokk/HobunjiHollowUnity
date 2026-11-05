@@ -593,8 +593,8 @@
   function setTorchLit(record, lit, resetTimer = false) {
     if (!record) return;
     record.lit = !!lit;
-    if (record.lit && resetTimer) record.burnUntil = performance.now() + TORCH_BURN_MS;
-    if (!record.lit) record.burnUntil = 0;
+    if(record.lit&&resetTimer)record.burnRemainingMs=TORCH_BURN_MS;
+    if(!record.lit)record.burnRemainingMs=0; // Torch lifetime is measured in active, frame-clamped game time; a stuck WebGL frame cannot consume an entire puzzle window.
     updateFlameVisual(record);
   }
 
@@ -607,7 +607,7 @@
       ...visual,
       status:'held',
       lit:true,
-      burnUntil:performance.now()+TORCH_BURN_MS,
+      burnRemainingMs:TORCH_BURN_MS, // Twelve active gameplay seconds, excluding GPU/GC stalls.
       restoreState:null,
       expectedSignature:null,
       ignoreSwitchUntil:0,
@@ -623,7 +623,7 @@
     if (!record || record.status !== 'dropped' || carriedTorch) return false;
     forceTorchWeaponMode(record);
     attachTorchToHand(record);
-    const left = record.lit ? Math.max(0, (record.burnUntil-performance.now())/1000) : 0;
+    const left=record.lit?Math.max(0,(record.burnRemainingMs||0)/1000):0;
     devDeps?.showToast?.(record.lit ? `Picked up torch — ${left.toFixed(1)}s burn left.` : 'Picked up an extinguished torch.', true);
     return true;
   }
@@ -814,9 +814,12 @@
     transferFire(nearest.target);
   }
 
-  function updateTorchTimers(now) {
-    for (const record of temporaryTorches) {
-      if (record.lit && record.burnUntil > 0 && now >= record.burnUntil) {
+  function updateTorchTimers(dt) {
+    for(const record of temporaryTorches){
+      if(record.lit){
+        record.burnRemainingMs=Math.max(0,(Number(record.burnRemainingMs)||0)-dt*1000);
+      }
+      if(record.lit&&record.burnRemainingMs<=0){
         setTorchLit(record, false, false);
         if (record.status === 'held') devDeps?.showToast?.('The ruin torch burns out.', false);
       }
@@ -894,7 +897,7 @@
     const dt = clamp((now-lastFrameMs)/1000, 0, .05);
     lastFrameMs = now;
     updateCarrySwitchDetection(now);
-    updateTorchTimers(now);
+    updateTorchTimers(dt);
     updateCarryVisual();
     updateTorchSwing(now);
     updateSignalState(dt);
@@ -981,7 +984,7 @@
       glyphs:{ total:glyphTargets.length, active:glyphTargets.filter(target => target.active).length },
       ignitionTargets:ignitionTargets.map(target => ({ id:target.id, kind:target.kind, mechanismId:target.mechanismId, lit:target.lit })),
       torchSources:torchSources.length,
-      temporaryTorches:temporaryTorches.map(record => ({ id:record.id, status:record.status, lit:record.lit, burnMs:record.lit?Math.max(0,Math.round(record.burnUntil-performance.now())):0 })),
+      temporaryTorches:temporaryTorches.map(record => ({ id:record.id, status:record.status, lit:record.lit, burnMs:record.lit?Math.max(0,Math.round(record.burnRemainingMs||0)):0 })),
       carryingTorch:carriedTorch?.id || null,
       activeSwing:!!activeSwing,
       signalStates:[...mechanismSignals.values()].map(state => ({ mechanismId:state.mechanismId, progress:state.progress, target:state.target, commandTarget:state.commandTarget, glyphRequired:state.glyphRequired, glyphActive:state.glyphTargets.filter(target=>target.active).length, ignitionLit:state.ignitionTargets.some(target=>target.lit) })), // Includes ON/OFF bridge midpoint state for mobile puzzle diagnostics.

@@ -179,7 +179,16 @@ module.exports=async function runNativeV50Playthrough(page){
       await put({...ordered[0].p,y:floorY(record)},record,stage);
       if(!hit.debugPickupTorch())fail('actual torch pickup callback failed',record,stage,{source:ordered[0].p});
       await put({...target,y:floorY(record)},record,stage);
-      if(!hit.debugIgniteTarget(actor))fail('authored brazier rejected actual fire-transfer callback',record,stage,{target});
+      if(!hit.debugIgniteTarget(actor)){
+        const status=hit.snapshot?.()||{}; // Precise CI evidence without a desktop console: distinguish actor mismatch, range and torch expiry.
+        fail('authored brazier rejected actual fire-transfer callback',record,stage,{
+          target,actorId:actor.id,
+          registered:status.ignitionTargets?.some(entry=>entry.id==='ignite-'+actor.id)||false,
+          range:hit.distanceToWorldObject?.(actor),
+          carriedTorch:status.temporaryTorches?.find(torch=>torch.id===status.carryingTorch)||null,
+          ignitionTargets:status.ignitionTargets?.filter(entry=>entry.kind==='brazier').slice(0,20),
+        });
+      }
       hit.dropTorch();
       steps.push({floor:record.floor,stage:stage.id,event:'torch-pickup-and-contact-callback'});
       await advance(32);
@@ -187,7 +196,8 @@ module.exports=async function runNativeV50Playthrough(page){
     const solveNative=async(state,record,stage,depth=0)=>{
       if(!state||depth>6)fail('native puzzle dependency cycle',record,stage,state?.id||null);
       if(state.solved)return;
-      const actor=state.linked.find(object=>object.userData?.activatorType!=='torch')||state.linked[0];
+      const actor=window.RuinV50NativeMechanisms?.pickStageActivator?.(state.linked)
+        ||state.linked.find(object=>object.userData?.activatorType!=='torch')||state.linked[0]; // Match the production V50 stage's real actionable actuator, not a nested/decorative brazier.
       if(!actor){
         const control=puzzleControl('v50NativeMechanism',state.object);
         await put({...point(state.object),y:floorY(record)},record,stage);

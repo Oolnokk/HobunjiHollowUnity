@@ -32,10 +32,11 @@ const TEST_URL = process.env.HOBUNJI_TEST_URL || 'http://127.0.0.1:8000/index.ht
       if (node.userData?.devRuinNativeRenderKind === 'activator'
         && node.name === 'pattern:sides' && node.visible === false) hiddenPatternOverlays++;
     });
-    return render?.sourceDoorMeshes > 0 && render.visibleDoorSources === render.sourceDoorMeshes
-      && render.sourceActivatorMeshes > 0
-      && render.visibleActivatorSources + hiddenPatternOverlays === render.sourceActivatorMeshes
-      && render.totalProxyCount === 0;
+    const collision=window.DevRandomRuin?.getShaftCollisionMap?.(0); // The new entry has one real V50 room with no forced puzzle door or activator.
+    return render?.sourceWalls>0 && render.visibleWallSources===render.sourceWalls
+      && render.visibleDoorSources===render.sourceDoorMeshes
+      && render.visibleActivatorSources+hiddenPatternOverlays===render.sourceActivatorMeshes
+      && collision?.blocked?.length>0&&render.totalProxyCount===0;
   }, null, { timeout:10000, polling:250 }).catch(async error => { // Headless/WebGL rAF can stall even after all visibility conditions are true.
     // Keep the original assertion, but report the exact failed counts when CI
     // cannot display WebGL. These are also available from Pixel Probe in-game.
@@ -74,16 +75,33 @@ const TEST_URL = process.env.HOBUNJI_TEST_URL || 'http://127.0.0.1:8000/index.ht
     const dynamic = window.DynamicSurfaces.debugSnapshot();
     const aggregate = dynamic.blockers.filter(record => record.id === 'devruin-tile-occupancy');
     const legacy = dynamic.blockers.filter(record => /^devruin-(?:wall|solid|door|push|transit-door)-/.test(record.id));
-    const blockedKey = first.blocked[0];
-    const [blockedCol, blockedRow] = blockedKey.split(',').map(Number);
-    const blockedHit = window.DynamicSurfaces.blockerAt(blockedCol + .5, blockedRow + .5, { radius:.05, actorHeight:1.25 });
+    const blockedKey=first.blocked[0]||null;
+    const [blockedCol,blockedRow]=blockedKey?blockedKey.split(',').map(Number):[-1,-1];
+    const blockedHit=blockedKey?window.DynamicSurfaces.blockerAt(blockedCol+.5,blockedRow+.5,{radius:.05,actorHeight:1.25}):null;
     const openKey = first.floor.find(tileKey => !first.blocked.includes(tileKey));
     const [openCol, openRow] = openKey.split(',').map(Number);
     const openHit = window.DynamicSurfaces.blockerAt(openCol + .5, openRow + .5, { radius:.05, actorHeight:1.25 });
 
     window.WildernessMap.renderMapPanel();
     const canvas = document.getElementById('wildernessMapCanvas');
-    const legend = document.querySelector('#mpMap .wmap-legend')?.textContent || '';
+    const legend=document.querySelector('#mpMap .wmap-legend')?.textContent||'';
+    const voxel=window.DevRandomRuin?.getShaftCollisionMap?.(0)||null; // Actual 3D collision must be present even if V50's vestibule has no puzzle doors.
+    const menu=document.getElementById('menuPanel');
+    const mapPane=document.getElementById('mpMap');
+    menu.classList.add('open');mapPane.classList.add('active'); // Controller focus is only possible when the menu/map pane is visible. Rendering an invisible panel is not a valid focus test.
+    const floorTabs=[...document.querySelectorAll('#wmapZoneTabs [data-ruin-floor]')]; // Query only the map panel; other UIs also use data-ruin-floor.
+    const floorTabCount=floorTabs.length;
+    const nextFloor=floorTabs[1]||null;
+    let floorSelectionWorks=false,focusPreserved=false,initialFocus=false;
+    if(nextFloor){
+      nextFloor.focus();initialFocus=document.activeElement===nextFloor;
+      nextFloor.click();
+      floorSelectionWorks=canvas.dataset.ruinFloor==='1'
+        &&nextFloor.classList.contains('active');
+      focusPreserved=initialFocus&&document.activeElement===nextFloor
+        &&document.querySelector('#wmapZoneTabs [data-ruin-floor="1"]')===nextFloor;
+      floorTabs[0].click(); // Restore the entrance before testing V50's original red occupancy and diagnostic legend.
+    }
 
     // Move one authored push block by a full runtime tile and refresh explicitly;
     // its red source must move without registering a new object blocker.
@@ -111,7 +129,9 @@ const TEST_URL = process.env.HOBUNJI_TEST_URL || 'http://127.0.0.1:8000/index.ht
     });
     return {
       hiddenPatternOverlays,
-      counts:{ blocked:first.blocked.length, causes:first.causes.length, effects:first.effects.length },
+      counts:{blocked:first.blocked.length,causes:first.causes.length,effects:first.effects.length},
+      voxelBlocked:voxel?.blocked?.length||0,voxelFloorCount:voxel?.floorCount||0,
+      floorTabCount,floorSelectionWorks,focusPreserved,initialFocus,
       aggregate:aggregate.length,
       legacy:legacy.length,
       blockedHit:blockedHit?.id || null,
@@ -125,14 +145,19 @@ const TEST_URL = process.env.HOBUNJI_TEST_URL || 'http://127.0.0.1:8000/index.ht
     };
   });
 
-  assert.ok(result.counts.blocked > 0, JSON.stringify(result));
+  assert.ok(result.counts.blocked>0||result.voxelBlocked>0,JSON.stringify(result));
+  assert.ok(result.voxelBlocked>0&&result.voxelFloorCount>=3,JSON.stringify(result));
+  assert.equal(result.floorTabCount,result.voxelFloorCount,JSON.stringify(result));
+  assert(result.floorSelectionWorks,'the map must actually select an upper floor');
+  assert(result.focusPreserved,'switching floors must not destroy the focused controller button');
   assert.equal(result.aggregate, 1, JSON.stringify(result));
   assert.equal(result.legacy, 0, JSON.stringify(result));
-  assert.equal(result.blockedHit, 'devruin-tile-occupancy', JSON.stringify(result));
+  if(result.counts.blocked>0)assert.equal(result.blockedHit,'devruin-tile-occupancy',JSON.stringify(result));
   assert.equal(result.openHit, null, JSON.stringify(result));
   assert.equal(result.mapRevision, result.pushChange?.revisionBefore ?? result.probe.revision, JSON.stringify(result));
   assert.equal(result.mapFog, 'disabled', JSON.stringify(result));
-  assert.match(result.legend, /Blocked/);
+  assert.match(result.legend,/blocked/i);
+  assert.match(result.legend,/3D wall/i);
   assert.match(result.legend, /Activator/);
   assert.match(result.legend, /Mechanism/);
   if (result.pushChange) {
@@ -141,12 +166,12 @@ const TEST_URL = process.env.HOBUNJI_TEST_URL || 'http://127.0.0.1:8000/index.ht
     assert.ok(result.pushChange.revisionAfter > result.pushChange.revisionBefore, JSON.stringify(result.pushChange));
   }
   assert.equal(result.probe.aggregateBlockers, 1, JSON.stringify(result.probe));
-  assert.ok(result.render.sourceDoorMeshes > 0, JSON.stringify(result.render));
+  assert.ok(result.render.sourceWalls>0,JSON.stringify(result.render));
   assert.equal(result.render.visibleDoorSources, result.render.sourceDoorMeshes, JSON.stringify(result.render));
-  assert.ok(result.render.sourceDoorArchMeshes > 0, JSON.stringify(result.render));
+  assert.ok(result.render.sourceDoorArchMeshes>=0,JSON.stringify(result.render));
   assert.equal(result.render.visibleDoorArchSources, result.render.sourceDoorArchMeshes, JSON.stringify(result.render));
-  assert.ok(result.render.normalizedDoorAssemblies > 0, JSON.stringify(result.render));
-  assert.ok(result.render.sourceActivatorMeshes > 0, JSON.stringify(result.render));
+  if(result.render.sourceDoorMeshes>0)assert.ok(result.render.normalizedDoorAssemblies>0,JSON.stringify(result.render));
+  // The one-room V50 vestibule deliberately does not spawn legacy activators; upper-floor puzzles use their own original V50 roots.
   assert.equal(result.render.visibleActivatorSources + result.hiddenPatternOverlays, result.render.sourceActivatorMeshes, JSON.stringify({render:result.render,hiddenPatternOverlays:result.hiddenPatternOverlays}));
   assert.equal(result.render.totalProxyCount, 0, JSON.stringify(result.render));
   assert.equal(result.render.frustumCulledSources, result.render.nativeSourceMeshCount, JSON.stringify(result.render));
