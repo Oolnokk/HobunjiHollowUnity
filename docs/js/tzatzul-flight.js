@@ -66,8 +66,9 @@
     const walkers = pathDeps?.npcWalkers || root._npcWalkers || [];
     for (const walker of walkers) {
       if (!walker || !Number.isFinite(walker.x) || !Number.isFinite(walker.y)) continue;
-      const candidate = Object.assign({ isNpcWalker: true, areaId: deps?.getCurrentArea?.() }, walker);
-      if (!eligiblePrey(candidate, bird)) continue;
+      if (!walker.areaId) walker.areaId = deps?.getCurrentArea?.(); // Scheduled wilderness NPC temporarily adopts its known current zone for prey testing.
+      walker.isNpcWalker = true;
+      if (!eligiblePrey(walker, bird)) continue;
       const d2 = (candidate.x - bird.x) ** 2 + (candidate.y - bird.y) ** 2;
       if (d2 < radius2 && d2 < bestD2) { bestD2 = d2; best = walker; }
     }
@@ -283,6 +284,7 @@
   function initWildlife(injectedDeps) {
     deps = injectedDeps;
     registerSpecies(injectedDeps);
+    root.TzatzulNestInterior?.initWildlife?.(injectedDeps); // Nest hatchlings and reward interactions use the same native creature/area registry.
     rigReady(); // Fire off one preload, allowing distance-streamed spawns to use it later.
     root.RuntimeFrameScheduler?.register?.('tzatzul-flight-presentation', framePresentation, {
       phase: 'pre-render', owner: 'TzatzulFlight', description: 'Airborne rigs and payloads retain full distant visibility',
@@ -298,6 +300,7 @@
     // Spire's nest is a true building map id; the existing den identity table
     // can resolve its exterior zone without parsing underscores.
     root.WildlifeSpawn?.denCavernMapId?.(zoneId, spire.nest.denId || spire.nest.id);
+    root.TzatzulNestInterior?.registerSpire?.(zoneId,spire); // Register cave identity before any asynchronous interior synthesis.
     const c = deps.makeCreatureEntity(SPECIES, spire.x * T, spire.z * T, {
       homeX: spire.x * T, homeY: spire.z * T,
       state: 'idle', streamVisuals: false,
@@ -370,7 +373,7 @@
     return true;
   }
   function control(c, dt) {
-    if (c?._tzatzulHatchling) return updateHatchling(c,dt);
+    if (c?._tzatzulHatchling || speciesOf(c) === HATCHLING) { if (c) c._tzatzulHatchling = true; return updateHatchling(c,dt); }
     if (!c?._tzatzulFlight || !deps) return false;
     const state = sessions.get(c);
     if (!state) return false;
@@ -428,6 +431,7 @@
   }
   function framePresentation(frame) {
     debug.frames++;
+    if (debug.frames % 12 === 0) promptCurrentArea(); // Mobile action claims are updated at ~5 Hz, without per-frame DOM writes.
     const area = deps?.getCurrentArea?.();
     if (area !== previousArea) {
       if (previousArea != null) for (const state of air.values()) if (areaOf(state.bird) !== area) detachCarry(state);
