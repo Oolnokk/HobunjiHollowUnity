@@ -175,6 +175,13 @@
   // below threshold before this hit.
   function applyWildlifeSkirmishDamage(attacker, target, amount) {
     if (target?.isNpcWalker) return window.WildlifeFoodWeb?.npcWalkerStrike?.(attacker, target) || false; // Named scheduling walkers lack Combat Health; defend/scare without inflicting fabricated damage.
+    // Player-owned animal companions are real hostile targets of predator bites, not wildlife sparring prey.
+    if (target?.isCompanion && !target.banditCompanion) {
+      deps.damageCreature(target, Math.max(0, amount), attacker.x, attacker.y, deps.HOSTILE_BITE_KNOCKBACK_PX_S, {
+        tag: attacker.def?.attackTag || 'sharp', attacker,
+      });
+      return;
+    }
     const factionTarget = target?.isBandit === true || target?.isTribeHunter === true || target?.isPorakanekiHunter === true || target?.banditCompanion === true;
     if (factionTarget) {
       // Predator-vs-humanoid encounters are real observed combat, not the
@@ -191,7 +198,7 @@
     }
     const floor = target.maxHealth * WILDLIFE_HP_FLOOR_FRACTION;
     const clamped = Math.max(0, Math.min(amount, target.health - floor));
-    if (clamped > 0) deps.damageCreature(target, clamped, attacker.x, attacker.y, deps.HOSTILE_BITE_KNOCKBACK_PX_S, { tag: attacker.def?.attackTag || 'sharp', attacker }); // Gives defensive wildlife the actual skirmish attacker instead of confusing it with the player.
+    if (clamped > 0) deps.damageCreature(target, clamped, attacker.x, attacker.y, deps.HOSTILE_BITE_KNOCKBACK_PX_S, { tag: attacker.def?.attackTag || 'sharp', attacker, wildlifeSkirmishFloor: floor }); // Scent damage obeys the existing nonlethal wildlife floor.
     if (target.health > 0 && target.health / target.maxHealth <= WILDLIFE_FLEE_HP_THRESHOLD) {
       target.state = 'fleeing-low-health';
       target.targetCreature = null;

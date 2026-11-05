@@ -1216,7 +1216,8 @@
               "stat_absorbMul_p0p15",
               "stat_damageMul_0p13",
               "stat_drainMul_p0p2",
-              "stat_idleDrainMul_p0p25"
+              "stat_idleDrainMul_p0p25",
+              "aff_scentMarkedHealth_0p55"
             ],
             "blunt": [
               "aff_bruisedHealth_0p375",
@@ -1227,7 +1228,8 @@
               "stat_damageMul_0p13",
               "stat_drainMul_p0p2",
               "stat_idleDrainMul_p0p25",
-              "stat_staminaCostMul_p0p15"
+              "stat_staminaCostMul_p0p15",
+              "aff_scentMarkedHealth_0p55"
             ]
           }
         }
@@ -1581,25 +1583,29 @@
               "aff_bleedingHealth_0p25",
               "aff_shatteredStamina_0p385",
               "debuff_durationS_12_id_sluggish",
-              "stat_idleDrainMul_p0p25"
+              "stat_idleDrainMul_p0p25",
+              "aff_scentMarkedHealth_0p55"
             ],
             "blunt": [
               "aff_bruisedHealth_0p375",
               "debuff_durationS_12_id_exposed",
               "stat_damageMul_0p1",
-              "stat_walkSpeedMul_0p1"
+              "stat_walkSpeedMul_0p1",
+              "aff_scentMarkedHealth_0p55"
             ]
           },
           "2": {
             "sharp": [
               "aff_bleedingHealth_0p25",
               "aff_woundedStamina_0p45499999999999996",
-              "stat_damageMul_0p15"
+              "stat_damageMul_0p15",
+              "aff_scentMarkedHealth_0p55"
             ],
             "blunt": [
               "aff_bruisedHealth_0p375",
               "debuff_durationS_12_id_inhibited",
-              "stat_staminaCostMul_p0p15"
+              "stat_staminaCostMul_p0p15",
+              "aff_scentMarkedHealth_0p55"
             ]
           }
         }
@@ -1623,13 +1629,15 @@
               "aff_poisonedHealth_0p315",
               "debuff_durationS_12_id_sapped",
               "stat_drainMul_p0p2",
-              "stat_zipDistanceMul_0p18"
+              "stat_zipDistanceMul_0p18",
+              "aff_scentMarkedHealth_0p55"
             ],
             "blunt": [
               "aff_bruisedHealth_0p375",
               "debuff_durationS_12_id_exposed",
               "stat_damageMul_0p1",
-              "stat_knockbackMul_0p15"
+              "stat_knockbackMul_0p15",
+              "aff_scentMarkedHealth_0p55"
             ]
           },
           "4": {
@@ -1645,7 +1653,8 @@
               "debuff_durationS_12_id_sapped",
               "instant_amount_6_id_bleedout",
               "stat_zipCooldownMul_p0p2",
-              "stat_zipDistanceMul_0p18"
+              "stat_zipDistanceMul_0p18",
+              "aff_scentMarkedHealth_0p55"
             ],
             "blunt": [
               "aff_bruisedHealth_0p375",
@@ -1658,7 +1667,8 @@
               "stat_damageMul_0p15",
               "stat_idleDrainMul_p0p25",
               "stat_zipDistanceMul_0p15",
-              "stat_zipDistanceMul_0p2"
+              "stat_zipDistanceMul_0p2",
+              "aff_scentMarkedHealth_0p55"
             ]
           }
         }
