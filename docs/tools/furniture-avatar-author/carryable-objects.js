@@ -135,15 +135,17 @@
     previewActor.scale.setScalar(scale);
     previewActor.quaternion.copy(tempRotation);
     const offset=a.posteriorOffset||{};
-    tempOffset.copy(previewPosterior).add(new THREE.Vector3(
+    const portraitPoint=a.portraitAnchor||{}; // Preview location of the authored back attachment on the portrait.
+    const mountPoint=isBack?new THREE.Vector3(Number(portraitPoint.x)||0,Number(portraitPoint.y)||0,Number(portraitPoint.z)||0):previewPosterior;
+    tempOffset.copy(mountPoint).add(new THREE.Vector3(
       Number(offset.x)||0,Number(offset.y)||0,Number(offset.z)||0))
       .multiplyScalar(scale).applyQuaternion(tempRotation);
     previewActor.position.set(p.x,p.y,p.z).sub(tempOffset);
-    if(posteriorMarker)posteriorMarker.position.copy(previewPosterior);
+    if(posteriorMarker)posteriorMarker.position.copy(mountPoint);
     if(attachmentMarker){
-      attachmentMarker.position.copy(previewPosterior).add(new THREE.Vector3(
+      attachmentMarker.position.copy(mountPoint).add(new THREE.Vector3(
         Number(offset.x)||0,Number(offset.y)||0,Number(offset.z)||0));
-      attachmentLine?.geometry?.setFromPoints?.([previewPosterior,attachmentMarker.position]);
+      attachmentLine?.geometry?.setFromPoints?.([mountPoint,attachmentMarker.position]);
     }
     previewActor.updateWorldMatrix(true,true);
     if(previewHands){
