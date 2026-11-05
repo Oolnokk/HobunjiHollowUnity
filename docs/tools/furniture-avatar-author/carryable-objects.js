@@ -81,7 +81,7 @@
     '<label>Roll<input id="carryRZ" type="number" step="1"></label>',
     '</div><label id="carrySizeRow">Billboard size <input id="carrySize" type="number" min="0.1" max="10" step="0.05"></label>',
     '</div>',
-    '<p class="muted">Offset FROM avatar posterior (character X/Y/Z). Held and back-carry mounts are independent; the back mount defaults to 180° around the vertical portrait axis.</p>',
+    '<p class="muted">Held: offset from avatar posterior. Back-stowed: use Portrait X/Y/Z instead; the old hip offsets do not affect its live portrait mount.</p>',
     '<div class="g3">',
     '<label>From hip X<input id="carryPosteriorX" type="number" step="0.01"></label>',
     '<label>From hip Y<input id="carryPosteriorY" type="number" step="0.01"></label>',
@@ -137,13 +137,14 @@
     const offset=a.posteriorOffset||{};
     const portraitPoint=a.portraitAnchor||{}; // Preview location of the authored back attachment on the portrait.
     const mountPoint=isBack?new THREE.Vector3(Number(portraitPoint.x)||0,Number(portraitPoint.y)||0,Number(portraitPoint.z)||0):previewPosterior;
-    tempOffset.copy(mountPoint).add(new THREE.Vector3(
-      Number(offset.x)||0,Number(offset.y)||0,Number(offset.z)||0))
-      .multiplyScalar(scale).applyQuaternion(tempRotation);
+    tempOffset.copy(mountPoint);
+    if(!isBack)tempOffset.add(new THREE.Vector3(Number(offset.x)||0,Number(offset.y)||0,Number(offset.z)||0));
+    tempOffset.multiplyScalar(scale).applyQuaternion(tempRotation);
     previewActor.position.set(p.x,p.y,p.z).sub(tempOffset);
     if(posteriorMarker)posteriorMarker.position.copy(mountPoint);
     if(attachmentMarker){
-      attachmentMarker.position.copy(mountPoint).add(new THREE.Vector3(
+      attachmentMarker.position.copy(mountPoint);
+      if(!isBack)attachmentMarker.position.add(new THREE.Vector3(
         Number(offset.x)||0,Number(offset.y)||0,Number(offset.z)||0));
       attachmentLine?.geometry?.setFromPoints?.([mountPoint,attachmentMarker.position]);
     }
@@ -260,6 +261,7 @@
     }
     el('carrySizeRow').hidden=id!=='anchor'&&id!=='back';
     el('carryPortraitAnchorRow').hidden=id!=='back';
+    for(const axis of ['X','Y','Z'])el('carryPosterior'+axis).disabled=id==='back'; // Hip offsets apply only to held items; back stow uses portrait coordinates.
     for(const axis of ['X','Y','Z']){
       const input=el('carryR'+axis);
       if(document.activeElement!==input)input.value=Number(r[axis.toLowerCase()]||0).toFixed(2);
