@@ -15812,6 +15812,8 @@
         window.HeldObjectRenderOrder?.forgetScene?.(zi.scene);
         window.CratePiles?.releaseZone?.(mapId);
         window.PorakanekiCampPlacementPolicy?.forgetZone?.(mapId);
+        window.Shattercasks?.releaseZone?.(mapId);
+        window.WorldPopupText?.releaseScene?.(zi.scene);
         zi.scene.clear(); // One stale reference to a mesh would otherwise keep the whole old zone reachable through its parent chain.
         window.__farmLog?.(`[zone-cache] evicted ${mapId} (${freed.materials} materials, ${freed.textures} textures released)`, 'perf');
         return true;

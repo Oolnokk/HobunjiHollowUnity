@@ -34,7 +34,9 @@ function makeWorld(config) {
       WildernessCampfire: { releaseVisualIfZone: id => campfireReleases.push(id) }, __farmLog: msg => logs.push(msg),
       HeldObjectRenderOrder: { forgetScene: scene => holderCalls.push({ module: 'held', scene, clearedAtCall: !!scene.cleared }) },
       CratePiles: { releaseZone: id => holderCalls.push({ module: 'crates', id }) },
-      PorakanekiCampPlacementPolicy: { forgetZone: id => holderCalls.push({ module: 'camps', id }) } },
+      PorakanekiCampPlacementPolicy: { forgetZone: id => holderCalls.push({ module: 'camps', id }) },
+      Shattercasks: { releaseZone: id => holderCalls.push({ module: 'shattercasks', id }) },
+      WorldPopupText: { releaseScene: scene => holderCalls.push({ module: 'popups', scene, clearedAtCall: !!scene.cleared }) } },
     setTimeout: fn => { timers.push(fn); return timers.length; },
     performance: { now: () => 0 }, localStorage: { getItem: () => null, setItem() {} },
     _zoneScenes: zoneScenes, hostileObjects: hostiles, corpseObjects: corpses, npcWalkers: npcs,
@@ -234,7 +236,9 @@ for (const [label, extra, store] of [
   assert.deepEqual(w.campfireReleases, ['map_a'], 'the saved campfire releases only its visual');
   assert.equal(scene.cleared, true, 'the old scene is emptied so no stale mesh can keep it reachable');
   // Modules that kept strong references to the old scene or grid (found in a heap snapshot) are told, for the evicted zone only.
-  assert.deepEqual(w.holderCalls.map(c => c.module).sort(), ['camps', 'crates', 'held'], 'each registry holder is released once');
+  assert.deepEqual(w.holderCalls.map(c => c.module).sort(), ['camps', 'crates', 'held', 'popups', 'shattercasks'], 'each holder is released once');
+  assert.equal(w.holderCalls.find(c => c.module === 'popups').scene, scene, 'popups anchored in the evicted scene are released');
+  assert.equal(w.holderCalls.find(c => c.module === 'shattercasks').id, 'map_a');
   const held = w.holderCalls.find(c => c.module === 'held');
   assert.equal(held.scene, scene, 'the render-order registries forget the evicted scene');
   assert.equal(held.clearedAtCall, false, 'before it is emptied, so its meshes can still be found');

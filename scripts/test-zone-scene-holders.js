@@ -99,4 +99,51 @@ function slice(source, from, to) {
   assert.deepEqual([...policy.debugSnapshot().gridRememberedZones], ['map_northern_cliffs'], 'and the next visit re-records it (treated as a rebuilt grid)');
 }
 
+// ---- Shattercasks.releaseZone ----------------------------------------------
+{
+  const releaseFn = slice(read('docs/js/shattercasks.js'), 'function releaseZone(mapId) {', 'function recordFor(mapId, targetScene) {');
+  const context = vm.createContext({});
+  vm.runInContext(`
+    const records = new Map([['zoneA', { scene: 'sceneA' }], ['zoneB', { scene: 'sceneB' }]]);
+    const placementCache = new Map([['zoneA', { scene: 'sceneA' }], ['zoneB', { scene: 'sceneB' }]]);
+    ${releaseFn}
+    this.api = { releaseZone, records, placementCache };`, context);
+  context.api.releaseZone('zoneA');
+  assert.deepEqual([...context.api.records.keys()], ['zoneB'], 'the zone\'s record (which holds its scene) is released');
+  assert.deepEqual([...context.api.placementCache.keys()], ['zoneB'], 'and its placement cache');
+  assert.match(read('docs/js/shattercasks.js'), /Object\.freeze\(\{\s*init,releaseZone,/, 'releaseZone is exported');
+}
+
+// ---- WorldPopupText.releaseScene -------------------------------------------
+{
+  const releaseFn = slice(read('docs/js/world-popup-text.js'), 'function releaseScene(scene) {', 'const api = {');
+  const disposed = [];
+  const context = vm.createContext({});
+  const ev = (id, scene) => ({ id, scene });
+  vm.runInContext(`
+    const state = { active: [], pending: [], levelUpQueue: [], aimLabel: null };
+    const disposed = this.disposed;
+    function dispose(event) { disposed.push(event.id); }
+    ${releaseFn}
+    this.api = { releaseScene, state };`, Object.assign(context, { disposed }));
+  const { api } = context;
+  const A = { name: 'A' }, B = { name: 'B' };
+  api.state.active.push(ev('popA1', A), ev('popB', B), ev('popA2', A));
+  api.state.pending.push({ kind: 'favor', scene: A }, { kind: 'favor', scene: B });
+  api.state.levelUpQueue.push({ text: 'x', scene: A }, { text: 'y', scene: B });
+  api.state.aimLabel = ev('aimA', A);
+  const released = api.releaseScene(A);
+  assert.deepEqual(disposed.sort(), ['aimA', 'popA1', 'popA2'], 'popups and the aim label anchored in the scene are disposed');
+  assert.deepEqual([...api.state.active.map(e => e.id)], ['popB'], 'other scenes\' popups stay');
+  assert.equal(api.state.pending.length, 1);
+  assert.equal(api.state.pending[0].scene, B, 'queued popups for the scene are dropped');
+  assert.equal(api.state.levelUpQueue.length, 1);
+  assert.equal(api.state.aimLabel, null);
+  assert.equal(released, 5, 'everything released is counted (2 active, 1 pending, 1 level-up, the aim label)');
+  api.state.aimLabel = ev('aimB', B);
+  assert.equal(api.releaseScene(A), 0, 'nothing left for that scene');
+  assert.equal(api.state.aimLabel.id, 'aimB', 'an aim label in another scene is untouched');
+  assert.equal(api.releaseScene(null), 0, 'a missing scene is ignored');
+}
+
 console.log('zone scene holder release regression passed');
