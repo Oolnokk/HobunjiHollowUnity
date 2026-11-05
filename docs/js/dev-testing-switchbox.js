@@ -108,6 +108,10 @@
       label: '🧠 Idle Animal Texture Cache',
       hint: 'Keep currently used animal frames, but immediately dispose unreferenced cached frames (may cause stutter when animals blink or change animation).',
     },
+    reducedPortraitPixelCache: {
+      label: '🧠 Portrait Source Image Cache (48 → 8 MiB)',
+      hint: 'Limit cached portrait source images to 8 MiB, preserving current avatar textures. More assets will need redecoding as new bandits spawn.',
+    },
   });
 
   function readFlags() {
@@ -152,12 +156,18 @@
     'noShellOutlines', 'noGrass', 'noWind', 'lowPolyFoliage',
     'noBrickWalls', 'noShingleGlbs', 'noSkySphere', 'noAudio', 'noVerdigris',
     'noCharacterGroundShadows', 'noPngAvatarOcclusion', 'noCorpseVisuals', 'noLayeredWeaponDecorations',
-    'noPortraitDepthMatrixParity', 'noHandOutlineMatrixParity', 'noFootOutlineMatrixParity', 'noUnusedAnimalTextureCache'
+    'noPortraitDepthMatrixParity', 'noHandOutlineMatrixParity', 'noFootOutlineMatrixParity', 'noUnusedAnimalTextureCache', 'reducedPortraitPixelCache'
   ]); // Deliberately excludes AI and water simulation: disabling them alters active gameplay state.
 
   const PAINTERLY_BACKUP_KEY = 'hobunji-dev-companion-painterly-previous-v1'; // Restores the user's selected quality after a temporary A/B disable.
 
   function companionToggleSwitch(name, enabled) {
+    if (name === 'trim-animal-textures') {
+      const before = window.CreatureTextureCache?.snapshot?.() || [];
+      const after = window.CreatureTextureCache?.trimUnused?.() || [];
+      const sum = rows => rows.reduce((total, row) => total + (row.estimatedBytes || 0), 0);
+      return { ok: true, beforeBytes: sum(before), afterBytes: sum(after), removedBytes: Math.max(0, sum(before) - sum(after)) };
+    }
     if (name === 'painterly' && typeof enabled === 'boolean') {
       const painterly = window.PainterlyPostprocess;
       if (!painterly?.setMode || !painterly?.getMode) return { ok: false, error: 'Painterly filter is not ready.' };
@@ -194,11 +204,17 @@
         ['Heap limit', Number.isFinite(performance.memory?.jsHeapSizeLimit) ? (performance.memory.jsHeapSizeLimit / 1048576).toFixed(0) + ' MiB' : 'Unavailable'],
         ['Animal textures (estimated)', ((window.CreatureTextureCache?.snapshot?.() || []).reduce((n, x) => n + (x.estimatedBytes || 0), 0) / 1048576).toFixed(1) + ' MiB'],
         ['Unused animal textures', ((window.CreatureTextureCache?.snapshot?.() || []).reduce((n, x) => n + (x.unusedEstimatedBytes || 0), 0) / 1048576).toFixed(1) + ' MiB'],
-        ['Creature image-cache entries', String((window.HobunjiCacheAudit?.snapshot?.()?.caches || []).find(c => c.name === 'CreatureGeneticsRender.imageCache')?.size ?? '—')],
+        ['Creature image-cache entries', String(window.CreatureGeneticsRender?.memorySnapshot?.()?.imageEntries ?? '—')],
         ['GPU textures', String(window.PerfProfiler?.getLiveGpuInfo?.()?.textures ?? '—')],
         ['GPU geometries', String(window.PerfProfiler?.getLiveGpuInfo?.()?.geometries ?? '—')],
       ],
       actions: [
+        {
+          id: 'trim-animal-textures',
+          group: 'Memory (live action)',
+          label: 'Trim unused animal textures',
+          title: 'Dispose only unreferenced cached animal frames now; never clears textures still attached to living or dead rigs.',
+        },
         {
           id: 'painterly',
           group: 'Live (no reload)',
