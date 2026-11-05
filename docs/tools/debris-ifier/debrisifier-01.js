@@ -142,6 +142,7 @@ function runtimeChooseMechanismActivatorType(rng,forcedType=null,linkedCubeDoor=
       ['vast single-room preview', 'function interiorRoomPreset(profileKind,rng,forcedLabel=null){', "function interiorRoomPreset(profileKind,rng,forcedLabel=null){if(window.__devRuinSingleRoom===true&&window.__devRuinSingleRoomPreset)forcedLabel=window.__devRuinSingleRoomPreset;"],
       ['single-room preview range', 'function interiorRoomRange(){', 'function interiorRoomRange(){if(window.__devRuinSingleRoom===true)return{min:1,max:1};'],
       ['single-room preview network', 'Math.round(Number(roomRange.min)||3),2,12)', 'Math.round(Number(roomRange.min)||3),window.__devRuinSingleRoom===true?1:2,12)'],
+      ['flat puzzle lab floor', 'plateauData=generateInteriorPlateauPlan(network,rng,density)', 'plateauData=window.__devRuinSingleRoomLab?{levelByCell:Object.fromEntries([...network.floorSet].map(key=>[key,0])),regions:[],focuses:[],stepHeight:INTERIOR_PLATEAU_STEP_HEIGHT,coreTreasureFocusId:null,singleCoreTreasure:false}:generateInteriorPlateauPlan(network,rng,density)'], // Only explicit dev labs skip V50 core-treasure scenery; ordinary ruins are byte-for-byte unchanged.
       ['repository-tree binding', treeNeedle, treeReplacement],
       ['raw-asset URL helper', rawNeedle, rawReplacement],
       ['Roughbrick loader', brickNeedle, brickReplacement],
