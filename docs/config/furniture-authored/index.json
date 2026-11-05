@@ -238,6 +238,14 @@
       "file": "config/furniture-authored/woodenDoor.json"
     },
     {
+      "key": "cliffDoor",
+      "file": "config/furniture-authored/cliffDoor.json"
+    },
+    {
+      "key": "cliffGate",
+      "file": "config/furniture-authored/cliffGate.json"
+    },
+    {
       "key": "hangingBanner",
       "file": "config/furniture-authored/hangingBanner.json"
     },
