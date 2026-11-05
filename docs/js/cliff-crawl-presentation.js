@@ -14,14 +14,36 @@
   let activeMesh = null; // Fast path for the current rig without searching every avatar descendant each render.
   let lastDebug = { active: false, hiddenHeldVisuals: 0 }; // Mobile-readable snapshot of the most recent rendered crawl.
 
-  // Alternating planted/reaching limbs. A stationary climber keeps four
-  // contacts, rather than running the ordinary walking animation in place.
-  function sampleStride(phase, moving, side) {
-    const wave = moving ? Math.sin((Number(phase) || 0) + (side === 'left' ? 0 : Math.PI)) : 0;
-    return {
-      lift: Math.max(0, wave), // Positive half-cycle lifts/reaches; negative half-cycle remains planted.
-      drive: moving ? -wave : 0, // Opposite contact shifts weight while the other limb reaches.
-    };
+  function clamp(value, min = 0, max = 1) { return Math.max(min, Math.min(max, value)); }
+
+  // Four independently timed grip transfers over each graph edge. A planted
+  // hand/foot stays on the FROM hold until its turn, then reaches the TO hold.
+  // Lift goes along the rock normal, never world-up, so lateral routes work.
+  function sampleContact(progress, moving, delay) {
+    if (!moving) return { progress: 1, lift: 0 };
+    const t = clamp((clamp(Number(progress) || 0) - delay) / (1 - delay));
+    return { progress: t, lift: Math.sin(Math.PI * t) };
+  }
+
+  function surfaceContact(state, outward, side, kind, modelHeight) {
+    const size = Math.max(1, Number(state.tileSize) || 64); // Shared world-pixel-to-Three conversion with the route runtime.
+    const p = state.player; // The live climb session's player; only read here.
+    const from = state.moving
+      ? new THREE.Vector3(p.climbStartX / size, p.climbSurfaceStartY, p.climbStartY / size)
+      : new THREE.Vector3(p.x / size, p.climbSurfaceY, p.y / size);
+    const to = state.moving
+      ? new THREE.Vector3(p.climbEndX / size, p.climbSurfaceEndY, p.climbEndY / size)
+      : from;
+    const isLeft = side === 'left';
+    const delay = kind === 'hand' ? (isLeft ? 0.07 : 0.38) : (isLeft ? 0.58 : 0.24);
+    const reach = sampleContact(state.progress, state.moving, delay);
+    const tangent = new THREE.Vector3(outward.z, 0, -outward.x); // Positive side of the generated cliff plane.
+    const sideSign = isLeft ? -1 : 1; // Separates left and right grips in face-local tangent coordinates.
+    const height = kind === 'hand' ? 0.29 : -0.29; // Hands above and feet below the torso's route origin.
+    return from.lerp(to, reach.progress)
+      .addScaledVector(tangent, sideSign * modelHeight * 0.13)
+      .addScaledVector(worldUp, modelHeight * height)
+      .addScaledVector(outward, modelHeight * (0.035 + reach.lift * 0.10));
   }
 
   function currentHandRig(mesh) {
@@ -35,35 +57,34 @@
 
   function handsOnCliff(rig) {
     const state = system.getCrawlState?.();
-    if (!state || !rig) return;
+    const normal = state?.route?.normal;
+    if (!state || !rig || !normal) return;
+    const outward = new THREE.Vector3(normal.x, 0, normal.z).normalize(); // World-space away from the rock face.
     const h = Math.max(0.2, Number(window.PlayerBodyTransformComposer?.getPlayerLegHandle?.()?.modelHeight) || 1);
+    const palmQ = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), outward); // Orient the hand's grip frame in the same face space as both feet.
     for (const side of ['left', 'right']) {
-      const sign = side === 'left' ? -1 : 1;
-      const step = sampleStride(state.phase, state.moving, side);
-      const reach = Math.min(rig.armLengthForSide?.(side) || h * 0.29, h * 0.4);
-      rig.setSideIdle?.(side, {
-        position: {
-          x: sign * h * 0.075 + step.drive * h * 0.018,
-          y: reach * (0.46 + step.lift * 0.37),
-          z: -h * (0.09 + step.lift * 0.035),
-        }, // Offset from authored free-hand anchor toward the wall and next hold.
-        rotationDeg: { pitch: -38 - step.lift * 24, yaw: sign * 15, roll: -sign * (16 + step.lift * 18) },
-      });
+      const target = surfaceContact(state, outward, side, 'hand', h); // Authored route holds, not avatar-relative swing offsets.
+      rig.placeHandWorld?.(side, target, palmQ);
     }
   }
 
   function claimHandRig(mesh, active) {
     const rig = active ? currentHandRig(mesh) : null;
     if (activeHandRig && activeHandRig !== rig) {
-      activeHandRig.setPoseProvider?.(OWNER, null);
-      activeHandRig.useIdlePose?.(); // Release both hands to the original tool/idle driver.
+      if (activeHandRig.getDebug?.().poseOwner === OWNER) {
+        activeHandRig.setPoseProvider?.(OWNER, null);
+        activeHandRig.useIdlePose?.(); // Restore idle only if no paired/grapple action has taken ownership.
+      }
       activeHandRig = null;
       activeMesh = null;
     }
     if (!rig) return null;
+    const owner = rig.getDebug?.().poseOwner;
+    if (owner && owner !== OWNER) {
+      activeHandRig = null; activeMesh = null;
+      return null; // Paired actions that started mid-climb retain their hand poses.
+    }
     if (rig !== activeHandRig) {
-      const owner = rig.getDebug?.().poseOwner;
-      if (owner && owner !== OWNER) return null; // Never steal a higher-priority paired-action pose.
       rig.setPoseProvider?.(OWNER, () => handsOnCliff(rig));
       activeHandRig = rig;
       activeMesh = mesh;
@@ -117,37 +138,23 @@
     });
   }
 
-  function poseFeet(mesh, legHandle, state, outward, undo) {
-    if (!legHandle?.applyWorldFootTargets || !legHandle.group) return false;
+  function poseFeet(legHandle, state, outward, undo) {
+    if (!legHandle?.applyWorldFootTargets || !legHandle.group || legHandle.hasExternalFootTargets?.()) return false;
     saveLegPose(legHandle, undo);
     const h = Math.max(0.2, Number(legHandle.modelHeight) || 1);
-    const base = mesh.getWorldPosition(new THREE.Vector3()); // Already shifted and pitched by the render-only crawl pose.
-    const tangent = new THREE.Vector3(-outward.z, 0, outward.x); // Across the face; sideways holds work without world-vertical feet.
-    const tileSize = Math.max(1, Number(state.tileSize) || 64); // Converts world-pixel X/Z into the same actual units as cliff elevation.
-    const movement = state.moving
-      ? new THREE.Vector3(
-        ((state.player.climbEndX || 0) - (state.player.climbStartX || 0)) / tileSize,
-        ((state.player.climbSurfaceEndY || 0) - (state.player.climbSurfaceStartY || 0)),
-        ((state.player.climbEndY || 0) - (state.player.climbStartY || 0)) / tileSize
-      ).normalize()
-      : new THREE.Vector3(0, 1, 0); // Foot steps follow actual route displacement; still hands/feet when hanging.
-    const targets = {};
-    for (const side of ['left', 'right']) {
-      const sign = side === 'left' ? -1 : 1;
-      const step = sampleStride(state.phase + Math.PI, state.moving, side); // Feet alternate opposite the reaching hand.
-      targets[side] = base.clone()
-        .addScaledVector(outward, -h * 0.22)
-        .addScaledVector(tangent, sign * h * 0.105)
-        .addScaledVector(movement, h * (0.12 + step.lift * 0.075 + step.drive * 0.018));
-    }
+    const targets = { // Contacts follow the actual cliff plane, not the avatar's pitched root frame.
+      left: surfaceContact(state, outward, 'left', 'foot', h),
+      right: surfaceContact(state, outward, 'right', 'foot', h),
+    };
     return legHandle.applyWorldFootTargets(targets, null, false) === true;
   }
 
-  function renderCrawl(undo, renderDebug) {
+  function applyCrawlPose(undo, renderDebug) {
     const state = system.getCrawlState?.();
     const composer = window.PlayerBodyTransformComposer;
     const mesh = composer?.getPlayerMesh?.();
-    if (!state || !mesh?.isObject3D || mesh.visible === false) {
+    const poseLocked = window.CharacterActionLocks?.isLocked?.('player', 'pose') === true; // Paired poses take precedence over the climb presentation.
+    if (!state || !mesh?.isObject3D || mesh.visible === false || poseLocked) {
       claimHandRig(null, false);
       lastDebug = { active: false, hiddenHeldVisuals: 0 };
       return;
@@ -162,9 +169,8 @@
     // the normal instead of bobbing vertically above world ground. The extra
     // outward clearance keeps the face from being buried in the cliff mesh.
     const tiltRad = 1.04; // Continuous rock-facing lean, rather than a world-up hop.
-    const inward = outward.clone().negate();
     const posedUp = worldUp.clone().multiplyScalar(Math.cos(tiltRad))
-      .addScaledVector(inward, Math.sin(tiltRad)).normalize();
+      .addScaledVector(outward, Math.sin(tiltRad)).normalize(); // Rock normal replaces upward gravity: torso leans AWAY from the face.
     const tilt = new THREE.Quaternion().setFromUnitVectors(worldUp, posedUp);
     const parentQ = mesh.parent?.getWorldQuaternion?.(new THREE.Quaternion()) || new THREE.Quaternion();
     const localTilt = parentQ.clone().invert().multiply(tilt).multiply(parentQ);
@@ -176,7 +182,7 @@
     undo.push(() => { mesh.position.copy(oldPosition); mesh.quaternion.copy(oldQuaternion); mesh.updateWorldMatrix?.(true, true); });
     const rig = claimHandRig(mesh, true);
     const legHandle = composer.getPlayerLegHandle?.();
-    const feetPosed = poseFeet(mesh, legHandle, state, outward, undo);
+    const feetPosed = poseFeet(legHandle, state, outward, undo);
     const hiddenHeldVisuals = hideHeldEquipment(mesh, undo);
     lastDebug = {
       active: true, moving: !!state.moving, phase: Number(state.phase) || 0,
@@ -184,6 +190,21 @@
       handRigOwned: !!rig, feetPosed, hiddenHeldVisuals,
     };
     renderDebug.cliffCrawl = lastDebug; // Also visible through the existing composer mobile render diagnostics.
+  }
+
+  function renderCrawl(undo, renderDebug) {
+    const checkpoint = undo.length; // Previous composer channels must never be undone by our failure handler.
+    try {
+      applyCrawlPose(undo, renderDebug);
+    } catch (error) {
+      for (let i = undo.length - 1; i >= checkpoint; i--) {
+        try { undo[i](); } catch (_) { /* Continue restoring the other transforms. */ }
+      }
+      undo.length = checkpoint; // The composer will later restore its own preceding transforms.
+      claimHandRig(null, false);
+      lastDebug = { active: false, hiddenHeldVisuals: 0, error: String(error?.message || error) };
+      renderDebug.cliffCrawl = lastDebug; // Mobile testing sees the failure even if the renderer hides hook exceptions.
+    }
   }
 
   function install() {
@@ -206,5 +227,5 @@
     phase: 'pre-render', owner: 'CliffCrawlPresentation',
     description: 'Registers the scoped crawl render hook after delayed composer setup.',
   });
-  window.CliffCrawlPresentation = { sampleStride, getDebug: () => ({ ...lastDebug, hookInstalled: installed }) };
+  window.CliffCrawlPresentation = { sampleContact, surfaceContact, getDebug: () => ({ ...lastDebug, hookInstalled: installed }) };
 })();
