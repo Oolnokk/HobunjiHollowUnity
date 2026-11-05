@@ -1,0 +1,42 @@
+'use strict';
+// Focused regression coverage for the developer single-room no-loot puzzle lab.
+const assert=require('node:assert/strict');
+const fs=require('node:fs');
+const path=require('node:path');
+const root=path.resolve(__dirname,'..');
+const read=file=>fs.readFileSync(path.join(root,file),'utf8');
+const planner=require('../docs/js/ruin-layer-plan.js');
+const solo=require('../docs/js/dev-ruin-single-room-trial.js');
+const valid=new Set(solo.TYPES.map(([kind])=>kind)); // Shared authoring choices and normal planner output.
+assert.equal(valid.size,7);
+for(const kind of valid){const selected=solo.pick(19,kind,planner);assert.equal(selected.kind,kind);assert.equal(selected.mode,'forced');}
+assert.throws(()=>solo.pick(10,'unknown',planner),/Unknown single-room puzzle/);
+assert.throws(()=>solo.pick(10,'weighted',null),/RuinLayerPlan is unavailable/);
+const counts=new Map(); // Measured output of the live dungeon stage weights.
+for(let seed=1;seed<=200;seed++){
+  const selected=solo.pick(seed,'weighted',planner);
+  const plan=planner.compose({seed,nativeV50:false});
+  const rooms=plan.floors.flatMap(f=>f.rooms.filter(room=>room.kind==='challenge-room'&&valid.has(room.challenge)));
+  assert.equal(plan.ok,true);assert.equal(selected.population,rooms.length);
+  assert.ok(rooms.some(room=>room.challenge===selected.kind));
+  assert.deepEqual(solo.pick(seed,'weighted',planner),selected);
+  counts.set(selected.kind,(counts.get(selected.kind)||0)+1);
+}
+assert.equal(counts.size,valid.size);
+assert.ok(counts.get('pressurePlate')>counts.get('dungeonFire'));
+const interior=read('docs/js/dev-random-ruin-interior-map.js');
+const simple=read('docs/js/dev-random-ruin-simple-puzzles.js');
+const defense=read('docs/js/ruin-layer-defense.js');
+const encounters=read('docs/js/ruin-encounters.js');
+const corpses=read('docs/js/bandit-camps.js');
+for(const needle of ['roomMax:singleVestibule?1','if(singleVestibule&&meta.rooms?.length!==1)','if(!singleRoomTrial)attachShaftHub','options.singleRoomTrial?null:requestedRuinType','singleRoomTrial:soloChoice,noLoot:singleRoomTrial','const stoneAgeRequested=!singleRoomTrial','puzzleType:soloSelector.value'])
+  assert.ok(interior.includes(needle),'one-room contract: '+needle);
+for(const needle of ['if(context.singleRoomTrial){','return; // Never run other composers','Challenge.compose({','Challenge.ropePitForRoom(room,side)','state.singleRoomChallenge?.dispose?.()','state.singleRoomChallenge?.tick?.(dt)'])
+  assert.ok(simple.includes(needle),'puzzle lifecycle: '+needle);
+assert.ok(defense.includes('noLoot:options.noLoot===true'));
+assert.ok(encounters.includes('entity.ruinNoLoot=enc.noLoot===true'));
+assert.ok(corpses.includes('if (c.ruinNoLoot===true)return [];')||corpses.includes('if(c.ruinNoLoot===true)return [];'));
+assert.ok(corpses.includes('if(c.ruinNoLoot===true)return {ok:false'));
+assert.ok(read('docs/index.html').includes('dev-ruin-single-room-trial.js'));
+assert.ok(read('docs/js/dev-random-ruin-bootstrap.js').includes('dev-random-ruin-simple-puzzles.js?v=20261104solo1'));
+console.log('Single-room puzzle lab: 200 planner seeds, seven forced choices, isolation and no-loot contracts passed.');
