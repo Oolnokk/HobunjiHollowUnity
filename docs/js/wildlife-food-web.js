@@ -82,12 +82,15 @@
     }
     return state.spot;
   }
+  const scanStats = { guardCalls: 0, guardCandidates: 0, preyCalls: 0, preyCandidates: 0 }; // Cumulative entity scan counters without retaining actor references.
   function scanPrey(c, actors, tile) {
     const rule = profile(c);
     if (!rule?.hunts?.length) return null;
     const maxD2 = (rule.huntRadiusTiles * tile) ** 2;
     let chosen = null, best = maxD2;
+    scanStats.preyCalls++;
     for (const other of actors) {
+      scanStats.preyCandidates++;
       if (other === c || !available(other) || other.areaId !== c.areaId ||
           other.state === 'fleeing-low-health' || other._fleeCooldownUntil > performance.now() ||
           !rule.hunts.includes(kindOf(other))) continue;
@@ -114,15 +117,22 @@
     const s = stateFor(c), spot = ensureFoodSpot(c, s, ctx), radius = ctx.tile * GUARD_RADIUS_TILES;
     if (!spot) return null;
     let best = null, bestD2 = radius * radius;
-    const candidates = [...players, ...actors]; // Local proximity checked only at the 350ms guard cadence.
-    for (const other of candidates) {
-      if (!other || other === c || other.isCompanion || other.health <= 0 ||
-          (other.creatureKey && kindOf(other) === kindOf(c)) ||
-          (other.areaId != null && other.areaId !== c.areaId) ||
-          !Number.isFinite(other.x) || !Number.isFinite(other.y)) continue;
-      const dx = spot.x - other.x, dy = spot.y - other.y, dist2 = dx * dx + dy * dy;
-      if (dist2 < bestD2) { best = other; bestD2 = dist2; }
+    // Two source loops avoid allocating a new candidates array for every guarding creature.
+    // Track comparisons so memory snapshots can distinguish O(N²) crowd work from retained meshes.
+    let inspected = 0; // Exposed in WildlifeFoodWeb.getScanDebug().
+    for (const source of [players, actors]) {
+      for (const other of source || []) {
+        inspected++;
+        if (!other || other === c || other.isCompanion || other.health <= 0 ||
+            (other.creatureKey && kindOf(other) === kindOf(c)) ||
+            (other.areaId != null && other.areaId !== c.areaId) ||
+            !Number.isFinite(other.x) || !Number.isFinite(other.y)) continue;
+        const dx = spot.x - other.x, dy = spot.y - other.y, dist2 = dx * dx + dy * dy;
+        if (dist2 < bestD2) { best = other; bestD2 = dist2; }
+      }
     }
+    scanStats.guardCalls++;
+    scanStats.guardCandidates += inspected;
     // Non-combat NPC walkers are approached/repelled without inventing a creature Health pool.
     for (const walker of walkers || []) {
       if (walker.area !== ctx.zoneId || !walker.root?.position) continue;
@@ -382,5 +392,6 @@
     PROFILES, profile, kindOf, updateThreats, tickForage, applyPose,
     onSkirmishHit, isDefending, cancelForage, abandon, tickParticles,
     npcWalkerStrike, getDebug: () => ({ ...debug }),
+    getScanDebug: () => ({ ...scanStats }),
   });
 })();
