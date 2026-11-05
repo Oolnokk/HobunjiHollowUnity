@@ -180,7 +180,7 @@ window.RangedWeapons.beginBanditAction(highArcher, 'fire', lowTarget);
 assert.ok(Math.abs(lowArcher._rangedAimPitch - Math.atan2(4, 2)) < 1e-5, 'ranger aims directly uphill at the 3D hitbox');
 assert.ok(Math.abs(highArcher._rangedAimPitch - Math.atan2(-4, 2)) < 1e-5, 'ranger aims directly downhill at the 3D hitbox');
 
-raisedTerrainY = 3; now += 100;
+raisedTerrainY = 3.8; now += 100; // High enough to intersect the descending trajectory as well as the rising one.
 assert.equal(window.RangedWeapons.hasLineOfSight(lowArcher, highTarget), false, 'raised ground blocks an upward sightline');
 assert.equal(window.RangedWeapons.hasLineOfSight(highArcher, lowTarget), false, 'raised ground blocks a downward sightline');
 raisedTerrainY = null; now += 100;
