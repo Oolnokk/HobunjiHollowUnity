@@ -37,6 +37,17 @@ for (const [key, def, expected] of [
   ['dryHerb', { label: 'Dry Herb Leaves' }, '../leaves/speartip_leaf.png'],
 ]) assert.equal(catalog.classify(key, def).spriteIcon, expected, 'object art for ' + key);
 assert.equal(catalog.classify('komaPowder', { label: 'Koma Powder' }).spriteMode, 'direct-sheen');
+const berryColors = { redberries: 0xD93A3A, blueberries: 0x3F63D9, yellowberries: 0xE0C93A, whiteberries: 0xF2EFE6, blackberries: 0x241A2E }; // Mirrors the canonical ItemProcessing pigment table, which runs before this catalogue.
+window.ItemProcessing = { BERRY_COLORS: berryColors };
+for (const [berry, color] of Object.entries(berryColors)) {
+  assert.equal(catalog.classify(berry, { label: berry }).spriteColor, color, 'Raw berry tint: ' + berry);
+  assert.equal(catalog.classify(berry + 'Dried', { label: 'Dried ' + berry }).spriteColor, color, 'Dried berry tint: ' + berry);
+  assert.equal(catalog.classify(berry + 'Jam', { label: berry + ' Jam', spriteIcon: 'jar_liquid.png' }), null, 'Jar artwork stays on jam');
+  assert.equal(catalog.classify(berry + 'Juice', { label: berry + ' Juice', spriteIcon: 'jar_liquid.png' }), null, 'Liquid artwork stays on juice');
+  assert.equal(catalog.classify(berry + 'Wine', { label: berry + ' Wine', spriteIcon: 'bottle_wine.png' }), null, 'Bottle artwork stays on wine');
+}
+assert.equal(catalog.classify('bar_tinBronze', { label: 'Tin Bronze Bar' }).spriteColor, 0xAA8050, 'Tin bronze must have bronze rather than tin pigment');
+assert.equal(catalog.classify('bar_platinum', { label: 'Platinum Bar' }).spriteColor, 0xCAD0D4, 'Platinum must not accidentally match tin');
 assert.equal(catalog.classify('gold', { label: 'Gold' }), null, 'Currency must not become a gold ingot');
 assert.equal(catalog.classify('garlink', { label: 'Garlink Herb', spriteIcon: 'garlink_bunch.png' }), null, 'Specialized authored crops retain their existing sprite');
 const definitions = { combatManualBlinkDodge: { combatManualAbilityId: 'blinkDodge' }, copperOre: { label: 'Copper Ore' } };
@@ -58,6 +69,7 @@ for (let row = 0; row < 20; row++) grid[row][10] = { type: 'path' };
 for (let row = 4; row <= 12; row++) for (const col of [8, 12]) grid[row][col] = { type: 'shrub', floraKind: 'bush' };
 grid[17][9] = { type: 'shrub', floraKind: 'bush' }; // Isolated roadside bush must keep the original leaf.
 grid[8][7] = { type: 'shrub', floraKind: 'copse' }; // Real trees must never be replaced by Koma hedges.
+grid[8][6] = { type: 'shrub', floraKind: 'fruitBush' }; // Resource-bearing bushes cannot be silently restyled as decorative hedges.
 grid[5][2] = { type: 'shrub', floraKind: 'bush' }; // Ordinary wilderness bushes away from roads keep old leaves.
 for (const zone of ['map_southern_cloud_forest', 'map_northern_cliffs', 'map_eastern_mire'])
   assert.equal(roadside.isHedgeBush(grid, 8, 8, zone), true, zone + ' has caravan-path hedge');
@@ -65,11 +77,13 @@ assert.equal(roadside.isHedgeBush(grid, 8, 8, 'map_western_slope'), false, 'Leaf
 assert.equal(roadside.isHedgeBush(grid, 9, 17, 'map_southern_cloud_forest'), false);
 assert.equal(roadside.isHedgeBush(grid, 2, 5, 'map_southern_cloud_forest'), false);
 assert.equal(roadside.isHedgeBush(grid, 7, 8, 'map_southern_cloud_forest'), false);
+assert.equal(roadside.isHedgeBush(grid, 6, 8, 'map_southern_cloud_forest'), false, 'Resource bushes retain harvestable appearance');
 assert.ok(roadside.getDebug().hits >= 3, 'Mobile roadside debug probe records rendered hedge eligibility');
 
 const game = read('docs/game.js'); // Executes the real zone vegetation dispatch, not a reimplemented test copy.
 const dispatch = game.slice(game.indexOf('              const isDeadTree ='), game.indexOf('              if (isDeadTree || isCrownedPine || isShadewood)'));
 assert.ok(dispatch.includes('isKomaHedge') && dispatch.includes('buildKomaHedgeBushMesh'));
+assert.match(read('docs/js/foliage-generator.js'), /TREE_PRESETS\.komaHedge\s*=\s*\{[^}]*leafTintS:\s*0,\s*leafTintL:\s*1/, 'Neutral Koma material preserves iridescent source colors');
 const funcs = ['buildDeadTreeMesh', 'buildDeadBushMesh', 'buildCrownedPineMesh', 'buildShadewoodMesh', 'buildKomaHedgeBushMesh', 'buildWildernessBushMesh', 'buildStumpMesh', 'buildShrubMesh'];
 const FoliageGenerator = Object.fromEntries(funcs.map(name => [name, () => name]));
 const render = new Function('window', 'mapId', 'tile', 'EXTERIOR_ZONES', 'c', 'r', 'zGrid', dispatch + '; return vegGroup;');
