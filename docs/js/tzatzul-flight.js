@@ -210,6 +210,8 @@
   function detachCarry(state, restore = true) {
     const target = state.carried;
     if (!target) return false;
+    state.playerLock?.release?.(); // Exact scoped player-movement/action lock, never clear other interaction owners.
+    state.playerLock = null;
     if (state.carryVisual) {
       state.carryVisual.parent?.remove?.(state.carryVisual);
       state.carryVisual = null; // Shared materials from avatar.clone() belong to the actual target, not to this presenter.
@@ -235,6 +237,10 @@
     const bird = state.bird;
     if (!eligiblePrey(target, bird, target === deps?.player && escort?.bird === bird)) return false;
     state.carried = target;
+    if (target === deps?.player) state.playerLock = root.CharacterActionLocks?.acquire?.({
+      owner:'tzatzul-voluntary-lift',reason:'Carried willingly to cliff nest',
+      participants:[{id:'player',channels:['movement','tools','actions']}],
+    }) || null;
     target._flyingCarriedBy = bird;
     target._tzatzulPriorState = target.state;
     target.state = 'tzatzul-carried';
@@ -437,10 +443,10 @@
       state.target = null;
       state.mode = 'orbit'; state.phase = 'glide'; state.cycleT = 0;
     }
-    if (state.carried && state.carried !== deps.player) {
+    if (state.carried) {
       state.carried.x = c.x;
       state.carried.y = c.y;
-      state.carried.vx = 0; state.carried.vy = 0;
+      state.carried.vx = 0; state.carried.vy = 0; // A real flight-mounted passenger follows the bird, not a hidden grounded actor.
     }
     deps.updateCreatureMesh?.(c,dt,c.facing);
     ensureRig(c,state);
