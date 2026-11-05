@@ -325,6 +325,7 @@
       deps.ITEM_DEFS[key] = { ...deps.ITEM_DEFS[key], icon: form === 'scroll' ? '📜' : '🪨', label, cat: 'material', sellPrice: 75 + 65 * rank, tags: ['Mastery', 'Combat', 'Consumable'], masteryUnlock: { type, rank, effectId: effect.id }, desc: `${effect.desc} Read to permanently unlock this bonus at Mastery ${rank} for all ${type} melee weapons. Reading consumes one copy; the learned bonus is permanent and works on all matching weapons.` };
       if (!known.has(key)) deps.inventoryItems.push({ key, icon: deps.ITEM_DEFS[key].icon, label: label.toUpperCase(), max: 99 });
     }
+    window.ObjectSpriteCatalog?.applyAll?.(deps); // Assign newly registered mastery scroll and tablet art before the inventory or held view opens.
   }
 
   function readMasteryItem(key) {

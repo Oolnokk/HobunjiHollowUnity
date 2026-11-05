@@ -11024,6 +11024,7 @@
         }; // Restricts tile-owned meshes to one streaming chunk.
         const includeTiles = options.includeTiles !== false; // Lets the global path layer build without duplicating ordinary tiles.
         const includeGlobalPath = options.includeGlobalPath !== false; // Keeps the one zone-wide route mesh outside streamed chunks.
+        const komaCosmeticSites = includeTiles ? window.RoadsideKomaHedges?.hedgePlan?.(zGrid, mapId) : null; // Cached entire-zone, generated from real roads but emitted in chunk-local lifecycle.
         const _floorBuckets = new Map();
         const _addToBucket = (matKey, geo, x, y, z) => {
           if (!geo) return;
@@ -11075,6 +11076,21 @@
           const tile = zGrid[r][c];
           const cx = c + 0.5, cz = r + 0.5;
           const tierY = (tile.elevTier || 0) * PLATEAU_UNIT;
+
+          // Guaranteed long Koma hedgerows are *decorative*, not SHRUB terrain:
+          // keep the roadside shoulder walkable and collision/pathfinding/save state untouched.
+          // Adding to this chunk's floorMeshes also guarantees unload/abort cleanup.
+          if (tile.type === TileType.GRASS && komaCosmeticSites?.has(c + ',' + r)) {
+            const komaBush = window.FoliageGenerator?.buildKomaHedgeBushMesh?.(c, r); // Cached variant geometry and material, never regenerated from scratch for each tile.
+            if (komaBush) {
+              komaBush.position.set(cx, tileSurfaceY(TileType.GRASS) + tierY, cz);
+              komaBush.userData.roadsideKomaCosmetic = true; // Exposes planned bush ownership to Pixel Probe and mobile diagnostics.
+              komaBush.userData.skipOcclusionFade = true; // Short decorative plants never trigger the player/companion camera fade.
+              zScene.add(komaBush);
+              _markOutline(komaBush);
+              meshes.push(komaBush);
+            }
+          }
 
           // A genuine plateau-top tile is normally left to buildPlateauMesa's
           // own continuous lid entirely (skipFloor) — but that lid already
@@ -11159,10 +11175,13 @@
               const isShadewood   = isTreeZone && EXTERIOR_ZONES[mapId]?.cloudForest && (tile.floraKind === 'copse' || !tile.floraKind);
               const isBush   = tile.floraKind === 'bush';
               const isStump  = tile.floraKind === 'beehive';
+              const isKomaHedge = !isDeadTree && !isDeadBush && !isCrownedPine && !isShadewood && !isStump
+                && window.RoadsideKomaHedges?.isHedgeBush?.(zGrid, c, r, mapId); // Only shrub lines beside Slagothim wilderness roads.
               const vegGroup = isDeadTree ? window.FoliageGenerator.buildDeadTreeMesh(c, r)
                              : isDeadBush ? window.FoliageGenerator.buildDeadBushMesh(c, r)
                              : isCrownedPine ? window.FoliageGenerator.buildCrownedPineMesh(c, r)
                              : isShadewood   ? window.FoliageGenerator.buildShadewoodMesh(c, r)
+                             : isKomaHedge   ? window.FoliageGenerator.buildKomaHedgeBushMesh(c, r)
                              : isBush        ? window.FoliageGenerator.buildWildernessBushMesh(c, r)
                              : isStump       ? window.FoliageGenerator.buildStumpMesh(c, r)
                              : window.FoliageGenerator.buildShrubMesh(c, r);
@@ -17293,6 +17312,7 @@
       function applyItemSpriteIcon(el, def, key) {
         if (!el || !def) return;
         window.ItemProcessing.normalizeAlcoholItemDef(def);
+        window.ObjectSpriteCatalog?.ensure?.(key, def); // Dynamic items acquire artwork before the existing Pack/HUD/arch sprite renderer.
         window.AlcoholInventoryUI?.applySwigBadge?.(el, key, def);
         if (!def.spriteIcon) { clearItemSpriteIcon(el, true); return; }
         // The source PNG replaces the emoji immediately; the recolored canvas
@@ -24050,6 +24070,7 @@
         // The full item definition supplies procedural bottle art and tint data.
         const def = ITEM_DEFS[item.key] || item;
         window.ItemProcessing.normalizeAlcoholItemDef(def);
+        window.ObjectSpriteCatalog?.ensure?.(item.key, def); // Held sprite planes use the same newly authored art as Pack and action-arch icons.
         // Width starts square and gains the source sprite's aspect ratio after load.
         const w = HELD_ITEM_PLANE_WIDTH * (ITEM_HELD_PLANE_SCALE[item.key] ?? 1) * (isThrowFlaskItem(item) ? HELD_FLASK_SIZE_MULT : 1);
         const geo = new THREE.PlaneGeometry(w, w);
