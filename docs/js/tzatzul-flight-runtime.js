@@ -11,6 +11,7 @@
   const REST_SECONDS = 5; // Birds visibly perch instead of permanently orbiting.
   const SPEED_TILES_PER_SECOND = 7; // Flight travel across world tiles.
   const STRIKE_RANGE_TILES = 1.15; // Moving targets can dodge the frozen swoop destination.
+  const STRIKE_AT_PROGRESS = .98; // Talons strike at contact, not far from a long-distance target.
   const spawnedThisDay = new Set(); // Prevents post-death immediate respawning.
   const actors = new Set(); // Only Tzatzul, not all hostile creatures, are animated each tick.
   const stats = { spawned: 0, flights: 0, swoops: 0, hits: 0, misses: 0,
@@ -158,7 +159,7 @@
     bird.branchT = t;
     window.PerchSupport?.constrain?.(bird); // Reuses native onBranch and branchSurfaceY movement/portrait height.
     bird.tzatzulFlightPose = t < .15 || t > .85 ? 'flap' : 'glide';
-    if (state.phase === 'swoop' && t >= .82) hit(bird);
+    if (state.phase === 'swoop' && t >= STRIKE_AT_PROGRESS) hit(bird);
     if (t < 1) return;
     state.segment = null;
     if (state.phase === 'swoop') { returnHome(bird); return; }

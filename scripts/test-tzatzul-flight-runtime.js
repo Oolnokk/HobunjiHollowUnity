@@ -58,6 +58,20 @@ assert(bird.onPerch.dimension===1||bird._tzFlight.phase==='perched','flight uses
 for(let i=0;i<160;i++)w.TzatzulFlightRuntime.update(.1);
 assert(w.TzatzulFlightRuntime.debugSnapshot().flights>0);
 assert(hits<=w.TzatzulFlightRuntime.debugSnapshot().swoops,'at most one damage transaction per swoop');
+const farBird=[...creatures][1]; // Distinct mother used to test long dives at the actual contact point.
+player.x=farBird.x-64*9;player.y=farBird.y;
+const beforeContact=hits;
+assert(w.TzatzulFlightRuntime.__test.swoop(farBird,player));
+for(let i=0;i<60&&farBird._tzFlight.phase==='swoop';i++)w.TzatzulFlightRuntime.update(.1);
+assert.equal(hits,beforeContact+1,'stationary prey nine tiles away is struck at talon contact');
+const beforeDodge=hits;
+farBird.x=2240;farBird.y=128;farBird.branchSurfaceY=7;
+player.x=farBird.x-64*9;player.y=farBird.y;
+assert(w.TzatzulFlightRuntime.__test.swoop(farBird,player));
+player.x+=64*3; // Player evades the frozen target point after the dive commits.
+for(let i=0;i<60&&farBird._tzFlight.phase==='swoop';i++)w.TzatzulFlightRuntime.update(.1);
+assert.equal(hits,beforeDodge,'dodging three tiles after the dive commits avoids contact');
+player.x=originalPlayerX;player.y=originalPlayerY;
 const initialKeyCount=w.TzatzulFlightRuntime.debugSnapshot().populationKeys;
 bird.health=0;w.TzatzulFlightRuntime.update(.1);
 assert.equal(w.TzatzulFlightRuntime.debugSnapshot().active,1);
