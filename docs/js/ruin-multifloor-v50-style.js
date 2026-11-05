@@ -46,10 +46,17 @@
         world.multiplyMatrices(node.matrixWorld,matrix);
         point.setFromMatrixPosition(world);
         const yaw=alongZ?Math.PI/2:0;
-        const offset=alongX?.095:-.095;
+        const cellX=Math.floor(point.x),cellZ=Math.floor(point.z);
+        const floorSet=rec.floorSet; // Position V50 engravings on the walkable side of the existing wall, not its outside face.
+        const onMinus=alongX?floorSet.has(cellX+','+(cellZ-1))
+          :floorSet.has((cellX-1)+','+cellZ);
+        const onPlus=alongX?floorSet.has(cellX+','+cellZ)
+          :floorSet.has(cellX+','+cellZ);
+        const direction=onMinus&&!onPlus?-1:1;
+        const offset=direction*.095;
         panel(point.x+(alongZ?offset:0),point.y,point.z+(alongX?offset:0),yaw);
-        if(i%32===3)panel(point.x+(alongZ?.17:0),point.y,
-          point.z+(alongX?.17:0),yaw,true);
+        if(i%32===3)panel(point.x+(alongZ?direction*.17:0),point.y,
+          point.z+(alongX?direction*.17:0),yaw,true);
       }
     });
     const grid=hub.grid;
