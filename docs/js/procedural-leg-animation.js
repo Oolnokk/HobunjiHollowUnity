@@ -1700,6 +1700,7 @@
 
     return {
       group: root, update, dispose, applyRecordedLegPose, getStandingPoseDebug, beginLunge, motionAnatomy, applyWorldFootTargets, setExternalFootTargets,
+      hasExternalFootTargets: () => !!externalFootTargets, // Cliff crawl must not overwrite a live grapple/mount/paired-action leg contact.
       getRunLean: () => state.runLean, // Allocation-free body-composition input independent of debug mesh scans.
       // Weapon-stance lowering: the caller asks for a hip drop in root-local units (fraction of height × modelHeight, see weapon-stance-drop-runtime.js);
       // update() eases toward it and getStanceDrop() reports what is really applied so the body channel lowers by exactly the same amount.
