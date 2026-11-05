@@ -83,7 +83,10 @@
     const toX = finite(goal?.x, state.x) - state.x;
     const toY = finite(goal?.y, state.y) - state.y;
     const bearing = Math.atan2(toY, toX);
-    const turn = clamp(angleDelta(state.heading, bearing), -delta * 1.6, delta * 1.6); // Sweeping hawk banking, never a pivot-on-a-dime.
+    const distance = Math.hypot(toX, toY);
+    const approach = clamp(distance / (unit * 4), .13, 1); // Slow for a precision talon grab or narrow nest landing.
+    const turnRate = 1.6 + (1 - approach) * 3.2;
+    const turn = clamp(angleDelta(state.heading, bearing), -delta * turnRate, delta * turnRate); // Sweeping banks in cruise, tightening into landing.
     state.heading += turn;
     state.cycleT = finite(state.cycleT) + delta;
     const phase = state.phase || 'climb';
@@ -102,9 +105,8 @@
     if (state.altitude < requiredAltitude - 1.6 && flying !== 'dive') {
       state.altitude = Math.min(requiredAltitude, state.altitude + 1.1 * delta); // So a complete circuit retains enough lift to clear cliff lips.
     }
-    state.speed = horizontalSpeed;
-    const distance = Math.hypot(toX, toY);
-    const advance = Math.min(horizontalSpeed * unit * delta, distance);
+    state.speed = horizontalSpeed * approach;
+    const advance = Math.min(state.speed * unit * delta, distance);
     state.x += Math.cos(state.heading) * advance;
     state.y += Math.sin(state.heading) * advance;
     return state;
