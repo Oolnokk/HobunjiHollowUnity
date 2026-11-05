@@ -36,6 +36,7 @@
   window.NaturalSurfaceMaterials?.naturalizeMesh?.(rock,'cliffs','world-stretch'); // Canonical carved_smooth rock texture.
   const black=new T.MeshBasicMaterial({color:0x050607,side:T.DoubleSide});
   const mouth=new T.Mesh(new T.CircleGeometry(.38,12),black);
+  mouth.name='tzatzul-dark-cave-mouth'; // Named geometry distinguishes visible sealed nest from future enterable cave runtime.
   mouth.rotation.y=Math.atan2(s.dx,s.dz);
   mouth.position.set(s.dx*1.05,s.height*.3,s.dz*1.05);
   const rim=new T.Mesh(new T.TorusGeometry(.40,.08,5,12),rock.material);
