@@ -106,7 +106,7 @@
     if (/\b(leaves|leaf|petals?|herbs?)\b|(^|[_:-])(leaf|herb)([_:-]|$)/i.test(joined)) {
       // Respect a bespoke crop/reagent rendering where one has already been authored.
       if (def.spriteIcon && !/^(?:leaf|herb|item|plant)[_.-]/i.test(def.spriteIcon)) return null;
-      return { spriteIcon: 'speartip_leaf.png', spriteColor: materialColor(key, def, 0x6BA153), spriteMode: 'direct' };
+      return { spriteIcon: '../leaves/speartip_leaf.png', spriteColor: materialColor(key, def, 0x6BA153), spriteMode: 'direct' };
     }
     return null;
   }
