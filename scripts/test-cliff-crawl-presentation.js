@@ -86,16 +86,25 @@ const item = { isObject3D: true, type: 'Group', userData: { isPngPlane: true }, 
 const burden = { isObject3D: true, visible: true }; // Carried (not back-stowed) burden.
 const stowed = { isObject3D: true, visible: true, name: 'stowed-back-burden' }; // Must remain visible when held categories hide.
 const worldHands = []; // World-space contact positions placed by the real hand rig API.
+const sockets = Object.fromEntries(['left', 'right'].map(side => [side, {
+  position: new Vec(), quaternion: new Q(), scale: new Vec(1, 1, 1), visible: true,
+}])); // Synthetic live hand sockets test temporary render-only placement and restoration.
 let returnedToIdle = 0; // Verifies paired-action ownership is not stolen on crawl exit.
 const rig = {
-  group: { parent: {} },
+  group: {
+    parent: {}, getObjectByName(name) { return sockets[name.split('_')[0]] || null; },
+    updateWorldMatrix() {},
+  },
   owner: null, provider: null,
   getDebug() { return { poseOwner: this.owner }; },
   setPoseProvider(owner, provider) {
     if (provider || this.owner === owner) { this.owner = provider ? owner : null; this.provider = provider || null; }
   },
   applyOwnedPose() { if (this.provider) { this.provider(this); return true; } return false; },
-  placeHandWorld(side, target, rotation) { worldHands.push({ side, target: target.clone(), rotation }); },
+  placeHandWorld(side, target, rotation) {
+    worldHands.push({ side, target: target.clone(), rotation });
+    sockets[side].position.copy(target);
+  },
   useIdlePose() { returnedToIdle++; },
 };
 const mesh = {
@@ -109,11 +118,21 @@ let footPoseCount = 0; // Counts direct IK foot solver calls.
 let footTargets = null; // Confirms the actual world-space contacts passed to the existing 2-bone solver.
 let externalFeetOwned = false; // Simulates a grapple/paired-action claiming both leg targets.
 let failFootPose = false; // Simulates an interrupted render so the scoped transform restores before returning.
+const gait = { left: new Vec(1, 2, 3), right: new Vec(4, 5, 6), mode: 'idle', lean: 0.15 }; // Real leg IK mutates these internal values as well as the rendered chain.
 const feet = {
   modelHeight: 1,
   group: { getObjectByName: () => null, updateWorldMatrix() {} },
   hasExternalFootTargets: () => externalFeetOwned,
+  captureMotionState: () => ({
+    leftTarget: gait.left.clone(), rightTarget: gait.right.clone(), motionMode: gait.mode, runLean: gait.lean,
+  }),
+  restoreMotionState(snapshot) {
+    gait.left.copy(snapshot.leftTarget); gait.right.copy(snapshot.rightTarget);
+    gait.mode = snapshot.motionMode; gait.lean = snapshot.runLean;
+  },
   applyWorldFootTargets(targets) {
+    gait.left.set(10, 11, 12); gait.right.set(13, 14, 15);
+    gait.mode = 'paired-dance'; gait.lean = 0;
     if (failFootPose) throw new Error('synthetic IK failure');
     footPoseCount++; footTargets = targets; return true;
   },
@@ -152,13 +171,18 @@ assert.equal(worldHands.length, 2, 'both hands use world-space contact placement
 assert(worldHands.every(entry => entry.target.x < 0 && entry.target.y > 0),
   'hands plant outside the face above the character and in its normal space');
 assert.equal(footPoseCount, 1, 'real procedural foot solver receives one paired contact update');
-assert(footTargets.left.y < 0 && footTargets.right.y < 0, 'feet stay below the torso along the cliff');
+assert(footTargets.left.y >= 0 && footTargets.right.y >= 0 && footTargets.left.y < 0.2,
+  'feet are placed against the rock near the route point rather than buried below ground');
 assert(Q.tilts.some(([from, to]) => from.y === 1 && to.x < -0.1),
   'body leans toward the OUTWARD cliff normal rather than into the rock');
 assert(frame.debug.cliffCrawl.feetPosed && frame.debug.cliffCrawl.handRigOwned);
 restore(frame.undo);
 assert(tool.visible && item.visible && burden.visible, 'render undo restores all held categories');
 assert.equal(mesh.position.x, 0, 'render undo restores body world position');
+assert.equal(sockets.left.position.y, 0, 'render undo restores the left hand socket');
+assert.equal(sockets.right.position.y, 0, 'render undo restores the right hand socket');
+assert.equal(gait.left.y, 2, 'render undo restores gait target instead of retaining climb IK');
+assert.equal(gait.mode, 'idle', 'render undo restores the original foot motion mode');
 
 input = { x: 1, y: 0 };
 climb.updateClimb(0.3);
@@ -196,6 +220,8 @@ failFootPose = true;
 frame = draw();
 assert(frame.debug.cliffCrawl.error.includes('synthetic IK failure'), 'render error appears in mobile diagnostics');
 assert.equal(mesh.position.x, 0, 'even interrupted renders immediately roll back the body transform');
+assert.equal(sockets.left.position.y, 0, 'even interrupted renders restore the hand socket');
+assert.equal(gait.left.y, 2, 'even interrupted renders restore gait targets');
 assert(tool.visible && item.visible && burden.visible, 'interrupted render leaves equipment visible');
 assert.equal(rig.owner, null, 'interrupted render releases procedural hand ownership');
 assert(returnedToIdle > 0, 'cliff pose returns to the default idle pose');
