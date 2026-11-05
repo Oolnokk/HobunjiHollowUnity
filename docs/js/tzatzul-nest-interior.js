@@ -76,7 +76,11 @@
       return selected;
     };
     const eggSites = spaced(2 + Math.floor(rng()*3), 2.0);
-    const bodies = spaced(3 + Math.floor(rng()*4), 1.0, eggSites);
+    const pileCenters = spaced(1 + Math.floor(rng() * 2), 3.4, eggSites); // A few dense victim heaps rather than corpses scattered singly around the cave.
+    const bodies = pileCenters.flatMap((center,group) => Array.from({length:3+Math.floor(rng()*3)}, (_,i)=>({
+      col:center.col+(rng()-.5)*1.5,row:center.row+(rng()-.5)*1.5,
+      stack:i, pile:group,
+    })));
     const hatchlings = spaced(2 + Math.floor(rng()*2), 2.0, bodies);
     return {
       mapId, eggSites: eggSites.map((site,i)=>({ ...site, id:'egg-'+i })),
@@ -178,7 +182,7 @@
     ensureItemRegistered();
     const state=claimed(mapId), plan=plans.get(mapId);
     if(state.eggs.includes(id) || !plan?.eggSites.some(egg=>egg.id===id))return false;
-    if(!directGrant({[EGG]:1}))return false; // Never consume a finite treasure if inventory grant is unavailable.
+    if(!ensureItemRegistered() || !directGrant({[EGG]:1}))return false; // Never consume a finite treasure if inventory grant is unavailable.
     state.eggs.push(id);
     const mesh=visualRecords.get(mapId)?.eggs.get(id);
     if(mesh)mesh.visible=false;
