@@ -165,6 +165,21 @@
     return track(seal, state);
   }
 
+  // V50 marks every display pedestal and coffin with a gold diamond showing the first letter of the item's
+  // label (createItemSpriteMaterial): a stand-in for treasure that was never replaced, and what reads as
+  // diamonds with an "S" or a "5" on them. Hidden, not removed: the sanctum finds its goal pedestals through
+  // these planes (findGoalSprites reads isSurfaceItemSprite and the parent), so they must stay in the scene.
+  function hidePlaceholderItems(root) {
+    let hidden = 0;
+    root?.traverse?.(object => {
+      if (!object.userData?.isSurfaceItemSprite || object.userData.devRuinPlaceholderHidden) return;
+      object.visible = false;
+      object.userData.devRuinPlaceholderHidden = true;
+      hidden++;
+    });
+    return hidden;
+  }
+
   // The variant whose outer width is closest to a gate's span.
   function passageVariantFor(span) {
     const width = Number(span) || PASSAGE_VARIANTS[PASSAGE_VARIANTS.length - 1].outer;
@@ -261,7 +276,7 @@
 
   window.DevRandomRuinFurniturePieces = Object.freeze({
     KEYS, ready, build, solid, pivotParts, skinDisplays, track, attachSeal, mountGlyphPlaques,
-    passageVariantFor, buildPassageGate,
+    passageVariantFor, buildPassageGate, hidePlaceholderItems,
     snapshot:() => ({
       loaded:Object.fromEntries(KEYS.map(key => [key, ready(key)])),
       tracked:[...tracked].map(entry => ({ key:entry.group.userData.ruinFurnitureKey, state:+Number(entry.state()).toFixed(2), inScene:inScene(entry.group) })),

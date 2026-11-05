@@ -7,6 +7,7 @@
 //   - input into the wall    -> climbs up (v)
 //   - input away from the wall -> climbs down; reaching the bottom lets go
 //   - reaching the top while pushing up -> mantles onto the top if it is standable
+//   - walking along the wall past either end -> steps off sideways onto a platform at the same height, if there is one
 //   - dodge -> lets go
 // It is the 2D-plane sibling of ClimbSystem's branch movement (player.onBranch,
 // which projects input onto a 1D axis).
@@ -32,6 +33,9 @@
     edgeMargin: 0.3,       // Keep the player's centre this far inside the wall's side edges.
     inputDeadzone: 0.25,
     topPushThreshold: 0.5, // Push this hard up at the top to mantle; this hard down at the bottom to let go.
+    sidePushThreshold: 0.5, // Push this hard along the wall while at its end to step off sideways.
+    sideReach: [0.3, 0.55, 0.8], // How far past the wall's end (tiles) a side exit may land.
+    sideStandOffs: [0.34, 0.7, 1.1], // How far out from the wall plane (tiles) a side exit may land.
     bottomGrabSlack: 0.25, // Feet may be this far below the wall's bottom edge and still grab.
     topGrabClearance: 0.5, // Must be at least this far below the top edge to grab (else just walk onto it).
     mantleDepth: 0.5,      // How far past the wall plane (into the solid) the mantle lands.
@@ -128,7 +132,21 @@
     return { x: wallX(surface, u) - surface.normal.x * depth, z: wallZ(surface, u) - surface.normal.z * depth, y: surface.y1 };
   }
 
-  const stepOut = { x: 0, z: 0, y: 0, u: 0, v: 0, facing: 0, event: null }; // Reused every frame; copy fields you keep.
+  // Where stepping off the end of a wall lands: just past the end, level with the player's feet, on whatever
+  // standable surface is there. canStand(x, z, y) is the same check a mantle uses. Null when there is none.
+  function sideExitPoint(surface, edge, y, canStand, options = {}) {
+    const o = { ...DEFAULTS, ...options };
+    if (!edge || typeof canStand !== 'function') return null;
+    const end = edge > 0 ? surface.u1 : surface.u0;
+    for (const beyond of o.sideReach) for (const out of o.sideStandOffs) {
+      const u = end + Math.sign(edge) * beyond;
+      const x = wallX(surface, u) + surface.normal.x * out, z = wallZ(surface, u) + surface.normal.z * out;
+      if (canStand(x, z, y)) return { x, z, y };
+    }
+    return null;
+  }
+
+  const stepOut = { x: 0, z: 0, y: 0, u: 0, v: 0, facing: 0, event: null, edge: 0 }; // Reused every frame; copy fields you keep.
   // Advances an attached session by dt using a ground-plane input vector (x, z). Mutates session.u/v.
   function step(session, input, dt, options = {}) {
     const o = { ...DEFAULTS, ...options }, s = session.surface, style = getStyle(s.style);
@@ -136,16 +154,24 @@
     const ix = len > 1e-4 ? input.x / len : 0, iz = len > 1e-4 ? input.z / len : 0;
     const along = (ix * s.tangent.x + iz * s.tangent.z) * mag;
     const into = -(ix * s.normal.x + iz * s.normal.z) * mag;      // + = pushing into the wall.
-    if (Math.abs(along) > o.inputDeadzone) session.u = clamp(session.u + along * style.speedU * dt, s.u0 + o.edgeMargin, s.u1 - o.edgeMargin);
+    const lo = s.u0 + o.edgeMargin, hi = s.u1 - o.edgeMargin;
+    if (Math.abs(along) > o.inputDeadzone) session.u = clamp(session.u + along * style.speedU * dt, lo, hi);
+    let edge = 0; // Still pushing along the wall after reaching its end.
+    if (Math.abs(along) > o.sidePushThreshold) {
+      if (along > 0 && session.u >= hi - 1e-6) edge = 1;
+      else if (along < 0 && session.u <= lo + 1e-6) edge = -1;
+    }
     if (Math.abs(into) > o.inputDeadzone) session.v = clamp(session.v + into * style.speedV * dt, s.y0, s.y1);
     let event = null;
     if (session.v >= s.y1 - 1e-6 && into > o.topPushThreshold) event = 'top';
     else if (session.v <= s.y0 + 1e-6 && into < -o.topPushThreshold) event = 'bottom';
+    else if (edge) event = 'edge';
     stepOut.x = wallX(s, session.u) + s.normal.x * session.standOff;
     stepOut.z = wallZ(s, session.u) + s.normal.z * session.standOff;
     stepOut.y = session.v; stepOut.u = session.u; stepOut.v = session.v;
     stepOut.facing = Math.atan2(-s.normal.z, -s.normal.x); // Faces into the wall.
     stepOut.event = event;
+    stepOut.edge = event === 'edge' ? edge : 0;
     return stepOut;
   }
 
@@ -244,11 +270,19 @@
         else { p.x = exit.x * deps.TILE; p.y = exit.z * deps.TILE; }
       }
     } else if (out.event === 'bottom') release();
+    else if (out.event === 'edge') {
+      const exit = sideExitPoint(session.surface, out.edge, session.v, (x, z, y) => deps.canStandAt?.(x, z, y));
+      if (exit) { // A platform level with the climber just past the wall's end: step off onto it. Nothing there: stay on the wall.
+        release();
+        if (window.DevRandomRuin?.setPlayerWorldPoint) window.DevRandomRuin.setPlayerWorldPoint({ x: exit.x, y: exit.y, z: exit.z }, { grounded: true });
+        else { p.x = exit.x * deps.TILE; p.y = exit.z * deps.TILE; }
+      }
+    }
   }
 
   return Object.freeze({
     DEFAULTS, init, registerStyle, getStyle, listStyles, register, registerGrid, remove, clearScope, list,
-    findGrabTarget, attach, step, topExitPoint, buildVisual,
+    findGrabTarget, attach, step, topExitPoint, sideExitPoint, buildVisual,
     worldClimbProvider, grab, release, updatePlayer,
     isAttached: () => !!deps?.player?.onClimbSurface,
     debugSnapshot: () => ({
