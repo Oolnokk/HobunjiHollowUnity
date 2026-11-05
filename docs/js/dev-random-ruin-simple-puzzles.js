@@ -2342,7 +2342,7 @@
     updateRopes(now,dt);
     state.singleRoomChallenge?.tick?.(dt); // Live wing implementations handle inputs and completion, not fake test interactions.
     state.singleRoomChallenge?.animate?.(dt);
-    for(const composer of composers){if(context.hachutu===true&&composer.id!=='hachutuTemple')continue;try{composer.update?.(state.kit,now,dt);}catch(error){console.warn('[Random Test Ruin] composer update failed',error);}}
+    if(!context.singleRoomTrial)for(const composer of composers){if(context.hachutu===true&&composer.id!=='hachutuTemple')continue;try{composer.update?.(state.kit,now,dt);}catch(error){console.warn('[Random Test Ruin] composer update failed',error);}} // Solo never updates unrelated composers even when they retain internal autonomous timers.
     updateDoorwayCheckpoints();
     updateRopeChainCheckpoints(); // Side checkpoint claims override other doorway updates in the same frame.
     if(state.context?.singleRoomTrial){
@@ -2356,7 +2356,7 @@
     if(!state||!inRuin())return [];
     const controls=state.controls.slice();
     for(const control of (window.DevRandomRuinDungeonChests?.controlsFor?.(state.elevatorChests)||[]))controls.push(control);
-    for(const composer of composers){if(state.context.hachutu===true&&composer.id!=='hachutuTemple')continue;for(const control of (composer.controls?.(state.kit)||[]))controls.push(control);}
+    if(!state.context.singleRoomTrial)for(const composer of composers){if(state.context.hachutu===true&&composer.id!=='hachutuTemple')continue;for(const control of (composer.controls?.(state.kit)||[]))controls.push(control);} // No stale composer prompts in isolated mode.
     for(const candidate of state.ropes){
       if(candidate.attached||state.flight||candidate.airOnly||candidate.burden)continue; // Air-only ropes in a rope-to-rope chain are caught mid-swing, never from the floor; a rope with a burden hanging on it is not a rider's.
       controls.push({
