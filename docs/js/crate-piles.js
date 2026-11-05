@@ -101,6 +101,16 @@
     if(changed)persistSupplies();
     return changed;
   }
+  // The inactive zone cache tears a zone's scene down while the player is away.
+  // Drop every live reference to that scene (piles, uncollected drops and the
+  // one-shot rehydration marker); savedDrops and savedCounts persist, so
+  // restoreAreaDrops and the camp's own re-registration rebuild them on re-entry.
+  function releaseZone(mapId) {
+    restoredScenes.delete(mapId);
+    const prefix=String(mapId)+'::';
+    for(const id of [...piles.keys()])if(id.startsWith(prefix))piles.delete(id);
+    for(const [id,drop] of [...junk])if(drop.mapId===mapId||id.startsWith(prefix)){drop.group.parent?.remove(drop.group);junk.delete(id);}
+  }
   function nearestInteractable(mapId,x,z) {
     let best = null, distance = 1.65;
     for (const pile of piles.values()) {
@@ -364,5 +374,5 @@
     savedUncollectedDrops:savedDrops.size,savedCountOverrides:savedCounts.size,
   });
   window.CratePiles={installed:true,registerPile,unregisterPile,nearestInteractable,takeCrate,
-    shatterBurden,sweepMelee,tick,forgetPile,debugSnapshot};
+    shatterBurden,sweepMelee,tick,forgetPile,releaseZone,debugSnapshot};
 })();

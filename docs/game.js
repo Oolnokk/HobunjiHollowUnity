@@ -15808,6 +15808,10 @@
         _disposeZoneScene(mapId);
         _restoreLivePreviewZonePersistence(mapId, persisted);
         const freed = disposeSceneResources(zi.scene, collectLiveSceneResources()); // _zoneScenes no longer lists this zone, so only scenes that stay alive count as users.
+        // Modules that keep strong, zone-keyed references to the old scene or grid (found with a heap snapshot).
+        window.HeldObjectRenderOrder?.forgetScene?.(zi.scene);
+        window.CratePiles?.releaseZone?.(mapId);
+        window.PorakanekiCampPlacementPolicy?.forgetZone?.(mapId);
         zi.scene.clear(); // One stale reference to a mesh would otherwise keep the whole old zone reachable through its parent chain.
         window.__farmLog?.(`[zone-cache] evicted ${mapId} (${freed.materials} materials, ${freed.textures} textures released)`, 'perf');
         return true;

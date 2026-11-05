@@ -23,7 +23,7 @@ const evictionBlock = slice('// ── Inactive wilderness zone cache', 'window.
 const persistenceFns = slice('function _captureLivePreviewZonePersistence(mapId)', 'function _disposeTownSceneForLivePreview');
 
 function makeWorld(config) {
-  const timers = [], disposed = [], campfireReleases = [], logs = [];
+  const timers = [], disposed = [], campfireReleases = [], logs = [], holderCalls = [];
   const persist = { reagents: new Map(), berries: new Map(), treasure: new Map(), felled: new Map(), mined: new Map() };
   const zoneScenes = new Map();
   const hostiles = new Set(), corpses = new Set(), npcs = [];
@@ -31,7 +31,10 @@ function makeWorld(config) {
   const farmScene = traversable([]), buildingScenes = new Map();
   const context = vm.createContext({
     window: { SCRATCHBONES_CONFIG: config, DevSpawner: { DEV_ARENA_ZONE_ID: 'map_dev_arena', WILDERNESS_LAB_ZONE_ID: 'map_wilderness_lab' },
-      WildernessCampfire: { releaseVisualIfZone: id => campfireReleases.push(id) }, __farmLog: msg => logs.push(msg) },
+      WildernessCampfire: { releaseVisualIfZone: id => campfireReleases.push(id) }, __farmLog: msg => logs.push(msg),
+      HeldObjectRenderOrder: { forgetScene: scene => holderCalls.push({ module: 'held', scene, clearedAtCall: !!scene.cleared }) },
+      CratePiles: { releaseZone: id => holderCalls.push({ module: 'crates', id }) },
+      PorakanekiCampPlacementPolicy: { forgetZone: id => holderCalls.push({ module: 'camps', id }) } },
     setTimeout: fn => { timers.push(fn); return timers.length; },
     performance: { now: () => 0 }, localStorage: { getItem: () => null, setItem() {} },
     _zoneScenes: zoneScenes, hostileObjects: hostiles, corpseObjects: corpses, npcWalkers: npcs,
@@ -49,7 +52,7 @@ function makeWorld(config) {
   vm.runInContext(`${persistenceFns}\n${evictionBlock}\nthis.api = { releaseResidentRigs, parkZoneNpcs, noteZoneVisited, trimZoneCache, scheduleZoneCacheTrim, zoneEvictionBlocker, evictZoneScene, rebindZoneResidents, order: _zoneVisitOrder };`, context, { filename: 'zone-cache.js' });
   const addZone = id => zoneScenes.set(id, { scene: Object.assign(traversable([]), { cleared: false }), grid: ['grid-' + id], cols: 200, rows: 200 });
   const visit = id => { addZone(id); context.currentArea = id; context.api.noteZoneVisited(id); };
-  return { farmScene, buildingScenes, traversable, context, api: context.api, timers, disposed, campfireReleases, logs, persist, zoneScenes, hostiles, corpses, npcs, addZone, visit };
+  return { holderCalls, farmScene, buildingScenes, traversable, context, api: context.api, timers, disposed, campfireReleases, logs, persist, zoneScenes, hostiles, corpses, npcs, addZone, visit };
 }
 
 // ---- keeps the current zone and the most recent inactive one --------------
@@ -230,6 +233,13 @@ for (const [label, extra, store] of [
   w.api.trimZoneCache();
   assert.deepEqual(w.campfireReleases, ['map_a'], 'the saved campfire releases only its visual');
   assert.equal(scene.cleared, true, 'the old scene is emptied so no stale mesh can keep it reachable');
+  // Modules that kept strong references to the old scene or grid (found in a heap snapshot) are told, for the evicted zone only.
+  assert.deepEqual(w.holderCalls.map(c => c.module).sort(), ['camps', 'crates', 'held'], 'each registry holder is released once');
+  const held = w.holderCalls.find(c => c.module === 'held');
+  assert.equal(held.scene, scene, 'the render-order registries forget the evicted scene');
+  assert.equal(held.clearedAtCall, false, 'before it is emptied, so its meshes can still be found');
+  assert.equal(w.holderCalls.find(c => c.module === 'crates').id, 'map_a');
+  assert.equal(w.holderCalls.find(c => c.module === 'camps').id, 'map_a');
 }
 
 // ---- scheduling and wiring ------------------------------------------------
