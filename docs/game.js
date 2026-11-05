@@ -20769,11 +20769,27 @@
         }
         // Auto-reserved plateau cliff-face ring — impassable except where a
         // ramp tile explicitly cuts through it (which never sets `incline`).
-        if (tile.incline) return null;
-        // Map-boundary escarpment tops are airtight scenery. A player who is
-        // somehow already standing on one (old save, teleport) may still walk
-        // off it rather than being welded in place.
-        if (tile.mapBoundary && !window.GridTileAccessors.getActiveGrid()[Math.floor(player.y / TILE)]?.[Math.floor(player.x / TILE)]?.mapBoundary) return null;
+        if (tile.incline || tile.mapBoundary) {
+          // Cliffs stop walking, but rays can clear their finite physical height.
+          // Auto-reserved incline rings store the LOWER adjacent tier; their
+          // true upper lip is the highest adjacent walkable plateau or ramp.
+          let cliffTopY = tileSurfaceYInArea(tile, currentArea); // Only projectile cover uses this ceiling; walking remains blocked.
+          if (projectile && tile.incline) {
+            const grid = window.GridTileAccessors.getActiveGrid();
+            for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+              const neighbour = grid[row + dz]?.[col + dx];
+              if (neighbour && !neighbour.incline && !neighbour.mapBoundary) {
+                cliffTopY = Math.max(cliffTopY, tileSurfaceYInArea(neighbour, currentArea));
+              }
+            }
+          }
+          const intersectsCliff = !projectile || worldY <= cliffTopY + 0.01;
+          if (tile.incline && intersectsCliff) return null;
+          // Preserve the original escape exception for an actor already on
+          // a boundary tile; it does not give ordinary walkers a route up.
+          if (tile.mapBoundary && intersectsCliff
+            && (projectile || !window.GridTileAccessors.getActiveGrid()[Math.floor(player.y / TILE)]?.[Math.floor(player.x / TILE)]?.mapBoundary)) return null; // Only actors stuck on old-save boundary tiles may step off; shots never inherit their escape exception.
+        }
         // Rivers/streams are swimmable, not blocked — the player has no
         // canSwim tag of their own (see CREATURE_DB's comment on the flag),
         // so this is always the slow "non-swimmer" pace; see isPlayerSwimming

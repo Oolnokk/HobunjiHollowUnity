@@ -495,6 +495,21 @@
   const lightPlayerPosition = new window.THREE.Vector3(); // Reused player-depth plane origin for farmhouse light projection.
   const ambientWindowScratch = new window.THREE.Vector3(); // Reused for window world positions so the mask pass allocates nothing per source.
   const windowMaskStats = { sources: 0, drawn: 0, glows: 0, colorAuras: 0, daylight: 0 }; // Mobile QA readout for the daylight-window mask pass.
+  const OUTDOOR_LIGHT_VISIBILITY_MARGIN_TILES = 8; // Keeps a fire or lantern fully visible a short way beyond its physical illumination radius.
+  const OUTDOOR_LIGHT_FADE_TILES = 6; // Smoothly retires distant outdoor glows instead of leaving sharp popping light spots on wilderness horizons.
+  const outdoorLightStats = { considered: 0, drawn: 0, fading: 0, culled: 0 }; // Displayed by the existing mobile Pixel Probe to verify wilderness source culling.
+
+  function outdoorLightVisibility(x, y, z, radiusTiles) {
+    if (!lightingDeps?.player || !Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) return 0;
+    const playerX = finiteOr(lightingDeps.player.x, 0) / lightingDeps.TILE; // World-space player coordinates are in tiles, the same units as local lights.
+    const playerY = finiteOr(lightingDeps.getPlayerWorldY?.(), 0); // Vertical separation matters for wilderness cliffs and multi-level walkways.
+    const playerZ = finiteOr(lightingDeps.player.y, 0) / lightingDeps.TILE;
+    const sourceDistance = Math.hypot(x - playerX, y - playerY, z - playerZ); // Used to limit overlay light visibility independently of its projection onto the camera.
+    const fadeStart = Math.max(0, finiteOr(radiusTiles, 0)) + OUTDOOR_LIGHT_VISIBILITY_MARGIN_TILES; // Full brightness near a light's authored reach.
+    if (sourceDistance <= fadeStart) return 1;
+    if (sourceDistance >= fadeStart + OUTDOOR_LIGHT_FADE_TILES) return 0;
+    return 1 - smoothstep01((sourceDistance - fadeStart) / OUTDOOR_LIGHT_FADE_TILES);
+  }
 
   function lightScreenRadius(x, z, y, tiles) {
     lightCamRight.setFromMatrixColumn(lightingDeps.camera.matrixWorld, 0);
@@ -609,8 +624,11 @@
     ctx.globalCompositeOperation = 'destination-out';
     const lanternTuning = tuning.lantern;
     const softInterior = enclosedLightingArea(currentArea); // Every enclosed room uses the eased edge, including mines and dens.
+    const outdoors = !softInterior; // Outdoor player/watch lanterns obey the wilderness visibility fade; enclosed rooms retain their existing behavior.
     const linearInterior = ordinaryBuildingInterior(currentArea); // Only ordinary buildings expand their physical light radius.
     for (const carrier of carriers) {
+      const visibility = outdoors ? outdoorLightVisibility(carrier.x, carrier.y, carrier.z, lanternTuning.radiusTiles) : 1; // Ignore far-away watch lanterns; carried player light stays nearby.
+      if (visibility <= 0) continue;
       const center = lightingDeps.worldToOverlay(carrier.x, carrier.y, carrier.z);
       const shineR = lightScreenRadius(carrier.x, carrier.z, carrier.y, lanternTuning.radiusTiles * ruinLanternScale * (linearInterior ? INTERIOR_LIGHT_RADIUS_MULTIPLIER : 1));
       if (!lightMaskIntersectsViewport(center, shineR, ctx, carrier.x, carrier.y, carrier.z, lanternTuning.radiusTiles * ruinLanternScale * (linearInterior ? INTERIOR_LIGHT_RADIUS_MULTIPLIER : 1))) continue;
@@ -618,7 +636,7 @@
       const grad = ctx.createRadialGradient(center.x, center.y, 0, center.x, center.y, shineR);
       const transmission = interiorLightTransmission(carrier.x, carrier.z);
       if (transmission <= 0.005) continue;
-      const effectiveStrength = lanternStrength * transmission;
+      const effectiveStrength = lanternStrength * transmission * visibility; // Fade the actual darkness reveal, not just the decorative warm halo.
       grad.addColorStop(0, `rgba(0,0,0,${lanternTuning.centerMaskAlpha * effectiveStrength})`);
       if (softInterior) {
         addInteriorFalloffStops(grad, lanternTuning.centerMaskAlpha * effectiveStrength);
@@ -640,6 +658,8 @@
     if (weatherTint) {
       ctx.globalCompositeOperation = 'multiply';
       for (const carrier of carriers) {
+        const visibility = outdoors ? outdoorLightVisibility(carrier.x, carrier.y, carrier.z, lanternTuning.radiusTiles) : 1; // Weather tint follows the same faded visibility as the matching darkness cutout.
+        if (visibility <= 0) continue;
         const center = lightingDeps.worldToOverlay(carrier.x, carrier.y, carrier.z);
         const shineR = lightScreenRadius(carrier.x, carrier.z, carrier.y, lanternTuning.radiusTiles * ruinLanternScale);
         if (!lightMaskIntersectsViewport(center, shineR, ctx, carrier.x, carrier.y, carrier.z, lanternTuning.radiusTiles * ruinLanternScale)) continue;
@@ -648,9 +668,9 @@
         addWeatherTintStops(
           grad,
           weatherTint,
-          lanternTuning.centerMaskAlpha * lanternStrength,
-          lanternTuning.clarityMaskAlpha * lanternStrength,
-          lanternTuning.softMaskAlpha * lanternStrength,
+          lanternTuning.centerMaskAlpha * lanternStrength * visibility,
+          lanternTuning.clarityMaskAlpha * lanternStrength * visibility,
+          lanternTuning.softMaskAlpha * lanternStrength * visibility,
           clarityFrac,
           lanternTuning.softTransitionFraction,
         );
@@ -668,19 +688,28 @@
     const visible = [];
     const currentArea = lightingDeps.getCurrentArea();
     const softInterior = enclosedLightingArea(currentArea); // All enclosed spaces fade softly into their own darkness.
+    const outdoors = !softInterior; // Only world-exterior furniture masks get limited by player-to-source distance.
     const linearInterior = ordinaryBuildingInterior(currentArea); // Only ordinary buildings expand the physical light radius.
     for (const light of lightingDeps.getFurnitureLightSources()) {
+      const visibility = outdoors ? outdoorLightVisibility(light.x, light.y, light.z, light.distance) : 1; // Bound remote campfire/torch glows by their actual world positions.
+      if (outdoors) {
+        outdoorLightStats.considered++;
+        if (visibility <= 0) outdoorLightStats.culled++;
+        else if (visibility < 1) outdoorLightStats.fading++;
+      }
+      if (visibility <= 0) continue;
       const transmission = interiorLightTransmission(light.x, light.z);
       if (transmission <= 0.005) continue;
       const projected = projectInteriorLightMask(light.x, light.y, light.z, light.distance * (linearInterior ? INTERIOR_LIGHT_RADIUS_MULTIPLIER : 1), ctx);
       if (!projected) continue;
-      visible.push({ light, center: projected.center, shineR: projected.radius, transmission });
+      visible.push({ light, center: projected.center, shineR: projected.radius, transmission, visibility }); // Reuse one fade factor across light reveal, weather tint and colored glow.
+      if (outdoors) outdoorLightStats.drawn++;
     }
 
     ctx.globalCompositeOperation = 'destination-out';
-    for (const { light, center, shineR, transmission } of visible) {
+    for (const { light, center, shineR, transmission, visibility } of visible) {
       const clarityFrac = Math.min(0.55, Math.max(0.18, 1.15 / light.distance));
-      const strength = Math.min(0.94, 0.58 + light.intensity * 0.22) * transmission;
+      const strength = Math.min(0.94, 0.58 + light.intensity * 0.22) * transmission * visibility;
       const grad = ctx.createRadialGradient(center.x, center.y, 0, center.x, center.y, shineR);
       grad.addColorStop(0, `rgba(0,0,0,${strength})`);
       if (softInterior) {
@@ -699,9 +728,9 @@
     const weatherTint = preserveOutdoorWeatherTint ? currentOutdoorWeatherTintState() : null; // Used below so static outdoor lights preserve the same weather coloration as carried/watch lanterns.
     if (weatherTint) {
       ctx.globalCompositeOperation = 'multiply';
-      for (const { light, center, shineR, transmission } of visible) {
+      for (const { light, center, shineR, transmission, visibility } of visible) {
         const clarityFrac = Math.min(0.55, Math.max(0.18, 1.15 / light.distance));
-        const strength = Math.min(0.94, 0.58 + light.intensity * 0.22) * transmission;
+        const strength = Math.min(0.94, 0.58 + light.intensity * 0.22) * transmission * visibility;
         const grad = ctx.createRadialGradient(center.x, center.y, 0, center.x, center.y, shineR);
         addWeatherTintStops(
           grad,
@@ -720,9 +749,9 @@
     }
 
     ctx.globalCompositeOperation = 'source-over';
-    for (const { light, center, shineR, transmission } of visible) {
+    for (const { light, center, shineR, transmission, visibility } of visible) {
       const glowR = shineR * (linearInterior ? 1 : 0.62);
-      const glowAlpha = Math.min(0.18, 0.055 + light.intensity * 0.055) * transmission;
+      const glowAlpha = Math.min(0.18, 0.055 + light.intensity * 0.055) * transmission * visibility; // Distant sources cannot leave a glowing dot after the reveal fades.
       const { r, g, b } = light.color;
       const glow = ctx.createRadialGradient(center.x, center.y, 0, center.x, center.y, glowR);
       glow.addColorStop(0, `rgba(${r},${g},${b},${glowAlpha})`);
@@ -962,6 +991,7 @@
     const surface = window.WeatherFX?.ensurePresentationSurface?.({ reason: 'unified-lighting-draw' }); // Keeps the authoritative replacement lighting pass on the same repaired CSS/backing dimensions as WebGL.
     const rect = surface?.rect || lightingDeps.getThreeRect();
     ctx.clearRect(0, 0, rect.width, rect.height);
+    outdoorLightStats.considered = outdoorLightStats.drawn = outdoorLightStats.fading = outdoorLightStats.culled = 0; // Count only lights in the latest frame for mobile debugging.
     const enclosed = farmhouseSceneActive || currentArea === 'interior'
       || lightingDeps._isBuildingArea(currentArea)
       || (isNoSkyArea(currentArea) && !isCloudForestMap(currentArea));
@@ -1042,6 +1072,12 @@
     setLayerOpacity,
     getKanthicLanternRadiusTiles:()=>tuning.lantern.radiusTiles, // Compatibility API: Kanthic now uses the normal smooth lantern radius.
     refreshLightingOverlay: () => { lastUnifiedLightingDraw = -Infinity; window.WeatherFX?.drawLightingOverlay?.(); }, // Lets dev-only lighting controls redraw immediately without owning a second lighting path.
+    outdoorLightVisibilityAt: (x, y, z, radiusTiles = 0) => {
+      const area = lightingDeps?.getCurrentArea?.(); // Reuses the compositor's actual current area instead of asking separate glow owners to guess indoor status.
+      const scene = lightingDeps?.getActiveScene?.() || window.GridTileAccessors?.getActiveScene?.(); // Farmhouse transitions may temporarily report the old outdoor area.
+      if (!lightingDeps || enclosedLightingArea(area) || scene?.userData?.hobunjiPlayerFarmhouseInterior === true) return 1;
+      return outdoorLightVisibility(x, y, z, radiusTiles); // Shared fade policy for spectral glows, Harlyao's second darkness pass and emissive orbs.
+    },
     // Called by the Settings tab's Cloud Forest Fog toggle. update() itself
     // is simply not called at all while disabled (see game.js's per-frame
     // call site), which freezes the mist mid-animation rather than hiding
@@ -1062,7 +1098,7 @@
         fogColor: fogResultColor ? `#${fogResultColor.getHexString()}` : null,
         skydomeSuppressed: !!isNoSkyArea(debugArea),
         undergroundLanternArea: isUndergroundLanternArea(debugArea),
-        latestChange: 'Interior light pools use a wider eased fade and fade through animated closed-door blockers; farmhouse and authored rooms share the same compositor.',
+        latestChange: 'Outdoor point-light glows and watch lanterns fade with player distance; indoor light pools retain their existing eased fades and door transmission.',
         interiorLightRadiusMultiplier: INTERIOR_LIGHT_RADIUS_MULTIPLIER,
         interiorLightFalloff: 'ease-out',
         undergroundDarknessKind: enclosedDarknessKind(debugArea),
@@ -1070,6 +1106,7 @@
         lastInteriorDarknessDraw: lastInteriorDarknessDraw ? { ...lastInteriorDarknessDraw } : null, // Mobile QA shows whether a base mask was drawn for the active farmhouse.
         playerLanternVisible: !!debugScene?.getObjectByName?.('mine_player_torch')?.visible,
         outdoorLanternActivation: currentOutdoorLanternActivation(),
+        outdoorLightVisibility: { ...outdoorLightStats, marginTiles: OUTDOOR_LIGHT_VISIBILITY_MARGIN_TILES, fadeTiles: OUTDOOR_LIGHT_FADE_TILES }, // Pixel Probe exposes how many wilderness lights were actually suppressed.
         outdoorWeatherTintRetention: currentOutdoorWeatherTintState()?.alpha ?? 0,
         renderingMode: 'original-skydome-visibility-only',
         lightingAuthority: window.WeatherFX?.__singleFullDayLightingAuthority ? 'full-day-shared' : 'legacy',

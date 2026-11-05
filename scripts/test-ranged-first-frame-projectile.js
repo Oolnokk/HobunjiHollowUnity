@@ -44,7 +44,7 @@ const sandbox = {
     const projectile = {
       itemKey, areaId: 'test', dead: false, embedded: false, x: 0, y: 0, worldY: 1,
       prevX: 0, prevY: 0, prevWorldY: 1, vx: 500, vy: 0, vyWorld: 0,
-      projectileGravityWorldS2: 0, dropStartPx: Infinity, distancePx: 0,
+      projectileGravityWorldS2: 0, dropStartPx: Infinity, distancePx: 0, flightDistancePx: 0, // Tracks real 3D flight distance for steep shots.
       maxDistancePx: 1000, def: { projectileRadiusPx: 3 },
       mesh: { position: { set() {} } },
     }; // Fresh in-flight shot with enough range to test its first physical step.
@@ -93,8 +93,25 @@ for (const [key, def] of Object.entries(configurations)) {
   const projectile = projectiles.at(-1);
   assert(projectile.x > 0, key + ' moves its projectile during that same frame');
   assert(projectile.distancePx > 0 && projectile.prevX === 0, key + ' retains a swept first-frame collision segment');
+  assert(projectile.flightDistancePx >= projectile.distancePx, key + ' counts full physical distance each frame');
   projectiles.length = 0;
 }
 assert.equal(sim.fireReleaseFrac({ fireDurationS: 1, fireAtFrac: 0 }), 0, 'authored instant fire remains instant');
 assert.equal(sim.fireReleaseFrac({ fireDurationS: 1, fireAtFrac: -1 }), 0, 'negative authored timing cannot delay fire');
+// A vertical-only projectile has zero horizontal distance but still consumes
+// range in 3D. It must expire without being able to climb infinitely.
+const verticalShot = {
+  itemKey:'crossbow',areaId:'test',dead:false,embedded:false,
+  x:0,y:0,worldY:1,prevX:0,prevY:0,prevWorldY:1,
+  vx:0,vy:0,vyWorld:64,
+  projectileGravityWorldS2:0,dropStartPx:Infinity,distancePx:0,flightDistancePx:0,
+  maxDistancePx:20,def:{projectileRadiusPx:3},
+  mesh:{position:{set(){}}},
+};
+projectiles.push(verticalShot);
+sim.update(1/60);
+assert.equal(verticalShot.dead, true, 'purely vertical shots expire after their 3D travel limit');
+assert.equal(verticalShot.distancePx, 0, 'vertical flight still has no horizontal travel');
+assert.ok(verticalShot.flightDistancePx > verticalShot.maxDistancePx, 'vertical flight correctly accumulates world-space range');
+
 console.log('Player ranged firing spawns and advances projectiles in the first update frame.');

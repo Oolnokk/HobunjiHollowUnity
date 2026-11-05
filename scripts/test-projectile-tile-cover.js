@@ -18,6 +18,7 @@ const context = { TileType, TILE:32, NORMAL_TOP:0, ROCK_H:0.75, PLATEAU_UNIT:0.5
   isSolid:type=>type === 'rock' || type === 'shrub', isChoppableTreeTile:()=>state.tree,
   _isCavernBuildingArea:()=>state.area === 'cavern', _isZoneArea:()=>false,
   furnitureBlocksMovementAt:()=>state.furniture,
+  tileSurfaceYInArea: tile => Number.isFinite(tile?.surfaceY) ? tile.surfaceY : (tile?.elevTier || 0) * 0.5, // Mirrors zone plateau height for finite cliff cover.
 }; // Minimal runtime dependencies keep tests focused on collision behavior.
 Object.defineProperty(context, 'currentArea', {get:()=>state.area});
 vm.createContext(context);
@@ -52,6 +53,20 @@ assert.equal(occupy(), false, 'tent walking footprint is retained');
 state.footprint = true;
 assert.equal(occupy(3), false, 'dedicated height-aware footprint providers remain authoritative');
 assert.equal(context.canOccupyAt(-1,48,2,10), false, 'shots cannot leave map bounds');
+state.footprint = false; state.furniture = false;
+grid[1][1] = {type:'grass', incline:true, elevTier:0}; // Auto-reserved cliff-face cell keeps the low tier.
+grid[1][2] = {type:'grass', elevTier:4}; // Its neighbouring plateau rises two world units higher.
+assert.equal(occupy(), false, 'cliffs remain fully impassable to walkers');
+assert.equal(occupy(1), false, 'shot below the adjacent plateau lip hits its cliff face');
+assert.equal(occupy(2.5), true, 'high shot clears the physical cliff rather than hitting an infinite wall');
+grid[1][1] = {type:'grass', mapBoundary:true, elevTier:3};
+context.player.x = 16; context.player.y = 16; // The historical unstuck exemption applies only to a player already ON a boundary tile.
+assert.equal(occupy(), false, 'boundary cliffs remain impassable to walkers');
+assert.equal(occupy(1), false, 'boundary cliffs block arrows at their actual height');
+context.player.x = 48; context.player.y = 48; // Old-save boundary resident may escape walking collision.
+assert.equal(occupy(1), false, 'projectile collisions never inherit the boundary-unstuck exception');
+context.player.x = 16; context.player.y = 16;
+assert.equal(occupy(2), true, 'shots above the boundary rock crest may pass');
 
 const scene = {children:[]}; // Minimal visible scene for semantic-cover runtime tests.
 const browser = {}; // Receives the actual collision module API.
