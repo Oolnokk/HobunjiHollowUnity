@@ -714,7 +714,7 @@
     }
     // A single instanced cap/ore/chest draw per zone replaces hundreds of
     // separate mesh draw calls on cliff-heavy maps (particularly mobile).
-    const shelves = network.balconies;
+    const shelves = network.balconies.filter(shelf => !shelf.aerialOnly); // Flight-only spire shelves are physical supports, never treasure-reward ledges.
     const hidden = new THREE.Matrix4().makeScale(0, 0, 0); // Invisible claimed/unrevealed reward matrix, with no instance list reallocation.
     const makeInstanced = (geometry, material, count, name) => {
       if (!count) return null;
