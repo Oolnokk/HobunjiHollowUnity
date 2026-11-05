@@ -29,36 +29,16 @@
     window.__farmLog?.('[tzatzul] ' + event, 'wildlife');
   }
   function roosts(area) {
-    const network = window.CliffRouteNetwork?.forArea?.(area);
-    if (!network?.balconies?.length) return []; // No invented supports or birds hovering above empty terrain.
-    const cached = roostCache.get(area);
-    if (cached?.network === network) return cached.roosts;
-    const candidates = network.balconies.filter(s => Number.isFinite(s?.x)
-      && Number.isFinite(s?.z) && Number.isFinite(s?.y)
-      && Array.isArray(s.footprint) && s.footprint.length > 0);
-    // Network balconies are the authoritative elevated rock geometry. Do not
-    // compare against worldSurfaceY: it already includes elevated support in
-    // some maps, so that comparison mistakenly rejects every real mini-cliff.
-    candidates.sort((a, b) => b.y - a.y || String(a.id).localeCompare(String(b.id)));
-    const selected = [];
-    for (const shelf of candidates) {
-      if (selected.length >= BIRDS_PER_ZONE) break;
-      if (selected.some(s => Math.hypot(s.shelf.x - shelf.x, s.shelf.z - shelf.z) < MIN_ROOST_GAP_TILES)) continue;
-      const id = 'tzatzul:roost:' + area + ':' + shelf.id;
-      const support = window.PerchSupport?.point?.(id, shelf.x * tile(), shelf.z * tile(), shelf.y);
-      if (!support || !window.PerchSupport?.register?.(area, support)) continue;
-      selected.push({ id, support, shelf });
-    }
-    // Unregister only old bird-owned perches. Never disturb other animals' Shadewood supports.
-    if (cached) for (const previous of cached.roosts) {
-      if (!selected.some(current => current.id === previous.id))
-        window.PerchSupport?.unregister?.(area, previous.id);
-    }
-    roostCache.set(area, { network, roosts: selected });
-    return selected;
+    // Existing mini-cliff caps are player-reachable; do not use them as nests.
+    // The dedicated Spire owner adds physically separate bird-only point
+    // perches without modifying player climb paths or walking surfaces.
+    return window.TzatzulCliffSites?.ensure?.(area, {
+      zoneScenes: deps?.zoneScenes, TILE: tile(),
+    }) || [];
   }
   function init(injected) {
     deps = injected; // No second creature factory, map store, camera loop, or independent timers.
+    lastArea = null;
     actors.clear();
     roostCache.clear();
     spawnedThisDay.clear();
@@ -67,7 +47,16 @@
   function ensureZone(area) {
     if (!deps || !ALLOWED_AREAS.has(area) || deps.getCurrentArea?.() !== area) return 0;
     let count = 0;
-    for (const [slot, roost] of roosts(area).entries()) {
+    const available = roosts(area);
+    const supports = new Map(available.map(r => [r.id, r.support])); // Restore roost identity across scene regeneration.
+    for (const bird of actors) {
+      if (bird.areaId !== area || !(bird.health > 0)) continue;
+      const state = bird._tzFlight, support = supports.get(state?.roostId);
+      if (!support) continue;
+      state.roost = support;
+      if (state.phase === 'perched') window.PerchSupport?.attach?.(bird, support);
+    }
+    for (const [slot, roost] of available.entries()) {
       if (spawnedThisDay.has(roost.id)) continue;
       const identity = window.TzatzulRegistration?.identityFor?.(area, slot);
       if (!identity) continue;
@@ -85,7 +74,7 @@
       actors.add(bird);
       spawnedThisDay.add(roost.id);
       stats.spawned++; count++;
-      mark(bird, 'roosted on mini-cliff ' + roost.id);
+      mark(bird, 'roosted on bird-only cliff spire ' + roost.id);
     }
     return count;
   }
@@ -178,10 +167,15 @@
       state.target = null; bird.tzatzulFlightPose = 'perched';
     }
   }
+  let lastArea = null; // Changed-zone detection disposes only old spire scene roots.
   function update(dt) {
     if (!deps?.hostileObjects) return;
     const step = Math.max(0, Math.min(.1, n(dt))); // Mobile tab resume cannot skip several seconds of flight.
     const area = deps.getCurrentArea?.();
+    if (area !== lastArea) {
+      window.TzatzulCliffSites?.releaseInactive?.(area);
+      lastArea = area;
+    }
     for (const bird of actors) {
       if (!deps.hostileObjects.has(bird) || !(bird.health > 0)) {
         actors.delete(bird); window.TzatzulLiveVisuals?.release?.(bird, 'dead or unloaded'); continue;

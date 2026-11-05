@@ -21,10 +21,10 @@ let hits=0; // Counts exact damage calls; a single swoop cannot hit repeatedly.
 const w={PerchSupport:supports,__farmLog(){},
   TzatzulRegistration:{identityFor:(a,i)=>({id:a+':'+i,tintHex:'#bb7777'})},
   TzatzulLiveVisuals:{release(){}},
-  CliffRouteNetwork:{forArea:id=>id===zone?{balconies:[
-    {id:'a',x:2,z:2,y:6,footprint:[{c:2,r:2}]},
-    {id:'b',x:35,z:2,y:7,footprint:[{c:35,r:2}]},
-    {id:'bad',x:4,z:5,y:0,footprint:[]}]}:null},
+  TzatzulCliffSites:{ensure:(area)=>area===zone?[
+    {id:'tzatzul:roost:a', support:{id:'tzatzul:roost:a',dimension:0,x:128,y:128,worldY:6}},
+    {id:'tzatzul:roost:b', support:{id:'tzatzul:roost:b',dimension:0,x:2240,y:128,worldY:7}},
+  ].map(r=>{supports.register(area,r.support);return r;}):[],releaseInactive(){}},
   Combat:{deps:{damagePlayer(damage){hits++;player.health-=damage;}}},
 };
 vm.runInNewContext(file('docs/js/tzatzul-flight-runtime.js'),{window:w,Math,Date,Set,Map,console});
