@@ -444,7 +444,8 @@ new vm.Script(read('docs/js/dev-random-ruin-dungeon-chests.js'), { filename: 'de
 const sanctum = read('docs/js/dev-random-ruin-sanctum.js');
 const lich = read('docs/js/combat/combat-lich.js');
 assert(sanctum.includes("SP.registerComposer({\n    id:'sanctum'"), 'braziers / Great Door / boss sanctum must register as a simple-puzzle composer');
-assert(read('docs/js/dev-random-ruin-interior-map.js').includes('window.DevRandomRuinSanctum?.reserve?.(cols, rows)'), 'floor projection must reserve the sanctum wing in the ruin grid');
+assert(interior.includes('window.DevRandomRuinSanctum?.reserve?.(cols,rows,')&&interior.includes('sanctumPlan:projected.sanctumPlan'),
+  'floor projection must reserve the exact sanctum geometry and preserve its orientation-aware location for runtime construction');
 assert(sanctum.includes('bgm_just_beyond_the_torchlight.ogg'), 'awakened Great Door must emit Just Beyond the Torchlight as its BGS');
 assert(lich.includes('allowArea:') && lich.includes('const allowedAreas = new Set([ARENA_ID])'), 'liches stay arena-confined unless an area opts in');
 assert(/js\/combat\/combat-lich\.js\?v=[A-Za-z0-9_-]+/.test(gameIndex), 'lich area opt-in must be cache-busted in the game page');
