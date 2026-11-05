@@ -232,6 +232,24 @@
     debug.drops++;
     return true;
   }
+  function ensureCarryVisual(state) {
+    const target = state?.carried;
+    if (!target || state.carryVisual || !state.rigRoot || !rigConfig || !root.THREE?.Group) return false;
+    const originalGroup = target === deps?.player ? sceneDeps?.playerMesh : target.avatarRef?.group;
+    if (!originalGroup?.clone) return false; // A data-only wildlife actor may promote its portrait a few frames after the pickup.
+    const THREE = root.THREE;
+    const frame = new THREE.Group(); // Native talon socket, shared by animals, NPCs and the voluntary player payload.
+    const outer = new THREE.Group(); // Parent cancels the bird's authored scale, preserving the prey's actual in-game size.
+    const clone = originalGroup.clone(true);
+    originalGroup.visible = false;
+    outer.add(clone);
+    frame.add(outer);
+    state.rigRoot.add(frame);
+    root.FlyingAnimalRig.placeTalonPayload(frame, outer, rigConfig.talonCarry, carryType(target), saddleAnchor(target));
+    state.carryVisual = outer;
+    state.carryingFrame = frame;
+    return true;
+  }
   function attachCarry(state, target) {
     if (!state || !target || state.carried || target._flyingCarriedBy) return false;
     const bird = state.bird;
@@ -244,21 +262,8 @@
     target._flyingCarriedBy = bird;
     target._tzatzulPriorState = target.state;
     target.state = 'tzatzul-carried';
-    const originalGroup = target === deps?.player ? sceneDeps?.playerMesh : target.avatarRef?.group;
-    if (originalGroup) originalGroup.visible = false;
+    ensureCarryVisual(state);
     if (target.groundShadow) target.groundShadow.visible = false;
-    if (state.rigRoot && root.THREE?.Group && originalGroup?.clone) {
-      const THREE = root.THREE;
-      const frame = new THREE.Group(); // Lives on the authored talon socket inside the actual bird rig.
-      const outer = new THREE.Group(); // Compensated payload frame retains its true game scale.
-      const clone = originalGroup.clone(true);
-      outer.add(clone);
-      frame.add(outer);
-      state.rigRoot.add(frame);
-      root.FlyingAnimalRig.placeTalonPayload(frame, outer, rigConfig.talonCarry, carryType(target), saddleAnchor(target));
-      state.carryVisual = outer;
-      state.carryingFrame = frame;
-    }
     state.mode = 'return';
     state.phase = 'climb';
     state.cycleT = 0;
@@ -474,6 +479,7 @@
       const pose = state.carried || state.phase === 'glide' ? 'glide' : 'flap';
       if (camera && state.rig) state.rig.update(camera, pose, state.animationT, !!state.carried);
       if (state.carried) {
+        ensureCarryVisual(state); // Late promotion from streaming never leaves prey floating invisibly.
         if (state.carried === deps?.player && sceneDeps?.playerMesh) sceneDeps.playerMesh.visible = false;
         if (state.carried.avatarRef?.group) state.carried.avatarRef.group.visible = false;
         if (state.carried.groundShadow) state.carried.groundShadow.visible = false;
