@@ -4,10 +4,15 @@
   'use strict';
   if (window.ObjectSpriteCatalog) return;
 
+  const reticleColors = window.MeleeHudReticle?.slotColors; // Reticle is loaded earlier than this catalogue in docs/index.html.
+  const parseSlotColor = (slot, fallback) => {
+    const source = reticleColors?.[slot]; // Reuses one combat-UI palette rather than maintaining an independent tint.
+    return /^#[0-9a-f]{6}$/i.test(source || '') ? parseInt(source.slice(1), 16) : fallback;
+  };
   const SLOT_COLORS = Object.freeze({
-    combo: 0x00D9FF, quickAttack: 0xFFD23F,
-    offensiveHold: 0xFF4FD8, defensiveHold: 0x7CFF4F,
-  }); // Matches the ordered quadrants in combat/melee-hud-reticle.js.
+    combo: parseSlotColor(0, 0x00D9FF), quickAttack: parseSlotColor(1, 0xFFD23F),
+    offensiveHold: parseSlotColor(2, 0xFF4FD8), defensiveHold: parseSlotColor(3, 0x7CFF4F),
+  }); // Standalone test/editor fallback mirrors the same canonical quartet.
   const PAPER_COLOR = 0xE7D5AF; // Warm paper fill for scroll.png, independent of binding color.
   const METAL_COLORS = Object.freeze({
     copper: 0xBD754B, tin: 0xC1C5C6, bronze: 0xAA8050,
