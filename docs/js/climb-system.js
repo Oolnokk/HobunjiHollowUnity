@@ -360,8 +360,14 @@
     player.onCliffBalcony = null;
     player._cliffRouteSession = {
       area: deps.getCurrentArea(), route: climb.route, nodeIndex: climb.entry,
-      moving: false, toIndex: -1,
+      moving: false, toIndex: -1, progress: 0, phase: 0, distance: 0,
     };
+    // Climbing faces the rock, not each new sideways/upward handhold direction.
+    const outward = climb.route.normal; // The terrain generator's actual cliff-face normal, reused by the crawl renderer.
+    if (outward && Number.isFinite(outward.x) && Number.isFinite(outward.z)) {
+      player.angle = Math.atan2(-outward.z, -outward.x);
+      deps.setFacingAngle(player.angle); deps.setTargetAimAngle(player.angle); deps.setLastMoveAngle(player.angle);
+    }
     player.climbing = true;
     player.x = node.x * deps.TILE; player.y = node.z * deps.TILE;
     player.climbSurfaceY = node.y;
@@ -655,32 +661,66 @@
     window.__farmLog?.('[climb] cancelled by moving away from the wall; dropping back down', 'wildlife');
   }
 
+  // Only selected exterior handhold routes use the surface crawl. Dungeon
+  // ladders, trees, jumps and legacy scripted climbs keep their own timings.
+  function updateRouteCrawl(player, session, dt) {
+    if (!session.moving) {
+      const raw = deps.getMovementInput?.() || { x: 0, y: 0 };
+      const next = window.CliffRouteNetwork?.nextHop?.(session.route, session.nodeIndex, { x: raw.x, z: raw.y });
+      if (!next) {
+        player.vx = 0; player.vy = 0; player.climbHopBounce = 0;
+        return; // Maintain hand/foot contact on the selected hold, including at forks.
+      }
+      session.toIndex = next.id; session.moving = true; session.progress = 0;
+      session.elapsed = 0; // Seconds elapsed on this single graph edge, not on the whole route.
+      player.climbStartX = player.x; player.climbStartY = player.y;
+      player.climbEndX = next.x * deps.TILE; player.climbEndY = next.z * deps.TILE;
+      player.climbSurfaceStartY = player.climbSurfaceY;
+      player.climbSurfaceEndY = next.y;
+      session.distance = Math.hypot(
+        (player.climbEndX - player.x) / deps.TILE,
+        (player.climbEndY - player.y) / deps.TILE,
+        next.y - player.climbSurfaceY
+      ); // True movement in the cliff plane, including lateral or diagonal traverses.
+      session.duration = Math.max(0.28, session.distance / 1.35);
+    }
+    const step = Math.max(0, Math.min(0.1, Number(dt) || 0));
+    session.elapsed += step;
+    session.progress = Math.min(1, session.elapsed / session.duration);
+    const t = session.progress;
+    // Linear path speed prevents the vertical, staggered leap-and-pause cadence.
+    // The procedural limbs provide planting, reaching and weight transfer.
+    player.x = player.climbStartX + (player.climbEndX - player.climbStartX) * t;
+    player.y = player.climbStartY + (player.climbEndY - player.climbStartY) * t;
+    player.climbSurfaceY = player.climbSurfaceStartY + (player.climbSurfaceEndY - player.climbSurfaceStartY) * t;
+    player.climbHopBounce = 0;
+    player.vx = 0; player.vy = 0;
+    session.phase += step * (session.distance / session.duration) * (Math.PI * 2 / 0.7);
+    if (t < 1) return;
+    session.nodeIndex = session.toIndex; session.moving = false; session.progress = 0;
+    const node = session.route.nodes[session.nodeIndex];
+    if (node?.balconyId) {
+      player.onCliffBalcony = node.balconyId;
+      player._cliffBalconyY = node.y;
+    }
+    if (!node?.balconyId && session.nodeIndex !== 0 && session.nodeIndex !== session.route.upperNode) {
+      return; // Stop at the chosen hold, but never hop without a fresh legal direction.
+    }
+    player._cliffRouteSession = null;
+    player.climbing = false;
+    player._climbCancelable = false;
+    player._climbDropped = false;
+  }
+
   function updateClimb(dt) {
     const player = deps.player;
     const session = player._cliffRouteSession; // Active only for exterior directional handhold climbing.
     if (session && session.area !== deps.getCurrentArea()) {
       player._cliffRouteSession = null; player.climbing = false; return;
     }
-    if (session && !session.moving) {
-      const raw = deps.getMovementInput?.() || { x: 0, y: 0 };
-      const next = window.CliffRouteNetwork?.nextHop?.(session.route, session.nodeIndex, { x: raw.x, z: raw.y });
-      if (!next) {
-        player.vx = 0; player.vy = 0; player.climbHopBounce = 0;
-        return; // No direction or no link: hang in place; never advance automatically.
-      }
-      session.toIndex = next.id; session.moving = true;
-      player.climbStartX = player.x; player.climbStartY = player.y;
-      player.climbEndX = next.x * deps.TILE; player.climbEndY = next.z * deps.TILE;
-      player.climbSurfaceStartY = player.climbSurfaceY;
-      player.climbSurfaceEndY = next.y;
-      player.climbElapsed = 0; player.climbHopCount = 1;
-      player._climbLastHopIndex = -1;
-      resetClimbTiming(player, { activeS: 0.32, pauseS: 0.13, bounce: 0.35, cancelable: false });
-      const facing = Math.atan2(player.climbEndY - player.y, player.climbEndX - player.x);
-      if (Number.isFinite(facing)) {
-        player.angle = facing;
-        deps.setFacingAngle(facing); deps.setTargetAimAngle(facing); deps.setLastMoveAngle(facing);
-      }
+    if (session) {
+      updateRouteCrawl(player, session, dt);
+      return;
     }
     if (climbCancelRequested(player, dt)) dropFromClimb(player);
     const hopActiveS = player._climbHopActiveS ?? CLIMB_HOP_ACTIVE_S;
@@ -836,6 +876,12 @@
     registerWorldClimbProvider, getWorldClimbTarget,
     startScriptedWorldClimb, // Reuses the cliff-climb hop lerp for authored non-grid climbs such as Random Test Ruin stone ladders.
     updateClimb,
+    getCrawlState: () => {
+      const player = deps?.player, session = player?._cliffRouteSession; // Renderer reads, never mutates, the traversal graph state.
+      return player?.climbing && session?.area === deps?.getCurrentArea()
+        ? { player, route: session.route, moving: session.moving, phase: session.phase, progress: session.progress }
+        : null;
+    },
     updateBranchMovement,
     constrainEntityToBranch,
     resolveBranchKnockback,
