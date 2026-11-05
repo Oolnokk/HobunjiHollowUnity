@@ -79,7 +79,8 @@
         x: x + levels[2].offsetX,
         z: z + side * (levels[2].depth * .5 + .37),
         y: nestY, width: 1.8, depth: 1.35, side,
-        caveMapId: 'map_i_tzatzul_' + area + '_' + c + '_' + r,
+        denId: 'tzatzul-' + c + '-' + r,
+        caveMapId: 'map_i_den_' + area + '_tzatzul-' + c + '-' + r,
       }; // High cave mouth has no handholds: only the aerial escort reaches its lip.
       picked.push({ id: 'tzatzul-spire-' + c + '-' + r, area, x, z, baseY, height, levels, nest, seed: hash(area + ':' + c + ':' + r) });
     }
@@ -170,6 +171,10 @@
     }
     const positions = [...tops, ...stone], geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    const uvs = []; // World-projected coordinates let the inherited rock/grass materials repeat without stretching.
+    for (let i = 0; i < tops.length; i += 3) uvs.push(tops[i], tops[i + 2]);
+    for (let i = 0; i < stone.length; i += 3) uvs.push(stone[i], stone[i + 1]);
+    geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
     geometry.addGroup(0, tops.length / 3, 0);
     geometry.addGroup(tops.length / 3, stone.length / 3, 1);
     geometry.computeVertexNormals();
