@@ -102,10 +102,11 @@
         index = list.length; list.push(recipe);
       } else list[index] = recipe;
       state.surfaceGrowth = list;
-      if (recipe.kind === 'stoneStalagmites') {
-        state.bladedHazard = true; // The invisible seed box becomes a solid sharp hazard through the existing furniture collider.
-        const hazardCheck = document.getElementById('bladedHazard');
-        if (hazardCheck) hazardCheck.checked = true;
+      const hazardCheck = document.getElementById('bladedHazard'); // Automatic stone sharpness never mutates the manually selected bladed hazard.
+      if (hazardCheck) {
+        const hasStone = list.some(entry => entry.kind === 'stoneStalagmites');
+        hazardCheck.checked = !!state.bladedHazard || hasStone;
+        hazardCheck.disabled = hasStone;
       }
       shown = true; // Display newly generated ice immediately.
       const report = rebuildSurfaceFoliage(); // Same geometry lifecycle as every existing root/vine layer.
@@ -120,6 +121,12 @@
     const list = recipes().slice();
     list.splice(index, 1);
     state.surfaceGrowth = list;
+    const hazardCheck = document.getElementById('bladedHazard');
+    if (hazardCheck) {
+      const hasStone = list.some(entry => entry.kind === 'stoneStalagmites');
+      hazardCheck.checked = !!state.bladedHazard || hasStone;
+      hazardCheck.disabled = hasStone;
+    } // Clearing the last stone layer restores exactly the prior manual collision hazard.
     const report = rebuildSurfaceFoliage();
     queueUndoHistory('remove ice stalagmite coverage');
     refresh(-1);
