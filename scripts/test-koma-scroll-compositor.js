@@ -40,7 +40,7 @@ const document = {
 };
 const window = {
   ColorFill: {
-    shadeFillPixels(_pixels, rgb) { tints.push(rgb.slice()); }, // Exact paper/ribbon RGB calls from the real code.
+    shadeFillPixels(_pixels, rgb) { tints.push(Array.from(rgb)); }, // Exact paper/ribbon RGB calls from the real code.
     shadeFillConfig: () => ({}), relativeLuminance: () => 0,
     rgbToHsv: () => ({ h: 0, s: 0, v: 0 }),
     hsvToRgb: () => [0, 0, 0], hueDistance: () => 0,
