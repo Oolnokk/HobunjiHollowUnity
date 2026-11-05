@@ -34,9 +34,11 @@ const deps={TILE:64,player,hostileObjects:creatures,getCurrentArea:()=>zone,worl
 assert(w.TzatzulFlightRuntime.init(deps));
 assert.equal(w.TzatzulFlightRuntime.ensureZone(zone),2,'one visible mother per distant high cliff roost');
 assert.equal(w.TzatzulFlightRuntime.ensureZone(zone),0,'repeated checks cannot duplicate mothers');
-assert.equal(native.get(zone).size,2,'missing footprint is not a real mini-cliff ledge');
-assert(file('docs/js/tzatzul-flight-runtime.js').includes('Array.isArray(s.footprint)'),
-  'only actual cliff-network shelf geometry may serve as a roost');
+assert.equal(native.get(zone).size,2,'two bird-only spire points are registered');
+assert(file('docs/js/tzatzul-cliff-sites.js').includes('s?.base?.footprint?.length'),
+  'only actual cliff geometry can anchor an independent spire');
+assert(file('docs/js/tzatzul-flight-runtime.js').includes('TzatzulCliffSites?.ensure'),
+  'birds use the non-climbable spire builder rather than accessible mini-cliff caps');
 assert.equal(w.TzatzulFlightRuntime.ensureZone('map_southern_cloud_forest'),0);
 const bird=[...creatures][0];
 assert.equal(bird.onPerch.dimension,0,'bird rests on registered zero-dimensional rock support');
