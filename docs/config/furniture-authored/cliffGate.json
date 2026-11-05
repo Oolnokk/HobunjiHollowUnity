@@ -109,7 +109,7 @@
       "materialUvMaxPatchWorldSize": 6,
       "rockShape": {
         "enabled": true,
-        "seed": "cliffGate:cliff_gate_slab",
+        "seed": "cliffDoor:cliff_door_slab",
         "roughness": 0.12,
         "contactArea": 0.35
       }
@@ -164,7 +164,7 @@
       "materialUvMaxPatchWorldSize": 6,
       "rockShape": {
         "enabled": true,
-        "seed": "cliffGate:cliff_gate_right_post",
+        "seed": "cliffDoor:cliff_door_right_post",
         "roughness": 0.12,
         "contactArea": 0.35
       }
@@ -219,7 +219,7 @@
       "materialUvMaxPatchWorldSize": 6,
       "rockShape": {
         "enabled": true,
-        "seed": "cliffGate:cliff_gate_left_post",
+        "seed": "cliffDoor:cliff_door_left_post",
         "roughness": 0.12,
         "contactArea": 0.35
       }
@@ -274,7 +274,7 @@
       "materialUvMaxPatchWorldSize": 6,
       "rockShape": {
         "enabled": true,
-        "seed": "cliffGate:cliff_gate_header",
+        "seed": "cliffDoor:cliff_door_header",
         "roughness": 0.12,
         "contactArea": 0.35
       }
