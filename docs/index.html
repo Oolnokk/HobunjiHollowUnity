@@ -67,7 +67,7 @@
        window.LootRolling.init(...) and .loadLootShopConfig() during its
        own setup, and before every other module whose init(deps) is handed
        window.LootRolling.rollItemStars/starRatingText/etc. -->
-  <script src="js/loot-rolling.js?v=20261105mixedAudit4"></script>
+  <script src="js/loot-rolling.js?v=20261105puzzleCaves1"></script>
   <!-- Seed planting/crop harvesting, extracted out of game.js. Must load
        before game.js, which calls window.CropPlanting.init(...). -->
   <script src="js/crop-planting.js?v=20261008hc238a6f"></script>
@@ -602,7 +602,8 @@
   <script src="js/dev-ruin-single-room-trial.js?v=20261104solo1"></script> <!-- Samples actual ruin-room puzzle selection odds for the one-room developer lab. -->
   <script src="js/ruin-shaft-corridor.js?v=20261104directVestibule1"></script>
   <script src="js/ruin-layer-defense.js?v=20261104soloNoLoot1"></script>
-  <script src="js/ruin-layer-challenges.js?v=20261104gateCleanup6"></script>
+  <script src="js/puzzle-cave-melody.js?v=20261105puzzleCaves1"></script><!-- Reusable rhythm grid and timed plate-gated cave songs. -->
+  <script src="js/ruin-layer-challenges.js?v=20261105puzzleCaves1"></script>
   <script src="js/ruin-layer-playable.js?v=20261104gateCleanup2"></script>
   <script src="js/ruin-v50-native-mechanisms.js?v=20261105polish3"></script>
   <script src="js/ruin-v50-native-floors.js?v=20261104autoplayTopology7"></script>
@@ -894,7 +895,7 @@
        synchronously during initial boot. -->
   <script src="js/locale-cave-runtime.js?v=20261010h40fea5e"></script>
   <!-- Promotes wilderness den anchors into generic cave sites; wraps WildlifeSpawn/CavernGenerator/DevSpawner, all loaded above. -->
-  <script src="js/cave-site-system.js?v=20261104he3456d4"></script>
+  <script src="js/cave-site-system.js?v=20261105puzzleCaves1"></script>
   <!-- Two-necked Shattercask runtime. Loaded after Combat/DevSpawner/CaveSiteSystem so their
        hooks bind before game.js initializes the subsystems; also handles touch prompts. -->
   <!-- Capability/event substrate (window.WorldEvents, window.Targetables): pure registries with no
