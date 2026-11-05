@@ -42,6 +42,62 @@ for(const side of Object.keys(orientation))for(let seed=1;seed<=60;seed++){
   assert(route.tiles.some(([x,z])=>x===portal.x&&z===portal.z),'doorway is on the walkable route');
   cases++;
 }
+
+// The complete connector must also bridge V50's offset threshold in the same
+// mounted record, not just return an abstract hallway path.
+const Playable=require('../docs/js/ruin-layer-playable.js');
+class Group {constructor(){this.children=[];this.userData={}}add(child){this.children.push(child);child.parent=this}remove(child){this.children=this.children.filter(item=>item!==child)}traverse(fn){fn(this);for(const child of this.children)child.traverse?.(fn)}}
+class Material {clone(){return new Material()}dispose(){}}
+class Geometry {dispose(){}}
+class InstancedMesh {constructor(geometry,material,count){Object.assign(this,{geometry,material,count,userData:{}})}setMatrixAt(){}}
+const THREE={Group,MeshBasicMaterial:Material,BoxGeometry:Geometry,InstancedMesh,
+  Matrix4:class{makeTranslation(){return this}}};
+const layerMount={collect:Playable.collect,mount:()=>({getState:()=>({floors:4,wings:1,braziers:1}),dispose(){}})};
+const nativeMount={mount:()=>({getState:()=>({floors:3,rooms:3}),dispose(){}})};
+const shaftMount={compose:Shaft.compose,mount:()=>({})};
+const DS={registerSurface(){},clearScope(){}};
+for(const side of Object.keys(orientation)){
+  const meta={cellSize:.5,entrance:{side,
+    axis:side==='east'||side==='west'?'x':'z',
+    boundary:side==='east'||side==='south'?24:2,center:13,roomId:'room_1'},
+    rooms:[{id:'room_1',col:2,row:2,w:22,h:22}]};
+  const aligned=Vestibule.compose({meta,seed:13,LayerPlan:Plan,ShaftHub:Shaft,Connector});
+  const floorSet=new Set();
+  for(let col=3;col<=22;col++)for(let row=3;row<=22;row++)
+    floorSet.add((aligned.padX+col)+','+(aligned.padZ+row));
+  const spawn=Vestibule.spawnAcrossRoom({meta,padX:aligned.padX,padZ:aligned.padZ,floorSet});
+  const makeTile=walkable=>({type:walkable?'floor':'rock'});
+  const cols=aligned.padX+30,rows=aligned.padZ+30;
+  const rec={cols,rows,floorSet,grid:Array.from({length:rows},()=>Array.from({length:cols},()=>makeTile(false))),
+    mapData:{id:'map_i_dev_random_ruin',floor:[...floorSet].map(key=>key.split(',').map(Number))},scene:new Group()};
+  for(const cell of floorSet){const [col,row]=cell.split(',').map(Number);rec.grid[row][col]=makeTile(true)}
+  const ruin={spawn,localeRoot:{traverse(){}},occupancy:{blocksBox:()=>false},
+    mechanisms:new Map(),transitDoors:[],activators:[],pushBlocks:[],controls:[]};
+  const connected=Connector.connect({rec,ruin,seed:13,meta,preplanned:aligned.plan,
+    pad:{x:aligned.padX,z:aligned.padZ},THREE,makeTile,DynamicSurfaces:DS,
+    ShaftHub:shaftMount,RuinLayerPlan:Plan,RuinShaftCorridor:Corridor,
+    RuinLayerPlayable:layerMount,RuinLayerChallenges:{},RuinLayerDefense:{},
+    RuinV50NativeFloors:nativeMount,CellGrid3D:{},getPlayerPosition:()=>spawn});
+  assert.equal(connected.route.length,6,'V50 door-to-shaft distance is exactly the authored short passage');
+  assert.equal(connected.route.corners,0);
+  assert(ruin.shaftConnection.thresholdConnected,'physical room-to-shaft reachability was proved');
+  assert(ruin.shaftConnection.straightVestibule);
+  const path=new Set([...floorSet,...connected.route.tiles.map(([x,z])=>x+','+z)]);
+  const starting=Math.floor(spawn.x)+','+Math.floor(spawn.z);
+  const target=aligned.mouth.x+','+aligned.mouth.z;
+  const visited=new Set([starting]),queue=[starting];
+  for(let head=0;head<queue.length&&!visited.has(target);head++){
+    const [x,z]=queue[head].split(',').map(Number);
+    for(const [dx,dz] of [[1,0],[-1,0],[0,1],[0,-1]]){
+      const adjacent=(x+dx)+','+(z+dz);
+      if(!path.has(adjacent)||visited.has(adjacent))continue;
+      visited.add(adjacent);queue.push(adjacent);
+    }
+  }
+  assert(visited.has(target),'the original V50 room and the shaft really share one connected set of tiles');
+  ruin.shaftConnectorCleanup();
+}
+
 const runtime=fs.readFileSync('docs/js/dev-random-ruin-interior-map.js','utf8');
 const bootstrap=fs.readFileSync('docs/js/dev-random-ruin-bootstrap.js','utf8');
 const index=fs.readFileSync('docs/index.html','utf8');
