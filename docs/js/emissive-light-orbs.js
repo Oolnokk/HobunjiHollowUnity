@@ -87,7 +87,10 @@
       const tx = scratch.camera.x - px, ty = scratch.camera.y - py, tz = scratch.camera.z - pz;
       const toCamera = Math.hypot(tx, ty, tz) || 1;
       const facing = (scratch.normal.x * tx + scratch.normal.y * ty + scratch.normal.z * tz) / toCamera;
-      const visibility = smoothstep(-0.05, 0.3, facing) * master;
+      const outdoorVisibility = typeof opts.visibilityAt === 'function'
+        ? Math.max(0, Math.min(1, Number(opts.visibilityAt(px, py, pz, Number(light.distance) || 0)) || 0))
+        : 1; // Gameplay passes the shared outdoor fade; authoring preview without it stays fully illuminated.
+      const visibility = smoothstep(-0.05, 0.3, facing) * master * outdoorVisibility; // Prevent fixed-minimum-size eye orbs shining through distant wilderness darkness.
       if (visibility <= 0.01) continue;
       const centre = projection.worldToOverlay(px, py, pz);
       if (!centre?.visible) continue;
@@ -141,7 +144,8 @@
     }
     if (!lights.length) return;
     const fade = 1 - Math.max(0, Math.min(1, Number(projection.getSceneTransAlpha?.()) || 0)); // Scene fades-to-black take the glow with them.
-    drawOrbs(overlay.ctx, projection, lights, performance.now(), { alpha: fade });
+    const visibilityAt = global.CloudForestFog?.outdoorLightVisibilityAt; // The topmost emissive canvas must obey the same distance limit as local light masks.
+    drawOrbs(overlay.ctx, projection, lights, performance.now(), { alpha: fade, visibilityAt });
   }
 
   function installGameOverlay(options = {}) {
