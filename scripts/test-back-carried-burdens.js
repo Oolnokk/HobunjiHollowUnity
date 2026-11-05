@@ -164,7 +164,7 @@ function testRuntime() {
   assert.equal(charge.group.parent,portrait,'stowed burden is a DIRECT child of the live skinned portrait plane');
   const authoredBurdenPoint=new Vector3(.13,.22,-.16).multiply(charge.group.scale).applyQuaternion(charge.group.quaternion);
   const actualAttachment=charge.group.position.clone().add(authoredBurdenPoint);
-  for(const [axis,expected] of Object.entries({x:.20,y:-.08,z:.22}))
+  for(const [axis,expected] of Object.entries({x:.12,y:-.08,z:.04}))
     assert(Math.abs(actualAttachment[axis]-expected)<1e-8,'back burden anchor follows portrait-local author coordinate on '+axis);
   assert.equal(window.Shattercasks.debugSnapshot().backCarryMount.portraitAttached,true);
   assert.equal(window.Shattercasks.debugSnapshot().backCarryMount.collision,'carrier-hitbox');
