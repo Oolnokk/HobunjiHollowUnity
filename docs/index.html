@@ -399,7 +399,7 @@
        window.BanditCombat.makeEntity/loadGangConfig/loadCampLocaleDefs, so
        must load after combat-bandit.js above, and before game.js, which
        calls window.BanditCamps.init(...) during its own setup. -->
-  <script src="js/bandit-camps.js?v=20261104asyncZones1"></script>
+  <script src="js/bandit-camps.js?v=20261104soloNoLoot1"></script>
   <!-- Bounty board (hunt a named bandit captain, destroy his camp) —
        window.BountyBoard. Reads window.BanditCamps/window.BanditCombat
        directly, so must load after both above, and before game.js, which
@@ -596,8 +596,9 @@
   <script src="js/climb-surfaces.js?v=20261103rawfacefix1"></script>
   <script src="js/shaft-hub.js?v=20261104octagon2"></script>
   <script src="js/ruin-layer-plan.js?v=20261104directVestibule1"></script>
+  <script src="js/dev-ruin-single-room-trial.js?v=20261104solo1"></script> <!-- Samples actual ruin-room puzzle selection odds for the one-room developer lab. -->
   <script src="js/ruin-shaft-corridor.js?v=20261104directVestibule1"></script>
-  <script src="js/ruin-layer-defense.js?v=20261104authoredDefence3"></script>
+  <script src="js/ruin-layer-defense.js?v=20261104soloNoLoot1"></script>
   <script src="js/ruin-layer-challenges.js?v=20261104gateCleanup6"></script>
   <script src="js/ruin-layer-playable.js?v=20261104gateCleanup2"></script>
   <script src="js/ruin-v50-native-mechanisms.js?v=20261105polish3"></script>
@@ -910,7 +911,7 @@
   <script src="js/ruin-solver.js?v=1"></script> <!-- Goal solver: composes modules into layouts that satisfy goals (defend a statue, blast a pillar...) -->
   <script src="js/room-plan.js?v=1"></script>
   <script src="js/ruin-composer.js?v=20261103h93645be"></script> <!-- Builds whole rooms from goals: archetype -> focal-first solving -> claims ledger -> furniture records + encounter -->
-  <script src="js/ruin-encounters.js?v=1"></script> <!-- Encounter runtime: pillar spawners, demolitionists planting at a statue -->
+  <script src="js/ruin-encounters.js?v=20261104soloNoLoot1"></script> <!-- Encounter runtime: pillar spawners, demolitionists planting at a statue -->
   <script src="js/ruin-composer-playable.js?v=20261104plinthFeed1"></script> <!-- Materializes composed trials in playable V50 ruins (authored fixtures, chasm collision and encounters). -->
   <script src="js/key-statues.js?v=20261104statueRecall2"></script>
   <script src="js/dungeon-fire.js?v=20261103particlesheld1"></script>
@@ -2888,7 +2889,7 @@
   <!-- Camera-safe utility spyglass: capture Fishing/ActionArcUI init before game.js boots; action-arch prompt and lens are created at DOM ready. -->
   <script src="js/utility-spyglass.js?v=20261103spyglassControls3"></script>
   <!-- Dev-only Random Test Ruin runtime; injects nothing unless Dev Mode is on. -->
-  <script src="js/dev-random-ruin-bootstrap.js?v=20261105polish5"></script>
+  <script src="js/dev-random-ruin-bootstrap.js?v=20261104solo1"></script>
   <!-- Dev Testing Switchbox: dev-only performance kill switches (audio,
        NPC/creature AI, water sim, low-poly foliage). Must load after
        audio-system.js/water-system.js/foliage-generator.js (wraps their
