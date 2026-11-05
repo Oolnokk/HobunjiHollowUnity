@@ -285,7 +285,7 @@ class PortraitPixelCache extends Map {
     return { entries: this.size, estimatedBytes: this.pixelBytes, budgetBytes: this.byteLimit, evictions: this.evictions };
   }
 }
-const IMG_CACHE = new PortraitPixelCache(48 * 1024 * 1024);
+const IMG_CACHE = new PortraitPixelCache(window.DevTestingSwitchbox?.flags?.reducedPortraitPixelCache ? 8 * 1024 * 1024 : 48 * 1024 * 1024); // Optional boot-time portrait memory budget A/B.
 
 const DEFAULT_BEHIND_LAYER_ORDER = [
   'sideLeft', 'rightSideHair',
