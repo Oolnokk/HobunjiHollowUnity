@@ -497,7 +497,7 @@
     mapData.caveBanditSpawns = clone(plan.banditSpawns);
   }
 
-  function addPuzzleCaveLayer(mapData, candidates, blockedKeys, plan) {
+  function addPuzzleCaveLayer(mapData, candidates, blockedKeys, plan, rng) {
     // One compact, carved chamber is reserved before cave sculpting, rather than
     // placing a gate against unknown collision or accidentally clipping the rim.
     const far = sortTilesByDistance(candidates, mapData.exitCol, mapData.exitRow);
@@ -507,7 +507,7 @@
     const room = {id:'puzzle-cave-chamber',col:center.col-4,row:center.row-4,width:9,depth:9};
     plan.clearanceFootprints.push(room); // The existing CavernGenerator builds the floor/ceiling/walls in one pass.
     plan.puzzleCave = {id:'puzzle-cave:'+String(mapData.id || plan.profile.mapId),
-      col:center.col,row:center.row,room,kind:'timedMelody'};
+      col:center.col,row:center.row,room,kind:rng() < .43 ? 'fireSconces' : 'timedMelody'}; // Both one-room variants share the save and reward lifecycle.
     for(const [col,row] of window.CavernSculptor.expandFootprint([], [room]))
       blockedKeys.add(tileKey(col,row)); // No later features or occupant spawns can obstruct the score.
     mapData.cavePuzzle = clone(plan.puzzleCave); // Diagnostics and interior tools see the same planned room.
@@ -726,10 +726,10 @@
     const room={x:puzzle.col+.5-4.5,z:puzzle.row+.5-4.5,w:9,d:9}; // One 9x9 carved cave chamber, centered on the actual floor tile.
     try{
       const challenge=creator({
-        THREE:window.THREE,parent:scene,room,id:puzzle.id,kind:'timedMelody',y:0,area:key,
+        THREE:window.THREE,parent:scene,room,id:puzzle.id,kind:puzzle.kind,y:0,area:key,
         isActive:()=>String(wildlifeDeps?.getCurrentArea?.()||'')===key && puzzleChallengesByMapId.get(key)?.scene===scene,
         onSolved:()=>{
-          state.puzzleSolved=true;state.puzzleRewardTier=challenge.song?.rewardTier||1;
+          state.puzzleSolved=true;state.puzzleRewardTier=challenge.song?.rewardTier||2;
           persistState();
           grantPuzzleCaveReward(profile,plan,state);
         },
@@ -819,7 +819,7 @@
     if (profile.contents === TYPES.RUIN_ENTRANCE) addRuinLayer(mapData, rng,
       allTiles.filter(tile => Math.hypot(tile.col - Number(mapData.exitCol), tile.row - Number(mapData.exitRow)) >= 3), blockedKeys, plan);
     if (profile.contents === TYPES.PUZZLE_CAVE)
-      addPuzzleCaveLayer(mapData, allTiles, blockedKeys, plan); // Reserve its one real challenge before cavern geometry is rebuilt.
+      addPuzzleCaveLayer(mapData, allTiles, blockedKeys, plan, rng); // Reserve its one real challenge before cavern geometry is rebuilt.
     if (clearanceFootprints.length) {
       window.CavernGenerator.expandCavernMapData(mapData, clearanceFootprints, makeRng(`${profile.signature}:clearance`));
       for (const key of solidTiles) blockedKeys.delete(key);
@@ -863,7 +863,15 @@
     // A few ordinary caves also contain loose charges; never consume reserved content tiles.
     const freeChargeTiles = awayFromEntrance.filter(tile => !blockedKeys.has(tileKey(tile.col,tile.row))
       && !plan.shattercasks.some(charge => Math.hypot(charge.col-tile.col,charge.row-tile.row)<4));
-    if ((profile.inhabitant === TYPES.BANDIT_HIDEOUT || rng()<.38) && freeChargeTiles.length) {
+    if (contents===TYPES.PUZZLE_CAVE && plan.puzzleCave?.kind==='fireSconces' && freeChargeTiles.length){
+      const charge=sortTilesByDistance(freeChargeTiles,plan.puzzleCave.col,plan.puzzleCave.row,false)
+        .find(tile=>Math.hypot(tile.col-plan.puzzleCave.col,tile.row-plan.puzzleCave.row)>4);
+      if(charge){
+        plan.shattercasks.push({id:'puzzle-flame-charge',col:charge.col,row:charge.row,kind:'flameShattercask',guaranteed:true});
+        blockedKeys.add(tileKey(charge.col,charge.row)); // Flame cask is an optional physical alternative to crafted Fire Flasks.
+      }
+    }
+    if (contents!==TYPES.PUZZLE_CAVE && (profile.inhabitant === TYPES.BANDIT_HIDEOUT || rng()<.38) && freeChargeTiles.length) {
       const tile = freeChargeTiles[Math.floor(rng()*freeChargeTiles.length)];
       plan.shattercasks.push({id:'loose-charge',col:tile.col,row:tile.row});
       blockedKeys.add(tileKey(tile.col,tile.row));
