@@ -134,7 +134,7 @@
     ['js/combat/combat-camera-alignment-bridge.js?v=20261105globalAerial2', () => Number(window.HobunjiCombatCameraAlignment?.version) >= 6],
     ['js/combat/ranged-dual-role-anim-style.js?v=20260918throwables1', () => Number(window.HobunjiDualRoleRangedAnimStyle?.version) >= 2],
     ['js/drunk-prone-composition-bridge.js?v=20261029enemyParity1', () => !!window.HobunjiDrunkProneCompositionBridge],
-    ['js/prone-motion-exclusivity.js?v=20260812a', () => !!window.HobunjiProneMotionExclusivity],
+    ['js/prone-motion-exclusivity.js?v=20261105perchAudit3', () => !!window.HobunjiProneMotionExclusivity],
     ['js/footing-damage-recovery-bridge.js?v=20260812a', () => !!window.HobunjiFootingDamageRecovery],
     ['js/combat/combat-grehlr-burrow.js?v=20261028hfuryburrow1', () => !!window.HobunjiGrehlrBurrow],
     ['js/combat/combat-grehlr-stink.js?v=20261028hnativestink1', () => !!window.HobunjiGrehlrStink],
