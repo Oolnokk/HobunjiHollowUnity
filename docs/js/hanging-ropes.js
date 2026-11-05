@@ -131,9 +131,12 @@
     rope.disposed = true;
     if (!rope.external) {
       rope.mesh?.parent?.remove(rope.mesh);
-      if (rope.mesh?.userData?.dungeonRopeSprite) { // Sprite geometry/material are private per rope; their loaded PNG is shared.
-        rope.mesh.geometry?.dispose?.();
-        rope.mesh.material?.dispose?.();
+      if (rope.mesh?.userData?.dungeonRopeSprite) { // Both rope plane and its brush-tip child own their geometry/material; the PNG texture stays shared.
+        rope.mesh.traverse?.(part => {
+          part.geometry?.dispose?.();
+          if (Array.isArray(part.material)) part.material.forEach(material => material?.dispose?.());
+          else part.material?.dispose?.();
+        });
       }
     }
     ropes.delete(rope.id);

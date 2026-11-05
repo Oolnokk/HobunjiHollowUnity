@@ -7,6 +7,8 @@
   const SPRITE_URL = 'assets/objectsprites/rope_long.png'; // Repo sprite used by both single-rope planes and the net atlas.
   const SPRITE_ASPECT = 152 / 2164; // PNG's original pixel aspect; preserves rope thickness as lengths change.
   const DEFAULT_LENGTH = 1; // The rope plane's unit length is scaled by updateRopePlane.
+  const ROPE_END_DIAMETER = .30; // Matches the former 0.15-radius ruin grip sphere; used for the brush-tip's XY footprint.
+  const ROPE_END_NECK_FRACTION = .40; // Narrow toward the anchor, widening beyond the moving bob like the bristles of a brush.
   const NET_ATLAS_SIZE = 512; // Single transparent atlas for every four-sided hanging net.
   const direction = new THREE.Vector3(); // Reused by updateRopePlane to align the plane with its physical pendulum.
   const midpoint = new THREE.Vector3(); // Reused by updateRopePlane to place the visual between anchor and bob.
@@ -56,10 +58,35 @@
     });
   }
 
+  function createRopeEndPlane(name) {
+    const half = ROPE_END_DIAMETER * .5; // Four quad corners stay within the old sphere's 0.3-by-0.3 silhouette.
+    const neck = half * ROPE_END_NECK_FRACTION; // Local -Y points up toward the anchor; local +Y points down toward the swinging bob.
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute([
+      -half, half, 0, -neck, -half, 0, half, half, 0,
+       half, half, 0, -neck, -half, 0, neck, -half, 0,
+    ], 3));
+    geometry.setAttribute('uv', new THREE.Float32BufferAttribute([
+      0, 1, 0, 0, 1, 1,
+      1, 1, 0, 0, 1, 0,
+    ], 2));
+    geometry.computeVertexNormals();
+    const tip = new THREE.Mesh(geometry, ropeMaterial());
+    tip.name = name + '_brush_end';
+    tip.userData.dungeonRopeBrushEnd = true;
+    tip.userData.dungeonRopeSprite = SPRITE_URL;
+    tip.position.set(0, DEFAULT_LENGTH * .5, .003); // The rope plane's local +Y follows anchor-to-bob; center the tip at the swinging end.
+    tip.frustumCulled = true; // Cull tips outside the view; the small quad's bounding sphere still contains every camera-facing orientation.
+    // Keep the rope's default transparent render order: forcing a higher order makes distant tips paint over nearer ropes.
+    return tip;
+  }
+
   function createRopePlane(name = 'dungeon_rope_sprite') {
     const mesh = new THREE.Mesh(new THREE.PlaneGeometry(SPRITE_ASPECT * DEFAULT_LENGTH, DEFAULT_LENGTH), ropeMaterial());
     mesh.name = name;
     mesh.userData.dungeonRopeSprite = SPRITE_URL;
+    mesh.ropeBrushTip = createRopeEndPlane(name); // Child inherits the rope's camera-facing frame and follows its moving endpoint.
+    mesh.add(mesh.ropeBrushTip);
     mesh.userData.ropeAnchor = null; // Live endpoints are kept here for camera-facing redraws even when the rope is idle.
     mesh.userData.ropeBob = null; // Updated by the swing simulation; onBeforeRender uses the actual rendering camera.
     mesh.onBeforeRender = (_renderer, _scene, camera) => {
@@ -81,6 +108,7 @@
     midpoint.set((anchor.x+bob.x)*.5,(anchor.y+bob.y)*.5,(anchor.z+bob.z)*.5);
     mesh.position.copy(midpoint);
     mesh.scale.set(1, length, 1);
+    if (mesh.ropeBrushTip) mesh.ropeBrushTip.scale.set(1, 1 / length, 1); // Cancel the parent's length stretch so the tip remains exactly 0.3x0.3 in world XY.
     if (camera?.getWorldPosition) {
       camera.getWorldPosition(cameraPosition);
       mesh.parent?.worldToLocal?.(cameraPosition); // Rope endpoints are in the parent's coordinates, not world coordinates.
@@ -123,6 +151,6 @@
     return mesh;
   }
 
-  window.DungeonRopeArt = Object.freeze({ SPRITE_URL, SPRITE_ASPECT, createRopePlane, updateRopePlane, createNetFrustum,
+  window.DungeonRopeArt = Object.freeze({ SPRITE_URL, SPRITE_ASPECT, ROPE_END_DIAMETER, createRopePlane, updateRopePlane, createNetFrustum,
     debugSnapshot: () => ({ source:SPRITE_URL, spriteReady:!!spriteTexture.image, atlasNeedsUpdate:atlasTexture.needsUpdate }) });
 })();

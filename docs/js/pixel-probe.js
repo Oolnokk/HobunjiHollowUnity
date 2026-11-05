@@ -1180,6 +1180,8 @@
     if (climbSafety) {
       lines.push(`Climb safety: active=${climbSafety.playerClimbing} mount=${climbSafety.mountRideState} lastBlock=${climbSafety.lastBlockReason || 'none'}${climbSafety.lastBlockReason ? `/${climbSafety.lastBlockRideState}` : ''}${Number.isFinite(climbSafety.lastWallFacingAngle) ? ` wallFacing=${climbSafety.lastWallFacingSource || 'unknown'}:${(climbSafety.lastWallFacingAngle * 180 / Math.PI).toFixed(1)}°/${climbSafety.lastWallFacingCardinal || '?'}` : ''}`);
     }
+    const crawl = window.CliffCrawlPresentation?.getDebug?.(); // Report live grip contact and hidden held-object count without desktop devtools.
+    if (crawl?.active || crawl?.error) lines.push(`Cliff crawl: route=${crawl.routeId ?? '-'} moving=${!!crawl.moving} handIK=${!!crawl.handRigOwned} footIK=${!!crawl.feetPosed} hiddenHeld=${crawl.hiddenHeldVisuals ?? 0} hook=${!!crawl.hookInstalled}${crawl.error ? ' error=' + crawl.error : ''}`);
     const cliffRegistry = window.CliffElevatedSurfaces?.debugSnapshot?.(); // Scoped CellGrid3D + DynamicSurfaces status for mobile, no console required.
     const cliffGraph = window.CliffRouteNetwork?.debugSnapshot?.(); // Surfaces and route proof must agree after terrain regeneration.
     if (cliffRegistry?.areas?.length || cliffGraph?.areas?.length) {

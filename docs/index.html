@@ -210,7 +210,7 @@
   <script src="js/leg-bones.js?v=20261013hb53d07e"></script>
   <!-- Procedural leg/foot animation for non-creature avatars (player + NPC walkers) -->
   <script src="js/actor-body-sink.js?v=20261030a"></script> <!-- Body sink for enemies and NPCs: lowers their own roots while the leg handle folds the knees. -->
-  <script src="js/procedural-leg-animation.js?v=20261031footvisibility4"></script>
+  <script src="js/procedural-leg-animation.js?v=20261104cliffCrawlAudit2"></script>
   <!-- In-game pants garment: skinned onto the procedural legs (rig data in config/pants-rigs.js, maths in js/pants-rig-core.js) -->
   <script src="config/pants-rigs.js?v=20261015h74422e2"></script>
   <script src="js/pants-rig-core.js?v=20261022omgurkuMerge1"></script>
@@ -584,7 +584,8 @@
        other systems above doesn't matter; must load before game.js, which
        calls window.ClimbSystem.init(...) during its own setup. -->
   <script src="js/cliff-route-network.js?v=20261105hcd658a0"></script> <!-- Shared graph for selected exterior handholds, balcony terrain and wildlife routes. -->
-  <script src="js/climb-system.js?v=20261104cliffAudit1"></script>
+  <script src="js/climb-system.js?v=20261104cliffCrawlAudit2"></script>
+  <script src="js/cliff-crawl-presentation.js?v=20261104cliffCrawlAudit3"></script> <!-- Surface-relative limb crawl and temporary hiding of hand-held equipment; ruins/trees stay on their existing animations. -->
   <script src="js/creature-cliff-climb.js?v=20261104cliffAudit1"></script>
   <!-- Cubic 3D cell grid (window.CellGrid3D): the tile grid plus a level axis.
        Pure data/math with no dependencies, so load order doesn't matter.
@@ -904,8 +905,8 @@
   <!-- Hanging ropes: the shared rope swing arithmetic (pure) and the rope component burdens hang from. Needs Shattercasks at
        call time only. See docs/architecture/ruin-capabilities.md. -->
   <script src="js/rope-core.js?v=1"></script>
-  <script src="js/dungeon-rope-art.js?v=20261103ropepng3"></script> <!-- Shared transparent rope sprite for pendulums and net frustums. -->
-  <script src="js/hanging-ropes.js?v=20261103spriteplanes1"></script>
+  <script src="js/dungeon-rope-art.js?v=20261105hfe97236"></script> <!-- Shared transparent rope sprite for pendulums and net frustums. -->
+  <script src="js/hanging-ropes.js?v=20261105h0d12b5d"></script>
   <script src="js/rope-furniture.js?v=1"></script> <!-- Ropes as furniture: a piece with a `rope` block hangs a rope; see docs/architecture/ruin-capabilities.md -->
   <script src="js/rope-launch.js?v=1"></script>
   <script src="js/ruin-solver.js?v=1"></script> <!-- Goal solver: composes modules into layouts that satisfy goals (defend a statue, blast a pillar...) -->
@@ -2742,7 +2743,7 @@
   <!-- Pixel Probe debug tool (window.PixelProbe) — wires its own DOM
        buttons at load time, and must load before game.js, which calls
        window.PixelProbe.init(...) during its own setup. -->
-  <script src="js/pixel-probe.js?v=20261104h3a38080"></script>
+  <script src="js/pixel-probe.js?v=20261104cliffCrawlAudit2"></script>
   <!-- NPC dialogue CONTENT (window.DialogueContent) — text/token
        resolution, tree/pool selection, typewriter, portrait rendering,
        choice buttons. Must load before game.js, which calls
@@ -2889,7 +2890,7 @@
   <!-- Camera-safe utility spyglass: capture Fishing/ActionArcUI init before game.js boots; action-arch prompt and lens are created at DOM ready. -->
   <script src="js/utility-spyglass.js?v=20261103spyglassControls3"></script>
   <!-- Dev-only Random Test Ruin runtime; injects nothing unless Dev Mode is on. -->
-  <script src="js/dev-random-ruin-bootstrap.js?v=20261104solo1"></script>
+  <script src="js/dev-random-ruin-bootstrap.js?v=20261105h279a1b2"></script>
   <!-- Dev Testing Switchbox: dev-only performance kill switches (audio,
        NPC/creature AI, water sim, low-poly foliage). Must load after
        audio-system.js/water-system.js/foliage-generator.js (wraps their
