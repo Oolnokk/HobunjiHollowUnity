@@ -258,6 +258,10 @@ const TILE_INFO = {
 const TILE_ORDER = ['grass','weeds','shrub','path','rock','tilled','raised','trench','paddy','river','stream','waterfall','ramp'];
 
 const OBJECT_PALETTE = [
+  { kind:'surface_placeholder',key:'unknownCliffFace',label:'Unknown Cliff Wall · mount plane',
+    icon:'🧱',w:2,h:1,
+    visual:{renderer:'unknown_wall_plane',height:2.6,wallMount:true},
+    collision:{mode:'none'} }, // Preview-only vertical mount scaffold, never a solid tile or world obstacle.
   // Explicit structural assets. The old generic "structure" record remains
   // load-compatible, but is intentionally not offered for new placement.
   { kind:'cave_entrance', key:'cave_small', label:'Cave Entrance · cave_small.glb', icon:'🕳️', w:3, h:3,
