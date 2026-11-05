@@ -99,7 +99,7 @@ const reticle=fs.readFileSync(path.join(root,'docs/js/combat/ranged-hud-reticle.
 assert(reticle.includes('FILTER_ORANGE') && reticle.includes('wouldHitShattercask'),
   'ranged reticle has orange Shattercask interception state');
 assert(ranged.includes('function wouldHitShattercask()') &&
-  ranged.includes("first={kind:'shattercask'"),'reticle shares projectile hit prediction');
+  ranged.includes('window.Shattercasks?.projectileHit?.'),'reticle shares projectile hit prediction');
 const handDriver=fs.readFileSync(path.join(root,'docs/js/procedural-hand-frame-driver.js'),'utf8');
 assert(handDriver.includes("target.mode === 'authored-world'") &&
   handDriver.includes('window.Shattercasks?.heldHandTarget'),
