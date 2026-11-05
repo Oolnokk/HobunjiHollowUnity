@@ -328,6 +328,52 @@
         t.phase=i*Math.PI;t.speed=1.2+i*.35;
       }
     }
+    if(options.authoredCliffDoor && (kind==='timedMelody'||kind==='fireSconces')){
+      // Use the real authored, lightly rockified cliff gate (frame, darkness,
+      // stone slab and 0.95-second slab motion). No interactive puzzle metadata
+      // is registered on this visual; only this encounter's judge can open it.
+      const furniture=root.AuthoredFurniture;
+      Promise.resolve(furniture?.load?.('cliffGate')).then(data=>{
+        if(rec.disposed||!data||!furniture?.buildGroup||!rec.door?.parent)return;
+        const model=furniture.buildGroup({...data,puzzle:null}); // Disable direct-interaction bypass on the puzzle-locked gate.
+        const slab=model.userData?.meshById?.get?.('cliff_gate_slab');
+        const motion=data.puzzle?.motion?.parts?.cliff_gate_slab;
+        if(!slab||!motion)return;
+        const gateZ=room.z+room.d-1.05;
+        model.position.set(cx,y,gateZ);
+        model.scale.setScalar(3); // The wide authored gate becomes a legible multi-glyph puzzle-door rather than a tiny prop.
+        group.add(model);
+        rec.authoredGate=model;
+        rec.door.visible=false; // The modeled slab/frame/darkness replace the placeholder when the JSON is ready.
+        const darkness=group.children.find(node=>node.userData?.puzzleCaveBackdrop);
+        if(darkness)darkness.visible=false;
+        let board=null;
+        if(rec.glyphs?.length){
+          board=new THREE.Group(); // Visible Scratchbone score stays engraved on the movable slab, not the wall behind it.
+          board.name='puzzle_cave_stone_score';
+          board.position.set(cx,y+1.67,gateZ-.36);
+          const cols=Math.min(8,rec.glyphs.length);
+          rec.glyphs.forEach((glyph,index)=>{
+            rec.door.remove(glyph);
+            board.add(glyph);
+            glyph.position.set((index%cols-(cols-1)/2)*.44,.28-Math.floor(index/cols)*.49,0);
+          });
+          group.add(board);
+        }
+        const off=motion.off,on=motion.on;
+        const baseBoardY=y+1.67;
+        const updateAuthoredDoor=()=>{
+          const progress=Math.max(0,Math.min(1,Number(rec.doorRise)||0));
+          const ease=progress*progress*(3-2*progress);
+          slab.position.y=off.y+(on.y-off.y)*ease;
+          slab.scale.z=off.sz+(on.sz-off.sz)*ease;
+          if(board){board.position.y=baseBoardY+(on.y-off.y)*3*ease;board.visible=progress<.94;}
+        };
+        const priorAnimation=rec.animate;
+        rec.animate=dt=>{priorAnimation?.(dt);updateAuthoredDoor();};
+        updateAuthoredDoor(); // A solved save that loads the model late still shows a fully raised gate.
+      }).catch(error=>root.__farmLog?.('[puzzle-cave] authored cliff gate unavailable: '+error.message,'warn'));
+    }
     rec.targetCount=targets.length;
     rec.tick=(dt)=>{
       if(rec.disposed)return;
