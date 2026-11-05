@@ -236,7 +236,10 @@
             const gateTiles=Array.from({length:3},(_,j)=>[cx+(dz*(j-1)),cz+(dx*(j-1))]);
             if(!gateTiles.every(([x,z])=>tiles.has(key(x,z))))
               throw new Error('Challenge gate cannot span its entire hallway: '+room.id);
-            const gate=mesh('ruin-challenge-gate-'+room.id,
+            const authoredGate=root.DevRandomRuinFurniturePieces?.buildPassageGate?.({ // Carved door with one seal; the plain box below is only the fallback until its JSON has loaded.
+              span:3,height:2.4,normalAxis:dx?'x':'z',parent:activeRoot,name:'ruin-challenge-gate-'+room.id,
+              position:{x:cx+.5,y:floor.y,z:cz+.5}});
+            const gate=authoredGate?authoredGate.object:mesh('ruin-challenge-gate-'+room.id,
               new THREE.BoxGeometry(dx?1.1:3,2.4,dz?1.1:3),gateMat,cx+.5,floor.y+1.2,cz+.5);
             challenge.gate={tiles:gateTiles,object:gate};
             challenge.grid=grid;setGate(challenge,true);
