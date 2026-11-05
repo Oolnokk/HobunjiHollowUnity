@@ -11,7 +11,7 @@ class Group {
   traverse(fn){fn(this);for(const child of this.children)child.traverse?.(fn)}
 }
 class Geometry {dispose(){this.disposed=true}}
-class Material {dispose(){this.disposed=true}}
+class Material {constructor(){this.map={disposed:false,dispose(){this.disposed=true}}}dispose(){this.disposed=true}}
 class Mesh {
   constructor(geometry,material){
     this.geometry=geometry;this.material=material;this.isMesh=true;this.children=[];
@@ -71,7 +71,9 @@ try{
   assert(decorated===1,'use the existing V50 furniture-pattern decoration once for all stories');
   assert(ruin.localeRoot.userData.ruinPatternIds.includes('sample-motif'),
     'collectible wall motifs remain available to the ruin reward system');
+  const material=f1.children[0].material;
   cleanup();
+  assert(material.disposed&&material.map.disposed,'the V50 material and its cloned PNG texture must both be released');
   assert(!scene.children.includes(root),'all decorative floor groups must leave the scene on reroll');
   console.log('ok V50 shaft masonry: floor-aware visibility, collectible patterns, owned cleanup');
 }finally{
