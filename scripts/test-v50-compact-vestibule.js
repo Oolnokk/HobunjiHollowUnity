@@ -26,6 +26,14 @@ const NativeMechanisms=require('../docs/js/ruin-v50-native-mechanisms.js');
     'real linked glyph overrides a brazier helper for the same V50 stage');
   assert.deepEqual(inspected.activators,[outer],
     'native stage candidate must not choose a nested brazier the original fire-transfer runtime will never register');
+
+  const ancestor={userData:{linkedMechanismId:'v50-test'},children:[],parent:root}; // Circuit ID lives on the authored holder; the physical brazier inherits it.
+  const inheritedOuter={userData:{activatorType:'brazier'},children:[],parent:ancestor};
+  const inheritedHelper={userData:{activatorType:'brazier',linkedMechanismId:'v50-test'},children:[],parent:inheritedOuter};
+  ancestor.children.push(inheritedOuter);inheritedOuter.children.push(inheritedHelper);
+  root.traverse=fn=>{fn(root);fn(ancestor);fn(inheritedOuter);fn(inheritedHelper)};
+  assert.deepEqual(NativeMechanisms.inspect(root).activators,[inheritedOuter],
+    'native V50 and fire-transfer callbacks must agree even when the real brazier inherits its circuit from an ancestor');
 }
 const orientation={north:{dx:0,dz:-1},east:{dx:1,dz:0},south:{dx:0,dz:1},west:{dx:-1,dz:0}};
 let cases=0; // Number of deterministic cardinal/seed layouts whose physical threshold is checked.
