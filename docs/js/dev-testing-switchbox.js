@@ -121,7 +121,23 @@
     'noBrickWalls', 'noShingleGlbs', 'noSkySphere', 'noAudio', 'noVerdigris'
   ]); // Deliberately excludes AI and water simulation: disabling them alters active gameplay state.
 
+  const PAINTERLY_BACKUP_KEY = 'hobunji-dev-companion-painterly-previous-v1'; // Restores the user's selected quality after a temporary A/B disable.
+
   function companionToggleSwitch(name, enabled) {
+    if (name === 'painterly' && typeof enabled === 'boolean') {
+      const painterly = window.PainterlyPostprocess;
+      if (!painterly?.setMode || !painterly?.getMode) return { ok: false, error: 'Painterly filter is not ready.' };
+      const mode = painterly.getMode();
+      if (!enabled && mode !== 'off') {
+        try { sessionStorage.setItem(PAINTERLY_BACKUP_KEY, mode); } catch (_) {}
+        painterly.setMode('off');
+      } else if (enabled && mode === 'off') {
+        let restore = 'medium';
+        try { restore = sessionStorage.getItem(PAINTERLY_BACKUP_KEY) || restore; } catch (_) {}
+        painterly.setMode(['low', 'medium', 'high'].includes(restore) ? restore : 'medium');
+      }
+      return { ok: true, changed: true, reloading: false };
+    }
     if (!COMPANION_SAFE_SWITCHES.includes(name) || typeof enabled !== 'boolean')
       return { ok: false, error: 'Unsupported switch or value.' };
     const off = !enabled; // UI is positive: checked means the feature runs.
@@ -137,16 +153,31 @@
     title: 'Performance A/B switchbox',
     order: -200,
     render: () => ({
-      summary: 'Reload to compare',
-      actions: COMPANION_SAFE_SWITCHES.map(name => ({
+      summary: 'Rendering cost isolation',
+      rows: [
+        ['FPS', Number(window.MobileRenderBudget?.snapshot?.()?.fps || 0).toFixed(1)],
+        ['GPU textures', String(window.PerfProfiler?.getLiveGpuInfo?.()?.textures ?? '—')],
+        ['GPU geometries', String(window.PerfProfiler?.getLiveGpuInfo?.()?.geometries ?? '—')],
+      ],
+      actions: [
+        {
+          id: 'painterly',
+          group: 'Live (no reload)',
+          label: '🎨 Painterly postprocess',
+          title: 'Disables additional painterly compositing without changing the underlying outline setting.',
+          toggle: true,
+          checked: window.PainterlyPostprocess?.getMode?.() !== 'off',
+          disabled: !window.PainterlyPostprocess?.setMode,
+        },
+        ...COMPANION_SAFE_SWITCHES.map(name => ({
         id: name,
         group: 'Enabled = feature active',
         label: SWITCHES[name].label,
         title: SWITCHES[name].hint + ' Changing this restarts the game tab.',
         toggle: true,
         checked: !flags[name],
-      })),
-      note: 'Each change reloads the game tab and reconnects this companion. Save first. AI and water simulation are deliberately excluded because they change world state. Outlines also gates the painterly filter.',
+      }))],
+      note: 'Painterly changes instantly; each other change reloads the game tab and reconnects this companion. Save first. AI and water simulation are deliberately excluded because they change world state. Outlines also gates the painterly filter.',
     }),
     onAction: (name, args) => companionToggleSwitch(name, args.enabled),
   });
