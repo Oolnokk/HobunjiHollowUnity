@@ -688,7 +688,7 @@
     return parts.join('|');
   }
 
-  window.CreatureGeneticsRender = { composeFrame, genotypeSignature, colorPoolPaintSignature, getLastPatternPaintDebug, prewarm, patternUrl, eyeStateKey, eyeStatesForKind, eyeSkinTintColor, SPECIES, recolorPixels, recolorKeyedPixels, hexToRgb, memorySnapshot: () => ({ recolorEntries: _recolorCache.size, recolorEstimatedBytes: recolorBytes, recolorBudgetBytes: RECOLOR_CACHE_BYTES, composePending, composeActive }) };
+  window.CreatureGeneticsRender = { composeFrame, genotypeSignature, colorPoolPaintSignature, getLastPatternPaintDebug, prewarm, patternUrl, eyeStateKey, eyeStatesForKind, eyeSkinTintColor, SPECIES, recolorPixels, recolorKeyedPixels, hexToRgb, memorySnapshot: () => ({ imageEntries: _imageCache.size, recolorEntries: _recolorCache.size, recolorEstimatedBytes: recolorBytes, recolorBudgetBytes: RECOLOR_CACHE_BYTES, composePending, composeActive }) };
 
   window.HobunjiCacheAudit?.register('CreatureGeneticsRender.imageCache', () => _imageCache.size);
   window.HobunjiCacheAudit?.register('CreatureGeneticsRender.recolorCache', () => _recolorCache.size);
