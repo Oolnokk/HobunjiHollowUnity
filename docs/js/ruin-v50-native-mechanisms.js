@@ -20,19 +20,19 @@
     return [...linked].filter(actor=>actor?.userData?.activatorType)
       .sort((a,b)=>priority.indexOf(a.userData.activatorType)-priority.indexOf(b.userData.activatorType))[0]||null;
   }
+  function inheritedData(object,key,root){
+    for(let node=object;node;node=node.parent){
+      if(node.userData?.[key]!=null)return node.userData[key];
+      if(node===root)break;
+    }
+    return null;
+  } // Shared V50 ancestry lookup matches the canonical hit-puzzle target selection.
   function inspect(nativeRoot){
-    const mechanisms=new Map(),activators=[],blocks=[],fixedBlocks=[],transitDoors=[];
-    const inherited=(object,key)=>{
-      for(let node=object;node;node=node.parent){
-        if(node.userData?.[key]!=null)return node.userData[key];
-        if(node===nativeRoot)break;
-      }
-      return null;
-    }; // Match HitPuzzles' V50 ancestor lookup: helpers can inherit a circuit ID without duplicating it on their immediate parent. // Fixed V50 push-route shapers must block upper-story players, not just the movable burden.
+    const mechanisms=new Map(),activators=[],blocks=[],fixedBlocks=[],transitDoors=[]; // Fixed V50 push-route shapers must block upper-story players, not just the movable burden.
     nativeRoot?.traverse?.(object=>{
       const d=object.userData||{},motion=d.previewMotion?.type;
       if(d.mechanismId&&MOTIONS.has(motion))mechanisms.set(String(d.mechanismId),object);
-      if(d.activatorType&&ACTIVATORS.has(d.activatorType)&&d.linkedMechanismId){
+      if(d.activatorType&&ACTIVATORS.has(d.activatorType)&&inheritedData(object,'linkedMechanismId',nativeRoot)){
         // Exactly mirror HitPuzzles' ignition-target ownership: nested torch/
         // brazier helper meshes are not independently interactive. Otherwise
         // a native stage can select an actor that the fire-transfer runtime
@@ -40,7 +40,7 @@
         const parent=object.parent?.userData;
         if((d.activatorType==='torch'||d.activatorType==='brazier')
           &&parent?.activatorType===d.activatorType
-          &&String(inherited(object.parent,'linkedMechanismId'))===String(inherited(object,'linkedMechanismId')))return;
+          &&String(inheritedData(object.parent,'linkedMechanismId',nativeRoot))===String(inheritedData(object,'linkedMechanismId',nativeRoot)))return;
         // Retain the deepest glyph-set leaves and authored cube controls.
         activators.push(object);
       }
@@ -110,7 +110,7 @@
     };
     for(const [id,object] of inventory.mechanisms){
       const motion=object.userData.previewMotion.type;
-      const linked=inventory.activators.filter(activator=>String(activator.userData.linkedMechanismId)===id);
+      const linked=inventory.activators.filter(activator=>String(inheritedData(activator,'linkedMechanismId',nativeRoot))===id);
       const state={id,object,motion,linked,target:0,progress:0,solved:false,
         requiresPuzzle:linked.length>0,lastApplied:null,reapplyAfter:0}; // Cache the last native V50 pose to avoid traversing an unchanged mechanism sixty times a second.
       states.set(id,state);
@@ -147,7 +147,7 @@
       }
     }
     for(const object of inventory.activators){
-      const d=object.userData,state=states.get(String(d.linkedMechanismId));
+      const d=object.userData,state=states.get(String(inheritedData(object,'linkedMechanismId',nativeRoot)));
       if(!state)continue;
       if(d.activatorType==='linkedCubePillars'&&Array.isArray(d.rotatingSegments)){
         for(const entry of d.rotatingSegments){
