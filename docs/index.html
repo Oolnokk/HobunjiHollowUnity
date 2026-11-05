@@ -183,7 +183,7 @@
   <script src="js/portrait-breathing.js?v=20260831syllable4"></script>
   <script src="js/npc-avatar-preview-utils.js?v=20261031h4adfa50"></script>
   <script src="js/character-spine.js?v=spine1"></script>
-  <script src="js/png-plane-avatar.js?v=20261101playerhead1"></script>
+  <script src="js/png-plane-avatar.js?v=20261105h9ba2b7a"></script>
   <script src="js/creature-ground-anchor.js?v=20261023hf1"></script> <!-- Creature sprite ground-anchor scan/offset (extracted from game.js). -->
   <script src="js/species-pose-scaling.js?v=20261031h0c1ffcd"></script>
   <script src="js/character-dimensions.js?v=20261007he86e7d1"></script>
@@ -229,7 +229,7 @@
   <script src="js/creature-genetics.js?v=20261029h86f0973"></script>
   <script src="js/animal-hides.js?v=20261102-animalhides2"></script> <!-- Per-unit genetics, rarity, price, and save data for butchered hides. -->
   <!-- Creature genotype recolor + pattern-overlay compositing. -->
-  <script src="js/creature-texture-cache.js?v=20261011h0a4170f"></script>
+  <script src="js/creature-texture-cache.js?v=20261105h5c6c35c"></script>
   <script src="js/creature-genetics-render.js?v=20261104nelkRig1"></script>
   <script src="js/honeyfuzzle-swarm.js?v=20261031honey3dz2"></script> <!-- Honeyfuzzle swarm renderer: instanced translucent fly-pose blend plus genotype-tinted tail/spectacles; wild and stable creatures link through shared Combat deps. -->
   <script src="js/honeyfuzzle-colors.js?v=20261026honeyEggGenes3"></script> <!-- Honeyfuzzle body colors by region (temperate / tropical / ominous) and egg color queue. -->
@@ -248,7 +248,7 @@
   <script src="js/foliage-generator.js?v=20261105stone1"></script>
   <script src="js/dungeon-door-ice-coverage.js?v=20261103doorice1"></script>
   <!-- Procedural furniture (replaces GLB-based furniture rendering) -->
-  <script src="js/procedural-furniture.js?v=20261101torchlanterntable1"></script>
+  <script src="js/procedural-furniture.js?v=20261105h2c9a161"></script>
   <script src="js/furniture-puzzle-properties.js?v=20261103h9f3db40"></script>
   <script src="js/furniture-puzzle-runtime.js?v=20261104statueRecall1"></script>
   <script src="js/interior-door-tiles.js?v=20261104crossheightAudit2"></script>
@@ -456,7 +456,7 @@
        during its own setup. -->
   <!-- The same controller/touch ring lock guards wilderness, cave-cache and ruin rewards. -->
   <script src="js/chest-lockpicking.js?v=20261104lockaudit2"></script>
-  <script src="js/wild-treasure.js?v=20261105mixedAudit4"></script>
+  <script src="js/wild-treasure.js?v=20261105h35bc1af"></script>
   <!-- Farm livestock: barn AI, animal factories, harvest interaction,
        breeding (window.FarmAnimals) — self-contained aside from deps
        injected via init(), and reads window.DewVats at call time (already
@@ -490,13 +490,13 @@
        time, not at load time, so script order relative to them doesn't
        matter; must load before game.js, which calls
        window.HousePieces.init(...) during its own setup. -->
-  <script src="js/house-pieces.js?v=20261104h1e014db&surfaceUv=20261026orequad1"></script>
+  <script src="js/house-pieces.js?v=20261105hc45b427&surfaceUv=20261026orequad1"></script>
   <!-- Death ragdoll → lootable corpse (window.CreatureDeath) —
        self-contained aside from deps injected via init(), so load order
        relative to the other systems above doesn't matter; must load
        before game.js, which calls window.CreatureDeath.init(...) during
        its own setup. -->
-  <script src="js/creature-death.js?v=20261105perch1"></script>
+  <script src="js/creature-death.js?v=20261105h1558f90"></script>
   <!-- Sell Crate + Supply Box farm world objects (window.FarmCrates) —
        self-contained aside from deps injected via init(), so load order
        relative to the other systems above doesn't matter; must load
@@ -627,7 +627,7 @@
        load order relative to the other systems above doesn't matter; must
        load before game.js, which calls window.GeneralStore.init(...)
        during its own setup. -->
-  <script src="js/general-store.js?v=20261104hMetalUi3"></script>
+  <script src="js/general-store.js?v=20261105hfea439b"></script>
   <!-- Carpenter's shop: barn plans + furniture blueprints
        (window.CarpenterShop) — self-contained aside from deps injected via
        init(), and reads window.ConditionRegistry at render time (already
@@ -729,7 +729,7 @@
        Mine floors, where player death destroys an underground camp.
        Self-contained aside from deps injected via init(); must load before game.js, which calls
        window.WildernessCampfire.init(...) during its own setup. -->
-  <script src="js/wilderness-campfire.js?v=20260929ruinsites1"></script>
+  <script src="js/wilderness-campfire.js?v=20261105h26a351c"></script>
   <!-- Per-tile grid water simulation (rain/absorption/flow/siltation) and
        the merged dynamic-water mesh renderer (window.WaterSystem). Must
        load before game.js — unusually early among these, in fact: game.js
@@ -900,8 +900,8 @@
        dependencies; must load before shattercasks.js, which feeds them. See docs/architecture/ruin-capabilities.md. -->
   <script src="js/world-events.js?v=1"></script>
   <script src="js/targetables.js?v=1"></script>
-  <script src="js/shattercasks.js?v=20261104portraitAnchor1"></script>
-  <script src="js/crate-piles.js?v=20261104cratepiles1"></script>
+  <script src="js/shattercasks.js?v=20261105h6f93aef"></script>
+  <script src="js/crate-piles.js?v=20261105hf6df591"></script>
   <script src="js/hronal-witch-bombs.js?v=20261104h83c7695"></script>
   <!-- Hanging ropes: the shared rope swing arithmetic (pure) and the rope component burdens hang from. Needs Shattercasks at
        call time only. See docs/architecture/ruin-capabilities.md. -->
@@ -2715,7 +2715,7 @@
     <button class="fcv-continue" id="fcvContinueBtn">Continue</button>
   </div>
 
-  <script src="js/tool-icon-render.js?v=20261103dungeonplumepadding3"></script>
+  <script src="js/tool-icon-render.js?v=20261105h791866e"></script>
   <script src="js/sprite-recolor.js?v=20261104scent1439c"></script>
   <!-- Mount ride system (window.Mounts) — must load before game.js, which
        calls window.Mounts.init(...) during its own setup. -->
@@ -2727,7 +2727,7 @@
   <script src="js/honeyfuzzle-audio.js?v=20261026hivebuzz2"></script> <!-- Shared 24-tile hive + swarm ambience, one decoded seam-crossfaded loop per nearby source, live aggression and Doppler. -->
   <!-- Semantic animal-call scheduler. Gameplay systems emit vocal intents;
        AudioSystem above remains the replaceable low-level renderer. -->
-  <script src="js/animal-vocalizations.js?v=20261102farmvoice1"></script>
+  <script src="js/animal-vocalizations.js?v=20261105h9533091"></script>
   <!-- Background music/ambient cues/bgs/furniture-proximity SFX
        (window.Music) — wires its own DOM audio-unlock listeners at load
        time, and must load before game.js, which calls
@@ -2777,7 +2777,7 @@
   <script src="js/farmhouse-login-spawn.js?v=20260930doorstep1"></script>
   <script src="js/banubu-questline.js?v=20261026banubuoverpass3"></script>
   <!-- World-space Float+ combat text and centered five-row reward lists. -->
-  <script src="js/world-popup-text.js?v=20261024h6db587e"></script>
+  <script src="js/world-popup-text.js?v=20261105h5fcacdd"></script>
   <!-- Quick Attack opportunity reticle needs WorldPopupText's avatar centroid
        helper at module evaluation time, so it belongs here rather than in the
        earlier combat-definition block. It still loads before game.js and
@@ -2936,7 +2936,7 @@
   <script src="js/delvers-vault-signal.js?v=20261031storyVault1"></script>
   <script src="js/bed-lie-pose.js?v=20261102mattressxray2"></script> <!-- Surface-aligned sleep presentation; game.js injects the live player and calendar. -->
   <script src="js/lunge-targeting.js?v=1"></script>
-  <script src="game.js?v=20261104crossheightAudit2"></script>
+  <script src="game.js?v=20261105h7964858"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261029hguild2"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->

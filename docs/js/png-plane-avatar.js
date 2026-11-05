@@ -900,7 +900,10 @@
     if (!entry) {
       const loader = new THREE.TextureLoader(); // Existing source-image loader and material settings stay unchanged.
       const back = new THREE.Texture(); // Pre-mirrored copy for callers without shared-face mirroring; shares the front's image and only uploads if bound.
-      const front = loader.load(spriteUrl, loaded => { back.image = loaded.image; back.needsUpdate = true; });
+      const front = loader.load(spriteUrl, loaded => {
+        window.CreatureTextureCache?.capLoadedTexture?.(loaded); // Oversized sprites are scaled once here, so the shared back copy below gets the capped image too.
+        back.image = loaded.image; back.needsUpdate = true;
+      });
       front.colorSpace = back.colorSpace = THREE.SRGBColorSpace;
       back.wrapS = THREE.RepeatWrapping;
       back.repeat.set(-1, 1); back.offset.set(1, 0);

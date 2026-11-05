@@ -203,7 +203,7 @@
   function _treasureChestMaterial(color) {
     const material = new THREE.MeshLambertMaterial({ color });
     if (typeof THREE.TextureLoader !== 'function') return material;
-    if (!treasureChestTexture) treasureChestTexture = new THREE.TextureLoader().load(TREASURE_CHEST_TEXTURE_PATH);
+    if (!treasureChestTexture) treasureChestTexture = new THREE.TextureLoader().load(TREASURE_CHEST_TEXTURE_PATH, window.CreatureTextureCache?.capFurnitureTexture); // Scaled once at load (source is 1378x1378).
     material.map = treasureChestTexture;
     material.needsUpdate = true;
     return material;

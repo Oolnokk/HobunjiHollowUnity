@@ -159,6 +159,13 @@
   function saveConsumed(id) {
     loadPersistence();persisted.add(id);persistWorld();
   }
+  // The inactive zone cache calls this when it tears a zone's scene down. The record and the placement cache
+  // both hold the old scene; recordFor rebuilds them (and restores unlooted rubble from the persisted history)
+  // the next time the zone is entered, exactly as it does when a zone's scene changes.
+  function releaseZone(mapId) {
+    records.delete(mapId);
+    placementCache.delete(mapId);
+  }
   function recordFor(mapId, targetScene) {
     const existing=records.get(mapId);
     if(existing?.scene===targetScene)return existing;
@@ -2436,7 +2443,7 @@
   });
 
   window.Shattercasks=Object.freeze({
-    init,RADIUS,FRUIT_RADIUS,Burden,registerFruit,rebindFruitBranch,pickUpFruit,discardFruit,releaseFruitFromTree,
+    init,releaseZone,RADIUS,FRUIT_RADIUS,Burden,registerFruit,rebindFruitBranch,pickUpFruit,discardFruit,releaseFruitFromTree,
     backCarriedInfo,backCarrierPosition,stowOnBack,takeFromBack,impactBackOnCarrierHit,
     spawn:ensureArea,spawnRandomInDevArena,pickUp,drop,interact,toolArchAction,toolArchTap,actionButtons,
     heldBurdenInfo,placeHeldBurdenOnSurface,retrievePlacedBurden,
