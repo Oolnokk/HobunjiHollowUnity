@@ -448,10 +448,12 @@
     const corpseObjects = combatDeps?.corpseObjects || runtimeDeps?.corpseObjects;
     const animalObjects = farmDeps?.animalObjects || runtimeDeps?.animalObjects;
 
-    eachActor(hostileObjects, 'hostile', area);
-    eachActor(companionObjects, 'companion', area);
-    eachActor(corpseObjects, 'corpse', area);
-    eachActor(animalObjects, 'farm', area);
+    // Only skip optional render-time lift scans. Entity simulation and gameplay elevation remain unchanged.
+    const switches = window.DevTestingSwitchbox?.flags;
+    if (!switches?.noRenderLiftHostileScan) eachActor(hostileObjects, 'hostile', area);
+    if (!switches?.noRenderLiftCompanionScan) eachActor(companionObjects, 'companion', area);
+    if (!switches?.noRenderLiftCorpseScan) eachActor(corpseObjects, 'corpse', area);
+    if (!switches?.noRenderLiftLivestockScan) eachActor(animalObjects, 'farm', area);
 
     // Water no longer changes character render Y. Movement-owned Y plus the
     // ordinary terrain/support render lift remain authoritative in water.
