@@ -88,14 +88,18 @@ function testEditorAuthoring() {
   assert.equal(defaultBack.rotation.y,200,'legacy furniture defaults to 180 degrees around portrait vertical');
   assert.equal(defaultBack.posteriorOffset.z,.3);
   assert.equal(defaultBack.size,1.2);
+  assert.equal(defaultBack.portraitAnchor.x,0);
+  assert.equal(defaultBack.portraitAnchor.y,0);
+  assert.equal(defaultBack.portraitAnchor.z,0);
   const customBack=normalize({billboardAnchor:original,backCarry:{
     position:{x:-.4,y:.8,z:.7},rotation:{x:11,y:93,z:4},
-    posteriorOffset:{x:.2,y:-.3,z:.4},size:.75,
+    posteriorOffset:{x:.2,y:-.3,z:.4},portraitAnchor:{x:.1,y:.15,z:-.2},size:.75,
   }}).backCarry;
   assert.equal(customBack.position.x,-.4,'back attachment position can be authored independently');
   assert.equal(customBack.rotation.y,93,'back rotation is stored without the fallback flip');
   assert.equal(customBack.posteriorOffset.y,-.3);
   assert.equal(customBack.size,.75);
+  assert.equal(customBack.portraitAnchor.y,.15);
 }
 
 function testRuntime() {
