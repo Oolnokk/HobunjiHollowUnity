@@ -109,8 +109,12 @@
       hint: 'Keep currently used animal frames, but immediately dispose unreferenced cached frames (may cause stutter when animals blink or change animation).',
     },
     reducedPortraitPixelCache: {
-      label: '🧠 Portrait Source Image Cache (48 → 8 MiB)',
-      hint: 'Limit cached portrait source images to 8 MiB, preserving current avatar textures. More assets will need redecoding as new bandits spawn.',
+      label: '🧠 Full Portrait Image Cache (48 MiB)',
+      hint: 'Uncheck to shrink the source-image cache budget from 48 MiB to 8 MiB. Live avatar textures are unaffected; assets may reload more often.',
+    },
+    noSkinnedPants: {
+      label: '👖 Deformable Pants Rig',
+      hint: 'Skips allocating deformable pants overlays for newly built characters; keeps procedural legs, inventory, physics, and attacks intact.',
     },
   });
 
@@ -156,7 +160,7 @@
     'noShellOutlines', 'noGrass', 'noWind', 'lowPolyFoliage',
     'noBrickWalls', 'noShingleGlbs', 'noSkySphere', 'noAudio', 'noVerdigris',
     'noCharacterGroundShadows', 'noPngAvatarOcclusion', 'noCorpseVisuals', 'noLayeredWeaponDecorations',
-    'noPortraitDepthMatrixParity', 'noHandOutlineMatrixParity', 'noFootOutlineMatrixParity', 'noUnusedAnimalTextureCache', 'reducedPortraitPixelCache'
+    'noPortraitDepthMatrixParity', 'noHandOutlineMatrixParity', 'noFootOutlineMatrixParity', 'noUnusedAnimalTextureCache', 'reducedPortraitPixelCache', 'noSkinnedPants'
   ]); // Deliberately excludes AI and water simulation: disabling them alters active gameplay state.
 
   const PAINTERLY_BACKUP_KEY = 'hobunji-dev-companion-painterly-previous-v1'; // Restores the user's selected quality after a temporary A/B disable.
