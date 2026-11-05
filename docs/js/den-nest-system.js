@@ -18,7 +18,7 @@
   // uses. s_showInteractionRaycast/activeAction/actionHeldDown are `let`s
   // reassigned elsewhere but only ever read here, so plain getters suffice.
   let deps = null;
-  function init(injectedDeps) { deps = injectedDeps; }
+  function init(injectedDeps) { deps = injectedDeps; window.TzatzulFlight?.initScene?.(injectedDeps); } // Share the native scene-transition owner with voluntary cliff-nest escorts.
 
   function _addPlayerToScene(toScene) {
     if (!toScene) return;
