@@ -879,7 +879,7 @@
     getCrawlState: () => {
       const player = deps?.player, session = player?._cliffRouteSession; // Renderer reads, never mutates, the traversal graph state.
       return player?.climbing && session?.area === deps?.getCurrentArea()
-        ? { player, route: session.route, moving: session.moving, phase: session.phase, progress: session.progress }
+        ? { player, route: session.route, moving: session.moving, phase: session.phase, progress: session.progress, tileSize: deps.TILE }
         : null;
     },
     updateBranchMovement,
