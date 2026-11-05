@@ -124,10 +124,11 @@
     if (pool?.kind === 'exclusive') {
       // Puzzle-cave trinkets are an actual one-of-N reward, not 13 independent
       // Bernoulli rolls (which could otherwise award zero or multiple trinkets).
-      const desiredTier = Math.max(1,Math.min(5,Math.floor(Number(context.rewardTier) || 1))); // Song difficulty determines this cave's reward band.
+      const constrainedTier = Number.isFinite(Number(context.rewardTier)) && Number(context.rewardTier) >= 1; // Standalone cave sets a tier; mixed victim loot intentionally draws from all tiers.
+      const desiredTier = constrainedTier ? Math.max(1,Math.min(5,Math.floor(Number(context.rewardTier)))) : null;
       const definitions = window.TrinketSystem?.DEFINITIONS || {}; // Prevent the mixed source from giving unknown items before the dependent trinket PR is loaded.
       const entries = (pool.entries || []).filter(entry => entry?.itemKey &&
-        (entry.tier == null || Number(entry.tier) === desiredTier) &&
+        (desiredTier == null || entry.tier == null || Number(entry.tier) === desiredTier) &&
         Number(entry.weight ?? 1) > 0 && (poolId !== 'puzzleCave' || !!definitions[String(entry.itemKey).replace(/^trinket_/, '')]));
       if (!entries.length) return {};
       const totalWeight = entries.reduce((sum,entry) => sum+Number(entry.weight ?? 1),0); // Stable configured probability mass.
