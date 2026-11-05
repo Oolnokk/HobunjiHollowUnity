@@ -1393,6 +1393,13 @@
 
   const combatTrace = { lastArea: '', origin: '', sawCombat: false, combat: false, left: false, bootCaptured: false, pending: [] };
   let combatRecords = [];
+  function retainCombatRecords(records) {
+    const sorted = [...records].sort((a, b) => a.capturedAt.localeCompare(b.capturedAt));
+    const best = sorted.filter(item => item.reason === 'highest-sustained-fps')
+      .sort((a, b) => (b.metadata?.sustainedFps || 0) - (a.metadata?.sustainedFps || 0))[0];
+    const recent = sorted.filter(item => item !== best).slice(-(COMBAT_TRACE_LIMIT - (best ? 1 : 0)));
+    return [...recent, ...(best ? [best] : [])].sort((a, b) => a.capturedAt.localeCompare(b.capturedAt));
+  }
   let combatDb = null; // IndexedDB holds full audits without crowding the nearly-full save localStorage.
   const combatDbReady = new Promise(resolve => {
     if (!root.indexedDB) { resolve(null); return; }
@@ -1405,9 +1412,7 @@
         const tx = combatDb.transaction('combat-snapshots', 'readonly');
         const read = tx.objectStore('combat-snapshots').getAll();
         read.onsuccess = () => {
-          combatRecords = [...read.result, ...combatRecords]
-            .sort((a,b) => a.capturedAt.localeCompare(b.capturedAt))
-            .slice(-COMBAT_TRACE_LIMIT);
+          combatRecords = retainCombatRecords([...read.result, ...combatRecords]);
           updateCombatTraceStatus();
           resolve(combatDb);
         };
@@ -1463,16 +1468,17 @@
     if (!snap) return;
     const record = { reason, capturedAt: new Date().toISOString(), ...(metadata ? { metadata: { ...metadata, gameTime: snap.calendar?.fullDateTime || null } } : {}), data: snap }; // Retained for deferred IndexedDB write.
     combatRecords.push(record);
-    if (combatRecords.length > COMBAT_TRACE_LIMIT) combatRecords.splice(0, combatRecords.length - COMBAT_TRACE_LIMIT);
+    combatRecords = retainCombatRecords(combatRecords);
     void combatDbReady.then(db => {
       if (!db) return; // Private browsing may disable IndexedDB; memory still works.
       try {
         const tx = db.transaction('combat-snapshots', 'readwrite');
         const store = tx.objectStore('combat-snapshots');
         store.put(record);
-        store.getAllKeys().onsuccess = event => {
-          const keys = event.target.result;
-          for (const key of keys.slice(0, Math.max(0, keys.length - COMBAT_TRACE_LIMIT))) store.delete(key);
+        store.getAll().onsuccess = event => {
+          const records = event.target.result;
+          const keep = new Set(retainCombatRecords(records).map(item => item.capturedAt));
+          for (const item of records) if (!keep.has(item.capturedAt)) store.delete(item.capturedAt);
         };
       } catch (_) {}
     });
