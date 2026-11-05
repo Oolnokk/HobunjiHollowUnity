@@ -630,6 +630,7 @@
   }
 
   function buildInteriorProps(mapId, mapData, scene) {
+    if (window.TzatzulNestInterior?.buildInteriorProps?.(mapId,mapData,scene)) return Promise.resolve(1); // Special roost content owns only its specific cave scene.
     buildMushroomClusters(mapId, mapData, scene);
     const id = String(mapId); // Shared key with the mushroom index and cave profile.
     const propRecord = { scene, groups: new Map() }; // Replaced on rebuild; late async furniture loads cannot register in a stale cave.
@@ -688,6 +689,7 @@
   }
 
   function decorateCavernMapData(mapId, mapData) {
+    if (window.TzatzulNestInterior?.isNestMap?.(mapId)) return window.TzatzulNestInterior.decorateMapData(mapId,mapData); // Spire nests reuse native cave shell but not random cave-site inhabitants.
     const profile = profileForMapId(mapId);
     if (!profile || !mapData) return mapData;
     const rng = makeRng(`${profile.signature}:interior`); // Feature stream isolated from profile selection, stable across reloads.
@@ -867,8 +869,13 @@
     else setTimeout(flush, 500);
   }
 
-  function serialize() { return savedCaveState ? clone(savedCaveState) : null; }
+  function serialize() {
+    const snapshot = savedCaveState ? clone(savedCaveState) : null;
+    if (snapshot) snapshot.tzatzulNests = window.TzatzulNestInterior?.serialize?.() || {};
+    return snapshot;
+  }
   function restore(saved) {
+    window.TzatzulNestInterior?.restore?.(saved?.tzatzulNests || {}); // Keep roost egg/body claims in the same portable world-save payload.
     deferredSaveGeneration++;
     deferredSaveQueued = false;
     savedCaveState = saved && typeof saved === 'object' && typeof saved.identity === 'string' && saved.sites && typeof saved.sites === 'object' ? clone(saved) : null;
@@ -1279,6 +1286,7 @@
   }
 
   function updateCurrentCaveRuntime(dt = 0) {
+    window.TzatzulNestInterior?.update?.(dt); // Existing cave heartbeat also owns egg/corpse input and hatchling population.
     caveClock += Number(dt) || 0;
     caveRuntimeTimer -= Number(dt) || 0;
     if (caveRuntimeTimer > 0) return;
@@ -1325,7 +1333,7 @@
     // parser-order difference cannot let game.js initialize one subsystem
     // before CaveSiteSystem has captured the shared runtime helpers.
     wrapInit(wildlife, deps => { wildlifeDeps = deps; }, '__caveSiteInitWrapped');
-    wrapInit(window.DevSpawner, deps => { devSpawnerDeps = deps; }, '__caveSiteInitWrapped');
+    wrapInit(window.DevSpawner, deps => { devSpawnerDeps = deps; window.TzatzulNestInterior?.initRewards?.(deps); }, '__caveSiteInitWrapped');
 
     if (cavern && !cavern.__caveSiteSynthesisWrapped && typeof cavern.synthesizeCavernMapData === 'function') {
       cavern.__caveSiteSynthesisWrapped = true;
@@ -1430,6 +1438,7 @@
     init,
     serialize,
     restore,
+    persistAuxiliaryState: () => persistState(true), // Nonfertile roost egg/body claims are included in the next world-save serialization.
     __test: Object.freeze({
       rollProfile,
       forceAnimalProfile,
