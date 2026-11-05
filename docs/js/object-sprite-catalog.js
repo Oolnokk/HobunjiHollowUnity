@@ -21,7 +21,7 @@
     nickel: 0xB9C1B3, mithril: 0x91B6D6, tin: 0xC1C5C6, stone: 0x79766C,
   }); // Fallbacks only; an item's explicitly authored material color takes precedence.
   const NO_OVERRIDE = new Set(['gold', 'ganang']); // Currency is not a physical gold-ore/ingot stack.
-  const seen = new WeakMap(); // Avoid reassigning sprite metadata on every HUD repaint.
+  const seen = new WeakMap(); // Stores each resolved icon and its applied metadata signature; HUD renders can return immediately without per-frame recolor regex/allocation.
   let patched = 0; // Number of item definitions receiving newly authored sprite metadata.
   let last = null; // Most recent item/art choice for in-game/mobile diagnostics.
 
@@ -120,12 +120,12 @@
   function assignArt(key, def, art) {
     if (!def || !art) return null;
     const signature = art.spriteIcon + '|' + art.spriteMode + '|' + art.spriteColor;
-    if (seen.get(def) === signature) return art;
+    if (seen.get(def)?.signature === signature) return art;
     try {
       def.spriteIcon = art.spriteIcon;
       def.spriteColor = art.spriteColor;
       def.spriteMode = art.spriteMode;
-      seen.set(def, signature);
+      seen.set(def, { signature, art });
       patched++;
       last = { key, ...art };
     } catch (error) {
@@ -136,6 +136,8 @@
 
   function ensure(key, def) {
     if (!def || typeof def !== 'object') return null;
+    const previous = seen.get(def); // O(1) happy path on the main 60Hz HUD: do not scan labels or construct regexes again.
+    if (previous && [def.spriteIcon, def.spriteMode, def.spriteColor].join('|') === previous.signature) return previous.art;
     const alreadyAssigned = def.spriteIcon === 'scroll.png' && /^layered-scroll:[0-9a-f]{6}$/i.test(def.spriteMode || '')
       && !def.combatManualAbilityId && !def.techniqueScrollTier && !def.masteryUnlock && !def.attackCategory;
     // Selectable item-wheel entries lack the canonical item's attack metadata.
