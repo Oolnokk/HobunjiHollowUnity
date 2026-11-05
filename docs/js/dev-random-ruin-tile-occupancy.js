@@ -339,10 +339,6 @@
         ctx.fillStyle = model.floorSet.has(tileKey) ? '#5d625d' : '#171b1d';
         ctx.fillRect(col * scaleX, row * scaleY, Math.ceil(scaleX), Math.ceil(scaleY));
       }
-      for (const tileKey of model.blocked) {
-        const [col, row] = tileKey.split(',').map(Number);
-        fillInset(ctx, col, row, scaleX, scaleY, '#e74c3c', Math.max(1, Math.min(scaleX, scaleY) * .14));
-      }
     }
     if(layer) {
       for(const tileKey of layer.open){
@@ -356,6 +352,10 @@
       }
     }
     if(!layer||layer.floor===0){
+    for (const tileKey of model.blocked) {
+      const [col,row]=tileKey.split(',').map(Number);
+      fillInset(ctx,col,row,scaleX,scaleY,'#e74c3c',Math.max(1,Math.min(scaleX,scaleY)*.14));
+    }
     ctx.fillStyle = '#e74c3c';
     for (const fp of model.footprints.list()) { // Exact prop outlines, so the Map shows the same collision the player feels.
       const corners = [[1,1],[1,-1],[-1,-1],[-1,1]].map(([a,b]) => [
