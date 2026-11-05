@@ -79,6 +79,29 @@ assert.equal(roadside.isHedgeBush(grid, 2, 5, 'map_southern_cloud_forest'), fals
 assert.equal(roadside.isHedgeBush(grid, 7, 8, 'map_southern_cloud_forest'), false);
 assert.equal(roadside.isHedgeBush(grid, 6, 8, 'map_southern_cloud_forest'), false, 'Resource bushes retain harvestable appearance');
 assert.ok(roadside.getDebug().hits >= 3, 'Mobile roadside debug probe records rendered hedge eligibility');
+const decorative = roadside.hedgePlan(grid, 'map_southern_cloud_forest'); // Unlike opportunistic bush reskin, this must guarantee actual rows on both sides.
+assert.ok(decorative.size >= 10, 'A sufficiently long straight caravan road gets real cosmetic hedge rows');
+assert.ok(decorative.has('9,8') && decorative.has('11,8'), 'Hedges are placed on both exterior shoulders, not down the middle of the road');
+assert.equal(grid[8][9].type, 'grass', 'Decorative Koma bushes do not change the walkable terrain');
+assert.strictEqual(roadside.hedgePlan(grid, 'map_southern_cloud_forest'), decorative, 'Streaming chunks share one cached full-zone plan');
+assert.ok(roadside.hedgePlan(grid, 'map_western_slope').size >= 10, 'Optional Slagothim routes through the Western Slope also receive cosmetic hedges, without reviving its dead bushes');
+
+const generator = require('../docs/js/wilderness-map-generator.js'); // This is the actual V44 generation pipeline, not a mocked shrub pattern.
+const generatedWorkspace = generator.generateWorkspace('review-one', {
+  width: 50, height: 50, entrySide: 'north', tradeExitSide: 'south', trees: 20, bushes: 100,
+  rivers: 0, ponds: 0, plateaus: 0, ramps: 0, animalDens: 0, caves: 0,
+  secretCaves: 0, logs: 0, boulders: 0,
+});
+const generatedMap = generatedWorkspace.maps.find(map => !map.isSubmap);
+const generatedGrid = Array.from({ length: generatedMap.rows }, (_, row) =>
+  Array.from({ length: generatedMap.cols }, (_, col) => generatedMap.tiles[col + ',' + row] || { type: 'grass' }));
+const actualSites = roadside.hedgePlan(generatedGrid, 'map_southern_cloud_forest');
+assert.ok(actualSites.size >= 12, 'The real generated road must produce visible contiguous hedges, not zero random bush matches');
+for (const location of actualSites) {
+  const [col, row] = location.split(',').map(Number); // Verify the real map retains the underlying walkable tile.
+  assert.equal(generatedGrid[row][col].type, 'grass', 'Hedge must not replace a road, resource, cliff, or water tile');
+}
+assert.ok(roadside.getDebug().lastPlan.runs >= 2, 'Procedural hedge detection should find separate real-world roadside stretches');
 
 const game = read('docs/game.js'); // Executes the real zone vegetation dispatch, not a reimplemented test copy.
 const dispatch = game.slice(game.indexOf('              const isDeadTree ='), game.indexOf('              if (isDeadTree || isCrownedPine || isShadewood)'));
@@ -94,6 +117,10 @@ assert.equal(render(runtime, 'map_western_slope', grid[8][8], {}, 8, 8, grid), '
 assert.equal(render(runtime, 'map_southern_cloud_forest', { floraKind: 'copse' }, { map_southern_cloud_forest: { cloudForest: true } }, 8, 8, grid), 'buildShadewoodMesh');
 assert.ok(game.includes('window.ObjectSpriteCatalog?.ensure?.(key, def)'), 'All inventory HUD/Pack icons use the live item art resolver');
 assert.ok(game.includes('window.ObjectSpriteCatalog?.ensure?.(item.key, def)'), 'Held item planes use the same dynamic item-art resolver');
+assert.ok(game.includes('window.RoadsideKomaHedges?.hedgePlan?.(zGrid, mapId)'), 'Chunk renderer consumes the deterministic road hedgerow plan');
+assert.ok(game.includes('komaBush.userData.roadsideKomaCosmetic = true'), 'Decorative bushes expose their ownership to mobile Pixel Probe');
+assert.match(game, /komaCosmeticSites\?\.has\(c \+ ',' \+ r\)/, 'Only planned grid cells render the road bushes');
+assert.ok(game.indexOf('komaCosmeticSites?.has(c +') < game.indexOf('if (tile.skipFloor && !CARVED_TILE_TYPES'), 'Roadside plants must not vanish on flat mesa-owned ground');
 
 const reticle = read('docs/js/combat/melee-hud-reticle.js'); // Canonical slot palette remains the only color authority.
 for (const hex of ['#00D9FF', '#FFD23F', '#FF4FD8', '#7CFF4F']) assert.ok(reticle.includes(hex));
