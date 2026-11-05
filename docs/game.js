@@ -6990,11 +6990,11 @@
       // above never saw them and each kept a full rig for the whole session.
       // This drives the same distance owner for them on a short timer, and
       // releases them outright once the player is in another area.
-      let _corpseVisualLodAccumS = 0;
-      function updateCorpseVisualLod(dt) {
-        _corpseVisualLodAccumS += dt;
-        if (_corpseVisualLodAccumS < 0.4) return;
-        _corpseVisualLodAccumS = 0;
+      let _corpseVisualLodAt = 0;
+      function updateCorpseVisualLod() {
+        const now = performance.now();
+        if (now - _corpseVisualLodAt < 400) return; // Wall clock, so a slow frame rate does not stretch the interval.
+        _corpseVisualLodAt = now;
         for (const c of corpseObjects) { // Promotion shares the per-frame allowance set by updateHostiles, so corpses wake over successive ticks.
           if (!window.WildlifeVisualLod.isStreamableCorpse(c)) continue;
           if (c.areaId !== currentArea) { if (!c._wildlifeVisualsReleased) releaseCreatureVisuals(c); continue; }
@@ -7003,7 +7003,7 @@
       }
       function tickCorpses(dt) {
         window.CreatureDeath.updateCorpses(dt);
-        updateCorpseVisualLod(dt);
+        updateCorpseVisualLod();
       }
 
       window.WildlifeVisualLod.init({ createVisuals: createCreatureVisuals, releaseVisuals: releaseCreatureVisuals }); // Existing LOD owns streamed wildlife presentation lifetime.
@@ -15707,9 +15707,10 @@
       // ordinary enterZone path from _zoneLayouts, the tile deltas and the
       // persist maps, which already restore edited tiles, felled trees, mined
       // rocks, berries, reagents and treasure. Wildlife, bandit camps and the
-      // player's campfire keep their own state and re-attach on entry. A zone
-      // with a resident that still owns a rig in it (a bandit, a dying body)
-      // or an NPC is never evicted.
+      // player's campfire keep their own state and re-attach on entry; NPCs are
+      // parked until the zone is rebuilt and ordinary creatures drop to data. A
+      // zone with a resident that must keep its rig (a bandit, a dying body)
+      // is never evicted.
       const _zoneVisitOrder = []; // Wilderness zone ids, most recently entered last.
       let _zoneCacheTrimTimer = null;
       function zoneCacheMaxInactive() {
@@ -15727,14 +15728,35 @@
         for (const set of [hostileObjects, corpseObjects]) for (const c of set) if ((c.areaId || c.zoneId) === mapId) residents.push(c);
         return residents;
       }
-      // Wildlife whose rig is only streamed in can always go back to data.
-      function releaseStreamedResidents(mapId) {
-        for (const c of zoneResidents(mapId)) if (!c._wildlifeVisualsReleased && c.streamVisuals) releaseCreatureVisuals(c);
+      // Ordinary creatures (wildlife and ambient hostiles) are rebuilt from their
+      // own data by createCreatureVisuals, so an inactive zone can hold them as
+      // plain data and the distance LOD promotes them again on return. Anything
+      // with its own rig builder or a rider/follower relationship stays put.
+      function canHoldAsData(c) {
+        if (c.isBandit || c.isCompanion || c.banditCompanion || c.maskboundTroop || c.mountedBy || c.rider || !c.def) return false;
+        return c.health > 0 || window.WildlifeVisualLod.isStreamableCorpse({ ...c, streamVisuals: true });
+      }
+      function releaseResidentRigs(mapId) {
+        for (const c of zoneResidents(mapId)) {
+          if (c._wildlifeVisualsReleased || !canHoldAsData(c)) continue;
+          c.streamVisuals = true; // From here on it streams by distance like any other wildlife.
+          releaseCreatureVisuals(c);
+        }
+      }
+      // NPCs have a parked state for a zone whose scene does not exist yet
+      // (_pendingZoneAdd, see makeNpcWalker/transferToArea); buildZoneScene drops
+      // them back in at the nearest walkable tile when the zone is rebuilt.
+      function parkZoneNpcs(mapId) {
+        const area = normalizeNpcArea(mapId);
+        for (const w of npcWalkers) {
+          if (normalizeNpcArea(w.area) !== area) continue;
+          if (w.root._npcScene) w.root._npcScene.remove(w.root); else w.root.parent?.remove?.(w.root);
+          w.root._npcScene = null; w.root._pendingZoneAdd = mapId;
+          w.resetRouteState?.();
+        }
       }
       function zoneEvictionBlocker(mapId) {
         if (mapId === window.DevSpawner?.DEV_ARENA_ZONE_ID || mapId === window.DevSpawner?.WILDERNESS_LAB_ZONE_ID) return 'dev zone';
-        const area = normalizeNpcArea(mapId);
-        for (const w of npcWalkers) if (normalizeNpcArea(w.area) === area || w.root?._pendingZoneAdd === mapId) return 'npc';
         for (const c of zoneResidents(mapId)) if (!c._wildlifeVisualsReleased && !c.isCompanion) return 'resident rig';
         return null;
       }
@@ -15744,6 +15766,7 @@
         const persisted = _captureLivePreviewZonePersistence(mapId); // _disposeZoneScene was written for terrain regeneration and drops this saved state.
         window.WildernessCampfire?.releaseVisualIfZone?.(mapId); // Keeps the saved campfire; only its visual belonged to this scene.
         for (const c of zoneResidents(mapId)) { c.scene = null; c.areaGrid = null; } // Data-only residents must not keep the old scene and grid alive; rebindZoneResidents restores them.
+        parkZoneNpcs(mapId);
         _disposeZoneScene(mapId);
         _restoreLivePreviewZonePersistence(mapId, persisted);
         zi.scene.clear(); // One stale reference to a mesh would otherwise keep the whole old zone reachable through its parent chain.
@@ -15760,7 +15783,7 @@
         const keep = new Set(inactive.slice(Math.max(0, inactive.length - zoneCacheMaxInactive())));
         for (const mapId of [..._zoneScenes.keys()]) {
           if (mapId === currentArea || keep.has(mapId)) continue;
-          releaseStreamedResidents(mapId);
+          releaseResidentRigs(mapId);
           const blocker = zoneEvictionBlocker(mapId);
           if (blocker) { window.__farmLog?.(`[zone-cache] kept ${mapId}: ${blocker}`, 'perf'); continue; }
           evictZoneScene(mapId);

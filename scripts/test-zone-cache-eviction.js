@@ -31,6 +31,7 @@ function makeWorld(config) {
     window: { SCRATCHBONES_CONFIG: config, DevSpawner: { DEV_ARENA_ZONE_ID: 'map_dev_arena', WILDERNESS_LAB_ZONE_ID: 'map_wilderness_lab' },
       WildernessCampfire: { releaseVisualIfZone: id => campfireReleases.push(id) }, __farmLog: msg => logs.push(msg) },
     setTimeout: fn => { timers.push(fn); return timers.length; },
+    performance: { now: () => 0 }, localStorage: { getItem: () => null, setItem() {} },
     _zoneScenes: zoneScenes, hostileObjects: hostiles, corpseObjects: corpses, npcWalkers: npcs,
     _zoneReagentPersist: persist.reagents, _zoneBerryPersist: persist.berries, _zoneTreasurePersist: persist.treasure,
     _zoneFelledTreePersist: persist.felled, _zoneMinedRockPersist: persist.mined,
@@ -40,7 +41,9 @@ function makeWorld(config) {
     // Mirrors the real _disposeZoneScene: it drops the scene AND the saved zone state (written for terrain regeneration).
     _disposeZoneScene: id => { disposed.push(id); zoneScenes.delete(id); for (const m of Object.values(persist)) m.delete(id); },
   });
-  vm.runInContext(`${persistenceFns}\n${evictionBlock}\nthis.api = { noteZoneVisited, trimZoneCache, scheduleZoneCacheTrim, zoneEvictionBlocker, evictZoneScene, rebindZoneResidents, order: _zoneVisitOrder };`, context, { filename: 'zone-cache.js' });
+  vm.runInContext(fs.readFileSync(path.join(root, 'docs/js/entity-distance-lod.js'), 'utf8'), context);
+  vm.runInContext(fs.readFileSync(path.join(root, 'docs/js/wildlife-visual-lod.js'), 'utf8'), context); // The real isStreamableCorpse decides what may become data.
+  vm.runInContext(`${persistenceFns}\n${evictionBlock}\nthis.api = { releaseResidentRigs, parkZoneNpcs, noteZoneVisited, trimZoneCache, scheduleZoneCacheTrim, zoneEvictionBlocker, evictZoneScene, rebindZoneResidents, order: _zoneVisitOrder };`, context, { filename: 'zone-cache.js' });
   const addZone = id => zoneScenes.set(id, { scene: { cleared: false, clear() { this.cleared = true; } }, grid: ['grid-' + id], cols: 200, rows: 200 });
   const visit = id => { addZone(id); context.currentArea = id; context.api.noteZoneVisited(id); };
   return { context, api: context.api, timers, disposed, campfireReleases, logs, persist, zoneScenes, hostiles, corpses, npcs, addZone, visit };
@@ -101,39 +104,58 @@ function makeWorld(config) {
   assert.deepEqual(w.persist.felled.get('map_b'), [{ col: 9, row: 9 }], 'other zones are untouched');
 }
 
-// ---- pins -----------------------------------------------------------------
+// ---- NPCs are parked, not pinned ------------------------------------------
 {
   const w = makeWorld({});
   w.visit('map_a'); w.visit('map_b'); w.visit('map_c');
-  w.npcs.push({ area: 'map_a' });
+  const removed = [], scene = { remove: r => removed.push(r) };
+  const inA = { area: 'map_a', root: { _npcScene: scene, _pendingZoneAdd: null }, resetRouteState() { this.reset = true; } };
+  const inB = { area: 'map_b', root: { _npcScene: scene, _pendingZoneAdd: null }, resetRouteState() { this.reset = true; } };
+  w.npcs.push(inA, inB);
   w.api.trimZoneCache();
-  assert.deepEqual(w.disposed, [], 'a zone with an NPC in it is never evicted');
-  assert.match(w.logs.join('\n'), /kept map_a: npc/);
-  w.npcs.length = 0;
+  assert.deepEqual(w.disposed, ['map_a'], 'an NPC does not stop its zone from being evicted');
+  assert.deepEqual(removed, [inA.root], 'the NPC is taken out of the old scene');
+  assert.equal(inA.root._npcScene, null);
+  assert.equal(inA.root._pendingZoneAdd, 'map_a', 'and parked until the zone is rebuilt (buildZoneScene re-attaches it)');
+  assert.equal(inA.reset, true, 'its route state is reset');
+  assert.equal(inB.root._npcScene, scene, 'NPCs of zones that stay built are untouched');
+  assert.equal(inB.reset, undefined);
+}
 
-  const bandit = { areaId: 'map_a', isBandit: true, _wildlifeVisualsReleased: false };
-  w.hostiles.add(bandit);
+// ---- residents: ordinary creatures go to data, special ones pin -----------
+{
+  const w = makeWorld({});
+  w.visit('map_a'); w.visit('map_b'); w.visit('map_c');
+  const def = { label: 'x' };
+  const ambient = { areaId: 'map_a', def, health: 30, state: 'idle', streamVisuals: false, _wildlifeVisualsReleased: false, avatarRef: {} };
+  const streamed = { areaId: 'map_a', def, health: 10, streamVisuals: true, _wildlifeVisualsReleased: false };
+  const dataOnly = { areaId: 'map_a', def, health: 10, streamVisuals: true, _wildlifeVisualsReleased: true };
+  const settled = { areaId: 'map_a', def, health: 0, state: 'corpse', streamVisuals: true, _wildlifeVisualsReleased: false };
+  for (const c of [ambient, streamed, dataOnly]) w.hostiles.add(c);
+  w.corpses.add(settled);
   w.api.trimZoneCache();
-  assert.deepEqual(w.disposed, [], 'a resident that still owns a rig in the zone pins it');
-  w.hostiles.delete(bandit);
-
-  const dying = { areaId: 'map_a', state: 'dying', health: 0, streamVisuals: true, _wildlifeVisualsReleased: false };
-  const streamed = { areaId: 'map_a', health: 10, streamVisuals: true, _wildlifeVisualsReleased: false };
-  const dataOnly = { areaId: 'map_a', health: 10, streamVisuals: true, _wildlifeVisualsReleased: true };
-  w.hostiles.add(streamed); w.hostiles.add(dataOnly);
+  assert.deepEqual(w.disposed, ['map_a'], 'ordinary residents do not stop eviction');
+  assert.equal(ambient._wildlifeVisualsReleased, true, 'an ambient hostile that never streamed drops to data');
+  assert.equal(ambient.streamVisuals, true, 'and streams by distance from then on');
+  assert.equal(streamed._wildlifeVisualsReleased, true);
+  assert.equal(settled._wildlifeVisualsReleased, true, 'a settled corpse becomes data');
+  for (const c of [ambient, streamed, dataOnly, settled]) { assert.equal(c.scene, null); assert.equal(c.areaGrid, null); }
+}
+for (const [label, extra, store] of [
+  ['a bandit', { isBandit: true, health: 20 }, 'hostiles'],
+  ['a companion-bound follower', { banditCompanion: true, health: 20 }, 'hostiles'],
+  ['a maskbound troop', { maskboundTroop: 'headtaker', health: 20 }, 'hostiles'],
+  ['a dying body', { state: 'dying', health: 0, streamVisuals: true }, 'corpses'],
+  ['a skeleton that revives after looting', { state: 'corpse', health: 0, streamVisuals: true, keepCorpseAfterLoot: true }, 'corpses'],
+]) {
+  const w = makeWorld({});
+  w.visit('map_a'); w.visit('map_b'); w.visit('map_c');
+  const resident = { areaId: 'map_a', def: {}, _wildlifeVisualsReleased: false, ...extra };
+  w[store].add(resident);
   w.api.trimZoneCache();
-  assert.deepEqual(w.disposed, ['map_a'], 'streamed wildlife is released to data and does not block eviction');
-  assert.equal(streamed._wildlifeVisualsReleased, true, 'the streamed rig was released first');
-  assert.equal(streamed.scene, null, 'and the creature no longer holds the old scene');
-  assert.equal(streamed.areaGrid, null, 'or the old grid');
-  assert.equal(dataOnly.scene, null);
-
-  const w2 = makeWorld({});
-  w2.visit('map_a'); w2.visit('map_b'); w2.visit('map_c');
-  const dying2 = { ...dying };
-  w2.corpses.add(dying2);
-  w2.api.trimZoneCache();
-  assert.deepEqual(w2.disposed, [], 'a dying body that still needs its rig pins the zone');
+  assert.deepEqual(w.disposed, [], `${label} keeps its rig, so its zone is kept`);
+  assert.match(w.logs.join('\n'), /kept map_a: resident rig/);
+  assert.equal(resident._wildlifeVisualsReleased, false, `${label} is left alone`);
 }
 
 // ---- never the current zone, never dev zones ------------------------------

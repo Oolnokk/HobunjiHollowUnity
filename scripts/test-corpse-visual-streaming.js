@@ -112,7 +112,7 @@ assert.match(release, /_deathRecordedThrow = null/, 'and drops the released rig\
 const create = game.slice(game.indexOf('function createCreatureVisuals(c)'), game.indexOf('function releaseCreatureVisuals(c)'));
 assert.match(create, /restoreSettledPose/, 'promotion restores the corpse pose');
 assert.equal((game.match(/^\s+tickCorpses\(dt\);/gm) || []).length, 2, 'both game-loop branches drive the corpse LOD');
-const tick = game.slice(game.indexOf('function updateCorpseVisualLod(dt)'), game.indexOf('function tickCorpses(dt)'));
+const tick = game.slice(game.indexOf('function updateCorpseVisualLod('), game.indexOf('function tickCorpses(dt)'));
 assert.match(tick, /c\.areaId !== currentArea[\s\S]{0,120}releaseCreatureVisuals\(c\)/, 'corpses in another area are released outright');
 
 console.log('corpse visual streaming regression passed');
