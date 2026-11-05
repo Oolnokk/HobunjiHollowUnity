@@ -217,16 +217,30 @@
 
   // TextureLoader.load callback: swaps an oversized decoded image for its
   // capped canvas before the texture is first uploaded to the GPU.
-  function capLoadedTexture(texture) {
-    const capped = capSourceImage(texture?.image);
+  function capLoadedTexture(texture, maxEdge) {
+    const capped = capSourceImage(texture?.image, maxEdge);
     if (capped && capped !== texture.image) { texture.image = capped; texture.needsUpdate = true; }
     return texture;
   }
+
+  // Tiling material textures (crate planks, carved stone) are painted onto
+  // surfaces that cover a few hundred screen pixels at most, yet crate_side.png
+  // ships at 1378x1378 (~9.7 MB mipmapped). They get a tighter bound than
+  // creature sprites. Overridable through
+  // SCRATCHBONES_CONFIG.game.assets.furnitureTextureMaxEdge.
+  const DEFAULT_FURNITURE_TEXTURE_MAX_EDGE = 512;
+  function furnitureTextureMaxEdge() {
+    const configured = Number(window.SCRATCHBONES_CONFIG?.game?.assets?.furnitureTextureMaxEdge);
+    return Number.isFinite(configured) && configured >= 64 ? configured : DEFAULT_FURNITURE_TEXTURE_MAX_EDGE;
+  }
+  function capFurnitureTexture(texture) { return capLoadedTexture(texture, furnitureTextureMaxEdge()); }
 
   window.CreatureTextureCache = {
     fitGeneratedCanvas,
     capSourceImage,
     capLoadedTexture,
+    capFurnitureTexture,
+    furnitureTextureMaxEdge,
     create,
     genotypeFrameSetKey,
     isDisposed: owner => disposedOwners.has(owner),

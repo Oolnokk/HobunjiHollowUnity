@@ -229,7 +229,7 @@
       spareBursts.push(old); // Recycle the oldest blast instead of discarding its GPU instance buffer.
     }
     if (!shardArt) {
-      const texture=new THREE.TextureLoader().load('assets/textures/crate_side.png');
+      const texture=new THREE.TextureLoader().load('assets/textures/crate_side.png',window.CreatureTextureCache?.capFurnitureTexture); // Shards are tiny; the 1378px source is scaled once at load.
       // Crop the four-times-stretched central area rather than shrinking its pattern to fit.
       texture.wrapS=THREE.RepeatWrapping;texture.wrapT=THREE.RepeatWrapping;
       texture.repeat.set(.25,.25);texture.offset.set(.375,.375);

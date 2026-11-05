@@ -557,6 +557,7 @@
     if (entry) return entry;
     entry = { base: null, loaded: false, pendingClones: new Set() };
     entry.base = _texLoader.load((window.__hobunjiFurnitureAssetBase || 'assets/') + 'textures/' + filename, () => {
+      window.CreatureTextureCache?.capFurnitureTexture?.(entry.base); // Oversized tiling art (crate_side is 1378x1378) is scaled once, before any clone captures its image.
       entry.loaded = true;
       for (const clone of entry.pendingClones) {
         finishPartTexture(clone, entry.base.image);
@@ -591,17 +592,35 @@
     return material;
   }
 
+  // three r128 uploads one GPU texture per Texture object, and a part's
+  // rotation/repeat/fill live on the Texture, so every part of every placed
+  // instance used to clone its own: four identical crate stacks held twelve
+  // GPU copies of the same 1378x1378 image (~116 MB). Parts whose file,
+  // rotation, repeat and fill all match now share one clone. Nothing mutates a
+  // part texture after this point (the rope animation owns a separate loader),
+  // and dispose() is a no-op because the cache owns these for the session.
+  const _sharedPartTextures = new Map(); // `${file}|${rotation}|${repeatU}|${repeatV}|${fill}` -> THREE.Texture
   function applyPartTexture(mat, part) {
-    const entry = texEntry(part.materialTexture);
-    const tex = entry.base.clone();
-    tex.needsUpdate = true;
-    tex.rotation = (part.materialRotationDeg || 0) * DEG;
-    tex.userData = Object.assign({}, tex.userData); // three.js r128 Textures have no userData field; give each clone its own.
-    tex.userData.furnitureTexture = part.materialTexture;
-    tex.userData.furnitureFill = part.materialFillMode !== 'never' && part.materialFillEnabled && /^#[0-9a-f]{6}$/i.test(part.materialFillColor || '') ? part.materialFillColor : null;
-    if (!entry.loaded) entry.pendingClones.add(tex);
-    else finishPartTexture(tex, entry.base.image);
-    tex.repeat.set(Math.max(.01, Number(part.materialRepeatU) || 1), Math.max(.01, Number(part.materialRepeatV) || 1));
+    const rotation = (part.materialRotationDeg || 0) * DEG;
+    const repeatU = Math.max(.01, Number(part.materialRepeatU) || 1), repeatV = Math.max(.01, Number(part.materialRepeatV) || 1);
+    const fill = part.materialFillMode !== 'never' && part.materialFillEnabled && /^#[0-9a-f]{6}$/i.test(part.materialFillColor || '') ? part.materialFillColor : null;
+    const key = [part.materialTexture, rotation.toFixed(5), repeatU, repeatV, fill || '-'].join('|');
+    let tex = _sharedPartTextures.get(key);
+    if (!tex) {
+      const entry = texEntry(part.materialTexture);
+      tex = entry.base.clone();
+      tex.needsUpdate = true;
+      tex.rotation = rotation;
+      tex.userData = Object.assign({}, tex.userData); // three.js r128 Textures have no userData field; give each clone its own.
+      tex.userData.furnitureTexture = part.materialTexture;
+      tex.userData.furnitureFill = fill;
+      tex.userData.furnitureShared = true;
+      if (!entry.loaded) entry.pendingClones.add(tex);
+      else finishPartTexture(tex, entry.base.image);
+      tex.repeat.set(repeatU, repeatV);
+      tex.dispose = () => {}; // Shared across instances; removing one piece of furniture must not free the GPU copy the others draw with.
+      _sharedPartTextures.set(key, tex);
+    }
     mat.map = tex;
     mat.color.set(0xffffff);
     mat.transparent = !!part.textureTransparent;
