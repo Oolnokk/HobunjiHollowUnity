@@ -187,7 +187,8 @@ module.exports=async function runNativeV50Playthrough(page){
     const solveNative=async(state,record,stage,depth=0)=>{
       if(!state||depth>6)fail('native puzzle dependency cycle',record,stage,state?.id||null);
       if(state.solved)return;
-      const actor=state.linked.find(object=>object.userData?.activatorType!=='torch')||state.linked[0];
+      const actor=window.RuinV50NativeMechanisms?.pickStageActivator?.(state.linked)
+        ||state.linked.find(object=>object.userData?.activatorType!=='torch')||state.linked[0]; // Match the production V50 stage's real actionable actuator, not a nested/decorative brazier.
       if(!actor){
         const control=puzzleControl('v50NativeMechanism',state.object);
         await put({...point(state.object),y:floorY(record)},record,stage);
