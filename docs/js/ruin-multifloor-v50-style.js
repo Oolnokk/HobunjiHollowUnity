@@ -20,7 +20,9 @@
     const pilaster=new THREE.BoxGeometry(.35,2.25,.22); // Repeats the V50 narrow pillar rhythm along otherwise featureless corridor walls.
     const matrix=new THREE.Matrix4(),world=new THREE.Matrix4(),point=new THREE.Vector3();
     let faces=0,pillars=0; // Exposed in the mobile ruin badge to confirm themed wall pieces were built.
+    const MAX_PANELS=96,MAX_PILASTERS=24; // Limit canvas-engraving uploads on mobile in very large multi-story ruins.
     function panel(x,y,z,aroundY=0,isPillar=false){
+      if(isPillar?pillars>=MAX_PILASTERS:faces>=MAX_PANELS)return;
       const mesh=new THREE.Mesh(isPillar?pilaster:wallFace,stone);
       mesh.name=isPillar?'v50 ruin wall pillar':'v50 ruin wall panel';
       mesh.userData.interiorRuinRole=isPillar?'pillar':'wall';
