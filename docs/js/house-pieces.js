@@ -32,9 +32,9 @@
     ['StructurePreload', 'structure-preload.js?v=20260812a'],
     // Shared distance-hysteresis/tick-rate-accumulator math reused by the two LOD modules below and by game.js's NPC walker distance LOD -- must load before both.
     ['EntityDistanceLod', 'entity-distance-lod.js?v=20260919b'],
-    ['WildernessSimulationLOD', 'wilderness-simulation-lod.js?v=20261009hcee431b'],
+    ['WildernessSimulationLOD', 'wilderness-simulation-lod.js?v=20261104tzatzul1'],
     // Wildlife's own visibility/render-cost LOD (distance-hidden avatar/shadow/ring HUD), sibling to the bandit-sleep LOD just above.
-    ['WildlifeVisualLod', 'wildlife-visual-lod.js?v=20261009h54b7caa'],
+    ['WildlifeVisualLod', 'wildlife-visual-lod.js?v=20261104tzatzul1'],
     // Adds the Harlyao-zone second darkness pass, then re-clears lantern/furniture-light masks. Terror later supplies the cached stack darkness/radius modifiers read by this adapter.
     ['HarlyaoNightMarchAtmosphere', 'harlyao-night-march-atmosphere.js?v=20261104habd63f8'],
     // Reusable solid-color translucent/emissive character treatment plus one cheap WeatherFX lantern-style glow provider per formation/object group.
