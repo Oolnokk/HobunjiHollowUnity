@@ -1017,6 +1017,25 @@
     mesh.castShadow = true; mesh.receiveShadow = true;
     group.add(mesh);
   }
+  function addUnknownWallPlane(group,object,merged,ghost) {
+    const span=Math.max(.3,Number(object.w)||2);
+    const tall=Math.max(.6,Number(object.visual?.height)||2.6);
+    const x=Number(object.x)+span/2,z=Number(object.y)+Math.max(.3,Number(object.h)||1)/2;
+    const floorY=surfaceY(merged,x,z);
+    const material=new THREE.MeshBasicMaterial({
+      color:0x5acdf1,transparent:true,opacity:ghost?.18:.25,depthWrite:false,
+      side:THREE.DoubleSide,
+    });
+    const plane=new THREE.Mesh(new THREE.PlaneGeometry(span,tall),material);
+    plane.name='localeObject_unknownCliffFace';
+    plane.position.set(x,floorY+tall/2,z);
+    plane.rotation.y=THREE.MathUtils.degToRad(Number(object.rot)||0);
+    plane.userData.localeAuthoringPlaceholder=true; // Editor-only mounting plane; the stamped wilderness uses its real cliff geometry.
+    const outline=new THREE.LineSegments(new THREE.EdgesGeometry(plane.geometry),
+      new THREE.LineBasicMaterial({color:0x8de5ff,transparent:true,opacity:ghost?.4:.9}));
+    plane.add(outline);group.add(plane);
+  }
+
   async function renderLocaleObjects(workspace, locale, instance, merged, terrainRoot, token, ghost) {
     if (!instance) return;
     const group = new THREE.Group();
@@ -1027,6 +1046,10 @@
       object.visual ||= source?.visual;
       object.collision ||= source?.collision;
       object.rot = object.rot ?? source?.rot ?? 0;
+      if(object.key==='unknownCliffFace'||object.visual?.renderer==='unknown_wall_plane'){
+        addUnknownWallPlane(group,object,merged,ghost); // Vertical wall mount is visible at any preview elevation.
+        continue; // Never render a solid furniture fallback or collider for this authoring-only marker.
+      }
       if (object.key === 'cave_small' || source?.visual?.renderer === 'cave_small') {
         addColliderMarker(group, object, merged, source);
         continue;
