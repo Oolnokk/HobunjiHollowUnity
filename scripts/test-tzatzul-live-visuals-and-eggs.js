@@ -90,6 +90,13 @@ async function flush() { for (let i = 0; i < 8; i++) await Promise.resolve(); }
   assert.equal(adult.avatarRef.backPlane.visible, false);
   visuals.tick(0.016, 'map_northern_cliffs');
   assert.equal(painted.at(-1).pose, 'perched');
+  const cameraProvider = visualWorld.window.Combat.deps.getActiveCamera; // Reproduce an early area load with no combat camera available yet.
+  visualWorld.window.Combat.deps.getActiveCamera = () => null;
+  const beforeNoCamera = painted.length; // Counts actual authored pose updates rather than hidden default sprites.
+  visuals.tick(0.016, 'map_northern_cliffs');
+  assert.equal(painted.length, beforeNoCamera + 1,
+    'camera-less area bootstrap still updates the real articulated bird pose');
+  visualWorld.window.Combat.deps.getActiveCamera = cameraProvider;
   adult._animalAttack = { id: 'pounce' };
   visuals.tick(0.016, 'map_northern_cliffs');
   assert.equal(painted.at(-1).pose, 'flap', 'pouncing Tzatzul display the articulated wings');
