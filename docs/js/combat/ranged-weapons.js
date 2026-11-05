@@ -70,6 +70,7 @@
   let wouldHitCacheAt = -Infinity;
   let wouldHitCacheValue = false;
   let projectileSerial = 0; // Monotonic launch order used only to choose the oldest embedded copy when a per-weapon visual cap is exceeded.
+  let lastTerrainImpact = null; // Recent blocked projectile and its world-space height; displayed in mobile ranged diagnostics.
   let friendlyFireHits = 0;
   let losRepositions = 0;
   let wouldHitCacheHits = 0;
@@ -1612,6 +1613,13 @@
       }
       const terrainImpact = hit?.kind === 'cover' ? hit : sweptTerrainImpact;
       if (terrainImpact) {
+        const fraction = THREE.MathUtils.clamp(Number(terrainImpact.t) || 0, 0, 1); // Collision fraction identifies the last real terrain impact in world coordinates.
+        lastTerrainImpact = {
+          team: p.team, kind: terrainImpact.kind, weapon: p.itemKey, area: p.areaId,
+          x: THREE.MathUtils.lerp(p.prevX, p.x, fraction) / deps.TILE,
+          y: THREE.MathUtils.lerp(p.prevWorldY, p.worldY, fraction),
+          z: THREE.MathUtils.lerp(p.prevY, p.y, fraction) / deps.TILE,
+        };
         if (hit?.kind !== 'cover') playProjectileImpactSfx(p, terrainImpact.t);
         if (!embedProjectile(p, terrainImpact)) disposeProjectile(p);
         continue;
@@ -2044,6 +2052,7 @@
     get playerAction() { return playerAction ? { ...playerAction, def: undefined, releaseAtS: playerAction.durationS * fireReleaseFrac(playerAction.def) } : null; },
     get lastEvent() { return lastEvent; },
     get lastAudioEvent() { return lastAudioEvent; },
+    get lastTerrainImpact() { return lastTerrainImpact ? { ...lastTerrainImpact } : null; }, // Mobile debug: where and why the previous shot was blocked.
     get heldVisualState() { return deps?.getHeldRangedVisualState?.() || null; },
     get aimPitchDeg() { return THREE.MathUtils.radToDeg(playerAimSolution()?.pitch ?? deps?.getPlayerAimPitch?.() ?? 0); },
     get aimSolution() {
@@ -2084,7 +2093,7 @@
     snapshot: () => ({
       latestChange: 'Players and enemies can shoot between elevations where 3D sightlines clear terrain, supports and solid cover.',
       staminaCosts: { loadFraction: DEFAULT_RANGED_LOAD_STAMINA_FRACTION, thrownChargeReady: chargeStaminaCostForPose(window.Combat?.chargedBreakerData?.MIN_READY_POSE ?? HELD_CHARGE_MIN_READY_POSE), thrownChargeFull: chargeStaminaCostForPose(1), thrownChargeReadyPose: window.Combat?.chargedBreakerData?.MIN_READY_POSE ?? HELD_CHARGE_MIN_READY_POSE },
-      lastEvent, lastAudioEvent, fireTriggerToProjectileMaxMs: MAX_FIRE_TRIGGER_TO_PROJECTILE_S * 1000, projectileDeadzoneDeg: PROJECTILE_PERP_DEAD_DEG, defaultProjectileSpeedMultiplier: DEFAULT_PROJECTILE_SPEED_MULTIPLIER,
+      lastEvent, lastAudioEvent, lastTerrainImpact: lastTerrainImpact ? { ...lastTerrainImpact } : null, fireTriggerToProjectileMaxMs: MAX_FIRE_TRIGGER_TO_PROJECTILE_S * 1000, projectileDeadzoneDeg: PROJECTILE_PERP_DEAD_DEG, defaultProjectileSpeedMultiplier: DEFAULT_PROJECTILE_SPEED_MULTIPLIER,
       equippedRanged: deps?.getEquippedRangedKey?.() || null,
       activeAmmo: activeAmmoId(), specialAmmo: specialAmmoCount(), specialAmmoMax: SPECIAL_AMMO_MAX,
       playerDebuffs: { ...(deps?.player?._rangedAmmoDebuffs || {}) },
