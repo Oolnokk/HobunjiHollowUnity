@@ -174,7 +174,8 @@
       left: surfaceContact(state, outward, 'left', 'foot', h),
       right: surfaceContact(state, outward, 'right', 'foot', h),
     };
-    return legHandle.applyWorldFootTargets(targets, null, false) === true;
+    const rockFootOrientation = new THREE.Quaternion().setFromUnitVectors(worldUp, outward); // Rotate the soles to use the cliff's NORMAL as their floor, never horizontal world-up.
+    return legHandle.applyWorldFootTargets(targets, rockFootOrientation, false) === true;
   }
 
   function applyCrawlPose(undo, renderDebug) {
