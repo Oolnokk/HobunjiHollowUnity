@@ -1431,7 +1431,7 @@
   function recordBestFps(fps, ts) {
     const area = String(root.GridTileAccessors?.getCurrentArea?.() || root.Combat?.deps?.getCurrentArea?.() || '');
     // A full 5-second stable-area window excludes loading screens, hidden tabs and brief frame spikes.
-    if (!area || !combatTracePlayer() || document.hidden || !root.HobunjiCacheAudit?.snapshot) {
+    if (!area || !combatTracePlayer() || document.hidden || !root.HobunjiCacheAudit?.snapshot || ts < 12000) {
       bestFpsState.samples = [];
       return;
     }
@@ -1444,9 +1444,9 @@
     bestFpsState.area = area;
     bestFpsState.lastCapture = ts;
     const at = new Date().toISOString();
-    const gameTime = root.HobunjiCalendarDebug?.snapshot?.()?.fullDateTime || null;
+    saveCombatTrace('highest-sustained-fps', { sustainedFps: sustained, area, observedAt: at });
+    const gameTime = combatRecords[combatRecords.length - 1]?.data?.calendar?.fullDateTime || null;
     try { root.localStorage?.setItem(BEST_FPS_KEY, JSON.stringify({ fps: sustained, area, at, gameTime })); } catch (_) {}
-    saveCombatTrace('highest-sustained-fps', { sustainedFps: sustained, area, gameTime, observedAt: at });
   }
 
   function updateCombatTraceStatus() {
@@ -1461,7 +1461,7 @@
     // Full cache audit is deferred until a transition has settled, never during combat itself.
     const snap = root.HobunjiCacheAudit?.snapshot?.();
     if (!snap) return;
-    const record = { reason, capturedAt: new Date().toISOString(), ...(metadata ? { metadata } : {}), data: snap }; // Retained for deferred IndexedDB write.
+    const record = { reason, capturedAt: new Date().toISOString(), ...(metadata ? { metadata: { ...metadata, gameTime: snap.calendar?.fullDateTime || null } } : {}), data: snap }; // Retained for deferred IndexedDB write.
     combatRecords.push(record);
     if (combatRecords.length > COMBAT_TRACE_LIMIT) combatRecords.splice(0, combatRecords.length - COMBAT_TRACE_LIMIT);
     void combatDbReady.then(db => {
@@ -1527,6 +1527,11 @@
     capture: (reason = 'manual') => saveCombatTrace(String(reason)),
     clear: () => {
       combatRecords = [];
+      bestFpsState.highest = 0;
+      bestFpsState.area = '';
+      bestFpsState.samples = [];
+      bestFpsState.lastCapture = -Infinity;
+      try { root.localStorage?.removeItem(BEST_FPS_KEY); } catch (_) {}
       void combatDbReady.then(db => {
         if (db) try { db.transaction('combat-snapshots', 'readwrite').objectStore('combat-snapshots').clear(); } catch (_) {}
       });
