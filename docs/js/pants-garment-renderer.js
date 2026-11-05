@@ -855,6 +855,7 @@
   // disposes the legs (NPC walkers, player, ragdoll playback, scene teardown) drives the garment without any other change:
   // legs.update() also updates the pants, legs.dispose() also disposes them.
   function attachToLegs(THREE, legs, options = {}) {
+    if (global.DevTestingSwitchbox?.flags?.noSkinnedPants) return null; // Omits just the optional garment mesh; original legs remain authoritative.
     if (!legs || legs.pants) return legs?.pants || null;
     const pants = attach(THREE, { ...options, legHandle: legs });
     if (!pants) return null;
