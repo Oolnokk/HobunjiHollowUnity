@@ -117,7 +117,9 @@
           if(mat)materials.add(mat);
       });
       geometries.forEach(geometry=>geometry.dispose?.());
-      materials.forEach(material=>material.dispose?.());
+      const textures=new Set(); // Each generated V50 engraving gets a PNG/atlas clone; material.dispose alone does not release GPU textures.
+      materials.forEach(material=>{if(material.map)textures.add(material.map);material.dispose?.();});
+      textures.forEach(texture=>texture.dispose?.());
       floorGroups.clear();floorCounts.clear();
     };
     cleanup.tick=tick; // Reused by the ruin's existing before-render client; never installs another frame loop.
