@@ -21,6 +21,9 @@ const NativeMechanisms=require('../docs/js/ruin-v50-native-mechanisms.js');
   const root={userData:{},children:[outer],parent:null,
     traverse(fn){fn(this);fn(outer);fn(nested)}};
   const inspected=NativeMechanisms.inspect(root);
+  const glyph={userData:{activatorType:'glyphObelisk'}};
+  assert.equal(NativeMechanisms.pickStageActivator([outer,glyph]),glyph,
+    'real linked glyph overrides a brazier helper for the same V50 stage');
   assert.deepEqual(inspected.activators,[outer],
     'native stage candidate must not choose a nested brazier the original fire-transfer runtime will never register');
 }
