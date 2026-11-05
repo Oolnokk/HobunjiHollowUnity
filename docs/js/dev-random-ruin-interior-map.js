@@ -941,6 +941,7 @@
     generationLabel = singleRoomTrial?'Single-Room Puzzle Lab (Dev)':requestedRuinType==='hachutu' ? 'Hachutu Root Temple (Dev)' : specialDef?.tomb || opts.label || null; // Reuses one title for generated map and location arrival.
     const requestedSeed=Number(seed)>>>0; // Seed the user/test requested before solvability-driven retries derive alternates.
     const button=document.getElementById('devRandomTestRuinBtn'); if(button){button.disabled=true;button.textContent='Generating…';}
+    const soloLaunch=document.getElementById('devRandomRuinSingleRoomBtn');if(soloLaunch)soloLaunch.disabled=true; // Prevent duplicate touch launches while the same generator is in flight.
     generationStartedMs=performance.now();generationMark('starting');
     try {
       if (deps.getCurrentArea?.() !== MAP_ID) returnAnchor=opts.returnAnchor||{area:deps.getCurrentArea?.(),x:deps.player.x,y:deps.player.y};
@@ -1082,7 +1083,7 @@
       const last=lastGenerationAudit.attempts[lastGenerationAudit.attempts.length-1];
       throw new Error('No solvable ruin found in '+maxAttempts+' attempts'+(last?.failures?.length?': '+last.failures[0]:'')+'.');
     } catch(error) { generationMark('failed-'+String(error?.message||error).slice(0,80));console.error('[Random Test Ruin interior]',error); deps.showToast?.('Random Test Ruin failed: '+error.message,false); clearRuntime(true); return false; }
-    finally { if(button){button.disabled=false;button.textContent='Generate';} }
+    finally { if(button){button.disabled=false;button.textContent='Generate';} if(soloLaunch)soloLaunch.disabled=false; }
   }
 
   // Fixed story ruin: intentionally bypass V50 generation and all puzzle/boss composers.
@@ -1720,7 +1721,7 @@
     const soloLabel=document.createElement('label'); // Keeps the selector touch-friendly in the existing Settings row on mobile.
     soloLabel.style.cssText='display:flex;align-items:center;gap:6px;flex-wrap:wrap';soloLabel.textContent='One-room puzzle';soloLabel.appendChild(soloSelector);row.appendChild(soloLabel);
     const soloButton=document.createElement('button'); // Generates only the selected V50 room; no shaft, extra rooms or loot grants.
-    soloButton.type='button';soloButton.className='settings-small-btn';soloButton.textContent='Generate 1 Room (No Loot)';
+    soloButton.type='button';soloButton.id='devRandomRuinSingleRoomBtn';soloButton.className='settings-small-btn';soloButton.textContent='Generate 1 Room (No Loot)';
     soloButton.addEventListener('click',()=>generate(randomSeed(),{singleRoomTrial:true,puzzleType:soloSelector.value}));row.appendChild(soloButton);
     row.querySelector('#devRandomTestRuinBtn')?.addEventListener('click',()=>{
       const selected=document.getElementById('devRandomRuinRootMechanisms')?.checked===true; // Single switch enables both the complete Stone Age environment and rooted mechanisms.
