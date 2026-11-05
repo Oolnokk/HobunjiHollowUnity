@@ -104,6 +104,10 @@
       label: '🦶 Foot Outline Matrix Sync',
       hint: 'Skips foot mesh outline callback hooks, preserving leg animation and water-occluded mesh registration.',
     },
+    noUnusedAnimalTextureCache: {
+      label: '🧠 Idle Animal Texture Cache',
+      hint: 'Keep currently used animal frames, but immediately dispose unreferenced cached frames (may cause stutter when animals blink or change animation).',
+    },
   });
 
   function readFlags() {
@@ -148,7 +152,7 @@
     'noShellOutlines', 'noGrass', 'noWind', 'lowPolyFoliage',
     'noBrickWalls', 'noShingleGlbs', 'noSkySphere', 'noAudio', 'noVerdigris',
     'noCharacterGroundShadows', 'noPngAvatarOcclusion', 'noCorpseVisuals', 'noLayeredWeaponDecorations',
-    'noPortraitDepthMatrixParity', 'noHandOutlineMatrixParity', 'noFootOutlineMatrixParity'
+    'noPortraitDepthMatrixParity', 'noHandOutlineMatrixParity', 'noFootOutlineMatrixParity', 'noUnusedAnimalTextureCache'
   ]); // Deliberately excludes AI and water simulation: disabling them alters active gameplay state.
 
   const PAINTERLY_BACKUP_KEY = 'hobunji-dev-companion-painterly-previous-v1'; // Restores the user's selected quality after a temporary A/B disable.
@@ -186,6 +190,11 @@
       summary: 'Rendering cost isolation',
       rows: [
         ['FPS', Number(window.MobileRenderBudget?.snapshot?.()?.fps || 0).toFixed(1)],
+        ['JS heap (Chrome)', Number.isFinite(performance.memory?.usedJSHeapSize) ? (performance.memory.usedJSHeapSize / 1048576).toFixed(1) + ' MiB' : 'Unavailable'],
+        ['Heap limit', Number.isFinite(performance.memory?.jsHeapSizeLimit) ? (performance.memory.jsHeapSizeLimit / 1048576).toFixed(0) + ' MiB' : 'Unavailable'],
+        ['Animal textures (estimated)', ((window.CreatureTextureCache?.snapshot?.() || []).reduce((n, x) => n + (x.estimatedBytes || 0), 0) / 1048576).toFixed(1) + ' MiB'],
+        ['Unused animal textures', ((window.CreatureTextureCache?.snapshot?.() || []).reduce((n, x) => n + (x.unusedEstimatedBytes || 0), 0) / 1048576).toFixed(1) + ' MiB'],
+        ['Creature image-cache entries', String((window.HobunjiCacheAudit?.snapshot?.()?.caches || []).find(c => c.name === 'CreatureGeneticsRender.imageCache')?.size ?? '—')],
         ['GPU textures', String(window.PerfProfiler?.getLiveGpuInfo?.()?.textures ?? '—')],
         ['GPU geometries', String(window.PerfProfiler?.getLiveGpuInfo?.()?.geometries ?? '—')],
       ],
@@ -207,7 +216,7 @@
         toggle: true,
         checked: !flags[name],
       }))],
-      note: 'Painterly changes instantly; each other change reloads the game tab and reconnects this companion. Save first. AI and water simulation are deliberately excluded because they change world state. Outlines also gates the painterly filter.',
+      note: 'Memory numbers are live when supported; texture memory is estimated. Painterly changes instantly; each other change reloads the game tab and reconnects this companion. Save first. AI and water simulation are deliberately excluded because they change world state. Outlines also gates the painterly filter.',
     }),
     onAction: (name, args) => companionToggleSwitch(name, args.enabled),
   });
