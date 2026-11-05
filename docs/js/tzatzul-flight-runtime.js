@@ -11,7 +11,6 @@
   const REST_SECONDS = 5; // Birds visibly perch instead of permanently orbiting.
   const SPEED_TILES_PER_SECOND = 7; // Flight travel across world tiles.
   const STRIKE_RANGE_TILES = 1.15; // Moving targets can dodge the frozen swoop destination.
-  const roostCache = new Map(); // Source CliffRouteNetwork identity -> generated real rock perches.
   const spawnedThisDay = new Set(); // Prevents post-death immediate respawning.
   const actors = new Set(); // Only Tzatzul, not all hostile creatures, are animated each tick.
   const stats = { spawned: 0, flights: 0, swoops: 0, hits: 0, misses: 0,
@@ -40,7 +39,6 @@
     deps = injected; // No second creature factory, map store, camera loop, or independent timers.
     lastArea = null;
     actors.clear();
-    roostCache.clear();
     spawnedThisDay.clear();
     return !!deps?.makeCreatureEntity;
   }
@@ -92,11 +90,13 @@
       if (d < best) { best = d; target = player; }
     }
     // Each bird scans at most once per REST_SECONDS, never once per frame.
-    for (const other of deps.hostileObjects) {
-      if (!viable(bird, other)) continue;
-      const d = distance(other, bird);
-      if (d < best) { best = d; target = other; }
-    }
+    for (const collection of [deps.hostileObjects, deps.companionObjects || []]) {
+      for (const other of collection) {
+        if (!viable(bird, other)) continue;
+        const d = distance(other, bird);
+        if (d < best) { best = d; target = other; }
+      }
+    } // Wild animals, enemy bandits and both sides' animal companions can be swoop targets.
     return target;
   }
   function startLeg(bird, endpoint, phase, target = null) {
@@ -200,7 +200,7 @@
   }
   function debugSnapshot() {
     return { ...stats, active: actors.size, populationKeys: spawnedThisDay.size,
-      roosts: [...roostCache].map(([area, data]) => ({ area, count: data.roosts.length })),
+      roosts: (window.TzatzulCliffSites?.snapshot?.().areas || []).map(({ area, count }) => ({ area, count })), // The mobile panel counts real spires, not abandoned reachable-balcony entries.
       birds: [...actors].map(c => ({ id: c._tzFlight?.identity?.id, area: c.areaId,
         phase: c._tzFlight?.phase, pose: c.tzatzulFlightPose,
         target: c._tzFlight?.target === deps.player ? 'player' : c._tzFlight?.target?.creatureKey || null })) };

@@ -102,6 +102,7 @@
   function renderTzatzulCensus() {
     const flight = window.TzatzulFlightRuntime?.debugSnapshot?.(); // Existing flight owner supplies everything this mobile panel reports.
     if (!flight) return '';
+    const spires = window.TzatzulCliffSites?.snapshot?.(); // Real cave-spire geometry and generation errors for mobile.
     const wings = window.TzatzulLiveVisuals?.snapshot?.(); // Actual wing mesh load/pose state, not an assumed successful render.
     const area = deps?.getCurrentArea?.();
     const inhabitants = (flight.birds || []).filter(bird => bird.area === area);
@@ -114,7 +115,8 @@
       + '<div>Living: <b>' + flight.active + '</b> · launched: ' + flight.flights
       + ' · swoops: ' + flight.swoops + ' · hits/misses: ' + flight.hits + '/' + flight.misses + '</div>'
       + '<div>Live wing rigs: ' + (wings?.liveRigs ?? 0) + ' · failed loads: ' + (wings?.loadFailures ?? 0) + '</div>'
-      + '<div>Roosts in this area: ' + (flight.roosts?.find(record => record.area === area)?.count || 0) + '</div>'
+      + '<div>Inaccessible nest spires: ' + (flight.roosts?.find(record => record.area === area)?.count || 0) + '</div>'
+      + (spires?.lastError ? '<div style="color:#f3b98c">Spire: ' + fmt(spires.lastError) + '</div>' : '')
       + (live || '<div style="opacity:.72">No adult Tzatzul encountered here yet.</div>')
       + (wings?.lastError ? '<div style="color:#f3b98c">Rig: ' + fmt(wings.lastError) + '</div>' : '')
       + '</div>';

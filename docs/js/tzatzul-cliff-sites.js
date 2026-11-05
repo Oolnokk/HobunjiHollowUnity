@@ -66,8 +66,8 @@
    for(const s of plan(area,network)){
     const support=window.PerchSupport.point(s.perchId,s.x*TILE,s.z*TILE,s.y);
     if(!window.PerchSupport.register(area,support))continue;
+    roosts.push({id:s.perchId,support,shelf:{id:s.shelfId,x:s.x,z:s.z,y:s.y},site:s}); // Record first so a render exception cannot leak a registered bird perch.
     const mesh=draw(s,scene,T);art.push(mesh);
-    roosts.push({id:s.perchId,support,shelf:{id:s.shelfId,x:s.x,z:s.z,y:s.y},site:s});
    }
    areas.set(area,{scene,network,roosts,art});debug.builds++;debug.lastError=null;
    return roosts;
