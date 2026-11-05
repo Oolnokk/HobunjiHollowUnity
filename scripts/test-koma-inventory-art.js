@@ -34,7 +34,7 @@ for (const [key, def, expected] of [
   ['blueberry', { label: 'Blueberry' }, 'berries.png'],
   ['komaPowder', { label: 'Iridescent Koma Powder' }, 'powder.png'],
   ['groundFlour', { label: 'Ground Flour' }, 'powder.png'],
-  ['dryHerb', { label: 'Dry Herb Leaves' }, 'speartip_leaf.png'],
+  ['dryHerb', { label: 'Dry Herb Leaves' }, '../leaves/speartip_leaf.png'],
 ]) assert.equal(catalog.classify(key, def).spriteIcon, expected, 'object art for ' + key);
 assert.equal(catalog.classify('komaPowder', { label: 'Koma Powder' }).spriteMode, 'direct-sheen');
 assert.equal(catalog.classify('gold', { label: 'Gold' }), null, 'Currency must not become a gold ingot');
