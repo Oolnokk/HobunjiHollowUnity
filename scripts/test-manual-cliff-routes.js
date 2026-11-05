@@ -24,7 +24,7 @@ function gridWithCliffs(rows = 28, thirdTier = false) {
 function build(g) {
   return routes.build(g, {
     area: 'western-slope',
-    tileY: tile => (tile.elevTier || 0) * 3,
+    tileY: tile => (tile.elevTier || 0) * 9, // Taller test tiers accommodate doubled mini-cliff undersides.
     blocked: tile => !tile || tile.incline || tile.type === 'rock',
   });
 }

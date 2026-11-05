@@ -15,7 +15,7 @@ function buildGrid(rows=28, upperThird=false) {
     elevTier:col<6?0:col<12?1:2,
   })));
 }
-const tileY=t=>(t?.elevTier||0)*3;
+const tileY=t=>(t?.elevTier||0)*9; // Taller test faces accommodate the doubled embedded underside.
 const build=grid=>routes.build(grid,{
   area:'mini-cliff-underside-test',tileY,
   blocked:tile=>!tile||tile.incline||tile.type==='rock',
@@ -30,6 +30,20 @@ for(const net of layouts) {
     const route=net.routes[shelf.routeId];
     assert(lower&&lower.footprint.length>0,'separate lower footprint exists');
     assert(lower.y<shelf.y,'underside base elevation is below walkable top');
+    assert(shelf.y-lower.y>=2.70-0.001,'minimum internal height is doubled from 1.35 to 2.70');
+    assert.equal(shelf.overhangDepths.length,3,'overhang varies along three points on one cap');
+    assert.equal(new Set(shelf.overhangDepths).size,3,'each cap mixes three distinct depths');
+    assert(Math.abs(Math.max(...shelf.overhangDepths)-shelf.depth)<0.001,'max projection extends the previous cap by one tile');
+    assert(Math.abs(Math.min(...shelf.overhangDepths)-(shelf.depth-1))<0.001,'min projection keeps the previous reach');
+    for(const u of [-0.9,0,0.9]){
+      const i=u<0?0:1,t=u<0?u+1:u;
+      const depth=shelf.overhangDepths[i]+(shelf.overhangDepths[i+1]-shelf.overhangDepths[i])*t;
+      const along=u*shelf.width/2,edge=-shelf.depth/2+depth;
+      const at=d=>({x:shelf.x+shelf.tangent.x*along+shelf.normal.x*d,z:shelf.z+shelf.tangent.z*along+shelf.normal.z*d});
+      const inside=at(edge-0.06),outside=at(edge+0.06);
+      assert(routes.shelfContains(shelf,inside.x,inside.z),'inside profile is supported');
+      assert(!routes.shelfContains(shelf,outside.x,outside.z),'outside profile has no phantom collision');
+    }
     assert.notDeepEqual(lower.footprint.map(t=>[t.c,t.r]),shelf.footprint.map(t=>[t.c,t.r]),
       'base is independently authored rather than recycling the top footprint');
     for(const cell of lower.footprint) {
@@ -51,6 +65,7 @@ class Geometry {
   constructor(){this.attrs={};}
   setAttribute(k,v){this.attrs[k]=v;}
   getAttribute(k){return this.attrs[k];}
+  addGroup(start,count,materialIndex){(this.groups??=[]).push({start,count,materialIndex});}
   computeVertexNormals(){}
   computeBoundingSphere(){}
 }
@@ -87,13 +102,21 @@ assert.equal(meshes.filter(m=>m.userData?.cliffGenerated).length,1,'no per-mini-
 assert(rock.userData.hobunjiGroundSurface&&rock.userData.cameraObstacle,
   'the composite keeps top-surface camera and occlusion tags');
 const coordinates=rock.geometry.getAttribute('position').array;
-const TRIANGLES_PER_SHELF=40; // Top fan (8) + two vertically blended side bands (2*8*2).
-const FLOATS_PER_SHELF=TRIANGLES_PER_SHELF*3*3;
-assert.equal(coordinates.length,net.balconies.length*FLOATS_PER_SHELF,
+const TOP_FLOATS_PER_SHELF=8*3*3, ROCK_FLOATS_PER_SHELF=32*3*3; // One top fan + four triangles per perimeter edge.
+assert.equal(coordinates.length,net.balconies.length*(TOP_FLOATS_PER_SHELF+ROCK_FLOATS_PER_SHELF),
   'every mini-plateau is tessellated as one top and an embedded tapered underside');
+assert.equal(rock.material.length,2,'mini-cliff mesh has independently selectable top and rock materials');
+assert.equal(rock.geometry.groups.length,2,'one batch each for grass cap and rocky shell');
+assert.equal(rock.geometry.groups[0].count,net.balconies.length*TOP_FLOATS_PER_SHELF/3,
+  'grass material covers all upward-facing cap triangles');
+assert.equal(rock.geometry.groups[1].count,net.balconies.length*ROCK_FLOATS_PER_SHELF/3,
+  'rock material covers all vertical and sloping rock triangles');
 for(let i=0;i<net.balconies.length;i++) {
   const shelf=net.balconies[i],base=shelf.base;
-  const buf=coordinates.subarray(i*FLOATS_PER_SHELF,(i+1)*FLOATS_PER_SHELF);
+  const topStart=i*TOP_FLOATS_PER_SHELF;
+  const rockStart=net.balconies.length*TOP_FLOATS_PER_SHELF+i*ROCK_FLOATS_PER_SHELF;
+  const buf=[...coordinates.subarray(topStart,topStart+TOP_FLOATS_PER_SHELF),
+    ...coordinates.subarray(rockStart,rockStart+ROCK_FLOATS_PER_SHELF)];
   const verts=[];
   for(let j=0;j<buf.length;j+=3)verts.push({x:buf[j],y:buf[j+1],z:buf[j+2]});
   const bottom=verts.filter(v=>Math.abs(v.y-base.y)<0.001);
