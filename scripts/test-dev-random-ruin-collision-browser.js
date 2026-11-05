@@ -86,7 +86,7 @@ const TEST_URL = process.env.HOBUNJI_TEST_URL || 'http://127.0.0.1:8000/index.ht
     const canvas = document.getElementById('wildernessMapCanvas');
     const legend=document.querySelector('#mpMap .wmap-legend')?.textContent||'';
     const voxel=window.DevRandomRuin?.getShaftCollisionMap?.(0)||null; // Actual 3D collision must be present even if V50's vestibule has no puzzle doors.
-    const floorTabs=[...document.querySelectorAll('[data-ruin-floor]')]; // These are the real mobile/controller focusable floor tabs.
+    const floorTabs=[...document.querySelectorAll('#wmapZoneTabs [data-ruin-floor]')]; // Query only the map panel; other UIs also use data-ruin-floor.
     const floorTabCount=floorTabs.length;
     const nextFloor=floorTabs[1]||null;
     let floorSelectionWorks=false,focusPreserved=false;
@@ -95,7 +95,7 @@ const TEST_URL = process.env.HOBUNJI_TEST_URL || 'http://127.0.0.1:8000/index.ht
       floorSelectionWorks=canvas.dataset.ruinFloor==='1'
         &&nextFloor.classList.contains('active');
       focusPreserved=document.activeElement===nextFloor
-        &&document.querySelector('[data-ruin-floor="1"]')===nextFloor;
+        &&document.querySelector('#wmapZoneTabs [data-ruin-floor="1"]')===nextFloor;
       floorTabs[0].click(); // Restore the entrance before testing V50's original red occupancy and diagnostic legend.
     }
 
