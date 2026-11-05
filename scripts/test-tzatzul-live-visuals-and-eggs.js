@@ -110,7 +110,7 @@ async function flush() { for (let i = 0; i < 8; i++) await Promise.resolve(); }
   hostiles.add(late);
   let resolveLate = null; // Captures the single pending creation for the disappearance test.
   createDelay = (resolve) => { resolveLate = resolve; };
-  visuals.tick(2, 'map_northern_cliffs');
+  for (let step = 0; step < 9; step++) visuals.tick(.25, 'map_northern_cliffs'); // Real tick clamps frame delta to 0.25s; emulate successive frames, not a multi-second hitch.
   await flush();
   assert(resolveLate, 'new flying rig began asynchronous creation');
   hostiles.delete(late);
