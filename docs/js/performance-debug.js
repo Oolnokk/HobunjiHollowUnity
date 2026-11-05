@@ -1186,8 +1186,8 @@
     combatExport.type = 'button';
     combatExport.textContent = 'Export all';
     combatExport.style.cssText = lagBtn.style.cssText;
-    combatExport.addEventListener('click', () => {
-      const records = root.HobunjiCombatPerfTrace.snapshots();
+    combatExport.addEventListener('click', async () => {
+      const records = await root.HobunjiCombatPerfTrace.snapshots();
       if (!records.length) { flashButtonLabel(combatExport, 'None yet'); return; }
       const blob = new Blob([JSON.stringify(records, null, 2)], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
@@ -1379,14 +1379,31 @@
 
   // Combat investigation records survive refreshes; the existing low-FPS history is session-only.
   const COMBAT_TRACE_KEY = 'hobunji_combat_perf_snapshots_v1';
-  const COMBAT_TRACE_LIMIT = 8; // Caps localStorage use; older incidents are rotated out.
+  const COMBAT_TRACE_LIMIT = 8; // Caps retained incident records.
   const combatTrace = { lastArea: '', origin: '', sawCombat: false, combat: false, left: false, bootCaptured: false, pending: [] };
   let combatRecords = [];
-  try {
-    const saved = JSON.parse(readStorage(COMBAT_TRACE_KEY, '[]'));
-    if (Array.isArray(saved)) combatRecords = saved.slice(-COMBAT_TRACE_LIMIT);
-  } catch (_) {}
-
+  let combatDb = null; // IndexedDB holds full audits without crowding the nearly-full save localStorage.
+  const combatDbReady = new Promise(resolve => {
+    if (!root.indexedDB) { resolve(null); return; }
+    try {
+      const request = root.indexedDB.open('hobunji-performance-diagnostics', 1);
+      request.onupgradeneeded = () => request.result.createObjectStore('combat-snapshots', { keyPath: 'capturedAt' });
+      request.onerror = () => resolve(null);
+      request.onsuccess = () => {
+        combatDb = request.result;
+        const tx = combatDb.transaction('combat-snapshots', 'readonly');
+        const read = tx.objectStore('combat-snapshots').getAll();
+        read.onsuccess = () => {
+          combatRecords = [...read.result, ...combatRecords]
+            .sort((a,b) => a.capturedAt.localeCompare(b.capturedAt))
+            .slice(-COMBAT_TRACE_LIMIT);
+          updateCombatTraceStatus();
+          resolve(combatDb);
+        };
+        read.onerror = () => resolve(combatDb);
+      };
+    } catch (_) { resolve(null); }
+  });
   function combatTracePlayer() {
     return root.Combat?.deps?.player || root.__hobunjiFurnitureDebug?.playerState || null;
   }
@@ -1413,9 +1430,18 @@
     if (!snap) return;
     combatRecords.push({ reason, capturedAt: new Date().toISOString(), data: snap });
     if (combatRecords.length > COMBAT_TRACE_LIMIT) combatRecords.splice(0, combatRecords.length - COMBAT_TRACE_LIMIT);
-    try { root.localStorage?.setItem(COMBAT_TRACE_KEY, JSON.stringify(combatRecords)); } catch (_) {
-      // Quota pressure must not disrupt gameplay; keep the incident available in memory.
-    }
+    void combatDbReady.then(db => {
+      if (!db) return; // Private browsing may disable IndexedDB; memory still works.
+      try {
+        const tx = db.transaction('combat-snapshots', 'readwrite');
+        const store = tx.objectStore('combat-snapshots');
+        store.put(combatRecords[combatRecords.length - 1]);
+        store.getAllKeys().onsuccess = event => {
+          const keys = event.target.result;
+          for (const key of keys.slice(0, Math.max(0, keys.length - COMBAT_TRACE_LIMIT))) store.delete(key);
+        };
+      } catch (_) {}
+    });
     updateCombatTraceStatus();
   }
 
@@ -1463,11 +1489,13 @@
   }
 
   root.HobunjiCombatPerfTrace = Object.freeze({
-    snapshots: () => combatRecords.slice(),
+    snapshots: async () => { await combatDbReady; return combatRecords.slice(); },
     capture: (reason = 'manual') => saveCombatTrace(String(reason)),
     clear: () => {
       combatRecords = [];
-      try { root.localStorage?.removeItem(COMBAT_TRACE_KEY); } catch (_) {}
+      void combatDbReady.then(db => {
+        if (db) try { db.transaction('combat-snapshots', 'readwrite').objectStore('combat-snapshots').clear(); } catch (_) {}
+      });
       updateCombatTraceStatus();
     }
   });
