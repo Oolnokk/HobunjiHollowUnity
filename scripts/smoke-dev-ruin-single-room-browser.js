@@ -86,6 +86,18 @@ async function main(){
     assert.equal(info.runtime.noLoot,true);
     assert.equal(info.puzzle.kind,weighted.expected);
     assert.equal(info.puzzle.mode,'weighted');
+    // Complete a real weighted pressure-plate by standing on the rendered
+    // center mechanism, not by toggling internal solved flags.
+    assert.equal(info.puzzle.kind,'pressurePlate','seed 2 should exercise a real pressure plate');
+    const stoodOnPlate=await page.evaluate(()=>{
+      const runtime=window.DevRandomRuin.getRuntimeContext(),room=runtime.meta.rooms[0];
+      const cs=(Number(runtime.meta.cellSize)||.5)*2;
+      const x=2+(room.col+room.w/2)*cs,z=2+(room.row+room.h/2)*cs;
+      const surface=window.DynamicSurfaces.sampleSupport(x,z,{scope:'dev-random-ruin-interior'});
+      return !!surface&&window.DevRandomRuin.setPlayerWorldPoint({x,z,y:surface.y},{grounded:true});
+    });
+    assert.equal(stoodOnPlate,true,'the chosen room must expose usable central floor support');
+    await page.waitForFunction(()=>window.DevRandomRuinSimplePuzzles?.snapshot?.().singleRoomChallenge?.solved===true,null,{timeout:8000});
 
     // Rope mode physically removes the central support and links the native
     // mid-air rope chain rather than displaying a cosmetic chasm.
