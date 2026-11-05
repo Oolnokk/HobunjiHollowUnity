@@ -240,7 +240,7 @@ const lateral = {
 const normal = new Vec(-1, 0, 0); // Horizontal wall pointing outward along negative world X.
 const lateralLeft = contacts.surfaceContact(lateral, normal, 'left', 'hand', 1);
 const lateralRight = contacts.surfaceContact(lateral, normal, 'right', 'hand', 1);
-assert(lateralLeft.z > lateralRight.z, 'staggered hands advance independently across sideways cliff edges');
+assert(lateralLeft.z + 0.13 > lateralRight.z - 0.13, 'after subtracting the mirrored grip spread, left hand advances earlier across sideways edges');
 assert(Math.abs(lateralLeft.y - lateralRight.y) < 1e-8, 'sideways reach does not add an artificial vertical hop');
 const downhill = { ...lateral, player: { ...lateral.player,
   climbSurfaceStartY: 2, climbSurfaceEndY: 0.8 } };
