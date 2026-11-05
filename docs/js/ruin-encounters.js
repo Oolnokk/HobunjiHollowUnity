@@ -162,7 +162,7 @@
       enc.pending--;
       if (!entity) continue;
       if (enc.state !== 'running' || !encounters.has(enc.id)) { disposeEntity(entity); continue; } // The encounter ended while the enemy was being built.
-      entity.ruinNoLoot=enc.noLoot===true; // The canonical corpse-loot handler reads this attached entity flag, not the temporary spawn arguments.
+      if(enc.noLoot)entity.ruinNoLoot=true; // Only explicitly loot-free encounters mark their corpses; normal spawns keep existing entity loot metadata.
       attachSurface(enc, entity);
       const enemy = { kind: entry.kind, entry, entity, spawner: spawner.index, bornAt: enc.clock, released: false, planted: false };
       enc.enemies.push(enemy); enc.stats.spawned++; spawned++;
