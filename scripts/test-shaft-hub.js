@@ -17,8 +17,8 @@ const runtime=fs.readFileSync('docs/js/dev-random-ruin-interior-map.js','utf8');
 const index=fs.readFileSync('docs/index.html','utf8');
 assert(runtime.includes('attachShaftHub(rec,candidateSeed,{preplanned:planned,nativeFloors:nativeSnapshots});'),
   'a V50 ruin must mount the pre-reserved native multi-floor plan, not compose a fresh shaft after V50');
-assert(runtime.includes('const planned=placement?.plan||window.RuinLayerPlan?.compose?.(')
-  &&runtime.indexOf('const planned=placement?.plan||')>runtime.indexOf("const meta=generated.locale?.meta?.interiorShell"),
+assert(runtime.includes('const planned=singleRoomTrial?null:placement?.plan||window.RuinLayerPlan?.compose?.(')
+  &&runtime.indexOf('const planned=singleRoomTrial?null:placement?.plan||')>runtime.indexOf("const meta=generated.locale?.meta?.interiorShell"),
   'the entrance-specific shaft reservation must be composed from the generated one-room doorway orientation');
 assert(runtime.includes('entryPadX=placement?.padX??PAD;entryPadZ=placement?.padZ??PAD;'),
   'the same aligned V50 projection must be used for room geometry and collision');
