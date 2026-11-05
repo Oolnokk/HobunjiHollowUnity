@@ -6,7 +6,8 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs'); // Check the shipped generator branch instead of maintaining a second set of rules.
 const Plan=require('../docs/js/ruin-layer-plan.js');
 const source=fs.readFileSync('docs/js/dev-random-ruin-interior-map.js','utf8');
-assert(source.includes("nativeV50:requestedRuinType!=='hachutu'"),'the Hachutu-only exception must be explicit');
+assert(source.includes("singleVestibule=requestedRuinType!=='hachutu'")&&source.includes("nativeV50:false"),
+  'Hachutu keeps its original temple entrance while normal ruins plan upper V50 stories after inspecting the one native entrance room');
 assert(source.includes('if(planned.nativeFloorCount){')&&source.includes('await window.RuinV50NativeFloors.generateFloors({'),
   'the game must skip V50 upper-floor generator calls when no native stories were reserved');
 for(const seed of [1,22,96,0x6ac4b078]){
