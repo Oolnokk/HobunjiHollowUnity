@@ -116,6 +116,7 @@ const mesh = {
 };
 let footPoseCount = 0; // Counts direct IK foot solver calls.
 let footTargets = null; // Confirms the actual world-space contacts passed to the existing 2-bone solver.
+let footOrientation = null; // The sole's local up axis must rotate to the actual cliff normal.
 let externalFeetOwned = false; // Simulates a grapple/paired-action claiming both leg targets.
 let failFootPose = false; // Simulates an interrupted render so the scoped transform restores before returning.
 const gait = { left: new Vec(1, 2, 3), right: new Vec(4, 5, 6), mode: 'idle', lean: 0.15 }; // Real leg IK mutates these internal values as well as the rendered chain.
@@ -130,7 +131,8 @@ const feet = {
     gait.left.copy(snapshot.leftTarget); gait.right.copy(snapshot.rightTarget);
     gait.mode = snapshot.motionMode; gait.lean = snapshot.runLean;
   },
-  applyWorldFootTargets(targets) {
+  applyWorldFootTargets(targets, orientation) {
+    footOrientation = orientation;
     gait.left.set(10, 11, 12); gait.right.set(13, 14, 15);
     gait.mode = 'paired-dance'; gait.lean = 0;
     if (failFootPose) throw new Error('synthetic IK failure');
@@ -173,6 +175,8 @@ assert(worldHands.every(entry => entry.target.x < 0 && entry.target.y > 0),
 assert.equal(footPoseCount, 1, 'real procedural foot solver receives one paired contact update');
 assert(footTargets.left.y >= 0 && footTargets.right.y >= 0 && footTargets.left.y < 0.2,
   'feet are placed against the rock near the route point rather than buried below ground');
+assert(footOrientation instanceof Q, 'foot IK receives a cliff-relative sole orientation');
+assert(Q.tilts.some(([from, to]) => from.y === 1 && to.x < -0.9), 'foot soles rotate from world-up into the rock normal');
 assert(Q.tilts.some(([from, to]) => from.y === 1 && to.x < -0.1),
   'body leans toward the OUTWARD cliff normal rather than into the rock');
 assert(frame.debug.cliffCrawl.feetPosed && frame.debug.cliffCrawl.handRigOwned);
