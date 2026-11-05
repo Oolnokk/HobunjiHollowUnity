@@ -60,6 +60,7 @@ assert.equal(occupy(), false, 'cliffs remain fully impassable to walkers');
 assert.equal(occupy(1), false, 'shot below the adjacent plateau lip hits its cliff face');
 assert.equal(occupy(2.5), true, 'high shot clears the physical cliff rather than hitting an infinite wall');
 grid[1][1] = {type:'grass', mapBoundary:true, elevTier:3};
+context.player.x = 16; context.player.y = 16; // The historical unstuck exemption applies only to a player already ON a boundary tile.
 assert.equal(occupy(), false, 'boundary cliffs remain impassable to walkers');
 assert.equal(occupy(1), false, 'boundary cliffs block arrows at their actual height');
 assert.equal(occupy(2), true, 'shots above the boundary rock crest may pass');
