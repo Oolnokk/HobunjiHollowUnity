@@ -104,11 +104,41 @@
     if(!route.ok)throw new Error('Shaft must connect physically: '+route.reason+
       ' (entry '+entrance.x+','+entrance.z+' → '+mouth.x+','+mouth.z+
       '; main cells '+oldCols+'×'+oldRows+'; blocked floors '+oldFloor.size+')');
-    // Prove the route touches V50's actual walkable door cells, not just its metadata marker.
+    // V50's exterior door is metadata-centred; its actual walkable threshold
+    // can begin 1–3 cells farther inside. Join these cells explicitly, or the
+    // new corridor wall would seal an otherwise valid-looking doorway.
     if(plan.options.groundEntranceSide){
-      const inward=SIDES[entrance.side],contact=[0,1,2,3].some(step=>
-        oldFloor.has(key(entrance.x-inward.dx*step,entrance.z-inward.dz*step)));
-      if(!contact)throw new Error('V50 vestibule corridor has no physical entry-floor contact');
+      const facing=SIDES[entrance.side]; // Inward direction starts opposite this V50 exterior normal.
+      const contact=[0,1,2,3].find(step=>
+        oldFloor.has(key(entrance.x-facing.dx*step,entrance.z-facing.dz*step)));
+      if(contact===undefined)throw new Error('V50 vestibule corridor has no physical entry-floor contact');
+      const routeKeys=new Set(route.tiles.map(([x,z])=>key(x,z)));
+      for(let step=1;step<contact;step++){
+        const x=entrance.x-facing.dx*step,z=entrance.z-facing.dz*step;
+        const tile=key(x,z);
+        if(!routeKeys.has(tile)){route.tiles.push([x,z]);routeKeys.add(tile);}
+      }
+      const connected=new Set([...oldFloor,...routeKeys]); // Union of actual V50 floor, door threshold, and shaft corridor.
+      const spawnKey=key(Math.floor(ruin.spawn.x),Math.floor(ruin.spawn.z));
+      const mouthKey=key(mouth.x,mouth.z);
+      const solidType=makeTile(false).type;
+      const physical=k=>{
+        if(!oldFloor.has(k))return false;
+        const [x,z]=k.split(',').map(Number);
+        return rec.grid[z]?.[x]?.type===solidType
+          ||!!ruin.occupancy?.blocksBox?.(x+.5,z+.5,.08,placed.grid.baseY);
+      };
+      const seen=new Set([spawnKey]),queue=[spawnKey];
+      for(let head=0;head<queue.length&&!seen.has(mouthKey);head++){
+        const [x,z]=queue[head].split(',').map(Number);
+        for(const [dx,dz] of [[1,0],[-1,0],[0,1],[0,-1]]){
+          const next=key(x+dx,z+dz);
+          if(!connected.has(next)||seen.has(next)||physical(next))continue;
+          seen.add(next);queue.push(next);
+        }
+      }
+      if(!seen.has(mouthKey))
+        throw new Error('V50 entrance room cannot physically reach the shaft across its doorway');
     }
     // Avoid mutating the real map until the entire shaft/route has passed its proofs.
     const added=new Set(); // Used by the visual, support registration and mobile debug.
@@ -136,7 +166,8 @@
     ruin.shaftConnection={length:route.length,corners:route.corners,physical:true,entrance,mouth,
       floorCount:plan.floorCount,totalWingsPlanned:plan.totalWings,braziersPlanned:plan.totalBraziers,
       hallwayTiles:route.tiles.length,addedFloorTiles:allFloor.length,
-      straightVestibule:!!plan.options.groundEntranceSide};
+      straightVestibule:!!plan.options.groundEntranceSide,
+      thresholdConnected:!!plan.options.groundEntranceSide};
     const scope='dev-ruin-shaft-corridor'; // Distinct disposal scope from normal V50 floor supports.
     const corridorSupportRects=RuinShaftCorridor.rectangles(route.tiles); // Group adjacent stone into broad collision supports.
     corridorSupportRects.forEach((bounds,i)=>DS.registerSurface({id:scope+'-support-'+i,scope,
