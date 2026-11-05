@@ -204,6 +204,10 @@
       summary: 'Rendering cost isolation',
       rows: [
         ['FPS', Number(window.MobileRenderBudget?.snapshot?.()?.fps || 0).toFixed(1)],
+        ['Wildlife guard candidates (cumulative)', String(window.WildlifeFoodWeb?.getScanDebug?.()?.guardCandidates ?? '—')],
+        ['Wildlife prey candidates (cumulative)', String(window.WildlifeFoodWeb?.getScanDebug?.()?.preyCandidates ?? '—')],
+        ['Portrait search candidates (cumulative)', String(window.PerpRotation?.getScanDebug?.()?.candidatesVisited ?? '—')],
+        ['Portrait lookup cache hits', String(window.PerpRotation?.getScanDebug?.()?.cacheHits ?? '—')],
         ['JS heap (Chrome)', Number.isFinite(performance.memory?.usedJSHeapSize) ? (performance.memory.usedJSHeapSize / 1048576).toFixed(1) + ' MiB' : 'Unavailable'],
         ['Heap limit', Number.isFinite(performance.memory?.jsHeapSizeLimit) ? (performance.memory.jsHeapSizeLimit / 1048576).toFixed(0) + ' MiB' : 'Unavailable'],
         ['Animal textures (estimated)', ((window.CreatureTextureCache?.snapshot?.() || []).reduce((n, x) => n + (x.estimatedBytes || 0), 0) / 1048576).toFixed(1) + ' MiB'],
