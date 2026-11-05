@@ -34,7 +34,7 @@
     };
   }
   function register(area, perch) {
-    if (!perch || ![0, 1].includes(perch.dimension) || !String(area || '')) return false;
+    if (!perch || ![0, 1].includes(perch.dimension) || !String(area || '') || perch.sourceBranch?.felled) return false; // A chopped Shadewood is no longer a usable support.
     const entries = byArea.get(area) || new Map();
     entries.set(perch.id, perch);
     byArea.set(area, entries);
@@ -49,13 +49,14 @@
   }
   function clearArea(area) { byArea.delete(area); }
   function list(area) {
-    return [...(byArea.get(area)?.values() || [])]; // Read-only snapshot of this map's supports for bird and wildlife AI; never inspect every map.
+    return [...(byArea.get(area)?.values() || [])].filter(perch => !perch.sourceBranch?.felled); // Only live supports in this map; a felled branch must not be offered to new birds.
   }
   function nearest(area, x, y, maxDistancePx = Infinity) {
     if (!Number.isFinite(x) || !Number.isFinite(y) || !(maxDistancePx >= 0)) return null;
     let best = null; // Only searched when a creature wants to perch, never every simulation or rendering frame.
     let bestDistanceSq = maxDistancePx * maxDistancePx;
     for (const perch of byArea.get(area)?.values() || []) {
+      if (perch.sourceBranch?.felled) continue;
       let t = 0; // Point perches have no longitudinal component.
       if (perch.dimension === 1) {
         const start = perch.start || {}, end = perch.end || {};
@@ -82,7 +83,7 @@
     };
   }
   function attach(entity, perch, t = 0) {
-    if (!entity || !perch || ![0, 1].includes(perch.dimension) || entity.prone || Number(entity.health) <= 0) return false;
+    if (!entity || !perch || ![0, 1].includes(perch.dimension) || entity.prone || Number(entity.health) <= 0 || perch.sourceBranch?.felled) return false;
     const u = perch.dimension === 0 ? 0 : clamp(t); // A point has no axis to walk along.
     const p = sample(perch, u);
     if (!p) return false;

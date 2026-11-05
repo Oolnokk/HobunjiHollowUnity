@@ -114,6 +114,22 @@ assert.equal(branchAnimal.health, 36, 'lost tree incurs one native branch-fall H
 assert.equal(branchAnimal.footing, 52.5, 'lost tree incurs one native branch-fall Footing penalty');
 assert.equal(w.PerchSupport.debugSnapshot().areas.some(a => a.id === mapId), false,
   'streamed-out Shadewood supports do not leak across chunk rebuilds');
+const choppedTree = { ...branch, felled: false };
+w.ClimbSystem.registerBranch(mapId, choppedTree);
+const soonFelled = w.PerchSupport.nearest(mapId, 140, 200, 10)?.perch;
+assert(soonFelled && w.PerchSupport.attach(branchAnimal, soonFelled, .5));
+const collapsed = w.ClimbSystem.collapseTree(mapId, 1, 3);
+assert.equal(collapsed.falls.length, 1, 'chopping a Shadewood ejects a global-perch animal exactly once');
+assert.equal(branchAnimal.onBranch, null);
+assert.equal(branchAnimal.onPerch, null);
+assert.equal(branchAnimal.health, 32, 'felled support applies native fall damage once');
+assert.equal(w.PerchSupport.nearest(mapId, 140, 200, 10), null,
+  'felled Shadewood cannot remain a candidate for subsequent perching');
+assert.equal(w.PerchSupport.attach(branchAnimal, soonFelled, .5), false,
+  'a cached perch descriptor is invalidated when its source tree falls');
+assert.equal(w.PerchSupport.register(mapId, soonFelled), false, 'chopped branch cannot be re-registered');
+w.ClimbSystem.registerBranch(mapId, { ...choppedTree, felled: true });
+assert.equal(w.PerchSupport.list(mapId).length, 0, 'reloading a felled tree cannot restore its perch');
 assert.match(read('docs/js/creature-death.js'), /PerchSupport\?\.release\?\.\(c, 'died on perch'\)/,
   'real corpse transition releases perched creatures');
 
