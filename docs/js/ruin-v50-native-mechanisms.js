@@ -18,9 +18,15 @@
       const d=object.userData||{},motion=d.previewMotion?.type;
       if(d.mechanismId&&MOTIONS.has(motion))mechanisms.set(String(d.mechanismId),object);
       if(d.activatorType&&ACTIVATORS.has(d.activatorType)&&d.linkedMechanismId){
-        // V50's glyph sets contain nested carved glyphs. Retain their
-        // leaves for the shared projectile runtime, but only one record
-        // per actual interactive tower/control group.
+        // Exactly mirror HitPuzzles' ignition-target ownership: nested torch/
+        // brazier helper meshes are not independently interactive. Otherwise
+        // a native stage can select an actor that the fire-transfer runtime
+        // deliberately does not register, leaving the chamber unsolvable.
+        const parent=object.parent?.userData;
+        if((d.activatorType==='torch'||d.activatorType==='brazier')
+          &&parent?.activatorType===d.activatorType
+          &&String(parent.linkedMechanismId)===String(d.linkedMechanismId))return;
+        // Retain the deepest glyph-set leaves and authored cube controls.
         activators.push(object);
       }
       if(d.pushable&&(motion==='pushPuzzleBlock'||motion==='elevatorPushBlock'))blocks.push(object);
