@@ -22,7 +22,7 @@
     if (embeddedRuntime) {
       try {
         const request = new XMLHttpRequest(); // Used only by the hidden dev generator so the API bytes cannot be starved behind the live game's startup asset queue.
-        request.open('GET', 'debrisifier-v50-api.js?v=20261104particleSync2', false);
+        request.open('GET', 'debrisifier-v50-api.js?v=20261104soloPreset1', false);
         request.send(null);
         const ok = (request.status >= 200 && request.status < 300) || (request.status === 0 && !!request.responseText);
         if (!ok) throw new Error(`V50 dev API HTTP ${request.status}`);
@@ -37,7 +37,7 @@
       return;
     }
     const api = document.createElement('script'); // Standalone editor usage keeps the ordinary external-script loader.
-    api.src = 'debrisifier-v50-api.js?v=20261104particleSync2';
+    api.src = 'debrisifier-v50-api.js?v=20261104soloPreset1';
     api.onerror = () => fail('V50 dev API did not load.');
     document.head.appendChild(api);
   }
@@ -139,9 +139,11 @@ function runtimeChooseMechanismActivatorType(rng,forcedType=null,linkedCubeDoor=
       ['native attachment allocation', '          if(!interiorRectClear(floorSet,hall)||!interiorRectClear(floorSet,room))continue;', '          if(!runtimeInteriorAllocationFits(rooms,hallways,room,hall)||!interiorRectClear(floorSet,hall)||!interiorRectClear(floorSet,room))continue;'],
       ['native escape allocation', '      if(!interiorRectClear(floorSet,hall)||!interiorRectClear(floorSet,room))throw new Error(', '      if(!runtimeInteriorAllocationFits(rooms,hallways,room,hall)||!interiorRectClear(floorSet,hall)||!interiorRectClear(floorSet,room))throw new Error('],
       // The immutable generator is shared with gameplay; only the root author's explicit option allows one room.
-      ['vast single-room preview', 'function interiorRoomPreset(profileKind,rng,forcedLabel=null){', "function interiorRoomPreset(profileKind,rng,forcedLabel=null){if(window.__devRuinSingleRoom===true&&window.__devRuinSingleRoomLarge===true)forcedLabel='veryLarge';"],
+      ['vast single-room preview', 'function interiorRoomPreset(profileKind,rng,forcedLabel=null){', "function interiorRoomPreset(profileKind,rng,forcedLabel=null){if(window.__devRuinSingleRoom===true&&window.__devRuinSingleRoomPreset)forcedLabel=window.__devRuinSingleRoomPreset;"],
       ['single-room preview range', 'function interiorRoomRange(){', 'function interiorRoomRange(){if(window.__devRuinSingleRoom===true)return{min:1,max:1};'],
       ['single-room preview network', 'Math.round(Number(roomRange.min)||3),2,12)', 'Math.round(Number(roomRange.min)||3),window.__devRuinSingleRoom===true?1:2,12)'],
+      ['flat puzzle lab floor', 'plateauData=generateInteriorPlateauPlan(network,rng,density)', 'plateauData=window.__devRuinSingleRoomLab?{levelByCell:Object.fromEntries([...network.floorSet].map(key=>[key,0])),regions:[],focuses:[],stepHeight:INTERIOR_PLATEAU_STEP_HEIGHT,coreTreasureFocusId:null,singleCoreTreasure:false}:generateInteriorPlateauPlan(network,rng,density)'],
+      ['clear solo chamber support pillars', 'if(tallAsset){\n    for(const room of network.rooms){', 'if(tallAsset&&!window.__devRuinSingleRoomLab){\n    for(const room of network.rooms){'], // The chosen standalone puzzle owns the chamber's usable floor; ordinary V50 rooms retain their full support network. // Only explicit dev labs skip V50 core-treasure scenery; ordinary ruins are byte-for-byte unchanged.
       ['repository-tree binding', treeNeedle, treeReplacement],
       ['raw-asset URL helper', rawNeedle, rawReplacement],
       ['Roughbrick loader', brickNeedle, brickReplacement],

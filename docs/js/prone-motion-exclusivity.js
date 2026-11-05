@@ -13,6 +13,7 @@
 
   function clearTransientMotion(entity) {
     if (!entity?.prone) return false;
+    window.PerchSupport?.release?.(entity, 'knocked prone on perch'); // A zero-/one-dimensional support cannot hold a prone creature.
     entity.vx = 0;
     entity.vy = 0;
     entity.knockbackT = 0;

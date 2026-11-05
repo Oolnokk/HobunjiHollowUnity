@@ -67,7 +67,7 @@
        window.LootRolling.init(...) and .loadLootShopConfig() during its
        own setup, and before every other module whose init(deps) is handed
        window.LootRolling.rollItemStars/starRatingText/etc. -->
-  <script src="js/loot-rolling.js?v=20261025-dungeon-bars"></script>
+  <script src="js/loot-rolling.js?v=20261105mixedAudit4"></script>
   <!-- Seed planting/crop harvesting, extracted out of game.js. Must load
        before game.js, which calls window.CropPlanting.init(...). -->
   <script src="js/crop-planting.js?v=20261008hc238a6f"></script>
@@ -244,8 +244,8 @@
   <!-- Species-driven food sources and retaliatory/guard rules share one existing wildlife AI tick. -->
   <script src="js/wildlife-food-web.js?v=20261020foodweb1"></script>
   <!-- Procedural foliage / crop geometry -->
-  <script src="js/ice-stalagmite-coverage.js?v=20261103doorice1"></script>
-  <script src="js/foliage-generator.js?v=20261103ice1"></script>
+  <script src="js/ice-stalagmite-coverage.js?v=20261105stoneAudit4"></script>
+  <script src="js/foliage-generator.js?v=20261105stone1"></script>
   <script src="js/dungeon-door-ice-coverage.js?v=20261103doorice1"></script>
   <!-- Procedural furniture (replaces GLB-based furniture rendering) -->
   <script src="js/procedural-furniture.js?v=20261105h2c9a161"></script>
@@ -258,7 +258,7 @@
   <script src="js/table-chair-placement.js?v=20261102chairreview3"></script>
   <script src="js/furniture-table-system.js?v=20261104familylocks1"></script>
   <script src="js/furniture-surface-png-runtime.js?v=20261103materialv3"></script> <!-- Opt-in per-face PNG tiling, alpha padding and opacity from Furniture Editor. -->
-  <script src="js/authored-furniture-runtime.js?v=20261104hf23bb18"></script>
+  <script src="js/authored-furniture-runtime.js?v=20261105stoneSyntaxFix2"></script>
   <!-- Preserve authored sign decals when house fixtures render at town load. -->
   <script src="js/furniture-decal-runtime.js?v=20261003h3fbafdb"></script>
   <script src="js/furniture-pattern-surfaces.js?v=20261104hb3db90a"></script>
@@ -312,7 +312,7 @@
   <!-- Combat system modules (windup/strike pipeline, loadout, abilities) -->
   <script src="js/combat/resource-system.js?v=20261104scent1439c"></script>
   <script src="js/sacred-ground.js?v=20261026sacred1"></script> <!-- Global sacred-ground provider registry for totems, temple and future blessings. -->
-  <script src="js/combat/knockback-collision-impact.js?v=20260930h6c19d61"></script>
+  <script src="js/combat/knockback-collision-impact.js?v=20261105aerialAudit2"></script>
   <!-- Burning Health presentation: reuses the authored campfire fire emitter on afflicted player/enemy avatar roots. -->
   <script src="js/combat/burning-affliction-vfx.js?v=20261017h6377740"></script>
   <script src="js/combat/resource-rings.js?v=20261004h9a5a10d"></script>
@@ -335,7 +335,7 @@
   <script src="js/combat/impact-blend-library.js?v=20260828b"></script>
   <script src="js/combat/impact-ragdoll-playback.js?v=20261024h5f9cf28"></script>
   <script src="js/combat/combat-enemy-telegraph.js?v=20261009he463e76"></script>
-  <script src="js/combat/combat-animal-attacks.js?v=20261104scent1439c"></script>
+  <script src="js/combat/combat-animal-attacks.js?v=20261105aerial1"></script>
   <script src="js/combat/combat-voorg-ass-rear-kick.js?v=20261028hkickhold1"></script> <!-- Voorg-Ass rear-kick named attack; uses the Head Rigger separator and existing animal attack lifecycle. -->
   <script src="js/combat/combat-attach.js?v=20261101h47c5427"></script> <!-- Reusable "climb onto a target and take its place" attacks (honeyfuzzle Swarm). -->
   <script src="js/combat/combat-loadout.js?v=20261030h5bdb79c"></script>
@@ -382,7 +382,7 @@
        doesn't matter as long as both exist by the time bandits actually
        spawn. -->
   <script src="js/combat/enemy-loadout-rules.js?v=20261101playerhead3"></script>
-  <script src="js/combat/combat-bandit.js?v=20261104hb48d8a3"></script>
+  <script src="js/combat/combat-bandit.js?v=20261105aerial1"></script>
   <script src="js/combat/ghoul-special-variants.js?v=20261031ghoulvar1"></script>
   <script src="js/combat/bandit-rank-wardrobe.js?v=20261031rankwardrobe1"></script> <!-- Lieutenant/captain pauldrons and circlet, patterned pants and captain overwear. --> <!-- Shadowknight / Wyrm-witch wardrobe, patterns and enchanted weapons. -->
   <script src="js/combat/combat-ghoul-wyrm-witches.js?v=20261027hcd7121b"></script> <!-- Distinct mobile-friendly Wyrm-witch cloud and stationary water-cone actions. -->
@@ -399,7 +399,7 @@
        window.BanditCombat.makeEntity/loadGangConfig/loadCampLocaleDefs, so
        must load after combat-bandit.js above, and before game.js, which
        calls window.BanditCamps.init(...) during its own setup. -->
-  <script src="js/bandit-camps.js?v=20261104asyncZones1"></script>
+  <script src="js/bandit-camps.js?v=20261104soloNoLoot1"></script>
   <!-- Bounty board (hunt a named bandit captain, destroy his camp) —
        window.BountyBoard. Reads window.BanditCamps/window.BanditCombat
        directly, so must load after both above, and before game.js, which
@@ -407,7 +407,7 @@
   <script src="js/bounty-board.js?v=20261008h416634c"></script>
   <!-- Loads docs/config/combat/attack-values.json and overrides every
        combat-*.js module's hardcoded defaults with it. -->
-  <script src="js/combat/combat-config-loader.js?v=20261104scent1439c"></script>
+  <script src="js/combat/combat-config-loader.js?v=20261105perchAudit3"></script>
   <!-- Shared timed-effect HUD, skill progression, food processing rules, and
        hearth cooking. These modules own their state/UI and expose narrow
        adapters to game.js. -->
@@ -583,8 +583,9 @@
        aside from deps injected via init(), so load order relative to the
        other systems above doesn't matter; must load before game.js, which
        calls window.ClimbSystem.init(...) during its own setup. -->
+  <script src="js/perch-support.js?v=20261105perchAudit7"></script> <!-- Point/line perches and shared branch-fall release on prone, death, or knockback. -->
   <script src="js/cliff-route-network.js?v=20261105hcd658a0"></script> <!-- Shared graph for selected exterior handholds, balcony terrain and wildlife routes. -->
-  <script src="js/climb-system.js?v=20261104cliffCrawlAudit2"></script>
+  <script src="js/climb-system.js?v=20261105perchAudit7"></script>
   <script src="js/cliff-crawl-presentation.js?v=20261104cliffCrawlAudit3"></script> <!-- Surface-relative limb crawl and temporary hiding of hand-held equipment; ruins/trees stay on their existing animations. -->
   <script src="js/creature-cliff-climb.js?v=20261104cliffAudit1"></script>
   <!-- Cubic 3D cell grid (window.CellGrid3D): the tile grid plus a level axis.
@@ -597,8 +598,9 @@
   <script src="js/climb-surfaces.js?v=20261103rawfacefix1"></script>
   <script src="js/shaft-hub.js?v=20261104octagon2"></script>
   <script src="js/ruin-layer-plan.js?v=20261104directVestibule1"></script>
+  <script src="js/dev-ruin-single-room-trial.js?v=20261104solo1"></script> <!-- Samples actual ruin-room puzzle selection odds for the one-room developer lab. -->
   <script src="js/ruin-shaft-corridor.js?v=20261104directVestibule1"></script>
-  <script src="js/ruin-layer-defense.js?v=20261104authoredDefence3"></script>
+  <script src="js/ruin-layer-defense.js?v=20261104soloNoLoot1"></script>
   <script src="js/ruin-layer-challenges.js?v=20261104gateCleanup6"></script>
   <script src="js/ruin-layer-playable.js?v=20261104gateCleanup2"></script>
   <script src="js/ruin-v50-native-mechanisms.js?v=20261105polish3"></script>
@@ -911,7 +913,7 @@
   <script src="js/ruin-solver.js?v=1"></script> <!-- Goal solver: composes modules into layouts that satisfy goals (defend a statue, blast a pillar...) -->
   <script src="js/room-plan.js?v=1"></script>
   <script src="js/ruin-composer.js?v=20261103h93645be"></script> <!-- Builds whole rooms from goals: archetype -> focal-first solving -> claims ledger -> furniture records + encounter -->
-  <script src="js/ruin-encounters.js?v=1"></script> <!-- Encounter runtime: pillar spawners, demolitionists planting at a statue -->
+  <script src="js/ruin-encounters.js?v=20261104soloNoLoot1"></script> <!-- Encounter runtime: pillar spawners, demolitionists planting at a statue -->
   <script src="js/ruin-composer-playable.js?v=20261104plinthFeed1"></script> <!-- Materializes composed trials in playable V50 ruins (authored fixtures, chasm collision and encounters). -->
   <script src="js/key-statues.js?v=20261104statueRecall2"></script>
   <script src="js/dungeon-fire.js?v=20261103particlesheld1"></script>
@@ -2889,7 +2891,7 @@
   <!-- Camera-safe utility spyglass: capture Fishing/ActionArcUI init before game.js boots; action-arch prompt and lens are created at DOM ready. -->
   <script src="js/utility-spyglass.js?v=20261103spyglassControls3"></script>
   <!-- Dev-only Random Test Ruin runtime; injects nothing unless Dev Mode is on. -->
-  <script src="js/dev-random-ruin-bootstrap.js?v=20261105he2b04ec"></script>
+  <script src="js/dev-random-ruin-bootstrap.js?v=20261105h279a1b2"></script>
   <!-- Dev Testing Switchbox: dev-only performance kill switches (audio,
        NPC/creature AI, water sim, low-poly foliage). Must load after
        audio-system.js/water-system.js/foliage-generator.js (wraps their

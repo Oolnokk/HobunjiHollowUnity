@@ -95,6 +95,8 @@ jobs:
         run: node scripts/test-dev-random-ruin-collision-browser.js
       - name: Verify playable composed trial and shaft wing in the real game
         run: node scripts/test-ruin-construction-browser.js
+      - name: Verify single-room no-loot puzzle lab in real Chromium
+        run: node scripts/smoke-dev-ruin-single-room-browser.js
       - name: Isolate previously failing seed
         env:
           HOBUNJI_RUIN_FIXED_SEEDS: '0x2468ace0'

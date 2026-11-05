@@ -1374,11 +1374,13 @@
       holdSeconds,
       holdLabel: 'Searching ' + (c.name || c.def.label) + '...',
       getButtons() {
+        if (c.ruinNoLoot===true)return []; // No corpse loot prompt in the isolated puzzle lab.
         if (holdSeconds > 0) return [{ icon: c.lootIcon || '🦴', label: 'Hold to Search', action: 'corpse_hold_loot', style: 'primary', allowed: true, worldInteraction: true, promptRoot: c.avatarRef?.group || null }];
         return [{ icon: '🪙', label: 'Loot ' + (c.name || c.def.label), action: 'obj_loot_corpse', style: 'primary', allowed: true }];
       },
       onAction(action) {
         if (action !== 'obj_loot_corpse') return { ok: false, message: 'Unknown action.' };
+        if(c.ruinNoLoot===true)return {ok:false,message:'This test-room opponent carries no loot.'}; // Also protects against calling the corpse action directly.
         const parts = grantBanditLoot(deps.rollLootPool(c.def.lootPool, { entity: c }));
         const specialAmmo = window.RangedWeapons?.rollSpecialAmmoLoot?.() || 0;
         if (specialAmmo) parts.push(`🏹 Special Ammo×${specialAmmo}`);

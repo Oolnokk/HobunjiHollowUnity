@@ -410,6 +410,7 @@
   function clearState() {
     if (!state) return;
     for (const composer of composers) { try { composer.clear?.(); } catch (error) { console.warn('[Random Test Ruin] composer clear failed', error); } }
+    state.singleRoomChallenge?.dispose?.(); // Release all projectile hooks, rope mounts, flute listeners and statue encounter state before disposing the room.
     restoreRopeEquipment();
     for (const set of state.chordPlateSets) cancelEchoPlayback(set); // Stop scheduled demonstration notes on reroll/exit without closing the player's ordinary instrument.
     for (const entity of state.spawnedMinions) disposeSpawnedMinion(entity); // Session/reroll ownership matches ordinary camp teardown; no sarcophagus enemy can leak into the next generated ruin.
@@ -1859,6 +1860,59 @@
     return true;
   }
 
+
+  // One real V50 room with exactly one playable dungeon challenge.
+  function buildSingleRoomTrial(context){
+    const source=context.meta?.rooms?.[0],selection=context.singleRoomTrial; // Frozen generator choice, including across solvability retries.
+    if(context.meta?.rooms?.length!==1||!source||!selection?.kind)throw new Error('Puzzle Lab requires exactly one V50 room.');
+    const Challenge=window.RuinLayerChallenges; // Reuses the multi-floor game's actual puzzle implementation.
+    if(!Challenge?.TYPES?.includes(selection.kind))throw new Error('Missing playable puzzle type '+selection.kind);
+    const bounds=roomBounds(context.meta,source); // V50's exact scaled room footprint, without a second layout generator.
+    const room={id:'single-room-lab',x:bounds.minX,z:bounds.minZ,w:bounds.maxX-bounds.minX,d:bounds.maxZ-bounds.minZ};
+    const entry=String(context.meta?.entrance?.side||'west').toLowerCase();
+    const side=({north:'S',south:'N',east:'W',west:'E'})[entry]||'E'; // The far bank / targets face away from the room entrance.
+    const centerX=room.x+room.w*.5,centerZ=room.z+room.d*.5;
+    const floorY=Number(sampleSupport(centerX,centerZ)?.y??context.meta?.floorSurfaceY??0);
+    if(selection.kind==='statueDefense'&&(room.w<18||room.d<18))throw new Error('Key Statue defense needs an 18 x 18 room.');
+    if(selection.kind==='ropeChain'){
+      const pit=Challenge.ropePitForRoom(room,side); // The identical pit-bank sizing used by playable shaft wings.
+      if(!pit)throw new Error('The generated chamber cannot fit a rope-chain crossing.');
+      const cs=worldCellSize(context.meta);let count=0; // Tracks deactivated V50 supports so the abyss is genuinely floorless.
+      for(const [col,row] of context.meta.floorCells||[]){
+        const x=PAD+(Number(col)+.5)*cs,z=PAD+(Number(row)+.5)*cs;
+        if(x<=pit.minX+.01||x>=pit.maxX-.01||z<=pit.minZ+.01||z>=pit.maxZ-.01)continue;
+        const support=DS.sampleSupport?.(x,z,{scope:SCOPE,minY:-6,maxY:10,pad:0});
+        if(support?.id==='devruin-floor-'+col+','+row&&support.record){
+          DS.registerSurface({...support.record,enabled:false});
+          state.ropeChainDisabledSurfaces.push(support.record);count++;
+        }
+        const tile=context.grid?.[Math.floor(z)]?.[Math.floor(x)];
+        if(tile){state.ropeChainPitTiles.push({tile,original:tile.bottomless});tile.bottomless=true;}
+      }
+      if(!count)throw new Error('The rope-chain puzzle did not expose floorless cells.');
+      const pitId='dev_ruin_single_room_abyss'; // The same surface ledger cleans this up on reroll or leaving.
+      DS.registerPit({id:pitId,scope:SCOPE,bounds:pit});state.surfaceIds.add(pitId);
+      const fog=new THREE.Mesh(new THREE.PlaneGeometry(pit.maxX-pit.minX,pit.maxZ-pit.minZ),makeBasic(0x08090b));
+      fog.name=pitId+'_mask';fog.rotation.x=-Math.PI/2;
+      fog.position.set((pit.minX+pit.maxX)*.5,floorY+.18,(pit.minZ+pit.maxZ)*.5);
+      fog.userData.devRuinFootprintIgnore=true;fog.userData.devRandomRuinBottomlessFog=true;
+      state.group.add(fog); // Opaque mask hides original V50 floor art; registered pit owns gameplay.
+    }
+    const owner=state; // A fast reroll cannot receive late puzzle callbacks from the old room.
+    const removeControl=control=>{const i=owner.controls.indexOf(control);if(i>=0)owner.controls.splice(i,1);};
+    state.singleRoomChallenge=Challenge.compose({
+      THREE,parent:state.group,room,y:floorY,id:'single-room-'+context.seed,kind:selection.kind,side,
+      mapId:MAP_ID,standaloneRoom:true,noLoot:context.noLoot===true,
+      isActive:()=>state===owner&&inRuin(),
+      onSolved:()=>{owner.singleRoomSolved=true;deps?.showToast?.('Puzzle complete! The test room awards no loot.',true);},
+      getPlayerPosition:playerWorld,
+      getPlayerY:()=>window.DevRandomRuin?.getPlayerGroundSupportY?.()??playerWorld()?.y??floorY,
+      addControl:control=>owner.controls.push(control),removeControl,
+      showToast:(message,ok)=>deps?.showToast?.(message,ok),
+    });
+    window.DevRandomRuinTileOccupancy?.scanSolids?.(state.group,SCOPE);
+  }
+
   function buildForContext(context) {
     clearState();
     const group=new THREE.Group();
@@ -1904,6 +1958,7 @@
       lastPlayerWorld:null,
       checkpoints:null,
       buildSeed:Number(context.seed)||0,
+      singleRoomChallenge:null,singleRoomSolved:false,singleRoomError:null, // Compact mobile diagnostics and the in-game runtime snapshot consume these fields.
     };
     buildCheckpoints(context);
     installModularProjectileHook(); // Reusable ceiling glyphs and stone canopies share one projectile seam no matter which procedural composer places them.
@@ -1913,6 +1968,11 @@
     const options=context.puzzleOptions||{};
     const kit=composerKit();
     state.kit=kit;
+    if(context.singleRoomTrial){
+      try{buildSingleRoomTrial(context);}catch(error){state.singleRoomError=String(error?.message||error);console.warn('[Puzzle Lab] could not mount puzzle',error);deps?.showToast?.('Puzzle Lab: '+state.singleRoomError,false);}
+      updateBadge(true);
+      return; // Never run other composers: no additional rooms, chest payoffs, or ambient challenges.
+    }
     for(const composer of composers){ // Room-claiming composers run first so standalone modules never take their rooms.
       if(context.hachutu===true&&composer.id!=='hachutuTemple')continue; // Exclusive developer-only content, never mixed with Harlyao composers.
       try{composer.buildRooms?.(kit,context,rng,usedRooms,options);}catch(error){console.warn('[Random Test Ruin] composer buildRooms failed',error);}
@@ -2282,9 +2342,17 @@
     updateSarcophagusModules(dt);
     updateOssuaryComposers();
     updateRopes(now,dt);
-    for(const composer of composers){if(context.hachutu===true&&composer.id!=='hachutuTemple')continue;try{composer.update?.(state.kit,now,dt);}catch(error){console.warn('[Random Test Ruin] composer update failed',error);}}
+    state.singleRoomChallenge?.tick?.(dt); // Live wing implementations handle inputs and completion, not fake test interactions.
+    state.singleRoomChallenge?.animate?.(dt);
+    if(!context.singleRoomTrial)for(const composer of composers){if(context.hachutu===true&&composer.id!=='hachutuTemple')continue;try{composer.update?.(state.kit,now,dt);}catch(error){console.warn('[Random Test Ruin] composer update failed',error);}} // Solo never updates unrelated composers even when they retain internal autonomous timers.
     updateDoorwayCheckpoints();
     updateRopeChainCheckpoints(); // Side checkpoint claims override other doorway updates in the same frame.
+    if(state.context?.singleRoomTrial){
+      const choice=state.context.singleRoomTrial;
+      const error=state.singleRoomError||state.singleRoomChallenge?.error||null; // Async statue asset/encounter failures must appear in the mobile debug badge.
+      const phase=error?'ERR '+error:state.singleRoomSolved?'SOLVED':state.singleRoomChallenge?.ready===false?'loading':'active';
+      window.DevRandomRuin?.setDebugBadgePart?.('challenge',' · '+choice.kind+' '+phase+' · drops OFF');
+    }else window.DevRandomRuin?.setDebugBadgePart?.('challenge','');
     updateBadge();
   }
 
@@ -2292,7 +2360,7 @@
     if(!state||!inRuin())return [];
     const controls=state.controls.slice();
     for(const control of (window.DevRandomRuinDungeonChests?.controlsFor?.(state.elevatorChests)||[]))controls.push(control);
-    for(const composer of composers){if(state.context.hachutu===true&&composer.id!=='hachutuTemple')continue;for(const control of (composer.controls?.(state.kit)||[]))controls.push(control);}
+    if(!state.context.singleRoomTrial)for(const composer of composers){if(state.context.hachutu===true&&composer.id!=='hachutuTemple')continue;for(const control of (composer.controls?.(state.kit)||[]))controls.push(control);} // No stale composer prompts in isolated mode.
     for(const candidate of state.ropes){
       if(candidate.attached||state.flight||candidate.airOnly||candidate.burden)continue; // Air-only ropes in a rope-to-rope chain are caught mid-swing, never from the floor; a rope with a burden hanging on it is not a rider's.
       controls.push({
@@ -2343,6 +2411,7 @@
     return {
       active:true,
       seed:state.buildSeed,
+      singleRoomChallenge:state.context.singleRoomTrial?{...state.context.singleRoomTrial,solved:state.singleRoomSolved,ready:!!state.singleRoomChallenge&&state.singleRoomChallenge.ready!==false,error:state.singleRoomError||state.singleRoomChallenge?.error||null,attempts:state.singleRoomChallenge?.attempts||0,linked:state.singleRoomChallenge?.linked??false,ropeLinked:state.singleRoomChallenge?.ropeLinked??false}:null, // Defense readiness/errors are asynchronous; don't claim it is ready before authored assets finish loading.
       safeGrids:state.safeGrids.map(grid=>({
         hallId:grid.hallId,
         axis:grid.axis,

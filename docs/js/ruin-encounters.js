@@ -55,7 +55,7 @@
   function spawnOptions(enc, spawner) {
     const t = TILE(), g = window.GridTileAccessors;
     return { x: spawner.x * t, y: spawner.z * t, zoneId: enc.mapId, scene: g?.getActiveScene?.(), grid: g?.getActiveGrid?.(), cols: g?.getActiveCols?.(), rows: g?.getActiveRows?.(),
-      extra: { homeX: spawner.x * t, homeY: spawner.z * t, state: 'idle', ruinEncounterId: enc.id } };
+      extra: { homeX: spawner.x * t, homeY: spawner.z * t, state: 'idle', ruinEncounterId: enc.id, ruinNoLoot:enc.noLoot===true } }; // Preserve the test-room reward policy through asynchronous enemy creation.
   }
   function attachSurface(enc, entity) {
     if (typeof enc.surfaceY !== 'function') return;
@@ -116,7 +116,7 @@
       id, mapId: String(options.mapId || window.GridTileAccessors?.getCurrentArea?.() || ''), objective: { fragileStatue: true, ...options.objective },
       spawners: (options.spawners || []).map((s, i) => ({ index: i, x: Number(s.x), z: Number(s.z), facing: s.facing || null })),
       schedule: [...(options.schedule || [])].sort((a, b) => a.t - b.t), tier: Number(options.tier) || 0, maxAlive: Number(options.maxAlive) || CONFIG.maxAlive,
-      surfaceY: options.surfaceY || null, retry: options.retry !== false,
+      surfaceY: options.surfaceY || null, retry: options.retry !== false, noLoot:options.noLoot===true, // An encounter only suppresses loot when explicitly requested.
       state: 'waiting', clock: 0, next: 0, enemies: [], pending: 0, stats: { spawned: 0, planted: 0, failures: 0, successes: 0 },
       proxy: { id: id + '_statue_proxy', x: 0, y: 0, health: 1e9, maxHealth: 1e9, areaId: String(options.mapId || ''), creatureKey: 'encounterStatueProxy', invulnUntil: Infinity, isEncounterProxy: true, facing: CONFIG.proxyFacing, angle: 0 },
       statuePoint() { const p = plinthState(this).payload; if (!p?.group) return null; const v = p.group.getWorldPosition ? p.group.getWorldPosition(this._v ||= (window.THREE ? new window.THREE.Vector3() : { x: 0, y: 0, z: 0 })) : p.group.position; return { x: v.x, y: v.y, z: v.z }; },
@@ -162,6 +162,7 @@
       enc.pending--;
       if (!entity) continue;
       if (enc.state !== 'running' || !encounters.has(enc.id)) { disposeEntity(entity); continue; } // The encounter ended while the enemy was being built.
+      if(enc.noLoot)entity.ruinNoLoot=true; // Only explicitly loot-free encounters mark their corpses; normal spawns keep existing entity loot metadata.
       attachSurface(enc, entity);
       const enemy = { kind: entry.kind, entry, entity, spawner: spawner.index, bornAt: enc.clock, released: false, planted: false };
       enc.enemies.push(enemy); enc.stats.spawned++; spawned++;

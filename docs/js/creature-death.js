@@ -175,6 +175,7 @@
   }
 
   function beginInternal(c, fromX, fromY) {
+    window.PerchSupport?.release?.(c, 'died on perch'); // Bodies lose support immediately instead of freezing above the ground.
     window.MaskboundHeadtaker?.cancel?.(c, 'attacker-died'); // Death immediately releases a puppet's grapple, grips, foot IK and temporary head art.
     // A corpse doesn't get further updateCreatureMesh() calls to keep
     // its resource ring synced/rebuilt, so drop it now rather than

@@ -33,6 +33,9 @@
   let lastLunge = null; // Mobile-readable snapshot of the latest camera-authored lunge direction/profile.
   let lastLungeSweep = null; // Mobile-readable snapshot of the latest swept lunge range-entry correction.
   let lungeSweepAnchor = null; // Previous post-movement player position used only while a combat lunge is active.
+  let activePlayerAerial = null; // One player-lunge travel record reused by the normal Combat.update tick; no extra world scan.
+  let playerAerialWallImpacts = 0; // Mobile diagnostics for confirmed stalled upward/airborne lunges.
+  let lastPlayerAerialImpact = null; // Plain numbers only, never a live player or renderer reference.
   let lastError = null; // Mobile-readable initialization/runtime error without putting failures into an independent frame loop.
 
   function recordError(stage, error) {
@@ -376,6 +379,7 @@
       pendingStagedMeleeCommit = stagedCommit;
       queuePendingCommitExpiry(stagedCommit);
       const result = rawLunge.apply(this, arguments);
+      if (!wasLunging) activePlayerAerial = null; // A denied lunge cannot borrow a previous attack's wall-impact record.
       if (!player || wasLunging || !player.lunging) return result;
 
       try {
@@ -448,6 +452,12 @@
           };
         }
         lungeSweepAnchor = { x: Number(player.x) || 0, y: Number(player.y) || 0 };
+        if ((pitch > 0.03 || player.lungeHopUnits > 0.01) && player.lungeDistancePx > 0) {
+          activePlayerAerial = {
+            player, x: Number(player.x) || 0, y: Number(player.y) || 0,
+            plannedPx: player.lungeDistancePx, blockedFrames: 0,
+          }; // Pitch alone makes a forward/upward lunge airborne; a flat ground dash must never take self-impact.
+        }
         lungeAuthorityCount++;
         lastLunge = {
           direction: { x: nx, y: ny, z: nz },
@@ -693,6 +703,58 @@
     return false;
   }
 
+  // Movement already swept solid tiles before Combat.update runs. Compare
+  // actual committed displacement with the native eased travel curve for
+  // two consecutive frames; only an airborne lunge stalled against terrain
+  // incurs the remaining-travel collision cost. An attack-volume stop, denied
+  // lunge, or normal elapsed completion never counts as a wall impact.
+  function checkPlayerAerialWall(liveDeps, enteredTargetVolume) {
+    const player = liveDeps?.player, state = activePlayerAerial;
+    if (!state || !player || state.player !== player) return false;
+    if (enteredTargetVolume || player.lungeDistancePx <= 0 || !player.lunging) {
+      activePlayerAerial = null;
+      return false;
+    }
+    const duration = Number(player.lungeDur);
+    const remaining = Number(player.lungeT);
+    if (!(duration > 0) || !Number.isFinite(remaining)) return false;
+    const progress = Math.max(0, Math.min(1, 1 - remaining / duration));
+    const expectedPx = state.plannedPx * (1 - Math.pow(1 - progress, 3));
+    const traveledPx = Math.hypot((Number(player.x) || 0) - state.x, (Number(player.y) || 0) - state.y);
+    const shortfall = expectedPx - traveledPx;
+    const threshold = Math.max((Number(liveDeps.TILE) || 64) * 0.18, state.plannedPx * 0.07);
+    state.blockedFrames = progress > 0.06 && shortfall > threshold ? state.blockedFrames + 1 : 0;
+    if (state.blockedFrames < 2) return false; // Ignores single-frame camera/position corrections, without granting invulnerability at a wall.
+
+    const measurement = { airborne: true, lungeMaxDistancePx: state.plannedPx, lungeTraveledPx: traveledPx };
+    const impact = window.KnockbackCollisionImpact?.resolveAerialLunge?.(
+      player, measurement, { kind: 'stone', label: 'Airborne player lunge into terrain' },
+      Number(liveDeps.TILE) || 64, {
+        dealHealthDamage(target, amount) {
+          const before = Math.max(0, Number(target.health) || 0);
+          if (typeof liveDeps.damagePlayer === 'function') liveDeps.damagePlayer(amount, target.x, target.y, 0,
+            { tag: 'blunt', environmentalImpact: true });
+          else window.ResourceSystem?.applyDamage?.(target, amount, { tag: 'blunt', source: 'aerial wall impact' });
+          const after = Math.max(0, Number(target.health) || 0);
+          return { applied: Math.min(before, Math.max(0, before - after) || amount),
+            lethal: before > 0 && (amount >= before || after <= 0) };
+        },
+      },
+    );
+    activePlayerAerial = null;
+    if (!impact) return false;
+    player.lunging = false; // Stop this committed flight; never repeatedly strike the same wall.
+    player.lungeHopCurrent = 0;
+    player.lungeVerticalTravelUnits = 0;
+    player.lungeFlightWorldY = null;
+    activeLungeReticleTarget = null;
+    lungeSweepAnchor = null;
+    playerAerialWallImpacts++;
+    lastPlayerAerialImpact = { at: Date.now(), progress, intendedPx: state.plannedPx,
+      traveledPx, shortfall, deficitTiles: impact.deficitTiles };
+    return true;
+  }
+
   function installCombatUpdateSweep(liveDeps) {
     const combat = window.Combat;
     const previousUpdate = combat?.update;
@@ -707,7 +769,8 @@
         // Main-loop ordering is updateMovement -> world/hostiles -> Combat.update.
         // Clamp a lunge that crossed into its real attack volume before staged
         // strike callbacks run, so the impact resolves from the stop point.
-        resolveSweptLungeEntry(liveDeps);
+        const enteredTargetVolume = resolveSweptLungeEntry(liveDeps);
+        checkPlayerAerialWall(liveDeps, enteredTargetVolume);
       } catch (error) {
         recordError('lunge-sweep', error);
       }
@@ -794,6 +857,9 @@
       lungeAuthorityCount,
       reticleBoxHitCount,
       lungeEarlyStopCount,
+      playerAerialWallImpacts,
+      lastPlayerAerialImpact: lastPlayerAerialImpact ? { ...lastPlayerAerialImpact } : null,
+      playerAerialWallActive: !!activePlayerAerial,
       lastCameraRay: lastCameraRay ? {
         origin: { ...lastCameraRay.origin },
         direction: { ...lastCameraRay.direction },
