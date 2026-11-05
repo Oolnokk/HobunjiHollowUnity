@@ -620,9 +620,11 @@
        above doesn't matter; must load before game.js, which calls
        window.PerpRotation.init(...) during its own setup. -->
   <script src="js/perp-rotation.js?v=20261026h7f6f691"></script>
+  <script src="js/animal-shoulder-spline.js?v=20261105tzFlight1"></script> <!-- Required by the actual seven-point flying rig perch deformation. -->
   <script src="js/flying-animal-rig.js?v=20261105tzatzul1"></script> <!-- Canonical authored two-bone bird wing/body assembly. -->
   <script src="js/tzatzul-registration.js?v=20261105tzEgg1"></script> <!-- Tzatzul dev species, hatchling peck, stable individual tint and flying-rig JSON. -->
-  <script src="js/tzatzul-live-visuals.js?v=20261105tzLive1"></script> <!-- Live Tzatzul avatar owner: authored wing rig, animal portrait swap, camera deadzones and disposal. -->
+  <script src="js/tzatzul-live-visuals.js?v=20261105tzLive1"></script>
+  <script src="js/tzatzul-flight-runtime.js?v=20261105tzFlight1"></script> <!-- High-cliff perches and timed swoop/return routes; renderer stays owned by live visuals. --> <!-- Live Tzatzul avatar owner: authored wing rig, animal portrait swap, camera deadzones and disposal. -->
   <!-- Funji & Son's General Store (window.GeneralStore) — self-contained
        aside from deps injected via init(), and reads window.DyeSystem/
        window.ConditionRegistry at render time (already global by then), so
@@ -684,7 +686,7 @@
        at call time (already global by then), so load order relative to the
        other systems above doesn't matter; must load before game.js, which
        calls window.WildlifeSpawn.init(...) during its own setup. -->
-  <script src="js/wildlife-spawn.js?v=20261105tzLive1"></script>
+  <script src="js/wildlife-spawn.js?v=20261105tzFlight1"></script>
   <!-- Town/zone building mesh spawning + decorative furniture/prop spawning
        (window.TownZoneBuildings) — reads globally-loaded HousePieceGen/
        WallBuilder/BuildingDoor/window.ProceduralFurniture/window.Music at
