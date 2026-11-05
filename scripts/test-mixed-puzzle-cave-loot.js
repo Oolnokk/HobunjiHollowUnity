@@ -59,7 +59,8 @@ w.LootRolling.init({
   pools.puzzleCave.entries.pop();
   // Cyclic source composition is bounded; no recursive runaway.
   pools.puzzleCave.kind = 'mixed'; pools.puzzleCave.sourcePools = [{ poolId: 'mixedCrateTreasurePuzzle', weight: 1 }];
-  assert.deepEqual(Object.keys(w.LootRolling.rollLootPool('puzzleCave', { random: () => 0 })), []);
+  assert(Object.keys(w.LootRolling.rollLootPool('puzzleCave', { random: () => 0 })).length > 0,
+    'cyclic source is excluded while its noncyclic independent sources still roll');
   delete pools.puzzleCave.kind; delete pools.puzzleCave.sourcePools;
   console.log('Mixed loot: crate, complete chest generators, deferred puzzle, future unlock and cycle guards PASS.');
 })().catch(error => { console.error(error); process.exitCode = 1; });
