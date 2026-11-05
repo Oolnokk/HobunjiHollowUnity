@@ -61,13 +61,13 @@
       unused.set(key, entry);
     }
 
-    function trim(protectedKey = null) {
-      const idleLimit = window.DevTestingSwitchbox?.flags?.noUnusedAnimalTextureCache ? 0 : UNUSED_BYTES_LIMIT; // Optional strict no-idle retention for diagnosis.
-      const entryLimit = window.DevTestingSwitchbox?.flags?.noUnusedAnimalTextureCache ? 0 : UNUSED_ENTRY_LIMIT;
+    function trim(protectedKey = null, force = false) {
+      const idleLimit = force || window.DevTestingSwitchbox?.flags?.noUnusedAnimalTextureCache ? 0 : UNUSED_BYTES_LIMIT; // Optional strict no-idle retention for diagnosis.
+      const entryLimit = force || window.DevTestingSwitchbox?.flags?.noUnusedAnimalTextureCache ? 0 : UNUSED_ENTRY_LIMIT;
       for (const [key, entry] of unused) {
         if (unusedBytes <= idleLimit && unused.size <= entryLimit) break;
         if (key === protectedKey) continue; // Give a newly completed compose a chance to bind before it can be evicted.
-        if (inWorkingSet(key, entry)) continue; // An on-screen animal is still cycling through this frame.
+        if (!force && inWorkingSet(key, entry)) continue; // An on-screen animal is still cycling through this frame.
         unused.delete(key);
         unusedBytes -= entry.bytes;
         totalBytes -= entry.bytes;
@@ -198,6 +198,6 @@
       for (const cache of caches) cache.release(owner);
     },
     snapshot: () => Array.from(caches, cache => cache.snapshot()),
-    trimUnused: () => { for (const cache of caches) cache.trim(); return Array.from(caches, cache => cache.snapshot()); }, // Safe manual cleanup: never disposes referenced frames.
+    trimUnused: () => { for (const cache of caches) cache.trim(null, true); return Array.from(caches, cache => cache.snapshot()); }, // Safe manual cleanup: never disposes referenced frames.
   };
 })();
