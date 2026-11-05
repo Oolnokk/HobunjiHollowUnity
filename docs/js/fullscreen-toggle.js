@@ -42,7 +42,7 @@
     style.textContent = `
       #${BUTTON_ID} {
         position: fixed;
-        top: calc(env(safe-area-inset-top, 0px) + 10px);
+        top: calc(env(safe-area-inset-top, 0px) + 42px);
         left: calc(env(safe-area-inset-left, 0px) + 10px);
         z-index: 23000;
         width: 36px;
@@ -74,7 +74,7 @@
       #${BUTTON_ID} svg { width: 20.25px; height: 20.25px; display: block; pointer-events: none; }
       #${FEEDBACK_ID} {
         position: fixed;
-        top: calc(env(safe-area-inset-top, 0px) + 52px);
+        top: calc(env(safe-area-inset-top, 0px) + 84px);
         left: calc(env(safe-area-inset-left, 0px) + 10px);
         z-index: 23001;
         max-width: min(82vw, 330px);
@@ -92,7 +92,7 @@
       @media (pointer: coarse) {
         #${BUTTON_ID} { width: 40.5px; height: 40.5px; border-radius: 10.5px; }
         #${BUTTON_ID} svg { width: 23.25px; height: 23.25px; }
-        #${FEEDBACK_ID} { top: calc(env(safe-area-inset-top, 0px) + 56.5px); }
+        #${FEEDBACK_ID} { top: calc(env(safe-area-inset-top, 0px) + 88.5px); }
       }
     `;
     document.head.appendChild(style);
