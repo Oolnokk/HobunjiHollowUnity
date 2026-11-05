@@ -397,8 +397,12 @@
     const sites = [], why = { walls:0, narrow:0, short:0, floor:0, blocked:0, solid:0, doorway:0, spawn:0 };
     for (const wall of wallCandidates(context)) {
       why.walls++;
-      const site = evaluateDoorSite(kit, context, wall, floorY, doorways, why);
-      if (site && site.spawnDistance > 5) sites.push(site); else if (site) why.spawn++;
+      const site=evaluateDoorSite(kit,context,wall,floorY,doorways,why);
+      if(!site)continue;
+      if(context.shaftEntrance&&Math.hypot(site.x-context.shaftEntrance.x,site.z-context.shaftEntrance.z)<DOOR_WIDTH+2){
+        why.doorway++;continue; // Both full-width furniture assemblies must have clearance, not merely non-overlapping center points.
+      }
+      if(site.spawnDistance>5)sites.push(site);else why.spawn++;
     }
     s.doorSiteStats = why;
     if (!sites.length) return null;
