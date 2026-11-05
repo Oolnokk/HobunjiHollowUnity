@@ -232,6 +232,7 @@
     const missAt = subjectMissAtByPerpState.get(state);
     if (missAt !== undefined && nowMs() - missAt < subjectMissRetryMs) { subjectScanStats.negativeHits++; return null; }
 
+    if (window.DevTestingSwitchbox?.flags?.noPortraitSubjectSearches) return null; // Cached subject identity above stays available; unknown owners use existing fallback perps.
     const combatDeps = window.Combat?.deps;
     const sources = [
       [window._npcWalkers, 'npc'],
