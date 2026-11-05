@@ -90,6 +90,7 @@
     if (!mesh?.isMesh) return false;
     markWaterOccluded(mesh, rigState, side);
     if (mesh.userData?.__hobunjiFeetOutlineParity) return false;
+    if (global.DevTestingSwitchbox?.flags?.noFootOutlineMatrixParity) return false; // Keep foot water registration above, omit draw-time matrix hooks.
 
     const previousBefore = typeof mesh.onBeforeRender === 'function' ? mesh.onBeforeRender : null;
     const previousAfter = typeof mesh.onAfterRender === 'function' ? mesh.onAfterRender : null;
