@@ -193,7 +193,7 @@
     }):null; // Each real upper V50 graph gets its own collision, stage gates, brazier and render root.
     ruin.nativeV50Runtime=nativeRuntime;
     if(plan.options.groundEntranceSide)
-      styleCleanup=root.RuinMultifloorV50Style?.apply?.({rec,ruin,hub:placed,seed,THREE,getPlayerY})||null;
+      styleCleanup=root.RuinMultifloorV50Style?.apply?.({rec,ruin,hub:placed,seed,THREE,getPlayerY,routeTiles:route.tiles})||null;
     ruin.shaftStyleTick=styleCleanup?.tick||null; // The existing frame client keeps higher-story engravings hidden with the puzzle-wing visuals.
     const active=layerRuntime.getState();
     ruin.shaftConnection.wingsPlayable=active.wings;
