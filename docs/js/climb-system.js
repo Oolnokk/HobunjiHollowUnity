@@ -1004,7 +1004,7 @@
       const entities = [deps?.player, ...(deps?.hostileObjects || []), ...(deps?.companionObjects || [])].filter(Boolean);
       for (const branch of doomed) {
         for (const entity of entities) {
-          if (entity.onBranch !== branch) continue;
+          if (entity.onBranch !== branch && entity.onBranch?.nativeBranch !== branch) continue; // Includes wild animals perched via the global Shadewood adapter.
           if (!pendingReattach.has(area)) pendingReattach.set(area, new Map());
           const key = reattachKey(branch);
           const areaMap = pendingReattach.get(area);
@@ -1029,7 +1029,8 @@
             // the tile genuinely stopped growing a tree. Any other value
             // (a fresh branch, or null from an unrelated jump-down/knockback
             // in the meantime) means this request already resolved.
-            if (request.entity.onBranch !== request.branch) continue;
+            if (request.entity.onBranch !== request.branch
+                && request.entity.onBranch?.nativeBranch !== request.branch) continue;
             releaseBranchEntity(request.entity, request.branch, 'branch no longer present after area rebuild');
           }
           areaMap.delete(key);
@@ -1112,8 +1113,8 @@
 
   function releaseBranchEntity(entity, branch, reason) {
     const defense = entity?._branchDefense?.branch === branch ? entity._branchDefense : null;
-    if (!entity || (entity.onBranch !== branch && !defense)) return null;
-    const onBranch = entity.onBranch === branch;
+    const onBranch = entity?.onBranch === branch || entity?.onBranch?.nativeBranch === branch;
+    if (!entity || (!onBranch && !defense)) return null; // Chopped trees must also eject native-branch-backed point/line perch occupants.
     const t = onBranch ? clamp01(entity.branchT) : clamp01(defense?.targetT ?? defense?.t ?? 0);
     const x = onBranch ? branch.baseX + (branch.tipX - branch.baseX) * t : Number(entity.x) || branch.baseX;
     const y = onBranch ? branch.baseY + (branch.tipY - branch.baseY) * t : Number(entity.y) || branch.baseY;

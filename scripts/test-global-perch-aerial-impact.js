@@ -20,16 +20,19 @@ const w = {
   },
   RangedWeapons: { init() {} },
 }; // Minimal real-module host; resource and movement callbacks retain their gameplay semantics.
-const context = { window: w, console, Math, Date, Map, Set, THREE: {}, queueMicrotask };
+const queuedMicrotasks = []; // Deterministically flushes native streaming fallbacks instead of racing the Node event loop.
+const context = { window: w, console, Math, Date, Map, Set, THREE: {},
+  queueMicrotask: callback => queuedMicrotasks.push(callback) };
 function load(path) { vm.runInNewContext(read(path), context, { filename: path }); }
 load('docs/js/perch-support.js');
 load('docs/js/climb-system.js');
 const tile = 64; // Matches game logical pixel-to-tile conversion for the test scenarios.
 const mapId = 'map_northern_cliffs'; // Area-scoped Shadewood registry test must not depend on the current player map.
+const simulatedHostiles = []; // Live creature collection consumed by ClimbSystem's real chunk-replacement safety wrapper.
 w.ClimbSystem.init({
   clamp: (x, a, b) => Math.max(a, Math.min(b, x)),
   TILE: tile, getCurrentArea: () => mapId, worldSurfaceY: () => 0,
-  player: {}, hostileObjects: [], companionObjects: []
+  player: {}, hostileObjects: simulatedHostiles, companionObjects: []
 });
 const branch = { id: mapId + ':1,3', col: 1, row: 3,
   baseX: 96, baseY: 200, tipX: 160, tipY: 200,
@@ -88,7 +91,27 @@ assert.equal(w.PerchSupport.forget(actor), true, 'intentional jump clears the ol
 actor.onBranch = null;
 assert.equal(w.PerchSupport.release(actor, 'already grounded'), null, 'post-jump fall cannot trigger twice');
 assert.equal(actor.health, 26);
+const branchAnimal = { health: 40, footing: 100, x: 0, y: 0 }; // Synthetic perch occupant must survive the exact same chunk-regrowth lifecycle.
+simulatedHostiles.push(branchAnimal);
+const globalBranch = w.PerchSupport.nearest(mapId, 144, 200, 4);
+assert(globalBranch?.perch.sourceBranch === branch, 'Shadewood perch knows its underlying streamable branch');
+assert(w.PerchSupport.attach(branchAnimal, globalBranch.perch, globalBranch.t));
+assert.equal(branchAnimal.onBranch.nativeBranch, branch);
 w.ClimbSystem.removeBranchesInBounds(mapId, { colStart: 1, rowStart: 3, colEnd: 2, rowEnd: 4 });
+const restoredBranch = { ...branch, baseX: 96, tipX: 164 }; // Same tile reloaded with slightly changed geometry.
+w.ClimbSystem.registerBranch(mapId, restoredBranch);
+while (queuedMicrotasks.length) queuedMicrotasks.shift()();
+assert.equal(branchAnimal.onBranch, restoredBranch, 'regenerated Shadewood reattaches a global perch animal to the live branch');
+assert.equal(branchAnimal.onPerch, null, 'reattached animal relinquishes stale global perch metadata');
+assert.equal(branchAnimal.health, 40, 'successful chunk reattachment does not injure the animal');
+const restoredPerch = w.PerchSupport.nearest(mapId, branchAnimal.x, branchAnimal.y, 4);
+assert(w.PerchSupport.attach(branchAnimal, restoredPerch.perch, restoredPerch.t));
+w.ClimbSystem.removeBranchesInBounds(mapId, { colStart: 1, rowStart: 3, colEnd: 2, rowEnd: 4 });
+while (queuedMicrotasks.length) queuedMicrotasks.shift()();
+assert.equal(branchAnimal.onBranch, null, 'unregrown Shadewood releases a global-perch occupant');
+assert.equal(branchAnimal.onPerch, null, 'removed perch does not leave a dangling attachment');
+assert.equal(branchAnimal.health, 36, 'lost tree incurs one native branch-fall Health penalty');
+assert.equal(branchAnimal.footing, 52.5, 'lost tree incurs one native branch-fall Footing penalty');
 assert.equal(w.PerchSupport.debugSnapshot().areas.some(a => a.id === mapId), false,
   'streamed-out Shadewood supports do not leak across chunk rebuilds');
 assert.match(read('docs/js/creature-death.js'), /PerchSupport\?\.release\?\.\(c, 'died on perch'\)/,

@@ -16,9 +16,12 @@
   }
   function fromBranch(branch) {
     if (!branch) return null;
-    return line('shadewood:' + (branch.id || [branch.col, branch.row].join(',')), {
-      x: branch.baseX, y: branch.baseY, worldY: branch.baseWorldY,
-    }, { x: branch.tipX, y: branch.tipY, worldY: branch.tipWorldY });
+    return Object.freeze({
+      ...line('shadewood:' + (branch.id || [branch.col, branch.row].join(',')), {
+        x: branch.baseX, y: branch.baseY, worldY: branch.baseWorldY,
+      }, { x: branch.tipX, y: branch.tipY, worldY: branch.tipWorldY }),
+      sourceBranch: branch, // Retains the live branch identity so chunk streaming can migrate an animal using the shared perch API.
+    });
   }
   function sample(perch, t = 0) {
     if (!perch) return null;
@@ -73,6 +76,7 @@
     const length = Math.max(1e-6, Math.hypot(end.x - start.x, end.y - start.y)); // Point supports have a zero tangent; nonzero divisor keeps all native branch movement finite.
     return {
       id: perch.id, perchSupport: true,
+      nativeBranch: perch.sourceBranch || null, // Matches ClimbSystem's branch replacement/drop lifecycle on streamed foliage.
       baseX: start.x, baseY: start.y, baseWorldY: start.worldY,
       tipX: end.x, tipY: end.y, tipWorldY: end.worldY, length,
     };
