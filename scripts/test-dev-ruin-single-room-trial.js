@@ -48,6 +48,7 @@ assert.ok(interior.includes('singleRoomLab:singleRoomTrial'));
 assert.ok(interior.includes("soloChoice.kind==='statueDefense'?'veryLarge':'large'"));
 assert.ok(read('docs/tools/debris-ifier/debrisifier-v50-api.js').includes('window.__devRuinSingleRoomLab ='));
 assert.ok(read('docs/tools/debris-ifier/debrisifier-01.js').includes("['flat puzzle lab floor',"));
+assert.ok(read('docs/tools/debris-ifier/debrisifier-01.js').includes("['clear solo chamber support pillars',")); // A normal V50 support column cannot overlap the selected challenge center.
 assert.ok(read('docs/index.html').includes('dev-ruin-single-room-trial.js'));
 assert.match(read('docs/js/dev-random-ruin-bootstrap.js'), /dev-random-ruin-simple-puzzles\.js\?v=[A-Za-z0-9_-]+/);
 console.log('Single-room puzzle lab: 200 planner seeds, seven forced choices, isolation and no-loot contracts passed.');
