@@ -56,8 +56,14 @@
 
   function insideShelf(s, x, z, pad = 0) {
     const dx = x - s.x, dz = z - s.z;
-    return Math.abs(dx * s.tangent.x + dz * s.tangent.z) <= s.width / 2 + pad
-      && Math.abs(dx * s.normal.x + dz * s.normal.z) <= s.depth / 2 + pad;
+    const along = dx * s.tangent.x + dz * s.tangent.z;
+    const across = dx * s.normal.x + dz * s.normal.z;
+    const profile = s.overhangDepths; // Dynamic supports follow the actual cap outline, not its maximum-depth bounding box.
+    const u = Math.max(-1, Math.min(1, along / (s.width / 2))), i = u < 0 ? 0 : 1, t = u < 0 ? u + 1 : u;
+    const depth = Array.isArray(profile) && profile.length === 3
+      ? profile[i] + (profile[i + 1] - profile[i]) * t : s.depth;
+    return Math.abs(along) <= s.width / 2 + pad &&
+      across >= -s.depth / 2 - pad && across <= -s.depth / 2 + depth + pad;
   }
 
   function clear(area) {
