@@ -1428,14 +1428,15 @@
     // Full cache audit is deferred until a transition has settled, never during combat itself.
     const snap = root.HobunjiCacheAudit?.snapshot?.();
     if (!snap) return;
-    combatRecords.push({ reason, capturedAt: new Date().toISOString(), data: snap });
+    const record = { reason, capturedAt: new Date().toISOString(), data: snap }; // Retained for deferred IndexedDB write.
+    combatRecords.push(record);
     if (combatRecords.length > COMBAT_TRACE_LIMIT) combatRecords.splice(0, combatRecords.length - COMBAT_TRACE_LIMIT);
     void combatDbReady.then(db => {
       if (!db) return; // Private browsing may disable IndexedDB; memory still works.
       try {
         const tx = db.transaction('combat-snapshots', 'readwrite');
         const store = tx.objectStore('combat-snapshots');
-        store.put(combatRecords[combatRecords.length - 1]);
+        store.put(record);
         store.getAllKeys().onsuccess = event => {
           const keys = event.target.result;
           for (const key of keys.slice(0, Math.max(0, keys.length - COMBAT_TRACE_LIMIT))) store.delete(key);
