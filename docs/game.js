@@ -10997,6 +10997,7 @@
         }; // Restricts tile-owned meshes to one streaming chunk.
         const includeTiles = options.includeTiles !== false; // Lets the global path layer build without duplicating ordinary tiles.
         const includeGlobalPath = options.includeGlobalPath !== false; // Keeps the one zone-wide route mesh outside streamed chunks.
+        const komaCosmeticSites = includeTiles ? window.RoadsideKomaHedges?.hedgePlan?.(zGrid, mapId) : null; // Cached entire-zone, generated from real roads but emitted in chunk-local lifecycle.
         const _floorBuckets = new Map();
         const _addToBucket = (matKey, geo, x, y, z) => {
           if (!geo) return;
@@ -11048,6 +11049,21 @@
           const tile = zGrid[r][c];
           const cx = c + 0.5, cz = r + 0.5;
           const tierY = (tile.elevTier || 0) * PLATEAU_UNIT;
+
+          // Guaranteed long Koma hedgerows are *decorative*, not SHRUB terrain:
+          // keep the roadside shoulder walkable and collision/pathfinding/save state untouched.
+          // Adding to this chunk's floorMeshes also guarantees unload/abort cleanup.
+          if (tile.type === TileType.GRASS && komaCosmeticSites?.has(c + ',' + r)) {
+            const komaBush = window.FoliageGenerator?.buildKomaHedgeBushMesh?.(c, r); // Cached variant geometry and material, never regenerated from scratch for each tile.
+            if (komaBush) {
+              komaBush.position.set(cx, tileSurfaceY(TileType.GRASS) + tierY, cz);
+              komaBush.userData.roadsideKomaCosmetic = true; // Exposes planned bush ownership to Pixel Probe and mobile diagnostics.
+              komaBush.userData.skipOcclusionFade = true; // Short decorative plants never trigger the player/companion camera fade.
+              zScene.add(komaBush);
+              _markOutline(komaBush);
+              meshes.push(komaBush);
+            }
+          }
 
           // A genuine plateau-top tile is normally left to buildPlateauMesa's
           // own continuous lid entirely (skipFloor) — but that lid already
