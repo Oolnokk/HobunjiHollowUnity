@@ -1042,6 +1042,15 @@
             ...(stoneAgeRequested?{pieceSet:'stoneAge',floorProps:'pillarsOnly'}:{}),
           }); // Skip expensive, unrelated room generation entirely for the five-room Hachutu root temple while preserving its climbable 3D shaft.
         }
+        // Upper V50 stories reuse the source room's furniture-pattern pipeline.
+        if(!ruin.hachutu)for(const item of nativeSnapshots){
+          await window.RuinPatternSurfaceRules?.preloadPieces?.(item.roots.localeRoot);
+          const ids=window.FurniturePatternSurfaces?.decorateRuin?.(item.roots.localeRoot,candidateSeed,
+            specialDef?{specialBoss:true,patternId:specialDef.glyph,ink:bossBodyColor3}:undefined)||[];
+          ruin.localeRoot.userData.ruinPatternIds=[...new Set([
+            ...(ruin.localeRoot.userData.ruinPatternIds||[]),...ids,
+          ])];
+        }
         generationMark('composing-preplanned-multifloor-shaft');
         try{attachShaftHub(rec,candidateSeed,{preplanned:planned,nativeFloors:nativeSnapshots});}
         catch(error){
@@ -1661,7 +1670,8 @@
     const layers=ruin.shaftLayerRuntime?.getState?.(); // Visible mobile count reflects instantiated gameplay, never just planning metadata.
     const nativeState=ruin.nativeV50Runtime?.getState?.(); // Reuse one diagnostics snapshot per badge update.
     const layerBadge=layers?(' · shaft '+layers.floors+' floors · physical hall '+ruin.shaftConnection.length+
-      ' cells'+(ruin.shaftConnection.straightVestibule?' · direct vestibule ✓':'')+' · '+layers.wings+' wings · gates '+layers.challengesSolved+'/'+layers.challengesTotal+
+      ' cells'+(ruin.shaftConnection.straightVestibule?' · direct vestibule ✓':'')+
+      ' · V50 motifs '+(ruin.shaftConnection.patternedWallPanels||0)+' panels/'+(ruin.shaftConnection.patternedPilasters||0)+' pillars · '+layers.wings+' wings · gates '+layers.challengesSolved+'/'+layers.challengesTotal+
       ' · braziers '+layers.lit+'/'+layers.braziers+
       ' · rope '+layers.ropeChainsLinked+' ('+layers.floorlessCells+' void tiles)'+
       ' · statue '+layers.defenseRoomsReady+' ready'+
