@@ -1072,6 +1072,12 @@
     setLayerOpacity,
     getKanthicLanternRadiusTiles:()=>tuning.lantern.radiusTiles, // Compatibility API: Kanthic now uses the normal smooth lantern radius.
     refreshLightingOverlay: () => { lastUnifiedLightingDraw = -Infinity; window.WeatherFX?.drawLightingOverlay?.(); }, // Lets dev-only lighting controls redraw immediately without owning a second lighting path.
+    outdoorLightVisibilityAt: (x, y, z, radiusTiles = 0) => {
+      const area = lightingDeps?.getCurrentArea?.(); // Reuses the compositor's actual current area instead of asking separate glow owners to guess indoor status.
+      const scene = lightingDeps?.getActiveScene?.() || window.GridTileAccessors?.getActiveScene?.(); // Farmhouse transitions may temporarily report the old outdoor area.
+      if (!lightingDeps || enclosedLightingArea(area) || scene?.userData?.hobunjiPlayerFarmhouseInterior === true) return 1;
+      return outdoorLightVisibility(x, y, z, radiusTiles); // Shared fade policy for spectral glows, Harlyao's second darkness pass and emissive orbs.
+    },
     // Called by the Settings tab's Cloud Forest Fog toggle. update() itself
     // is simply not called at all while disabled (see game.js's per-frame
     // call site), which freezes the mist mid-animation rather than hiding
