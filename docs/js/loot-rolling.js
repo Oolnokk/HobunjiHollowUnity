@@ -149,7 +149,9 @@
           && !parentIds.includes(source.poolId) && Number.isFinite(Number(source.weight))
           && Number(source.weight) > 0 && _lootPools[source.poolId]
           && (_lootPools[source.poolId].kind === 'mixed'
-            || Array.isArray(_lootPools[source.poolId].entries) && _lootPools[source.poolId].entries.length > 0));
+            || Array.isArray(_lootPools[source.poolId].entries) && _lootPools[source.poolId].entries.some(entry =>
+              _lootPools[source.poolId].kind !== 'exclusive'||source.poolId !== 'puzzleCave'
+                || !!window.TrinketSystem?.DEFINITIONS?.[String(entry.itemKey||'').replace(/^trinket_/, '')]))); // An unmerged trinket dependency is a deferred source, not an empty selected roll.
       const gained = {}; // Flat inventory stacks; the caller's clothingDrops side-channel stores rich garment records.
       const selected = []; // Bound-sized diagnostics for test UI / mobile.
       const draws = Math.max(0, Math.min(10, Math.floor(Number(pool.rolls) || 1)));
