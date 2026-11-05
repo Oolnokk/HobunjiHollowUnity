@@ -1380,7 +1380,7 @@
   // Combat investigation records survive refreshes; the existing low-FPS history is session-only.
   const COMBAT_TRACE_KEY = 'hobunji_combat_perf_snapshots_v1';
   const COMBAT_TRACE_LIMIT = 8; // Caps localStorage use; older incidents are rotated out.
-  const combatTrace = { lastArea: '', origin: '', sawCombat: false, combat: false, left: false, bootCaptured: false, pending: null };
+  const combatTrace = { lastArea: '', origin: '', sawCombat: false, combat: false, left: false, bootCaptured: false, pending: [] };
   let combatRecords = [];
   try {
     const saved = JSON.parse(readStorage(COMBAT_TRACE_KEY, '[]'));
@@ -1420,7 +1420,7 @@
   }
 
   function queueCombatTrace(reason, delayMs = 2500) {
-    combatTrace.pending = { reason, due: performance.now() + delayMs };
+    combatTrace.pending.push({ reason, due: performance.now() + delayMs });
   }
 
   function combatTraceTick() {
@@ -1453,11 +1453,12 @@
       }
     }
     combatTrace.lastArea = area;
-    if (combatTrace.pending && performance.now() >= combatTrace.pending.due) {
-      // Never record a delayed combat-ended snapshot while the next fight is underway.
-      if (combatTrace.pending.reason !== 'combat-ended' || !fighting)
-        saveCombatTrace(combatTrace.pending.reason);
-      combatTrace.pending = null;
+    // Drain every due event independently: leaving an area must never erase combat-ended.
+    const now = performance.now();
+    const ready = combatTrace.pending.filter(entry => entry.due <= now);
+    combatTrace.pending = combatTrace.pending.filter(entry => entry.due > now);
+    for (const entry of ready) {
+      if (entry.reason !== 'combat-ended' || !fighting) saveCombatTrace(entry.reason);
     }
   }
 
