@@ -278,7 +278,7 @@
       scene.add(group);
       decorate?.(group);
       const entry = { id, puzzleMapId: state.puzzleMapId, col: c, row: r, tiles: record.tiles, group, facing: facing.facing, active: false, handOpened: false, idleFor: 0, exitId: record.exitId || null }; // setOpen() addresses the mechanism through the entry's own puzzle map id.
-      const coverBox = typeof THREE.Box3 === 'function' ? new THREE.Box3().setFromObject(group) : null; // Measure the authored door volume once for height-aware projectile sight.
+      const coverBox = typeof THREE?.Box3 === 'function' ? new THREE.Box3().setFromObject(group) : null; // Measure the authored door volume once for height-aware projectile sight.
       if (Number.isFinite(coverBox?.min?.y) && Number.isFinite(coverBox?.max?.y)) {
         entry.projectileBottomY = coverBox.min.y; // Closed leaf/frame bottom, consulted by worldY-aware LOS queries.
         entry.projectileTopY = coverBox.max.y; // Shots above this height clear the actual furniture.

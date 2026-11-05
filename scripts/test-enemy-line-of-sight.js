@@ -42,10 +42,12 @@ let shotDoorClosed = false; // Authoritative door state for projectile and hit-p
 let playerPitch = 0; // Controls vertical player aim during the hit-preview regression.
 let terrainBlock = false;
 let raisedTerrainY = null; // Enables raised-ground LOS regression without a visible stone wall.
+let shatterHit = null;
 let sightObjects = [];
 const hostileObjects = [];
 const window = {
   NearbyVolumeCollision: { segmentHit: () => null, segmentSightHit: () => null },
+  Shattercasks: { projectileHit: () => shatterHit },
   InteriorDoorTiles: {
     blocksBox(_area, x, _z, _radius, worldY) {
       return (closedDoor && x > 1.02 && x < 1.08)
@@ -250,5 +252,12 @@ now += 100;
 assert.equal(window.RangedWeapons.wouldHitHostile(), false, 'a visibly aligned target beyond 3D projectile travel shows no false hit');
 hostileObjects.pop();
 playerPitch = 0;
+
+shatterHit = { t: .5 };
+now += 100;
+assert.equal(window.RangedWeapons.wouldHitShattercask(), true, 'player hit preview shares the projectile sweep for Shattercasks');
+shatterHit = null;
+now += 100;
+assert.equal(window.RangedWeapons.wouldHitShattercask(), false, 'reticle clears when no Shattercask intercepts the shot');
 
 console.log('enemy line of sight: all checks passed');
