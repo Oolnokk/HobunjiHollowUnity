@@ -1067,6 +1067,7 @@
     "icon": "🌾",
     "cat": "seed"
   },
+  "tzatzulEggs": { "key": "tzatzulEggs", "label": "Tzatzul Eggs", "icon": "🥚", "cat": "ingredient", "sellPrice": 4800 },
   "nelkEggs": {
     "key": "nelkEggs",
     "label": "Nelk Eggs",
