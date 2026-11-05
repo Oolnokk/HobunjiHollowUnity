@@ -13,8 +13,6 @@
   let activeHandRig = null; // The current player's rig; invalidated on appearance rebuild or climb exit.
   let lastDebug = { active: false, hiddenHeldVisuals: 0 }; // Mobile-readable snapshot of the most recent rendered crawl.
 
-  function clamp(value, min, max) { return Math.max(min, Math.min(max, value)); }
-
   // Alternating planted/reaching limbs. A stationary climber keeps four
   // contacts, rather than running the ordinary walking animation in place.
   function sampleStride(phase, moving, side) {
@@ -120,11 +118,12 @@
     const h = Math.max(0.2, Number(legHandle.modelHeight) || 1);
     const base = mesh.getWorldPosition(new THREE.Vector3()); // Already shifted and pitched by the render-only crawl pose.
     const tangent = new THREE.Vector3(-outward.z, 0, outward.x); // Across the face; sideways holds work without world-vertical feet.
+    const tileSize = Math.max(1, Number(state.tileSize) || 64); // Converts world-pixel X/Z into the same actual units as cliff elevation.
     const movement = state.moving
       ? new THREE.Vector3(
-        ((state.player.climbEndX || 0) - (state.player.climbStartX || 0)),
-        ((state.player.climbSurfaceEndY || 0) - (state.player.climbSurfaceStartY || 0)) * 64,
-        ((state.player.climbEndY || 0) - (state.player.climbStartY || 0))
+        ((state.player.climbEndX || 0) - (state.player.climbStartX || 0)) / tileSize,
+        ((state.player.climbSurfaceEndY || 0) - (state.player.climbSurfaceStartY || 0)),
+        ((state.player.climbEndY || 0) - (state.player.climbStartY || 0)) / tileSize
       ).normalize()
       : new THREE.Vector3(0, 1, 0); // Foot steps follow actual route displacement; still hands/feet when hanging.
     const targets = {};
@@ -157,10 +156,10 @@
     // Interpret the rock face as the support surface: pitch the torso *into*
     // the normal instead of bobbing vertically above world ground. The extra
     // outward clearance keeps the face from being buried in the cliff mesh.
-    const blend = 1; // All normal-driven pose transforms are render-only and scoped to a live route.
+    const tiltRad = 1.04; // Continuous rock-facing lean, rather than a world-up hop.
     const inward = outward.clone().negate();
-    const posedUp = worldUp.clone().multiplyScalar(Math.cos(1.04 * blend))
-      .addScaledVector(inward, Math.sin(1.04 * blend)).normalize();
+    const posedUp = worldUp.clone().multiplyScalar(Math.cos(tiltRad))
+      .addScaledVector(inward, Math.sin(tiltRad)).normalize();
     const tilt = new THREE.Quaternion().setFromUnitVectors(worldUp, posedUp);
     const parentQ = mesh.parent?.getWorldQuaternion?.(new THREE.Quaternion()) || new THREE.Quaternion();
     const localTilt = parentQ.clone().invert().multiply(tilt).multiply(parentQ);
