@@ -210,7 +210,7 @@
   <script src="js/leg-bones.js?v=20261013hb53d07e"></script>
   <!-- Procedural leg/foot animation for non-creature avatars (player + NPC walkers) -->
   <script src="js/actor-body-sink.js?v=20261030a"></script> <!-- Body sink for enemies and NPCs: lowers their own roots while the leg handle folds the knees. -->
-  <script src="js/procedural-leg-animation.js?v=20261031footvisibility4"></script>
+  <script src="js/procedural-leg-animation.js?v=20261104cliffCrawlAudit2"></script>
   <!-- In-game pants garment: skinned onto the procedural legs (rig data in config/pants-rigs.js, maths in js/pants-rig-core.js) -->
   <script src="config/pants-rigs.js?v=20261015h74422e2"></script>
   <script src="js/pants-rig-core.js?v=20261022omgurkuMerge1"></script>
@@ -584,7 +584,8 @@
        other systems above doesn't matter; must load before game.js, which
        calls window.ClimbSystem.init(...) during its own setup. -->
   <script src="js/cliff-route-network.js?v=20261105hcd658a0"></script> <!-- Shared graph for selected exterior handholds, balcony terrain and wildlife routes. -->
-  <script src="js/climb-system.js?v=20261104cliffAudit1"></script>
+  <script src="js/climb-system.js?v=20261104cliffCrawlAudit2"></script>
+  <script src="js/cliff-crawl-presentation.js?v=20261104cliffCrawlAudit3"></script> <!-- Surface-relative limb crawl and temporary hiding of hand-held equipment; ruins/trees stay on their existing animations. -->
   <script src="js/creature-cliff-climb.js?v=20261104cliffAudit1"></script>
   <!-- Cubic 3D cell grid (window.CellGrid3D): the tile grid plus a level axis.
        Pure data/math with no dependencies, so load order doesn't matter.
@@ -2741,7 +2742,7 @@
   <!-- Pixel Probe debug tool (window.PixelProbe) — wires its own DOM
        buttons at load time, and must load before game.js, which calls
        window.PixelProbe.init(...) during its own setup. -->
-  <script src="js/pixel-probe.js?v=20261104h3a38080"></script>
+  <script src="js/pixel-probe.js?v=20261104cliffCrawlAudit2"></script>
   <!-- NPC dialogue CONTENT (window.DialogueContent) — text/token
        resolution, tree/pool selection, typewriter, portrait rendering,
        choice buttons. Must load before game.js, which calls
