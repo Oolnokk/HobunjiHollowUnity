@@ -191,6 +191,7 @@
       deps.ITEM_DEFS[manual.key] = { ...old, icon: old.icon || manual.icon, label: old.label || manual.label, cat: old.cat || 'material', sellPrice: Math.max(Number(old.sellPrice) || 0, 160), tags: [...new Set([...(old.tags || []), 'Combat Manual', 'Combat', 'Consumable'])], desc: old.desc || manual.desc, combatManualAbilityId: manual.abilityId };
       if (!deps.inventoryItems.some(entry => entry.key === manual.key)) deps.inventoryItems.push({ key: manual.key, icon: manual.icon, label: manual.label.toUpperCase(), max: 99 });
     });
+    window.ObjectSpriteCatalog?.applyAll?.(deps); // Manual and tiered scroll registrations share the same palette-aware paper/binding art.
     window.HobunjiInventoryActionMetadataBridge?.refresh?.();
   }
   function captureItemDeps(deps) {
