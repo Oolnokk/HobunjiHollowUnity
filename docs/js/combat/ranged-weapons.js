@@ -909,7 +909,7 @@
     const shaftT = shaftCoverT(start, end, radiusWorld); // True voxel wall collision across stories.
     const floorT = dynamicSupportHitT(start, end, radiusWorld);
     const dx = p.x - p.prevX, dz = p.y - p.prevY, dy = (p.worldY - p.prevWorldY) * deps.TILE;
-    const samples = Math.max(1, Math.ceil(Math.hypot(dx, dy, dz) / (deps.TILE * 0.2))); // Thin cliff tiles must not be skipped by a long frame.
+    const samples = Math.max(1, Math.ceil(Math.hypot(dx, dy, dz) / (deps.TILE * 0.1))); // Sub-tile samples catch narrow blockers even when step endpoints are both clear.
     const contact = t => {
       const x = THREE.MathUtils.lerp(p.prevX, p.x, t), y = THREE.MathUtils.lerp(p.prevY, p.y, t);
       const height = THREE.MathUtils.lerp(p.prevWorldY, p.worldY, t);
