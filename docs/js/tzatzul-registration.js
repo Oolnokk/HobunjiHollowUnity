@@ -67,6 +67,7 @@
       attackDamage: 24, attackTag: 'sharp', attackCooldownS: 2.4,
       attacks: ['pounce'], // Exterior fight will replace this with flight-based engagement once nests are generated.
       isFlyingSpecies: true,
+      lootPool: 'mixedCrateTreasurePuzzle', // The killed adult's stored prey is drawn from the full crate / treasure / puzzle pool.
       sprites: { idle: SPRITES.perched, run: [SPRITES.flying, SPRITES.flying] },
     };
     const adult = db[KIND];
@@ -77,6 +78,7 @@
       visualScaleY: HATCHLING_SCALE.y,
       attackDamage: 6, attackRangePx: tile * 0.72, attackCooldownS: 1.8,
       attacks: ['tzatzulPeck'], isFlyingSpecies: false,
+      lootPool: 'creature_tzatzul_hatchling', // Nest hatchlings do not independently produce a mother's accumulated prey hoard.
       sprites: { idle: SPRITES.perched, run: [SPRITES.perched, SPRITES.perched] },
     };
     const visual = window.CreatureGeneticsRender?.SPECIES;
