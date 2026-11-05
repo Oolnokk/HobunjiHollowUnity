@@ -397,11 +397,13 @@
       .filter(c => c.tier > groundTier && !reached.has(c.id))
       .map(c => c.id);
     const unreachableBalconies = network.balconies
+      .filter(s => !s.aerialOnly)
       .filter(s => {
         const route = network.routes[s.routeId];
         return !route || !reached.has(route.aComp) || !disconnectedNodes.get(s.routeId)?.has(s.nodeId);
       }).map(s => s.id);
     const invalidEmbeddedBases = network.balconies
+      .filter(s => !s.aerialOnly)
       .filter(s => !s.base?.footprint?.length || s.base.footprint.some(cell =>
         componentAt(network, cell.c, cell.r) !== s.base.parentComponent ||
         !(s.y - s.base.y >= MIN_MINI_CLIFF_HEIGHT - 0.001) ||
