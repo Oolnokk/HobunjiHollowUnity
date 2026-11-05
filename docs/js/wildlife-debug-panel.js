@@ -99,11 +99,32 @@
     </div>`;
   }
 
+  function renderTzatzulCensus() {
+    const flight = window.TzatzulFlightRuntime?.debugSnapshot?.(); // Existing flight owner supplies everything this mobile panel reports.
+    if (!flight) return '';
+    const wings = window.TzatzulLiveVisuals?.snapshot?.(); // Actual wing mesh load/pose state, not an assumed successful render.
+    const area = deps?.getCurrentArea?.();
+    const inhabitants = (flight.birds || []).filter(bird => bird.area === area);
+    const fmt = value => deps.esc(String(value ?? 'none'));
+    const live = inhabitants.map(bird =>
+      '<div>' + fmt(bird.id) + ' · ' + fmt(bird.phase) + ' · ' + fmt(bird.pose)
+      + (bird.target ? ' · target ' + fmt(bird.target) : '') + '</div>').join('');
+    return '<div style="padding:8px 10px;margin-bottom:8px;border:1px solid rgba(145,179,222,.3);border-radius:6px;font-size:12px">'
+      + '<div style="font-weight:600">Tzatzul flight / cliff roosts</div>'
+      + '<div>Living: <b>' + flight.active + '</b> · launched: ' + flight.flights
+      + ' · swoops: ' + flight.swoops + ' · hits/misses: ' + flight.hits + '/' + flight.misses + '</div>'
+      + '<div>Live wing rigs: ' + (wings?.liveRigs ?? 0) + ' · failed loads: ' + (wings?.loadFailures ?? 0) + '</div>'
+      + '<div>Roosts in this area: ' + (flight.roosts?.find(record => record.area === area)?.count || 0) + '</div>'
+      + (live || '<div style="opacity:.72">No adult Tzatzul encountered here yet.</div>')
+      + (wings?.lastError ? '<div style="color:#f3b98c">Rig: ' + fmt(wings.lastError) + '</div>' : '')
+      + '</div>';
+  }
+
   function renderWildlifeDebugPanel() {
     syncWildlifeTabVisibility();
     const container = document.getElementById('wildlifeDenList');
     if (!container) return;
-    const censusHtml = renderDenNestCensus() + renderDenTurnoverCensus() + renderRoamingHerdCensus() + renderCaveGeometryCensus();
+    const censusHtml = renderDenNestCensus() + renderDenTurnoverCensus() + renderRoamingHerdCensus() + renderCaveGeometryCensus() + renderTzatzulCensus();
     if (!window.WildlifeSpawn.getDenGenotypes().size) {
       container.innerHTML = censusHtml + '<div style="opacity:.6;padding:8px 0">No den-family genotypes generated yet this session. Roaming herds are reported separately above because they do not belong to caverns.</div>';
       return;

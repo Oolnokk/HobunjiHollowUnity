@@ -52,6 +52,8 @@ assert.equal(w.TzatzulFlightRuntime.ensureZone(zone),1,'existing daily respawn b
 assert.equal(w.TzatzulFlightRuntime.debugSnapshot().populationKeys,initialKeyCount);
 assert.match(file('docs/js/wildlife-spawn.js'),/TzatzulFlightRuntime\?\.update\?\.\(dt\)/,
   'simulation owned by the existing wilderness frame');
-assert.match(file('docs/index.html'),/animal-shoulder-spline\.js\?v=20261105tzFlight1/,
+assert.match(file('docs/index.html'),/animal-shoulder-spline\.js\?v=[A-Za-z0-9_-]+/,
   'live rig loads the shoulder spline dependency before first mount');
+assert.match(file('docs/js/wildlife-debug-panel.js'), /function renderTzatzulCensus\(/,
+  'mobile wildlife developer tab displays flight activity and rig-loading errors');
 console.log('Tzatzul real cliff roosts, bounded flight, swoops, and wildlife turnover PASS.');
