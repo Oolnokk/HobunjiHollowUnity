@@ -27,6 +27,7 @@
   let promptNest = null; // Cached nearby spire to keep one onPress callback stable.
   let escort = null; // Voluntary player lift session, never an involuntary hostile attack.
   let previousArea = null; // Zone changes release carried prey and retire stale outer-zone rigs.
+  const fallbackCamera = { getWorldPosition: point => point.set(0, 1, 8) }; // Keeps wings animated even before a camera is available.
 
   const finite = (n, fallback = 0) => Number.isFinite(Number(n)) ? Number(n) : fallback;
   const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
@@ -34,11 +35,13 @@
   const speciesOf = c => c?.creatureKey || c?.kind || c?.def?.key || c?.speciesKey || '';
   const areaOf = c => c?._wildernessLodAreaId || c?.areaId || c?.zoneId || '';
   const pos = c => ({ x: finite(c?.x), y: finite(c?.y) });
-  const sceneCamera = () => root.Combat?.deps?.getActiveCamera?.() || root.Shattercasks?.deps?.getActiveCamera?.() || null;
+  const sceneCamera = () => root.Combat?.deps?.getActiveCamera?.() || root.Combat?.deps?.camera ||
+    root.Shattercasks?.deps?.getActiveCamera?.() || root.__hobunjiGameCamera || fallbackCamera;
 
   function sizeClass(target) {
     const name = speciesOf(target);
-    const authored = target?.genotype?.sizeClass || target?.sizeClass || target?.def?.defaultSizeClass ||
+    const authored = root.CreatureGenetics?.creatureSizeClass?.(name,target?.genotype) ||
+      target?.genotype?.sizeClass || target?.sizeClass || target?.def?.fixedSizeClass || target?.def?.defaultSizeClass ||
       deps?.CREATURE_DB?.[name]?.defaultSizeClass;
     return String(authored || 'medium').toLowerCase();
   }
@@ -169,7 +172,16 @@
     const frame = c.avatarRef.group;
     const scale = finite(profile.rig?.talonCarry?.birdScale, ADULT_BIRD_SCALE);
     model.root.scale.set(scale * (hatchling ? 0.375 : 1), scale * (hatchling ? .625 : 1), scale * (hatchling ? .375 : 1));
-    frame.add(model.root);
+    if (hatchling && root.THREE?.Group) {
+      const pivot = new root.THREE.Group(); // Foot-level peck hinge, preserving the authored deformed perched plane.
+      const footOffset = scale * .625 * .43;
+      pivot.position.y = -footOffset;
+      model.root.position.y = footOffset;
+      pivot.add(model.root);
+      frame.add(pivot);
+      state.peckPivot = pivot;
+      state.footOffset = footOffset;
+    } else frame.add(model.root);
     hideNativeSprite(c.avatarRef, true);
     state.rig = model;
     state.rigRoot = model.root;
@@ -206,6 +218,7 @@
       delete target._flyingCarriedBy;
       if (restore) {
         target.state = target._tzatzulPriorState || 'idle';
+        if (target === deps?.player && sceneDeps?.playerMesh) sceneDeps.playerMesh.visible = true;
         if (target.avatarRef?.group) target.avatarRef.group.visible = true;
         if (target.groundShadow) target.groundShadow.visible = true;
       }
@@ -223,13 +236,14 @@
     target._flyingCarriedBy = bird;
     target._tzatzulPriorState = target.state;
     target.state = 'tzatzul-carried';
-    if (target.avatarRef?.group) target.avatarRef.group.visible = false;
+    const originalGroup = target === deps?.player ? sceneDeps?.playerMesh : target.avatarRef?.group;
+    if (originalGroup) originalGroup.visible = false;
     if (target.groundShadow) target.groundShadow.visible = false;
-    if (state.rigRoot && root.THREE?.Group && target.avatarRef?.group?.clone) {
+    if (state.rigRoot && root.THREE?.Group && originalGroup?.clone) {
       const THREE = root.THREE;
       const frame = new THREE.Group(); // Lives on the authored talon socket inside the actual bird rig.
       const outer = new THREE.Group(); // Compensated payload frame retains its true game scale.
-      const clone = target.avatarRef.group.clone(true);
+      const clone = originalGroup.clone(true);
       outer.add(clone);
       frame.add(outer);
       state.rigRoot.add(frame);
@@ -344,13 +358,14 @@
     if (c.health <= 0) return false;
     const state = stateFor(c, { baseY: 0 });
     state.animationT += Math.max(0, finite(dt));
+    deps?.updateCreatureMesh?.(c,dt,c.facing || 0); // Native position first; peck/visible waddle pose wins afterwards.
     ensureRig(c, state, true);
     // A single authored perched plane waddles; no manufactured run sprites.
     const offset = Math.sin(state.animationT * 11) * .035;
     const group = c.avatarRef?.group;
     if (group) {
       group.rotation.z = Math.sin(state.animationT * 7) * .075;
-      if (state.rigRoot) state.rigRoot.position.y = offset;
+      if (state.peckPivot) state.peckPivot.position.y = -state.footOffset + offset;
     }
     const player = sceneDeps?.player;
     if (player && sceneDeps?.getCurrentArea?.() === areaOf(c)) {
@@ -362,14 +377,16 @@
       }
       // At peck range use the feet as the local hinge (Z rotation of a
       // translated plane); the existing melee hit path remains authoritative.
-      if (dist < (deps?.TILE || 32) * 1.1) state.peckT += Math.max(0,dt);
-      const peck = Math.max(0, Math.sin(state.peckT * 9));
-      if (state.rigRoot) {
-        state.rigRoot.position.y = -0.24 * (1 - Math.cos(peck * 1.4)); // Foot-end stationary while the body tips.
-        state.rigRoot.rotation.z = -peck * .72;
-      }
+      if (dist < (deps?.TILE || 32) * 1.1) {
+        state.peckT += Math.max(0,dt);
+        if (state.peckT >= 1.15) {
+          state.peckT %= 1.15;
+          root.Combat?.deps?.damagePlayer?.(8,c.x,c.y,0,{tag:'sharp',attacker:c}); // Existing combat damage/footing/dodge path.
+        }
+      } else state.peckT = 0;
+      const peck = dist < (deps?.TILE || 32)*1.1 ? Math.max(0,Math.sin(state.peckT * 6)) : 0;
+      if (state.peckPivot) state.peckPivot.rotation.z = -peck * .72; // Feet hinge remains fixed as the beak hammers down.
     }
-    deps?.updateCreatureMesh?.(c,dt,c.facing || 0);
     return true;
   }
   function control(c, dt) {
@@ -449,6 +466,7 @@
       const pose = state.carried || state.phase === 'glide' ? 'glide' : 'flap';
       if (camera && state.rig) state.rig.update(camera, pose, state.animationT, !!state.carried);
       if (state.carried) {
+        if (state.carried === deps?.player && sceneDeps?.playerMesh) sceneDeps.playerMesh.visible = false;
         if (state.carried.avatarRef?.group) state.carried.avatarRef.group.visible = false;
         if (state.carried.groundShadow) state.carried.groundShadow.visible = false;
       }
