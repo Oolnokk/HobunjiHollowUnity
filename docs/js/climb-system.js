@@ -602,6 +602,9 @@
   const BRANCH_KNOCKBACK_DUR_S = 0.18; // Mirrors game.js's own KNOCKBACK_DUR_S so a shove off a branch covers the same distance a ground knockback would.
   function resolveBranchKnockback(entity, fromX, fromY, speedPxS) {
     const branch = entity.onBranch;
+    if (branch && Number(speedPxS) > 0 && window.PerchSupport?.release) {
+      return window.PerchSupport.release(entity, 'knocked from Shadewood perch', { deferLegacyKnockback: true });
+    }
     if (!branch) return null;
     const axisX = (branch.tipX - branch.baseX) / branch.length;
     const axisY = (branch.tipY - branch.baseY) / branch.length;

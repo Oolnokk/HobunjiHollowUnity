@@ -35,6 +35,7 @@
 
   function begin(entity, speedPxS, durationS) {
     if (!entity) return null;
+    if (Math.abs(finite(speedPxS)) > 0 && entity.onPerch) window.PerchSupport?.release?.(entity, 'knocked from perch');
     const speed = Math.max(0, Math.abs(finite(speedPxS)));
     const duration = Math.max(0, finite(durationS));
     entity._knockbackCollisionImpact = { // Used only while this knockback is in flight to measure the actual lost travel at first collision.
@@ -156,6 +157,27 @@
     });
   }
 
+  // An aerial attacker blocked by terrain takes the same collision payload as a
+  // knocked-back target. Horizontal lunges and successful target contacts do not
+  // call this; each committed movement owner reports its own *actual* travel.
+  function resolveAerialLunge(entity, state, descriptor, tilePx, hooks = {}) {
+    if (!entity || !state || state._aerialCollisionResolved) return null;
+    const isAirborne = state.airborne === true || (Number(state.lungeProfile?.hopUnits) || 0) > 0.01
+      || (Number(state.lungeProfile?.directFlightStrength) || 0) > 0.01;
+    if (!isAirborne) return null;
+    const intendedPx = Math.max(0, finite(state.lungeMaxDistancePx));
+    const traveledPx = Math.max(0, finite(state.lungeTraveledPx));
+    const deficitPx = Math.max(0, intendedPx - traveledPx);
+    state._aerialCollisionResolved = true; // Stops repeated wall damage during a multi-frame lunge.
+    if (!(deficitPx > 0.001)) return null;
+    const tile = Math.max(0.001, finite(tilePx, 1));
+    return resolveStrength(entity, descriptor || { kind: 'stone', label: 'Airborne lunge impact' },
+      deficitPx / tile, tile, hooks, {
+        mode: 'aerial-lunge', clearState: false,
+        intendedPx, traveledPx,
+      });
+  }
+
   function coolBurningOnDodge(entity) {
     const amount = config().burningDodgeRecovery;
     if (!(amount > 0)) return 0;
@@ -190,6 +212,7 @@
     effectsFor,
     resolve,
     resolveStrength,
+    resolveAerialLunge,
     coolBurningOnDodge,
     extinguishInWater,
     debugSnapshot,

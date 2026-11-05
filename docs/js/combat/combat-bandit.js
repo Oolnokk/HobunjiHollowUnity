@@ -1284,6 +1284,8 @@
     c._banditLungeHopCurrent = 0;
     c._banditLungeAimPitch = lungeProfile.pitch;
     c._banditLungeHitTest = hitTest;
+    c._banditLungeAirborne = lungeProfile.hopUnits > 0.01 || lungeProfile.directFlightStrength > 0.01; // Only genuine airborne enemy lunges rebound from walls.
+    c._banditLungeImpactResolved = false; // Per-lunge wall-impact guard; the attacker can launch another lunge later.
   }
 
   // Halts the lunge at a margin INSIDE the real hit-cone (see
@@ -1334,6 +1336,23 @@
     const swept = deps.sweptMove(c.x, c.y, desiredX, desiredY, (x, y) => deps.canOccupyAt(x, y, deps.TILE * 0.32));
     const stepPx = Math.hypot(swept.x - c.x, swept.y - c.y);
     c.x = swept.x; c.y = swept.y;
+    if (swept.blockedAt && c._banditLungeAirborne && !c._banditLungeImpactResolved) {
+      const state = {
+        airborne: true, lungeMaxDistancePx: c._banditLungeDistancePx,
+        lungeTraveledPx: Math.hypot(c.x - c._banditLungeStartX, c.y - c._banditLungeStartY),
+      }; // Uses the committed budget rather than remaining time; glancing walls cannot erase the collision penalty.
+      window.KnockbackCollisionImpact?.resolveAerialLunge?.(c, state,
+        { kind: 'stone', label: 'Airborne enemy lunge impact' }, deps.TILE, {
+          dealHealthDamage: (entity, amount) => {
+            const before = Math.max(0, Number(entity.health) || 0);
+            deps.damageCreature?.(entity, amount, entity.x, entity.y, 0,
+              { tag: 'blunt', environmentalImpact: true, attacker: entity });
+            return { applied: Math.max(0, before - Math.max(0, Number(entity.health) || 0)), lethal: entity.health <= 0 };
+          },
+        });
+      c._banditLungeImpactResolved = true;
+      c._banditLungeT = 0; // No pushing repeatedly into the same solid wall on subsequent frames.
+    }
     // Same-frame overshoot correction: a lunge's own cone-halt (above)
     // normally stops it well outside contact range, but the lunge
     // doesn't home like the player's own does, so a target that
