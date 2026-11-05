@@ -19,6 +19,12 @@
     const wallFace=new THREE.BoxGeometry(.89,1.64,.055); // Thin geometry supports the existing engraving projection, rather than a new shader.
     const pilaster=new THREE.BoxGeometry(.35,2.25,.22); // Repeats the V50 narrow pillar rhythm along otherwise featureless corridor walls.
     const matrix=new THREE.Matrix4(),world=new THREE.Matrix4(),point=new THREE.Vector3();
+    const wingTiles=new Map(); // Resolve each authored wing's real story-specific floor, never the flattened cells shared with other elevations.
+    for(const floor of ruin.shaftHubPlan?.floors||[])for(const wing of floor.wings||[])
+      if(typeof root.RuinLayerPlayable?.collect==='function')
+        wingTiles.set(wing.id,root.RuinLayerPlayable.collect(wing));
+    const entryTiles=new Set([...(ruin.entryFloorSet||[]),...(ruin.shaftConnector?.route?.tiles||[]).map(([x,z])=>x+','+z)]); // Ground-floor stone entrance/corridor only; upper stories must not flip engraving placement.
+    const corridorTiles=entryTiles.size?entryTiles:rec.floorSet;
     const floorGroups=new Map(),floorCounts=new Map(); // Each story's visual accents follow the same elevation visibility as generated wing rooms.
     let faces=0,pillars=0; // Exposed in the mobile ruin badge to confirm themed wall pieces were built.
     const MAX_PANELS=96,MAX_PILASTERS=24; // Global material/atlas budget for one entire multi-story ruin.
@@ -61,7 +67,8 @@
         point.setFromMatrixPosition(world);
         const yaw=alongZ?Math.PI/2:0;
         const cellX=Math.floor(point.x),cellZ=Math.floor(point.z);
-        const floorSet=rec.floorSet; // Position V50 engravings on the walkable side of the existing wall, not its outside face.
+        const wingMatch=/^(floor\d+-[NESW])-wall-(ns|ew)$/.exec(name);
+        const floorSet=(wingMatch&&wingTiles.get(wingMatch[1]))||(!wingMatch&&corridorTiles)||rec.floorSet; // World-space wall decorations face their actual room, not a floor that happens to overlap in 2D.
         const onMinus=alongX?floorSet.has(cellX+','+(cellZ-1))
           :floorSet.has((cellX-1)+','+cellZ);
         const onPlus=alongX?floorSet.has(cellX+','+(cellZ+1))
