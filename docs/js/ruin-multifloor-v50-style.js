@@ -7,7 +7,7 @@
   else root.RuinMultifloorV50Style=api;
 })(typeof self!=='undefined'?self:globalThis,function(root){
   'use strict';
-  function apply({rec,ruin,hub,seed,THREE,getPlayerY}={}){
+  function apply({rec,ruin,hub,seed,THREE,getPlayerY,routeTiles=[]}={}){
     if(!rec?.scene||!ruin?.localeRoot||!hub?.grid||!THREE?.Mesh)
       throw new Error('V50 multifloor wall style needs a mounted scene and shaft grid.');
     const accents=new THREE.Group(); // Owns the V50-style wall reliefs for cleanup on dungeon reroll.
@@ -23,7 +23,7 @@
     for(const floor of ruin.shaftHubPlan?.floors||[])for(const wing of floor.wings||[])
       if(typeof root.RuinLayerPlayable?.collect==='function')
         wingTiles.set(wing.id,root.RuinLayerPlayable.collect(wing));
-    const entryTiles=new Set([...(ruin.entryFloorSet||[]),...(ruin.shaftConnector?.route?.tiles||[]).map(([x,z])=>x+','+z)]); // Ground-floor stone entrance/corridor only; upper stories must not flip engraving placement.
+    const entryTiles=new Set([...(ruin.entryFloorSet||[]),...routeTiles.map(([x,z])=>x+','+z)]); // Ground-floor stone entrance/corridor only; upper stories must not flip engraving placement.
     const corridorTiles=entryTiles.size?entryTiles:rec.floorSet;
     const floorGroups=new Map(),floorCounts=new Map(); // Each story's visual accents follow the same elevation visibility as generated wing rooms.
     let faces=0,pillars=0; // Exposed in the mobile ruin badge to confirm themed wall pieces were built.
