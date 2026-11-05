@@ -66,16 +66,19 @@
     };
   }
 
-  function planLayout(baseCols, baseRows, dims = layoutDims()) {
-    const { aw, ad, vw, vd } = dims;
-    const rows = Math.max(baseRows, ad + 6);
-    const x0 = baseCols + 1;
+  function planLayout(baseCols, baseRows, dims = layoutDims(), options = {}) {
+    const {aw,ad,vw,vd}=dims;
+    const rows=Math.max(baseRows,ad+6);
+    const westOf=Number(options.leftOfX); // East-facing V50 vestibules put the physical shaft on the east; keep this endgame-only sanctuary on the unused west.
+    const westPlacement=Number.isFinite(westOf)&&westOf>0;
+    const x0=westPlacement?Math.floor(westOf-aw-PASSAGE_LEN-vw-5):baseCols+1;
+    if(x0<2)throw new Error('Not enough west-side clearance for the boss sanctum');
     const z0 = Math.floor((rows - ad) / 2);
     const zc = z0 + ad / 2; // Whole-tile line the passage and vault centre on.
     const arena = { minX:x0, maxX:x0 + aw, minZ:z0, maxZ:z0 + ad };
     const passage = { minX:arena.maxX, maxX:arena.maxX + PASSAGE_LEN, minZ:zc - PASSAGE_W / 2, maxZ:zc + PASSAGE_W / 2 };
     const vault = { minX:passage.maxX, maxX:passage.maxX + vw, minZ:zc - vd / 2, maxZ:zc + vd / 2 };
-    return { cols:vault.maxX + 3, rows, arena, passage, vault, zc };
+    return {cols:Math.max(baseCols,vault.maxX+3),rows,arena,passage,vault,zc,westPlacement};
   }
 
   function rectTiles(rect, out) {
@@ -83,8 +86,8 @@
       for (let r = Math.floor(rect.minZ); r < Math.ceil(rect.maxZ); r++) out.add(`${c},${r}`);
   }
 
-  function reserve(baseCols, baseRows) {
-    const plan = planLayout(baseCols, baseRows);
+  function reserve(baseCols, baseRows, options = {}) {
+    const plan=planLayout(baseCols,baseRows,layoutDims(),options);
     const tiles = new Set();
     rectTiles(plan.arena, tiles); rectTiles(plan.passage, tiles); rectTiles(plan.vault, tiles);
     return { cols:plan.cols, rows:plan.rows, tiles, plan };
@@ -389,7 +392,8 @@
 
   function chooseDoorSite(kit, context, rng) {
     const floorY = Number(context.meta?.floorSurfaceY) || 0;
-    const doorways = (context.meta?.doorways || []).map((door, index) => kit.doorwayWorld(context.meta, door, index)).filter(Boolean);
+    const doorways=(context.meta?.doorways||[]).map((door,index)=>kit.doorwayWorld(context.meta,door,index)).filter(Boolean);
+    if(context.shaftEntrance)doorways.push(context.shaftEntrance); // Do not place the Great Door over the one physical exit to the shaft.
     const sites = [], why = { walls:0, narrow:0, short:0, floor:0, blocked:0, solid:0, doorway:0, spawn:0 };
     for (const wall of wallCandidates(context)) {
       why.walls++;
@@ -1168,6 +1172,7 @@
   // The live grid's size already includes the reserved wing; the V50 base
   // size is recovered by subtracting the wing's fixed width.
   function reservedLayout(context) {
+    if(context?.sanctumPlan?.arena&&context.sanctumPlan?.vault)return context.sanctumPlan; // Preserve the reserved west-side location instead of guessing from enlarged map dimensions.
     const size = context?.sanctumMapSize || context; // Shaft wing appends rows after the sanctum reserves its tiles.
     const cols = Number(size?.cols) || 0, rows = Number(size?.rows) || 0;
     const wing = planLayout(0, rows).cols; // Width the wing adds (base 0).
