@@ -748,6 +748,7 @@
       const list=node.userData?.decalMaterials;
       if(Array.isArray(list))node.userData.decalMaterials=list.map(material=>replaced.get(material)||material);
     });
+    window.DevRandomRuinDoorSlabs?.normalize?.(root); // V50 door slabs stop 0.45 above the floor; stretch them down to it (js/dev-random-ruin-door-slabs.js).
     window.DevRandomRuinCubePillars?.normalize?.(root,{tileScale:RUIN_TILE_SCALE}); // V50's linked cube pairs: arch-aware spacing, true cubes, distinct icon faces (js/dev-random-ruin-cube-pillars.js).
 
     let remainingLitMaterials=0,legacyStoneMaterials=0;
