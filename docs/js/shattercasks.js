@@ -517,14 +517,10 @@
     // The burden's authored anchor is moved onto this point rather than inheriting
     // the body-root posterior position. Its rotation continues following the plane.
     const anchor=backConfig?.portraitAnchor||{}; // Authored attachment coordinate on the carrier portrait.
-    const offset=backConfig?.posteriorOffset||{}; // Fine adjustment in portrait-local coordinates.
     const burdenPoint=backConfig?.position||{}; // Point on the burden that must meet the portrait anchor.
     const localBurdenPoint=new THREE.Vector3(finite(burdenPoint.x),finite(burdenPoint.y),finite(burdenPoint.z))
       .multiply(vase.group.scale).applyQuaternion(vase.group.quaternion);
-    vase.group.position.set(
-      finite(anchor.x)+finite(offset.x),
-      finite(anchor.y)+finite(offset.y),
-      finite(anchor.z)+finite(offset.z)).sub(localBurdenPoint);
+    vase.group.position.set(finite(anchor.x),finite(anchor.y),finite(anchor.z)).sub(localBurdenPoint);
   }
   function heldItemHolder(){
     const d=carryDeps();
