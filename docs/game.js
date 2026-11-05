@@ -6972,6 +6972,8 @@
       function releasePreviousAreaCreatureTextures() {
         if (_lastInactiveCreatureTextureArea === currentArea || cutscenePreviewActive) return;
         _lastInactiveCreatureTextureArea = currentArea;
+        noteZoneVisited(currentArea); // Fires once per area change; the inactive zone cache trims shortly after the arrival settles.
+        scheduleZoneCacheTrim();
         for (const c of hostileObjects) if (c.areaId !== currentArea) {
           releaseInactiveCreatureTextures(c);
           releaseCreatureVisuals(c); // An inactive zone keeps creature data, not full animal rigs.
@@ -11498,6 +11500,7 @@
 
         const info = { scene: zScene, grid: zGrid, cols: ZCOLS, rows: ZROWS, transitions, occlusionMeshes, canopyZones, cullables, chunkController: null, pathNet: zonePathNet };
         _zoneScenes.set(mapId, info);
+        rebindZoneResidents(mapId, info); // Creatures that outlived an evicted copy of this zone point at the new scene and grid.
 
         const floorRegistry = _zoneFloorMeshGroups.get(mapId); // Tracks global path meshes plus every currently loaded chunk floor object.
         const waterRegistry = _zoneWaterMeshes.get(mapId); // Tracks only resident water meshes for shared water animation/debug consumers.
@@ -15692,6 +15695,82 @@
         window.CliffElevatedSurfaces?.clear?.(mapId); // Release only this wilderness area's stacked support scope on unload.
         window.CliffRouteNetwork?.releaseArea?.(mapId); // Drop transient scene/route references; saved balcony rewards survive.
       }
+
+      // ── Inactive wilderness zone cache ────────────────────────────────
+      // A wilderness scene used to stay cached forever once built, so every
+      // zone the player had ever entered kept its scene graph, GPU buffers and
+      // per-tile data (about 170 MB of JS heap and several hundred MB of
+      // process memory each). Only the current zone plus the most recent
+      // inactive one(s) stay built now
+      // (SCRATCHBONES_CONFIG.game.zoneCache.maxInactiveZones, default 1).
+      // Older zones are torn down with _disposeZoneScene and rebuilt by the
+      // ordinary enterZone path from _zoneLayouts, the tile deltas and the
+      // persist maps, which already restore edited tiles, felled trees, mined
+      // rocks, berries, reagents and treasure. Wildlife, bandit camps and the
+      // player's campfire keep their own state and re-attach on entry. A zone
+      // with a resident that still owns a rig in it (a bandit, a dying body)
+      // or an NPC is never evicted.
+      const _zoneVisitOrder = []; // Wilderness zone ids, most recently entered last.
+      let _zoneCacheTrimTimer = null;
+      function zoneCacheMaxInactive() {
+        const configured = Number(window.SCRATCHBONES_CONFIG?.game?.zoneCache?.maxInactiveZones);
+        return Number.isFinite(configured) && configured >= 0 ? Math.floor(configured) : 1;
+      }
+      function noteZoneVisited(mapId) {
+        if (!_isZoneArea(mapId)) return;
+        const at = _zoneVisitOrder.indexOf(mapId);
+        if (at >= 0) _zoneVisitOrder.splice(at, 1);
+        _zoneVisitOrder.push(mapId);
+      }
+      function zoneResidents(mapId) {
+        const residents = [];
+        for (const set of [hostileObjects, corpseObjects]) for (const c of set) if ((c.areaId || c.zoneId) === mapId) residents.push(c);
+        return residents;
+      }
+      // Wildlife whose rig is only streamed in can always go back to data.
+      function releaseStreamedResidents(mapId) {
+        for (const c of zoneResidents(mapId)) if (!c._wildlifeVisualsReleased && c.streamVisuals) releaseCreatureVisuals(c);
+      }
+      function zoneEvictionBlocker(mapId) {
+        if (mapId === window.DevSpawner?.DEV_ARENA_ZONE_ID || mapId === window.DevSpawner?.WILDERNESS_LAB_ZONE_ID) return 'dev zone';
+        const area = normalizeNpcArea(mapId);
+        for (const w of npcWalkers) if (normalizeNpcArea(w.area) === area || w.root?._pendingZoneAdd === mapId) return 'npc';
+        for (const c of zoneResidents(mapId)) if (!c._wildlifeVisualsReleased && !c.isCompanion) return 'resident rig';
+        return null;
+      }
+      function evictZoneScene(mapId) {
+        const zi = _zoneScenes.get(mapId);
+        if (!zi) return false;
+        const persisted = _captureLivePreviewZonePersistence(mapId); // _disposeZoneScene was written for terrain regeneration and drops this saved state.
+        window.WildernessCampfire?.releaseVisualIfZone?.(mapId); // Keeps the saved campfire; only its visual belonged to this scene.
+        for (const c of zoneResidents(mapId)) { c.scene = null; c.areaGrid = null; } // Data-only residents must not keep the old scene and grid alive; rebindZoneResidents restores them.
+        _disposeZoneScene(mapId);
+        _restoreLivePreviewZonePersistence(mapId, persisted);
+        zi.scene.clear(); // One stale reference to a mesh would otherwise keep the whole old zone reachable through its parent chain.
+        window.__farmLog?.(`[zone-cache] evicted ${mapId}`, 'perf');
+        return true;
+      }
+      function rebindZoneResidents(mapId, info) {
+        for (const c of zoneResidents(mapId)) { c.scene = info.scene; c.areaGrid = info.grid; c.areaCols = info.cols; c.areaRows = info.rows; }
+      }
+      function trimZoneCache() {
+        _zoneCacheTrimTimer = null;
+        if (cutscenePreviewActive || _tothalShiftPromise) return;
+        const inactive = _zoneVisitOrder.filter(id => id !== currentArea && _zoneScenes.has(id));
+        const keep = new Set(inactive.slice(Math.max(0, inactive.length - zoneCacheMaxInactive())));
+        for (const mapId of [..._zoneScenes.keys()]) {
+          if (mapId === currentArea || keep.has(mapId)) continue;
+          releaseStreamedResidents(mapId);
+          const blocker = zoneEvictionBlocker(mapId);
+          if (blocker) { window.__farmLog?.(`[zone-cache] kept ${mapId}: ${blocker}`, 'perf'); continue; }
+          evictZoneScene(mapId);
+        }
+      }
+      function scheduleZoneCacheTrim() {
+        if (_zoneCacheTrimTimer) return;
+        _zoneCacheTrimTimer = setTimeout(trimZoneCache, 6000); // Never in the frame the player arrives: a freshly entered area gets a few quiet seconds first.
+      }
+      window.__zoneCacheDebug = { trim: trimZoneCache, order: () => [..._zoneVisitOrder], built: () => [..._zoneScenes.keys()], blocker: zoneEvictionBlocker }; // QA hook, mirrors window.__regenerateWildernessLab.
 
       // Finds one already-built wilderness shrub/tree group by indexed tile
       // lookup and removes it with light list bookkeeping. The grass floor
