@@ -64,6 +64,18 @@ assert.equal(actor.onPerch, null);
 assert.equal(actor.onBranch, null);
 assert.equal(actor.health, 26, 'prone releases from elevated perch with ordinary branch-fall Health');
 assert.equal(actor.footing, 52.5, 'prone branch-fall Footing penalty is applied exactly once');
+actor.prone = false;
+assert(w.PerchSupport.attach(actor, w.PerchSupport.point('old-roost', 99, 44, 5)));
+actor.onBranch = null; // Simulates the native jump-down handoff into normal ground/climb motion.
+assert.equal(w.PerchSupport.support(actor), null, 'a stale perch record cannot count as standing on an old roost');
+assert.equal(w.PerchSupport.constrain(actor), false, 'stale perch cannot teleport actor after an intentional jump');
+assert.equal(actor.onPerch, null, 'stale reference discarded');
+assert.equal(actor.health, 26, 'no duplicated fall on next prone check');
+assert(w.PerchSupport.attach(actor, w.PerchSupport.point('next-roost', 12, 19, 3)));
+assert.equal(w.PerchSupport.forget(actor), true, 'intentional jump clears the old support without injury');
+actor.onBranch = null;
+assert.equal(w.PerchSupport.release(actor, 'already grounded'), null, 'post-jump fall cannot trigger twice');
+assert.equal(actor.health, 26);
 w.ClimbSystem.removeBranchesInBounds(mapId, { colStart: 1, rowStart: 3, colEnd: 2, rowEnd: 4 });
 assert.equal(w.PerchSupport.debugSnapshot().areas.some(a => a.id === mapId), false,
   'streamed-out Shadewood supports do not leak across chunk rebuilds');

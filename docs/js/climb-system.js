@@ -516,6 +516,7 @@
     const axisY = (branch.tipY - branch.baseY) / branch.length;
     const jumpDir = climb.dir || { x: axisX, y: axisY };
     player.onBranch = null;
+    window.PerchSupport?.forget?.(player); // Jumping down is intentional: the old point/line perch must not trigger a later phantom fall.
     player.climbing = true;
     player.climbElapsed = 0;
     player.climbHopCount = 1;
@@ -541,6 +542,7 @@
   // Snaps an entity onto a branch at fraction t along it (0 = base/trunk end,
   // 1 = tip) and derives its ground-plane position + height from that.
   function beginOnBranch(entity, branch, t) {
+    window.PerchSupport?.forget?.(entity); // Moving to a native Shadewood branch supersedes any prior authored perch.
     entity.onBranch = branch;
     entity.branchT = deps.clamp(t, 0, 1);
     entity.x = branch.baseX + (branch.tipX - branch.baseX) * entity.branchT;
@@ -971,6 +973,7 @@
   function reattachKey(branch) { return branch.col + ',' + branch.row; }
   function seatBranchAt(entity, branch, t) {
     const clamped = clamp01(t);
+    window.PerchSupport?.forget?.(entity); // Chunk reattachment must never retain the previous perch identity.
     entity.onBranch = branch;
     entity.branchT = clamped;
     entity.x = branch.baseX + (branch.tipX - branch.baseX) * clamped;
@@ -1115,6 +1118,7 @@
     const x = onBranch ? branch.baseX + (branch.tipX - branch.baseX) * t : Number(entity.x) || branch.baseX;
     const y = onBranch ? branch.baseY + (branch.tipY - branch.baseY) * t : Number(entity.y) || branch.baseY;
     entity.onBranch = null;
+    window.PerchSupport?.forget?.(entity); // Felled-tree and streamed-branch fallback already owns this fall's damage.
     entity.branchT = 0;
     entity.branchSurfaceY = 0;
     entity.climbing = false;
@@ -1198,6 +1202,7 @@
       // position sync reads as a sudden teleport.
       if (entity._territorialBehavior?.phase === 'fight') {
         entity.onBranch = null; entity.branchT = 0; entity.branchSurfaceY = 0;
+        window.PerchSupport?.forget?.(entity); // Ground pursuit intentionally abandons elevated branch support.
       }
       return false;
     }

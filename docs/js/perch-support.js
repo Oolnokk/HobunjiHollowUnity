@@ -65,9 +65,18 @@
     entity.x = p.x; entity.y = p.y;
     return true;
   }
+  function forget(entity) {
+    if (!entity?.onPerch) return false;
+    entity.onPerch = null; entity.perchT = 0; entity.perchWorldY = 0;
+    return true; // Normal jumps/branch swaps relinquish support without taking a second fall hit.
+  }
   function constrain(entity) {
     if (!entity?.onPerch) return false;
-    const t = entity.onBranch?.perchSupport ? entity.branchT : entity.perchT; // Native 1D branch walks advance branchT, not the editor-only perchT.
+    if (!entity.onBranch?.perchSupport || entity.onBranch.id !== entity.onPerch.id) {
+      forget(entity); // A regular branch, climb or ground step superseded the synthetic perch.
+      return false;
+    }
+    const t = entity.branchT; // Native 1D branch walks advance branchT, not the editor-only perchT.
     const p = sample(entity.onPerch, t);
     if (!p) return false;
     entity.perchT = entity.onPerch.dimension === 0 ? 0 : clamp(t);
@@ -76,7 +85,11 @@
     return true;
   }
   function support(entity) {
-    return entity?.onPerch || entity?.onBranch || null;
+    const branch = entity?.onBranch;
+    // A stale reference on an actor that already jumped down is not a perch;
+    // never damage that actor again just because an old onPerch field survived.
+    return entity?.onPerch && branch?.perchSupport && branch.id === entity.onPerch.id
+      ? entity.onPerch : branch || null;
   }
   function release(entity, reason = 'fell from perch', options = {}) {
     const held = support(entity);
@@ -87,7 +100,7 @@
       : sample(entity.onPerch, entity.perchT);
     const ground = Number(window.ClimbSystem?.groundYAt?.(p?.x, p?.y)) || 0;
     const height = Math.max(0, finite(p?.worldY) - ground);
-    entity.onPerch = null; entity.perchT = 0; entity.perchWorldY = 0;
+    forget(entity);
     entity.onBranch = null; entity.branchT = 0; entity.branchSurfaceY = 0;
     entity._branchDefense = null;
     if (p) { entity.x = p.x; entity.y = p.y; }
@@ -105,7 +118,7 @@
     return { fell: true, x: entity.x, y: entity.y, height, support: held };
   }
   window.PerchSupport = Object.freeze({
-    point, line, fromBranch, sample, register, unregister, clearArea, attach, constrain, support, release,
+    point, line, fromBranch, sample, register, unregister, clearArea, attach, forget, constrain, support, release,
     debugSnapshot: () => ({ areas: [...byArea].map(([id, items]) => ({ id, supports: items.size })), lastDrop: lastDrop && { ...lastDrop } }),
   });
 })();
