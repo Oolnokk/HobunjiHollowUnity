@@ -139,7 +139,10 @@
     for (const [tileKey, type] of model.baseGridTypes) {
       const [col,row] = tileKey.split(',').map(Number);
       const tile = grid[row]?.[col];
-      if (!tile) continue;
+      // Only undo tiles this model stamped solid. baseGridTypes holds every tile as first seen, so
+      // blindly reverting all of them would turn tiles stamped walkable since then (the shaft
+      // connector's corridor, restamped just before create() destroys the previous model) back into rock.
+      if (!tile || !tile._devRuinCollisionSources) continue;
       tile.type = type;
       delete tile._devRuinCollisionSources;
     }
