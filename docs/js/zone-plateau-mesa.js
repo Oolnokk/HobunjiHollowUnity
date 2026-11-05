@@ -392,7 +392,8 @@
       window.CliffElevatedSurfaces?.mount?.(network, {
         isActive: () => deps.getCurrentArea?.() === mapId, // Offscreen zones cannot change an interior's support.
       });
-      meshes.push(...window.CliffRouteNetwork.render(THREE, zScene, network, deps.resolveTileMat(mapId, deps.TileType.ROCK)));
+      meshes.push(...window.CliffRouteNetwork.render(THREE, zScene, network,
+        deps.resolveTileMat(mapId, deps.TileType.ROCK), deps.resolveTileMat(mapId, deps.TileType.GRASS))); // Match plateau tops without grass on the rocky underside.
       for (const route of network.routes) delete route.project; // The baked decals no longer need the triangle index.
     }
     scheduleMesaRenderBatching(zScene, mapId, meshes);
