@@ -172,6 +172,7 @@
 
   function installMeshHook(mesh) {
     if (!mesh?.isMesh || mesh.userData?.__hobunjiPortraitOutlineParity) return false;
+    if (global.DevTestingSwitchbox?.flags?.noPortraitDepthMatrixParity) return false; // Diagnostics only; never changes the visible avatar pose.
 
     const previousBefore = typeof mesh.onBeforeRender === 'function' ? mesh.onBeforeRender : null;
     const previousAfter = typeof mesh.onAfterRender === 'function' ? mesh.onAfterRender : null;
