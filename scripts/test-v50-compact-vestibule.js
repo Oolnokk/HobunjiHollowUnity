@@ -138,7 +138,8 @@ const map=fs.readFileSync('docs/js/dev-random-ruin-tile-occupancy.js','utf8');
 assert(runtime.includes('singleRoom:singleVestibule'),'V50 itself must generate only one room, not simply hide extra rooms');
 assert(runtime.includes('padX:entryPadX,padZ:entryPadZ'),'solvability reads the relocated V50 room');
 assert(runtime.includes('getShaftCollisionMap:(requestedFloor=0)'),'map must obtain actual height-aware collision voxels');
-assert(map.includes("getShaftCollisionMap?.(selectedRuinFloor)"),'map must render real voxel walls at the chosen elevation');
+assert(map.includes("getShaftCollisionMap?.(requestedStory)")&&map.includes('layer.entryFloor'),
+  'map must render real voxel walls at the selected elevation and retain only real V50 ground-floor cells');
 assert(map.includes('data-ruin-floor'),'controller/touch must be able to select a dungeon story');
 for(const name of ['ruin-v50-vestibule.js','ruin-multifloor-v50-style.js'])
   assert(index.includes(name),'new architecture file must load before game bootstrap: '+name);
