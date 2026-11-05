@@ -105,14 +105,16 @@ assert.equal(stats.drawn, 1, 'a light at the same elevated level is visible agai
 
 playerY = 0;
 fixtures = [];
-walkers = [{ area: currentArea, rec: { tags: ['watch'] }, root: { position: { x: 30, y: 0, z: 0 } } }];
-// This compositor receives the walker array by reference; mutate it instead of replacing the dependency.
-lightingWindow.WeatherFX.init; // No-op reference keeps this test explicit about using the same initialized runtime.
+const watch = { area: currentArea, rec: { tags: ['watch'] }, root: { position: { x: 30, y: 0, z: 0 } } }; // Faraway watch lantern should not cut a dot through the outdoor overlay.
+walkers.push(watch);
+draw();
+assert.equal(gradients.filter(g => g.mode === 'destination-out' && Math.abs(g.radius - 2.4) < 0.001).length, 1,
+  'distant watch NPC lantern is suppressed while the local player lantern remains');
+watch.root.position.x = 5;
+draw();
+assert.equal(gradients.filter(g => g.mode === 'destination-out' && Math.abs(g.radius - 2.4) < 0.001).length, 2,
+  'watch lantern fades back in after the player comes close');
 walkers.length = 0;
-const watch = { area: currentArea, rec: { tags: ['watch'] }, root: { position: { x: 30, y: 0, z: 0 } } };
-const activeWalkers = lightingWindow.__outdoorTestWalkers || [];
-// Assigning the initial array directly is avoided by creating the next fixture through a new module below.
-assert.equal(draw().drawn, 0, 'no furniture-light mask remains after fixture teardown');
 
 currentArea = 'map_i_temple'; // Ordinary enclosed rooms must retain the pre-existing wide lamp range and occlusion behavior.
 fixtures = [{ x: 30, y: 0, z: 0, distance: 4, intensity: 1, color: { r: 255, g: 180, b: 80 } }];
