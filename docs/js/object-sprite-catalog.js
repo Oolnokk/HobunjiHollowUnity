@@ -154,8 +154,8 @@
     let count = 0;
     for (const [key, def] of Object.entries(definitions)) if (ensure(key, def)) count++;
     for (const entry of deps.inventoryItems || []) if (entry?.key && definitions[entry.key]) {
-      const art = classify(entry.key, definitions[entry.key]);
-      if (art) assignArt(entry.key, entry, art); // Copy exact canonical category/color, even if this selectable entry has only a key/label.
+      const art = ensure(entry.key, definitions[entry.key]); // The canonical definition was already classified above; preserve its result even if the new source path would no longer match an initial-art guard.
+      if (art) assignArt(entry.key, entry, art); // Copy exact canonical category/color into metadata-light wheel entries.
     }
     return count;
   }
