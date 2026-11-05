@@ -902,21 +902,20 @@
     return null;
   }
 
-  function terrainImpactForStep(p) {
-    const start = _projectileHitStart.set(p.prevX / deps.TILE, p.prevWorldY, p.prevY / deps.TILE);
-    const end = _projectileHitEnd.set(p.x / deps.TILE, p.worldY, p.y / deps.TILE);
-    const radiusWorld = p.def.projectileRadiusPx / deps.TILE; // Includes the projectile underside during physical terrain checks.
-    const shaftT = shaftCoverT(start, end, radiusWorld); // True voxel wall collision across stories.
-    const floorT = dynamicSupportHitT(start, end, radiusWorld);
-    const dx = p.x - p.prevX, dz = p.y - p.prevY, dy = (p.worldY - p.prevWorldY) * deps.TILE;
-    const samples = Math.max(1, Math.ceil(Math.hypot(dx, dy, dz) / (deps.TILE * 0.1))); // Sub-tile samples catch narrow blockers even when step endpoints are both clear.
+  // The same finite 3D terrain/door sweep is used by the live projectile and the
+  // player's hit predictor. Both evaluate the actual shot altitude at every sample.
+  function steppedTerrainImpact(start, end, radiusWorld) {
+    const dx = end.x - start.x, dy = end.y - start.y, dz = end.z - start.z;
+    const samples = Math.max(1, Math.ceil(Math.hypot(dx, dy, dz) / 0.1)); // Conservative, sub-tile sweeps prevent tunnelling between frames.
+    const projectileRadiusPx = radiusWorld * deps.TILE; // Converts the same shot radius for the original world-to-pixel occupancy interface.
     const contact = t => {
-      const x = THREE.MathUtils.lerp(p.prevX, p.x, t), y = THREE.MathUtils.lerp(p.prevY, p.y, t);
-      const height = THREE.MathUtils.lerp(p.prevWorldY, p.worldY, t);
-      if (height - radiusWorld <= deps.worldSurfaceY(x, y) + 0.08) return 'ground';
-      return !deps.canOccupyAt(x, y, p.def.projectileRadiusPx, height) ? 'solid-tile' : null;
+      const x = THREE.MathUtils.lerp(start.x, end.x, t), z = THREE.MathUtils.lerp(start.z, end.z, t);
+      const y = THREE.MathUtils.lerp(start.y, end.y, t);
+      const xPx = x * deps.TILE, zPx = z * deps.TILE;
+      if (y - radiusWorld <= deps.worldSurfaceY(xPx, zPx) + 0.08) return 'ground';
+      if (window.InteriorDoorTiles?.blocksBox?.(deps.getCurrentArea(), x, z, radiusWorld, y)) return 'door';
+      return !deps.canOccupyAt(xPx, zPx, projectileRadiusPx, y) ? 'solid-tile' : null;
     };
-    let terrain = null;
     for (let i = 1; i <= samples; i++) {
       const t = i / samples;
       if (!contact(t)) continue;
@@ -925,10 +924,18 @@
         const mid = (lo + hi) / 2;
         if (contact(mid)) hi = mid; else lo = mid;
       }
-      terrain = { kind: contact(hi) || 'solid-tile', t: hi };
-      break;
+      return { kind: contact(hi) || 'solid-tile', t: hi };
     }
-    let first = terrain;
+    return null;
+  }
+
+  function terrainImpactForStep(p) {
+    const start = _projectileHitStart.set(p.prevX / deps.TILE, p.prevWorldY, p.prevY / deps.TILE);
+    const end = _projectileHitEnd.set(p.x / deps.TILE, p.worldY, p.y / deps.TILE);
+    const radiusWorld = p.def.projectileRadiusPx / deps.TILE; // One radius for ray, floor, and door cover.
+    const shaftT = shaftCoverT(start, end, radiusWorld); // True voxel wall collision across stories.
+    const floorT = dynamicSupportHitT(start, end, radiusWorld); // Registered support slabs intercept shots across stories.
+    let first = steppedTerrainImpact(start, end, radiusWorld);
     if (shaftT !== null && (!first || shaftT <= first.t)) first = { kind: 'solid-tile', t: shaftT };
     if (floorT !== null && (!first || floorT < first.t)) first = { kind: 'floor', t: floorT };
     return first;
@@ -1945,34 +1952,34 @@
   }
   function disposeOwner(c) { cancelBanditAction(c); if (c?._banditRangedToolHolder) c._banditRangedToolHolder.parent?.remove(c._banditRangedToolHolder); }
 
-  const WOULD_HIT_LOS_STEP_PX = 48;
   function computeWouldHitTarget() {
-    const key=deps?.getEquippedRangedKey?.(),def=defFor(key);
-    if(!def||!isLoaded(key))return null;
-    const solution=playerAimSolution(key);if(!solution)return null;
-    const segment=shotSegment(solution,def),radius=def.projectileRadiusPx/deps.TILE;
-    let first=null;
-    for(const actor of deps.hostileObjects){
-      if(actor.health<=0||actor.areaId!==deps.getCurrentArea())continue;
-      const interval=segmentHitboxInterval(segment.start,segment.end,actorHitbox(actor),radius);
-      if(interval&&(!first||interval.enter<first.t))first={kind:'hostile',t:interval.enter};
+    const key = deps?.getEquippedRangedKey?.(), def = defFor(key);
+    if (!def || !isLoaded(key)) return null;
+    const solution = playerAimSolution(key);
+    if (!solution) return null;
+    const { start, end } = shotSegment(solution, def);
+    const radiusWorld = def.projectileRadiusPx / deps.TILE; // Same radius used by real projectiles and terrain sweeps.
+    let first = null;
+    for (const actor of deps.hostileObjects) {
+      if (actor.health <= 0 || actor.areaId !== deps.getCurrentArea()) continue;
+      const interval = segmentHitboxInterval(start, end, actorHitbox(actor), radiusWorld);
+      if (interval && (!first || interval.enter < first.t)) first = { kind: 'hostile', t: interval.enter };
     }
-    const charge=window.Shattercasks?.projectileHit?.(segment.start,segment.end,radius,1,deps.getCurrentArea());
-    if(charge&&(!first||charge.t<first.t))first={kind:'shattercask',t:charge.t};
-    if(!first)return null;
-    const cover=window.NearbyVolumeCollision?.segmentHit?.(segment.start,segment.end,radius);
-    if(cover&&cover.t<=first.t)return null;
-    const shaftT=shaftCoverT(segment.start,segment.end,radius); // Keep the aim indicator consistent with shaft cover.
-    if(shaftT!==null&&shaftT<=first.t)return null;
-    const maxRangePx=def.rangeTiles*deps.TILE,hitDistancePx=first.t*maxRangePx;
-    const dirX=(segment.end.x-segment.start.x)/def.rangeTiles;
-    const dirY=(segment.end.z-segment.start.z)/def.rangeTiles;
-    for(let distancePx=WOULD_HIT_LOS_STEP_PX;distancePx<hitDistancePx;distancePx+=WOULD_HIT_LOS_STEP_PX){
-      const f=distancePx/maxRangePx,x=deps.player.x+dirX*distancePx,y=deps.player.y+dirY*distancePx;
-      const height=THREE.MathUtils.lerp(segment.start.y,segment.end.y,f);
-      if(!deps.canOccupyAt(x,y,def.projectileRadiusPx,height)
-          ||height<=deps.worldSurfaceY(x,y)+.08)return null;
-    }
+    const shatter = window.Shattercasks?.projectileHit?.(start, end, radiusWorld, 1, deps.getCurrentArea());
+    if (shatter && (!first || shatter.t < first.t)) first = { kind: 'shattercask', t: shatter.t };
+    if (!first) return null;
+
+    // A steep trajectory consumes range vertically too. Do not show a hit for a
+    // target beyond the live projectile's 3D maximum flight envelope.
+    const shotDistance = Math.hypot(end.x - start.x, end.y - start.y, end.z - start.z) * first.t;
+    if (shotDistance > def.rangeTiles * RANGE_FALLOFF_DISTANCE_MULTIPLIER) return null;
+
+    const targetPoint = start.clone().lerp(end, first.t); // Only the segment BEFORE the first candidate may obstruct it.
+    const cover = window.NearbyVolumeCollision?.segmentHit?.(start, targetPoint, radiusWorld);
+    if (cover && cover.t < 1 - AIM_EPSILON) return null;
+    if (shaftCoverT(start, targetPoint, radiusWorld) !== null) return null;
+    if (dynamicSupportHitT(start, targetPoint, radiusWorld) !== null) return null;
+    if (steppedTerrainImpact(start, targetPoint, radiusWorld)) return null;
     return first.kind;
   }
   function wouldHitTarget(){
