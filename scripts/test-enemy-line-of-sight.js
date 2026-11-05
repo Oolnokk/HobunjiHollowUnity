@@ -16,6 +16,8 @@ class Vector3 {
   lengthSq() { return this.x * this.x + this.y * this.y + this.z * this.z; }
   normalize() { const n = this.length() || 1; return this.set(this.x / n, this.y / n, this.z / n); }
   multiplyScalar(value) { this.x *= value; this.y *= value; this.z *= value; return this; }
+  addScaledVector(other, scalar) { this.x += other.x * scalar; this.y += other.y * scalar; this.z += other.z * scalar; return this; }
+  lerp(other, t) { return this.set(this.x + (other.x - this.x)*t,this.y + (other.y - this.y)*t,this.z + (other.z - this.z)*t); }
 }
 class Quaternion { setFromAxisAngle() { return this; } }
 class Matrix4 {}
@@ -36,6 +38,8 @@ const THREE = {
 let now = 1000;
 let area = 'interior';
 let closedDoor = false;
+let shotDoorClosed = false; // Authoritative door state for projectile and hit-preview regression cases.
+let playerPitch = 0; // Controls vertical player aim during the hit-preview regression.
 let terrainBlock = false;
 let raisedTerrainY = null; // Enables raised-ground LOS regression without a visible stone wall.
 let sightObjects = [];
@@ -43,7 +47,10 @@ const hostileObjects = [];
 const window = {
   NearbyVolumeCollision: { segmentHit: () => null, segmentSightHit: () => null },
   InteriorDoorTiles: {
-    blocksBox(_area, x) { return closedDoor && x > 1.02 && x < 1.08; },
+    blocksBox(_area, x, _z, _radius, worldY) {
+      return (closedDoor && x > 1.02 && x < 1.08)
+        || (shotDoorClosed && x > 1.3 && x < 1.7 && (worldY == null || (worldY >= 0 && worldY <= 2))); // Actual finite-height door.
+    },
   },
 };
 const context = {
@@ -61,6 +68,9 @@ window.RangedWeapons.init({
   getSightOccluders: () => sightObjects,
   worldSurfaceY: x => raisedTerrainY != null && x / 64 > 1.4 && x / 64 < 1.6 ? raisedTerrainY : 0,
   canOccupyAt(x) { return !(terrainBlock && x / 64 > 1.4 && x / 64 < 1.6); },
+  getEquippedRangedKey: () => 'crossbow',
+  getPlayerAimAngle: () => 0,
+  getPlayerAimPitch: () => playerPitch,
 });
 
 const actor = (x, y) => ({ x, y, health: 100, def: { modelWidth: 0.5, modelHeight: 1 } });
@@ -203,5 +213,42 @@ assert.equal(solidImpact?.kind, 'solid-tile', 'fast ranged shots still hit a nar
 assert.ok(solidImpact.t > .15 && solidImpact.t < .35, 'swept collision finds the obstruction before its far edge');
 terrainBlock = false;
 assert.equal(window.__testTerrainImpact(fastShot), null, 'the clear shot does not gain an invented collider');
+
+
+/* Regression: actual player/enemy projectiles must collide with a closed
+ * doorway, and the player's hit indicator must predict the same obstruction. */
+shotDoorClosed = true;
+const doorShot = {prevX:64,prevY:896,prevWorldY:.6,x:192,y:896,worldY:.6,def:{projectileRadiusPx:3}};
+const closedDoorHit = window.__testTerrainImpact(doorShot);
+assert.equal(closedDoorHit?.kind, 'door', 'actual projectiles stop at an opaque closed door');
+assert.ok(closedDoorHit.t > .1 && closedDoorHit.t < .5, 'closed door impact is swept before the distant target');
+doorShot.prevWorldY = 3; doorShot.worldY = 3;
+assert.equal(window.__testTerrainImpact(doorShot), null, 'high projectiles clear the finite door');
+shotDoorClosed = false; doorShot.prevWorldY = .6; doorShot.worldY = .6;
+assert.equal(window.__testTerrainImpact(doorShot), null, 'opening a door allows real projectiles to travel through');
+
+const previewTarget = elevatedActor(192,64,.5);
+previewTarget.areaId = 'town'; hostileObjects.push(previewTarget);
+now += 100;
+assert.equal(window.RangedWeapons.wouldHitHostile(), true, 'clear horizontal player shot shows a valid hit');
+shotDoorClosed = true; now += 100;
+assert.equal(window.RangedWeapons.wouldHitHostile(), false, 'player hit preview rejects shots that strike a closed door');
+shotDoorClosed = false;
+window.DynamicSurfaces = { sampleSupport: (x, _z, range) =>
+  x > 1.4 && x < 2.8 && range.minY <= .3 && range.maxY >= .3 ? {y:.3} : null }; // A solid narrow floor placed between player and hostile.
+now += 100;
+assert.equal(window.RangedWeapons.wouldHitHostile(), false, 'player hit preview rejects a crossing story-floor slab');
+delete window.DynamicSurfaces;
+now += 100;
+assert.equal(window.RangedWeapons.wouldHitHostile(), true, 'a removed support floor restores the indicator');
+hostileObjects.pop();
+
+playerPitch = Math.PI * (75 / 180); // An extremely steep shot expends 3D range more quickly than horizontal range.
+const steepTarget = elevatedActor(64 + 6 * 64,64,.3125 + 6 * Math.tan(playerPitch));
+steepTarget.areaId = 'town'; hostileObjects.push(steepTarget);
+now += 100;
+assert.equal(window.RangedWeapons.wouldHitHostile(), false, 'a visibly aligned target beyond 3D projectile travel shows no false hit');
+hostileObjects.pop();
+playerPitch = 0;
 
 console.log('enemy line of sight: all checks passed');
