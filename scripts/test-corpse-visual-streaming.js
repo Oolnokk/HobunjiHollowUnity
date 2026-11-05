@@ -86,7 +86,7 @@ const restoring = (extra = {}) => ({
   avatarRef: rig(), groundShadow: { position: { set(x, y, z) { this.x = x; this.y = y; this.z = z; } } }, ...extra,
 });
 const grid = Array.from({ length: 10 }, () => Array.from({ length: 10 }, () => ({})));
-const recordedBody = restoring({ areaGrid: grid });
+const recordedBody = restoring({ areaGrid: grid, deathRestRotY: -1.1486 });
 assert.equal(deathWindow.CreatureDeath.restoreSettledPose(recordedBody), true);
 assert.deepEqual(started, ['back'], 'the recorded fall is rebuilt on the new rig');
 assert.deepEqual(sampled, [1], 'and posed on its settled last frame');
@@ -95,6 +95,7 @@ assert.equal(recordedBody.avatarRef.group.position.z, 4.5);
 assert.equal(recordedBody.avatarRef.group.position.y, 2 + 0.5 * 0.82, 'recorded bodies rest at the recorded height');
 assert.equal(recordedBody.groundShadow.position.y, 2 + 0.02, 'the ground shadow follows');
 assert.equal(recordedBody.avatarRef.frontPlane.rotation.y, Math.PI / 2, 'cards are reset to the flat face');
+assert.deepEqual([recordedBody.avatarRef.group.rotation.x, recordedBody.avatarRef.group.rotation.y, recordedBody.avatarRef.group.rotation.z], [0, -1.1486, 0], 'a recorded body keeps the facing it fell with (the new rig would otherwise start at yaw 0)');
 
 const flatBody = restoring({ areaGrid: grid, deathRecorded: false, deathRestRotX: 0.1, deathRestRotY: 1.2, deathRestRotZ: Math.PI / 2 });
 sampled.length = 0;
