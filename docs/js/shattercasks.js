@@ -212,7 +212,7 @@
     if(!cached.ready) {
       const cave=window.CaveSiteSystem?.__test?.plansByMapId?.get?.(mapId);
       if(cave)for(const entry of cave.shattercasks||[]) cached.static.push({
-        id:entry.id+'_'+entry.col+'_'+entry.row,col:entry.col,row:entry.row
+        id:entry.id+'_'+entry.col+'_'+entry.row,col:entry.col,row:entry.row,kind:entry.kind||'shattercask' // Puzzle cave's flame charge is still a shared physical Burden.
       });
       // Generated ruin occupancy sorts every floor cell when snapshotted:
       // sample it once per generated scene, never once every 140ms.
@@ -707,6 +707,12 @@
     const vase=new Burden({...p,group,data,meshColliders:collectMeshColliders(group),
       meshBounds:THREE.Box3?new THREE.Box3():null,
       emitters:null,exploded:false,carried:false});
+    if(vase.kind==='flameShattercask'){
+      const flame=new THREE.Mesh(new THREE.ConeGeometry(.11,.27,6),
+        new THREE.MeshBasicMaterial({color:0xff8a2a,transparent:true,opacity:.75,depthWrite:false}));
+      flame.name='flame_shattercask_indicator';
+      flame.position.y=.88;group.add(flame); // Visually distinguishes the volatile fire variant without modifying shared pottery textures.
+    }
     if(vase.meshBounds)refreshMeshBounds(vase);
     rec.vases.set(p.id,vase);
     return vase;
@@ -957,7 +963,7 @@
       return true;
     }
     if(burden.kind==='soursap')return detonateFruit(burden,cause);
-    if(burden.kind==='shattercask')return detonate(burden,cause);
+    if(burden.kind==='shattercask'||burden.kind==='flameShattercask')return detonate(burden,cause);
     burden.flying=false;
     refreshMeshBounds(burden);
     lastEvent='ceiling Burden landed '+burden.id+' via '+cause;
@@ -1985,7 +1991,7 @@
     }
     let count=0;
     for(const burden of hit) {
-      if(burden.kind==='shattercask'){if(detonate(burden,'chain-blast'))count++;}
+      if(burden.kind==='shattercask'||burden.kind==='flameShattercask'){if(detonate(burden,'chain-blast'))count++;}
       else if(burden.kind==='hronalWitchBomb') {
         const handler=burden.impactHandler||BURDEN_IMPACT_HANDLERS.get(burden.kind);
         if(typeof handler==='function'&&handler(burden,'witch-bomb-chain')!==false)count++;
@@ -2066,7 +2072,7 @@
   }
   function detonate(cask,cause='weapon',attacker=null) {
     if(!cask||cask.exploded)return false;
-    if(cask.kind!=='soursap'&&cask.kind!=='shattercask') {
+    if(cask.kind!=='soursap'&&cask.kind!=='shattercask'&&cask.kind!=='flameShattercask') {
       const handler=cask.impactHandler||BURDEN_IMPACT_HANDLERS.get(cask.kind)||cask.data?.carryable?.impactHandler;
       return typeof handler==='function'?handler(cask,cause,attacker)!==false:false; // Future physical Burdens own their impact; they are never mistaken for explosive pottery.
     }
@@ -2091,7 +2097,10 @@
     const x=impact.x,z=impact.z;
     const y=(cask.carried||cask.flying||cask.plinthAttached)?impact.y:baseHeight(cask.col,cask.row)+.30; // An attached charge explodes at its live surface position.
     shatterVisual(rec?.scene||scene(),x,z,y);
-    applyBlast(cask.mapId,x,z);
+    const isFlame=cask.kind==='flameShattercask'; // Same blast/throw/pickup lifecycle; only the payload changes.
+    applyBlast(cask.mapId,x,z,isFlame?{tag:'fire',reason:'Flame Shattercask',burningHealth:26}:{});
+    if(isFlame)window.PersistentGroundFire?.ignite?.({area:cask.mapId,x,z,y:baseHeight(Math.floor(x),Math.floor(z)),
+      radius:2.3,seconds:12,source:'flameShattercask'});
     const cleared=destroyTerrain(cask.mapId,rec,x,z);
     lastEvent='blast '+cask.id+' via '+cause+', terrain='+cleared;
     window.__farmLog?.('[shattercask] '+lastEvent,'world');
