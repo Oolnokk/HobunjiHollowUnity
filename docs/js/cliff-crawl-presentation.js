@@ -11,6 +11,7 @@
   const worldUp = new THREE.Vector3(0, 1, 0); // Reference vector for pitching the torso toward the cliff surface.
   let installed = false; // Guards the one composer render-hook registration.
   let activeHandRig = null; // The current player's rig; invalidated on appearance rebuild or climb exit.
+  let activeMesh = null; // Fast path for the current rig without searching every avatar descendant each render.
   let lastDebug = { active: false, hiddenHeldVisuals: 0 }; // Mobile-readable snapshot of the most recent rendered crawl.
 
   // Alternating planted/reaching limbs. A stationary climber keeps four
@@ -24,6 +25,7 @@
   }
 
   function currentHandRig(mesh) {
+    if (mesh && activeMesh === mesh && activeHandRig?.group?.parent) return activeHandRig;
     let rig = null; // The avatar's existing procedural-hand rig, not an independently authored arm set.
     mesh?.traverse?.(node => {
       if (!rig && node.userData?.proceduralHandRig) rig = node.userData.proceduralHandRig;
@@ -56,6 +58,7 @@
       activeHandRig.setPoseProvider?.(OWNER, null);
       activeHandRig.useIdlePose?.(); // Release both hands to the original tool/idle driver.
       activeHandRig = null;
+      activeMesh = null;
     }
     if (!rig) return null;
     if (rig !== activeHandRig) {
@@ -63,6 +66,7 @@
       if (owner && owner !== OWNER) return null; // Never steal a higher-priority paired-action pose.
       rig.setPoseProvider?.(OWNER, () => handsOnCliff(rig));
       activeHandRig = rig;
+      activeMesh = mesh;
     }
     rig.applyOwnedPose?.(); // Update this render even if the regular pre-render hand sync already ran.
     return rig;
@@ -109,6 +113,7 @@
         if (item.calfLength === undefined) delete item.node.userData.hobunjiCalfLength;
         else item.node.userData.hobunjiCalfLength = item.calfLength;
       }
+      legHandle.group?.updateWorldMatrix?.(true, true); // Restore socket/world matrices for subsequent depth-replay renders.
     });
   }
 
@@ -168,7 +173,7 @@
     mesh.position.copy(mesh.parent?.worldToLocal ? mesh.parent.worldToLocal(shifted) : shifted);
     mesh.quaternion.premultiply(localTilt);
     mesh.updateWorldMatrix?.(true, true);
-    undo.push(() => { mesh.position.copy(oldPosition); mesh.quaternion.copy(oldQuaternion); });
+    undo.push(() => { mesh.position.copy(oldPosition); mesh.quaternion.copy(oldQuaternion); mesh.updateWorldMatrix?.(true, true); });
     const rig = claimHandRig(mesh, true);
     const legHandle = composer.getPlayerLegHandle?.();
     const feetPosed = poseFeet(mesh, legHandle, state, outward, undo);
