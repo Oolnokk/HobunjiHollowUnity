@@ -47,7 +47,11 @@
     parent.updateMatrixWorld(true);
     inverse.copy(parent.matrixWorld).invert();
     parent.traverse(function (object) {
-      if (sources.length >= MAX_SOURCE_MESHES || !object.isMesh || !object.geometry || !object.visible) return;
+      if (sources.length >= MAX_SOURCE_MESHES || !object.isMesh || !object.geometry) return;
+      // Authored nest spike supports are intentionally invisible, ground-level
+      // collision boxes. A selected STONE layer may still sample its geometry,
+      // but never include unrelated hidden furniture pieces or invisible ICE.
+      if (!object.visible && !(settings.kind === 'stoneStalagmites' && settings.target === 'selected')) return;
       if (object.userData?.surfaceFoliage || object.userData?.surfaceFoliageGuide || object.userData?.furnitureGlbPart) return; // GLB wrappers are invisible 0.001-unit drivers; sample their loaded child meshes instead.
       const partId = findPartId(object, parent); // Generated overlays and attached item previews have no authored part id.
       if (!partId || (settings.target === 'selected' && !selected.has(partId))) return;
@@ -252,11 +256,18 @@
     setGrowth(first, 1); // Restoring growth must reproduce the exact previous faceted geometry.
     const restored = first.children[0]?.geometry.getAttribute('position').array.every((value, i) => value === originalFirst[i]);
     const noSelected = build(T, furniture, { ...config, targetIds: ['missing'] }); // A selected subset with no matches must not cover unrelated furniture.
-    const ok = deterministic && floorAnchored && midway && fullyRetracted && restored && !noSelected.children.length && first.userData.surfaceGrowthStats.spikes > 0;
-    for (const layer of [first, second, noSelected]) layer.traverse(node => { node.geometry?.dispose?.(); node.material?.dispose?.(); });
+    box.visible = false; // A hidden authored box remains the collision/support source for cave-stone clusters only.
+    const hiddenStone = build(T, furniture, { ...config, kind: 'stoneStalagmites', color: '#716d67' });
+    box.visible = true;
+    const stoneMesh = hiddenStone.children[0];
+    const stoneOk = !!stoneMesh && hiddenStone.userData.stoneStalagmites === true
+      && stoneMesh.material.transparent === false && stoneMesh.material.opacity === 1
+      && stoneMesh.layers.isEnabled(1) && stoneMesh.userData.bladedHazard === true;
+    const ok = stoneOk && deterministic && floorAnchored && midway && fullyRetracted && restored && !noSelected.children.length && first.userData.surfaceGrowthStats.spikes > 0;
+    for (const layer of [first, second, noSelected, hiddenStone]) layer.traverse(node => { node.geometry?.dispose?.(); node.material?.dispose?.(); });
     box.geometry.dispose();
     box.material.dispose();
-    return { ok, message: ok ? 'PASS: deterministic geometry, ground anchoring, selected parts, reversible crystal growth.' : 'FAIL: seeded geometry, ground anchoring, selected parts, or reversible crystal growth.' };
+    return { ok, message: ok ? 'PASS: deterministic geometry, ground anchoring, selected/hidden stone supports, sharp opaque stone shells and reversible crystal growth.' : 'FAIL: seeded geometry, anchoring, selected/hidden stone supports, stone shells or reversible growth.' };
   }
 
   window.IceStalagmiteCoverage = { build, setGrowth, selfTest, MAX_SPIKES }; // Shared by gameplay, furniture author, and mobile diagnostics.
