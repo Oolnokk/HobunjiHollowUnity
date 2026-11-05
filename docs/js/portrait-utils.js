@@ -258,6 +258,8 @@ class PortraitPixelCache extends Map {
     return value;
   }
   set(key, value) {
+    // Switchbox loads after this module; reading at insertion, not construction, honors the persisted memory A/B flag.
+    if (this === IMG_CACHE) this.byteLimit = window.DevTestingSwitchbox?.flags?.reducedPortraitPixelCache ? 8 * 1024 * 1024 : 48 * 1024 * 1024;
     this.delete(key);
     const width = Number(value?.naturalWidth || value?.width) || 0; // Promises have zero pixel bytes until decoded.
     const height = Number(value?.naturalHeight || value?.height) || 0; // Counts native dimensions without resizing anything.
@@ -285,7 +287,7 @@ class PortraitPixelCache extends Map {
     return { entries: this.size, estimatedBytes: this.pixelBytes, budgetBytes: this.byteLimit, evictions: this.evictions };
   }
 }
-const IMG_CACHE = new PortraitPixelCache(48 * 1024 * 1024);
+const IMG_CACHE = new PortraitPixelCache(48 * 1024 * 1024); // Portrait source cache; optional dev testing cap applied at every insertion.
 
 const DEFAULT_BEHIND_LAYER_ORDER = [
   'sideLeft', 'rightSideHair',

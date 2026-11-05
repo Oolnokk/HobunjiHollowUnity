@@ -76,6 +76,74 @@
       label: '🟢 Verdigris',
       hint: 'Skips tool oxidation/aging recoloring; base metal tinting still applies.',
     },
+    noCharacterGroundShadows: {
+      label: '◉ Character Ground Shadows',
+      hint: 'Do not draw individual avatar ground-shadow disks. Keeps their objects/transforms alive for gameplay.',
+    },
+    noPngAvatarOcclusion: {
+      label: '▧ PNG Portrait Depth Pass',
+      hint: 'Skips the PNG-avatar-only depth replay pass; weapon/3D shell outlines may appear through portraits.',
+    },
+    noCorpseVisuals: {
+      label: '☠ Corpse Rig Rendering',
+      hint: 'Hides settled corpse avatar groups after death animation. Corpses remain in simulation and lootable, but become invisible.',
+    },
+    noLayeredWeaponDecorations: {
+      label: '⚔ Layered Weapon Decorations',
+      hint: 'Skips creating multi-sprite weapon assemblies. Weapon action logic and original tool plane remain, but layered weapon art may be absent.',
+    },
+    noPortraitDepthMatrixParity: {
+      label: '▤ Portrait Depth Matrix Sync',
+      hint: 'Skips per-mesh portrait matrix capture/restore around depth replays. May introduce temporary outline/depth jitter.',
+    },
+    noHandOutlineMatrixParity: {
+      label: '✋ Hand Outline Matrix Sync',
+      hint: 'Skips hand mesh outline matrix callback hooks, while retaining normal hand attachment and held overlay tagging.',
+    },
+    noFootOutlineMatrixParity: {
+      label: '🦶 Foot Outline Matrix Sync',
+      hint: 'Skips foot mesh outline callback hooks, preserving leg animation and water-occluded mesh registration.',
+    },
+    noUnusedAnimalTextureCache: {
+      label: '🧠 Idle Animal Texture Cache',
+      hint: 'Keep currently used animal frames, but immediately dispose unreferenced cached frames (may cause stutter when animals blink or change animation).',
+    },
+    reducedPortraitPixelCache: {
+      label: '🧠 Full Portrait Image Cache (48 MiB)',
+      hint: 'Uncheck to shrink the source-image cache budget from 48 MiB to 8 MiB. Live avatar textures are unaffected; assets may reload more often.',
+    },
+    noSkinnedPants: {
+      label: '👖 Deformable Pants Rig',
+      hint: 'Skips allocating deformable pants overlays for newly built characters; keeps procedural legs, inventory, physics, and attacks intact.',
+    },
+    noWildlifePreyScans: {
+      label: '🐾 Wildlife Prey Searches',
+      hint: 'TEST ONLY: stops food-web predator prey acquisition. Changes animal hunting behavior; combat/death cleanup remains active.',
+    },
+    noWildlifeGuardScans: {
+      label: '🛡 Wildlife Food-Guard Searches',
+      hint: 'TEST ONLY: stops food-guard threat acquisition, affecting animal defensive AI. Existing targets and cleanup remain active.',
+    },
+    noPortraitSubjectSearches: {
+      label: '👁 Portrait Entity-Registry Search',
+      hint: 'Skips fallback scanning every entity collection for portrait-facing owners. Cached identities still work; uncached ones use fallback orientation.',
+    },
+    noRenderLiftHostileScan: {
+      label: '📐 Render-Lift Hostile Scan',
+      hint: 'Skips per-render hostile elevation adjustment only. Gameplay height/collisions remain authoritative; some animal visuals may appear ungrounded.',
+    },
+    noRenderLiftCorpseScan: {
+      label: '📐 Render-Lift Corpse Scan',
+      hint: 'Skips per-render corpse elevation adjustment only. Corpses remain lootable; visuals may appear at incorrect height.',
+    },
+    noRenderLiftCompanionScan: {
+      label: '📐 Render-Lift Companion Scan',
+      hint: 'Skips per-render companion elevation adjustment only; visual grounding may differ on raised surfaces.',
+    },
+    noRenderLiftLivestockScan: {
+      label: '📐 Render-Lift Livestock Scan',
+      hint: 'Skips per-render farm-animal elevation adjustment only; visual grounding may differ on raised surfaces.',
+    },
   });
 
   function readFlags() {
@@ -113,6 +181,126 @@
     SWITCHES,
     applyFlags,
   });
+
+  // Dev Companion's performance A/B panel reuses these boot-time guards.
+  // Delaying the reload lets the BroadcastChannel acknowledge the switch first.
+  const COMPANION_SAFE_SWITCHES = Object.freeze([
+    'noShellOutlines', 'noGrass', 'noWind', 'lowPolyFoliage',
+    'noBrickWalls', 'noShingleGlbs', 'noSkySphere', 'noAudio', 'noVerdigris',
+    'noCharacterGroundShadows', 'noPngAvatarOcclusion', 'noCorpseVisuals', 'noLayeredWeaponDecorations',
+    'noPortraitDepthMatrixParity', 'noHandOutlineMatrixParity', 'noFootOutlineMatrixParity', 'noUnusedAnimalTextureCache', 'reducedPortraitPixelCache', 'noSkinnedPants',
+    'noWildlifePreyScans', 'noWildlifeGuardScans', 'noPortraitSubjectSearches',
+    'noRenderLiftHostileScan', 'noRenderLiftCorpseScan', 'noRenderLiftCompanionScan', 'noRenderLiftLivestockScan'
+  ]); // Deliberately excludes AI and water simulation: disabling them alters active gameplay state.
+
+  const PAINTERLY_BACKUP_KEY = 'hobunji-dev-companion-painterly-previous-v1'; // Restores the user's selected quality after a temporary A/B disable.
+
+  function companionToggleSwitch(name, enabled) {
+    if (name === 'trim-animal-textures') {
+      const before = window.CreatureTextureCache?.snapshot?.() || [];
+      const after = window.CreatureTextureCache?.trimUnused?.() || [];
+      const sum = rows => rows.reduce((total, row) => total + (row.estimatedBytes || 0), 0);
+      return { ok: true, beforeBytes: sum(before), afterBytes: sum(after), removedBytes: Math.max(0, sum(before) - sum(after)) };
+    }
+    if (name === 'painterly' && typeof enabled === 'boolean') {
+      const painterly = window.PainterlyPostprocess;
+      if (!painterly?.setMode || !painterly?.getMode) return { ok: false, error: 'Painterly filter is not ready.' };
+      const mode = painterly.getMode();
+      if (!enabled && mode !== 'off') {
+        try { sessionStorage.setItem(PAINTERLY_BACKUP_KEY, mode); } catch (_) {}
+        painterly.setMode('off');
+      } else if (enabled && mode === 'off') {
+        let restore = 'medium';
+        try { restore = sessionStorage.getItem(PAINTERLY_BACKUP_KEY) || restore; } catch (_) {}
+        painterly.setMode(['low', 'medium', 'high'].includes(restore) ? restore : 'medium');
+      }
+      return { ok: true, changed: true, reloading: false };
+    }
+    if (!COMPANION_SAFE_SWITCHES.includes(name) || typeof enabled !== 'boolean')
+      return { ok: false, error: 'Unsupported switch or value.' };
+    const off = !enabled; // UI is positive: checked means the feature runs.
+    if (flags[name] === off) return { ok: true, changed: false };
+    flags[name] = off;
+    saveFlags();
+    setTimeout(() => location.reload(), 350);
+    return { ok: true, changed: true, reloading: true };
+  }
+
+  window.DevCompanion?.registerCheatPanel?.({
+    id: 'performance-ab-switchbox',
+    title: 'Performance A/B switchbox',
+    order: -200,
+    render: () => ({
+      summary: 'Rendering cost isolation',
+      rows: [
+        ['FPS', Number(window.MobileRenderBudget?.snapshot?.()?.fps || 0).toFixed(1)],
+        ['Wildlife guard candidates (cumulative)', String(window.WildlifeFoodWeb?.getScanDebug?.()?.guardCandidates ?? '—')],
+        ['Wildlife prey candidates (cumulative)', String(window.WildlifeFoodWeb?.getScanDebug?.()?.preyCandidates ?? '—')],
+        ['Portrait search candidates (cumulative)', String(window.PerpRotation?.getScanDebug?.()?.candidatesVisited ?? '—')],
+        ['Portrait lookup cache hits', String(window.PerpRotation?.getScanDebug?.()?.cacheHits ?? '—')],
+        ['Render-lift hostile visits (cumulative)', String(window.HobunjiAnimalSubtleElevation?.getScanDebug?.()?.hostiles ?? '—')],
+        ['Render-lift corpse visits (cumulative)', String(window.HobunjiAnimalSubtleElevation?.getScanDebug?.()?.corpses ?? '—')],
+        ['JS heap (Chrome)', Number.isFinite(performance.memory?.usedJSHeapSize) ? (performance.memory.usedJSHeapSize / 1048576).toFixed(1) + ' MiB' : 'Unavailable'],
+        ['Heap limit', Number.isFinite(performance.memory?.jsHeapSizeLimit) ? (performance.memory.jsHeapSizeLimit / 1048576).toFixed(0) + ' MiB' : 'Unavailable'],
+        ['Animal textures (estimated)', ((window.CreatureTextureCache?.snapshot?.() || []).reduce((n, x) => n + (x.estimatedBytes || 0), 0) / 1048576).toFixed(1) + ' MiB'],
+        ['Unused animal textures', ((window.CreatureTextureCache?.snapshot?.() || []).reduce((n, x) => n + (x.unusedEstimatedBytes || 0), 0) / 1048576).toFixed(1) + ' MiB'],
+        ['Creature image-cache entries', String(window.CreatureGeneticsRender?.memorySnapshot?.()?.imageEntries ?? '—')],
+        ['GPU textures', String(window.PerfProfiler?.getLiveGpuInfo?.()?.textures ?? '—')],
+        ['GPU geometries', String(window.PerfProfiler?.getLiveGpuInfo?.()?.geometries ?? '—')],
+      ],
+      actions: [
+        {
+          id: 'trim-animal-textures',
+          group: 'Memory (live action)',
+          label: 'Trim unused animal textures',
+          title: 'Dispose only unreferenced cached animal frames now; never clears textures still attached to living or dead rigs.',
+        },
+        {
+          id: 'painterly',
+          group: 'Live (no reload)',
+          label: '🎨 Painterly postprocess',
+          title: 'Disables additional painterly compositing without changing the underlying outline setting.',
+          toggle: true,
+          checked: window.PainterlyPostprocess?.getMode?.() !== 'off',
+          disabled: !window.PainterlyPostprocess?.setMode,
+        },
+        ...COMPANION_SAFE_SWITCHES.map(name => ({
+        id: name,
+        group: 'Enabled = feature active',
+        label: SWITCHES[name].label,
+        title: SWITCHES[name].hint + ' Changing this restarts the game tab.',
+        toggle: true,
+        checked: !flags[name],
+      }))],
+      note: 'Memory numbers are live when supported; texture memory is estimated. Painterly changes instantly; other switches reload. Wildlife prey/guard switches ALTER animal behavior during testing, while portrait/render-lift switches affect visual positioning only. Save first and restore all checkboxes before normal play. The broad NPC AI and water-simulation switches remain excluded.',
+    }),
+    onAction: (name, args) => companionToggleSwitch(name, args.enabled),
+  });
+
+  // ── Character-rig rendering isolation ───────────────────────────────
+  // All four experiments preserve entity state, collision, damage, and corpse
+  // ownership. They affect ONLY optional draw/assembly layers; reload restores.
+  if (flags.noCharacterGroundShadows && window.CharacterGroundShadow?.make) {
+    const nativeMakeShadow = window.CharacterGroundShadow.make; // Original factory used by all living NPC/animal/player callers.
+    window.CharacterGroundShadow.make = function (...args) {
+      const shadow = nativeMakeShadow.apply(this, args);
+      if (shadow) shadow.visible = false; // No draw calls but maintain a valid Mesh for callers that position/scale it.
+      return shadow;
+    };
+  }
+
+  if (flags.noPngAvatarOcclusion && window.PngPlaneOutlineOccluder?.renderDepth) {
+    window.PngPlaneOutlineOccluder.renderDepth = function () {};
+    // Registered meshes and regular avatar draws remain untouched.
+  }
+
+  if (flags.noLayeredWeaponDecorations && window.HobunjiWeaponSpriteAssemblies?.decorate) {
+    const nativeDecorateWeapon = window.HobunjiWeaponSpriteAssemblies.decorate; // Preserved for debugging/reload; no gameplay attack hooks are modified.
+    window.HobunjiWeaponSpriteAssemblies.decorate = function (root, ...args) {
+      if (root?.userData?.toolPlane) return root; // Retains the existing base tool; only skips assembling extra decorative meshes.
+      return nativeDecorateWeapon.call(this, root, ...args);
+    };
+  }
 
   // ── 🔇 Audio ─────────────────────────────────────────────────────────
   // Rather than gate every play*() call across the several separate sound

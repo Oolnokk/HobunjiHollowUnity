@@ -220,9 +220,13 @@
     return true;
   }
 
+  const actorScanTotals = { renderPasses: 0, hostiles: 0, companions: 0, corpses: 0, farm: 0 }; // Measures full collection visits by the render-lift bridge.
   function eachActor(setLike, kind, area) {
     if (!setLike || typeof setLike[Symbol.iterator] !== 'function') return;
-    for (const actor of setLike) liftActor(actor, area, kind);
+    for (const actor of setLike) {
+      actorScanTotals[kind]++; // No actor references or per-frame trace arrays are retained.
+      liftActor(actor, area, kind);
+    }
   }
 
   function tileSize() {
@@ -411,6 +415,7 @@
   }
 
   function applyRenderLift() {
+    actorScanTotals.renderPasses++;
     const area = activeArea();
     liftedRoots.length = 0;
     liftedBaseYs.length = 0;
@@ -443,10 +448,12 @@
     const corpseObjects = combatDeps?.corpseObjects || runtimeDeps?.corpseObjects;
     const animalObjects = farmDeps?.animalObjects || runtimeDeps?.animalObjects;
 
-    eachActor(hostileObjects, 'hostile', area);
-    eachActor(companionObjects, 'companion', area);
-    eachActor(corpseObjects, 'corpse', area);
-    eachActor(animalObjects, 'farm', area);
+    // Only skip optional render-time lift scans. Entity simulation and gameplay elevation remain unchanged.
+    const switches = window.DevTestingSwitchbox?.flags;
+    if (!switches?.noRenderLiftHostileScan) eachActor(hostileObjects, 'hostile', area);
+    if (!switches?.noRenderLiftCompanionScan) eachActor(companionObjects, 'companion', area);
+    if (!switches?.noRenderLiftCorpseScan) eachActor(corpseObjects, 'corpse', area);
+    if (!switches?.noRenderLiftLivestockScan) eachActor(animalObjects, 'farm', area);
 
     // Water no longer changes character render Y. Movement-owned Y plus the
     // ordinary terrain/support render lift remain authoritative in water.
@@ -540,6 +547,7 @@
       : null; // Included in the existing mobile Surface Debug alert so furniture grounding can be checked without devtools.
     return {
       ...lastDebug,
+      actorScanTotals: { ...actorScanTotals },
       renderDepth,
       farmFurniture,
       proneWaterHazard: {
@@ -586,6 +594,7 @@
       return !!raw && !!activeWaterTileAtRaw(raw.x, raw.y);
     },
     getDebug: debugSnapshot,
+    getScanDebug: () => ({ ...actorScanTotals }),
   });
   window.__animalSubtleElevationDebug = debugSnapshot;
 })();

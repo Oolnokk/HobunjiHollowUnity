@@ -173,6 +173,11 @@
         heldOverlay: window.HeldObjectRenderOrder?.snapshot?.() || null,
         outlineRender: window.OutlineRenderPerformance?.snapshot?.() || null,
         wildernessLod: window.WildernessSimulationLOD?.snapshot?.() || null,
+        entityScans: {
+          wildlifeFood: window.WildlifeFoodWeb?.getScanDebug?.() || null,
+          portraitSubjectLookup: window.PerpRotation?.getScanDebug?.() || null,
+          renderLift: window.HobunjiAnimalSubtleElevation?.getScanDebug?.() || null,
+        }, // Scalar-only cumulative counts; never serializes or retains entities.
         mobileRendering: window.MobileRenderBudget?.snapshot?.() || null,
         localStorageBytes,
         caches,

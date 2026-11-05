@@ -1177,6 +1177,41 @@
     box.appendChild(lagStatus);
     updateLagSnapshotStatusUI();
 
+    const combatRow = document.createElement('div');
+    combatRow.style.cssText = 'display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:6px 0';
+    const combatTitle = document.createElement('span');
+    combatTitle.textContent = 'Combat performance snapshots';
+    combatTitle.style.cssText = 'font-size:12px;flex:1 1 140px';
+    const combatExport = document.createElement('button');
+    combatExport.type = 'button';
+    combatExport.textContent = 'Export all';
+    combatExport.style.cssText = lagBtn.style.cssText;
+    combatExport.addEventListener('click', async () => {
+      const records = await root.HobunjiCombatPerfTrace.snapshots();
+      if (!records.length) { flashButtonLabel(combatExport, 'None yet'); return; }
+      const blob = new Blob([JSON.stringify(records, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'hobunji-combat-performance-snapshots.json';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    });
+    const combatClear = document.createElement('button');
+    combatClear.type = 'button';
+    combatClear.textContent = 'Clear';
+    combatClear.style.cssText = lagBtn.style.cssText;
+    combatClear.addEventListener('click', () => root.HobunjiCombatPerfTrace.clear());
+    combatRow.append(combatTitle, combatExport, combatClear);
+    box.appendChild(combatRow);
+    const combatStatus = document.createElement('div');
+    combatStatus.id = 'combatTraceStatus';
+    combatStatus.style.cssText = 'font-size:10px;opacity:.65;margin:-2px 0 5px';
+    box.appendChild(combatStatus);
+    updateCombatTraceStatus();
+
     const baked = readStorage(TREE_MODE_KEY, 'procedural') === 'baked';
     const tree = makeCheckboxRow('settingBakedTrees', 'Baked GLB Trees', baked,
       'On: use docs/assets/models/trees/*.glb. Off: use runtime procedural tree geometry. Changing this reloads the game for a clean comparison.');
@@ -1334,11 +1369,181 @@
     const fps = lagWatch.sampleFrames * 1000 / Math.max(1, elapsed);
     lagWatch.sampleFrames = 0;
     lagWatch.sampleStart = ts;
+    combatTraceTick();
+    recordBestFps(fps, ts);
     if (fps <= LAG_SNAPSHOT_FPS_THRESHOLD && (ts - lagWatch.lastSnapshotAt) >= LAG_SNAPSHOT_COOLDOWN_MS) {
       lagWatch.lastSnapshotAt = ts;
       captureLagSnapshot(fps);
     }
   }
+
+
+  // Combat investigation records survive refreshes; the existing low-FPS history is session-only.
+  const COMBAT_TRACE_KEY = 'hobunji_combat_perf_snapshots_v1';
+  const COMBAT_TRACE_LIMIT = 8; // Caps retained incident records.
+  const BEST_FPS_KEY = 'hobunji_best_sustained_fps_v1'; // Small durable high-water mark, independent of cache-audit retention.
+  const bestFpsState = { samples: [], highest: 0, area: '', lastCapture: -Infinity }; // Tracks only steady gameplay windows, not loading spikes.
+  try {
+    const prior = JSON.parse(readStorage(BEST_FPS_KEY, 'null'));
+    if (Number.isFinite(prior?.fps) && prior.fps > 0) {
+      bestFpsState.highest = prior.fps;
+      bestFpsState.area = String(prior.area || '');
+    }
+  } catch (_) {}
+
+  const combatTrace = { lastArea: '', origin: '', sawCombat: false, combat: false, left: false, bootCaptured: false, pending: [] };
+  let combatRecords = [];
+  function retainCombatRecords(records) {
+    const sorted = [...records].sort((a, b) => a.capturedAt.localeCompare(b.capturedAt));
+    const best = sorted.filter(item => item.reason === 'highest-sustained-fps')
+      .sort((a, b) => (b.metadata?.sustainedFps || 0) - (a.metadata?.sustainedFps || 0))[0];
+    const recent = sorted.filter(item => item !== best).slice(-(COMBAT_TRACE_LIMIT - (best ? 1 : 0)));
+    return [...recent, ...(best ? [best] : [])].sort((a, b) => a.capturedAt.localeCompare(b.capturedAt));
+  }
+  let combatDb = null; // IndexedDB holds full audits without crowding the nearly-full save localStorage.
+  const combatDbReady = new Promise(resolve => {
+    if (!root.indexedDB) { resolve(null); return; }
+    try {
+      const request = root.indexedDB.open('hobunji-performance-diagnostics', 1);
+      request.onupgradeneeded = () => request.result.createObjectStore('combat-snapshots', { keyPath: 'capturedAt' });
+      request.onerror = () => resolve(null);
+      request.onsuccess = () => {
+        combatDb = request.result;
+        const tx = combatDb.transaction('combat-snapshots', 'readonly');
+        const read = tx.objectStore('combat-snapshots').getAll();
+        read.onsuccess = () => {
+          combatRecords = retainCombatRecords([...read.result, ...combatRecords]);
+          updateCombatTraceStatus();
+          resolve(combatDb);
+        };
+        read.onerror = () => resolve(combatDb);
+      };
+    } catch (_) { resolve(null); }
+  });
+  function combatTracePlayer() {
+    return root.Combat?.deps?.player || root.__hobunjiFurnitureDebug?.playerState || null;
+  }
+
+  function combatTraceActive(player) {
+    if (!player) return false;
+    // Prefer the same player-combat grace period used by the clothing runtime.
+    if (typeof root.ClothingWeavingSystem?.combatActive === 'function')
+      return !!root.ClothingWeavingSystem.combatActive(player);
+    const last = Math.max(Number(player.lastAttackAttemptAt) || -1e12, Number(player.lastAttackReceivedAt) || -1e12);
+    return performance.now() - last < 5000;
+  }
+
+  function recordBestFps(fps, ts) {
+    const area = String(root.GridTileAccessors?.getCurrentArea?.() || root.Combat?.deps?.getCurrentArea?.() || '');
+    // A full 5-second stable-area window excludes loading screens, hidden tabs and brief frame spikes.
+    if (!area || !combatTracePlayer() || document.hidden || !root.HobunjiCacheAudit?.snapshot || ts < 12000) {
+      bestFpsState.samples = [];
+      return;
+    }
+    bestFpsState.samples.push({ fps, ts, area });
+    bestFpsState.samples = bestFpsState.samples.filter(sample => ts - sample.ts <= 5000 && sample.area === area);
+    if (bestFpsState.samples.length < 8 || ts - bestFpsState.samples[0].ts < 4000) return;
+    const sustained = bestFpsState.samples.reduce((sum, sample) => sum + sample.fps, 0) / bestFpsState.samples.length;
+    if (sustained < 1 || sustained <= bestFpsState.highest + 0.5 || ts - bestFpsState.lastCapture < 30000) return;
+    bestFpsState.highest = sustained;
+    bestFpsState.area = area;
+    bestFpsState.lastCapture = ts;
+    const at = new Date().toISOString();
+    saveCombatTrace('highest-sustained-fps', { sustainedFps: sustained, area, observedAt: at });
+    const gameTime = combatRecords[combatRecords.length - 1]?.data?.calendar?.fullDateTime || null;
+    try { root.localStorage?.setItem(BEST_FPS_KEY, JSON.stringify({ fps: sustained, area, at, gameTime })); } catch (_) {}
+  }
+
+  function updateCombatTraceStatus() {
+    const el = document.getElementById('combatTraceStatus');
+    if (el) el.textContent = combatRecords.length
+      ? `${combatRecords.length} saved snapshots · latest: ${combatRecords[combatRecords.length - 1].reason}`
+      : 'No combat investigation snapshots captured yet.';
+    if (el && bestFpsState.highest > 0) el.textContent += ` · best sustained: ${bestFpsState.highest.toFixed(1)} FPS in ${bestFpsState.area}`;
+  }
+
+  function saveCombatTrace(reason, metadata = null) {
+    // Full cache audit is deferred until a transition has settled, never during combat itself.
+    const snap = root.HobunjiCacheAudit?.snapshot?.();
+    if (!snap) return;
+    const record = { reason, capturedAt: new Date().toISOString(), ...(metadata ? { metadata: { ...metadata, gameTime: snap.calendar?.fullDateTime || null } } : {}), data: snap }; // Retained for deferred IndexedDB write.
+    combatRecords.push(record);
+    combatRecords = retainCombatRecords(combatRecords);
+    void combatDbReady.then(db => {
+      if (!db) return; // Private browsing may disable IndexedDB; memory still works.
+      try {
+        const tx = db.transaction('combat-snapshots', 'readwrite');
+        const store = tx.objectStore('combat-snapshots');
+        store.put(record);
+        store.getAll().onsuccess = event => {
+          const records = event.target.result;
+          const keep = new Set(retainCombatRecords(records).map(item => item.capturedAt));
+          for (const item of records) if (!keep.has(item.capturedAt)) store.delete(item.capturedAt);
+        };
+      } catch (_) {}
+    });
+    updateCombatTraceStatus();
+  }
+
+  function queueCombatTrace(reason, delayMs = 2500) {
+    combatTrace.pending.push({ reason, due: performance.now() + delayMs });
+  }
+
+  function combatTraceTick() {
+    if (document.hidden) return;
+    const area = String(root.GridTileAccessors?.getCurrentArea?.() || root.Combat?.deps?.getCurrentArea?.() || '');
+    const player = combatTracePlayer();
+    if (!area || !player) return;
+    if (!combatTrace.bootCaptured) {
+      combatTrace.bootCaptured = true;
+      queueCombatTrace('session-loaded', 4500);
+    }
+    const fighting = combatTraceActive(player);
+    if (fighting && !combatTrace.combat) {
+      combatTrace.sawCombat = true;
+      combatTrace.origin = area;
+      combatTrace.left = false;
+      queueCombatTrace('combat-start', 500);
+    } else if (!fighting && combatTrace.combat) {
+      queueCombatTrace('combat-ended', 3500);
+    }
+    combatTrace.combat = fighting;
+
+    if (combatTrace.lastArea && area !== combatTrace.lastArea && combatTrace.sawCombat) {
+      if (combatTrace.lastArea === combatTrace.origin) {
+        combatTrace.left = true;
+        queueCombatTrace('left-combat-area', 2500);
+      } else if (area === combatTrace.origin && combatTrace.left) {
+        queueCombatTrace('returned-to-combat-area', 3500);
+        combatTrace.left = false;
+      }
+    }
+    combatTrace.lastArea = area;
+    // Drain every due event independently: leaving an area must never erase combat-ended.
+    const now = performance.now();
+    const ready = combatTrace.pending.filter(entry => entry.due <= now);
+    combatTrace.pending = combatTrace.pending.filter(entry => entry.due > now);
+    for (const entry of ready) {
+      if (entry.reason !== 'combat-ended' || !fighting) saveCombatTrace(entry.reason);
+    }
+  }
+
+  root.HobunjiCombatPerfTrace = Object.freeze({
+    snapshots: async () => { await combatDbReady; return combatRecords.slice(); },
+    capture: (reason = 'manual') => saveCombatTrace(String(reason)),
+    clear: () => {
+      combatRecords = [];
+      bestFpsState.highest = 0;
+      bestFpsState.area = '';
+      bestFpsState.samples = [];
+      bestFpsState.lastCapture = -Infinity;
+      try { root.localStorage?.removeItem(BEST_FPS_KEY); } catch (_) {}
+      void combatDbReady.then(db => {
+        if (db) try { db.transaction('combat-snapshots', 'readwrite').objectStore('combat-snapshots').clear(); } catch (_) {}
+      });
+      updateCombatTraceStatus();
+    }
+  });
 
   function startLagWatch() {
     if (lagWatch.registered) return;

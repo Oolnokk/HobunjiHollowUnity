@@ -618,7 +618,25 @@
         panel.rows?.length ? el('dl', { class: 'kv small-text' }, ...panel.rows.flatMap(([label, value]) => [el('dt', { text: label }), el('dd', { text: value })])) : null,
         ...[...groups.entries()].map(([group, actions]) => el('div', { class: 'group' },
           group ? el('span', { class: 'group-label', text: group }) : null,
-          ...actions.map(action => action.input ? el('label', { class: 'group' }, action.label,
+          ...actions.map(action => action.toggle ? el('label', {
+            class: 'check',
+            title: action.title || '',
+          }, el('input', {
+            type: 'checkbox',
+            checked: !!action.checked,
+            disabled: !state.connected || !!action.disabled,
+            'aria-label': action.label,
+            onchange: async event => {
+              const input = event.target;
+              input.disabled = true;
+              const ok = await run('panel-action', {
+                panel: panel.id, action: action.id,
+                args: { ...action.args, enabled: input.checked },
+              });
+              if (!ok) { input.checked = !!action.checked; input.disabled = false; }
+              // Successful toggles may reload the game; the next state refresh recreates this row.
+            },
+          }), el('span', { text: action.label })) : action.input ? el('label', { class: 'group' }, action.label,
             el('input', { type: 'number', value: action.value, min: action.input.min, max: action.input.max, step: action.input.step,
               'aria-label': action.label, disabled: !state.connected, style: 'width:90px',
               onchange: async event => {
