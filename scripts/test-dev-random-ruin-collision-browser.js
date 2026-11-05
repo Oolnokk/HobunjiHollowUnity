@@ -86,15 +86,19 @@ const TEST_URL = process.env.HOBUNJI_TEST_URL || 'http://127.0.0.1:8000/index.ht
     const canvas = document.getElementById('wildernessMapCanvas');
     const legend=document.querySelector('#mpMap .wmap-legend')?.textContent||'';
     const voxel=window.DevRandomRuin?.getShaftCollisionMap?.(0)||null; // Actual 3D collision must be present even if V50's vestibule has no puzzle doors.
+    const menu=document.getElementById('menuPanel');
+    const mapPane=document.getElementById('mpMap');
+    menu.classList.add('open');mapPane.classList.add('active'); // Controller focus is only possible when the menu/map pane is visible. Rendering an invisible panel is not a valid focus test.
     const floorTabs=[...document.querySelectorAll('#wmapZoneTabs [data-ruin-floor]')]; // Query only the map panel; other UIs also use data-ruin-floor.
     const floorTabCount=floorTabs.length;
     const nextFloor=floorTabs[1]||null;
-    let floorSelectionWorks=false,focusPreserved=false;
+    let floorSelectionWorks=false,focusPreserved=false,initialFocus=false;
     if(nextFloor){
-      nextFloor.focus();nextFloor.click();
+      nextFloor.focus();initialFocus=document.activeElement===nextFloor;
+      nextFloor.click();
       floorSelectionWorks=canvas.dataset.ruinFloor==='1'
         &&nextFloor.classList.contains('active');
-      focusPreserved=document.activeElement===nextFloor
+      focusPreserved=initialFocus&&document.activeElement===nextFloor
         &&document.querySelector('#wmapZoneTabs [data-ruin-floor="1"]')===nextFloor;
       floorTabs[0].click(); // Restore the entrance before testing V50's original red occupancy and diagnostic legend.
     }
@@ -127,7 +131,7 @@ const TEST_URL = process.env.HOBUNJI_TEST_URL || 'http://127.0.0.1:8000/index.ht
       hiddenPatternOverlays,
       counts:{blocked:first.blocked.length,causes:first.causes.length,effects:first.effects.length},
       voxelBlocked:voxel?.blocked?.length||0,voxelFloorCount:voxel?.floorCount||0,
-      floorTabCount,floorSelectionWorks,focusPreserved,
+      floorTabCount,floorSelectionWorks,focusPreserved,initialFocus,
       aggregate:aggregate.length,
       legacy:legacy.length,
       blockedHit:blockedHit?.id || null,
