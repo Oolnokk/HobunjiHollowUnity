@@ -24,6 +24,7 @@
     corridorWidth:3,
     seed:1,
     nativeV50:false, // When enabled, upper stories reserve one EAST shaft portal for an independently generated V50 room graph.
+    groundEntranceSide:null, // The one-room V50 vestibule claims this shaft wall; no puzzle wing may occupy the same portal.
   });
   function random(seed){
     let a=(Number(seed)>>>0)||1;
@@ -62,6 +63,7 @@
     o.maxChallenges=Math.max(o.minChallenges,Math.min(4,o.maxChallenges|0));
     o.corridorWidth=3;
     o.nativeV50=o.nativeV50===true; // Non-native story vaults and existing standalone floor tests preserve their original layout.
+    o.groundEntranceSide=['N','E','S','W'].includes(o.groundEntranceSide)?o.groundEntranceSide:null;
     o.shaftWall=Math.max(5,Math.min(12,Math.round(Number(o.shaftWall)||8)));
     o.portalOffset=Math.max(1,Math.min(8,Math.round(Number(o.portalOffset)||8)));
     const rng=random(o.seed);
@@ -94,9 +96,9 @@
           w:maxNativeExtent,d:maxNativeExtent};
       }
       const shuffled=DIRS.map(d=>({d,roll:rng()})).sort((a,b)=>a.roll-b.roll).map(x=>x.d)
-        .filter(d=>!nativePort||d.side!==nativePort.side);
-      const maxCustomWings=nativePort?Math.min(3,o.maxWings-1):o.maxWings;
-      const minCustomWings=nativePort?Math.max(0,o.minWings-1):o.minWings;
+        .filter(d=>(!nativePort||d.side!==nativePort.side)&&(floor!==0||d.side!==o.groundEntranceSide));
+      const maxCustomWings=Math.min(shuffled.length,nativePort?Math.min(3,o.maxWings-1):o.maxWings);
+      const minCustomWings=Math.min(maxCustomWings,nativePort?Math.max(0,o.minWings-1):o.minWings);
       const wingCount=integer(rng,minCustomWings,maxCustomWings), wings=[],rooms=[],hallways=[],doorways=[],braziers=[];
       rooms.push({id:`shaft-f${floor}`,kind:'shaft',...shaft,y,anchor:shaft.anchor,shared:true}); // Same x/z on every layer; unique floor-local room.
       for(let wi=0;wi<wingCount;wi++){
@@ -158,7 +160,7 @@
         }
         wings.push({id:wingId,floor,side:dir.side,entry:{...portal,y},rooms:nodes,corridors,goalBrazierId:braziers[braziers.length-1].id});
       }
-      floors.push({floor,y,anchor:{...shaft.anchor},rooms,hallways,doorways,wings,braziers,nativePort,entry:floor===0?{kind:'external-wing',side:'S'}:null});
+      floors.push({floor,y,anchor:{...shaft.anchor},rooms,hallways,doorways,wings,braziers,nativePort,entry:floor===0?{kind:'external-wing',side:o.groundEntranceSide||'S'}:null});
     }
     const plan={schema:'hobunji.ruin-layer-plan.v1',options:o,shaft,floorCount,floors,trialRoomId,
       totalWings:floors.reduce((n,f)=>n+f.wings.length,0),
@@ -176,6 +178,8 @@
       add(`floor${floor.floor}-aligned`,floor.anchor.x===first.x&&floor.anchor.z===first.z);
       add(`floor${floor.floor}-wingCount`,floor.wings.length+(floor.nativePort?1:0)>=1&&floor.wings.length+(floor.nativePort?1:0)<=4);
       add(`floor${floor.floor}-uniqueSides`,new Set([...floor.wings.map(w=>w.side),...(floor.nativePort?[floor.nativePort.side]:[])]).size===floor.wings.length+(floor.nativePort?1:0));
+      if(floor.floor===0&&plan.options.groundEntranceSide)
+        add('groundEntranceClear',floor.wings.every(w=>w.side!==plan.options.groundEntranceSide));
       add(`floor${floor.floor}-nativeReserved`,!plan.options.nativeV50||floor.floor===0||!!floor.nativePort&&floor.nativePort.side==='E');
       if(floor.nativePort){
         const area=floor.nativePort.reservation; // The V50 allocation is fixed before the iframe generates this floor's room graph.
