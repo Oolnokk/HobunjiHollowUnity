@@ -61,7 +61,7 @@ function mask(mode, radius) { // Selects the furniture fixture, excluding the pl
 }
 function firstAlpha(gradient) { // Extracts the center intensity of a canvas gradient.
   assert(gradient, 'expected a light gradient');
-  return Number(gradient.stops[0][1].match(/,([0-9.eE+-]+)\\)$/)[1]);
+  return Number(gradient.stops[0][1].match(/,([0-9.eE+-]+)\)$/)[1]);
 }
 function near(value, expected, description) {
   assert(Math.abs(value - expected) < 0.00001, `${description}: expected ${expected}, got ${value}`);
