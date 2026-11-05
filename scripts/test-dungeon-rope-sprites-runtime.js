@@ -98,11 +98,33 @@ vm.runInContext(read('docs/js/furniture-surface-png-runtime.js'),context);
   assert(Math.abs(Math.max(...xs)-Math.min(...xs)-.3)<1e-6,'quad X bounds exactly match the former 0.3-diameter sphere');
   assert(Math.abs(Math.max(...ys)-Math.min(...ys)-.3)<1e-6,'quad Y bounds exactly match the former 0.3-diameter sphere');
   const widthAtY=y=>Math.max(...xs.filter((_,i)=>Math.abs(ys[i]-y)<1e-6))-Math.min(...xs.filter((_,i)=>Math.abs(ys[i]-y)<1e-6));
-  assert(widthAtY(Math.max(...ys))<widthAtY(Math.min(...ys)),'quad widens towards its paintbrush end');
-  assert.equal(tip.position.y,-.5,'brush plane is centered at the rope bob in parent coordinates');
+  assert(widthAtY(Math.max(...ys))>widthAtY(Math.min(...ys)),'quad widens toward the physical bob (local +Y)');
+  assert.equal(tip.position.y,.5,'brush plane is centered at the swinging bob (parent local +Y)');
   assert.equal(tip.scale.y,.5,'tip cancels rope-length stretch');
   art.updateRopePlane(plane,{x:0,y:5,z:0},bob,null);
   assert(Math.abs(tip.scale.y*plane.scale.y-1)<1e-9,'tip stays square for different rope lengths');
+  art.updateRopePlane(plane,anchor,bob,null);
+  // Resolve the actual orientation basis, so a backwards tip at the ceiling anchor fails.
+  const tipCenterInWorld = () => {
+    const axes=plane.orientations.at(-1);
+    const offsetY=plane.scale.y*tip.position.y,offsetZ=tip.position.z;
+    return {
+      x:plane.position.x+axes[3]*offsetY+axes[6]*offsetZ,
+      y:plane.position.y+axes[4]*offsetY+axes[7]*offsetZ,
+      z:plane.position.z+axes[5]*offsetY+axes[8]*offsetZ,
+    };
+  };
+  for (const [a,b] of [
+    [{x:0,y:3,z:0},{x:0,y:1,z:0}],
+    [{x:1,y:8,z:2},{x:3.2,y:6.6,z:3}],
+    [{x:4,y:5,z:6},{x:1,y:4,z:5}],
+  ]) {
+    art.updateRopePlane(plane,a,b,null);
+    const center=tipCenterInWorld();
+    assert(Math.hypot(center.x-b.x,center.y-b.y,center.z-b.z)<.0031,
+      'brush end remains at the real bob through rope rotations');
+    assert(Math.abs(tip.scale.y*plane.scale.y-1)<1e-9,'brush tip stays square while rope tilts');
+  }
   art.updateRopePlane(plane,anchor,bob,null);
   const cameraA={getWorldPosition(out){return out.set(0,2,5)}};
   const cameraB={getWorldPosition(out){return out.set(5,2,0)}};
