@@ -66,43 +66,63 @@ class Vec {
   addScaledVector(v, f) { return this.set(this.x + v.x * f, this.y + v.y * f, this.z + v.z * f); }
   multiplyScalar(s) { return this.set(this.x * s, this.y * s, this.z * s); }
   negate() { return this.multiplyScalar(-1); }
+  lerp(v, t) { return this.set(this.x + (v.x - this.x) * t, this.y + (v.y - this.y) * t, this.z + (v.z - this.z) * t); }
   lengthSq() { return this.x * this.x + this.y * this.y + this.z * this.z; }
   normalize() { const length = Math.sqrt(this.lengthSq()); return length ? this.multiplyScalar(1 / length) : this; }
 }
 class Q {
+  static tilts = []; // Records world-up-to-face-normal rotations used to catch inverted body lean.
   clone() { return new Q(); }
   invert() { return this; }
   multiply() { return this; }
   premultiply() { return this; }
   copy() { return this; }
-  setFromUnitVectors() { return this; }
+  setFromUnitVectors(from, to) { Q.tilts.push([from.clone(), to.clone()]); return this; }
 }
 
 assert(climb.startClimb({ type: 'cliffRoute', route, entry: 0 }));
 const tool = { isObject3D: true, visible: true }; // External weapon/tool scene root.
 const item = { isObject3D: true, type: 'Group', userData: { isPngPlane: true }, visible: true, name: '' }; // In-rig held item.
 const burden = { isObject3D: true, visible: true }; // Carried (not back-stowed) burden.
-let handPoseCount = 0; // Counts left/right procedural grips applied during the synthetic render.
+const stowed = { isObject3D: true, visible: true, name: 'stowed-back-burden' }; // Must remain visible when held categories hide.
+const worldHands = []; // World-space contact positions placed by the real hand rig API.
+let returnedToIdle = 0; // Verifies paired-action ownership is not stolen on crawl exit.
 const rig = {
-  getDebug: () => ({ poseOwner: null }),
-  setPoseProvider(_owner, provider) { this.provider = provider; },
+  group: { parent: {} },
+  owner: null, provider: null,
+  getDebug() { return { poseOwner: this.owner }; },
+  setPoseProvider(owner, provider) {
+    if (provider || this.owner === owner) { this.owner = provider ? owner : null; this.provider = provider || null; }
+  },
   applyOwnedPose() { if (this.provider) { this.provider(this); return true; } return false; },
-  armLengthForSide: () => 0.3,
-  setSideIdle() { handPoseCount++; },
-  useIdlePose() {},
+  placeHandWorld(side, target, rotation) { worldHands.push({ side, target: target.clone(), rotation }); },
+  useIdlePose() { returnedToIdle++; },
 };
 const mesh = {
   isObject3D: true, visible: true, position: new Vec(), quaternion: new Q(),
-  parent: { worldToLocal: value => value }, children: [item],
+  parent: { worldToLocal: value => value }, children: [item, stowed],
   traverse(visit) { visit({ userData: { proceduralHandRig: rig } }); },
-  getWorldPosition(value) { return value.set(0, 0, 0); },
+  getWorldPosition(value) { return value.copy(this.position); },
   updateWorldMatrix() {},
+};
+let footPoseCount = 0; // Counts direct IK foot solver calls.
+let footTargets = null; // Confirms the actual world-space contacts passed to the existing 2-bone solver.
+let externalFeetOwned = false; // Simulates a grapple/paired-action claiming both leg targets.
+let failFootPose = false; // Simulates an interrupted render so the scoped transform restores before returning.
+const feet = {
+  modelHeight: 1,
+  group: { getObjectByName: () => null, updateWorldMatrix() {} },
+  hasExternalFootTargets: () => externalFeetOwned,
+  applyWorldFootTargets(targets) {
+    if (failFootPose) throw new Error('synthetic IK failure');
+    footPoseCount++; footTargets = targets; return true;
+  },
 };
 let hook = null; // Captured composer render hook; called with an undo stack below.
 const composer = {
   addPostHeadAimHook(callback) { hook = callback; },
   getPlayerMesh: () => mesh,
-  getPlayerLegHandle: () => null,
+  getPlayerLegHandle: () => feet,
 };
 const renderWin = {
   ClimbSystem: climb, THREE: { Vector3: Vec, Quaternion: Q },
@@ -112,15 +132,76 @@ const renderWin = {
 };
 vm.runInNewContext(presentationSource, { window: renderWin });
 assert.equal(typeof hook, 'function', 'render hook installs through the existing composer');
-const stride = renderWin.CliffCrawlPresentation.sampleStride;
-assert(stride(Math.PI / 2, true, 'left').lift > 0.99);
-assert(stride(Math.PI / 2, true, 'right').lift < 0.01, 'left/right hands alternate');
-const undo = [], renderDebug = {};
-hook(undo, renderDebug);
-assert(!tool.visible && !item.visible && !burden.visible, 'all held visual categories hide while drawing');
-assert(handPoseCount >= 2 && renderDebug.cliffCrawl.active, 'the procedural grips visibly move in crawl pose');
-for (let i = undo.length - 1; i >= 0; i--) undo[i]();
-assert(tool.visible && item.visible && burden.visible, 'every held visual is restored after rendering');
-assert.equal(renderWin.CliffCrawlPresentation.getDebug().hiddenHeldVisuals, 3);
+const contacts = renderWin.CliffCrawlPresentation;
+assert.equal(contacts.sampleContact(0.1, false, 0.5).lift, 0, 'idle climber keeps contact planted');
+assert(contacts.sampleContact(0.5, true, 0.07).progress > contacts.sampleContact(0.5, true, 0.38).progress,
+  'left and right hands transfer to new holds at different phases');
+
+function draw() {
+  const undo = [], debug = {};
+  hook(undo, debug);
+  return { undo, debug };
+}
+function restore(undo) { for (let i = undo.length - 1; i >= 0; i--) undo[i](); }
+
+let frame = draw();
+assert(!tool.visible && !item.visible && !burden.visible, 'all held visual categories hide during crawl');
+assert(stowed.visible, 'stowed equipment remains visible');
+assert.equal(rig.owner, 'cliff-crawl', 'crawl owns the existing procedural hand rig');
+assert.equal(worldHands.length, 2, 'both hands use world-space contact placement, not idle offsets');
+assert(worldHands.every(entry => entry.target.x < 0 && entry.target.y > 0),
+  'hands plant outside the face above the character and in its normal space');
+assert.equal(footPoseCount, 1, 'real procedural foot solver receives one paired contact update');
+assert(footTargets.left.y < 0 && footTargets.right.y < 0, 'feet stay below the torso along the cliff');
+assert(Q.tilts.some(([from, to]) => from.y === 1 && to.x < -0.1),
+  'body leans toward the OUTWARD cliff normal rather than into the rock');
+assert(frame.debug.cliffCrawl.feetPosed && frame.debug.cliffCrawl.handRigOwned);
+restore(frame.undo);
+assert(tool.visible && item.visible && burden.visible, 'render undo restores all held categories');
+assert.equal(mesh.position.x, 0, 'render undo restores body world position');
+
+input = { x: 1, y: 0 };
+climb.updateClimb(0.3);
+assert(player.climbing && climb.getCrawlState()?.moving, 'movement is a live linked handhold traverse');
+frame = draw();
+assert(worldHands.length >= 4, 'hands keep solving during active movement');
+assert(worldHands.at(-2).target.y > worldHands[0].target.y, 'moving hand reaches higher on the selected edge');
+restore(frame.undo);
+
+externalFeetOwned = true;
+frame = draw();
+assert.equal(footPoseCount, 2, 'climb does not overwrite grapple-owned leg targets');
+assert.equal(frame.debug.cliffCrawl.feetPosed, false, 'mobile diagnostics report leg override');
+restore(frame.undo);
+externalFeetOwned = false;
+
+rig.owner = 'grapple';
+rig.provider = () => {};
+frame = draw();
+assert.equal(rig.owner, 'grapple', 'crawl never steals a newer paired-action owner');
+assert.equal(frame.debug.cliffCrawl.handRigOwned, false);
+restore(frame.undo);
+
+area = 'town';
+frame = draw();
+assert.equal(frame.debug.cliffCrawl, undefined, 'other areas have no active crawl pose');
+assert.equal(rig.owner, 'grapple', 'climb exit preserves other hand owner');
+restore(frame.undo);
+area = 'western-slope';
+rig.owner = null; rig.provider = null;
+input = { x: 0, y: 0 };
+assert(climb.startClimb({ type: 'cliffRoute', route, entry: 0 }));
+failFootPose = true;
+frame = draw();
+assert(frame.debug.cliffCrawl.error.includes('synthetic IK failure'), 'render error appears in mobile diagnostics');
+assert.equal(mesh.position.x, 0, 'even interrupted renders immediately roll back the body transform');
+assert(tool.visible && item.visible && burden.visible, 'interrupted render leaves equipment visible');
+assert.equal(rig.owner, null, 'interrupted render releases procedural hand ownership');
+assert(returnedToIdle > 0, 'cliff pose returns to the default idle pose');
+failFootPose = false;
+frame = draw();
+assert(frame.debug.cliffCrawl.active, 'cliff crawl reclaims a healthy rig after a failed frame');
+restore(frame.undo);
+assert(contacts.getDebug().hookInstalled, 'mobile diagnostics expose hook installation');
 
 console.log('cliff crawl presentation: all targeted checks passed');
