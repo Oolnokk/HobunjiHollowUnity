@@ -1146,6 +1146,7 @@
         "Not Dairy"
       ]
     },
+    "tzatzulEggs": { "id": "tzatzulEggs", "name": "Tzatzul Eggs", "categories": ["egg"], "quality": 5, "baseBoost": 12, "processingTier": "raw", "primaryEffect": "combat", "tags": ["Egg", "Tzatzul", "Rare", "Nonfertile"] },
     "nelkEggs": {
       "id": "nelkEggs",
       "name": "Nelk Eggs",
