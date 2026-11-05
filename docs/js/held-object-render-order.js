@@ -1720,8 +1720,28 @@
     return state;
   }
 
+  // Every registry keeps its members (and the scene they were found under) in
+  // strong Sets and Maps, so a scene the game discards would stay reachable
+  // with all of its meshes. The inactive zone cache calls this before it empties
+  // an evicted zone's scene: placed members leave through their scene bucket,
+  // members not yet placed through a traversal.
+  function forgetScene(scene) {
+    if (!scene) return 0;
+    const registries = [heldRegistry, groundRegistry, topFaceGroundRegistry, waterRegistry, tintCoverRegistry, protectedCoverRegistry, waterOccludedRegistry, pngDepthRegistry];
+    let removed = 0;
+    for (const registry of registries) {
+      const bucket = registry.byScene.get(scene);
+      if (bucket) for (const object of [...bucket]) if (registry.delete(object)) removed++;
+      registry.byScene.delete(scene);
+    }
+    scene.traverse?.(object => { for (const registry of registries) if (registry.delete(object)) removed++; });
+    lastSceneScan.delete(scene);
+    return removed;
+  }
+
   window.HeldObjectRenderOrder = {
     installed: true,
+    forgetScene,
     mode: 'selective-depth-replay',
     LEGACY_HELD_RENDER_ORDER,
     FOOT_WATER_MASK_LAYER,

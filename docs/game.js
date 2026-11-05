@@ -5037,7 +5037,7 @@
       window.HobunjiCacheAudit?.register('game.creatureTexCache', () => _creatureTexCache.front.size);
       function _getCreatureFrontTexture(url) {
         if (!_creatureTexCache.front.has(url)) {
-          const tex = new THREE.TextureLoader().load(url);
+          const tex = new THREE.TextureLoader().load(url, window.CreatureTextureCache?.capLoadedTexture); // Oversized art (grehlr 3000x2250) is scaled once at load; see creature-texture-cache.js.
           tex.colorSpace = THREE.SRGBColorSpace;
           _creatureTexCache.front.set(url, tex);
         }
@@ -5045,7 +5045,7 @@
       }
       function _getCreatureBackTexture(url) {
         if (!_creatureTexCache.back.has(url)) {
-          const tex = new THREE.TextureLoader().load(url);
+          const tex = new THREE.TextureLoader().load(url, window.CreatureTextureCache?.capLoadedTexture); // Same cap as the front texture.
           tex.colorSpace = THREE.SRGBColorSpace;
           tex.wrapS = THREE.RepeatWrapping;
           tex.repeat.set(-1, 1);
@@ -5331,14 +5331,17 @@
           if (avatarRef.backPlane) avatarRef.backPlane.position.y = offsetY;
         });
         window.WildlifeSpawn?.restoreHerdMotherVisuals?.(c); // Recreates shared-map saddle babies after a data-only mother's promotion.
+        if (c.state === 'corpse') window.CreatureDeath?.restoreSettledPose?.(c); // A corpse promoted from data lies exactly where and how it settled.
       }
 
       function releaseCreatureVisuals(c) {
-        if (!c.streamVisuals || c.isCompanion || c.health <= 0 || c._wildlifeVisualsReleased) return;
+        if (!c.streamVisuals || c.isCompanion || c._wildlifeVisualsReleased) return;
+        if (c.health <= 0 && !window.WildlifeVisualLod.isStreamableCorpse(c)) return; // Dying bodies and revivable skeletons keep their rig; a settled wildlife corpse is plain data when far away.
         disposeCreaturePresentation(c); // Releases only visuals; health, genes, movement state, and population keys remain registered.
         c.avatarRef = dataCreatureAvatar();
         c.groundShadow = null;
         c._carriedBabyVisuals = null;
+        c._deathRecordedThrow = null; c._deathScorch = null; c._impactRagdollPlayback = null; // Pose state belonged to the released rig; CreatureDeath.restoreSettledPose rebuilds it on promotion.
         c._wildlifeVisualsReleased = true;
         c._wildlifeVisualLodHidden = true;
         c.currentFrameUrl = null;
@@ -5348,6 +5351,7 @@
       function despawnCreature(c) {
         if (c?.maskboundTroop === 'headtaker') window.MaskboundHeadtaker?.cancel?.(c, 'despawn'); // Release the player's neck/input lock before removing this attacker and its visual rig.
         clearKnockbackLedgeMotion(c);
+        window.AnimalVocalizations?.releaseCreature?.(c); // Drops the scheduler's strong tracking-set reference; without this every despawned wild animal (and its whole rig object graph) stayed reachable forever.
         disposeCreaturePresentation(c); // Ordinary despawns and data-only retirement share one visual disposal owner.
       }
 
@@ -5424,7 +5428,7 @@
         return {
           id: 'corpse_' + c.id,
           type: 'creature_corpse',
-          promptRoot: c.avatarRef?.group || null,
+          promptRoot: c._wildlifeVisualsReleased ? null : (c.avatarRef?.group || null), // A far, data-only corpse has no rig to anchor a prompt to.
           getButtons() {
             return [{ icon: '🍖', label: 'Butcher ' + c.def.label, action: 'obj_loot_corpse', style: 'primary', allowed: true }];
           },
@@ -5544,6 +5548,7 @@
         if (c.isBandit) { c._banditAction = null; window.RangedWeapons?.cancelBanditAction?.(c); window.BanditCombat?.cancelLunge?.(c); }
         hostileObjects.delete(c);
         companionObjects.delete(c);
+        window.AnimalVocalizations?.releaseCreature?.(c); // A dead creature is never ticked again, so nothing else would ever drop it from the vocalization scheduler's strong set.
         const mineDeathArea = window.TownMine?.floorFromMapId?.(c.areaId) ? c.areaId : c.zoneId;
         if (!c.isCompanion && !c._mineDescentDeathRolled && window.TownMine?.floorFromMapId?.(mineDeathArea)) {
           c._mineDescentDeathRolled = true;
@@ -6967,6 +6972,8 @@
       function releasePreviousAreaCreatureTextures() {
         if (_lastInactiveCreatureTextureArea === currentArea || cutscenePreviewActive) return;
         _lastInactiveCreatureTextureArea = currentArea;
+        noteZoneVisited(currentArea); // Fires once per area change; the inactive zone cache trims shortly after the arrival settles.
+        scheduleZoneCacheTrim();
         for (const c of hostileObjects) if (c.areaId !== currentArea) {
           releaseInactiveCreatureTextures(c);
           releaseCreatureVisuals(c); // An inactive zone keeps creature data, not full animal rigs.
@@ -6977,6 +6984,26 @@
         const hidden = window.WildlifeVisualLod.update(c, distanceTiles); // Promotes data-only actors through the same distance owner.
         if (hidden) releaseInactiveCreatureTextures(c);
         return hidden;
+      }
+
+      // Settled wildlife corpses leave hostileObjects, so the per-creature LOD
+      // above never saw them and each kept a full rig for the whole session.
+      // This drives the same distance owner for them on a short timer, and
+      // releases them outright once the player is in another area.
+      let _corpseVisualLodAt = 0;
+      function updateCorpseVisualLod() {
+        const now = performance.now();
+        if (now - _corpseVisualLodAt < 400) return; // Wall clock, so a slow frame rate does not stretch the interval.
+        _corpseVisualLodAt = now;
+        for (const c of corpseObjects) { // Promotion shares the per-frame allowance set by updateHostiles, so corpses wake over successive ticks.
+          if (!window.WildlifeVisualLod.isStreamableCorpse(c)) continue;
+          if (c.areaId !== currentArea) { if (!c._wildlifeVisualsReleased) releaseCreatureVisuals(c); continue; }
+          updateWildlifeVisualLod(c, Math.hypot(player.x - c.x, player.y - c.y) / TILE);
+        }
+      }
+      function tickCorpses(dt) {
+        window.CreatureDeath.updateCorpses(dt);
+        updateCorpseVisualLod();
       }
 
       window.WildlifeVisualLod.init({ createVisuals: createCreatureVisuals, releaseVisuals: releaseCreatureVisuals }); // Existing LOD owns streamed wildlife presentation lifetime.
@@ -11492,6 +11519,7 @@
 
         const info = { scene: zScene, grid: zGrid, cols: ZCOLS, rows: ZROWS, transitions, occlusionMeshes, canopyZones, cullables, chunkController: null, pathNet: zonePathNet };
         _zoneScenes.set(mapId, info);
+        rebindZoneResidents(mapId, info); // Creatures that outlived an evicted copy of this zone point at the new scene and grid.
 
         const floorRegistry = _zoneFloorMeshGroups.get(mapId); // Tracks global path meshes plus every currently loaded chunk floor object.
         const waterRegistry = _zoneWaterMeshes.get(mapId); // Tracks only resident water meshes for shared water animation/debug consumers.
@@ -15686,6 +15714,154 @@
         window.CliffElevatedSurfaces?.clear?.(mapId); // Release only this wilderness area's stacked support scope on unload.
         window.CliffRouteNetwork?.releaseArea?.(mapId); // Drop transient scene/route references; saved balcony rewards survive.
       }
+
+      // ── Inactive wilderness zone cache ────────────────────────────────
+      // A wilderness scene used to stay cached forever once built, so every
+      // zone the player had ever entered kept its scene graph, GPU buffers and
+      // per-tile data (about 170 MB of JS heap and several hundred MB of
+      // process memory each). Only the current zone plus the most recent
+      // inactive one(s) stay built now
+      // (SCRATCHBONES_CONFIG.game.zoneCache.maxInactiveZones, default 1).
+      // Older zones are torn down with _disposeZoneScene and rebuilt by the
+      // ordinary enterZone path from _zoneLayouts, the tile deltas and the
+      // persist maps, which already restore edited tiles, felled trees, mined
+      // rocks, berries, reagents and treasure. Wildlife, bandit camps and the
+      // player's campfire keep their own state and re-attach on entry; NPCs are
+      // parked until the zone is rebuilt and ordinary creatures drop to data. A
+      // zone with a resident that must keep its rig (a bandit, a dying body)
+      // is never evicted.
+      const _zoneVisitOrder = []; // Wilderness zone ids, most recently entered last.
+      let _zoneCacheTrimTimer = null;
+      function zoneCacheMaxInactive() {
+        const configured = Number(window.SCRATCHBONES_CONFIG?.game?.zoneCache?.maxInactiveZones);
+        return Number.isFinite(configured) && configured >= 0 ? Math.floor(configured) : 1;
+      }
+      function noteZoneVisited(mapId) {
+        if (!_isZoneArea(mapId)) return;
+        const at = _zoneVisitOrder.indexOf(mapId);
+        if (at >= 0) _zoneVisitOrder.splice(at, 1);
+        _zoneVisitOrder.push(mapId);
+      }
+      function zoneResidents(mapId) {
+        const residents = [];
+        for (const set of [hostileObjects, corpseObjects]) for (const c of set) if ((c.areaId || c.zoneId) === mapId) residents.push(c);
+        return residents;
+      }
+      // Ordinary creatures (wildlife and ambient hostiles) are rebuilt from their
+      // own data by createCreatureVisuals, so an inactive zone can hold them as
+      // plain data and the distance LOD promotes them again on return. Anything
+      // with its own rig builder or a rider/follower relationship stays put.
+      function canHoldAsData(c) {
+        if (c.isBandit || c.isCompanion || c.banditCompanion || c.maskboundTroop || c.mountedBy || c.rider || !c.def) return false;
+        return c.health > 0 || window.WildlifeVisualLod.isStreamableCorpse({ ...c, streamVisuals: true });
+      }
+      function releaseResidentRigs(mapId) {
+        for (const c of zoneResidents(mapId)) {
+          if (c._wildlifeVisualsReleased || !canHoldAsData(c)) continue;
+          c.streamVisuals = true; // From here on it streams by distance like any other wildlife.
+          releaseCreatureVisuals(c);
+        }
+      }
+      // NPCs have a parked state for a zone whose scene does not exist yet
+      // (_pendingZoneAdd, see makeNpcWalker/transferToArea); buildZoneScene drops
+      // them back in at the nearest walkable tile when the zone is rebuilt.
+      function parkZoneNpcs(mapId) {
+        const area = normalizeNpcArea(mapId);
+        for (const w of npcWalkers) {
+          if (normalizeNpcArea(w.area) !== area) continue;
+          if (w.root._npcScene) w.root._npcScene.remove(w.root); else w.root.parent?.remove?.(w.root);
+          w.root._npcScene = null; w.root._pendingZoneAdd = mapId;
+          w.resetRouteState?.();
+        }
+      }
+      function zoneEvictionBlocker(mapId) {
+        if (mapId === window.DevSpawner?.DEV_ARENA_ZONE_ID || mapId === window.DevSpawner?.WILDERNESS_LAB_ZONE_ID) return 'dev zone';
+        for (const c of zoneResidents(mapId)) if (!c._wildlifeVisualsReleased && !c.isCompanion) return 'resident rig';
+        return null;
+      }
+      // _disposeZoneScene frees geometry only, because tileMats and the house
+      // wall builder's materials are shared by every map. An evicted zone would
+      // otherwise leave all of its other materials and textures resident, and its
+      // rebuild would create a second set (about 370 textures per cycle). Anything
+      // still referenced by a scene that stays alive is skipped; r128 re-uploads a
+      // disposed resource on next use, so a skipped-or-missed share costs a
+      // re-upload at worst.
+      function materialTextures(material) {
+        const found = [];
+        for (const key in material) { const value = material[key]; if (value?.isTexture) found.push(value); }
+        if (material.uniforms) for (const uniform of Object.values(material.uniforms)) if (uniform?.value?.isTexture) found.push(uniform.value);
+        return found;
+      }
+      function materialsOf(object) { return Array.isArray(object.material) ? object.material : [object.material]; }
+      function collectLiveSceneResources() {
+        const materials = new Set(), textures = new Set();
+        const scenes = [scene, townScene, ...[..._buildingScenes.values()].map(b => b?.scene), ...[..._zoneScenes.values()].map(zi => zi.scene)];
+        for (const s of scenes) s?.traverse?.(object => {
+          for (const material of materialsOf(object)) {
+            if (!material || materials.has(material)) continue;
+            materials.add(material);
+            for (const texture of materialTextures(material)) textures.add(texture);
+          }
+        });
+        return { materials, textures };
+      }
+      function disposeSceneResources(zoneScene, live) {
+        const seen = new Set(); let materials = 0, textures = 0;
+        zoneScene.traverse(object => {
+          for (const material of materialsOf(object)) {
+            if (!material || seen.has(material) || live.materials.has(material)) continue;
+            seen.add(material);
+            for (const texture of materialTextures(material)) if (!live.textures.has(texture)) { texture.dispose(); textures++; }
+            material.dispose(); materials++;
+          }
+        });
+        return { materials, textures };
+      }
+      function evictZoneScene(mapId) {
+        const zi = _zoneScenes.get(mapId);
+        if (!zi) return false;
+        const persisted = _captureLivePreviewZonePersistence(mapId); // _disposeZoneScene was written for terrain regeneration and drops this saved state.
+        window.WildernessCampfire?.releaseVisualIfZone?.(mapId); // Keeps the saved campfire; only its visual belonged to this scene.
+        for (const c of zoneResidents(mapId)) { c.scene = null; c.areaGrid = null; } // Data-only residents must not keep the old scene and grid alive; rebindZoneResidents restores them.
+        parkZoneNpcs(mapId);
+        _disposeZoneScene(mapId);
+        _restoreLivePreviewZonePersistence(mapId, persisted);
+        const freed = disposeSceneResources(zi.scene, collectLiveSceneResources()); // _zoneScenes no longer lists this zone, so only scenes that stay alive count as users.
+        // Modules that keep strong, zone-keyed references to the old scene or grid (found with a heap snapshot).
+        window.HeldObjectRenderOrder?.forgetScene?.(zi.scene);
+        window.CratePiles?.releaseZone?.(mapId);
+        window.PorakanekiCampPlacementPolicy?.forgetZone?.(mapId);
+        window.Shattercasks?.releaseZone?.(mapId);
+        window.WorldPopupText?.releaseScene?.(zi.scene);
+        zi.scene.clear(); // One stale reference to a mesh would otherwise keep the whole old zone reachable through its parent chain.
+        window.__farmLog?.(`[zone-cache] evicted ${mapId} (${freed.materials} materials, ${freed.textures} textures released)`, 'perf');
+        return true;
+      }
+      function rebindZoneResidents(mapId, info) {
+        for (const c of zoneResidents(mapId)) { c.scene = info.scene; c.areaGrid = info.grid; c.areaCols = info.cols; c.areaRows = info.rows; }
+      }
+      const _zoneCacheHistory = []; // QA record of recent trim decisions, newest last (window.__zoneCacheDebug.history).
+      function trimZoneCache() {
+        _zoneCacheTrimTimer = null;
+        const entry = { at: Date.now(), current: currentArea, order: [..._zoneVisitOrder], built: [..._zoneScenes.keys()], skipped: null, kept: [], evicted: [], blocked: [] };
+        _zoneCacheHistory.push(entry);
+        if (_zoneCacheHistory.length > 40) _zoneCacheHistory.shift();
+        if (cutscenePreviewActive || _tothalShiftPromise) { entry.skipped = cutscenePreviewActive ? 'cutscene preview' : 'tothal shift'; return; }
+        const inactive = _zoneVisitOrder.filter(id => id !== currentArea && _zoneScenes.has(id));
+        const keep = new Set(inactive.slice(Math.max(0, inactive.length - zoneCacheMaxInactive())));
+        for (const mapId of [..._zoneScenes.keys()]) {
+          if (mapId === currentArea || keep.has(mapId)) { entry.kept.push(mapId); continue; }
+          releaseResidentRigs(mapId);
+          const blocker = zoneEvictionBlocker(mapId);
+          if (blocker) { entry.blocked.push(`${mapId}: ${blocker}`); window.__farmLog?.(`[zone-cache] kept ${mapId}: ${blocker}`, 'perf'); continue; }
+          if (evictZoneScene(mapId)) entry.evicted.push(mapId);
+        }
+      }
+      function scheduleZoneCacheTrim() {
+        if (_zoneCacheTrimTimer) return;
+        _zoneCacheTrimTimer = setTimeout(trimZoneCache, 6000); // Never in the frame the player arrives: a freshly entered area gets a few quiet seconds first.
+      }
+      window.__zoneCacheDebug = { trim: trimZoneCache, order: () => [..._zoneVisitOrder], built: () => [..._zoneScenes.keys()], blocker: zoneEvictionBlocker, history: () => _zoneCacheHistory.map(e => ({ ...e })), sceneRef: id => _zoneScenes.get(id)?.scene || null, gridRef: id => _zoneScenes.get(id)?.grid || null }; // QA hook, mirrors window.__regenerateWildernessLab.
 
       // Finds one already-built wilderness shrub/tree group by indexed tile
       // lookup and removes it with light list bookkeeping. The grass floor
@@ -26221,14 +26397,14 @@
               const hostilePerf = window.PerfProfiler?.begin('hostiles'); // Measures the complete current-area hostile AI and visual synchronization pass.
               updateHostiles(dt);
               window.PerfProfiler?.end(hostilePerf);
-              window.CreatureDeath.updateCorpses(dt);
+              tickCorpses(dt);
             } else if (_isBuildingArea(currentArea)) {
               // Ordinary building interiors still have no wild spawns; this
               // branch only keeps any authored interior hostile/corpse active.
               const hostilePerf = window.PerfProfiler?.begin('hostiles'); // Uses the same timing bucket for authored interior combatants.
               updateHostiles(dt);
               window.PerfProfiler?.end(hostilePerf);
-              window.CreatureDeath.updateCorpses(dt);
+              tickCorpses(dt);
             }
           }
 

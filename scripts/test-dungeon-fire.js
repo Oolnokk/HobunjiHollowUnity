@@ -302,8 +302,8 @@ async function main() {
     'the regular ranged frame must animate the already-armed held weapon before firing');
   const heldOverlayCode = fs.readFileSync(path.join(root, 'docs/js/held-object-render-order.js'), 'utf8'); // Confirms every world-up particle stays inside the shared weapon x-ray replay.
   assert(heldOverlayCode.includes('hobunjiDungeonFireVfxPadding') &&
-    fs.readFileSync(path.join(root, 'docs/js/tool-icon-render.js'), 'utf8').includes('20261103dungeonplumepadding2'),
-    'the authored flame padding is supported and its dynamic loader cache token updated');
+    /held-object-render-order\.js\?v=[A-Za-z0-9_-]+/.test(fs.readFileSync(path.join(root, 'docs/js/tool-icon-render.js'), 'utf8')), // Any token: scripts/check-cache-busts.js moves it whenever the module changes, so pinning one value breaks on every later edit.
+    'the authored flame padding is supported and the dynamic loader still carries a cache token');
   assert(rangedCode.includes('const dungeonFire = window.DungeonFire?.consumeNextProjectile?.() === true;') &&
     rangedCode.includes('shotOptions?.dungeonFire === true && i > 0'),
     'only one player projectile in a volley consumes the one-shot fire charge');

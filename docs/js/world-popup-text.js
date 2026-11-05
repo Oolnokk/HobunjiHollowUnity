@@ -868,7 +868,27 @@
     return clone(state.settings);
   }
 
+  // The inactive zone cache calls this for a zone whose scene it is discarding. Popups and the aim label are normally
+  // gone within seconds, but one still anchored in that scene would keep the whole scene reachable until it expired.
+  function releaseScene(scene) {
+    if (!scene) return 0;
+    let released = 0;
+    for (let index = state.active.length - 1; index >= 0; index--) {
+      if (state.active[index].scene !== scene) continue;
+      dispose(state.active[index]);
+      state.active.splice(index, 1);
+      released++;
+    }
+    const before = state.pending.length + state.levelUpQueue.length;
+    state.pending = state.pending.filter(item => item.scene !== scene);
+    state.levelUpQueue = state.levelUpQueue.filter(item => item.scene !== scene);
+    released += before - state.pending.length - state.levelUpQueue.length;
+    if (state.aimLabel?.scene === scene) { dispose(state.aimLabel); state.aimLabel = null; released++; }
+    return released;
+  }
+
   const api = {
+    releaseScene,
     init, update, showChange, queueReward, queueSocialGain, queueLevelUp,
     setInteractionPrompts, syncInteractionPrompts, clearInteractionPrompts,
     setConditionCallout, clearConditionCallout,

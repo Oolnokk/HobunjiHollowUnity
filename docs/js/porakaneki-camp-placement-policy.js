@@ -313,9 +313,13 @@
   window.PorakanekiCampPlacementPolicy = Object.freeze({
     version: 4,
     syncCurrentZoneClutter,
+    // The inactive zone cache drops a zone's grid; forgetting the reference lets the old grid be collected,
+    // and the next visit sees a different grid and re-applies the active clearings (see syncCurrentZoneClutter).
+    forgetZone: zoneId => { gridRefByZone.delete(zoneId); },
     debugSnapshot: () => ({
       placements: [...placements].map(([id, entry]) => ({ id, zoneId: entry.zoneId, clearedTiles: entry.snapshots.length })),
       appliedByZone: Object.fromEntries([...appliedByZone].map(([zoneId, ids]) => [zoneId, [...ids]])),
+      gridRememberedZones: [...gridRefByZone.keys()], // Zones whose live grid this module still references (the inactive zone cache clears these through forgetZone).
     }),
     __test: Object.freeze({ isPorakanekiInstance, zoneIdFromInstanceId, prepareClutter, campStampAttempts, minimumCampFallbackLocales }),
   });
