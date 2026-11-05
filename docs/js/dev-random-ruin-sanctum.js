@@ -72,7 +72,7 @@
     const westOf=Number(options.leftOfX); // East-facing V50 vestibules put the physical shaft on the east; keep this endgame-only sanctuary on the unused west.
     const westPlacement=Number.isFinite(westOf)&&westOf>0;
     const x0=westPlacement?Math.floor(westOf-aw-PASSAGE_LEN-vw-5):baseCols+1;
-    if(x0<2)throw new Error('Not enough west-side clearance for the boss sanctum');
+    if(westPlacement&&x0<2)throw new Error('Not enough west-side clearance for the boss sanctum');
     const z0 = Math.floor((rows - ad) / 2);
     const zc = z0 + ad / 2; // Whole-tile line the passage and vault centre on.
     const arena = { minX:x0, maxX:x0 + aw, minZ:z0, maxZ:z0 + ad };
