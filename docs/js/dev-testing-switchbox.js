@@ -114,6 +114,43 @@
     applyFlags,
   });
 
+  // Dev Companion's performance A/B panel reuses these boot-time guards.
+  // Delaying the reload lets the BroadcastChannel acknowledge the switch first.
+  const COMPANION_SAFE_SWITCHES = Object.freeze([
+    'noShellOutlines', 'noGrass', 'noWind', 'lowPolyFoliage',
+    'noBrickWalls', 'noShingleGlbs', 'noSkySphere', 'noAudio', 'noVerdigris'
+  ]); // Deliberately excludes AI and water simulation: disabling them alters active gameplay state.
+
+  function companionToggleSwitch(name, enabled) {
+    if (!COMPANION_SAFE_SWITCHES.includes(name) || typeof enabled !== 'boolean')
+      return { ok: false, error: 'Unsupported switch or value.' };
+    const off = !enabled; // UI is positive: checked means the feature runs.
+    if (flags[name] === off) return { ok: true, changed: false };
+    flags[name] = off;
+    saveFlags();
+    setTimeout(() => location.reload(), 350);
+    return { ok: true, changed: true, reloading: true };
+  }
+
+  window.DevCompanion?.registerCheatPanel?.({
+    id: 'performance-ab-switchbox',
+    title: 'Performance A/B switchbox',
+    order: -200,
+    render: () => ({
+      summary: 'Reload to compare',
+      actions: COMPANION_SAFE_SWITCHES.map(name => ({
+        id: name,
+        group: 'Enabled = feature active',
+        label: SWITCHES[name].label,
+        title: SWITCHES[name].hint + ' Changing this restarts the game tab.',
+        toggle: true,
+        checked: !flags[name],
+      })),
+      note: 'Each change reloads the game tab and reconnects this companion. Save first. AI and water simulation are deliberately excluded because they change world state. Outlines also gates the painterly filter.',
+    }),
+    onAction: (name, args) => companionToggleSwitch(name, args.enabled),
+  });
+
   // ── 🔇 Audio ─────────────────────────────────────────────────────────
   // Rather than gate every play*() call across the several separate sound
   // modules (AudioSystem, HobunjiAmbientBgs, AnimalVocalizations, ambient
