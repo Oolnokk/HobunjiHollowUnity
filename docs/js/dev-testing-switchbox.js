@@ -76,6 +76,22 @@
       label: '🟢 Verdigris',
       hint: 'Skips tool oxidation/aging recoloring; base metal tinting still applies.',
     },
+    noCharacterGroundShadows: {
+      label: '◉ Character Ground Shadows',
+      hint: 'Do not draw individual avatar ground-shadow disks. Keeps their objects/transforms alive for gameplay.',
+    },
+    noPngAvatarOcclusion: {
+      label: '▧ PNG Portrait Depth Pass',
+      hint: 'Skips the PNG-avatar-only depth replay pass; weapon/3D shell outlines may appear through portraits.',
+    },
+    noCorpseVisuals: {
+      label: '☠ Corpse Rig Rendering',
+      hint: 'Hides settled corpse avatar groups after death animation. Corpses remain in simulation and lootable, but become invisible.',
+    },
+    noLayeredWeaponDecorations: {
+      label: '⚔ Layered Weapon Decorations',
+      hint: 'Skips creating multi-sprite weapon assemblies. Weapon action logic and original tool plane remain, but layered weapon art may be absent.',
+    },
   });
 
   function readFlags() {
@@ -118,7 +134,8 @@
   // Delaying the reload lets the BroadcastChannel acknowledge the switch first.
   const COMPANION_SAFE_SWITCHES = Object.freeze([
     'noShellOutlines', 'noGrass', 'noWind', 'lowPolyFoliage',
-    'noBrickWalls', 'noShingleGlbs', 'noSkySphere', 'noAudio', 'noVerdigris'
+    'noBrickWalls', 'noShingleGlbs', 'noSkySphere', 'noAudio', 'noVerdigris',
+    'noCharacterGroundShadows', 'noPngAvatarOcclusion', 'noCorpseVisuals', 'noLayeredWeaponDecorations'
   ]); // Deliberately excludes AI and water simulation: disabling them alters active gameplay state.
 
   const PAINTERLY_BACKUP_KEY = 'hobunji-dev-companion-painterly-previous-v1'; // Restores the user's selected quality after a temporary A/B disable.
@@ -181,6 +198,41 @@
     }),
     onAction: (name, args) => companionToggleSwitch(name, args.enabled),
   });
+
+  // ── Character-rig rendering isolation ───────────────────────────────
+  // All four experiments preserve entity state, collision, damage, and corpse
+  // ownership. They affect ONLY optional draw/assembly layers; reload restores.
+  if (flags.noCharacterGroundShadows && window.CharacterGroundShadow?.make) {
+    const nativeMakeShadow = window.CharacterGroundShadow.make; // Original factory used by all living NPC/animal/player callers.
+    window.CharacterGroundShadow.make = function (...args) {
+      const shadow = nativeMakeShadow.apply(this, args);
+      if (shadow) shadow.visible = false; // No draw calls but maintain a valid Mesh for callers that position/scale it.
+      return shadow;
+    };
+  }
+
+  if (flags.noPngAvatarOcclusion && window.PngPlaneOutlineOccluder?.renderDepth) {
+    window.PngPlaneOutlineOccluder.renderDepth = function () {};
+    // Registered meshes and regular avatar draws remain untouched.
+  }
+
+  if (flags.noCorpseVisuals && window.CreatureDeath?.settleAsCorpse) {
+    const nativeSettleCorpse = window.CreatureDeath.settleAsCorpse; // Preserves authoritative death/loot/cleanup ownership.
+    window.CreatureDeath.settleAsCorpse = function (entity, ...args) {
+      const settled = nativeSettleCorpse.call(this, entity, ...args);
+      if (settled && entity?.state === 'corpse' && entity.avatarRef?.group)
+        entity.avatarRef.group.visible = false;
+      return settled;
+    };
+  }
+
+  if (flags.noLayeredWeaponDecorations && window.HobunjiWeaponSpriteAssemblies?.decorate) {
+    const nativeDecorateWeapon = window.HobunjiWeaponSpriteAssemblies.decorate; // Preserved for debugging/reload; no gameplay attack hooks are modified.
+    window.HobunjiWeaponSpriteAssemblies.decorate = function (root, ...args) {
+      if (root?.userData?.toolPlane) return root; // Retains the existing base tool; only skips assembling extra decorative meshes.
+      return nativeDecorateWeapon.call(this, root, ...args);
+    };
+  }
 
   // ── 🔇 Audio ─────────────────────────────────────────────────────────
   // Rather than gate every play*() call across the several separate sound
