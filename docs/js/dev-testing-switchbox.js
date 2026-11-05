@@ -116,6 +116,34 @@
       label: '👖 Deformable Pants Rig',
       hint: 'Skips allocating deformable pants overlays for newly built characters; keeps procedural legs, inventory, physics, and attacks intact.',
     },
+    noWildlifePreyScans: {
+      label: '🐾 Wildlife Prey Searches',
+      hint: 'TEST ONLY: stops food-web predator prey acquisition. Changes animal hunting behavior; combat/death cleanup remains active.',
+    },
+    noWildlifeGuardScans: {
+      label: '🛡 Wildlife Food-Guard Searches',
+      hint: 'TEST ONLY: stops food-guard threat acquisition, affecting animal defensive AI. Existing targets and cleanup remain active.',
+    },
+    noPortraitSubjectSearches: {
+      label: '👁 Portrait Entity-Registry Search',
+      hint: 'Skips fallback scanning every entity collection for portrait-facing owners. Cached identities still work; uncached ones use fallback orientation.',
+    },
+    noRenderLiftHostileScan: {
+      label: '📐 Render-Lift Hostile Scan',
+      hint: 'Skips per-render hostile elevation adjustment only. Gameplay height/collisions remain authoritative; some animal visuals may appear ungrounded.',
+    },
+    noRenderLiftCorpseScan: {
+      label: '📐 Render-Lift Corpse Scan',
+      hint: 'Skips per-render corpse elevation adjustment only. Corpses remain lootable; visuals may appear at incorrect height.',
+    },
+    noRenderLiftCompanionScan: {
+      label: '📐 Render-Lift Companion Scan',
+      hint: 'Skips per-render companion elevation adjustment only; visual grounding may differ on raised surfaces.',
+    },
+    noRenderLiftLivestockScan: {
+      label: '📐 Render-Lift Livestock Scan',
+      hint: 'Skips per-render farm-animal elevation adjustment only; visual grounding may differ on raised surfaces.',
+    },
   });
 
   function readFlags() {
@@ -160,7 +188,9 @@
     'noShellOutlines', 'noGrass', 'noWind', 'lowPolyFoliage',
     'noBrickWalls', 'noShingleGlbs', 'noSkySphere', 'noAudio', 'noVerdigris',
     'noCharacterGroundShadows', 'noPngAvatarOcclusion', 'noCorpseVisuals', 'noLayeredWeaponDecorations',
-    'noPortraitDepthMatrixParity', 'noHandOutlineMatrixParity', 'noFootOutlineMatrixParity', 'noUnusedAnimalTextureCache', 'reducedPortraitPixelCache', 'noSkinnedPants'
+    'noPortraitDepthMatrixParity', 'noHandOutlineMatrixParity', 'noFootOutlineMatrixParity', 'noUnusedAnimalTextureCache', 'reducedPortraitPixelCache', 'noSkinnedPants',
+    'noWildlifePreyScans', 'noWildlifeGuardScans', 'noPortraitSubjectSearches',
+    'noRenderLiftHostileScan', 'noRenderLiftCorpseScan', 'noRenderLiftCompanionScan', 'noRenderLiftLivestockScan'
   ]); // Deliberately excludes AI and water simulation: disabling them alters active gameplay state.
 
   const PAINTERLY_BACKUP_KEY = 'hobunji-dev-companion-painterly-previous-v1'; // Restores the user's selected quality after a temporary A/B disable.
@@ -242,7 +272,7 @@
         toggle: true,
         checked: !flags[name],
       }))],
-      note: 'Memory numbers are live when supported; texture memory is estimated. Painterly changes instantly; each other change reloads the game tab and reconnects this companion. Save first. AI and water simulation are deliberately excluded because they change world state. Outlines also gates the painterly filter.',
+      note: 'Memory numbers are live when supported; texture memory is estimated. Painterly changes instantly; other switches reload. Wildlife prey/guard switches ALTER animal behavior during testing, while portrait/render-lift switches affect visual positioning only. Save first and restore all checkboxes before normal play. The broad NPC AI and water-simulation switches remain excluded.',
     }),
     onAction: (name, args) => companionToggleSwitch(name, args.enabled),
   });
