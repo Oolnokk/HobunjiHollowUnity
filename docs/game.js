@@ -11132,10 +11132,13 @@
               const isShadewood   = isTreeZone && EXTERIOR_ZONES[mapId]?.cloudForest && (tile.floraKind === 'copse' || !tile.floraKind);
               const isBush   = tile.floraKind === 'bush';
               const isStump  = tile.floraKind === 'beehive';
+              const isKomaHedge = !isDeadTree && !isDeadBush && !isCrownedPine && !isShadewood && !isStump
+                && window.RoadsideKomaHedges?.isHedgeBush?.(zGrid, c, r, mapId); // Only shrub lines beside Slagothim wilderness roads.
               const vegGroup = isDeadTree ? window.FoliageGenerator.buildDeadTreeMesh(c, r)
                              : isDeadBush ? window.FoliageGenerator.buildDeadBushMesh(c, r)
                              : isCrownedPine ? window.FoliageGenerator.buildCrownedPineMesh(c, r)
                              : isShadewood   ? window.FoliageGenerator.buildShadewoodMesh(c, r)
+                             : isKomaHedge   ? window.FoliageGenerator.buildKomaHedgeBushMesh(c, r)
                              : isBush        ? window.FoliageGenerator.buildWildernessBushMesh(c, r)
                              : isStump       ? window.FoliageGenerator.buildStumpMesh(c, r)
                              : window.FoliageGenerator.buildShrubMesh(c, r);
@@ -17117,6 +17120,7 @@
       function applyItemSpriteIcon(el, def, key) {
         if (!el || !def) return;
         window.ItemProcessing.normalizeAlcoholItemDef(def);
+        window.ObjectSpriteCatalog?.ensure?.(key, def); // Dynamic items acquire artwork before the existing Pack/HUD/arch sprite renderer.
         window.AlcoholInventoryUI?.applySwigBadge?.(el, key, def);
         if (!def.spriteIcon) { clearItemSpriteIcon(el, true); return; }
         // The source PNG replaces the emoji immediately; the recolored canvas
