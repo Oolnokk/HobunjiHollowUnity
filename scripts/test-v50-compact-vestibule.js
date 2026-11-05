@@ -9,6 +9,21 @@ const Shaft=require('../docs/js/shaft-hub.js');
 const Corridor=require('../docs/js/ruin-shaft-corridor.js');
 const Connector=require('../docs/js/ruin-shaft-connector.js');
 const Vestibule=require('../docs/js/ruin-v50-vestibule.js');
+const NativeMechanisms=require('../docs/js/ruin-v50-native-mechanisms.js');
+// V50's authored brazier helpers copy their parent's metadata, but the
+// canonical fire-transfer runtime registers only the outer physical brazier.
+{
+  const outer={userData:{activatorType:'brazier',linkedMechanismId:'v50-test'},
+    children:[],parent:null};
+  const nested={userData:{activatorType:'brazier',linkedMechanismId:'v50-test'},
+    children:[],parent:outer};
+  outer.children.push(nested);
+  const root={userData:{},children:[outer],parent:null,
+    traverse(fn){fn(this);fn(outer);fn(nested)}};
+  const inspected=NativeMechanisms.inspect(root);
+  assert.deepEqual(inspected.activators,[outer],
+    'native stage candidate must not choose a nested brazier the original fire-transfer runtime will never register');
+}
 const orientation={north:{dx:0,dz:-1},east:{dx:1,dz:0},south:{dx:0,dz:1},west:{dx:-1,dz:0}};
 let cases=0; // Number of deterministic cardinal/seed layouts whose physical threshold is checked.
 for(const side of Object.keys(orientation))for(let seed=1;seed<=60;seed++){
