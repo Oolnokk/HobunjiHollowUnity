@@ -18,7 +18,7 @@
   function bushAt(grid, col, row) {
     const here = tile(grid, col, row);
     if (String(here?.type || '').toLowerCase() !== 'shrub') return false;
-    return !['copse', 'beehive', 'mushroomPatch'].includes(String(here.floraKind || ''));
+    return here.floraKind === 'bush'; // Only ordinary decorative bushes; fruit/mushroom resources, trees and hive stumps keep their identifying art.
   }
 
   function nearRoad(grid, col, row) {
