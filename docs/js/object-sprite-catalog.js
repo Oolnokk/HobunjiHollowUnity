@@ -15,10 +15,10 @@
   }); // Standalone test/editor fallback mirrors the same canonical quartet.
   const PAPER_COLOR = 0xE7D5AF; // Warm paper fill for scroll.png, independent of binding color.
   const METAL_COLORS = Object.freeze({
-    copper: 0xBD754B, tin: 0xC1C5C6, bronze: 0xAA8050,
+    copper: 0xBD754B, bronze: 0xAA8050, platinum: 0xCAD0D4,
     iron: 0x81848A, steel: 0xACBEC3, silver: 0xC7CFDF,
     gold: 0xD8AE49, lead: 0x80818A, zinc: 0xB7BABF,
-    nickel: 0xB9C1B3, mithril: 0x91B6D6, stone: 0x79766C,
+    nickel: 0xB9C1B3, mithril: 0x91B6D6, tin: 0xC1C5C6, stone: 0x79766C,
   }); // Fallbacks only; an item's explicitly authored material color takes precedence.
   const NO_OVERRIDE = new Set(['gold', 'ganang']); // Currency is not a physical gold-ore/ingot stack.
   const seen = new WeakMap(); // Avoid reassigning sprite metadata on every HUD repaint.
@@ -39,9 +39,10 @@
       const parsed = parseColor(value); // Keeps the already-authored mineral/ingredient tint if one exists.
       if (parsed != null) return parsed;
     }
-    const name = (String(key) + ' ' + String(def?.label || '')).toLowerCase();
+    const name = (String(key) + ' ' + String(def?.label || ''))
+      .replace(/([a-z])([A-Z])/g, '$1 $2').replace(/[_:-]/g, ' ').toLowerCase();
     for (const [metal, color] of Object.entries(METAL_COLORS)) {
-      if (name.includes(metal)) return color;
+      if (new RegExp('\\b' + metal + '\\b').test(name)) return color; // Prevents 'tin' in platinum and gives tin-bronze the bronze tint.
     }
     return fallback;
   }
@@ -95,8 +96,13 @@
     if (/\b(ingots?|bars?)\b|(^|[_:-])(bar|ingot)([_:-]|$)/i.test(joined)) {
       return { spriteIcon: 'ingot.png', spriteColor: materialColor(key, def, 0xB6A18B), spriteMode: 'direct' };
     }
-    if (/berries|berry/i.test(joined) || /\bberries\b/i.test(tags)) {
-      return { spriteIcon: 'berries.png', spriteColor: materialColor(key, def, 0xBC4568), spriteMode: 'direct' };
+    if ((/berries|berry/i.test(joined) || /\bberries\b/i.test(tags))
+        && !/wine|juice|jam|jelly|syrup|nectar|liqueur|potion|pie|cake|muffin|sauce|seed|cutting|extract|vinegar/i.test(joined)) {
+      // Only fruit (including dried fruit) becomes a berry pile; wine, jam and juice retain authored containers.
+      const colors = window.ItemProcessing?.BERRY_COLORS; // Reuses the actual jam/juice dye palette for the five named berries.
+      const berryKey = Object.keys(colors || {}).find(name => String(key).toLowerCase().startsWith(name.toLowerCase()));
+      const ownColor = berryKey ? colors[berryKey] : null; // Optional source dye; generic/unknown berries retain their existing material pigment.
+      return { spriteIcon: 'berries.png', spriteColor: materialColor(key, def, ownColor ?? 0xBC4568), spriteMode: 'direct' };
     }
     if (/\b(powder|flour|dust|ground\s+spice|spice\s+mix|ash|ashes|meal\s+powder|grist)\b/i.test(joined) || /narcotic/i.test(tags)) {
       const koma = /koma|iridescen/i.test(context);
