@@ -125,6 +125,7 @@
     ensurePuktukRuntimeRegistration(injectedDeps);
     ensureVoorgAssRuntimeRegistration(injectedDeps);
     window.TzatzulRegistration?.register?.(injectedDeps); // Species registration is synchronous, like Voorg-Ass; actual nesting is separate.
+    window.TzatzulLiveVisuals?.init?.(injectedDeps); // The canonical wildlife update tick will own bird-rig promotion, animation and disposal.
     deps = injectedDeps;
     installDenTurnoverDeathHook();
   }
@@ -1802,6 +1803,7 @@
     const currentArea = deps.getCurrentArea();
     if (currentArea !== lastTurnoverArea) { lastTurnoverArea = currentArea; processDueCaves(); }
     if (deps.getCutscenePreviewActive()) return;
+    window.TzatzulLiveVisuals?.tick?.(dt, currentArea); // Actual dev-spawned Tzatzul get their authored body/wing rig in the existing update loop, even outside wilderness zones.
     denCheckTimer -= dt;
     if (denCheckTimer > 0) return;
     denCheckTimer = DEN_CHECK_INTERVAL_S;
