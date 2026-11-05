@@ -7,7 +7,7 @@
   else root.RuinLayerChallenges=api;
 })(typeof self!=='undefined'?self:globalThis,function(root){
   'use strict';
-  const TYPES=Object.freeze(['pressurePlate','glyphObelisk','ceilingRailTargets','melodyEcho','dungeonFire','ropeChain','statueDefense','timedMelody']);
+  const TYPES=Object.freeze(['pressurePlate','glyphObelisk','ceilingRailTargets','melodyEcho','dungeonFire','ropeChain','statueDefense','timedMelody','fireSconces']);
   const boneTextures=new Map(); // Shared Scratchbone numeral textures for every generated melody decal.
   function melodyFor(id){
     let seed=2166136261; // Deterministic FNV hash; the same generated chamber always has the same note sequence.
@@ -181,6 +181,32 @@
         }
       };
       options.addControl?.(fireControl);
+    }else if(kind==='fireSconces'){
+      // Stone sconces must both be lit with real lingering world fire, not a
+      // generic projectile hit. A fire flask or a Flame Shattercask will work.
+      const gate=body('puzzle-cave-fire-door-'+id,
+        new THREE.BoxGeometry(4.7,3.4,.32),stone,cx,y+1.75,room.z+room.d-1.05);
+      const dark=body('puzzle-cave-fire-darkness-'+id,
+        new THREE.BoxGeometry(5.05,3.65,.025),basic(0x050404),cx,y+1.82,room.z+room.d-.84);
+      dark.userData.puzzleCaveBackdrop=true;
+      gate.userData.puzzleCaveDoor=true;
+      rec.door=gate;rec.sconces=[];rec.doorRise=0;
+      const gateY=gate.position.y; // Slab-only rise leaves the black cave entrance fixed and both sconces attached to the wall.
+      for(const [index,direction] of [-1,1].entries()){
+        const px=cx+direction*2.55,pz=room.z+room.d-1.20;
+        const bracket=body('stone-sconce-'+id+'-'+index,
+          new THREE.CylinderGeometry(.27,.32,.32,10),stone,px,y+1.20,pz);
+        const flame=body('sconce-flame-'+id+'-'+index,
+          new THREE.ConeGeometry(.15,.48,8),basic(0xffa332),px,y+1.54,pz);
+        flame.visible=false;
+        bracket.userData.puzzleCaveSconce=true;
+        rec.sconces.push({x:px,z:pz,flame,lit:false});
+      }
+      rec.animate=dt=>{
+        if(!rec.solved||rec.disposed)return;
+        rec.doorRise=Math.min(1,rec.doorRise+Math.max(0,Number(dt)||0)/.95);
+        gate.position.y=gateY+3.5*rec.doorRise;
+      };
     }else if(kind==='timedMelody'){
       // Cliff-door score: visible Scratchbone notation on a stone gate, no audible example.
       // The generated score's beat clock advances only while the player stays on the large plate.
@@ -311,6 +337,15 @@
           &&Math.hypot(player.x-cx,player.z-cz)<1.15;
         rec.elapsed=standing?rec.elapsed+Math.min(.05,Math.max(0,dt)):0;
         if(rec.elapsed>=rec.requiredSeconds){rec.plate.material=hit;complete();}
+      }
+      if(kind==='fireSconces'&&!rec.solved&&isActive()){
+        const fireZones=options.groundFire||root.PersistentGroundFire;
+        for(const sconce of rec.sconces){
+          if(sconce.lit||!fireZones?.intersects?.(options.area,sconce.x,sconce.z,.16))continue;
+          sconce.lit=true;sconce.flame.visible=true; // Lights persist after the ground patch burns out.
+          options.onSconceLit?.(rec,sconce);
+        }
+        if(rec.sconces.every(sconce=>sconce.lit))complete();
       }
       if(kind==='timedMelody'){
         const down=!rec.solved&&isActive()&&player&&Number.isFinite(currentY)&&Math.abs(currentY-y)<.75
