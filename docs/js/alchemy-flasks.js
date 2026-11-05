@@ -44,6 +44,7 @@
 
   function init(injectedDeps = {}) {
     deps = injectedDeps; // Used by every later render/gameplay operation.
+    window.PersistentGroundFire?.init?.(injectedDeps); // Shared entity query and scene adapter, without a second game.js dependency bag.
   }
 
   function heldPayload() {
@@ -353,6 +354,11 @@
     const tile = deps.TILE || 64; // Three-unit to gameplay-pixel conversion.
     const x = projectile.target.x * tile; // Splash center X.
     const y = projectile.target.z * tile; // Splash center Y.
+    if(projectile.definition.application==='groundFire'){
+      window.PersistentGroundFire?.ignite?.({area:projectile.area,x:projectile.target.x,
+        z:projectile.target.z,y:projectile.target.y,
+        radius:Number(projectile.definition.splashRadius)||1.6,source:'fireFlask'});
+    }
     const playerOwned = projectile.playerOwned !== false; // Used to keep enemy Flaskers from borrowing the player's Empower Flasks perk.
     const radiusTiles = splashRadius(projectile.definition, playerOwned); // Same radius as the ground preview.
     const entities = deps.getSplashEntities?.(projectile.area, x, y, radiusTiles * tile) || []; // Existing entity/friendly-fire query adapter.
@@ -450,6 +456,7 @@
 
   function update(dt) {
     if (!Number.isFinite(dt) || dt < 0) return;
+    window.PersistentGroundFire?.update?.(dt); // Fire patches continue ticking with no flask in flight.
     if (aimState && (aimState.area !== deps.getCurrentArea?.() || heldPayload()?.itemKey !== aimState.itemKey)) cancelAim(); // Selection/map changes cannot release a stale held flask.
     if (aimState?.phase === 'releasing') {
       aimState.releaseT -= Math.max(0, dt); // Windup→strike release countdown.
