@@ -18,6 +18,13 @@ for(const side of Object.keys(orientation))for(let seed=1;seed<=60;seed++){
     rooms:[{id:'room_1',col:2,row:2,w:22,h:22}]};
   const placed=Vestibule.compose({meta,seed,LayerPlan:Plan,ShaftHub:Shaft,Connector});
   assert(placed.plan.ok,'valid single-room plan');
+  if(seed<=8){
+    const trial=Vestibule.compose({meta,seed,LayerPlan:Plan,ShaftHub:Shaft,Connector,plinthTrial:true});
+    assert(trial.plan.ok&&trial.plan.trialRoomId,'in-place plinth trial survives compact entrance planning');
+    assert(trial.plan.floors.some(floor=>floor.rooms.some(room=>
+      room.id===trial.plan.trialRoomId&&room.challenge==='statueDefense')),
+      'in-place trial is a regular puzzle room, not a separate destination');
+  }
   assert.equal(placed.plan.options.groundEntranceSide,placed.entranceSide);
   assert(!placed.plan.floors[0].wings.some(wing=>wing.side===placed.entranceSide),'do not occupy entrance portal');
   const portal=Connector.entranceOutside(meta,{x:placed.padX,z:placed.padZ},2);
