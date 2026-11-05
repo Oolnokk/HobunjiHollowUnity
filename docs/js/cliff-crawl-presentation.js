@@ -12,6 +12,7 @@
   let installed = false; // Guards the one composer render-hook registration.
   let activeHandRig = null; // The current player's rig; invalidated on appearance rebuild or climb exit.
   let activeMesh = null; // Fast path for the current rig without searching every avatar descendant each render.
+  let inCrawlRender = false; // Owned hand poses run only in this render scope, never during ordinary pre-render tool sync.
   let lastDebug = { active: false, hiddenHeldVisuals: 0 }; // Mobile-readable snapshot of the most recent rendered crawl.
 
   function clamp(value, min = 0, max = 1) { return Math.max(min, Math.min(max, value)); }
@@ -39,7 +40,7 @@
     const reach = sampleContact(state.progress, state.moving, delay);
     const tangent = new THREE.Vector3(outward.z, 0, -outward.x); // Positive side of the generated cliff plane.
     const sideSign = isLeft ? -1 : 1; // Separates left and right grips in face-local tangent coordinates.
-    const height = kind === 'hand' ? 0.29 : -0.29; // Hands above and feet below the torso's route origin.
+    const height = kind === 'hand' ? 0.56 : 0.07; // Feet keep the surface contact height; hands reach above the shoulders.
     return from.lerp(to, reach.progress)
       .addScaledVector(tangent, sideSign * modelHeight * 0.13)
       .addScaledVector(worldUp, modelHeight * height)
@@ -58,7 +59,7 @@
   function handsOnCliff(rig) {
     const state = system.getCrawlState?.();
     const normal = state?.route?.normal;
-    if (!state || !rig || !normal) return;
+    if (!inCrawlRender || !state || !rig || !normal) return; // The pre-render hand driver may invoke our provider outside the temporary tilted body pose.
     const outward = new THREE.Vector3(normal.x, 0, normal.z).normalize(); // World-space away from the rock face.
     const h = Math.max(0.2, Number(window.PlayerBodyTransformComposer?.getPlayerLegHandle?.()?.modelHeight) || 1);
     const palmQ = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), outward); // Orient the hand's grip frame in the same face space as both feet.
@@ -68,7 +69,30 @@
     }
   }
 
-  function claimHandRig(mesh, active) {
+
+  function saveHandPose(rig, undo) {
+    const sockets = []; // Existing two procedural-hand sockets, scoped to one draw only.
+    for (const side of ['left', 'right']) {
+      const node = rig.group?.getObjectByName?.(side + '_hand_socket');
+      if (!node) continue;
+      sockets.push({
+        node, position: node.position.clone(), quaternion: node.quaternion.clone(),
+        scale: node.scale.clone(), visible: node.visible,
+      });
+    }
+    if (!sockets.length) return;
+    undo.push(() => {
+      for (const item of sockets) {
+        item.node.position.copy(item.position);
+        item.node.quaternion.copy(item.quaternion);
+        item.node.scale.copy(item.scale);
+        item.node.visible = item.visible;
+      }
+      rig.group?.updateWorldMatrix?.(true, true);
+    });
+  }
+
+  function claimHandRig(mesh, active, undo = null) {
     const rig = active ? currentHandRig(mesh) : null;
     if (activeHandRig && activeHandRig !== rig) {
       if (activeHandRig.getDebug?.().poseOwner === OWNER) {
@@ -86,9 +110,11 @@
     }
     if (rig !== activeHandRig) {
       rig.setPoseProvider?.(OWNER, () => handsOnCliff(rig));
+      rig.useIdlePose?.(); // Clear the last tool grip before taking render-scoped snapshots.
       activeHandRig = rig;
       activeMesh = mesh;
     }
+    if (undo) saveHandPose(rig, undo);
     rig.applyOwnedPose?.(); // Update this render even if the regular pre-render hand sync already ran.
     return rig;
   }
@@ -140,6 +166,8 @@
 
   function poseFeet(legHandle, state, outward, undo) {
     if (!legHandle?.applyWorldFootTargets || !legHandle.group || legHandle.hasExternalFootTargets?.()) return false;
+    const motion = legHandle.captureMotionState?.(); // Preserve gait targets and mode as well as the visible joint transforms.
+    if (motion) undo.push(() => legHandle.restoreMotionState?.(motion));
     saveLegPose(legHandle, undo);
     const h = Math.max(0.2, Number(legHandle.modelHeight) || 1);
     const targets = { // Contacts follow the actual cliff plane, not the avatar's pitched root frame.
@@ -180,7 +208,10 @@
     mesh.quaternion.premultiply(localTilt);
     mesh.updateWorldMatrix?.(true, true);
     undo.push(() => { mesh.position.copy(oldPosition); mesh.quaternion.copy(oldQuaternion); mesh.updateWorldMatrix?.(true, true); });
-    const rig = claimHandRig(mesh, true);
+    const previousRenderScope = inCrawlRender; // Nested/auxiliary renders restore the outer hand-pose scope.
+    inCrawlRender = true;
+    undo.push(() => { inCrawlRender = previousRenderScope; });
+    const rig = claimHandRig(mesh, true, undo);
     const legHandle = composer.getPlayerLegHandle?.();
     const feetPosed = poseFeet(legHandle, state, outward, undo);
     const hiddenHeldVisuals = hideHeldEquipment(mesh, undo);
