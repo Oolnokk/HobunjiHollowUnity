@@ -36,22 +36,30 @@ class InstancedMesh {
   getMatrixAt(index,matrix){matrix.point=this.cells[index]}
   traverse(fn){fn(this)}
 }
-const previous={materials:globalThis.ProceduralFurniture,patterns:globalThis.FurniturePatternSurfaces};
+const previous={materials:globalThis.ProceduralFurniture,patterns:globalThis.FurniturePatternSurfaces,playable:globalThis.RuinLayerPlayable};
 let decorated=0; // Records actual calls into the shared pattern-decorating pipeline.
 globalThis.ProceduralFurniture={makePartMaterial:()=>new Material()};
 globalThis.FurniturePatternSurfaces={decorateRuin:()=>{decorated++;return ['sample-motif']}};
+globalThis.RuinLayerPlayable={collect:wing=>wing.tiles}; // Wing-specific 3D footprints must win over overlapping projected floors.
 try{
   const Style=require('../docs/js/ruin-multifloor-v50-style.js');
   const scene=new Group();
   const cells=Array.from({length:28},(_,index)=>({x:40+index,y:5,z:80}));
   scene.add(new InstancedMesh('floor1-N-wall-ns',cells));
   scene.add(new InstancedMesh('floor2-E-wall-ew',cells.map(cell=>({...cell,y:9}))));
-  const ruin={localeRoot:new Group(),shaftConnection:{}};
+  const story1=new Set(cells.map(cell=>Math.floor(cell.x)+','+(Math.floor(cell.z)-1)));
+  const story2=new Set(cells.map(cell=>Math.floor(cell.x)+','+(Math.floor(cell.z)+1)));
+  for(const cell of cells)story2.add((Math.floor(cell.x)+1)+','+Math.floor(cell.z));
+  const ruin={localeRoot:new Group(),shaftConnection:{},shaftHubPlan:{floors:[
+    {wings:[{id:'floor1-N',tiles:story1}]},
+    {wings:[{id:'floor2-E',tiles:story2}]},
+  ]}};
+  const projected=new Set([...story1,...story2]); // Intentionally conflicting floor footprints at identical X/Z.
   const hub={options:{floors:3,spacing:4},grid:{
     rows:1,cols:1,isSolid:()=>false,canStand:()=>false,
   }};
   let playerY=0;
-  const cleanup=Style.apply({rec:{scene,floorSet:new Set()},ruin,hub,seed:23,
+  const cleanup=Style.apply({rec:{scene,floorSet:projected},ruin,hub,seed:23,
     THREE:{Group,Mesh,Matrix4,Vector3,BoxGeometry:Geometry,MeshBasicMaterial:Material},
     getPlayerY:()=>playerY});
   assert.equal(typeof cleanup,'function');
@@ -61,6 +69,8 @@ try{
   const f1=root.children.find(child=>child.name==='ruin-v50-masonry-floor-1');
   const f2=root.children.find(child=>child.name==='ruin-v50-masonry-floor-2');
   assert(f1?.children.length>0&&f2?.children.length>0,'both story groups need real wall reliefs');
+  assert(f1.children[0].xyz[2]<80,
+    'first story engravings face their own chamber even though an upper floor projects onto the opposite side');
   assert.equal(f1.visible,false,'first upper-floor engraving hidden when player is at the entrance');
   assert.equal(f2.visible,false,'second upper-floor engraving hidden when player is at the entrance');
   playerY=4;cleanup.tick();
@@ -79,4 +89,5 @@ try{
 }finally{
   globalThis.ProceduralFurniture=previous.materials;
   globalThis.FurniturePatternSurfaces=previous.patterns;
+  globalThis.RuinLayerPlayable=previous.playable;
 }
