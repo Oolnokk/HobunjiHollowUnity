@@ -155,8 +155,10 @@
         rolledItems: Object.keys(gained).length }; // No persistent entity references or expensive per-frame scanning.
       return gained;
     }
-    if (poolId === 'treasureChest' && typeof window.WildTreasure?.rollTreasureLootAsItems === 'function')
-      return window.WildTreasure.rollTreasureLootAsItems(context); // Reuse complete chest bundle including generators.
+    if (poolId === 'treasureChest' && typeof window.WildTreasure?.rollTreasureLootAsItems === 'function') {
+      const generated = window.WildTreasure.rollTreasureLootAsItems(context); // Full wilderness chest bundle only with fully initialized world data.
+      if (generated && typeof generated === 'object') return generated;
+    } // Pre-bootstrap and isolated dungeon callers retain the original flat-entry fallback.
     if (pool?.mastery) return rollMasteryPool(poolId, context);
     const masteryPool = masteryPoolForLoot(poolId, context); // Select the semantic source before ordinary pool inheritance obscures its identity.
     if (!pool) return masteryPool ? rollMasteryPool(masteryPool, context) : {};

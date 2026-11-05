@@ -262,7 +262,7 @@
     const stoneMesh = hiddenStone.children[0];
     const stoneOk = !!stoneMesh && hiddenStone.userData.stoneStalagmites === true
       && stoneMesh.material.transparent === false && stoneMesh.material.opacity === 1
-      && stoneMesh.layers.isEnabled(1) && stoneMesh.userData.bladedHazard === true;
+      && (stoneMesh.layers.mask & (1 << 1)) !== 0 && stoneMesh.userData.bladedHazard === true; // Compatible with Three r128: Layers has .mask and .enable(), not .isEnabled().
     const ok = stoneOk && deterministic && floorAnchored && midway && fullyRetracted && restored && !noSelected.children.length && first.userData.surfaceGrowthStats.spikes > 0;
     for (const layer of [first, second, noSelected, hiddenStone]) layer.traverse(node => { node.geometry?.dispose?.(); node.material?.dispose?.(); });
     box.geometry.dispose();

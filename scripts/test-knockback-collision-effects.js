@@ -105,8 +105,10 @@ assert.match(editorSource, /id="bladedHazard" type="checkbox"/,
   'furniture author exposes the requested Bladed Hazard checkbox');
 assert.match(editorSource, /id="fireHazard" type="checkbox"/,
   'furniture author exposes the requested Fire Hazard checkbox');
-assert.match(editorSource, /bladedHazard:!!state\.bladedHazard,fireHazard:!!state\.fireHazard/,
-  'hazard flags persist in exported authored-furniture JSON');
+assert(editorSource.includes('bladedHazard:!!state.bladedHazard||autoStoneBlade,stoneStalagmiteAutoBlade:autoStoneBlade,fireHazard:!!state.fireHazard,'),
+  'explicit and automatically generated blade hazard flags persist independently in furniture export');
+assert(editorSource.includes('state.bladedHazard=!!data.bladedHazard&&!data.stoneStalagmiteAutoBlade'),
+  'furniture imports preserve manually authored blade hazards without retaining derived stone sharpness');
 assert.match(editorSource, /state\.fireHazard=!!data\.fireHazard/,
   'furniture author imports the explicit Fire Hazard flag');
 assert.doesNotMatch(editorSource, /state\.fireHazard=!!\(data\.fireHazard\|\|/,

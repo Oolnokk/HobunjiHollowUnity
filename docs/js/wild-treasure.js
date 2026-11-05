@@ -532,7 +532,7 @@
   // tables need inventory stacks, so adapt that exact generator output here
   // rather than independently approximating its metal/dye/manual chances.
   function rollTreasureLootAsItems(context = {}) {
-    if (!deps) return {}; // Mixed loot can be inspected before the world has initialized its treasure subsystem.
+    if (!deps?.getLootPools || typeof deps.rnd !== 'function') return null; // A partially initialized dungeon-test / pre-bootstrap wilderness adapter falls back to LootRolling's original flat entries.
     const bundle = _rollTreasureLootBundle();
     const gained = {}; // Individual quantity stacks consumed by LootRolling and corpse containers.
     const add = (key, amount = 1) => {
