@@ -5331,14 +5331,17 @@
           if (avatarRef.backPlane) avatarRef.backPlane.position.y = offsetY;
         });
         window.WildlifeSpawn?.restoreHerdMotherVisuals?.(c); // Recreates shared-map saddle babies after a data-only mother's promotion.
+        if (c.state === 'corpse') window.CreatureDeath?.restoreSettledPose?.(c); // A corpse promoted from data lies exactly where and how it settled.
       }
 
       function releaseCreatureVisuals(c) {
-        if (!c.streamVisuals || c.isCompanion || c.health <= 0 || c._wildlifeVisualsReleased) return;
+        if (!c.streamVisuals || c.isCompanion || c._wildlifeVisualsReleased) return;
+        if (c.health <= 0 && !window.WildlifeVisualLod.isStreamableCorpse(c)) return; // Dying bodies and revivable skeletons keep their rig; a settled wildlife corpse is plain data when far away.
         disposeCreaturePresentation(c); // Releases only visuals; health, genes, movement state, and population keys remain registered.
         c.avatarRef = dataCreatureAvatar();
         c.groundShadow = null;
         c._carriedBabyVisuals = null;
+        c._deathRecordedThrow = null; c._deathScorch = null; c._impactRagdollPlayback = null; // Pose state belonged to the released rig; CreatureDeath.restoreSettledPose rebuilds it on promotion.
         c._wildlifeVisualsReleased = true;
         c._wildlifeVisualLodHidden = true;
         c.currentFrameUrl = null;
@@ -5425,7 +5428,7 @@
         return {
           id: 'corpse_' + c.id,
           type: 'creature_corpse',
-          promptRoot: c.avatarRef?.group || null,
+          promptRoot: c._wildlifeVisualsReleased ? null : (c.avatarRef?.group || null), // A far, data-only corpse has no rig to anchor a prompt to.
           getButtons() {
             return [{ icon: '🍖', label: 'Butcher ' + c.def.label, action: 'obj_loot_corpse', style: 'primary', allowed: true }];
           },
@@ -6979,6 +6982,26 @@
         const hidden = window.WildlifeVisualLod.update(c, distanceTiles); // Promotes data-only actors through the same distance owner.
         if (hidden) releaseInactiveCreatureTextures(c);
         return hidden;
+      }
+
+      // Settled wildlife corpses leave hostileObjects, so the per-creature LOD
+      // above never saw them and each kept a full rig for the whole session.
+      // This drives the same distance owner for them on a short timer, and
+      // releases them outright once the player is in another area.
+      let _corpseVisualLodAccumS = 0;
+      function updateCorpseVisualLod(dt) {
+        _corpseVisualLodAccumS += dt;
+        if (_corpseVisualLodAccumS < 0.4) return;
+        _corpseVisualLodAccumS = 0;
+        for (const c of corpseObjects) { // Promotion shares the per-frame allowance set by updateHostiles, so corpses wake over successive ticks.
+          if (!window.WildlifeVisualLod.isStreamableCorpse(c)) continue;
+          if (c.areaId !== currentArea) { if (!c._wildlifeVisualsReleased) releaseCreatureVisuals(c); continue; }
+          updateWildlifeVisualLod(c, Math.hypot(player.x - c.x, player.y - c.y) / TILE);
+        }
+      }
+      function tickCorpses(dt) {
+        window.CreatureDeath.updateCorpses(dt);
+        updateCorpseVisualLod(dt);
       }
 
       window.WildlifeVisualLod.init({ createVisuals: createCreatureVisuals, releaseVisuals: releaseCreatureVisuals }); // Existing LOD owns streamed wildlife presentation lifetime.
@@ -26202,14 +26225,14 @@
               const hostilePerf = window.PerfProfiler?.begin('hostiles'); // Measures the complete current-area hostile AI and visual synchronization pass.
               updateHostiles(dt);
               window.PerfProfiler?.end(hostilePerf);
-              window.CreatureDeath.updateCorpses(dt);
+              tickCorpses(dt);
             } else if (_isBuildingArea(currentArea)) {
               // Ordinary building interiors still have no wild spawns; this
               // branch only keeps any authored interior hostile/corpse active.
               const hostilePerf = window.PerfProfiler?.begin('hostiles'); // Uses the same timing bucket for authored interior combatants.
               updateHostiles(dt);
               window.PerfProfiler?.end(hostilePerf);
-              window.CreatureDeath.updateCorpses(dt);
+              tickCorpses(dt);
             }
           }
 
