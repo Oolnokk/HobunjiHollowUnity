@@ -715,7 +715,7 @@
     deps.companionObjects.add(hound);
     rec.gangIds.add(hound.id);
     window.__farmLog?.(
-      `[bandits] Slagothim Beastmaster spawned ${creatureKey} companion ${hound.id} (${hound.maxHealth} HP, ${tunedDef.attackDamage} damage).`,
+      `[bandits] Slagothim Beastmaster spawned ${creatureKey} companion ${hound.id} (${hound.maxHealth} HP, ${tunedDef.attackDamage} damage; coat ${hound.genotype?.base?.color || 'missing'}).`,
       'wildlife',
     );
     return hound;
