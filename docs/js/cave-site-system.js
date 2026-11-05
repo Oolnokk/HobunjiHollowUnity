@@ -21,6 +21,7 @@
     CATACOMB: 'catacomb',
     RUIN_ENTRANCE: 'ruin_entrance',
     MUSHROOM_CAVE: 'mushroom_cave',
+    PUZZLE_CAVE: 'puzzle_cave', // A compact one-challenge cavern, separate from a multiwing ruin.
     // Inhabitants
     BANDIT_HIDEOUT: 'bandit_hideout',
     ANIMAL_DEN: 'animal_den',
@@ -33,6 +34,7 @@
     [TYPES.CATACOMB]: 'Ancient Catacomb',
     [TYPES.RUIN_ENTRANCE]: 'Ancient Ruin Entrance',
     [TYPES.MUSHROOM_CAVE]: 'Mushroom Cave',
+    [TYPES.PUZZLE_CAVE]: 'Puzzle Cave',
     [TYPES.BANDIT_HIDEOUT]: 'Bandit Hideout',
     [TYPES.ANIMAL_DEN]: 'Animal Den',
     [TYPES.NONE]: 'Uninhabited',
@@ -44,6 +46,7 @@
     [TYPES.TRAPPED_CACHE, 18],
     [TYPES.CATACOMB, 18],
     [TYPES.RUIN_ENTRANCE, 16],
+    [TYPES.PUZZLE_CAVE, 8], // Rare enough to reward searching cliffs and the wilderness.
   ]);
 
   const INHABITANT_WEIGHTS = Object.freeze([
@@ -81,6 +84,7 @@
   let ruinLicensePromptAtMs = 0; // Throttles the missing-Stone warning while the player stands inside the automatic cave threshold.
   const mushroomMeshesByMapId = new Map(); // map id -> (cluster id -> scene group), so a pick can remove exactly that cluster.
   const propMeshesByMapId = new Map(); // Map id -> scene and built authored props; the live chest/ruin threshold can be sensed without scanning the cave shell.
+  const puzzleChallengesByMapId = new Map(); // Map id -> single instantiated playable challenge, scene owner and disposal lifecycle.
   const mushroomScenesByMapId = new Map(); // Retains the cave scene for visual regrowth after the in-game day changes.
   const mushroomVisualDayByMapId = new Map(); // Last day each cave's mushroom visuals were reconciled.
   const bodiesByMapId = new Map(); // map id -> catacomb body records { body, entity, riser, armedAt, delay, rising, risen } for this page session.
@@ -158,7 +162,7 @@
     const signature = caveSignature(zoneId, den); // Stable site identity used by deterministic profile generation and persistence.
     // Separate streams so retuning one layer's weights never reshuffles the other.
     const contents = weightedPick(makeRng(`${signature}:contents`), CONTENTS_WEIGHTS);
-    const inhabitant = weightedPick(makeRng(`${signature}:inhabitant`), INHABITANT_WEIGHTS);
+    const inhabitant = contents === TYPES.PUZZLE_CAVE ? TYPES.NONE : weightedPick(makeRng(`${signature}:inhabitant`), INHABITANT_WEIGHTS); // Puzzle caves are solitary mechanisms, never bandit or animal homes.
     return {
       schema: PROFILE_SCHEMA,
       id: `cave_${String(den?.id || 'site')}`,
@@ -190,8 +194,10 @@
     const key = String(zoneId || '');
     const profiles = dens.map(den => den?.caveSite?.mapId && den.caveSite.schema === PROFILE_SCHEMA ? clone(den.caveSite) : rollProfile(key, den)); // One cave profile per existing den anchor, preserving all old geometry/map ids.
     if (profiles.length && !profiles.some(profile => profile.inhabitant === TYPES.ANIMAL_DEN)) {
+      const candidates = profiles.filter(profile => profile.contents !== TYPES.PUZZLE_CAVE); // Leave the one-puzzle caves uninhabited unless every generated site is one.
       const rng = makeRng(`${key}:animal-den-preservation`); // Stable slot selection guarantees legacy animal ecology survives the promotion to generic caves.
-      forceAnimalProfile(profiles[Math.floor(rng() * profiles.length)]);
+      const preserving = candidates.length ? candidates : profiles;
+      forceAnimalProfile(preserving[Math.floor(rng() * preserving.length)]);
     }
     for (let index = 0; index < dens.length; index++) {
       const den = dens[index]; // Existing compatibility record consumed by terrain/collision/turnover systems.
@@ -491,6 +497,23 @@
     mapData.caveBanditSpawns = clone(plan.banditSpawns);
   }
 
+  function addPuzzleCaveLayer(mapData, candidates, blockedKeys, plan) {
+    // One compact, carved chamber is reserved before cave sculpting, rather than
+    // placing a gate against unknown collision or accidentally clipping the rim.
+    const far = sortTilesByDistance(candidates, mapData.exitCol, mapData.exitRow);
+    const center = far.find(tile => hasFeatureClearance(tile, blockedKeys, 2.2)
+      && Math.hypot(tile.col-mapData.exitCol,tile.row-mapData.exitRow)>=4);
+    if (!center) return false; // Invalid/small cave leaves the normal shell intact.
+    const room = {id:'puzzle-cave-chamber',col:center.col-4,row:center.row-4,width:9,depth:9};
+    plan.clearanceFootprints.push(room); // The existing CavernGenerator builds the floor/ceiling/walls in one pass.
+    plan.puzzleCave = {id:'puzzle-cave:'+String(mapData.id || plan.profile.mapId),
+      col:center.col,row:center.row,room,kind:'timedMelody'};
+    for(const [col,row] of window.CavernSculptor.expandFootprint([], [room]))
+      blockedKeys.add(tileKey(col,row)); // No later features or occupant spawns can obstruct the score.
+    mapData.cavePuzzle = clone(plan.puzzleCave); // Diagnostics and interior tools see the same planned room.
+    return true;
+  }
+
   function addCacheLayer(mapData, rng, candidates, blockedKeys, plan) {
     // When there is a real sealed extension, the cache must be on the far side.
     // Caves lacking a safe separator preserve the existing accessible deep-cache fallback.
@@ -631,6 +654,7 @@
 
   function buildInteriorProps(mapId, mapData, scene) {
     buildMushroomClusters(mapId, mapData, scene);
+    buildPuzzleCaveChallenge(mapId,mapData,scene); // Puzzle rooms are physical challenges, not authored furniture-only props.
     const id = String(mapId); // Shared key with the mushroom index and cave profile.
     const propRecord = { scene, groups: new Map() }; // Replaced on rebuild; late async furniture loads cannot register in a stale cave.
     for(const [propId,group] of propMeshesByMapId.get(id)?.groups||[])if(group.userData?.caveSiteProp?.key==='crateStack')
@@ -663,6 +687,70 @@
       }
       return 1;
     }))).then(built => built.reduce((sum, n) => sum + n, 0));
+  }
+
+  function grantPuzzleCaveReward(profile, plan, state) {
+    if(!state.puzzleSolved||state.puzzleRewardClaimed)return false;
+    const defs=window.TrinketSystem?.DEFINITIONS||{}; // Source of truth from the benefit/drawback trinket PR.
+    const entries=window.LootRolling?.getLootPools?.()?.puzzleCave?.entries||[];
+    const tier=Number(state.puzzleRewardTier)||1;
+    if(!entries.some(entry=>Number(entry.tier)===tier && defs[String(entry.itemKey||'').replace(/^trinket_/,'')])) {
+      state.puzzleRewardPending=true; // Never spend a solved cave's reward when its prerequisite trinket branch is absent.
+      persistState(true);
+      window.__farmLog?.('[puzzle-cave] reward waiting for registered trinket definitions, tier '+tier,'warn');
+      return false;
+    }
+    const gained=window.LootRolling?.rollLootPool?.('puzzleCave',{rewardTier:tier,zoneId:profile.zoneId})||{};
+    if(!Object.keys(gained).length)return false;
+    const parts=window.TrinketSystem?.claimLoot?.(gained,'puzzleCave')||[];
+    if(!parts.length)return false; // Retry after inventory support becomes available; do not consume reward.
+    state.puzzleRewardClaimed=true;state.puzzleRewardPending=false;
+    persistState();
+    wildlifeDeps?.showToast?.('Puzzle Cave treasure: '+parts.join(', '),true);
+    return true;
+  }
+
+  function buildPuzzleCaveChallenge(mapId,mapData,scene) {
+    const key=String(mapId);
+    const previous=puzzleChallengesByMapId.get(key);
+    if(previous){previous.challenge?.dispose?.();puzzleChallengesByMapId.delete(key);}
+    const plan=plansByMapId.get(key),profile=sitesByMapId.get(key);
+    if(!plan?.puzzleCave||!profile||!scene)return null;
+    const creator=window.RuinLayerChallenges?.compose;
+    if(typeof creator!=='function'){
+      window.__farmLog?.('[puzzle-cave] RuinLayerChallenges is unavailable while building '+key,'warn');
+      return null;
+    }
+    const puzzle=plan.puzzleCave;
+    const state=stateFor(profile);
+    const room={x:puzzle.col+.5-4.5,z:puzzle.row+.5-4.5,w:9,d:9}; // One 9x9 carved cave chamber, centered on the actual floor tile.
+    try{
+      const challenge=creator({
+        THREE:window.THREE,parent:scene,room,id:puzzle.id,kind:'timedMelody',y:0,area:key,
+        isActive:()=>String(wildlifeDeps?.getCurrentArea?.()||'')===key && puzzleChallengesByMapId.get(key)?.scene===scene,
+        onSolved:()=>{
+          state.puzzleSolved=true;state.puzzleRewardTier=challenge.song?.rewardTier||1;
+          persistState();
+          grantPuzzleCaveReward(profile,plan,state);
+        },
+        getPlayerPosition:()=>{
+          const p=wildlifeDeps?.player,t=Number(wildlifeDeps?.TILE)||32;
+          return p?{x:Number(p.x)/t,z:Number(p.y)/t}:null;
+        },
+        getPlayerY:()=>0, // Cave interiors are flat, level-zero generated slices.
+        onMusicUnavailable:()=>wildlifeDeps?.showToast?.('Equip an instrument to attempt the stone song.',false),
+      });
+      if(state.puzzleSolved){
+        challenge.solved=true;challenge.doorRise=1;
+        challenge.door.position.y+=3.6; // A previously solved gate remains lifted after loading the cavern again.
+        grantPuzzleCaveReward(profile,plan,state); // Retry a pending payout when definitions or saves are repaired.
+      }
+      puzzleChallengesByMapId.set(key,{scene,challenge}); // Scene ownership ensures no duplicates after interior regeneration.
+      return challenge;
+    }catch(error){
+      window.__farmLog?.('[puzzle-cave] challenge build failed: '+error.message,'warn');
+      return null;
+    }
   }
 
   function senseTargets(scene) {
@@ -726,10 +814,12 @@
       clearanceFootprints,
       separator: null,
       shattercasks: [], // Deterministic explosives spawned outside separator walls and occasionally elsewhere in caves.
-      banditSpawns: [], bodies: [], traps: [], coffins: [], mineRocks: [], mushrooms: [], cache: null, ruinEntrance: null,
+      banditSpawns: [], bodies: [], traps: [], coffins: [], mineRocks: [], mushrooms: [], cache: null, ruinEntrance: null, puzzleCave: null,
     }; // Runtime-only plan mirrors map decorations and drives mechanics that cannot live in static building map data.
     if (profile.contents === TYPES.RUIN_ENTRANCE) addRuinLayer(mapData, rng,
       allTiles.filter(tile => Math.hypot(tile.col - Number(mapData.exitCol), tile.row - Number(mapData.exitRow)) >= 3), blockedKeys, plan);
+    if (profile.contents === TYPES.PUZZLE_CAVE)
+      addPuzzleCaveLayer(mapData, allTiles, blockedKeys, plan); // Reserve its one real challenge before cavern geometry is rebuilt.
     if (clearanceFootprints.length) {
       window.CavernGenerator.expandCavernMapData(mapData, clearanceFootprints, makeRng(`${profile.signature}:clearance`));
       for (const key of solidTiles) blockedKeys.delete(key);
@@ -744,7 +834,7 @@
     // doesn't reshuffle loot in caves where no suitable chokepoint exists.
     const contents = profile.contents;
     const extensionRng = makeRng(`${profile.signature}:extension`); // Stable optional annex roll per cave incarnation.
-    if (contents === TYPES.TRAPPED_CACHE || (awayFromEntrance.length >= MIN_OPTIONAL_EXTENSION_FLOOR && extensionRng() < (EXTENSION_CHANCES[contents] || 0))) {
+    if (contents !== TYPES.PUZZLE_CAVE && (contents === TYPES.TRAPPED_CACHE || (awayFromEntrance.length >= MIN_OPTIONAL_EXTENSION_FLOOR && extensionRng() < (EXTENSION_CHANCES[contents] || 0)))) {
       installMineableSeparator(mapData, extensionRng, blockedKeys, plan);
     }
     if (contents === TYPES.ORE_MINE) addMineLayer(mapData, rng, awayFromEntrance, blockedKeys, plan);
@@ -798,7 +888,7 @@
     mapData.caveSitePlan = {
       shattercasks: clone(plan.shattercasks), separatorRock: plan.separator ? { col: plan.separator.col, row: plan.separator.row, cells: clone(plan.separator.cells), oreKind: plan.separator.oreKind } : null,
       banditSpawns: clone(plan.banditSpawns), bodies: clone(plan.bodies), traps: clone(plan.traps), cache: clone(plan.cache),
-      coffins: clone(plan.coffins), ruinEntrance: clone(plan.ruinEntrance), mushrooms: clone(plan.mushrooms), mineRockCount: plan.mineRocks.length,
+      coffins: clone(plan.coffins), ruinEntrance: clone(plan.ruinEntrance), puzzleCave: clone(plan.puzzleCave), mushrooms: clone(plan.mushrooms), mineRockCount: plan.mineRocks.length,
       extension: plan.separator ? { contentType: contents, hiddenTiles: plan.separator.farKeys.length } : null,
     };
     plansByMapId.set(String(mapId), plan);
@@ -949,6 +1039,8 @@
       devSpawnerDeps?.corpseObjects?.delete?.(record.entity);
       if (resident) devSpawnerDeps?.despawnCreature?.(record.entity);
     }
+    puzzleChallengesByMapId.get(mapId)?.challenge?.dispose?.();
+    puzzleChallengesByMapId.delete(mapId); // Retire the timed puzzle's listeners and authored meshes with the cavern.
     plansByMapId.delete(mapId);
     bodiesByMapId.delete(mapId);
     bodySpawnPromises.delete(mapId);
@@ -1303,6 +1395,8 @@
     }
     ensureBodies(profile, plan, state);
     updateBodies(profile, plan, state);
+    const puzzle=puzzleChallengesByMapId.get(mapId)?.challenge; // No scene traversal or new allocations in the mobile cave tick.
+    if(puzzle){puzzle.tick(dt);puzzle.animate?.(dt);}
     maybeEnterRuin(profile, plan, state);
   }
 
@@ -1403,6 +1497,8 @@
         cache: plansByMapId.get(currentArea).cache,
         coffins: plansByMapId.get(currentArea).coffins,
         ruinEntrance: plansByMapId.get(currentArea).ruinEntrance,
+        puzzleCave: plansByMapId.get(currentArea).puzzleCave,
+        puzzleProgress: puzzleChallengesByMapId.get(currentArea)?.challenge?.melodyState||null,
         mushrooms: plansByMapId.get(currentArea).mushrooms,
       }) : null,
       currentState: profileForMapId(currentArea) ? clone(stateFor(profileForMapId(currentArea))) : null,
@@ -1433,6 +1529,8 @@
     __test: Object.freeze({
       rollProfile,
       forceAnimalProfile,
+      addPuzzleCaveLayer,
+      puzzleChallengesByMapId,
       findMineableSeparator,
       thickenSeparator,
       installMineableSeparator,
