@@ -2347,7 +2347,9 @@
     updateRopeChainCheckpoints(); // Side checkpoint claims override other doorway updates in the same frame.
     if(state.context?.singleRoomTrial){
       const choice=state.context.singleRoomTrial;
-      window.DevRandomRuin?.setDebugBadgePart?.('challenge',' · '+choice.kind+' '+(state.singleRoomError?'ERR '+state.singleRoomError:state.singleRoomSolved?'SOLVED':'active')+' · drops OFF');
+      const error=state.singleRoomError||state.singleRoomChallenge?.error||null; // Async statue asset/encounter failures must appear in the mobile debug badge.
+      const phase=error?'ERR '+error:state.singleRoomSolved?'SOLVED':state.singleRoomChallenge?.ready===false?'loading':'active';
+      window.DevRandomRuin?.setDebugBadgePart?.('challenge',' · '+choice.kind+' '+phase+' · drops OFF');
     }else window.DevRandomRuin?.setDebugBadgePart?.('challenge','');
     updateBadge();
   }
@@ -2407,7 +2409,7 @@
     return {
       active:true,
       seed:state.buildSeed,
-      singleRoomChallenge:state.context.singleRoomTrial?{...state.context.singleRoomTrial,solved:state.singleRoomSolved,ready:!!state.singleRoomChallenge,error:state.singleRoomError,linked:state.singleRoomChallenge?.linked??false,ropeLinked:state.singleRoomChallenge?.ropeLinked??false}:null,
+      singleRoomChallenge:state.context.singleRoomTrial?{...state.context.singleRoomTrial,solved:state.singleRoomSolved,ready:!!state.singleRoomChallenge&&state.singleRoomChallenge.ready!==false,error:state.singleRoomError||state.singleRoomChallenge?.error||null,attempts:state.singleRoomChallenge?.attempts||0,linked:state.singleRoomChallenge?.linked??false,ropeLinked:state.singleRoomChallenge?.ropeLinked??false}:null, // Defense readiness/errors are asynchronous; don't claim it is ready before authored assets finish loading.
       safeGrids:state.safeGrids.map(grid=>({
         hallId:grid.hallId,
         axis:grid.axis,
