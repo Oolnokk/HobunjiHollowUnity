@@ -183,6 +183,7 @@ assert.equal(frame.debug.cliffCrawl.handRigOwned, false);
 restore(frame.undo);
 
 area = 'town';
+climb.updateClimb(0.016); // The real movement tick retires a stale route on map transition.
 frame = draw();
 assert.equal(frame.debug.cliffCrawl, undefined, 'other areas have no active crawl pose');
 assert.equal(rig.owner, 'grapple', 'climb exit preserves other hand owner');
