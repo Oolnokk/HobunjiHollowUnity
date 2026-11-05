@@ -76,8 +76,8 @@
     tip.userData.dungeonRopeBrushEnd = true;
     tip.userData.dungeonRopeSprite = SPRITE_URL;
     tip.position.set(0, -DEFAULT_LENGTH * .5, .003); // Center the new 0.3x0.3 plane on the physical bob.
-    tip.frustumCulled = false; // Parent redraws its camera-facing matrix during rendering.
-    tip.renderOrder = 1; // Paint the broad end over the thin rope at their shared endpoint.
+    tip.frustumCulled = true; // Cull tips outside the view; the small quad's bounding sphere still contains every camera-facing orientation.
+    // Keep the rope's default transparent render order: forcing a higher order makes distant tips paint over nearer ropes.
     return tip;
   }
 
