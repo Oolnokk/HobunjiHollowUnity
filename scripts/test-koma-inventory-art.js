@@ -79,6 +79,7 @@ assert.equal(render(runtime, 'map_southern_cloud_forest', grid[17][9], { map_sou
 assert.equal(render(runtime, 'map_western_slope', grid[8][8], {}, 8, 8, grid), 'buildDeadBushMesh');
 assert.equal(render(runtime, 'map_southern_cloud_forest', { floraKind: 'copse' }, { map_southern_cloud_forest: { cloudForest: true } }, 8, 8, grid), 'buildShadewoodMesh');
 assert.ok(game.includes('window.ObjectSpriteCatalog?.ensure?.(key, def)'), 'All inventory HUD/Pack icons use the live item art resolver');
+assert.ok(game.includes('window.ObjectSpriteCatalog?.ensure?.(item.key, def)'), 'Held item planes use the same dynamic item-art resolver');
 
 const reticle = read('docs/js/combat/melee-hud-reticle.js'); // Canonical slot palette remains the only color authority.
 for (const hex of ['#00D9FF', '#FFD23F', '#FF4FD8', '#7CFF4F']) assert.ok(reticle.includes(hex));
