@@ -1091,7 +1091,7 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
 
   // Western Slope's leafless variants keep their own silhouettes but use the
   // crowned pine bark tint; NaturalSurfaceMaterials applies the same stretched PNG.
-  TREE_PRESETS.komaHedge = { ...TREE_PRESETS.bush, leafTexture: 'assets/leaves/koma_leaf.png' }; // Roadside hedge only: regular bushes keep their existing leaf art.
+  TREE_PRESETS.komaHedge = { ...TREE_PRESETS.bush, leafTexture: 'assets/leaves/koma_leaf.png', leafTintS: 0, leafTintL: 1 }; // Neutral white leaf-card multiplier preserves the authored iridescent Koma hues; ordinary bushes stay green.
   TREE_PRESETS.deadBush = { ...TREE_PRESETS.bush, leafless: true, barkColorHex: TREE_PRESETS.crownedPine.barkColorHex };
   TREE_PRESETS.deadTree = { ...TREE_PRESETS.bush, leafless: true, barkColorHex: TREE_PRESETS.crownedPine.barkColorHex,
     trunkLength: 4.2, trunkRadius: 0.25, trunkBend: 0.2, trunkTaper: 0.85,
