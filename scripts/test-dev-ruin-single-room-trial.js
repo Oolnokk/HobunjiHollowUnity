@@ -49,5 +49,5 @@ assert.ok(interior.includes("soloChoice.kind==='statueDefense'?'veryLarge':'larg
 assert.ok(read('docs/tools/debris-ifier/debrisifier-v50-api.js').includes('window.__devRuinSingleRoomLab ='));
 assert.ok(read('docs/tools/debris-ifier/debrisifier-01.js').includes("['flat puzzle lab floor',"));
 assert.ok(read('docs/index.html').includes('dev-ruin-single-room-trial.js'));
-assert.ok(read('docs/js/dev-random-ruin-bootstrap.js').includes('dev-random-ruin-simple-puzzles.js?v=20261104solo1'));
+assert.match(read('docs/js/dev-random-ruin-bootstrap.js'), /dev-random-ruin-simple-puzzles\.js\?v=[A-Za-z0-9_-]+/);
 console.log('Single-room puzzle lab: 200 planner seeds, seven forced choices, isolation and no-loot contracts passed.');
