@@ -124,6 +124,7 @@
   function init(injectedDeps) {
     ensurePuktukRuntimeRegistration(injectedDeps);
     ensureVoorgAssRuntimeRegistration(injectedDeps);
+    window.TzatzulRegistration?.register?.(injectedDeps); // Species registration is synchronous, like Voorg-Ass; actual nesting is separate.
     deps = injectedDeps;
     installDenTurnoverDeathHook();
   }
