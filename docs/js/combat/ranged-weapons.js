@@ -1713,7 +1713,7 @@
         const x = c.x + ux * travel;
         const y = c.y + uy * travel;
         const rayWorldY = segment.start.y + dWorldY * (travel / distancePx); // AI visibility uses the same finite-height cover check as projectile flight.
-        if (window.InteriorDoorTiles?.blocksBox?.(deps.getCurrentArea(), x / deps.TILE, y / deps.TILE, radiusWorld)) {
+        if (window.InteriorDoorTiles?.blocksBox?.(deps.getCurrentArea(), x / deps.TILE, y / deps.TILE, radiusWorld, rayWorldY)) {
           return { clear: false, kind: 'door', id: 'closed-interior-door' }; // Closed authored doors are separate from the terrain grid and need their own opaque test.
         }
         const groundY = deps.worldSurfaceY?.(x, y); // Raised walkable terrain also occludes lower shot lines.
