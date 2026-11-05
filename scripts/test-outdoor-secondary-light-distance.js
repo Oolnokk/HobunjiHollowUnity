@@ -26,6 +26,7 @@ function canvasRecorder() {
   };
   return { ctx, gradients };
 }
+const atRadius = (gradient, radius) => Math.abs(gradient.radius - radius) < 0.000001; // Projected decimal radii are approximate floating-point values.
 function opacity(gradient) { // Captures real alpha emitted to Canvas2D, not a parallel copy of the fade formula.
   assert(gradient, 'expected the light to create a gradient');
   return Number(gradient.stops[0][1].match(/,([0-9.eE+-]+)\)$/)[1]);
@@ -64,19 +65,19 @@ const visibility = x => x >= 25 ? 0 : x >= 14 ? 0.5 : 1; // Models the exported 
   weather.init(projection(ctx, sources, walkers));
   function draw() { gradients.length = 0; weather.drawLightingOverlay(); }
   draw();
-  assert.equal(gradients.filter(g => g.radius === 4).length, 0,
+  assert.equal(gradients.filter(g => atRadius(g, 4)).length, 0,
     'night march must not re-punch dark sky around a faraway campfire');
-  assert.equal(gradients.filter(g => g.radius === 2.4).length, 1,
+  assert.equal(gradients.filter(g => atRadius(g, 2.4)).length, 1,
     'only the nearby player lantern remains while distant watch lanterns are culled');
   sources[0].x = 15;
   walkers[0].root.position.x = 15;
   draw();
-  const fire = gradients.find(g => g.radius === 4 && g.mode === 'destination-out');
-  const watch = gradients.filter(g => g.radius === 2.4 && g.mode === 'destination-out');
+  const fire = gradients.find(g => atRadius(g, 4) && g.mode === 'destination-out');
+  const watch = gradients.filter(g => atRadius(g, 2.4) && g.mode === 'destination-out');
   assert(Math.abs(opacity(fire) - 0.4) < 1e-8, 'night march half-fades campfire dark-reveal strength');
   assert.equal(watch.length, 2, 'watch lantern transitions into view during the Harlyao march');
   assert(Math.abs(opacity(watch[1]) - 0.46) < 1e-8, 'watch lantern alpha uses the same half-fade');
-  const glow = gradients.find(g => g.radius === 4 * 0.62 && g.mode === 'source-over');
+  const glow = gradients.find(g => atRadius(g, 4 * 0.62) && g.mode === 'source-over');
   assert(Math.abs(opacity(glow) - 0.055) < 1e-8, 'night march decorative glow also half-fades');
 }
 
@@ -97,18 +98,18 @@ const visibility = x => x >= 25 ? 0 : x >= 14 ? 0.5 : 1; // Models the exported 
   const stopBeacon = win.Ghostify.registerGlowSource(() => beacon);
   function draw() { gradients.length = 0; now += 150; win.WeatherFX.drawLightingOverlay(); }
   draw();
-  assert.equal(gradients.filter(g => g.radius === 4).length, 0,
+  assert.equal(gradients.filter(g => atRadius(g, 4)).length, 0,
     'regular spectral halo is culled on a distant wilderness horizon');
-  assert.equal(gradients.filter(g => g.radius === 5).length, 1,
+  assert.equal(gradients.filter(g => atRadius(g, 5)).length, 1,
     'navigation beacon retains an intentional distant darkness reveal');
   regular.x = 15;
   draw();
-  const glow = gradients.find(g => g.radius === 4 && g.mode === 'destination-out');
+  const glow = gradients.find(g => atRadius(g, 4) && g.mode === 'destination-out');
   assert(Math.abs(opacity(glow) - 0.31) < 1e-8,
     'generic ghost light reveals half its nearby darkness at the fade midpoint');
   regular.x = 5;
   draw();
-  assert(Math.abs(opacity(gradients.find(g => g.radius === 4 && g.mode === 'destination-out')) - 0.62) < 1e-8,
+  assert(Math.abs(opacity(gradients.find(g => atRadius(g, 4) && g.mode === 'destination-out')) - 0.62) < 1e-8,
     'regular spectral halo retains full intensity nearby');
   stopRegular();
   stopBeacon();
