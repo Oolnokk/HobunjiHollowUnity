@@ -15815,24 +15815,28 @@
       function rebindZoneResidents(mapId, info) {
         for (const c of zoneResidents(mapId)) { c.scene = info.scene; c.areaGrid = info.grid; c.areaCols = info.cols; c.areaRows = info.rows; }
       }
+      const _zoneCacheHistory = []; // QA record of recent trim decisions, newest last (window.__zoneCacheDebug.history).
       function trimZoneCache() {
         _zoneCacheTrimTimer = null;
-        if (cutscenePreviewActive || _tothalShiftPromise) return;
+        const entry = { at: Date.now(), current: currentArea, order: [..._zoneVisitOrder], built: [..._zoneScenes.keys()], skipped: null, kept: [], evicted: [], blocked: [] };
+        _zoneCacheHistory.push(entry);
+        if (_zoneCacheHistory.length > 40) _zoneCacheHistory.shift();
+        if (cutscenePreviewActive || _tothalShiftPromise) { entry.skipped = cutscenePreviewActive ? 'cutscene preview' : 'tothal shift'; return; }
         const inactive = _zoneVisitOrder.filter(id => id !== currentArea && _zoneScenes.has(id));
         const keep = new Set(inactive.slice(Math.max(0, inactive.length - zoneCacheMaxInactive())));
         for (const mapId of [..._zoneScenes.keys()]) {
-          if (mapId === currentArea || keep.has(mapId)) continue;
+          if (mapId === currentArea || keep.has(mapId)) { entry.kept.push(mapId); continue; }
           releaseResidentRigs(mapId);
           const blocker = zoneEvictionBlocker(mapId);
-          if (blocker) { window.__farmLog?.(`[zone-cache] kept ${mapId}: ${blocker}`, 'perf'); continue; }
-          evictZoneScene(mapId);
+          if (blocker) { entry.blocked.push(`${mapId}: ${blocker}`); window.__farmLog?.(`[zone-cache] kept ${mapId}: ${blocker}`, 'perf'); continue; }
+          if (evictZoneScene(mapId)) entry.evicted.push(mapId);
         }
       }
       function scheduleZoneCacheTrim() {
         if (_zoneCacheTrimTimer) return;
         _zoneCacheTrimTimer = setTimeout(trimZoneCache, 6000); // Never in the frame the player arrives: a freshly entered area gets a few quiet seconds first.
       }
-      window.__zoneCacheDebug = { trim: trimZoneCache, order: () => [..._zoneVisitOrder], built: () => [..._zoneScenes.keys()], blocker: zoneEvictionBlocker }; // QA hook, mirrors window.__regenerateWildernessLab.
+      window.__zoneCacheDebug = { trim: trimZoneCache, order: () => [..._zoneVisitOrder], built: () => [..._zoneScenes.keys()], blocker: zoneEvictionBlocker, history: () => _zoneCacheHistory.map(e => ({ ...e })), sceneRef: id => _zoneScenes.get(id)?.scene || null, gridRef: id => _zoneScenes.get(id)?.grid || null }; // QA hook, mirrors window.__regenerateWildernessLab.
 
       // Finds one already-built wilderness shrub/tree group by indexed tile
       // lookup and removes it with light list bookkeeping. The grass floor
