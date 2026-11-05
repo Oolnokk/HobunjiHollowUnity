@@ -8,12 +8,12 @@
   'use strict';
   const SIDES={north:{dx:0,dz:-1,hub:'S'},east:{dx:1,dz:0,hub:'W'},
     south:{dx:0,dz:1,hub:'N'},west:{dx:-1,dz:0,hub:'E'}};
-  function compose({meta,seed,LayerPlan,ShaftHub,Connector,tileScale=2,anchor=256,gap=6}={}){
+  function compose({meta,seed,LayerPlan,ShaftHub,Connector,tileScale=2,anchor=256,gap=6,plinthTrial=false}={}){
     const orientation=SIDES[meta?.entrance?.side];
     if(!orientation||!LayerPlan?.compose||!ShaftHub?.compose||!Connector?.entranceOutside)
       throw new Error('V50 entrance cannot be oriented toward a physical shaft.');
     const plan=LayerPlan.compose({seed,spacing:64,anchorX:anchor,anchorZ:anchor,
-      shaftSize:33,floorHeight:4,nativeV50:true,groundEntranceSide:orientation.hub});
+      shaftSize:33,floorHeight:4,nativeV50:true,plinthTrial,groundEntranceSide:orientation.hub});
     if(!plan.ok)throw new Error('V50 vestibule shaft plan invalid: '+plan.checks.filter(c=>!c.ok).map(c=>c.name).join(','));
     const portals=plan.floors.flatMap(f=>[
       ...f.wings.map(w=>({floor:f.floor,side:w.side})),
