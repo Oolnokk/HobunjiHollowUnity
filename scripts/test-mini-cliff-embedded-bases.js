@@ -21,6 +21,10 @@ const build=grid=>routes.build(grid,{
   blocked:tile=>!tile||tile.incline||tile.type==='rock',
 });
 const layouts=[build(buildGrid()),build(buildGrid(28,true))];
+const medium=routes.build(buildGrid(28,true),{area:'mini-cliff-medium-height',
+  tileY:t=>(t?.elevTier||0)*4,blocked:tile=>!tile||tile.incline||tile.type==='rock'});
+assert(medium.balconies.length>0,'shelves survive on four-unit cliffs by moving their anchor higher');
+assert(medium.verification.ok,'raised medium-cliff anchors remain climbable');
 assert(layouts.every(net=>net.balconies.length>0),'test maps generate intermediate mini-plateaus');
 for(const net of layouts) {
   assert(net.verification.ok,'all route links and inset lower footprints must pass validation');
@@ -35,6 +39,15 @@ for(const net of layouts) {
     assert.equal(new Set(shelf.overhangDepths).size,3,'each cap mixes three distinct depths');
     assert(Math.abs(Math.max(...shelf.overhangDepths)-shelf.depth)<0.001,'max projection extends the previous cap by one tile');
     assert(Math.abs(Math.min(...shelf.overhangDepths)-(shelf.depth-1))<0.001,'min projection keeps the previous reach');
+    // Every point in the rendered polygon must belong to the registered cap footprint.
+    // Narrow corner strips previously fell through gaps in 5x5 sampling.
+    const cells=new Set(shelf.footprint.map(tile=>tile.c+','+tile.r));
+    const step=0.055;
+    for(let x=Math.max(0,shelf.x-3);x<Math.min(net.cols,shelf.x+3);x+=step)
+      for(let z=Math.max(0,shelf.z-3);z<Math.min(net.rows,shelf.z+3);z+=step)
+        if(routes.shelfContains(shelf,x,z))
+          assert(cells.has(Math.floor(x)+','+Math.floor(z)),
+            'no part of the actual irregular cap lies outside its registered tile footprint');
     for(const u of [-0.9,0,0.9]){
       const i=u<0?0:1,t=u<0?u+1:u;
       const depth=shelf.overhangDepths[i]+(shelf.overhangDepths[i+1]-shelf.overhangDepths[i])*t;
@@ -136,6 +149,12 @@ for(let i=0;i<net.balconies.length;i++) {
   assert.equal(approach.y, landing.y, 'the transfer reaches across at cap height');
 
   assert(verts.every(v=>v.y<=shelf.y+0.001&&v.y>=base.y-0.001),'taper lies between top and embedded base');
+  const capVerts=coordinates.subarray(topStart,topStart+TOP_FLOATS_PER_SHELF);
+  for(let k=0;k<capVerts.length;k+=9){
+    const ax=capVerts[k],az=capVerts[k+2],bx=capVerts[k+3],bz=capVerts[k+5],cx=capVerts[k+6],cz=capVerts[k+8];
+    assert((bz-az)*(cx-ax)-(bx-ax)*(cz-az)>0.001,
+      'all plateau-surface cap triangles face upward, including the variable-depth corners');
+  }
   for(const v of bottom)assert(base.footprint.some(t=>
     v.x>=t.c-0.001&&v.x<=t.c+1.001&&v.z>=t.r-0.001&&v.z<=t.r+1.001),
     'ALL underside base vertices remain inside the parent plateau footprint');

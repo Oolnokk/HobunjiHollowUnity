@@ -196,7 +196,9 @@
         const count = h >= 8 ? 2 : 1;
         const oldSpans = clamp(Math.ceil(Math.max(h / 0.54, (c.walls + 1) / 0.56)), 3, 95); // Preserve existing reward save keys.
         for (let j = 0; j < count; j++) {
-          const idx = clamp(Math.round(spans * (j + 1) / (count + 1)), 1, spans - 2), anchor = nodes[idx];
+          const minIndex = Math.ceil((MIN_MINI_CLIFF_HEIGHT + 0.12) * (spans - 1) / h); // A higher hold lets a mid-height ledge fit its doubled embedded rock height.
+          const idx = clamp(Math.max(Math.round(spans * (j + 1) / (count + 1)), minIndex), 1, spans - 2), anchor = nodes[idx];
+          if (anchor.y - c.y0 < MIN_MINI_CLIFF_HEIGHT + 0.12) continue; // No usable place below this cliff's lip.
           const width = 1.7 + (hash(c.a.c, c.a.r, 64 + j) % 7) * 0.16; // Width across the face.
           const baseDepth = 1.0 + (hash(c.a.c, c.a.r, 67 + j) % 5) * 0.13; // Old cap depth, retained on the shortest portion of this overhang.
           const profiles = [[0, 0.5, 1], [1, 0.5, 0], [0.5, 1, 0], [0, 1, 0.5]]; // Three different overhang lengths along each cap.
@@ -221,16 +223,16 @@
               tangent: tan, normal, footprint: [], // Tile/elevation cells never overwrite the ordinary ground grid.
               reward: hash(c.a.c, c.a.r, 94 + j) % 2 ? 'buriedTreasure' : 'oreRock',
             };
-            const extent = Math.ceil(Math.max(shelf.width, shelf.depth)) + 1;
-            for (let dr = -extent; dr <= extent; dr++) for (let dc = -extent; dc <= extent; dc++) {
-              const cc = Math.floor(shelf.x) + dc, rr = Math.floor(shelf.z) + dr;
-              // Include every tile touched by the actual balcony cap, not only
-              // tiles whose CENTRES overlap it. CellGrid3D can then support
-              // the whole visible platform while the oriented outline still
-              // constrains where feet can stand.
-              const touched = [0.02, 0.25, 0.5, 0.75, 0.98].some(u =>
-                [0.02, 0.25, 0.5, 0.75, 0.98].some(v => shelfContains(shelf, cc + u, rr + v, 0.01)));
-              if (cc >= 0 && rr >= 0 && cc < cols && rr < rows && touched)
+            const capOutline = [[-1,-1],[0,-1],[1,-1],[1,1],[0,1],[-1,1]]
+              .map(([u,v]) => miniCliffTopPoint(shelf, u, v)); // Used for exact cap/tile overlap rather than sampled misses.
+            const minCol = Math.max(0, Math.floor(Math.min(...capOutline.map(p => p[0]))));
+            const maxCol = Math.min(cols - 1, Math.floor(Math.max(...capOutline.map(p => p[0]))));
+            const minRow = Math.max(0, Math.floor(Math.min(...capOutline.map(p => p[2]))));
+            const maxRow = Math.min(rows - 1, Math.floor(Math.max(...capOutline.map(p => p[2]))));
+            for (let rr = minRow; rr <= maxRow; rr++) for (let cc = minCol; cc <= maxCol; cc++) {
+              // Include all touched floor cells, even slivers narrower than a
+              // probe grid. The final support still uses exact shelfContains.
+              if (miniCliffTouchesCell(shelf, capOutline, cc, rr))
                 shelf.footprint.push({ c: cc, r: rr, elevation: shelf.y });
             }
             // Projecting ledges may overhang lower terrain, but not the entire
@@ -489,6 +491,25 @@
     const across = dx * shelf.normal.x + dz * shelf.normal.z;
     return Math.abs(along) <= shelf.width / 2 + pad &&
       across >= -shelf.depth / 2 - pad && across <= -shelf.depth / 2 + overhangDepthAt(shelf, along / (shelf.width / 2)) + pad;
+  }
+  function miniCliffTouchesCell(shelf, outline, col, row) {
+    // A cap can touch a cell only at a thin triangular corner; five-point
+    // sampling missed these cells and made real rendered ledges non-walkable.
+    if ([0, 1].some(dx => [0, 1].some(dz => shelfContains(shelf, col + dx, row + dz)))) return true;
+    if (outline.some(p => p[0] >= col && p[0] <= col + 1 && p[2] >= row && p[2] <= row + 1)) return true;
+    const edgeTouchesCell = (a, b) => {
+      let enter = 0, exit = 1;
+      for (const [start, delta, lo, hi] of [[a[0], b[0] - a[0], col, col + 1],
+        [a[2], b[2] - a[2], row, row + 1]]) {
+        if (Math.abs(delta) < 1e-9) { if (start < lo || start > hi) return false; continue; }
+        const t0 = (lo - start) / delta, t1 = (hi - start) / delta;
+        enter = Math.max(enter, Math.min(t0, t1));
+        exit = Math.min(exit, Math.max(t0, t1));
+        if (enter > exit) return false;
+      }
+      return true;
+    };
+    return outline.some((p, i) => edgeTouchesCell(p, outline[(i + 1) % outline.length]));
   }
   function shelfAt(network, id) { return network?.balconies.find(s => s.id === id) || null; }
   function getRewardState(area, id) {
