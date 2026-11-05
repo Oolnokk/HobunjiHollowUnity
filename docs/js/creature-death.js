@@ -263,6 +263,7 @@
     c.telegraphState = null;
     deps.corpseObjects.add(c);
     const grp = c.avatarRef?.group; // Used to force the fallback corpse into a visible lying pose.
+    if (grp && window.DevTestingSwitchbox?.flags?.noCorpseVisuals) grp.visible = false; // Visual-only test; corpse remains lootable.
     let visualError = null; // Used to retain a secondary fallback-pose failure without preventing corpse registration.
     try {
       if (grp) {
@@ -349,6 +350,7 @@
         grp.position.set(c.x / TILE, surfY + halfHeight * (c.deathRecorded ? 0.82 : 0.12), c.y / TILE);
         if (!c.deathRecorded) grp.rotation.set(c.deathRestRotX, c.deathRestRotY, c.deathRestRotZ);
         activeDyingCorpses.delete(c); // Settled corpses no longer require any simulation tick.
+        if (window.DevTestingSwitchbox?.flags?.noCorpseVisuals) grp.visible = false; // Hide only after the recorded fall finishes.
       }
     }
   }
@@ -388,6 +390,7 @@
     grp.rotation.set(c.deathRestRotX, c.deathRestRotY, c.deathRestRotZ);
     if (c.groundShadow) c.groundShadow.position.set(grp.position.x, surfY + deps.characterGroundShadowSurfaceOffset(), grp.position.z);
     deps.corpseObjects.add(c);
+    if (window.DevTestingSwitchbox?.flags?.noCorpseVisuals) grp.visible = false; // Covers directly spawned corpse rigs.
     return true;
   }
 
