@@ -387,6 +387,14 @@
       tileY: t => deps.tileSurfaceYInArea(t, mapId), // Same Y authority used by the player, creatures and scheduled NPCs.
     });
     if (network) {
+      // Install flight-only plateaus before the shared support registry sees the network.
+      window.TzatzulSpires?.install?.(network, zGrid, {
+        area: mapId,
+        blocked: t => !t || t.incline || deps.isSolid(t.type) || [deps.TileType.RIVER, deps.TileType.STREAM, deps.TileType.TRENCH].includes(t.type),
+        isBoundary: t => window.MapBoundaryGuard?.isBoundaryTile?.(t) || false,
+        tileY: t => deps.tileSurfaceYInArea(t, mapId),
+        obstacles: cliffObstacles(mapId),
+      });
       // The dungeon's registered-support system is authoritative for all
       // mini-cliffs, including overlapping X/Z across multiple Y levels.
       window.CliffElevatedSurfaces?.mount?.(network, {
@@ -394,6 +402,8 @@
       });
       meshes.push(...window.CliffRouteNetwork.render(THREE, zScene, network,
         deps.resolveTileMat(mapId, deps.TileType.ROCK), deps.resolveTileMat(mapId, deps.TileType.GRASS))); // Match plateau tops without grass on the rocky underside.
+      meshes.push(...(window.TzatzulSpires?.render?.(THREE, zScene, network,
+        deps.resolveTileMat(mapId, deps.TileType.ROCK), deps.resolveTileMat(mapId, deps.TileType.GRASS)) || [])); // Same rock and top materials as ordinary cliffs.
       for (const route of network.routes) delete route.project; // The baked decals no longer need the triangle index.
     }
     scheduleMesaRenderBatching(zScene, mapId, meshes);
