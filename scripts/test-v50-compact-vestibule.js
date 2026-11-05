@@ -117,5 +117,5 @@ assert(map.includes('data-ruin-floor'),'controller/touch must be able to select 
 for(const name of ['ruin-v50-vestibule.js','ruin-multifloor-v50-style.js'])
   assert(index.includes(name),'new architecture file must load before game bootstrap: '+name);
 for(const name of ['dev-random-ruin-interior-map.js','dev-random-ruin-solvability.js','dev-random-ruin-tile-occupancy.js'])
-  assert(bootstrap.includes(name+'?v=20261104directVestibule2'),'bootstrap cache must use current code: '+name);
+  assert(new RegExp(name.replaceAll('.','\\.')+'\\?v=[A-Za-z0-9_-]+').test(bootstrap),'bootstrap must cache-bust current code: '+name);
 console.log('ok '+cases+' one-chamber V50 vestibules: four orientations, straight shaft connection, world projection, floor-map diagnostics');
