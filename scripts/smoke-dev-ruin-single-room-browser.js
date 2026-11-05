@@ -105,7 +105,7 @@ async function main(){
         challenge:simple.singleRoomChallenge,
         chains:simple.ropeChains.length,
         voidAtCenter:!!window.DynamicSurfaces.pointInPit(center.x,center.z),
-        centerSupport:window.DynamicSurfaces.sampleSupport(center.x,center.z,{scope:'dev-random-ruin-interior-map'})?.id||null,
+        centerSupport:window.DynamicSurfaces.sampleSupport(center.x,center.z,{scope:'dev-random-ruin-interior'})?.id||null,
       };
     });
     assert.equal(ropeInfo.rooms,1);
