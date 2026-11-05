@@ -8,6 +8,13 @@ const read=file=>fs.readFileSync(path.join(root,file),'utf8');
 const planner=require('../docs/js/ruin-layer-plan.js');
 const solo=require('../docs/js/dev-ruin-single-room-trial.js');
 const valid=new Set(solo.TYPES.map(([kind])=>kind)); // Shared authoring choices and normal planner output.
+const challenges=require('../docs/js/ruin-layer-challenges.js'); // Geometry-only pit preview verifies standalone rope spacing without Three.js.
+for(let length=11;length<=18;length++){
+  const pit=challenges.ropePitForRoom({x:0,z:0,w:length,d:13},'E');
+  assert.ok(pit,'large-preset rooms must have two actual rope banks');
+  const span=pit.maxX-pit.minX,count=Math.max(3,Math.min(8,Math.ceil((span-1)/2.25)+1));
+  assert.ok((span-1)/(count-1)<=2.25,'normal rope catch distances must be physically achievable');
+}
 assert.equal(valid.size,7);
 for(const kind of valid){const selected=solo.pick(19,kind,planner);assert.equal(selected.kind,kind);assert.equal(selected.mode,'forced');}
 assert.throws(()=>solo.pick(10,'unknown',planner),/Unknown single-room puzzle/);
@@ -37,6 +44,10 @@ assert.ok(defense.includes('noLoot:options.noLoot===true'));
 assert.ok(encounters.includes('entity.ruinNoLoot=enc.noLoot===true'));
 assert.ok(corpses.includes('if (c.ruinNoLoot===true)return [];')||corpses.includes('if(c.ruinNoLoot===true)return [];'));
 assert.ok(corpses.includes('if(c.ruinNoLoot===true)return {ok:false'));
+assert.ok(interior.includes('singleRoomLab:singleRoomTrial'));
+assert.ok(interior.includes("soloChoice.kind==='statueDefense'?'veryLarge':'large'"));
+assert.ok(read('docs/tools/debris-ifier/debrisifier-v50-api.js').includes('window.__devRuinSingleRoomLab ='));
+assert.ok(read('docs/tools/debris-ifier/debrisifier-01.js').includes("['flat puzzle lab floor',"));
 assert.ok(read('docs/index.html').includes('dev-ruin-single-room-trial.js'));
 assert.ok(read('docs/js/dev-random-ruin-bootstrap.js').includes('dev-random-ruin-simple-puzzles.js?v=20261104solo1'));
 console.log('Single-room puzzle lab: 200 planner seeds, seven forced choices, isolation and no-loot contracts passed.');
