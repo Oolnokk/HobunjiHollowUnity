@@ -16,6 +16,7 @@ const supports={
 };
 const zone='map_northern_cliffs'; // The real selected cliff biome.
 const creatures=new Set(); // Shared hostiles Set from the production injection contract.
+const companions=new Set(); // The same shared companion Set available to wildlife prey selection.
 const player={x:128,y:128,health:100}; // Real Tzatzul prey type is the player.
 let hits=0; // Counts exact damage calls; a single swoop cannot hit repeatedly.
 const w={PerchSupport:supports,__farmLog(){},
@@ -28,7 +29,7 @@ const w={PerchSupport:supports,__farmLog(){},
   Combat:{deps:{damagePlayer(damage){hits++;player.health-=damage;}}},
 };
 vm.runInNewContext(file('docs/js/tzatzul-flight-runtime.js'),{window:w,Math,Date,Set,Map,console});
-const deps={TILE:64,player,hostileObjects:creatures,getCurrentArea:()=>zone,worldSurfaceY:()=>0,
+const deps={TILE:64,player,hostileObjects:creatures,companionObjects:companions,getCurrentArea:()=>zone,worldSurfaceY:()=>0,
   makeCreatureEntity:(creatureKey,x,y,opts)=>({creatureKey,x,y,areaId:zone,
     health:100,maxHealth:100,def:{attackDamage:24},...opts})};
 assert(w.TzatzulFlightRuntime.init(deps));
@@ -41,6 +42,14 @@ assert(file('docs/js/tzatzul-flight-runtime.js').includes('TzatzulCliffSites?.en
   'birds use the non-climbable spire builder rather than accessible mini-cliff caps');
 assert.equal(w.TzatzulFlightRuntime.ensureZone('map_southern_cloud_forest'),0);
 const bird=[...creatures][0];
+const loyalAnimal={creatureKey:'gar-wolf',health:45,areaId:zone,x:bird.x+8,y:bird.y+8,isCompanion:true}; // A player-owned wolf can be prey, not ignored for being outside the hostile collection.
+companions.add(loyalAnimal);
+const originalPlayerX=player.x,originalPlayerY=player.y;
+player.x=50000;player.y=50000;
+assert.strictEqual(w.TzatzulFlightRuntime.__test.choosePrey(bird),loyalAnimal,
+  'a Tzatzul can select a nearby companion using the real shared animal target logic');
+player.x=originalPlayerX;player.y=originalPlayerY;
+companions.delete(loyalAnimal);
 assert.equal(bird.onPerch.dimension,0,'bird rests on registered zero-dimensional rock support');
 assert(bird.tzatzulIdentity.tintHex,'bird holds a unique palette key for live visuals');
 for(let i=0;i<80;i++)w.TzatzulFlightRuntime.update(.1);
