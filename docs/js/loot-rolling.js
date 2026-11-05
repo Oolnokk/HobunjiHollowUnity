@@ -121,6 +121,24 @@
     const pool = _lootPools[poolId];
     // Shared composition is data-driven so later puzzle-cave tables can be
     // populated without touching Tzatzul AI or making new loot grant paths.
+    if (pool?.kind === 'exclusive') {
+      // Puzzle-cave trinkets are an actual one-of-N reward, not 13 independent
+      // Bernoulli rolls (which could otherwise award zero or multiple trinkets).
+      const desiredTier = Math.max(1,Math.min(5,Math.floor(Number(context.rewardTier) || 1))); // Song difficulty determines this cave's reward band.
+      const entries = (pool.entries || []).filter(entry => entry?.itemKey &&
+        (entry.tier == null || Number(entry.tier) === desiredTier) &&
+        Number(entry.weight ?? 1) > 0);
+      if (!entries.length) return {};
+      const totalWeight = entries.reduce((sum,entry) => sum+Number(entry.weight ?? 1),0); // Stable configured probability mass.
+      const random = typeof context.random === 'function' ? context.random :
+        () => window.GameRandom?.random?.() ?? Math.random();
+      let pick = Math.max(0,Math.min(.999999999,Number(random()) || 0))*totalWeight;
+      for(const entry of entries){
+        pick-=Number(entry.weight ?? 1);
+        if(pick<0)return {[entry.itemKey]:1};
+      }
+      return {[entries[entries.length-1].itemKey]:1};
+    }
     if (pool?.kind === 'mixed') {
       const parentIds = Array.isArray(ancestry) ? ancestry : []; // Recursion guard; cyclic edited tables never hang the game.
       if (parentIds.includes(poolId) || parentIds.length >= 8) return {};
