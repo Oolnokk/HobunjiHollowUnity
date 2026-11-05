@@ -42,7 +42,8 @@
     if (typeof log === 'function') log('[Ice Stalagmites] ' + message, level);
   }
   function recipes() { return Array.isArray(state.surfaceGrowth) ? state.surfaceGrowth : []; } // Uses the editor's canonical saved growth list.
-  function selectedLayer() { const id = Number(get('layer').value); return Number.isInteger(id) && id >= 0 && recipes()[id]?.kind === 'iceStalagmites' ? id : -1; }
+  const isSpikes = recipe => ['iceStalagmites','stoneStalagmites'].includes(recipe?.kind); // Both materials share the recipe and undo workflow.
+  function selectedLayer() { const id = Number(get('layer').value); return Number.isInteger(id) && id >= 0 && isSpikes(recipes()[id]) ? id : -1; }
   function iceSceneLayers() { return root.children.filter(child => child.userData?.iceStalagmites); } // Owned generated groups are siblings of existing root/vine layers.
   function updateVisibility() {
     for (const layer of iceSceneLayers()) layer.visible = shown;
@@ -50,15 +51,16 @@
   }
   function populateChoices(preferred = -1) {
     const select = get('layer'); // Actual array indices remain correct even when root/vine layers are interleaved.
-    select.replaceChildren(new Option('New ice layer', '-1'));
+    select.replaceChildren(new Option('New stalagmite layer', '-1'));
     recipes().forEach((recipe, index) => {
-      if (recipe?.kind === 'iceStalagmites') select.add(new Option('Ice layer ' + (index + 1) + ' · ' + (recipe.seed || 'unseeded'), String(index)));
+      if (isSpikes(recipe)) select.add(new Option((recipe.kind === 'stoneStalagmites' ? 'Stone' : 'Ice') + ' layer ' + (index + 1) + ' · ' + (recipe.seed || 'unseeded'), String(index)));
     });
-    select.value = recipes()[preferred]?.kind === 'iceStalagmites' ? String(preferred) : '-1';
+    select.value = isSpikes(recipes()[preferred]) ? String(preferred) : '-1';
   }
   function loadFields(index) {
     const saved = index >= 0 ? recipes()[index] : null; // Missing or legacy settings receive normalized safe defaults.
     const recipe = window.FoliageGenerator.normalizeSurfaceGrowth(saved || defaults);
+    get('kind').value = recipe.kind === 'stoneStalagmites' ? 'stoneStalagmites' : 'iceStalagmites';
     get('seed').value = recipe.seed;
     get('target').value = recipe.target === 'selected' ? 'selected' : 'all';
     get('color').value = recipe.color;
@@ -72,7 +74,7 @@
     populateChoices(preserve);
     loadFields(selectedLayer());
     updateVisibility();
-    const count = recipes().filter(recipe => recipe?.kind === 'iceStalagmites').length;
+    const count = recipes().filter(isSpikes).length;
     get('savedCount').textContent = count + ' saved ice layer' + (count === 1 ? '' : 's');
   }
   function readForm() {
@@ -82,7 +84,7 @@
     const targetIds = target === 'selected' ? (ids.length ? ids : original.targetIds || []) : [];
     if (target === 'selected' && !targetIds.length) throw new Error('Select furniture pieces in the viewport first, then choose Selected pieces.');
     if (!state.parts.length) throw new Error('Add or import furniture pieces before adding ice.');
-    const config = { ...original, kind: 'iceStalagmites', style: 'natural', target, targetIds,
+    const config = { ...original, kind: get('kind').value === 'stoneStalagmites' ? 'stoneStalagmites' : 'iceStalagmites', style: 'natural', target, targetIds,
       seed: get('seed').value.trim() || 'furniture-ice-1', color: get('color').value, texture: '' };
     for (const [name] of fields) {
       if (get(name).value.trim() === '' || !Number.isFinite(Number(get(name).value))) throw new Error('Invalid ' + name + ' value.');
@@ -100,6 +102,11 @@
         index = list.length; list.push(recipe);
       } else list[index] = recipe;
       state.surfaceGrowth = list;
+      if (recipe.kind === 'stoneStalagmites') {
+        state.bladedHazard = true; // The invisible seed box becomes a solid sharp hazard through the existing furniture collider.
+        const hazardCheck = document.getElementById('bladedHazard');
+        if (hazardCheck) hazardCheck.checked = true;
+      }
       shown = true; // Display newly generated ice immediately.
       const report = rebuildSurfaceFoliage(); // Same geometry lifecycle as every existing root/vine layer.
       queueUndoHistory('ice stalagmite coverage');
@@ -120,8 +127,8 @@
   }
 
   const card = element('div', { className: 'section' }); // Main control surface uses the editor's existing responsive layout.
-  card.appendChild(element('h2', {}, 'Ice Stalagmites'));
-  card.appendChild(element('p', { className: 'muted' }, 'Grow faceted ice spikes UP from the ground around the lower furniture geometry. No ceiling stalactites or floating ice; layer JSON and in-game visuals use the shared Roots & Vines growth system.'));
+  card.appendChild(element('h2', {}, 'Ice / Stone Stalagmites'));
+  card.appendChild(element('p', { className: 'muted' }, 'Grow opaque outlined sharp stone OR translucent ice from a small furniture box at ground level. Stone switches the enclosing furniture collider to Bladed Hazard for significant Bleeding/Wounded collision effects.'));
   const header = element('div', { className: 'g2' }); // Layer and scope selectors live together for quick mobile editing.
   const layerLabel = element('label', {}, 'Saved layer');
   layerLabel.appendChild(element('select', { id: 'ice-layer' }));
@@ -132,6 +139,11 @@
   targetLabel.appendChild(target);
   header.append(layerLabel, targetLabel);
   card.appendChild(header);
+  const kindLabel = element('label', {}, 'Stalagmite material');
+  const kindSelect = element('select', { id: 'ice-kind' });
+  kindSelect.add(new Option('Ice (translucent)', 'iceStalagmites'));
+  kindSelect.add(new Option('Cave stone (sharp / shell outline)', 'stoneStalagmites'));
+  kindLabel.appendChild(kindSelect); card.appendChild(kindLabel);
   const seedLabel = element('label', {}, 'Generation seed');
   seedLabel.appendChild(element('input', { id: 'ice-seed', type: 'text', maxLength: 128 }));
   card.appendChild(seedLabel);
@@ -144,7 +156,7 @@
     grid.appendChild(label);
   }
   card.appendChild(grid);
-  const colorLabel = element('label', {}, 'Ice color');
+  const colorLabel = element('label', {}, 'Spike material color');
   colorLabel.appendChild(element('input', { id: 'ice-color', type: 'color', value: '#bcecff' }));
   card.appendChild(colorLabel);
   const actions = element('div', { className: 'g2' }); // Save, clear, and visibility actions never reach root/vine recipes.
@@ -157,7 +169,12 @@
   card.appendChild(element('div', { id: 'ice-status', className: 'pill', role: 'status', ariaLive: 'polite' }, 'Ice authoring ready.'));
   panel.appendChild(card);
 
-  get('layer').addEventListener('change', function () { loadFields(selectedLayer()); }); // Switching layers exposes their saved settings.
+  get('layer').addEventListener('change', function () { loadFields(selectedLayer()); });
+  get('kind').addEventListener('change', function () {
+    const color = get('color'); // Only change a stock tint, not an artist-customized swatch.
+    if (this.value === 'stoneStalagmites' && color.value.toLowerCase() === '#bcecff') color.value = '#716d67';
+    else if (this.value === 'iceStalagmites' && color.value.toLowerCase() === '#716d67') color.value = '#bcecff';
+  }); // Switching layers exposes their saved settings.
   get('target').addEventListener('change', function () {
     get('selection').textContent = this.value === 'selected' ? 'Select pieces in the viewport; the next save captures those part IDs.' : 'All furniture parts will be eligible.';
   });

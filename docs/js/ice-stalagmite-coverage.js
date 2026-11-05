@@ -137,9 +137,11 @@
 
   function build(T, parent, settings) {
     const group = new T.Group(); // Sibling-owned generated group is safely cleaned up by applySurfaceGrowth.
-    group.name = 'Surface ice stalagmites';
+    const isStone = settings.kind === 'stoneStalagmites'; // Stone and ice use identical faceted growth and placement.
+    group.name = isStone ? 'Surface stone stalagmites' : 'Surface ice stalagmites';
     group.userData.surfaceFoliage = true;
     group.userData.iceStalagmites = true;
+    group.userData.stoneStalagmites = isStone; // The editor uses the same saved growth layer/preview lifecycle.
     if (!T || !parent) { group.userData.diagnostics = 'Ice coverage needs a Three.js furniture root.'; return group; }
     const sources = collectSources(T, parent, settings); // No floor meshes, decals, selected-surface guides, or particles become ice origins.
     const clusters = Math.min(MAX_CLUSTERS, Math.max(1, Math.round(settings.count * settings.density))); // Density scales saved cluster count.
@@ -173,17 +175,22 @@
       geometry.computeVertexNormals();
       const material = new T.MeshStandardMaterial({ // Translucent, cold highlights with no external texture dependency.
         vertexColors: true, color: 0xffffff, roughness: settings.iceRoughness, metalness: .02,
-        transparent: settings.iceOpacity < 1, opacity: settings.iceOpacity, depthWrite: true,
+        transparent: !isStone && settings.iceOpacity < 1, opacity: isStone ? 1 : settings.iceOpacity, depthWrite: true,
         flatShading: true, side: T.DoubleSide
       });
       const mesh = new T.Mesh(geometry, material); // Rendering-only child never registers as a collision or surface target.
-      mesh.name = 'Faceted ground ice';
+      mesh.name = isStone ? 'Faceted sharp cave stone' : 'Faceted ground ice';
       mesh.userData.surfaceFoliage = true;
       mesh.userData.iceCoverage = true;
+      if (isStone) {
+        mesh.layers.enable(1); // Existing inverted-shell outline pass on faceted volumetric stone.
+        mesh.userData.bladedHazard = true; // Matches the enclosing furniture's Bladed Hazard collision profile.
+        mesh.userData.shellOutline = true;
+      }
       group.add(mesh);
     }
     group.userData.surfaceGrowthStats = { parts: sources.length, clusters, spikes, triangles: positions.length / 9 }; // Counts power in-editor diagnostics.
-    group.userData.diagnostics = 'Ice stalagmites: ' + clusters + ' clusters, ' + spikes + ' spikes on ' + sources.length + ' lower furniture mesh(es); ' + (positions.length / 9) + ' triangles.';
+    group.userData.diagnostics = (isStone ? 'Stone' : 'Ice') + ' stalagmites: ' + clusters + ' clusters, ' + spikes + ' spikes on ' + sources.length + ' lower furniture mesh(es); ' + (positions.length / 9) + ' triangles.';
     return group;
   }
 

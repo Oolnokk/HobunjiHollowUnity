@@ -171,11 +171,9 @@
     state._aerialCollisionResolved = true; // Stops repeated wall damage during a multi-frame lunge.
     if (!(deficitPx > 0.001)) return null;
     const tile = Math.max(0.001, finite(tilePx, 1));
-    return resolveStrength(entity, descriptor || { kind: 'stone', label: 'Airborne lunge impact' },
-      deficitPx / tile, tile, hooks, {
-        mode: 'aerial-lunge', clearState: false,
-        intendedPx, traveledPx,
-      });
+    return applyResolvedImpact(entity, descriptor || { kind: 'stone', label: 'Airborne lunge impact' },
+      tile, hooks, deficitPx / tile, { intendedPx, traveledPx },
+      { mode: 'aerial-lunge', clearState: false });
   }
 
   function coolBurningOnDodge(entity) {
