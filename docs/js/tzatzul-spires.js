@@ -47,7 +47,7 @@
     if (!central || opts.blocked?.(central) || opts.isBoundary?.(central)) return false;
     const baseY = Number(opts.tileY?.(central));
     if (!Number.isFinite(baseY)) return false;
-    for (let dr = -3; dr <= 3; dr++) for (let dc = -3; dc <= 3; dc++) {
+    for (let dr = -2; dr <= 2; dr++) for (let dc = -2; dc <= 2; dc++) { // Small real rock footprints fit even rugged cliff maps.
       const tile = grid[r + dr]?.[c + dc];
       if (!tile || opts.blocked?.(tile) || opts.isBoundary?.(tile)) return false;
       if (Math.abs((Number(opts.tileY?.(tile)) || 0) - baseY) > 0.45) return false;
@@ -59,7 +59,7 @@
     const rows = grid.length, cols = grid[0].length;
     if (cols < 20 || rows < 20) return [];
     const rng = rngFor('tzatzul-spires:' + area + ':' + cols + 'x' + rows);
-    const count = Math.min(4, Math.max(2, Math.round(cols * rows / 5200)));
+    const count = Math.min(4, Math.max(3, Math.round(cols * rows / 3500))); // Every wilderness map aims for several visually distinct spires.
     const picked = [];
     for (let attempt = 0; attempt < 650 && picked.length < count; attempt++) {
       const c = 6 + Math.floor(rng() * (cols - 12)), r = 6 + Math.floor(rng() * (rows - 12));
@@ -99,6 +99,10 @@
   function install(network, grid, opts = {}) {
     if (!network || !Array.isArray(network.balconies)) return [];
     const area = String(network.area || opts.area || '');
+    if (Array.isArray(network.tzatzulSpires)) { // The same cached cliff graph may be rebuilt into multiple scene meshes.
+      byArea.set(area, { network, spires: network.tzatzulSpires });
+      return network.tzatzulSpires;
+    }
     const spires = plan(area, grid, opts, network);
     const added = [];
     for (const spire of spires) {
