@@ -206,12 +206,15 @@
     return cameraSample;
   }
 
+  const subjectScanStats = { lookups: 0, cacheHits: 0, negativeHits: 0, collectionScans: 0, candidatesVisited: 0 }; // Reports broad portrait-subject searches without retaining references.
   function findSubjectInCollection(collection, state, kind) {
     if (!collection || !state) return null;
     let values = collection;
     if (typeof collection.values === 'function') values = collection.values();
     if (!values || typeof values[Symbol.iterator] !== 'function') return null;
+    subjectScanStats.collectionScans++;
     for (const candidate of values) {
+      subjectScanStats.candidatesVisited++;
       if (candidate?.perpState === state) return { subject: candidate, kind };
     }
     return null;
@@ -223,10 +226,11 @@
 
   function subjectForPerpState(state) {
     if (!state || typeof state !== 'object') return null;
+    subjectScanStats.lookups++;
     const cached = subjectByPerpState.get(state);
-    if (cached?.subject?.perpState === state) return cached;
+    if (cached?.subject?.perpState === state) { subjectScanStats.cacheHits++; return cached; }
     const missAt = subjectMissAtByPerpState.get(state);
-    if (missAt !== undefined && nowMs() - missAt < subjectMissRetryMs) return null;
+    if (missAt !== undefined && nowMs() - missAt < subjectMissRetryMs) { subjectScanStats.negativeHits++; return null; }
 
     const combatDeps = window.Combat?.deps;
     const sources = [
@@ -599,6 +603,7 @@
     clearHeadtrackHint,
     setCorrectivePriority,
     getCorrectivePriority: () => correctivePriority.slice(),
+    getScanDebug: () => ({ ...subjectScanStats }),
     resolveCorrectiveDirection,
     PERP_DEAD_RAD,
     PERP_CENTER_HYSTERESIS_RAD,
