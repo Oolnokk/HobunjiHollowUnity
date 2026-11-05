@@ -32,7 +32,7 @@ assert.match(gameSource, /if \(target === player\) damagePlayer/, 'fallback comp
 assert.match(gameSource, /window\.BanditCamps\?\.init\(\{[\s\S]{0,900}makeCreatureEntity,/, 'BanditCamps must receive the shared creature factory');
 
 const renderSource = fs.readFileSync('docs/js/creature-genetics-render.js', 'utf8'); // Checks the existing species compositor already has the eye art that the spawn genotype enables.
-assert.match(renderSource, /'dabinggi-hound':\\s*\\{[\\s\\S]*?eyes: \\{ open: 'assets\\/creaturesprites\\/dabinggi-hound_eye\\.png'/, 'Dabinggi renderer must paint eye overlays for genotyped hounds');
+assert.match(renderSource, /'dabinggi-hound':\s*\{[\s\S]*?eyes: \{ open: 'assets\/creaturesprites\/dabinggi-hound_eye\.png'/, 'Dabinggi renderer must paint eye overlays for genotyped hounds');
 
 const spawnStart = campSource.indexOf('  async function spawnBeastmasterCompanion('); // Extracts the actual production spawn function for a functional regression check.
 const spawnEnd = campSource.indexOf('  async function spawnConfiguredBandit(', spawnStart); // Stops before the unrelated bandit spawn helper.
@@ -65,7 +65,7 @@ async function verifyHoundGenotypeOnCreation() {
     },
     __farmLog: () => {},
   };
-  const spawn = vm.runInNewContext(campSource.slice(spawnStart, spawnEnd) + '\\nspawnBeastmasterCompanion', { deps, window });
+  const spawn = vm.runInNewContext(campSource.slice(spawnStart, spawnEnd) + String.fromCharCode(10) + 'spawnBeastmasterCompanion', { deps, window });
   const owner = { id: 'test-beastmaster', name: 'Beastmaster', x: 32, y: 64, scene: {}, areaGrid: {}, areaCols: 30, areaRows: 30 };
   const camp = { instance: { id: 'camp-1' }, homeX: 16, homeY: 32, gangIds: new Set() };
   const hound = await spawn(camp, owner, variant);
