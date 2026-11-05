@@ -726,7 +726,7 @@
     const room={x:puzzle.col+.5-4.5,z:puzzle.row+.5-4.5,w:9,d:9}; // One 9x9 carved cave chamber, centered on the actual floor tile.
     try{
       const challenge=creator({
-        THREE:window.THREE,parent:scene,room,id:puzzle.id,kind:puzzle.kind,y:0,area:key,
+        THREE:window.THREE,parent:scene,room,id:puzzle.id,kind:puzzle.kind,y:0,area:key,authoredCliffDoor:true,
         isActive:()=>String(wildlifeDeps?.getCurrentArea?.()||'')===key && puzzleChallengesByMapId.get(key)?.scene===scene,
         onSolved:()=>{
           state.puzzleSolved=true;state.puzzleRewardTier=challenge.song?.rewardTier||2;
