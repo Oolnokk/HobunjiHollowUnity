@@ -22,6 +22,10 @@ assert(html.indexOf('js/furniture-surface-png-runtime.js?') < html.indexOf('js/a
 assert(bootstrap.includes('js/dev-random-ruin-simple-puzzles.js?'));
 assert(bootstrap.includes('js/dev-random-ruin-dungeon-fire.js?'));
 assert(source('docs/js/dev-random-ruin-simple-puzzles.js').includes('DungeonRopeArt.updateRopePlane'), 'ruin rope uses PNG plane');
+const ruin = source('docs/js/dev-random-ruin-simple-puzzles.js'); // Checks visual change without losing the interactive bob marker.
+assert(ruin.includes('marker.material.colorWrite=false') && ruin.includes('marker.userData.interactive3D=true'), 'old grip sphere is invisible but remains raycast-interactive');
+assert(art.includes('mesh.add(mesh.ropeBrushTip)') && art.includes('ROPE_END_DIAMETER'), 'brush tip is a real textured child of the rope plane');
+assert(source('docs/js/hanging-ropes.js').includes('rope.mesh.traverse?.(part =>'), 'removing a hanging rope disposes the brush-tip child');
 assert(source('docs/js/hanging-ropes.js').includes('DungeonRopeArt.updateRopePlane'), 'burden rope uses PNG plane');
 assert(source('docs/js/dev-random-ruin-dungeon-fire.js').includes('createNetFrustum'), 'net uses tapered skin');
 assert(source('docs/js/authored-furniture-runtime.js').includes('FurnitureSurfacePngRuntime?.applyToPart'), 'game applies new per-face settings');
