@@ -31,12 +31,13 @@ class Raycaster {
 }
 const THREE = {
   Vector3, Quaternion, Matrix4, Box3, Raycaster,
-  MathUtils: { degToRad: degrees => degrees * Math.PI / 180 },
+  MathUtils: { degToRad: degrees => degrees * Math.PI / 180, lerp: (a,b,t) => a + (b-a)*t, clamp: (v,lo,hi) => Math.max(lo,Math.min(hi,v)) },
 };
 let now = 1000;
 let area = 'interior';
 let closedDoor = false;
 let terrainBlock = false;
+let raisedTerrainY = null; // Enables raised-ground LOS regression without a visible stone wall.
 let sightObjects = [];
 const hostileObjects = [];
 const window = {
@@ -48,7 +49,9 @@ const window = {
 const context = {
   window, THREE, performance: { now: () => now }, console,
 };
-vm.runInNewContext(fs.readFileSync('docs/js/combat/ranged-weapons.js', 'utf8'), context);
+const rangedSource = fs.readFileSync('docs/js/combat/ranged-weapons.js', 'utf8')
+  .replace('  window.RangedWeapons = {', '  window.__testTerrainImpact = terrainImpactForStep;\n  window.RangedWeapons = {'); // Actual private projectile sweep made available to this isolated regression.
+vm.runInNewContext(rangedSource, context);
 window.RangedWeapons.init({
   TILE: 64,
   playerRadius: 20,
@@ -56,7 +59,7 @@ window.RangedWeapons.init({
   hostileObjects,
   getCurrentArea: () => area,
   getSightOccluders: () => sightObjects,
-  worldSurfaceY: () => 0,
+  worldSurfaceY: x => raisedTerrainY != null && x / 64 > 1.4 && x / 64 < 1.6 ? raisedTerrainY : 0,
   canOccupyAt(x) { return !(terrainBlock && x / 64 > 1.4 && x / 64 < 1.6); },
 });
 
@@ -153,5 +156,52 @@ sightObjects = [{ name: 'height-wall', blocksSight: true, visible: true }];
 heightTarget.def.modelHeight = 2;
 now += 20; // Also expires the independent 16 ms actor-hitbox cache.
 assert.equal(window.RangedWeapons.hasLineOfSight(heightObserver, heightTarget), false, 'vertical actor movement forces a fresh wall intersection test');
+
+
+const elevatedActor = (x, z, centerY) => { // A real avatar group reports its 3D center even when its feet are on another story.
+  const a = actor(x, z);
+  a.avatarRef = { group: {
+    isObject3D: true,
+    userData: { portraitModelWidth: 0.5, portraitModelHeight: 1, portraitVerticalPlacementRatio: 0.5 },
+    updateWorldMatrix() {},
+    getWorldPosition(out) { return out.set(x / 64, centerY, z / 64); },
+    getWorldScale(out) { return out.set(1, 1, 1); },
+  } };
+  return a;
+};
+now += 100; sightObjects = []; terrainBlock = false; area = 'town';
+const lowArcher = elevatedActor(64, 640, 0.5), highTarget = elevatedActor(192, 640, 4.5);
+const highArcher = elevatedActor(64, 704, 4.5), lowTarget = elevatedActor(192, 704, 0.5);
+assert.equal(window.RangedWeapons.hasLineOfSight(lowArcher, highTarget), true, 'unobstructed uphill sight');
+assert.equal(window.RangedWeapons.hasLineOfSight(highArcher, lowTarget), true, 'unobstructed downhill sight');
+lowArcher.def.rangedWeaponKey = 'crossbow'; highArcher.def.rangedWeaponKey = 'crossbow';
+window.RangedWeapons.beginBanditAction(lowArcher, 'fire', highTarget);
+window.RangedWeapons.beginBanditAction(highArcher, 'fire', lowTarget);
+assert.ok(Math.abs(lowArcher._rangedAimPitch - Math.atan2(4, 2)) < 1e-5, 'ranger aims directly uphill at the 3D hitbox');
+assert.ok(Math.abs(highArcher._rangedAimPitch - Math.atan2(-4, 2)) < 1e-5, 'ranger aims directly downhill at the 3D hitbox');
+
+raisedTerrainY = 3; now += 100;
+assert.equal(window.RangedWeapons.hasLineOfSight(lowArcher, highTarget), false, 'raised ground blocks an upward sightline');
+assert.equal(window.RangedWeapons.hasLineOfSight(highArcher, lowTarget), false, 'raised ground blocks a downward sightline');
+raisedTerrainY = null; now += 100;
+assert.equal(window.RangedWeapons.hasLineOfSight(lowArcher, highTarget), true, 'sight returns when intervening terrain is removed');
+
+window.DynamicSurfaces = { sampleSupport: (_x,_z,range) => range.minY <= 2 && range.maxY >= 2 ? { y:2 } : null };
+now += 100;
+assert.equal(window.RangedWeapons.hasLineOfSight(lowArcher, highTarget), false, 'an intervening story floor blocks sight from below');
+assert.equal(window.RangedWeapons.hasLineOfSight(highArcher, lowTarget), false, 'an intervening story floor blocks sight from above');
+const risingShot = {prevX:64,prevY:768,prevWorldY:0.5,x:192,y:768,worldY:4.5,def:{projectileRadiusPx:3}};
+const floorImpact = window.__testTerrainImpact(risingShot);
+assert.equal(floorImpact?.kind, 'floor', 'live projectile sweep collides with the intermediate story floor');
+assert.ok(floorImpact.t > .3 && floorImpact.t < .5, 'floor impact is detected at the correct sloped trajectory fraction');
+delete window.DynamicSurfaces;
+
+terrainBlock = true;
+const fastShot = {prevX:64,prevY:832,prevWorldY:.6,x:192,y:832,worldY:.6,def:{projectileRadiusPx:3}};
+const solidImpact = window.__testTerrainImpact(fastShot);
+assert.equal(solidImpact?.kind, 'solid-tile', 'fast ranged shots still hit a narrow intervening obstacle');
+assert.ok(solidImpact.t > .15 && solidImpact.t < .35, 'swept collision finds the obstruction before its far edge');
+terrainBlock = false;
+assert.equal(window.__testTerrainImpact(fastShot), null, 'the clear shot does not gain an invented collider');
 
 console.log('enemy line of sight: all checks passed');
