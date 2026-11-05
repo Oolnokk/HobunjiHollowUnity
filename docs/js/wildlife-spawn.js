@@ -125,6 +125,7 @@
     ensurePuktukRuntimeRegistration(injectedDeps);
     ensureVoorgAssRuntimeRegistration(injectedDeps);
     deps = injectedDeps;
+    window.TzatzulFlight?.initWildlife?.(injectedDeps); // Register the authored flying species before the first native creature spawn.
     installDenTurnoverDeathHook();
   }
 
@@ -1149,6 +1150,7 @@
   // instead of seeding fresh.
   function forgetZoneDenState(zoneId) {
     const prefix = `${zoneId}:`;
+    window.TzatzulFlight?.clearZone?.(zoneId); // Invalidate airborne nest occupancy when the Tothal Shift rebuilds its cliffs.
     for (const key of denEverSpawned) if (key.startsWith(prefix)) denEverSpawned.delete(key);
     for (const key of pendingDenRespawn) if (key.startsWith(prefix)) pendingDenRespawn.delete(key);
     for (const key of [...denLastKnownAlive.keys()]) if (key.startsWith(prefix)) denLastKnownAlive.delete(key);
@@ -1810,6 +1812,7 @@
     ensureCurrentZoneDenPacks();
     ensureCurrentZoneRoamingHerds();
     ensureCurrentZoneNestTrees();
+    window.TzatzulFlight?.ensureCurrentZone?.(); // One autonomous adult per generated spire; normal den ecology stays unchanged.
     window.HoneyfuzzleHives?.ensureCurrentZone(); // Swarms come out of their hive stumps by day (js/honeyfuzzle-hives.js).
     window.BanditCamps.ensureCurrentZoneCamps();
     if (_zoneEntryAnimalLogPending === currentArea) {
