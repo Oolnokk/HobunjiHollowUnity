@@ -22,7 +22,9 @@ const w={PerchSupport:supports,__farmLog(){},
   TzatzulRegistration:{identityFor:(a,i)=>({id:a+':'+i,tintHex:'#bb7777'})},
   TzatzulLiveVisuals:{release(){}},
   CliffRouteNetwork:{forArea:id=>id===zone?{balconies:[
-    {id:'a',x:2,z:2,y:6},{id:'b',x:35,z:2,y:7},{id:'bad',x:4,z:5,y:0}]}:null},
+    {id:'a',x:2,z:2,y:6,footprint:[{c:2,r:2}]},
+    {id:'b',x:35,z:2,y:7,footprint:[{c:35,r:2}]},
+    {id:'bad',x:4,z:5,y:0,footprint:[]}]}:null},
   Combat:{deps:{damagePlayer(damage){hits++;player.health-=damage;}}},
 };
 vm.runInNewContext(file('docs/js/tzatzul-flight-runtime.js'),{window:w,Math,Date,Set,Map,console});
@@ -32,7 +34,9 @@ const deps={TILE:64,player,hostileObjects:creatures,getCurrentArea:()=>zone,worl
 assert(w.TzatzulFlightRuntime.init(deps));
 assert.equal(w.TzatzulFlightRuntime.ensureZone(zone),2,'one visible mother per distant high cliff roost');
 assert.equal(w.TzatzulFlightRuntime.ensureZone(zone),0,'repeated checks cannot duplicate mothers');
-assert.equal(native.get(zone).size,2,'ground-level or empty ledges never receive imaginary perches');
+assert.equal(native.get(zone).size,2,'missing footprint is not a real mini-cliff ledge');
+assert(file('docs/js/tzatzul-flight-runtime.js').includes('Array.isArray(s.footprint)'),
+  'only actual cliff-network shelf geometry may serve as a roost');
 assert.equal(w.TzatzulFlightRuntime.ensureZone('map_southern_cloud_forest'),0);
 const bird=[...creatures][0];
 assert.equal(bird.onPerch.dimension,0,'bird rests on registered zero-dimensional rock support');

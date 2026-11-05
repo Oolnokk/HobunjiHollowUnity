@@ -35,7 +35,10 @@
     if (cached?.network === network) return cached.roosts;
     const candidates = network.balconies.filter(s => Number.isFinite(s?.x)
       && Number.isFinite(s?.z) && Number.isFinite(s?.y)
-      && s.y > surface(s.x * tile(), s.z * tile()) + .3);
+      && Array.isArray(s.footprint) && s.footprint.length > 0);
+    // Network balconies are the authoritative elevated rock geometry. Do not
+    // compare against worldSurfaceY: it already includes elevated support in
+    // some maps, so that comparison mistakenly rejects every real mini-cliff.
     candidates.sort((a, b) => b.y - a.y || String(a.id).localeCompare(String(b.id)));
     const selected = [];
     for (const shelf of candidates) {
