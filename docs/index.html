@@ -242,7 +242,7 @@
        (game.js) and farm livestock (farm-animals.js). -->
   <script src="js/creature-blink.js?v=20261104nelkRig2"></script>
   <!-- Species-driven food sources and retaliatory/guard rules share one existing wildlife AI tick. -->
-  <script src="js/wildlife-food-web.js?v=20261104memorydiag3"></script>
+  <script src="js/wildlife-food-web.js?v=20261104entityscan5"></script>
   <!-- Procedural foliage / crop geometry -->
   <script src="js/ice-stalagmite-coverage.js?v=20261103doorice1"></script>
   <script src="js/foliage-generator.js?v=20261103ice1"></script>
@@ -615,7 +615,7 @@
        injected via init(), so load order relative to the other systems
        above doesn't matter; must load before game.js, which calls
        window.PerpRotation.init(...) during its own setup. -->
-  <script src="js/perp-rotation.js?v=20261104memorydiag3"></script>
+  <script src="js/perp-rotation.js?v=20261104entityscan5"></script>
   <!-- Funji & Son's General Store (window.GeneralStore) — self-contained
        aside from deps injected via init(), and reads window.DyeSystem/
        window.ConditionRegistry at render time (already global by then), so
@@ -2892,7 +2892,7 @@
        audio-system.js/water-system.js/foliage-generator.js (wraps their
        exported functions) and before game.js (whose boot calls into all
        three and reads window.DevTestingSwitchbox.flags directly). -->
-  <script src="js/dev-testing-switchbox.js?v=20261104memorydiag2"></script>
+  <script src="js/dev-testing-switchbox.js?v=20261104entityscan5"></script>
   <script src="js/random-outdoor-ruins.js?v=20260922ruinpuzzle1"></script>
   <!-- Optional world-only painterly postprocess. It patches the existing
        fullscreen world composite after renderer creation, persists only its
