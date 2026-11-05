@@ -901,8 +901,10 @@
       || new THREE.Mesh(sharedCylinderGeometry(ROPE_BODY_RADIUS,ROPE_BODY_RADIUS,1,8),window.ProceduralFurniture.makePartMaterial({materialTexture:'boards.png',materialLighting:'unlit',color:'#c9ad77',materialFillEnabled:true,materialFillColor:'#c9ad77',materialFillMode:'always',materialRepeatU:4,surfaceOpacity:.98}));
     ropeMesh.name='dev_ruin_swing_rope_'+room.id+suffix;
     ropeMesh.frustumCulled=true;ropeMesh.userData.devRandomRuinSwingRope=true;state.group.add(ropeMesh);
-    const marker=new THREE.Mesh(sharedSphereGeometry(.15,10,8),makeBasic(0xd1b682));
+    const gripRadius=(window.DungeonRopeArt?.ROPE_END_DIAMETER || .30)*.5; // The existing grip hitbox shares the new brush-tip plane's XY dimensions.
+    const marker=new THREE.Mesh(sharedSphereGeometry(gripRadius,10,8),makeBasic(0xd1b682));
     marker.name='dev_ruin_swing_rope_grip_'+room.id+suffix;
+    marker.material.colorWrite=false;marker.material.depthWrite=false; // Invisible raycast/prompt target: the PNG brush tip is the only visible rope end.
     marker.userData.interactive3D=true;marker.userData.devRuinInteractionType='ropeSwing';state.group.add(marker);
     return {
       id:'rope-'+room.id+(idSuffix?'-'+idSuffix:''),
@@ -2362,7 +2364,8 @@
         ceilingY:+rope.ceilingY.toFixed(3),ceilingMounted:rope.mount?.parent===state.group,weaponStowed:!!state.ropeHeldToolSnapshot,
         anchor:clonePoint(rope.anchor),bob:clonePoint(rope.bob),grabPoint:clonePoint(rope.grabPoint),
         bottomY:+(rope.anchor.y-rope.length).toFixed(3),minBobY:+(rope.minBobY||0).toFixed(3),
-        thickMesh:rope.mesh?.isMesh===true,collisionStops:rope.collisionStops||0,autoGrabCount:rope.autoGrabCount||0,lavaVisible:rope.hazard?.mesh?.visible!==false,
+        thickMesh:rope.mesh?.isMesh===true,brushEnd:!!rope.mesh?.ropeBrushTip,gripProxyInvisible:rope.marker?.material?.colorWrite===false, // Mobile debug snapshot confirms the replacement without a console.
+        collisionStops:rope.collisionStops||0,autoGrabCount:rope.autoGrabCount||0,lavaVisible:rope.hazard?.mesh?.visible!==false,
         startTopY:+(rope.startPlatform?.topY||0).toFixed(3),endTopY:+(rope.endPlatform?.topY||0).toFixed(3),
       })),
       ropeChains:state.ropeChains.map(chain=>({hallId:chain.id,axis:chain.axis,bounds:chain.bounds,
