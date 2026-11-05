@@ -18,7 +18,7 @@
 
   let activeModel = null; // The session-only ruin snapshot currently used by collision and Map.
   let originalLegendHtml = null;
-  let selectedRuinFloor=0; // Mobile map floor tab; keeps 3D collision markings separated by story height. // Wilderness legend restored after leaving the diagnostic ruin.
+  let selectedRuinFloor=null; // Null selects the player's actual story on first map opening; a chosen tab is retained until reroll.
   const nativeRenderMapPanel = WildernessMap.renderMapPanel.bind(WildernessMap);
 
   const keyFor = (col, row) => `${col},${row}`;
@@ -329,16 +329,18 @@
     const canvas = document.getElementById('wildernessMapCanvas');
     if (!model || !tabs || !canvas) return;
     const ctx = canvas.getContext('2d');
-    const scaleX = canvas.width / model.cols, scaleY = canvas.height / model.rows;
-    const layer=window.DevRandomRuin?.getShaftCollisionMap?.(selectedRuinFloor)||null; // Reads registered physical voxel walls, not an inferred drawing.
-    if(layer)selectedRuinFloor=layer.floor;
-    ctx.fillStyle = '#090b0d'; ctx.fillRect(0, 0, canvas.width, canvas.height);
-    if(!layer||layer.floor===0){
-      for (let row = 0; row < model.rows; row++) for (let col = 0; col < model.cols; col++) {
-        const tileKey = keyFor(col, row);
-        ctx.fillStyle = model.floorSet.has(tileKey) ? '#5d625d' : '#171b1d';
-        ctx.fillRect(col * scaleX, row * scaleY, Math.ceil(scaleX), Math.ceil(scaleY));
-      }
+    const scaleX=canvas.width/model.cols,scaleY=canvas.height/model.rows;
+    const playerY=Number(window.DevRandomRuin?.getPlayerSupportY?.());
+    const currentStory=Number.isFinite(playerY)?Math.round(playerY/4):0; // Map defaults to the story underneath the player instead of always showing the entrance.
+    const requestedStory=selectedRuinFloor===null?currentStory:selectedRuinFloor;
+    const layer=window.DevRandomRuin?.getShaftCollisionMap?.(requestedStory)||null; // The 3D voxel grid owns collision on each story.
+    const floorTiles=layer?(layer.floor===0?layer.entryFloor:[]):[...model.floorSet]; // Never draw upper-floor projected tiles as walkable ground.
+    ctx.fillStyle=layer&&layer.floor>0?'#090b0d':'#171b1d';
+    ctx.fillRect(0,0,canvas.width,canvas.height);
+    for(const tileKey of floorTiles){
+      const [col,row]=tileKey.split(',').map(Number);
+      ctx.fillStyle='#5d625d';
+      ctx.fillRect(col*scaleX,row*scaleY,Math.ceil(scaleX),Math.ceil(scaleY));
     }
     if(layer) {
       for(const tileKey of layer.open){
@@ -373,37 +375,58 @@
       const [col, row] = tileKey.split(',').map(Number);
       fillInset(ctx, col, row, scaleX, scaleY, '#35c96f', Math.max(3, Math.min(scaleX, scaleY) * .38));
     }
-    const player = model.getPlayerPosition?.();
-    const playerFloor=layer?Math.round((Number(window.DevRandomRuin?.getPlayerSupportY?.())||0)/(layer.floorCount?4:1)):0;
-    if (player&&(!layer||layer.floor===playerFloor)) {
+    const player=model.getPlayerPosition?.();
+    const playerFloor=layer?Math.max(0,Math.min(layer.floorCount-1,
+      Math.round((Number.isFinite(playerY)?playerY:0)/layer.floorHeight))):0;
+    if(player&&(!layer||layer.floor===playerFloor)) {
       ctx.beginPath(); ctx.arc(player.x * scaleX, player.z * scaleY, Math.max(3, Math.min(scaleX, scaleY) * .25), 0, Math.PI * 2);
       ctx.fillStyle = '#ffe082'; ctx.fill(); ctx.strokeStyle = '#111'; ctx.lineWidth = 2; ctx.stroke();
     }
-    tabs.innerHTML = layer?Array.from({length:layer.floorCount},(_,floor)=>
-      '<button type="button" class="wmap-zone-tab'+(floor===layer.floor?' active':'')+
-      '" data-ruin-floor="'+floor+'">Floor '+(floor+1)+'</button>').join('')
-      :'<button type="button" class="wmap-zone-tab active">Test Ruin</button>';
-    if(layer)tabs.querySelectorAll('[data-ruin-floor]').forEach(button=>
-      button.addEventListener('click',()=>{
-        selectedRuinFloor=Number(button.dataset.ruinFloor);
-        renderRuinMapPanel();
-      })); // Touch/controller click changes both displayed geometry and voxel collision.
+    if(layer){
+      // Rebuild only when the number of floors changes: replacing focused
+      // buttons on every click breaks controller navigation and screen readers.
+      let buttons=[...tabs.querySelectorAll('[data-ruin-floor]')];
+      if(buttons.length!==layer.floorCount||buttons.some((button,i)=>Number(button.dataset.ruinFloor)!==i)){
+        tabs.innerHTML=Array.from({length:layer.floorCount},(_,floor)=>
+          '<button type="button" class="wmap-zone-tab" data-ruin-floor="'+floor+
+          '" aria-label="'+(floor===0?'Entrance floor':'Dungeon floor '+(floor+1))+'">'+
+          (floor===0?'F1 · Entry':'F'+(floor+1))+'</button>').join('');
+        buttons=[...tabs.querySelectorAll('[data-ruin-floor]')];
+        for(const button of buttons)button.addEventListener('click',()=>{
+          selectedRuinFloor=Number(button.dataset.ruinFloor);
+          renderRuinMapPanel();
+        });
+      }
+      for(const button of buttons){
+        const active=Number(button.dataset.ruinFloor)===layer.floor;
+        button.classList.toggle('active',active);
+        button.setAttribute('aria-pressed',String(active));
+      }
+    }else if(tabs.querySelector('[data-ruin-floor]')||tabs.textContent!=='Test Ruin')
+      tabs.innerHTML='<button type="button" class="wmap-zone-tab active">Test Ruin</button>';
     const legend = document.querySelector('#mpMap .wmap-legend');
     if (legend) {
       if (originalLegendHtml == null) originalLegendHtml = legend.innerHTML;
-      legend.innerHTML = '<span><i style="background:#e74c3c;border-radius:2px"></i>V50 blocked</span>'+
-        (layer?'<span><i style="background:#e67e22;border-radius:2px"></i>3D wall (Floor '+(layer.floor+1)+')</span>':'')+
-        '<span><i style="background:#35c96f;border-radius:2px"></i>Activator</span><span><i style="background:#3498db;border-radius:2px"></i>Mechanism</span><span><i style="background:#ffe082"></i>Player</span>';
+      legend.innerHTML = (!layer||layer.floor===0?'<span><i style="background:#e74c3c;border-radius:2px"></i>V50 blocked</span>':'')+
+        (layer?'<span><i style="background:#e67e22;border-radius:2px"></i>3D wall · F'+(layer.floor+1)+'</span>':'')+
+        (!layer||layer.floor===0?'<span><i style="background:#35c96f;border-radius:2px"></i>Activator</span><span><i style="background:#3498db;border-radius:2px"></i>Mechanism</span>':'')+
+        (player&&(!layer||layer.floor===playerFloor)?'<span><i style="background:#ffe082"></i>Player</span>':'');
     }
     const status = document.getElementById('wmapWaypointStatusText');
     const clear = document.getElementById('wmapWaypointClearBtn');
     const list = document.getElementById('wmapLandmarkList');
     const render = window.DevRandomRuinWallRenderProxy?.snapshot?.() || null; // Shown beside occupancy so mobile testing can distinguish collision from direct-source visibility.
-    if (status) status.textContent = `Full interior · floor ${layer?layer.floor+1:1} · occupancy revision ${model.revision} · no fog of war`;
+    if(status)status.textContent=`Full interior · ${layer?'Floor '+(layer.floor+1)+' of '+layer.floorCount:'Ground floor'} · collision revision ${model.revision} · no fog of war`;
     if (clear) clear.hidden = true;
-    if (list) list.innerHTML = `<div class="wmap-gathering-empty">${model.blocked.size} V50 blocked tiles · ${layer?.blocked?.length||0} level-specific voxel walls · ${model.footprints.count()} prop footprints · ${model.causes.size} activator · ${model.effects.size} mechanism tiles${render ? `<br>${render.visibleDoorSources}/${render.sourceDoorMeshes} door panels · ${render.visibleDoorArchSources}/${render.sourceDoorArchMeshes} arch pieces · ${render.visibleActivatorSources}/${render.sourceActivatorMeshes} activator meshes visible · 0 proxy meshes` : ''}</div>`;
+    if(list){
+      const ground=!layer||layer.floor===0;
+      const original=ground?`${model.blocked.size} V50 blockers · ${model.footprints.count()} prop footprints · ${model.causes.size} activators · ${model.effects.size} mechanisms`:'';
+      const voxel=layer?`${layer.blocked.length} F${layer.floor+1} voxel blockers`:'';
+      list.innerHTML=`<div class="wmap-gathering-empty">${[original,voxel].filter(Boolean).join(' · ')}${ground&&render?`<br>${render.visibleDoorSources}/${render.sourceDoorMeshes} door panels · ${render.visibleDoorArchSources}/${render.sourceDoorArchMeshes} arches · ${render.visibleActivatorSources}/${render.sourceActivatorMeshes} activators visible · ${render.totalProxyCount} proxy meshes`:''}</div>`;
+    }
     canvas.setAttribute('aria-label', 'Random Test Ruin occupancy map: red V50 blocked, orange level-specific 3D walls, green activator, blue mechanism; floor '+(layer?layer.floor+1:1));
-    canvas.dataset.ruinOccupancyRevision = String(model.revision);
+    canvas.dataset.ruinOccupancyRevision=String(model.revision);
+    canvas.dataset.ruinFloor=String(layer?.floor??0); // Mobile Pixel Probe can distinguish the selected story without a console.
     canvas.dataset.ruinFog = 'disabled';
   }
 
@@ -420,6 +443,7 @@
 
   function create(config) {
     activeModel?.destroy();
+    selectedRuinFloor=null; // Every new ruin begins by following the player's floor instead of reusing the last seed's tab.
     const model = {
       mapId:config.mapId || MAP_ID,
       scope:config.scope,
