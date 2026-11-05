@@ -19,6 +19,7 @@
     return true;
   }
   function canHide(c) {
+    if (c?._tzatzulFlight || c?._flyingCarriedBy || c?._tzatzulHatchling) return false; // A bird and its visible payload outlive the ordinary streaming radius.
     if (c.health <= 0 || c.isBandit || c.isCompanion || c.prone || c._branchDefense || (c.knockbackT || 0) > 0 || (c.retreatT || 0) > 0) return false;
     if (c.state === 'chase' || c.state === 'searching' || c.state === 'patrol-chase' || c.state === 'return' || c.state === 'fleeing-low-health') return false;
     if (window.Combat?.telegraph?.isBusy(c) || window.Combat?.animalAttacks?.isBusy(c)) return false;
