@@ -15760,6 +15760,44 @@
         for (const c of zoneResidents(mapId)) if (!c._wildlifeVisualsReleased && !c.isCompanion) return 'resident rig';
         return null;
       }
+      // _disposeZoneScene frees geometry only, because tileMats and the house
+      // wall builder's materials are shared by every map. An evicted zone would
+      // otherwise leave all of its other materials and textures resident, and its
+      // rebuild would create a second set (about 370 textures per cycle). Anything
+      // still referenced by a scene that stays alive is skipped; r128 re-uploads a
+      // disposed resource on next use, so a skipped-or-missed share costs a
+      // re-upload at worst.
+      function materialTextures(material) {
+        const found = [];
+        for (const key in material) { const value = material[key]; if (value?.isTexture) found.push(value); }
+        if (material.uniforms) for (const uniform of Object.values(material.uniforms)) if (uniform?.value?.isTexture) found.push(uniform.value);
+        return found;
+      }
+      function materialsOf(object) { return Array.isArray(object.material) ? object.material : [object.material]; }
+      function collectLiveSceneResources() {
+        const materials = new Set(), textures = new Set();
+        const scenes = [scene, townScene, ...[..._buildingScenes.values()].map(b => b?.scene), ...[..._zoneScenes.values()].map(zi => zi.scene)];
+        for (const s of scenes) s?.traverse?.(object => {
+          for (const material of materialsOf(object)) {
+            if (!material || materials.has(material)) continue;
+            materials.add(material);
+            for (const texture of materialTextures(material)) textures.add(texture);
+          }
+        });
+        return { materials, textures };
+      }
+      function disposeSceneResources(zoneScene, live) {
+        const seen = new Set(); let materials = 0, textures = 0;
+        zoneScene.traverse(object => {
+          for (const material of materialsOf(object)) {
+            if (!material || seen.has(material) || live.materials.has(material)) continue;
+            seen.add(material);
+            for (const texture of materialTextures(material)) if (!live.textures.has(texture)) { texture.dispose(); textures++; }
+            material.dispose(); materials++;
+          }
+        });
+        return { materials, textures };
+      }
       function evictZoneScene(mapId) {
         const zi = _zoneScenes.get(mapId);
         if (!zi) return false;
@@ -15769,8 +15807,9 @@
         parkZoneNpcs(mapId);
         _disposeZoneScene(mapId);
         _restoreLivePreviewZonePersistence(mapId, persisted);
+        const freed = disposeSceneResources(zi.scene, collectLiveSceneResources()); // _zoneScenes no longer lists this zone, so only scenes that stay alive count as users.
         zi.scene.clear(); // One stale reference to a mesh would otherwise keep the whole old zone reachable through its parent chain.
-        window.__farmLog?.(`[zone-cache] evicted ${mapId}`, 'perf');
+        window.__farmLog?.(`[zone-cache] evicted ${mapId} (${freed.materials} materials, ${freed.textures} textures released)`, 'perf');
         return true;
       }
       function rebindZoneResidents(mapId, info) {

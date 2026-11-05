@@ -27,6 +27,8 @@ function makeWorld(config) {
   const persist = { reagents: new Map(), berries: new Map(), treasure: new Map(), felled: new Map(), mined: new Map() };
   const zoneScenes = new Map();
   const hostiles = new Set(), corpses = new Set(), npcs = [];
+  const traversable = objects => ({ objects, traverse(fn) { this.objects.forEach(fn); }, remove() {}, clear() { this.cleared = true; } });
+  const farmScene = traversable([]), buildingScenes = new Map();
   const context = vm.createContext({
     window: { SCRATCHBONES_CONFIG: config, DevSpawner: { DEV_ARENA_ZONE_ID: 'map_dev_arena', WILDERNESS_LAB_ZONE_ID: 'map_wilderness_lab' },
       WildernessCampfire: { releaseVisualIfZone: id => campfireReleases.push(id) }, __farmLog: msg => logs.push(msg) },
@@ -35,6 +37,7 @@ function makeWorld(config) {
     _zoneScenes: zoneScenes, hostileObjects: hostiles, corpseObjects: corpses, npcWalkers: npcs,
     _zoneReagentPersist: persist.reagents, _zoneBerryPersist: persist.berries, _zoneTreasurePersist: persist.treasure,
     _zoneFelledTreePersist: persist.felled, _zoneMinedRockPersist: persist.mined,
+    scene: farmScene, townScene: null, _buildingScenes: buildingScenes,
     currentArea: 'town', cutscenePreviewActive: false, _tothalShiftPromise: null,
     _isZoneArea: id => String(id).startsWith('map_'), normalizeNpcArea: id => String(id),
     releaseCreatureVisuals: c => { if (c.health <= 0 && c.state !== 'corpse') return; c._wildlifeVisualsReleased = true; c.avatarRef = { data: true }; }, // Same guard as the real one: a dying body keeps its rig.
@@ -44,9 +47,9 @@ function makeWorld(config) {
   vm.runInContext(fs.readFileSync(path.join(root, 'docs/js/entity-distance-lod.js'), 'utf8'), context);
   vm.runInContext(fs.readFileSync(path.join(root, 'docs/js/wildlife-visual-lod.js'), 'utf8'), context); // The real isStreamableCorpse decides what may become data.
   vm.runInContext(`${persistenceFns}\n${evictionBlock}\nthis.api = { releaseResidentRigs, parkZoneNpcs, noteZoneVisited, trimZoneCache, scheduleZoneCacheTrim, zoneEvictionBlocker, evictZoneScene, rebindZoneResidents, order: _zoneVisitOrder };`, context, { filename: 'zone-cache.js' });
-  const addZone = id => zoneScenes.set(id, { scene: { cleared: false, clear() { this.cleared = true; } }, grid: ['grid-' + id], cols: 200, rows: 200 });
+  const addZone = id => zoneScenes.set(id, { scene: Object.assign(traversable([]), { cleared: false }), grid: ['grid-' + id], cols: 200, rows: 200 });
   const visit = id => { addZone(id); context.currentArea = id; context.api.noteZoneVisited(id); };
-  return { context, api: context.api, timers, disposed, campfireReleases, logs, persist, zoneScenes, hostiles, corpses, npcs, addZone, visit };
+  return { farmScene, buildingScenes, traversable, context, api: context.api, timers, disposed, campfireReleases, logs, persist, zoneScenes, hostiles, corpses, npcs, addZone, visit };
 }
 
 // ---- keeps the current zone and the most recent inactive one --------------
@@ -156,6 +159,43 @@ for (const [label, extra, store] of [
   assert.deepEqual(w.disposed, [], `${label} keeps its rig, so its zone is kept`);
   assert.match(w.logs.join('\n'), /kept map_a: resident rig/);
   assert.equal(resident._wildlifeVisualsReleased, false, `${label} is left alone`);
+}
+
+// ---- materials and textures of an evicted zone are released ---------------
+{
+  const resource = (name, extra = {}) => ({ name, disposed: 0, dispose() { this.disposed++; }, isTexture: undefined, ...extra });
+  const texture = name => resource(name, { isTexture: true });
+  const material = (name, props = {}, uniforms) => resource(name, { ...props, ...(uniforms ? { uniforms } : {}) });
+
+  const w = makeWorld({});
+  w.visit('map_a'); w.visit('map_b'); w.visit('map_c');
+  const own = texture('own-map'), uniformTex = texture('uniform-map'), sharedTex = texture('shared-with-b');
+  const ownMat = material('own', { map: own }), shaderMat = material('shader', {}, { uTex: { value: uniformTex }, uNumber: { value: 3 } });
+  const sharedMat = material('shared-with-farm'), sharedTexMat = material('uses-shared-texture', { map: sharedTex });
+  const arrayA = material('array-a', { map: texture('array-a-map') }), arrayB = material('array-b');
+  const inTown = material('in-town'), inBuilding = material('in-building');
+  w.zoneScenes.get('map_a').scene.objects.push(
+    { material: ownMat }, { material: shaderMat }, { material: sharedMat }, { material: sharedTexMat },
+    { material: [arrayA, arrayB] }, { material: inTown }, { material: inBuilding }, { material: ownMat }, { name: 'a group with no material' },
+  );
+  w.zoneScenes.get('map_b').scene.objects.push({ material: material('b-only', { map: sharedTex }) }); // a kept zone still draws with sharedTex
+  w.farmScene.objects.push({ material: sharedMat });
+  w.context.townScene = w.traversable([{ material: inTown }]);
+  w.buildingScenes.set('inn', { scene: w.traversable([{ material: inBuilding }]) });
+  w.api.trimZoneCache();
+  assert.deepEqual(w.disposed, ['map_a']);
+  assert.equal(ownMat.disposed, 1, 'a material only the evicted zone used is disposed, once');
+  assert.equal(own.disposed, 1, 'and so is its texture');
+  assert.equal(shaderMat.disposed, 1);
+  assert.equal(uniformTex.disposed, 1, 'a texture held in a shader uniform is released too');
+  assert.equal(arrayA.disposed + arrayB.disposed, 2, 'array materials are handled');
+  assert.equal(arrayA.map.disposed, 1);
+  assert.equal(sharedMat.disposed, 0, 'a material the farm scene still uses is kept');
+  assert.equal(inTown.disposed, 0, 'a material the town scene still uses is kept');
+  assert.equal(inBuilding.disposed, 0, 'a material a building interior still uses is kept');
+  assert.equal(sharedTexMat.disposed, 1, 'a material only the evicted zone used is disposed even when its texture is shared');
+  assert.equal(sharedTex.disposed, 0, 'but a texture a kept zone still draws with is not');
+  assert.match(w.logs.join('\n'), /evicted map_a \(\d+ materials, \d+ textures released\)/, 'the release is logged');
 }
 
 // ---- never the current zone, never dev zones ------------------------------
