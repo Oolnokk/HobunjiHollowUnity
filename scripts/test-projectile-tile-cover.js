@@ -63,6 +63,9 @@ grid[1][1] = {type:'grass', mapBoundary:true, elevTier:3};
 context.player.x = 16; context.player.y = 16; // The historical unstuck exemption applies only to a player already ON a boundary tile.
 assert.equal(occupy(), false, 'boundary cliffs remain impassable to walkers');
 assert.equal(occupy(1), false, 'boundary cliffs block arrows at their actual height');
+context.player.x = 48; context.player.y = 48; // Old-save boundary resident may escape walking collision.
+assert.equal(occupy(1), false, 'projectile collisions never inherit the boundary-unstuck exception');
+context.player.x = 16; context.player.y = 16;
 assert.equal(occupy(2), true, 'shots above the boundary rock crest may pass');
 
 const scene = {children:[]}; // Minimal visible scene for semantic-cover runtime tests.
