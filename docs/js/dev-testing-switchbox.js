@@ -216,16 +216,6 @@
     // Registered meshes and regular avatar draws remain untouched.
   }
 
-  if (flags.noCorpseVisuals && window.CreatureDeath?.settleAsCorpse) {
-    const nativeSettleCorpse = window.CreatureDeath.settleAsCorpse; // Preserves authoritative death/loot/cleanup ownership.
-    window.CreatureDeath.settleAsCorpse = function (entity, ...args) {
-      const settled = nativeSettleCorpse.call(this, entity, ...args);
-      if (settled && entity?.state === 'corpse' && entity.avatarRef?.group)
-        entity.avatarRef.group.visible = false;
-      return settled;
-    };
-  }
-
   if (flags.noLayeredWeaponDecorations && window.HobunjiWeaponSpriteAssemblies?.decorate) {
     const nativeDecorateWeapon = window.HobunjiWeaponSpriteAssemblies.decorate; // Preserved for debugging/reload; no gameplay attack hooks are modified.
     window.HobunjiWeaponSpriteAssemblies.decorate = function (root, ...args) {
