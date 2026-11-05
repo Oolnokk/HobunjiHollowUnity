@@ -12,6 +12,14 @@
   const clamp=(n,a,b)=>Math.min(b,Math.max(a,n));
   const finite=n=>Number.isFinite(Number(n));
 
+  function pickStageActivator(linked=[]){
+    // A V50 motion can have multiple legitimate trigger families. Prefer
+    // the real projectile glyph when a decorative brazier helper shares its
+    // mechanism, then authored controls, then fire transfer.
+    const priority=['glyphObelisk','linkedCubePillars','stackedObelisk','pressurePlate','brazier','torch'];
+    return [...linked].filter(actor=>actor?.userData?.activatorType)
+      .sort((a,b)=>priority.indexOf(a.userData.activatorType)-priority.indexOf(b.userData.activatorType))[0]||null;
+  }
   function inspect(nativeRoot){
     const mechanisms=new Map(),activators=[],blocks=[],fixedBlocks=[],transitDoors=[]; // Fixed V50 push-route shapers must block upper-story players, not just the movable burden.
     nativeRoot?.traverse?.(object=>{
@@ -322,7 +330,7 @@
         const id=raw.startsWith(prefix)?raw:prefix+raw;
         const final=states.get(id);
         if(!final||!final.linked.length)return null; // If the author recorded a final objective but its real state is missing, never misreport a preparatory control as the solution.
-        return {id:final.id,kind:final.linked[0].userData.activatorType,nestedFinal:true};
+        return {id:final.id,kind:pickStageActivator(final.linked)?.userData?.activatorType||'unknown',nestedFinal:true};
       }
       for(const state of states.values()){
         if(state.linked.some(activator=>['ON','OFF'].includes(activator.userData?.bridgeCommand)))
@@ -331,7 +339,7 @@
           const pos=center(activator);
           if(pos.x>room.x+.25&&pos.x<room.x+room.w-.25
             &&pos.z>room.z+.25&&pos.z<room.z+room.d-.25)
-            return {id:state.id,kind:activator.userData.activatorType};
+            return {id:state.id,kind:pickStageActivator(state.linked)?.userData?.activatorType||activator.userData.activatorType};
         }
       }
       return null;
@@ -354,5 +362,5 @@
         motions:[...new Set([...states.values()].map(item=>item.motion))].sort(),
       })};
   }
-  return Object.freeze({MOTIONS,ACTIVATORS,inspect,namespace,mount});
+  return Object.freeze({MOTIONS,ACTIVATORS,inspect,namespace,mount,pickStageActivator});
 });
