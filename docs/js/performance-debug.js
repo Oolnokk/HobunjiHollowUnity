@@ -1370,6 +1370,7 @@
     lagWatch.sampleFrames = 0;
     lagWatch.sampleStart = ts;
     combatTraceTick();
+    recordBestFps(fps, ts);
     if (fps <= LAG_SNAPSHOT_FPS_THRESHOLD && (ts - lagWatch.lastSnapshotAt) >= LAG_SNAPSHOT_COOLDOWN_MS) {
       lagWatch.lastSnapshotAt = ts;
       captureLagSnapshot(fps);
@@ -1380,6 +1381,16 @@
   // Combat investigation records survive refreshes; the existing low-FPS history is session-only.
   const COMBAT_TRACE_KEY = 'hobunji_combat_perf_snapshots_v1';
   const COMBAT_TRACE_LIMIT = 8; // Caps retained incident records.
+  const BEST_FPS_KEY = 'hobunji_best_sustained_fps_v1'; // Small durable high-water mark, independent of cache-audit retention.
+  const bestFpsState = { samples: [], highest: 0, area: '', lastCapture: -Infinity }; // Tracks only steady gameplay windows, not loading spikes.
+  try {
+    const prior = JSON.parse(readStorage(BEST_FPS_KEY, 'null'));
+    if (Number.isFinite(prior?.fps) && prior.fps > 0) {
+      bestFpsState.highest = prior.fps;
+      bestFpsState.area = String(prior.area || '');
+    }
+  } catch (_) {}
+
   const combatTrace = { lastArea: '', origin: '', sawCombat: false, combat: false, left: false, bootCaptured: false, pending: [] };
   let combatRecords = [];
   let combatDb = null; // IndexedDB holds full audits without crowding the nearly-full save localStorage.
@@ -1417,18 +1428,40 @@
     return performance.now() - last < 5000;
   }
 
+  function recordBestFps(fps, ts) {
+    const area = String(root.GridTileAccessors?.getCurrentArea?.() || root.Combat?.deps?.getCurrentArea?.() || '');
+    // A full 5-second stable-area window excludes loading screens, hidden tabs and brief frame spikes.
+    if (!area || !combatTracePlayer() || document.hidden || !root.HobunjiCacheAudit?.snapshot) {
+      bestFpsState.samples = [];
+      return;
+    }
+    bestFpsState.samples.push({ fps, ts, area });
+    bestFpsState.samples = bestFpsState.samples.filter(sample => ts - sample.ts <= 5000 && sample.area === area);
+    if (bestFpsState.samples.length < 8 || ts - bestFpsState.samples[0].ts < 4000) return;
+    const sustained = bestFpsState.samples.reduce((sum, sample) => sum + sample.fps, 0) / bestFpsState.samples.length;
+    if (sustained < 1 || sustained <= bestFpsState.highest + 0.5 || ts - bestFpsState.lastCapture < 30000) return;
+    bestFpsState.highest = sustained;
+    bestFpsState.area = area;
+    bestFpsState.lastCapture = ts;
+    const at = new Date().toISOString();
+    const gameTime = root.HobunjiCalendarDebug?.snapshot?.()?.fullDateTime || null;
+    try { root.localStorage?.setItem(BEST_FPS_KEY, JSON.stringify({ fps: sustained, area, at, gameTime })); } catch (_) {}
+    saveCombatTrace('highest-sustained-fps', { sustainedFps: sustained, area, gameTime, observedAt: at });
+  }
+
   function updateCombatTraceStatus() {
     const el = document.getElementById('combatTraceStatus');
     if (el) el.textContent = combatRecords.length
       ? `${combatRecords.length} saved snapshots · latest: ${combatRecords[combatRecords.length - 1].reason}`
       : 'No combat investigation snapshots captured yet.';
+    if (el && bestFpsState.highest > 0) el.textContent += ` · best sustained: ${bestFpsState.highest.toFixed(1)} FPS in ${bestFpsState.area}`;
   }
 
-  function saveCombatTrace(reason) {
+  function saveCombatTrace(reason, metadata = null) {
     // Full cache audit is deferred until a transition has settled, never during combat itself.
     const snap = root.HobunjiCacheAudit?.snapshot?.();
     if (!snap) return;
-    const record = { reason, capturedAt: new Date().toISOString(), data: snap }; // Retained for deferred IndexedDB write.
+    const record = { reason, capturedAt: new Date().toISOString(), ...(metadata ? { metadata } : {}), data: snap }; // Retained for deferred IndexedDB write.
     combatRecords.push(record);
     if (combatRecords.length > COMBAT_TRACE_LIMIT) combatRecords.splice(0, combatRecords.length - COMBAT_TRACE_LIMIT);
     void combatDbReady.then(db => {
