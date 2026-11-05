@@ -45,6 +45,29 @@
     return removed;
   }
   function clearArea(area) { byArea.delete(area); }
+  function list(area) {
+    return [...(byArea.get(area)?.values() || [])]; // Read-only snapshot of this map's supports for bird and wildlife AI; never inspect every map.
+  }
+  function nearest(area, x, y, maxDistancePx = Infinity) {
+    if (!Number.isFinite(x) || !Number.isFinite(y) || !(maxDistancePx >= 0)) return null;
+    let best = null; // Only searched when a creature wants to perch, never every simulation or rendering frame.
+    let bestDistanceSq = maxDistancePx * maxDistancePx;
+    for (const perch of byArea.get(area)?.values() || []) {
+      let t = 0; // Point perches have no longitudinal component.
+      if (perch.dimension === 1) {
+        const start = perch.start || {}, end = perch.end || {};
+        const dx = end.x - start.x, dy = end.y - start.y;
+        const lengthSq = dx * dx + dy * dy;
+        if (lengthSq > 1e-9) t = clamp(((x - start.x) * dx + (y - start.y) * dy) / lengthSq);
+      }
+      const p = sample(perch, t);
+      const distanceSq = (p.x - x) ** 2 + (p.y - y) ** 2;
+      if (distanceSq > bestDistanceSq || (best && distanceSq >= bestDistanceSq)) continue;
+      bestDistanceSq = distanceSq;
+      best = { perch, t, point: p, distancePx: Math.sqrt(distanceSq) };
+    }
+    return best;
+  }
   function branchAdapter(perch) {
     const start = sample(perch, 0), end = sample(perch, 1); // Converts 0D/1D support to the existing renderer's exact branch-height representation.
     const length = Math.max(1e-6, Math.hypot(end.x - start.x, end.y - start.y)); // Point supports have a zero tangent; nonzero divisor keeps all native branch movement finite.
@@ -118,7 +141,7 @@
     return { fell: true, x: entity.x, y: entity.y, height, support: held };
   }
   window.PerchSupport = Object.freeze({
-    point, line, fromBranch, sample, register, unregister, clearArea, attach, forget, constrain, support, release,
+    point, line, fromBranch, sample, register, unregister, clearArea, list, nearest, attach, forget, constrain, support, release,
     debugSnapshot: () => ({ areas: [...byArea].map(([id, items]) => ({ id, supports: items.size })), lastDrop: lastDrop && { ...lastDrop } }),
   });
 })();

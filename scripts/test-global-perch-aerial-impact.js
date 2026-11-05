@@ -37,6 +37,18 @@ const branch = { id: mapId + ':1,3', col: 1, row: 3,
 w.ClimbSystem.registerBranch(mapId, branch);
 assert.equal(w.PerchSupport.debugSnapshot().areas.find(a => a.id === mapId)?.supports, 1,
   'native Shadewood registration also registers global line support');
+assert.equal(w.PerchSupport.list(mapId).length, 1, 'all creatures can discover Shadewood branches in their area');
+assert.equal(w.PerchSupport.list('other-map').length, 0, 'area-scoped query cannot see another map');
+const queried = w.PerchSupport.nearest(mapId, 144, 204, 20);
+assert(queried && queried.perch.dimension === 1, 'nearest query finds a registered line perch');
+assert(Math.abs(queried.t - .75) < 1e-6 && Math.abs(queried.distancePx - 4) < 1e-6,
+  'nearest line query projects onto the actual 1D segment');
+assert.equal(w.PerchSupport.nearest(mapId, 144, 204, 3), null, 'distance limit prevents remote perch attachment');
+const newRock = w.PerchSupport.point('high-rock', 400, 300, 8);
+assert(w.PerchSupport.register(mapId, newRock));
+assert.equal(w.PerchSupport.nearest(mapId, 400, 300, 0)?.perch.id, 'high-rock',
+  'zero-dimensional rock perch can be discovered at its authored position');
+assert.equal(w.PerchSupport.unregister(mapId, 'high-rock'), true, 'unregister handles independently authored perches');
 const actor = { health: 30, footing: 100, x: 0, y: 0 }; // Shared live creature fixture.
 assert(w.PerchSupport.attach(actor, w.PerchSupport.point('stone-perch', 50, 60, 5)));
 assert.equal(actor.onBranch?.perchSupport, true, 'point uses native height/render/movement support');
