@@ -532,13 +532,14 @@
   // tables need inventory stacks, so adapt that exact generator output here
   // rather than independently approximating its metal/dye/manual chances.
   function rollTreasureLootAsItems(context = {}) {
+    if (!deps) return {}; // Mixed loot can be inspected before the world has initialized its treasure subsystem.
     const bundle = _rollTreasureLootBundle();
     const gained = {}; // Individual quantity stacks consumed by LootRolling and corpse containers.
     const add = (key, amount = 1) => {
       if (typeof key !== 'string' || !key || !(Number(amount) > 0)) return;
       gained[key] = (gained[key] || 0) + Number(amount);
     };
-    for (const key of bundle.metalKeys || []) add(key);
+    for (const metal of bundle.metalKeys || []) add(deps?.metalBarItemKey?.(metal)); // Smithing bars use canonical inventory keys, never raw metal-type IDs.
     for (const key of bundle.dyeItemKeys || []) add(key);
     add('gold', bundle.gold);
     for (const key of [bundle.potionKey, bundle.recipeItemKey, bundle.combatManualKey]) add(key);

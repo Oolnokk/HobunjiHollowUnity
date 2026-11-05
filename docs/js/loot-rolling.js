@@ -150,7 +150,7 @@
             gained[itemKey] = (gained[itemKey] || 0) + Number(amount);
       }
       lastMixedRoll = { poolId, selected, availableSources: sources.map(source => source.poolId),
-        deferredSources: (pool.sourcePools || []).map(source => source?.poolId)
+        deferredSources: (Array.isArray(pool.sourcePools) ? pool.sourcePools : []).map(source => source?.poolId)
           .filter(id => id && !sources.some(source => source.poolId === id)),
         rolledItems: Object.keys(gained).length }; // No persistent entity references or expensive per-frame scanning.
       return gained;
