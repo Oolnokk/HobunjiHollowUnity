@@ -38,7 +38,7 @@ for (const original of door.parts) {
   assert.deepEqual(part.transform, transform, id + ' must scale only its world-X position and width');
   if (original.rockShape) {
     assert.deepEqual({ ...part.rockShape, seed:null }, { ...original.rockShape, seed:null }, id + ' must retain the rock surface settings');
-    assert.equal(part.rockShape.seed, 'cliffGate:' + id, id + ' needs a stable independent rock seed');
+    assert.equal(part.rockShape.seed, original.rockShape.seed, id + ' must preserve the same rock pattern while stretching');
   } else {
     assert.equal(part.rockShape, undefined, 'darkness must stay smooth and non-rockified');
   }
