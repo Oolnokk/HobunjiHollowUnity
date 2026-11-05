@@ -220,9 +220,13 @@
     return true;
   }
 
+  const actorScanTotals = { renderPasses: 0, hostiles: 0, companions: 0, corpses: 0, farm: 0 }; // Measures full collection visits by the render-lift bridge.
   function eachActor(setLike, kind, area) {
     if (!setLike || typeof setLike[Symbol.iterator] !== 'function') return;
-    for (const actor of setLike) liftActor(actor, area, kind);
+    for (const actor of setLike) {
+      actorScanTotals[kind]++; // No actor references or per-frame trace arrays are retained.
+      liftActor(actor, area, kind);
+    }
   }
 
   function tileSize() {
@@ -411,6 +415,7 @@
   }
 
   function applyRenderLift() {
+    actorScanTotals.renderPasses++;
     const area = activeArea();
     liftedRoots.length = 0;
     liftedBaseYs.length = 0;
@@ -540,6 +545,7 @@
       : null; // Included in the existing mobile Surface Debug alert so furniture grounding can be checked without devtools.
     return {
       ...lastDebug,
+      actorScanTotals: { ...actorScanTotals },
       renderDepth,
       farmFurniture,
       proneWaterHazard: {
@@ -586,6 +592,7 @@
       return !!raw && !!activeWaterTileAtRaw(raw.x, raw.y);
     },
     getDebug: debugSnapshot,
+    getScanDebug: () => ({ ...actorScanTotals }),
   });
   window.__animalSubtleElevationDebug = debugSnapshot;
 })();
