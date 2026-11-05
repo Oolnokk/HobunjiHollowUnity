@@ -258,6 +258,9 @@ function testRuntime() {
     id:'same-room-local-id',kind:'shattercask',hanging:false,data:{carryable:{}}});
   assert(window.Shattercasks.pickUp(travel));
   assert(window.Shattercasks.stowOnBack());
+  assert.equal(travel.group.parent,rigidPortrait,'default back stow mounts to the available rigid portrait');
+  for(const axis of ['x','y','z'])assert(Math.abs(travel.group.position[axis])<1e-8,
+    'a burden without authored back coordinates defaults to the exact portrait center on '+axis);
   const secondScene=new Group(); // Mimics a destination ruin with a static object using the same local ID.
   currentArea='map_back_destination';
   activeScene=secondScene;
