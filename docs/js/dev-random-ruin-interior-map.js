@@ -974,7 +974,7 @@
         const generated=await api.generateInteriorLocale({seed:'dev-'+candidateSeed.toString(36),
           size:cfg('generation.size','medium'),density:cfg('generation.density',62),
           roomMin:singleVestibule?1:cfg('generation.roomMin',3),
-          roomMax:singleVestibule?1:cfg('generation.roomMax',6),singleRoom:singleVestibule,
+          roomMax:singleVestibule?1:cfg('generation.roomMax',6),singleRoom:singleVestibule,singleRoomLab:singleRoomTrial, // Avoid a default core moat or raised treasure display conflicting with the one selected challenge.
           ...(singleRoomTrial&&['statueDefense','ropeChain'].includes(soloChoice.kind)?{roomPreset:soloChoice.kind==='statueDefense'?'veryLarge':'large'}:{}), // Defense requires 18x18; rope gaps stay within the normal rope hop distance.
           puzzles:singleVestibule?Object.fromEntries(Object.keys(puzzleOptions).map(key=>[key,false])):puzzleOptions,
           ...(stoneAgeRequested?{pieceSet:'stoneAge',floorProps:'pillarsOnly'}:{})}); // V50 retains the configured multi-room/hallway topology; the quarter-scale stone skin uses its exact walkable/elevation cells.
