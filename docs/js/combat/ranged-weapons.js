@@ -879,32 +879,59 @@
     return window.DevRandomRuin?.shaftSegmentHit?.(start, end, radius, segmentHitboxInterval) ?? null;
   }
 
-  function terrainImpactForStep(p, blockedAtTerrain, groundedAtGround) {
-    const shaftT = shaftCoverT(
-      _projectileHitStart.set(p.prevX / deps.TILE, p.prevWorldY, p.prevY / deps.TILE),
-      _projectileHitEnd.set(p.x / deps.TILE, p.worldY, p.y / deps.TILE),
-      p.def.projectileRadiusPx / deps.TILE,
-    ); // Full sweep catches intervening walls even when both endpoints are open.
-    const shaftHit = shaftT === null ? null : { kind: 'solid-tile', t: shaftT };
-    if (!blockedAtTerrain && !groundedAtGround) return shaftHit;
-    let lo = 0, hi = 1;
-    for (let i = 0; i < 8; i++) {
-      const t = (lo + hi) * 0.5;
-      const x = THREE.MathUtils.lerp(p.prevX, p.x, t);
-      const y = THREE.MathUtils.lerp(p.prevY, p.y, t);
-      const worldY = THREE.MathUtils.lerp(p.prevWorldY, p.worldY, t);
-      const blocked = !deps.canOccupyAt(x, y, p.def.projectileRadiusPx, worldY); // worldY lets height-aware prop footprints (js/area-footprint-blockers.js) pass shots over low props.
-      const grounded = worldY <= deps.worldSurfaceY(x, y) + 0.08;
-      if (blocked || grounded) hi = t;
-      else lo = t;
+  // Elevated floors are DynamicSurfaces support planes, not necessarily voxel solids.
+  function dynamicSupportHitT(start, end, radiusWorld) {
+    const sample = window.DynamicSurfaces?.sampleSupport;
+    if (typeof sample !== 'function') return null;
+    const dx = end.x - start.x, dy = end.y - start.y, dz = end.z - start.z;
+    const steps = Math.max(1, Math.ceil(Math.hypot(dx, dy, dz) / 0.2)); // Fine samples catch small ledges and steep shots.
+    for (let i = 1; i <= steps; i++) {
+      const a = (i - 1) / steps, b = i / steps, m = (a + b) / 2;
+      const y0 = start.y + dy * a, y1 = start.y + dy * b;
+      const support = sample(start.x + dx * m, start.z + dz * m, {
+        minY: Math.min(y0, y1) - radiusWorld - 0.01,
+        maxY: Math.max(y0, y1) + radiusWorld + 0.01,
+        pad: radiusWorld,
+      });
+      const floorY = Number(support?.y); // Actual dynamic floor elevation, including stacked rooms and balconies.
+      if (!support || !Number.isFinite(floorY)) continue;
+      if (Math.min(y0, y1) > floorY + radiusWorld + 0.01 || Math.max(y0, y1) < floorY - radiusWorld - 0.01) continue;
+      return Math.abs(y1 - y0) < AIM_EPSILON ? a
+        : a + (b - a) * THREE.MathUtils.clamp((floorY - y0) / (y1 - y0), 0, 1);
     }
-    if (shaftHit && shaftHit.t <= hi) return shaftHit;
-    const t = hi;
-    const x = THREE.MathUtils.lerp(p.prevX, p.x, t);
-    const y = THREE.MathUtils.lerp(p.prevY, p.y, t);
-    const worldY = THREE.MathUtils.lerp(p.prevWorldY, p.worldY, t);
-    const kind = worldY <= deps.worldSurfaceY(x, y) + 0.08 ? 'ground' : 'solid-tile';
-    return { kind, t };
+    return null;
+  }
+
+  function terrainImpactForStep(p) {
+    const start = _projectileHitStart.set(p.prevX / deps.TILE, p.prevWorldY, p.prevY / deps.TILE);
+    const end = _projectileHitEnd.set(p.x / deps.TILE, p.worldY, p.y / deps.TILE);
+    const radiusWorld = p.def.projectileRadiusPx / deps.TILE; // Includes the projectile underside during physical terrain checks.
+    const shaftT = shaftCoverT(start, end, radiusWorld); // True voxel wall collision across stories.
+    const floorT = dynamicSupportHitT(start, end, radiusWorld);
+    const dx = p.x - p.prevX, dz = p.y - p.prevY, dy = (p.worldY - p.prevWorldY) * deps.TILE;
+    const samples = Math.max(1, Math.ceil(Math.hypot(dx, dy, dz) / (deps.TILE * 0.2))); // Thin cliff tiles must not be skipped by a long frame.
+    const contact = t => {
+      const x = THREE.MathUtils.lerp(p.prevX, p.x, t), y = THREE.MathUtils.lerp(p.prevY, p.y, t);
+      const height = THREE.MathUtils.lerp(p.prevWorldY, p.worldY, t);
+      if (height - radiusWorld <= deps.worldSurfaceY(x, y) + 0.08) return 'ground';
+      return !deps.canOccupyAt(x, y, p.def.projectileRadiusPx, height) ? 'solid-tile' : null;
+    };
+    let terrain = null;
+    for (let i = 1; i <= samples; i++) {
+      const t = i / samples;
+      if (!contact(t)) continue;
+      let lo = (i - 1) / samples, hi = t;
+      for (let k = 0; k < 8; k++) {
+        const mid = (lo + hi) / 2;
+        if (contact(mid)) hi = mid; else lo = mid;
+      }
+      terrain = { kind: contact(hi) || 'solid-tile', t: hi };
+      break;
+    }
+    let first = terrain;
+    if (shaftT !== null && (!first || shaftT <= first.t)) first = { kind: 'solid-tile', t: shaftT };
+    if (floorT !== null && (!first || floorT < first.t)) first = { kind: 'floor', t: floorT };
+    return first;
   }
 
   function embedProjectile(p, impact) {
@@ -937,8 +964,8 @@
     const hasSourcePosition = Number.isFinite(sourcePosition?.x) && Number.isFinite(sourcePosition?.y) && Number.isFinite(sourcePosition?.z);
     const spawnX = hasSourcePosition ? sourcePosition.x * deps.TILE : x;
     const spawnY = hasSourcePosition ? sourcePosition.z * deps.TILE : y;
-    const surfaceY = ownerElevationY(owner, spawnX, spawnY);
-    const worldY = hasSourcePosition ? sourcePosition.y : surfaceY + 0.55;
+    const ownerCenterY = owner ? actorHitbox(owner)?.center?.y : NaN; // Live actor hitbox center is authoritative, including stacked ruin floors.
+    const worldY = hasSourcePosition ? sourcePosition.y : (Number.isFinite(ownerCenterY) ? ownerCenterY : ownerElevationY(owner, spawnX, spawnY) + 0.55);
     mesh.position.set(spawnX / deps.TILE, worldY, spawnY / deps.TILE);
     scene.add(mesh);
 
@@ -992,7 +1019,7 @@
       launchDirection: direction.clone(),
       launchSerial: ++projectileSerial,
       embedded: false, embeddedAgeS: 0, fading: false, fadeElapsedS: 0, fadeDurationS: 0, fadeReason: null, impactKind: null,
-      angle, pitch, distancePx: 0,
+      angle, pitch, distancePx: 0, flightDistancePx: 0,
       effectiveRangePx: def.rangeTiles * deps.TILE,
       maxDistancePx: def.rangeTiles * deps.TILE * RANGE_FALLOFF_DISTANCE_MULTIPLIER,
       areaId: deps.getCurrentArea(), dead: false,
@@ -1176,9 +1203,10 @@
       const heldOrigin = projectileOriginFromPosition(heldPosition); // Converts the held plane's world position into the Vector3 language used by trajectory math.
       if (heldOrigin) return heldOrigin;
     } catch (_) { /* Fall through to the legacy center-height origin when the held visual is unavailable. */ }
+    const centerY = actorHitbox(deps.player)?.center?.y; // Fallback projectile launch uses the player's true portrait center, not an extra body-height offset.
     return new THREE.Vector3(
       deps.player.x / deps.TILE,
-      ownerElevationY(deps.player, deps.player.x, deps.player.y) + 0.55,
+      Number.isFinite(centerY) ? centerY : ownerElevationY(deps.player, deps.player.x, deps.player.y) + 0.55,
       deps.player.y / deps.TILE,
     );
   }
@@ -1563,14 +1591,13 @@
       }
       p.worldY += p.vyWorld * dt - 0.5 * p.projectileGravityWorldS2 * gravityDt * gravityDt;
       if (gravityDt > 0) p.vyWorld -= p.projectileGravityWorldS2 * gravityDt;
+      p.flightDistancePx += Math.hypot(dx, dy, (p.worldY - p.prevWorldY) * deps.TILE); // Full 3D range also expires near-vertical trajectories.
 
       p.mesh.position.set(p.x / deps.TILE, p.worldY, p.y / deps.TILE);
       updateProjectileVisual(p, dt);
       window.DungeonFire?.updateProjectile?.(p, dt); // Keeps thrown metal-pixel embers and upright arrow flames attached to the live trajectory.
 
-      const blockedAtTerrain = !deps.canOccupyAt(p.x, p.y, p.def.projectileRadiusPx, p.worldY);
-      const groundedAtGround = p.worldY <= deps.worldSurfaceY(p.x, p.y) + 0.08;
-      const sweptTerrainImpact = terrainImpactForStep(p, blockedAtTerrain, groundedAtGround);
+      const sweptTerrainImpact = terrainImpactForStep(p); // Uses the same height-aware collision for player and hostile shots.
       const hit = projectileHit(p, sweptTerrainImpact?.t ?? 1); // Ground/solid terrain caps the actor sweep so a curved shot cannot damage something behind the first terrain contact.
       if (hit?.kind === 'actor') {
         disposeProjectile(p);
@@ -1582,7 +1609,7 @@
         if (!embedProjectile(p, terrainImpact)) disposeProjectile(p);
         continue;
       }
-      if (p.distancePx >= p.maxDistancePx) {
+      if (p.flightDistancePx >= p.maxDistancePx) {
         disposeProjectile(p);
         continue;
       }
@@ -1596,11 +1623,8 @@
   // player up a tree. Mirrors playerAimSolution's own pitch derivation and
   // reuses the same muzzle-height convention as spawnProjectile's origin.
   function banditAimPitch(c, targetPlayer) {
-    const dx = targetPlayer.x - c.x, dy = targetPlayer.y - c.y;
-    const horizontalWorld = Math.hypot(dx, dy) / deps.TILE;
-    const shooterY = ownerElevationY(c, c.x, c.y) + 0.55;
-    const targetY = ownerElevationY(targetPlayer, targetPlayer.x, targetPlayer.y) + 0.55;
-    return Math.atan2(targetY - shooterY, Math.max(horizontalWorld, AIM_EPSILON));
+    const { start, end } = banditLosSegment(c, targetPlayer); // Shot pitch and NPC sight use the same world-space portrait centers.
+    return Math.atan2(end.y - start.y, Math.max(Math.hypot(end.x - start.x, end.z - start.z), AIM_EPSILON));
   }
 
   function beginBanditAction(c, kind, targetPlayer) {
@@ -1663,6 +1687,8 @@
     const coverQuery = window.NearbyVolumeCollision?.segmentSightHit || window.NearbyVolumeCollision?.segmentHit;
     const coverHit = coverQuery?.call(window.NearbyVolumeCollision, segment.start, segment.end, radiusWorld) || null; // Prefer the setting-independent sight query; older isolated previews can still use the projectile query.
     if (coverHit && coverHit.t < 0.985) return { clear: false, kind: 'cover', id: coverHit.object?.name || coverHit.key || coverHit.kind || 'cover' };
+    const supportT = dynamicSupportHitT(segment.start, segment.end, radiusWorld); // Stacked floor slabs occlude genuine sightlines.
+    if (supportT !== null && supportT < 0.985) return { clear: false, kind: 'floor', id: 'elevated-floor' };
 
     let ally = null;
     for (const other of (deps.hostileObjects || [])) {
@@ -1690,6 +1716,8 @@
         if (window.InteriorDoorTiles?.blocksBox?.(deps.getCurrentArea(), x / deps.TILE, y / deps.TILE, radiusWorld)) {
           return { clear: false, kind: 'door', id: 'closed-interior-door' }; // Closed authored doors are separate from the terrain grid and need their own opaque test.
         }
+        const groundY = deps.worldSurfaceY?.(x, y); // Raised walkable terrain also occludes lower shot lines.
+        if (Number.isFinite(groundY) && rayWorldY - radiusWorld <= groundY + 0.08) return { clear: false, kind: 'ground', id: 'raised-terrain' };
         if (typeof deps.canOccupyAt === 'function' && !deps.canOccupyAt(x, y, def.projectileRadiusPx, rayWorldY)) {
           return { clear: false, kind: 'tile', id: 'solid-tile' };
         }
@@ -1703,9 +1731,15 @@
     const cached = c._rangedLosCache;
     const moved = cached ? Math.hypot(c.x - cached.x, c.y - cached.y) : Infinity;
     const targetMoved = cached ? Math.hypot(targetPlayer.x - cached.tx, targetPlayer.y - cached.ty) : Infinity;
-    if (cached && now - cached.at < BANDIT_LOS_CACHE_MS && moved < deps.TILE * 0.08 && targetMoved < deps.TILE * 0.08) return cached.result;
+    const area = deps.getCurrentArea?.(); // Prevents visibility caching across scenes that reuse map coordinates.
+    const shooterWorldY = actorHitbox(c)?.center?.y; // Updated when a stationary shooter climbs or jumps.
+    const targetWorldY = actorHitbox(targetPlayer)?.center?.y;
+    const heightStable = cached && Number.isFinite(shooterWorldY) && Number.isFinite(targetWorldY)
+      && Math.abs(shooterWorldY - cached.shooterWorldY) < 0.04 && Math.abs(targetWorldY - cached.targetWorldY) < 0.04;
+    if (cached && cached.area === area && cached.target === targetPlayer && heightStable
+      && now - cached.at < BANDIT_LOS_CACHE_MS && moved < deps.TILE * 0.08 && targetMoved < deps.TILE * 0.08) return cached.result;
     const result = computeBanditLos(c, targetPlayer, def);
-    c._rangedLosCache = { at: now, x: c.x, y: c.y, tx: targetPlayer.x, ty: targetPlayer.y, result };
+    c._rangedLosCache = { at: now, area, target: targetPlayer, x: c.x, y: c.y, tx: targetPlayer.x, ty: targetPlayer.y, shooterWorldY, targetWorldY, result };
     c._rangedLosDebug = { ...result, at: now };
     return result;
   }
@@ -1999,7 +2033,7 @@
     get config() { return CONFIG; },
   };
   window.__rangedDebug = {
-    get projectiles() { return projectiles.map(p => ({ itemKey: p.itemKey, team: p.team, ammoId: p.ammoId, x: p.x, y: p.y, vx: p.vx, vy: p.vy, worldY: p.worldY, vyWorld: p.vyWorld, distancePx: p.distancePx, projectileSpeedPxS: p.projectileSpeedPxS, projectileSpeedMultiplier: p.projectileSpeedMultiplier, projectileDropStartTiles: p.projectileDropStartTiles, projectileGravityWorldS2: p.projectileGravityWorldS2, lockLaunchAlignment: p.lockLaunchAlignment, embedded: p.embedded, embeddedAgeS: p.embeddedAgeS, impactKind: p.impactKind, fading: p.fading, fadeReason: p.fadeReason, launchTransformMode: p.launchTransformMode, facingSource: p.launchTransformMode === 'held-strike-plane' ? 'sampled-held-plane' : (p.def?.toolEndFlip === true ? 'config-flip-fallback' : 'flight-frame'), spinAxis: p.spinRateRad ? 'png-local-z' : null, trailAfflictionIds: [...p.trailAfflictionIds] })); },
+    get projectiles() { return projectiles.map(p => ({ itemKey: p.itemKey, team: p.team, ammoId: p.ammoId, x: p.x, y: p.y, vx: p.vx, vy: p.vy, worldY: p.worldY, vyWorld: p.vyWorld, distancePx: p.distancePx, flightDistancePx: p.flightDistancePx, projectileSpeedPxS: p.projectileSpeedPxS, projectileSpeedMultiplier: p.projectileSpeedMultiplier, projectileDropStartTiles: p.projectileDropStartTiles, projectileGravityWorldS2: p.projectileGravityWorldS2, lockLaunchAlignment: p.lockLaunchAlignment, embedded: p.embedded, embeddedAgeS: p.embeddedAgeS, impactKind: p.impactKind, fading: p.fading, fadeReason: p.fadeReason, launchTransformMode: p.launchTransformMode, facingSource: p.launchTransformMode === 'held-strike-plane' ? 'sampled-held-plane' : (p.def?.toolEndFlip === true ? 'config-flip-fallback' : 'flight-frame'), spinAxis: p.spinRateRad ? 'png-local-z' : null, trailAfflictionIds: [...p.trailAfflictionIds] })); },
     get playerAction() { return playerAction ? { ...playerAction, def: undefined, releaseAtS: playerAction.durationS * fireReleaseFrac(playerAction.def) } : null; },
     get lastEvent() { return lastEvent; },
     get lastAudioEvent() { return lastAudioEvent; },
@@ -2041,7 +2075,7 @@
     firePlayer: (itemKey) => startPlayerAction(itemKey),
     idlePose: itemKey => ({ ...idlePose(itemKey) }),
     snapshot: () => ({
-      latestChange: 'Ranged reloads spend 85% of effective maximum Stamina and hold regen blocked through the load; held throws use Charged Breaker’s cumulative pose-cost curve.',
+      latestChange: 'Players and enemies can shoot between elevations where 3D sightlines clear terrain, supports and solid cover.',
       staminaCosts: { loadFraction: DEFAULT_RANGED_LOAD_STAMINA_FRACTION, thrownChargeReady: chargeStaminaCostForPose(window.Combat?.chargedBreakerData?.MIN_READY_POSE ?? HELD_CHARGE_MIN_READY_POSE), thrownChargeFull: chargeStaminaCostForPose(1), thrownChargeReadyPose: window.Combat?.chargedBreakerData?.MIN_READY_POSE ?? HELD_CHARGE_MIN_READY_POSE },
       lastEvent, lastAudioEvent, fireTriggerToProjectileMaxMs: MAX_FIRE_TRIGGER_TO_PROJECTILE_S * 1000, projectileDeadzoneDeg: PROJECTILE_PERP_DEAD_DEG, defaultProjectileSpeedMultiplier: DEFAULT_PROJECTILE_SPEED_MULTIPLIER,
       equippedRanged: deps?.getEquippedRangedKey?.() || null,
