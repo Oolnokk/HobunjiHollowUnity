@@ -1177,6 +1177,41 @@
     box.appendChild(lagStatus);
     updateLagSnapshotStatusUI();
 
+    const combatRow = document.createElement('div');
+    combatRow.style.cssText = 'display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:6px 0';
+    const combatTitle = document.createElement('span');
+    combatTitle.textContent = 'Combat performance snapshots';
+    combatTitle.style.cssText = 'font-size:12px;flex:1 1 140px';
+    const combatExport = document.createElement('button');
+    combatExport.type = 'button';
+    combatExport.textContent = 'Export all';
+    combatExport.style.cssText = lagBtn.style.cssText;
+    combatExport.addEventListener('click', () => {
+      const records = root.HobunjiCombatPerfTrace.snapshots();
+      if (!records.length) { flashButtonLabel(combatExport, 'None yet'); return; }
+      const blob = new Blob([JSON.stringify(records, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'hobunji-combat-performance-snapshots.json';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    });
+    const combatClear = document.createElement('button');
+    combatClear.type = 'button';
+    combatClear.textContent = 'Clear';
+    combatClear.style.cssText = lagBtn.style.cssText;
+    combatClear.addEventListener('click', () => root.HobunjiCombatPerfTrace.clear());
+    combatRow.append(combatTitle, combatExport, combatClear);
+    box.appendChild(combatRow);
+    const combatStatus = document.createElement('div');
+    combatStatus.id = 'combatTraceStatus';
+    combatStatus.style.cssText = 'font-size:10px;opacity:.65;margin:-2px 0 5px';
+    box.appendChild(combatStatus);
+    updateCombatTraceStatus();
+
     const baked = readStorage(TREE_MODE_KEY, 'procedural') === 'baked';
     const tree = makeCheckboxRow('settingBakedTrees', 'Baked GLB Trees', baked,
       'On: use docs/assets/models/trees/*.glb. Off: use runtime procedural tree geometry. Changing this reloads the game for a clean comparison.');
@@ -1334,11 +1369,107 @@
     const fps = lagWatch.sampleFrames * 1000 / Math.max(1, elapsed);
     lagWatch.sampleFrames = 0;
     lagWatch.sampleStart = ts;
+    combatTraceTick();
     if (fps <= LAG_SNAPSHOT_FPS_THRESHOLD && (ts - lagWatch.lastSnapshotAt) >= LAG_SNAPSHOT_COOLDOWN_MS) {
       lagWatch.lastSnapshotAt = ts;
       captureLagSnapshot(fps);
     }
   }
+
+
+  // Combat investigation records survive refreshes; the existing low-FPS history is session-only.
+  const COMBAT_TRACE_KEY = 'hobunji_combat_perf_snapshots_v1';
+  const COMBAT_TRACE_LIMIT = 8; // Caps localStorage use; older incidents are rotated out.
+  const combatTrace = { lastArea: '', origin: '', sawCombat: false, combat: false, left: false, bootCaptured: false, pending: null };
+  let combatRecords = [];
+  try {
+    const saved = JSON.parse(readStorage(COMBAT_TRACE_KEY, '[]'));
+    if (Array.isArray(saved)) combatRecords = saved.slice(-COMBAT_TRACE_LIMIT);
+  } catch (_) {}
+
+  function combatTracePlayer() {
+    return root.Combat?.deps?.player || root.__hobunjiFurnitureDebug?.playerState || null;
+  }
+
+  function combatTraceActive(player) {
+    if (!player) return false;
+    // Prefer the same player-combat grace period used by the clothing runtime.
+    if (typeof root.ClothingWeavingSystem?.combatActive === 'function')
+      return !!root.ClothingWeavingSystem.combatActive(player);
+    const last = Math.max(Number(player.lastAttackAttemptAt) || -1e12, Number(player.lastAttackReceivedAt) || -1e12);
+    return performance.now() - last < 5000;
+  }
+
+  function updateCombatTraceStatus() {
+    const el = document.getElementById('combatTraceStatus');
+    if (el) el.textContent = combatRecords.length
+      ? `${combatRecords.length} saved snapshots · latest: ${combatRecords[combatRecords.length - 1].reason}`
+      : 'No combat investigation snapshots captured yet.';
+  }
+
+  function saveCombatTrace(reason) {
+    // Full cache audit is deferred until a transition has settled, never during combat itself.
+    const snap = root.HobunjiCacheAudit?.snapshot?.();
+    if (!snap) return;
+    combatRecords.push({ reason, capturedAt: new Date().toISOString(), data: snap });
+    if (combatRecords.length > COMBAT_TRACE_LIMIT) combatRecords.splice(0, combatRecords.length - COMBAT_TRACE_LIMIT);
+    try { root.localStorage?.setItem(COMBAT_TRACE_KEY, JSON.stringify(combatRecords)); } catch (_) {
+      // Quota pressure must not disrupt gameplay; keep the incident available in memory.
+    }
+    updateCombatTraceStatus();
+  }
+
+  function queueCombatTrace(reason, delayMs = 2500) {
+    combatTrace.pending = { reason, due: performance.now() + delayMs };
+  }
+
+  function combatTraceTick() {
+    if (document.hidden) return;
+    const area = String(root.GridTileAccessors?.getCurrentArea?.() || root.Combat?.deps?.getCurrentArea?.() || '');
+    const player = combatTracePlayer();
+    if (!area || !player) return;
+    if (!combatTrace.bootCaptured) {
+      combatTrace.bootCaptured = true;
+      queueCombatTrace('session-loaded', 4500);
+    }
+    const fighting = combatTraceActive(player);
+    if (fighting && !combatTrace.combat) {
+      combatTrace.sawCombat = true;
+      combatTrace.origin = area;
+      combatTrace.left = false;
+      queueCombatTrace('combat-start', 500);
+    } else if (!fighting && combatTrace.combat) {
+      queueCombatTrace('combat-ended', 3500);
+    }
+    combatTrace.combat = fighting;
+
+    if (combatTrace.lastArea && area !== combatTrace.lastArea && combatTrace.sawCombat) {
+      if (combatTrace.lastArea === combatTrace.origin) {
+        combatTrace.left = true;
+        queueCombatTrace('left-combat-area', 2500);
+      } else if (area === combatTrace.origin && combatTrace.left) {
+        queueCombatTrace('returned-to-combat-area', 3500);
+        combatTrace.left = false;
+      }
+    }
+    combatTrace.lastArea = area;
+    if (combatTrace.pending && performance.now() >= combatTrace.pending.due) {
+      // Never record a delayed combat-ended snapshot while the next fight is underway.
+      if (combatTrace.pending.reason !== 'combat-ended' || !fighting)
+        saveCombatTrace(combatTrace.pending.reason);
+      combatTrace.pending = null;
+    }
+  }
+
+  root.HobunjiCombatPerfTrace = Object.freeze({
+    snapshots: () => combatRecords.slice(),
+    capture: (reason = 'manual') => saveCombatTrace(String(reason)),
+    clear: () => {
+      combatRecords = [];
+      try { root.localStorage?.removeItem(COMBAT_TRACE_KEY); } catch (_) {}
+      updateCombatTraceStatus();
+    }
+  });
 
   function startLagWatch() {
     if (lagWatch.registered) return;
