@@ -1091,6 +1091,7 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
 
   // Western Slope's leafless variants keep their own silhouettes but use the
   // crowned pine bark tint; NaturalSurfaceMaterials applies the same stretched PNG.
+  TREE_PRESETS.komaHedge = { ...TREE_PRESETS.bush, leafTexture: 'assets/leaves/koma_leaf.png' }; // Roadside hedge only: regular bushes keep their existing leaf art.
   TREE_PRESETS.deadBush = { ...TREE_PRESETS.bush, leafless: true, barkColorHex: TREE_PRESETS.crownedPine.barkColorHex };
   TREE_PRESETS.deadTree = { ...TREE_PRESETS.bush, leafless: true, barkColorHex: TREE_PRESETS.crownedPine.barkColorHex,
     trunkLength: 4.2, trunkRadius: 0.25, trunkBend: 0.2, trunkTaper: 0.85,
@@ -3015,6 +3016,12 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
     buildWildernessBushMesh(col, row) {
       const seedU32 = xfnv1a(`wb_${col}_${row}`);
       return buildTreeInstance('bush', TREE_PRESETS.bush, seedU32);
+    },
+    buildKomaHedgeBushMesh(col, row) {
+      const seedU32 = xfnv1a(`wb_${col}_${row}`); // Same spatial seed as the original bush, separate shared-variant cache.
+      const bush = buildTreeInstance('komaHedge', TREE_PRESETS.komaHedge, seedU32);
+      bush.userData.komaRoadsideHedge = true; // Distinguishes visually reskinned bushes in the mobile scene inspector.
+      return bush;
     },
     buildStumpMesh(col, row) {
       const seedU32 = xfnv1a(`st_${col}_${row}`);
