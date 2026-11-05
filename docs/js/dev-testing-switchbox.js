@@ -208,6 +208,8 @@
         ['Wildlife prey candidates (cumulative)', String(window.WildlifeFoodWeb?.getScanDebug?.()?.preyCandidates ?? '—')],
         ['Portrait search candidates (cumulative)', String(window.PerpRotation?.getScanDebug?.()?.candidatesVisited ?? '—')],
         ['Portrait lookup cache hits', String(window.PerpRotation?.getScanDebug?.()?.cacheHits ?? '—')],
+        ['Render-lift hostile visits (cumulative)', String(window.HobunjiAnimalSubtleElevation?.getScanDebug?.()?.hostiles ?? '—')],
+        ['Render-lift corpse visits (cumulative)', String(window.HobunjiAnimalSubtleElevation?.getScanDebug?.()?.corpses ?? '—')],
         ['JS heap (Chrome)', Number.isFinite(performance.memory?.usedJSHeapSize) ? (performance.memory.usedJSHeapSize / 1048576).toFixed(1) + ' MiB' : 'Unavailable'],
         ['Heap limit', Number.isFinite(performance.memory?.jsHeapSizeLimit) ? (performance.memory.jsHeapSizeLimit / 1048576).toFixed(0) + ' MiB' : 'Unavailable'],
         ['Animal textures (estimated)', ((window.CreatureTextureCache?.snapshot?.() || []).reduce((n, x) => n + (x.estimatedBytes || 0), 0) / 1048576).toFixed(1) + ' MiB'],
