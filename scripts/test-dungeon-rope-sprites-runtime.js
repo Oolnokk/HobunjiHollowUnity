@@ -48,7 +48,7 @@ class Geometry {
   dispose(){this.disposed=true}
 }
 class Mesh {
-  constructor(geometry,material){this.geometry=geometry;this.material=material;this.position=new Vector3();this.scale=new Vector3(1,1,1);this.userData={};this.children=[];this.isMesh=true;this.orientations=[];this.quaternion={setFromRotationMatrix:m=>{this.orientations.push([...m.axes])}}}
+  constructor(geometry,material){this.geometry=geometry;this.material=material;this.position=new Vector3();this.scale=new Vector3(1,1,1);this.userData={};this.children=[];this.isMesh=true;this.renderOrder=0;this.frustumCulled=true;this.orientations=[];this.quaternion={setFromRotationMatrix:m=>{this.orientations.push([...m.axes])}}}
   add(child){this.children.push(child);child.parent=this;return this}
   traverse(visit){visit(this);for(const child of this.children)child.traverse(visit)}
   updateMatrixWorld(){this.matrixRefreshes=(this.matrixRefreshes||0)+1;for(const child of this.children)child.updateMatrixWorld()}
@@ -85,8 +85,13 @@ vm.runInContext(read('docs/js/furniture-surface-png-runtime.js'),context);
   const tip=plane.ropeBrushTip; // The textured child replaces the visible sphere, but the ruin can keep its original raycast proxy.
   assert(tip && plane.children.includes(tip),'brush end is parented directly to the rope plane');
   assert.equal(tip.material.map,plane.material.map,'both planes reuse the identical rope PNG texture');
+  assert.equal(tip.frustumCulled,true,'off-screen rope ends are culled instead of drawing for every rope');
+  assert.equal(tip.renderOrder,plane.renderOrder,'rope tip does not overpaint nearer sprites via a global render-order override');
   assert.equal(tip.geometry.getAttribute('position').count,6,'brush end is one quad made of two triangles');
   assert.equal(tip.geometry.getAttribute('uv').count,6,'brush end stretches one full rope PNG across its quad');
+  const texCoords=tip.geometry.getAttribute('uv').array;
+  assert.equal(Math.min(...texCoords),0,'brush UVs use the PNG origin');
+  assert.equal(Math.max(...texCoords),1,'brush UVs use the entire PNG without repeat');
   const vertices=tip.geometry.getAttribute('position');
   const xs=Array.from({length:vertices.count},(_,i)=>vertices.getX(i));
   const ys=Array.from({length:vertices.count},(_,i)=>vertices.getY(i));
