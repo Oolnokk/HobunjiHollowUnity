@@ -40,10 +40,15 @@
   // px (player.x/y convention); baseWorldY/tipWorldY are THREE-unit heights
   // (player.climbSurfaceY/branchSurfaceY convention).
   const branchesByArea = new Map();
-  function resetAreaBranches(mapId) { branchesByArea.set(mapId, []); }
+  function resetAreaBranches(mapId) {
+    for (const branch of branchesByArea.get(mapId) || [])
+      if (branch) window.PerchSupport?.unregister?.(mapId, window.PerchSupport.fromBranch(branch).id);
+    branchesByArea.set(mapId, []); // Clears Shadewood only; independently registered rock perches survive a foliage rebuild.
+  }
   function registerBranch(mapId, branch) {
     if (!branchesByArea.has(mapId)) branchesByArea.set(mapId, []);
     branchesByArea.get(mapId).push(branch);
+    if (branch && !branch.felled) window.PerchSupport?.register?.(mapId, window.PerchSupport.fromBranch(branch));
   }
   function removeBranchesInBounds(mapId, bounds) {
     const branches = branchesByArea.get(mapId);
@@ -54,6 +59,11 @@
       return col < bounds.colStart || col >= bounds.colEnd || row < bounds.rowStart || row >= bounds.rowEnd;
     });
     const removed = branches.length - kept.length;
+    if (removed && window.PerchSupport?.unregister) {
+      const live = new Set(kept);
+      for (const branch of branches) if (branch && !live.has(branch))
+        window.PerchSupport.unregister(mapId, window.PerchSupport.fromBranch(branch).id);
+    }
     branchesByArea.set(mapId, kept);
     return removed;
   }
@@ -506,6 +516,7 @@
     const axisY = (branch.tipY - branch.baseY) / branch.length;
     const jumpDir = climb.dir || { x: axisX, y: axisY };
     player.onBranch = null;
+    window.PerchSupport?.forget?.(player); // Jumping down is intentional: the old point/line perch must not trigger a later phantom fall.
     player.climbing = true;
     player.climbElapsed = 0;
     player.climbHopCount = 1;
@@ -531,6 +542,7 @@
   // Snaps an entity onto a branch at fraction t along it (0 = base/trunk end,
   // 1 = tip) and derives its ground-plane position + height from that.
   function beginOnBranch(entity, branch, t) {
+    window.PerchSupport?.forget?.(entity); // Moving to a native Shadewood branch supersedes any prior authored perch.
     entity.onBranch = branch;
     entity.branchT = deps.clamp(t, 0, 1);
     entity.x = branch.baseX + (branch.tipX - branch.baseX) * entity.branchT;
@@ -602,6 +614,9 @@
   const BRANCH_KNOCKBACK_DUR_S = 0.18; // Mirrors game.js's own KNOCKBACK_DUR_S so a shove off a branch covers the same distance a ground knockback would.
   function resolveBranchKnockback(entity, fromX, fromY, speedPxS) {
     const branch = entity.onBranch;
+    if (branch && Math.abs(Number(speedPxS) || 0) > 0 && window.PerchSupport?.release) {
+      return window.PerchSupport.release(entity, 'knocked from Shadewood perch', { deferLegacyKnockback: true });
+    }
     if (!branch) return null;
     const axisX = (branch.tipX - branch.baseX) / branch.length;
     const axisY = (branch.tipY - branch.baseY) / branch.length;
@@ -958,6 +973,7 @@
   function reattachKey(branch) { return branch.col + ',' + branch.row; }
   function seatBranchAt(entity, branch, t) {
     const clamped = clamp01(t);
+    window.PerchSupport?.forget?.(entity); // Chunk reattachment must never retain the previous perch identity.
     entity.onBranch = branch;
     entity.branchT = clamped;
     entity.x = branch.baseX + (branch.tipX - branch.baseX) * clamped;
@@ -988,7 +1004,7 @@
       const entities = [deps?.player, ...(deps?.hostileObjects || []), ...(deps?.companionObjects || [])].filter(Boolean);
       for (const branch of doomed) {
         for (const entity of entities) {
-          if (entity.onBranch !== branch) continue;
+          if (entity.onBranch !== branch && entity.onBranch?.nativeBranch !== branch) continue; // Includes wild animals perched via the global Shadewood adapter.
           if (!pendingReattach.has(area)) pendingReattach.set(area, new Map());
           const key = reattachKey(branch);
           const areaMap = pendingReattach.get(area);
@@ -1013,7 +1029,8 @@
             // the tile genuinely stopped growing a tree. Any other value
             // (a fresh branch, or null from an unrelated jump-down/knockback
             // in the meantime) means this request already resolved.
-            if (request.entity.onBranch !== request.branch) continue;
+            if (request.entity.onBranch !== request.branch
+                && request.entity.onBranch?.nativeBranch !== request.branch) continue;
             releaseBranchEntity(request.entity, request.branch, 'branch no longer present after area rebuild');
           }
           areaMap.delete(key);
@@ -1096,12 +1113,13 @@
 
   function releaseBranchEntity(entity, branch, reason) {
     const defense = entity?._branchDefense?.branch === branch ? entity._branchDefense : null;
-    if (!entity || (entity.onBranch !== branch && !defense)) return null;
-    const onBranch = entity.onBranch === branch;
+    const onBranch = entity?.onBranch === branch || entity?.onBranch?.nativeBranch === branch;
+    if (!entity || (!onBranch && !defense)) return null; // Chopped trees must also eject native-branch-backed point/line perch occupants.
     const t = onBranch ? clamp01(entity.branchT) : clamp01(defense?.targetT ?? defense?.t ?? 0);
     const x = onBranch ? branch.baseX + (branch.tipX - branch.baseX) * t : Number(entity.x) || branch.baseX;
     const y = onBranch ? branch.baseY + (branch.tipY - branch.baseY) * t : Number(entity.y) || branch.baseY;
     entity.onBranch = null;
+    window.PerchSupport?.forget?.(entity); // Felled-tree and streamed-branch fallback already owns this fall's damage.
     entity.branchT = 0;
     entity.branchSurfaceY = 0;
     entity.climbing = false;
@@ -1120,6 +1138,7 @@
     const branch = branchList(area).find(item => Number(item.col) === Number(col) && Number(item.row) === Number(row));
     if (!branch) return { branch: null, nest: null, falls: [] };
     branch.felled = true;
+    window.PerchSupport?.unregister?.(area, window.PerchSupport.fromBranch(branch).id); // Chopped Shadewood can never be selected as a fresh perch.
     // Chopping a Soursap tree releases its fruit safely onto adjacent ground.
     // A projectile hit instead uses Burden's ballistic fall + sticky impact.
     window.Shattercasks?.releaseFruitFromTree?.(area, col, row);
@@ -1185,6 +1204,7 @@
       // position sync reads as a sudden teleport.
       if (entity._territorialBehavior?.phase === 'fight') {
         entity.onBranch = null; entity.branchT = 0; entity.branchSurfaceY = 0;
+        window.PerchSupport?.forget?.(entity); // Ground pursuit intentionally abandons elevated branch support.
       }
       return false;
     }

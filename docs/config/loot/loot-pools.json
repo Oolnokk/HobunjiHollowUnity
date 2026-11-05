@@ -2060,6 +2060,32 @@
           "conditions": {}
         }
       ]
+    },
+    "puzzleCave": {
+      "label": "Puzzle Cave Loot (unpopulated)",
+      "note": "Reserved for future puzzle-cave rewards. Intentionally has no entries yet; this is not permission to invent items. The mixed pool skips unpopulated sources until their entries are authored.",
+      "entries": []
+    },
+    "mixedCrateTreasurePuzzle": {
+      "label": "Mixed Crate / Treasure / Puzzle Cave Loot",
+      "note": "Reusable mixed loot for victim remains and future encounters. Each of two draws picks a populated source by weight. The treasureChest source uses its full existing bundle generators. The empty puzzleCave source becomes eligible automatically once rewards are authored.",
+      "kind": "mixed",
+      "rolls": 2,
+      "sourcePools": [
+        {
+          "poolId": "crateJunk",
+          "weight": 1
+        },
+        {
+          "poolId": "treasureChest",
+          "weight": 1
+        },
+        {
+          "poolId": "puzzleCave",
+          "weight": 1
+        }
+      ],
+      "entries": []
     }
   }
 }

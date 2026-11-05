@@ -83,7 +83,7 @@
       for(const part of data.parts)if(part.kind==='glb')meshById.get(part.id).userData.onRockSourceReady=refreshRockContacts;
       refreshRockContacts();
     }
-    if ((data.surfaceGrowth || []).some(recipe => recipe.kind === 'iceStalagmites')) {
+    if ((data.surfaceGrowth || []).some(recipe => (recipe.kind === 'iceStalagmites' || recipe.kind === 'stoneStalagmites'))) {
       for (const part of data.parts) if (part.kind === 'glb') {
         const driver = meshById.get(part.id); // GLB parts begin as invisible placeholder geometry; only actual loaded children can anchor ice.
         if (!driver) continue;
