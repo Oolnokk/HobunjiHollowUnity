@@ -272,7 +272,7 @@
   <script src="js/wilderness-archipelago.js?v=20261020islandatlas1"></script>
   <script src="js/wilderness-map-generator.js?v=20261102hydrology5"></script>
   <!-- Terrain-aware authored locales inspect the finished wilderness and place against existing host terrain. Must load after WildernessMapGenerator so its wrapper installs in the game, not only in editor/tests. -->
-  <script src="js/locale-terrain-placement.js?v=20261018hd009bff"></script>
+  <script src="js/locale-terrain-placement.js?v=20261105cliffPortal1"></script>
   <script src="js/foliage-furniture-renderer.js?v=20260816a"></script>
   <script src="js/foliage-furniture-runtime.js?v=20261027campseats1"></script>
   <!-- Generic post-generation locale placement (window.TemporaryLocales) —
@@ -896,6 +896,7 @@
        synchronously during initial boot. -->
   <script src="js/locale-cave-runtime.js?v=20261010h40fea5e"></script>
   <!-- Promotes wilderness den anchors into generic cave sites; wraps WildlifeSpawn/CavernGenerator/DevSpawner, all loaded above. -->
+  <script src="js/locale-cliff-wall-mounts.js?v=20261105cliffPortal1"></script><!-- Mount editor-authored furniture on the resolved procedural wall normal and elevation. -->
   <script src="js/puzzle-cave-entrances.js?v=20261105cliffPortal1"></script><!-- Real mini-cliff cliffDoor placement, exterior timed plate, and authoritative gated transition. -->
   <script src="js/cave-site-system.js?v=20261105cliffPortal1"></script>
   <!-- Two-necked Shattercask runtime. Loaded after Combat/DevSpawner/CaveSiteSystem so their
