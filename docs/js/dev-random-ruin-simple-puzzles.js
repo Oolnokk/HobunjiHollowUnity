@@ -462,9 +462,9 @@
     return path;
   }
 
-  function buildSafePathGrid(context, rng, usedHallways) {
+  function buildSafePathGrid(context, rng, usedHallways, hallways = context.meta?.hallways || []) {
     const cs = worldCellSize(context.meta);
-    const candidates = shuffle((context.meta?.hallways || []).filter(hall => {
+    const candidates = shuffle(hallways.filter(hall => {
       const longCells = hall.axis === 'x' ? Number(hall.w) : Number(hall.h);
       const crossCells = hall.axis === 'x' ? Number(hall.h) : Number(hall.w);
       return longCells >= 5 && crossCells >= 5 && !usedHallways.has(hall.id);
@@ -1217,7 +1217,7 @@
     if(!doorway)return null;
     const support=sampleSupport(doorway.x,doorway.z);
     if(!support)return null;
-    const generatedMechanismId=nearestGeneratedStoneDoorMechanism(context,doorway); // Reuses the V50 doorway door when one already occupies this threshold instead of stacking a second invisible/visible collision gate on top of it.
+    const generatedMechanismId=options.standalone?null:nearestGeneratedStoneDoorMechanism(context,doorway); // Reuse the real threshold door outside the freestanding lab fixture.
     const thickness=.18,height=1.9,width=Math.max(.9,doorway.width*.82);
     let panel=null,blockerId=null;
     if(!generatedMechanismId){
@@ -1393,8 +1393,9 @@
     const region=options.region||deepestSunkenRegionForRoom(context,room);
     if(!region)return null;
     const cs=worldCellSize(context.meta),step=Math.abs(Number(context.meta?.plateauModel?.stepHeight)||.42);
-    const topFloorY=Number(context.meta?.floorSurfaceY)||0,lowerFloorY=topFloorY+Number(region.level)*step;
-    if(topFloorY-lowerFloorY<.65)return null;
+    const topFloorY=Number(context.meta?.floorSurfaceY)||0,lowerFloorY=options.lowerFloorY??(topFloorY+Number(region.level)*step);
+    const topRise=Math.max(.05,Number(options.topRise)||.05); // The lab can ride the same lift from a flat floor to an elevated stop.
+    if(topFloorY+topRise-lowerFloorY<.65)return null;
     const regionBounds={
       minX:PAD+Number(region.col)*cs,maxX:PAD+(Number(region.col)+Number(region.w))*cs,
       minZ:PAD+Number(region.row)*cs,maxZ:PAD+(Number(region.row)+Number(region.h))*cs,
@@ -1446,7 +1447,7 @@
     const height=.26;
     const mesh=naturalizeStone(new THREE.Mesh(sharedBoxGeometry(width,height,depth),makeBasic(0x808080)));
     mesh.name='dev_ruin_cycling_elevator_'+room.id;
-    const topTopY=topFloorY+Math.max(.05,Number(options.topRise)||.05),bottomTopY=lowerFloorY+.08; // Compound rope elevators can begin conspicuously above step height; standalone elevators retain floor-flush tops.
+    const topTopY=topFloorY+topRise,bottomTopY=lowerFloorY+.08; // Compound rope elevators can begin conspicuously above step height; standalone elevators retain floor-flush tops.
     mesh.position.set(x,topTopY-height*.5,z);state.group.add(mesh);
     const module={
       id:'cycling-elevator-'+room.id,roomId:String(room.id),mesh,x,z,width,depth,height,region,regionBounds,annexBounds,annexDoorway,
@@ -1616,7 +1617,7 @@
         const creature=await window.MinionCombat?.makeEntity?.({
           speciesId:'harlyao-skeleton',name:'Harlyao Skeleton',tier:module.tier,x:px,y:py,zoneId:MAP_ID,
           scene:ownerState?.context?.scene,grid:ownerState?.context?.grid,cols:ownerState?.context?.cols,rows:ownerState?.context?.rows,weaponMetalKey:'nativeCopper',
-          extra:{homeX:px,homeY:py,state:'idle',devRandomRuinSarcophagus:true},
+          extra:{homeX:px,homeY:py,state:'idle',devRandomRuinSarcophagus:true,ruinNoLoot:ownerState.context.noLoot===true},
         });
         if(creature&&state===ownerState&&inRuin()&&ownerState.sarcophagusModules.includes(module)){
           creature.surfaceYOverride=()=>{ // Keeps this reusable humanoid on the live DynamicSurfaces tier while it walks around a sunken/moving ruin instead of snapping to the flat building grid.
@@ -1860,13 +1861,118 @@
     return true;
   }
 
+  function buildAuthoredLabMechanism(context,kind,center) {
+    const id='lab-'+kind; // Used for this fixture's registration and teardown.
+    const key=window.DevRuinSingleRoomTrial.AUTHORED_MECHANISMS[kind];
+    const puzzle=window.FurniturePuzzleRuntime;
+    const group=window.AuthoredFurniture?.buildGroup?.(context.labFurniture,0x80766a);
+    if(!group||!puzzle)return null;
+    const bombTube=kind==='witchBombTube';
+    const floor=Number(sampleSupport(center.x,center.z)?.y)||0;
+    group.position.set(center.x,bombTube?context.ceilingY-.035:floor,center.z);
+    group.userData.devRuinFootprintIgnore=true; // Animated collision and support are owned by the furniture runtime.
+    state.group.add(group);
+    if(!puzzle.registerNode(MAP_ID,{id,key},group))return null;
+    if(bombTube&&!window.HronalWitchBombs?.registerDispenser?.(MAP_ID,id,group,group.userData.furniturePuzzle)){
+      puzzle.unregisterNode(MAP_ID,id);
+      return null;
+    }
+    state.controls.push({
+      kind:id,object:group,promptRoot:group,point:{...center,y:floor},range:2,priority:35,claimAction1:true,
+      label:bombTube?'Release Witch-bomb':'Toggle Pillar Bridge',
+      onPress:()=>bombTube?window.HronalWitchBombs.dispenseFromMechanism(group):puzzle.toggleMechanism(MAP_ID,id),
+    });
+    return {id,dispose:()=>puzzle.unregisterNode(MAP_ID,id)};
+  }
+
+  function buildSingleMechanism(context, source, kind, rng) {
+    const bounds=roomBounds(context.meta,source); // Uses the V50 room's coordinates for placement and collision.
+    const center={x:(bounds.minX+bounds.maxX)/2,z:(bounds.minZ+bounds.maxZ)/2}; // Anchor for mechanisms with no normal hallway or pit.
+    const complete=()=>{state.singleRoomSolved=true;}; // Signal fixtures report completion through the same lab diagnostics.
+    let fixture;
+    switch(kind){
+      case 'stoneDoor': {
+        const doorway={x:center.x,z:center.z,axis:'x',width:2.2}; // Freestanding doorway leaves the arena exit clear.
+        fixture=buildLockableDoorModule(context,source,{doorway,startOpen:false,standalone:true});
+        if(fixture){
+          const control={kind:'labStoneDoor',object:fixture.panel,promptRoot:fixture.panel,point:{...center,y:Number(context.meta.floorSurfaceY)||0},range:2,priority:30,claimAction1:true,touchIcon:'🚪',
+            label:'Toggle Stone Door',onPress:()=>{setLockDoorOpen(fixture,!fixture.targetOpen);complete();}};
+          state.controls.push(control);
+        }
+        break;
+      }
+      case 'ceilingGlyph':
+        fixture=buildCeilingGlyphModule(context,source,center,{onActivate:complete});
+        break;
+      case 'melodyPlate':
+        fixture=buildChordPlateSet(context,rng,{kind:'room',owner:source,onComplete:complete});
+        break;
+      case 'safePathGrid': {
+        const strip={...source,id:'lab-safe-path',axis:'x',row:source.row+2,h:source.h-4}; // The central strip substitutes for an ordinary corridor.
+        fixture=buildSafePathGrid(context,rng,new Set(),[strip]);
+        break;
+      }
+      case 'stoneCanopy':
+        fixture=buildStoneCanopyModule(context,source);
+        break;
+      case 'cyclingLift': {
+        const region={col:source.col+Math.floor(source.w/2)-2,row:source.row+Math.floor(source.h/2)-2,w:4,h:4}; // Four V50 cells give riders a bounded platform.
+        fixture=buildCyclingElevatorModule(context,source,{region,lowerFloorY:Number(context.meta.floorSurfaceY)||0,topRise:1.65,startActive:true});
+        break;
+      }
+      case 'sarcophagus':
+        fixture=buildSarcophagusSpawnerModule(context,rng,source,{tier:1,autoActivateRadius:2.5});
+        break;
+      case 'ropeSwing':
+        fixture=buildRopeSwing(context,rng,new Set(),{room:source});
+        break;
+      case 'ropePump':
+      case 'ropeTransfer':
+        fixture=window.DevRandomRuinRopeVariants?.buildStandalone?.(state.kit,context,rng,new Set(),kind==='ropePump'?'pump':'chain');
+        break;
+      case 'pillarBridge':
+      case 'witchBombTube':
+        fixture=buildAuthoredLabMechanism(context,kind,center);
+        break;
+      default: {
+        const composer=composers.find(candidate=>candidate.fixtureKinds?.includes(kind)); // Only the selected composer may run in this room.
+        fixture=composer?.buildFixture?.(state.kit,context,kind);
+        if(fixture)state.singleRoomComposer=composer;
+      }
+    }
+    if(!fixture)throw new Error('Could not place '+kind+' in the lab chamber.');
+    state.singleRoomChallenge={id:fixture.id||kind,kind,ready:true,linked:true,dispose:fixture.dispose};
+    window.DevRandomRuinTileOccupancy?.scanSolids?.(state.group,SCOPE);
+  }
 
   // One real V50 room with exactly one playable dungeon challenge.
-  function buildSingleRoomTrial(context){
+  function buildSingleRoomTrial(context,rng){
     const source=context.meta?.rooms?.[0],selection=context.singleRoomTrial; // Frozen generator choice, including across solvability retries.
     if(context.meta?.rooms?.length!==1||!source||!selection?.kind)throw new Error('Puzzle Lab requires exactly one V50 room.');
+    if(selection.mode==='mechanism')return buildSingleMechanism(context,source,selection.kind,rng);
     const Challenge=window.RuinLayerChallenges; // Reuses the multi-floor game's actual puzzle implementation.
-    if(!Challenge?.TYPES?.includes(selection.kind))throw new Error('Missing playable puzzle type '+selection.kind);
+    const nativeKind=window.DevRuinSingleRoomTrial?.NATIVE_VARIANTS?.[selection.kind]||null; // Native V50 trial fixtures keep their own authoritative controls and mechanism state.
+    if(!nativeKind&&!Challenge?.TYPES?.includes(selection.kind))throw new Error('Missing playable puzzle type '+selection.kind);
+    if(nativeKind){
+      const fixture=context.meta?.singleRoomNative,mechanism=window.DevRandomRuin?.mechanismInfo?.(fixture?.mechanismId);
+      if(fixture?.kind!==nativeKind||!mechanism?.root||!mechanism.gated)
+        throw new Error('Selected native V50 puzzle was not mounted: '+selection.kind+' · fixture '+(fixture?.kind||'missing')+' · mechanism '+(mechanism?'ungated':'missing')); // Mobile diagnostics distinguish wrong family, ungated mechanism and missing V50 fixture.
+      const owner=state; // Native selection and completion belong to this one reroll's context.
+      const trial={id:fixture.mechanismId,kind:selection.kind,ready:true,linked:true,solved:false,disposed:false,
+        nativeFixture:fixture,
+        tick(){
+          if(trial.disposed||trial.solved||state!==owner||!inRuin())return;
+          const active=window.DevRandomRuin?.mechanismInfo?.(fixture.mechanismId);
+          if(active?.progress>=.98){
+            trial.solved=true;owner.singleRoomSolved=true;
+            deps?.showToast?.('Native V50 puzzle complete! The test room awards no loot.',true);
+          }
+        },
+        dispose(){trial.disposed=true;},
+      };
+      state.singleRoomChallenge=trial;
+      return; // No secondary RuinLayerChallenges construct; V50's original scene/hitboxes already own this puzzle.
+    }
     const bounds=roomBounds(context.meta,source); // V50's exact scaled room footprint, without a second layout generator.
     const room={id:'single-room-lab',x:bounds.minX,z:bounds.minZ,w:bounds.maxX-bounds.minX,d:bounds.maxZ-bounds.minZ};
     const entry=String(context.meta?.entrance?.side||'west').toLowerCase();
@@ -1881,7 +1987,7 @@
       for(const [col,row] of context.meta.floorCells||[]){
         const x=PAD+(Number(col)+.5)*cs,z=PAD+(Number(row)+.5)*cs;
         if(x<=pit.minX+.01||x>=pit.maxX-.01||z<=pit.minZ+.01||z>=pit.maxZ-.01)continue;
-        const support=DS.sampleSupport?.(x,z,{scope:SCOPE,minY:-6,maxY:10,pad:0});
+        const support=DS.sampleSupport?.(x,z,{scope:context.floorScope,minY:-6,maxY:10,pad:0});
         if(support?.id==='devruin-floor-'+col+','+row&&support.record){
           DS.registerSurface({...support.record,enabled:false});
           state.ropeChainDisabledSurfaces.push(support.record);count++;
@@ -1969,7 +2075,7 @@
     const kit=composerKit();
     state.kit=kit;
     if(context.singleRoomTrial){
-      try{buildSingleRoomTrial(context);}catch(error){state.singleRoomError=String(error?.message||error);console.warn('[Puzzle Lab] could not mount puzzle',error);deps?.showToast?.('Puzzle Lab: '+state.singleRoomError,false);}
+      try{buildSingleRoomTrial(context,rng);}catch(error){state.singleRoomError=String(error?.message||error);console.warn('[Puzzle Lab] could not mount puzzle',error);deps?.showToast?.('Puzzle Lab: '+state.singleRoomError,false);}
       updateBadge(true);
       return; // Never run other composers: no additional rooms, chest payoffs, or ambient challenges.
     }
@@ -2344,6 +2450,7 @@
     updateRopes(now,dt);
     state.singleRoomChallenge?.tick?.(dt); // Live wing implementations handle inputs and completion, not fake test interactions.
     state.singleRoomChallenge?.animate?.(dt);
+    state.singleRoomComposer?.update?.(state.kit,now,dt); // One production composer may own an isolated fixture.
     if(!context.singleRoomTrial)for(const composer of composers){if(context.hachutu===true&&composer.id!=='hachutuTemple')continue;try{composer.update?.(state.kit,now,dt);}catch(error){console.warn('[Random Test Ruin] composer update failed',error);}} // Solo never updates unrelated composers even when they retain internal autonomous timers.
     updateDoorwayCheckpoints();
     updateRopeChainCheckpoints(); // Side checkpoint claims override other doorway updates in the same frame.
@@ -2352,6 +2459,8 @@
       const error=state.singleRoomError||state.singleRoomChallenge?.error||null; // Async statue asset/encounter failures must appear in the mobile debug badge.
       const phase=error?'ERR '+error:state.singleRoomSolved?'SOLVED':state.singleRoomChallenge?.ready===false?'loading':'active';
       window.DevRandomRuin?.setDebugBadgePart?.('challenge',' · '+choice.kind+' '+phase+' · drops OFF');
+      window.DevRandomRuin?.setPuzzleLabStatus?.(error?'error':state.singleRoomSolved?'solved'
+        :state.singleRoomChallenge?.ready===false?'loading':'ready',error);
     }else window.DevRandomRuin?.setDebugBadgePart?.('challenge','');
     updateBadge();
   }
@@ -2359,6 +2468,7 @@
   function getInteractionControls() {
     if(!state||!inRuin())return [];
     const controls=state.controls.slice();
+    for(const control of state.singleRoomComposer?.controls?.(state.kit)||[])controls.push(control);
     for(const control of (window.DevRandomRuinDungeonChests?.controlsFor?.(state.elevatorChests)||[]))controls.push(control);
     if(!state.context.singleRoomTrial)for(const composer of composers){if(state.context.hachutu===true&&composer.id!=='hachutuTemple')continue;for(const control of (composer.controls?.(state.kit)||[]))controls.push(control);} // No stale composer prompts in isolated mode.
     for(const candidate of state.ropes){
@@ -2411,7 +2521,7 @@
     return {
       active:true,
       seed:state.buildSeed,
-      singleRoomChallenge:state.context.singleRoomTrial?{...state.context.singleRoomTrial,solved:state.singleRoomSolved,ready:!!state.singleRoomChallenge&&state.singleRoomChallenge.ready!==false,error:state.singleRoomError||state.singleRoomChallenge?.error||null,attempts:state.singleRoomChallenge?.attempts||0,linked:state.singleRoomChallenge?.linked??false,ropeLinked:state.singleRoomChallenge?.ropeLinked??false}:null, // Defense readiness/errors are asynchronous; don't claim it is ready before authored assets finish loading.
+      singleRoomChallenge:state.context.singleRoomTrial?{...state.context.singleRoomTrial,solved:state.singleRoomSolved,ready:!!state.singleRoomChallenge&&state.singleRoomChallenge.ready!==false,error:state.singleRoomError||state.singleRoomChallenge?.error||null,ropeError:lastExternalRopeError,attempts:state.singleRoomChallenge?.attempts||0,linked:state.singleRoomChallenge?.linked??false,ropeLinked:state.singleRoomChallenge?.ropeLinked??false,fireLinked:state.singleRoomChallenge?.fireLinked??false,noteCount:state.singleRoomChallenge?.notes?.length||0,targetCount:state.singleRoomChallenge?.targetCount||0}:null, // Defense readiness/errors are asynchronous; don't claim it is ready before authored assets finish loading.
       safeGrids:state.safeGrids.map(grid=>({
         hallId:grid.hallId,
         axis:grid.axis,
@@ -2497,16 +2607,21 @@
     return true;
   }
 
+  let lastExternalRopeError=null; // Exposed in mobile/browser diagnostics when a layered rope room cannot bind to native rope physics.
   function registerExternalRopeChain(spec){
     // Layered ruin rooms use the *same* ride, pump, release-flight, mid-air
     // catch and checkpoint machinery as the V50 abyss hallway. No second
     // player-motion implementation or teleports are introduced here.
     const active=window.DevRandomRuin?.getRuntimeContext?.(); // Prevent old sessions from claiming ropes during a fast generation reroll.
+    lastExternalRopeError=null;
     if(!state||!inRuin()||state.root!==active?.root||!spec?.id
       ||!Array.isArray(spec.anchors)||spec.anchors.length<3||!spec.bounds
-      ||!spec.entry||!spec.exit)return null;
+      ||!spec.entry||!spec.exit){
+      lastExternalRopeError=!state?'puzzle state absent':!inRuin()?'not inside ruin':state.root!==active?.root?'stale puzzle scene':'invalid rope anchors or banks';
+      return null;
+    }
     const id=String(spec.id);
-    if(state.ropeChains.some(c=>c.id===id))return null;
+    if(state.ropeChains.some(c=>c.id===id)){lastExternalRopeError='chain id already registered: '+id;return null;}
     const ropes=[]; // Native rider ropes owned by this external floor; removed when the wing is destroyed.
     const room={id:'layer_'+id};
     const length=Math.max(ROPE_MIN_LENGTH,Number(spec.length)||2.43);
@@ -2545,6 +2660,7 @@
         if(index>=0)state.ropes.splice(index,1);
         disposeRopeObject(rope);
       }
+      lastExternalRopeError=String(error?.stack||error?.message||error).slice(0,500); // Mobile badge and isolated browser checks expose the original rope constructor failure.
       console.warn('[Random Test Ruin] external rope chain creation failed:',id,error);
       return null;
     }
@@ -2582,6 +2698,7 @@
   window.DevRandomRuinSimplePuzzles=Object.freeze({
     getInteractionControls,
     addFurnitureRope,removeFurnitureRope,registerExternalProjectileTarget,
+    lastExternalRopeError:()=>lastExternalRopeError, // Dev-mobile diagnostic access for failed rope registrations.
     registerExternalRopeChain,removeExternalRopeChain,
     hasActiveRuinState:()=>!!state&&inRuin()&&state.root===window.DevRandomRuin?.getRuntimeContext?.()?.root, // External fire/ranged challenges must not bind to an old generation.
     isNoClimbSurface:id=>!!state?.noClimbSurfaceIds?.has(String(id)),

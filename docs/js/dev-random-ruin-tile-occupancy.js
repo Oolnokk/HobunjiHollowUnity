@@ -237,7 +237,7 @@
       parts.push(`d:${mechanism.id}:${doorIsClosed(mechanism.root) ? 1 : 0}`);
     }
     for (const door of model.transitDoors) parts.push(`t:${door.id}:${doorIsClosed(door) ? 1 : 0}`);
-    for (const block of model.pushBlocks) {
+    for (const block of model.tilePushBlocks) {
       parts.push(`p:${block.id}:${(block.position?.x || 0).toFixed(3)},${(block.position?.z || 0).toFixed(3)}`);
     }
     return parts.join('|');
@@ -257,7 +257,7 @@
       if (!doorIsClosed(door)) continue;
       for (const tileKey of doorTiles(door, model)) addSource(sources, tileKey, `transit-door:${door.id}`);
     }
-    for (const block of model.pushBlocks) {
+    for (const block of model.tilePushBlocks) {
       const sourceId = block.userData.__devRuinOccupancySource || `push:${block.id}`;
       block.userData.__devRuinOccupancySource = sourceId;
       for (const tileKey of objectTiles(block, model)) addSource(sources, tileKey, sourceId);
@@ -281,7 +281,8 @@
 
   function blocksAt(model, x, z, radius, options = {}) {
     const ignoreSource = options.ignoreRuinSource || '';
-    if (model.footprints.blocksBox(x, z, radius, Number.isFinite(Number(options.worldY)) ? Number(options.worldY) : null)) return true; // worldY: height-aware callers (rope riders) clear props below/above them.
+    const worldY = Number.isFinite(options.worldY) ? options.worldY : null; // Height-aware callers clear props below or above them.
+    if (model.footprints.blocksBox(x, z, radius, worldY) || pushBlocksBox(model, x, z, radius, worldY, ignoreSource)) return true;
     const minCol = Math.floor(x - radius), maxCol = Math.floor(x + radius);
     const minRow = Math.floor(z - radius), maxRow = Math.floor(z + radius);
     for (let row = minRow; row <= maxRow; row++) for (let col = minCol; col <= maxCol; col++) {
@@ -292,8 +293,29 @@
     return false;
   }
 
+  function pushBlockBox(model, block) {
+    const pose = model.slidingPushBlocks.get(block); // Cached until the actual block transform moves.
+    if (!pose) return null;
+    const {x, y, z} = block.position;
+    if (x !== pose.x || y !== pose.y || z !== pose.z) Object.assign(pose, {x, y, z, box:worldBox(block)});
+    return pose.box;
+  }
+
+  function pushBlocksBox(model, x, z, half, worldY, ignoreSource) {
+    for (const block of model.slidingPushBlocks.keys()) {
+      if (block.userData.__devRuinOccupancySource === ignoreSource) continue;
+      const box = pushBlockBox(model, block);
+      if (!box || (worldY != null && (worldY + half < box.min.y || worldY - half > box.max.y))) continue;
+      if (x + half > box.min.x && x - half < box.max.x && z + half > box.min.z && z - half < box.max.z) return true;
+    }
+    return false;
+  }
+
   function mergedSources(model) {
     const merged = new Map([...model.sources].map(([tileKey, ids]) => [tileKey, new Set(ids)]));
+    for (const block of model.slidingPushBlocks.keys()) {
+      for (const tileKey of objectTiles(block, model)) addSource(merged, tileKey, block.userData.__devRuinOccupancySource);
+    }
     for (const [tileKey, ids] of model.footprints.centerCoveredTiles(model.floorSet)) {
       let set = merged.get(tileKey);
       if (!set) merged.set(tileKey, set = new Set());
@@ -362,6 +384,10 @@
       fillInset(ctx,col,row,scaleX,scaleY,'#e74c3c',Math.max(1,Math.min(scaleX,scaleY)*.14));
     }
     ctx.fillStyle = '#e74c3c';
+    for (const block of model.slidingPushBlocks.keys()) {
+      const box = pushBlockBox(model, block); // Draw the true moving footprint when the entrance map is inspected.
+      if (box) ctx.fillRect(box.min.x*scaleX,box.min.z*scaleY,(box.max.x-box.min.x)*scaleX,(box.max.z-box.min.z)*scaleY);
+    }
     for (const fp of model.footprints.list()) { // Exact prop outlines, so the Map shows the same collision the player feels.
       const corners = [[1,1],[1,-1],[-1,-1],[-1,1]].map(([a,b]) => [
         (fp.cx + fp.ux * fp.halfU * a + fp.vx * fp.halfV * b) * scaleX,
@@ -456,7 +482,8 @@
       mechanisms:config.mechanisms || new Map(),
       transitDoors:config.transitDoors || [],
       activators:config.activators || [],
-      pushBlocks:config.pushBlocks || [],
+      tilePushBlocks:[], // Lift blocks retain their existing stamped collision.
+      slidingPushBlocks:new Map(), // Ordinary blocks collide at their current visual position without restamping the grid.
       getPlayerPosition:config.getPlayerPosition,
       grid:config.grid || null, // Exact generated building grid registered in _buildingScenes; collision stamps mutate this rather than maintaining a parallel physics-only map.
       solidType:config.solidType ?? 'rock', // Same solid tile type ordinary interior movement/AI already treats as impassable.
@@ -474,6 +501,7 @@
       revision:0,
       refresh:() => rebuild(model),
       blocksAt:(x, z, radius = 0, options = {}) => blocksAt(model, x, z, radius, options),
+      pushBlockBox:block => pushBlockBox(model, block),
       snapshot:() => snapshot(model),
       scanSolids:(root, tag) => model.footprints.scan(root, tag),
       clearSolids:tag => model.footprints.removeTag(tag),
@@ -486,6 +514,12 @@
         if (activeModel === model) activeModel = null;
       },
     };
+    for (const block of config.pushBlocks || []) {
+      if (block.userData?.previewMotion?.type === 'pushPuzzleBlock') {
+        block.userData.__devRuinOccupancySource ||= `push:${block.id}`;
+        model.slidingPushBlocks.set(block, {});
+      } else model.tilePushBlocks.push(block);
+    }
     for (const wall of config.walls || []) for (const tileKey of wallTiles(wall, model)) addSource(model.staticSources, tileKey, `wall:${wall.id}`);
     for (const root of config.solidRoots || []) model.footprints.scan(root, 'static');
     // Door panels collide exactly while closed; the rest of the door assembly
@@ -517,7 +551,7 @@
     FootprintBlockers?.register(BLOCKER_ID, {
       area:model.mapId,
       enabled:() => activeModel === model,
-      blocksBox:(x, z, half, worldY) => !!model.footprints.blocksBox(x, z, half, worldY),
+      blocksBox:(x, z, half, worldY) => !!model.footprints.blocksBox(x, z, half, worldY) || pushBlocksBox(model, x, z, half, worldY),
     });
     return model;
   }

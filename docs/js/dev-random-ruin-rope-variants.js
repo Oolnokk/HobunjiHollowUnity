@@ -178,10 +178,10 @@
   }
 
   // Returns the launch rope (startPlatform/endPlatform set) or null.
-  function buildStandalone(kit, context, rng, usedRooms) {
+  function buildStandalone(kit, context, rng, usedRooms, forcedKind = null) {
     const chainChance = cfg('ropeVariants.chainChance', .35), pumpChance = cfg('ropeVariants.pumpChance', .4);
     const roll = rng();
-    const kinds = roll < chainChance ? ['chain', 'pump'] : roll < chainChance + pumpChance ? ['pump', 'chain'] : null;
+    const kinds = forcedKind ? [forcedKind] : roll < chainChance ? ['chain', 'pump'] : roll < chainChance + pumpChance ? ['pump', 'chain'] : null;
     if (!kinds) return null;
     for (const room of shuffled(kit.usableRoomCandidates(context).filter(room => !usedRooms.has(room.id)), rng)) {
       const frame = roomFrame(kit, context, room);

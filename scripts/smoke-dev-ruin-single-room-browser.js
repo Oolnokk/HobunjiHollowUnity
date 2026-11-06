@@ -49,7 +49,7 @@ async function main(){
       options:[...document.querySelector('#devRandomRuinSinglePuzzleType')?.options||[]].map(o=>o.value),
     }));
     assert.equal(ui.button,true);
-    assert.deepEqual(ui.options,['weighted','pressurePlate','glyphObelisk','ceilingRailTargets','melodyEcho','dungeonFire','ropeChain','statueDefense']);
+    assert.deepEqual(ui.options,['weighted','glyphObelisk','ceilingRailTargets','melodyEcho','dungeonFire','ropeChain','statueDefense','nativeBrazier','nativeGlyphObelisk','nativeStackedObelisk','nativeLinkedCubePillars','nativePushBlock']);
 
     // One specific puzzle, and the genuine projectile-target runtime must link.
     const forced=await page.evaluate(seed=>window.DevRandomRuin.generate(seed,{
@@ -86,18 +86,12 @@ async function main(){
     assert.equal(info.runtime.noLoot,true);
     assert.equal(info.puzzle.kind,weighted.expected);
     assert.equal(info.puzzle.mode,'weighted');
-    // Complete a real weighted pressure-plate by standing on the rendered
-    // center mechanism, not by toggling internal solved flags.
-    assert.equal(info.puzzle.kind,'pressurePlate','seed 2 should exercise a real pressure plate');
-    const stoodOnPlate=await page.evaluate(()=>{
-      const runtime=window.DevRandomRuin.getRuntimeContext(),room=runtime.meta.rooms[0];
-      const cs=(Number(runtime.meta.cellSize)||.5)*2;
-      const x=2+(room.col+room.w/2)*cs,z=2+(room.row+room.h/2)*cs;
-      const surface=window.DynamicSurfaces.sampleSupport(x,z,{scope:'dev-random-ruin-interior'});
-      return !!surface&&window.DevRandomRuin.setPlayerWorldPoint({x,z,y:surface.y},{grounded:true});
+    assert.notEqual(info.puzzle.kind,'pressurePlate','weighted mode must not select retired pressure plates');
+    const removedPlate=await page.evaluate(()=>{
+      try{window.DevRuinSingleRoomTrial.pick(2,'pressurePlate');return false;}
+      catch(error){return /Unknown single-room puzzle/.test(String(error));}
     });
-    assert.equal(stoodOnPlate,true,'the chosen room must expose usable central floor support');
-    await page.waitForFunction(()=>window.DevRandomRuinSimplePuzzles?.snapshot?.().singleRoomChallenge?.solved===true,null,{timeout:8000});
+    assert.equal(removedPlate,true,'direct/API selection must also reject retired pressure plates');
 
     // Rope mode physically removes the central support and links the native
     // mid-air rope chain rather than displaying a cosmetic chasm.
@@ -124,7 +118,26 @@ async function main(){
     assert.equal(ropeInfo.chains,1);
     assert.equal(ropeInfo.voidAtCenter,true);
     assert.equal(ropeInfo.centerSupport,null,'the rope abyss must have no ordinary V50 floor support');
-    console.log('Browser puzzle lab: forced glyph, planner-weighted, real rope void and live hooks passed.');
+
+    // Native V50 mode must mount an original V50 obelisk and linked stone door.
+    const native=await page.evaluate(seed=>window.DevRandomRuin.generate(seed,{
+      singleRoomTrial:true,puzzleType:'nativeStackedObelisk',
+    }),0x4ed17f2a);
+    assert.equal(native,true,'native V50 obelisk lab must enter');
+    await page.waitForFunction(()=>window.DevRandomRuinSimplePuzzles?.snapshot?.().singleRoomChallenge?.ready===true,null,{timeout:20000});
+    const nativeInfo=await page.evaluate(()=>({
+      state:window.DevRandomRuin.getState(),
+      puzzle:window.DevRandomRuinSimplePuzzles.snapshot().singleRoomChallenge,
+      mechanism:window.DevRandomRuin.mechanismInfo('single_room_native_v50_goal'),
+    }));
+    assert.equal(nativeInfo.state.rooms,1);
+    assert.equal(nativeInfo.state.noLoot,true);
+    assert.equal(nativeInfo.puzzle.kind,'nativeStackedObelisk');
+    assert.equal(nativeInfo.puzzle.linked,true);
+    assert.equal(nativeInfo.state.puzzleGeneration.nativeLab.kind,'stackedObelisk');
+    assert.equal(nativeInfo.mechanism?.gated,true);
+
+    console.log('Browser puzzle lab: glyph, weighted, rope void, native V50 obelisk and real hooks passed.');
   }catch(error){
     console.error('Standalone puzzle lab smoke failure:',error);
     console.error('Recent browser errors:',errors.slice(-25).join('\n'));

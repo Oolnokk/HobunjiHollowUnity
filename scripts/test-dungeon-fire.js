@@ -265,7 +265,7 @@ async function main() {
     'Tothal ice covers actual generated, transit, modular and explicitly eligible doors instead of visible doorway sheets');
   assert(/dev-random-ruin-dungeon-fire\.js\?v=[A-Za-z0-9_-]+/.test(fs.readFileSync(path.join(root,'docs/js/dev-random-ruin-bootstrap.js'),'utf8')),
     'the dungeon-fire mechanism loader has a cache-busting token');
-  assert(mechanismCode.includes("registerComposer({id:'dungeonFire',buildRooms,update,controls,snapshot,clear})"),
+  assert.match(mechanismCode,/registerComposer\(\{id:'dungeonFire',buildRooms,.*\bupdate,controls,snapshot,clear\}\)/,
     'Dungeon Fire is registered with the generated Harlyao ruin composer');
   assert(mechanismCode.includes('registerFireTarget(record,brazier=>') &&
     mechanismCode.includes('brazier.cleansed=window.DevRandomRuinLichThemes?.clearPlasmRadius?.(point.x,point.z,brazier.radius)||0;') &&

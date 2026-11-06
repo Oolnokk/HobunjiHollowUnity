@@ -32,7 +32,7 @@
   const KEYS = ['ruinDoorSeal', 'ruinGlyphTarget', 'ruinGreatDoor',
     'ruinBlueBrazierBowl', 'ruinStandingBrazier', 'ruinSanctumLadder', 'ruinSanctumCoffin',
     'ruinDungeonChestT1', 'ruinDungeonChestT2', 'ruinDungeonChestT3', 'ruinDungeonChestT4', 'ruinRewardPlate',
-    'ruinDisplayPedestal', 'ruinDisplayCoffin',
+    'ruinDisplayPedestal', 'ruinDisplayCoffin', 'ruinRopeMount',
     'ruinPassageDoorSlim', 'ruinPassageDoorNarrow', 'ruinPassageDoor', 'ruinPassageDoorWide'];
   // Outer widths match scripts/authoring/build-ruin-passage-doors.py; PASSAGE_HEIGHT is the height they are authored at.
   const PASSAGE_VARIANTS = Object.freeze([
