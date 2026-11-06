@@ -44,6 +44,14 @@ assert(detonateBody.includes('if(!cask||cask.exploded)return false;') &&
   'one guarded detonation boundary plays the blast cue for thrown/melee hits, while projectile hits preserve generic Burden handlers and the guarded Shattercask fallback');
 assert.equal((detonateBody.match(/playObjectSfxKey\?\.\('shattercaskBlast'\)/g)||[]).length,1,
   'the central detonation path contains one sound request');
+assert(code.includes("const explosive=burden.kind==='shattercask'||burden.kind==='flameShattercask'") &&
+  code.includes("if((burden.kind==='shattercask'||burden.kind==='flameShattercask')&&!burden._backOriginalSpawnRetired)") &&
+  code.includes("if(cask.kind!=='soursap'&&cask.kind!=='shattercask'&&cask.kind!=='flameShattercask')") &&
+  code.includes("window.PersistentGroundFire?.ignite?.("),
+  'Flame Shattercasks retain carrier-hit explosions and consumed-spawn area transfers, and use the real burning ground impact');
+assert(code.includes("this.kind === 'flameShattercask' ? 'Flame Shattercask'"),
+  'the physical flame charge uses a readable name in mobile carry prompts');
+
 assert(code.includes('assets/textures/boards.png')&&code.includes('assets/textures/carved_smooth.png'),'debris uses the real body and neck textures');
 
 assert.equal(asset.particleEmitters.filter(e=>e.enabled&&e.type==='bubbles').length,2,
