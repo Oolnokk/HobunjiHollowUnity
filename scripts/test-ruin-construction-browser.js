@@ -63,7 +63,7 @@ const URL=process.env.HOBUNJI_TEST_URL||'http://127.0.0.1:8000/index.html?skipIn
       const state=window.DevRandomRuin.getState();
       const controls=window.DevRandomRuin.getInteractionControls(); // The actual in-game interaction resolver must own one native V50 brazier per upper story.
       const hasTeleport=controls.some(c=>c.kind==='shaft-passage'||c.label==='Enter Shaft Hub'); // The shaft must be a real corridor, not a warp.
-      const surfaces=window.ClimbSurfaces.list().filter(s=>String(s.scope)==='shaft-hub');
+      const surfaces=window.ClimbSurfaces.list().filter(s=>['shaft-hub','shaft-obelisks'].includes(String(s.scope)));
       const highest=surfaces.reduce((best,next)=>!best||next.y1>best.y1?next:best,null);
       const top=highest&&window.ClimbSurfaces.topExitPoint(highest,(highest.u0+highest.u1)/2);
       const support=top&&window.DynamicSurfaces.sampleSupport(top.x,top.z,{minY:highest.y1-.2,maxY:highest.y1+.4});

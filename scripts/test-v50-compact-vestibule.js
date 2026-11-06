@@ -110,7 +110,7 @@ for(const side of Object.keys(orientation)){
     pad:{x:aligned.padX,z:aligned.padZ},THREE,makeTile,DynamicSurfaces:DS,
     ShaftHub:shaftMount,RuinLayerPlan:Plan,RuinShaftCorridor:Corridor,
     RuinLayerPlayable:layerMount,RuinLayerChallenges:{},RuinLayerDefense:{},
-    RuinV50NativeFloors:nativeMount,CellGrid3D:{},getPlayerPosition:()=>spawn});
+    RuinV50NativeFloors:nativeMount,RuinReachingObelisks:{mount:()=>({dispose(){}})},CellGrid3D:{},getPlayerPosition:()=>spawn});
   assert.equal(connected.route.length,6,'V50 door-to-shaft distance is exactly the authored short passage');
   assert.equal(connected.route.corners,0);
   assert(ruin.shaftConnection.thresholdConnected,'physical room-to-shaft reachability was proved');
