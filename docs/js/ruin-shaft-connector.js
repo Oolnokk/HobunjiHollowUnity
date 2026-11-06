@@ -170,6 +170,7 @@
       floorCount:plan.floorCount,totalWingsPlanned:plan.totalWings,braziersPlanned:plan.totalBraziers,
       hallwayTiles:route.tiles.length,addedFloorTiles:allFloor.length,
       straightVestibule:!!plan.options.groundEntranceSide,
+      traversal:plan.options.shaftTraversal, // Mobile diagnostics and ruin movement inspect the same chosen method.
       thresholdConnected:!!plan.options.groundEntranceSide};
     const scope='dev-ruin-shaft-corridor'; // Distinct disposal scope from normal V50 floor supports.
     const corridorSupportRects=RuinShaftCorridor.rectangles(route.tiles); // Group adjacent stone into broad collision supports.
@@ -178,9 +179,17 @@
       topY:placed.grid.baseY,priority:1}));
     ruin.shaftConnection.supportRects=corridorSupportRects.length;
     const unmountVisual=visual(route.tiles.filter(([c,r])=>!oldFloor.has(key(c,r))),THREE,rec.scene,placed.grid.baseY,rec.floorSet);
-    let layerRuntime=null,nativeRuntime=null,styleCleanup=null; // Gameplay and V50 decorative masonry share session cleanup.
-    ruin.shaftConnectorCleanup=()=>{styleCleanup?.();nativeRuntime?.dispose();layerRuntime?.dispose();unmountVisual();DS.clearScope(scope);};
+    let layerRuntime=null,nativeRuntime=null,obeliskRuntime=null,styleCleanup=null; // Gameplay mechanisms share the shaft session lifecycle.
+    ruin.shaftConnectorCleanup=()=>{styleCleanup?.();nativeRuntime?.dispose();layerRuntime?.dispose();obeliskRuntime?.dispose();ruin.shaftObeliskRuntime=null;unmountVisual();DS.clearScope(scope);};
     const registered=ShaftHub.mount(placed,{THREE,parent:rec.scene,ClimbSurfaces,DynamicSurfaces:DS,DevRandomRuin});
+    if(placed.obelisks){
+      if(!root.RuinReachingObelisks?.mount)throw new Error('Selected Reaching Obelisks module is not loaded.');
+      obeliskRuntime=root.RuinReachingObelisks.mount(placed.obelisks,{
+        scope:'shaft-obelisks',THREE,parent:rec.scene,DynamicSurfaces:DS,ClimbSurfaces,
+        tradition:ruin.theme,getPlayerPosition,getPlayerY,projectileBus:root.DevRandomRuinSimplePuzzles,onStateChange,
+      });
+    }
+    ruin.shaftObeliskRuntime=obeliskRuntime; // Height-aware fall, switch updates and mobile badge all reuse this one runtime.
     layerRuntime=RuinLayerPlayable.mount({
       rec,ruin,plan,hub:placed,makeTile,THREE,DynamicSurfaces:DS,CellGrid3D,
       RuinShaftCorridor,RuinLayerChallenges,RuinLayerDefense,DevRandomRuin,getPlayerPosition,getPlayerY,showToast,onStateChange
