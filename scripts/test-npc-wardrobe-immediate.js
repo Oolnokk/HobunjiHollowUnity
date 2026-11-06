@@ -465,6 +465,13 @@ fallbackWalker.area = 'map_i_test_bedroom';
   assert.equal(wardrobe.clothingWearability(rec, migrated.find(item => item.uid === 'legacy_off_style')).allowed, true, 'legacy stored clothing without provenance stays wearable after load');
   assert.equal(wardrobe.clothingWearability(rec, migrated.find(item => item.uid === 'player_placed')).allowed, false, 'clothing placed by the player keeps the ordinary-NPC style gate');
   assert.equal(wardrobe.clothingWearability(rec, { cosmeticId: 'foreign_style_coat' }).allowed, false, 'an item that never came through a save or the NPC still fails closed');
+  // A deliberately commissioned garment is accepted as a delivery, even if the recipient would reject the same garment as an unsolicited gift.
+  const ordinaryOffStyle = wardrobe.offerClothing(rec.id, { uid: 'offstyle-gift', cosmeticId: 'foreign_style_coat', slot: 'torso' }); // Contrasts the default style gate with a verified crafting commission.
+  assert.equal(ordinaryOffStyle.accepted, false, 'ordinary off-style gifts retain the NPC rejection rules');
+  const requestedOffStyle = wardrobe.offerClothing(rec.id, { uid: 'offstyle-commission', cosmeticId: 'foreign_style_coat', slot: 'torso' }, { commission: true });
+  assert.equal(requestedOffStyle.accepted, true, 'the same garment is accepted when a validated commission is delivered');
+  const cursedCommission = wardrobe.offerClothing(rec.id, { uid: 'cursed-commission', cosmeticId: 'foreign_style_coat', slot: 'torso', cursed: { kind: 'circlet' } }, { commission: true });
+  assert.equal(cursedCommission.accepted, false, 'commission delivery never bypasses the cursed-item veto');
   // Cursed clothing is refused by the wardrobe itself, whichever caller (gift UI, commission turn-in) reaches it.
   const cursedStoredBefore = wardrobe.getWardrobeContents(rec.id).stored.length;
   const cursedVerdict = wardrobe.offerClothing(rec.id, { uid: 'cursed-gift', cosmeticId: 'fine_poncho', slot: 'overwear', cursed: { kind: 'circlet', dispelBy: 'garanki' } });

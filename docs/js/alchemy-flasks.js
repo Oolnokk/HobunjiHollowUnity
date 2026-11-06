@@ -122,9 +122,10 @@
     return Number(deps.getGroundYAtWorld?.(x, z) ?? deps.getGroundY?.(x * (deps.TILE || 64), z * (deps.TILE || 64))) || 0;
   }
 
-  function splashRadius(definition, playerOwned = true) {
+  function splashRadius(definition, playerOwned = true, flaskmasterRadius = null) {
     const rank = playerOwned ? (window.PerkSystem?.rank('alchemy', 'empowerFlasks') || 0) : 0; // Shared preview/impact perk authority.
-    return (definition.splashRadius || window.AlchemySystem.DEFAULT_SPLASH_RADIUS_TILES) * (1 + rank * 0.1);
+    const trinketRadius = !playerOwned ? 1 : (flaskmasterRadius ?? window.TrinketSystem?.combatMultiplier?.('flaskRadius') ?? 1); // NPC flasks never inherit the wearer's equipment; launched player flasks keep their release-time bonus.
+    return (definition.splashRadius || window.AlchemySystem.DEFAULT_SPLASH_RADIUS_TILES) * (1 + rank * 0.1) * trinketRadius;
   }
 
   function makeTargetRing() {
@@ -246,7 +247,7 @@
     if (!make || !scene) return null;
     const config = window.CharacterGroundShadow.config(); // Player shadow footprint the cue shrinks toward.
     const mesh = make('flask_landing_shadow');
-    const radiusTiles = splashRadius(record.definition, record.playerOwned !== false); // Same radius as the aim ring and impact query.
+    const radiusTiles = splashRadius(record.definition, record.playerOwned !== false, record.flaskmasterRadius); // Same radius as the aim ring and impact query.
     const baseOpacity = Math.max(mesh.material.opacity, LANDING_SHADOW_MIN_OPACITY); // Telegraph opacity reached after the quick fade-in; never fainter than a character shadow.
     const groundY = record.target.y; // Landing surface shared with the projectile.
     mesh.material.opacity = 0;
@@ -295,7 +296,9 @@
     const target = { x: state.targetX / tile, y: deps.getGroundYAtWorld?.(state.targetX / tile, state.targetY / tile) ?? deps.getGroundY?.(state.targetX, state.targetY) ?? 0.05, z: state.targetY / tile }; // Terrain-aware landing point.
     const distanceTiles = Math.hypot(target.x - origin.x, target.z - origin.z); // Scales flight time/arc for the extended shoulder range.
     const durationS = flightDuration(distanceTiles); // Readable distance-scaled travel time.
-    projectiles.push(makeProjectile({ itemKey: state.itemKey, payload: state.payload, definition: state.definition, area: deps.getCurrentArea?.(), t: 0, durationS, distanceTiles, trailAccumulator:0, origin: { x: origin.x, y: origin.y, z: origin.z }, target }));
+    const flaskmasterPower = window.TrinketSystem?.combatMultiplier?.('flaskPower') || 1; // Captured at the wearer's throw release; swapping trinkets mid-flight cannot change the payload.
+    const flaskmasterRadius = window.TrinketSystem?.combatMultiplier?.('flaskRadius') || 1; // Keeps the flight's impact footprint equal to its authored release-time bonus.
+    projectiles.push(makeProjectile({ itemKey: state.itemKey, payload: state.payload, definition: state.definition, area: deps.getCurrentArea?.(), t: 0, durationS, distanceTiles, trailAccumulator:0, origin: { x: origin.x, y: origin.y, z: origin.z }, target, flaskmasterPower, flaskmasterRadius }));
     emitSfx('release', { itemKey: state.itemKey, recipeId: state.definition.id, x: origin.x, y: origin.y, z: origin.z });
     aimState = null;
     if (targetRing) targetRing.visible = false;
@@ -354,17 +357,17 @@
     const x = projectile.target.x * tile; // Splash center X.
     const y = projectile.target.z * tile; // Splash center Y.
     const playerOwned = projectile.playerOwned !== false; // Used to keep enemy Flaskers from borrowing the player's Empower Flasks perk.
-    const radiusTiles = splashRadius(projectile.definition, playerOwned); // Same radius as the ground preview.
+    const radiusTiles = splashRadius(projectile.definition, playerOwned, projectile.flaskmasterRadius); // NPCs have no trinket, while player flight retains release-time potency.
     const entities = deps.getSplashEntities?.(projectile.area, x, y, radiusTiles * tile) || []; // Existing entity/friendly-fire query adapter.
     let affected = 0; // Impact diagnostic count.
     entities.forEach(entity => {
-      const result = window.AlchemySystem.applyRecipeToEntity(projectile.definition.id, window.AlchemySystem.potencyMultiplier(projectile.payload.potencyTier), entity, { splash: true, potencyTier: projectile.payload.potencyTier, skipEmpower: !playerOwned }); // ResourceSystem-backed gameplay resolution; NPC throws never inherit player perk magnitude.
+      const result = window.AlchemySystem.applyRecipeToEntity(projectile.definition.id, window.AlchemySystem.potencyMultiplier(projectile.payload.potencyTier) * (playerOwned ? projectile.flaskmasterPower || 1 : 1), entity, { splash: true, potencyTier: projectile.payload.potencyTier, skipEmpower: !playerOwned }); // ResourceSystem-backed gameplay resolution; NPC throws never inherit player perk magnitude.
       if (result.ok) affected++;
     });
     deps.spawnImpactPresentation?.({ x, y, radiusTiles, definition: projectile.definition }); // Presentation-only burst.
     spawnImpactEffect(projectile, radiusTiles);
     emitSfx('impact', { itemKey: projectile.itemKey, recipeId: projectile.definition.id, x: projectile.target.x, y: projectile.target.y, z: projectile.target.z, radiusTiles, affected });
-    lastImpact = { recipeId: projectile.definition.id, x, y, radiusTiles, affected, at: performance.now() };
+    lastImpact = { recipeId: projectile.definition.id, x, y, radiusTiles, affected, flaskmasterPower: playerOwned ? projectile.flaskmasterPower || 1 : 1, at: performance.now() };
     disposeProjectile(projectile);
   }
 
