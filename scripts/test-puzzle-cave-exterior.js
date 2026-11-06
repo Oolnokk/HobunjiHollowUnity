@@ -68,6 +68,9 @@ assert.equal(Exterior.plan({...network,balconies:[]},[profile]).length,0,
   'no fictitious entrance is generated without a reachable mini-cliff');
 
 const scene=new Group();scene.name='zone-scene';
+const denFacades=new Group();denFacades.name='animalDenEntrances'; // Scene's existing animal-den entrance meshes must reappear when the mini-cliff portal is retired.
+const originalFacade=new Mesh(new Geometry(),new Material({color:0x888888}));
+originalFacade.userData.denId='den1';denFacades.add(originalFacade);scene.add(denFacades);
 const entranceRing=new Mesh(new Geometry(),new Material({color:0xeac86a})); // Cached scene's original ground-level entrance marker must be restored on cliff regeneration.
 entranceRing.userData.mapEditorRef={kind:'spot',id:'den_den1_enter'};
 entranceRing.position.set(4.5,.1,10.5);scene.add(entranceRing);
@@ -102,6 +105,11 @@ context.AuthoredFurniture={
 Exterior.init({zoneLayouts,zoneScenes,player,TILE:64,getCurrentArea:()=>activeArea});
 const [gate]=Exterior.mount(area,network,scene);
 assert(gate&&gate.requiresSong,'a real supported ledge owns one outdoor music puzzle');
+assert.equal(originalFacade.visible,false,'the original den facade is concealed by the cliff door');
+const lateFacade=new Mesh(new Geometry(),new Material({color:0x888888}));
+lateFacade.userData.denId='den1';denFacades.add(lateFacade);
+Exterior.update(.8,area);
+assert.equal(lateFacade.visible,false,'newly loaded den facade meshes are also concealed by the mounted cliff door');
 assert.equal(den.mouthAnchor.x,gate.entry.c,'a cave exit returns to the generated cliff entrance');
 assert.equal(layoutTransition.target,'puzzle_cave_locked','unsolved cave entrance is not an actionable world transition');
 assert.equal(copiedTransition.target,'puzzle_cave_locked','cached scene cannot bypass a locked cave');
@@ -145,6 +153,8 @@ assert.equal(player.onCliffBalcony,gate.shelf.id,'returning from the cavern rest
 assert.equal(player.climbSurfaceY,gate.shelf.y);
 Exterior.clear(area);
 assert.equal(gate.shelf.puzzleCavePortal,undefined,'a retired cave portal releases its mini-cliff reservation');
+assert.equal(originalFacade.visible,true,'retiring a cliff door restores the original den facade visibility');
+assert.equal(lateFacade.visible,true,'retiring a cliff door restores later loaded den facade meshes');
 assert.equal(layoutTransition.target,'building','scene retirement restores original transition type');
 assert.equal(layoutTransition.col,4,'scene retirement restores original cave entrance tile');
 assert.equal(den.mouthAnchor.x,4,'scene retirement restores the original den mouth');
