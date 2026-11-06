@@ -508,7 +508,7 @@
     const room = {id:'puzzle-cave-chamber',col:center.col-4,row:center.row-4,width:9,depth:9};
     plan.clearanceFootprints.push(room); // The existing CavernGenerator builds the floor/ceiling/walls in one pass.
     plan.puzzleCave = {id:'puzzle-cave:'+String(mapData.id || plan.profile.mapId),
-      col:center.col,row:center.row,room,kind:rng() < .43 ? 'fireSconces' : 'timedMelody'}; // Both one-room variants share the save and reward lifecycle.
+      col:center.col,row:center.row,room,kind:rng() < .43 ? 'fireSconces' : 'timedMelody',difficulty:1+Math.floor(rng()*5)}; // Both one-room variants share the save and reward lifecycle.
     for(const [col,row] of window.CavernSculptor.expandFootprint([], [room]))
       blockedKeys.add(tileKey(col,row)); // No later features or occupant spawns can obstruct the score.
     mapData.cavePuzzle = clone(plan.puzzleCave); // Diagnostics and interior tools see the same planned room.
@@ -728,6 +728,7 @@
     try{
       const challenge=creator({
         THREE:window.THREE,parent:scene,room,id:puzzle.id,kind:puzzle.kind,y:0,area:key,authoredCliffDoor:true,
+        songOptions:{difficulty:puzzle.difficulty}, // Deterministic 1–2-measure challenge range, not a universal easy one-measure song.
         isActive:()=>String(wildlifeDeps?.getCurrentArea?.()||'')===key && puzzleChallengesByMapId.get(key)?.scene===scene,
         onSolved:()=>{
           state.puzzleSolved=true;state.puzzleRewardTier=challenge.song?.rewardTier||2;
