@@ -156,6 +156,10 @@ function testRuntime() {
   assert(charge);
   const chargePart={renderOrder:0,material:new MeshBasicMaterial({transparent:false,depthTest:true,depthWrite:true})}; // Physical part used to verify held/back layer transitions.
   charge.meshColliders=[chargePart];
+  const decal=new Group();decal.isMesh=true;decal.visible=true;decal.renderOrder=0; // Authored decals are visible but deliberately not collider meshes.
+  decal.userData.furnitureDecal=true;
+  decal.material=new MeshBasicMaterial({transparent:true,depthTest:true,depthWrite:false});
+  charge.group.add(decal);
   charge.meshBounds={isEmpty:()=>false,getCenter:target=>target.set(4,.5,3)}; // Legacy cached geometric target, not a carrier-hitbox proxy.
   const originalTarget=targetSources.get('shattercasks')('map_back_test').find(entry=>entry.owner===charge);
   assert(originalTarget?.hitbox(),'the same physical Burden is independently targetable before being carried');
@@ -169,12 +173,25 @@ function testRuntime() {
   assert.equal(chargePart.material.transparent,true,'opaque furniture joins the transparent PNG sort queue while stowed');
   assert.equal(chargePart.material.depthTest,true,'world terrain can still occlude the back Burden');
   assert.equal(chargePart.material.depthWrite,false,'back furniture cannot hide the front PNG by writing depth');
+  assert.equal(decal.renderOrder,2.15,'non-colliding furniture decal must x-ray through the back PNG alongside its parent');
   assert.equal(portrait.renderOrder,2.25,'the real skinned front PNG renders after the stowed Burden');
   const rearPass=firstAvatar.children.find(child=>child.userData?.shattercaskRearOverlay);
   assert.equal(rearPass?.renderOrder,2.05,'the isolated skinned back PNG renders before the Burden');
   assert.equal(rearPass?.material[1].depthWrite,false,'rear pixels do not prevent the stowed Burden from rendering');
   assert.equal(portrait.material[0].visible,true,'front PNG remains visible');
   assert.equal(portrait.material[1].visible,false,'the original skinned back pass is not drawn twice');
+  const lateDetail=new Group();lateDetail.isMesh=true;lateDetail.visible=true;lateDetail.renderOrder=0; // Simulates an asynchronous authored GLB child after pickup.
+  lateDetail.material=new MeshBasicMaterial({transparent:false,depthWrite:true,depthTest:true});
+  charge.group.add(lateDetail);
+  const priorMaterial=chargePart.material;
+  chargePart.material=new MeshBasicMaterial({transparent:false,depthWrite:true,depthTest:true}); // Recolored furniture can replace its original material while carried.
+  window.Shattercasks.tick(.2); // Force the normal 7 Hz render-state reconciliation.
+  assert.equal(lateDetail.renderOrder,2.15,'late-loaded furniture detail enters the correct stowed layer');
+  assert.equal(lateDetail.material.transparent,true,'late-loaded opaque detail enters the PNG sorting queue');
+  assert.equal(lateDetail.material.depthWrite,false,'late-loaded furniture cannot cover the front PNG');
+  assert.equal(chargePart.material.transparent,true,'replacement material inherits the stowed render flags');
+  assert.equal(chargePart.material.depthWrite,false,'replacement material cannot mask the front PNG');
+  assert.equal(priorMaterial.depthWrite,true,'detached original material is restored on replacement');
   const authoredBurdenPoint=new Vector3(.13,.22,-.16).multiply(charge.group.scale).applyQuaternion(charge.group.quaternion);
   const actualAttachment=charge.group.position.clone().add(authoredBurdenPoint);
   for(const [axis,expected] of Object.entries({x:.12,y:-.08,z:.04}))
@@ -278,6 +295,9 @@ function testRuntime() {
   assert.equal(chargePart.renderOrder,1.4,'retrieved furniture returns to the existing held-order layer');
   assert.equal(chargePart.material.transparent,false,'retrieval restores the authored opaque material');
   assert.equal(chargePart.material.depthWrite,false,'hand-held furniture retains the established rear-PNG behavior');
+  assert.equal(decal.renderOrder,0,'the authored decal regains its native drawing order when retrieved into the hands');
+  assert.equal(lateDetail.renderOrder,0,'late-loaded decorative geometry regains its authored drawing order on retrieval');
+  assert.equal(lateDetail.material.depthWrite,true,'late-loaded decorative geometry regains its original depth mode');
   assert(window.Shattercasks.stowOnBack());
   assert.equal(charge.group.parent,rigidPortrait,'restowing reattaches directly to the rebuilt portrait');
   player.health-=10; // Affliction damage alone must never trigger a back-mounted collision.
@@ -290,6 +310,8 @@ function testRuntime() {
   assert.equal(chargePart.renderOrder,0,'explosion restores the stowed Burden original order');
   assert.equal(chargePart.material.transparent,false,'explosion restores the stowed Burden original material mode');
   assert.equal(chargePart.material.depthWrite,true,'explosion restores the stowed Burden original depth state');
+  assert.equal(decal.renderOrder,0,'explosion restores the decal original drawing order');
+  assert.equal(lateDetail.renderOrder,0,'explosion restores asynchronously loaded details');
   assert.equal(window.Shattercasks.backCarriedInfo(),null,'hit-triggered explosion clears the back slot');
   assert.equal(window.Shattercasks.getBurden(charge.id),null,'the original physical item is consumed');
 
