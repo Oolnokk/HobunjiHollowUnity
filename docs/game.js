@@ -7005,9 +7005,20 @@
       function tickCorpses(dt) {
         window.CreatureDeath.updateCorpses(dt);
         updateCorpseVisualLod();
+        window.BanditCorpseRetirement.tick(performance.now()); // Bandit corpses cannot stream to data, so old ones lose their rig instead (js/bandit-corpse-retirement.js); throttled inside.
       }
 
       window.WildlifeVisualLod.init({ createVisuals: createCreatureVisuals, releaseVisuals: releaseCreatureVisuals }); // Existing LOD owns streamed wildlife presentation lifetime.
+      // Bandit corpse rig retirement now lives in js/bandit-corpse-retirement.js.
+      window.BanditCorpseRetirement.init({
+        corpseObjects,
+        getPlayer: () => player,
+        getTile: () => TILE,
+        getCurrentArea: () => currentArea,
+        getDefaultScene: () => scene,
+        disposeCreaturePresentation, // The same shared owner despawnCreature uses.
+        tileSurfaceYInArea,
+      });
 
       function updateHostiles(dt) {
         for (const entity of hostileObjects) {
