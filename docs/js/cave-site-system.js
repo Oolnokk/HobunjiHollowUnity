@@ -759,7 +759,7 @@
           id:gateId,scope:key,
           bounds:{minX:room.x+room.w/2-2.53,maxX:room.x+room.w/2+2.53,
             minZ:room.z+room.d-.96,maxZ:room.z+room.d-.67},
-          enabled:()=>!challenge.disposed&&!challenge.solved,
+          enabled:()=>!challenge.disposed&&Number(challenge.doorRise||0)<.98, // Stay solid until the animated slab has physically cleared the doorway.
           blocksAt:(_x,_z,_height,_record,_radius,opts)=>{
             const y=Number(opts?.worldY??opts?.floorY??opts?.y);
             return !Number.isFinite(y)||Math.abs(y)<2; // Ignore unrelated elevated surfaces above this ground-floor slab.
