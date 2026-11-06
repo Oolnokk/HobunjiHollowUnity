@@ -1487,7 +1487,8 @@
     return {
       ready: integrationsInstalled,
       currentArea,
-      latestChange: 'Procedural caves and mines are carved 1.5x tall (2.5x around ruin doors, easing down away from them) under a low-poly roof of irregular flat facets, with faceted, gently concave walls, so the stretch-to-fit rock texture finds many large surfaces. Walls land on tile edges, and any walkable tile still inside rendered rock becomes solid, so cave geometry and collision agree. Nests keep 8x8 rooms and ruin doors 7x6 approaches.',
+      latestChange: 'Puzzle Caves reserve one carved challenge chamber and require a timed song or both flame sconces. Solved state and pending trinket reward persist; exterior mini-cliff attachment still pending.',
+      groundFire: window.PersistentGroundFire?.debugSnapshot?.() || null, // Mobile-safe inspection of active fire without devtools.
       zoneCount: zones.length,
       caveCount: sites.length,
       caves: sites.map(site => ({ mapId: site.mapId, zoneId: site.zoneId, denId: site.denId, contents: site.contents, inhabitant: site.inhabitant, label: site.discoveredLabel })),
