@@ -65,7 +65,7 @@
     // coordinates while the original V50 room stays at its authored position.
     const anchorX=Math.ceil(Math.max(rec.cols+spacing,spacing*3)/spacing)*spacing;
     const anchorZ=Math.ceil(Math.max(rec.rows+spacing,spacing*3)/spacing)*spacing;
-    const plan=preplanned||RuinLayerPlan.compose({seed,spacing,anchorX,anchorZ,shaftSize:33,floorHeight:4});
+    const plan=preplanned||RuinLayerPlan.compose({seed,spacing,anchorX,anchorZ,shaftSize:45,floorHeight:16});
     if(preplanned&&!preplanned.options.groundEntranceSide&&(preplanned.shaft.anchor.x<rec.cols+spacing||preplanned.shaft.anchor.z<rec.rows+spacing))
       throw new Error('Reserved native V50 shaft overlaps the original entry-floor V50 footprint');
     if(!plan.ok)throw new Error('Layer plan invalid: '+plan.checks.filter(c=>!c.ok).map(c=>c.name).join(', '));
@@ -74,7 +74,8 @@
       ...(f.nativePort?[{floor:f.floor,side:f.nativePort.side}]:[]),
     ]); // All E-side native V50 entrances are reserved before V50 emits any floor scene. // Every generated room chain now receives a separate physical doorway.
     const shaftOptions={seed,floors:plan.floorCount,chambers:false,wall:plan.options.shaftWall,
-      shaft:plan.options.shaftSize,spacing:plan.options.floorHeight,entranceSide:plan.options.groundEntranceSide||'W',portals};
+      shaft:plan.options.shaftSize,spacing:plan.options.floorHeight,traversal:plan.options.shaftTraversal,
+      entranceSide:plan.options.groundEntranceSide||'W',portals};
     const hub=ShaftHub.compose(shaftOptions); // The real shared room; origin is set below after determining its full masonry shell.
     const originX=plan.shaft.anchor.x-Math.floor(hub.cols/2),originZ=plan.shaft.anchor.z-Math.floor(hub.rows/2); // The pre-generation anchor owns every portal and wing, including the rendered shaft.
     const placed=ShaftHub.compose({...shaftOptions,originX,originZ});
