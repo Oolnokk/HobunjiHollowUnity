@@ -567,6 +567,8 @@ async function arenaScenario() {
   assert.equal(stowedMesh.material.transparent,true,'opaque furniture switches into the PNG transparent queue while stowed');
   assert.equal(stowedMesh.material.depthTest,true,'back furniture remains hidden by closer walls and terrain');
   assert.equal(stowedMesh.material.depthWrite,false,'back furniture cannot cover the front PNG through depth writes');
+  assert.equal(rearHeadwear.renderOrder,2.08,'back headwear is also behind the stowed Burden');
+  assert.equal(rearHeadwear.material.depthWrite,false,'back headwear cannot mask the stowed Burden');
   assert.equal(rebuilt.renderOrder,2.25,'skinned front PNG is drawn after the back Burden');
   assert.equal(rebuilt.material[0].visible,true,'front-facing skin stays visible while back-stowing');
   assert.equal(game.Shattercasks.debugSnapshot().rearPortraitXray.stowedParts,1,'mobile debug reports actual stowed render parts');
@@ -585,6 +587,8 @@ async function arenaScenario() {
   assert.equal(game.Shattercasks.debugSnapshot().backCarried,null,'retrieval clears the back slot');
   assert.equal(rebuilt.renderOrder,2,'taking the Burden back into the hands restores native front PNG order');
   assert.equal(stowedRear.material[1].depthWrite,true,'held Burdens retain the original rear-pass depth rules');
+  assert.equal(rearHeadwear.renderOrder,2.6,'retrieval restores the held-only rear headwear layer');
+  assert.equal(rearHeadwear.material.depthWrite,true,'retrieval restores held-only rear headwear depth');
   assert.equal(stowedMesh.renderOrder,1.4,'retrieved furniture returns to the standard held layer');
   assert.equal(stowedDecal.renderOrder,0,'a hand-held decal returns to its pre-stowed draw order');
   assert.equal(stowedMesh.material.transparent,undefined,'retrieval restores the authored material transparency');
