@@ -96,6 +96,7 @@
     }
     if(!portal.ring)return;
     if(!portal.ringRelocated){
+      portal.originalRingPosition={x:portal.ring.position.x,y:portal.ring.position.y,z:portal.ring.position.z}; // Preserve the actual cached scene marker for zone rebuilds.
       portal.ring.position.set(portal.entry.c+.5,portal.shelf.y+.02,portal.entry.r+.5);
       portal.ringRelocated=true; // The old ground-level den's marker follows the elevated route exactly once.
     }
@@ -203,7 +204,7 @@
       id:portal.blockerId,scope:portalTag+':'+portal.area,
       bounds:{minX:Math.min(x1,x2)-.08,maxX:Math.max(x1,x2)+.08,
         minZ:Math.min(z1,z2)-.08,maxZ:Math.max(z1,z2)+.08},
-      enabled:()=>!portal.disposed&&portal.rise<.98,
+      enabled:()=>!portal.disposed&&deps?.getCurrentArea?.()===portal.area&&portal.rise<.98, // The global movement blocker query is sometimes unscoped: never obstruct a different area.
       blocksAt:(_x,_z,_height,_record,_radius,opts)=>{
         const y=Number(opts?.worldY??opts?.floorY??opts?.y);
         return !Number.isFinite(y)||Math.abs(y-portal.door.y)<1.1; // Stacked elevations keep lower ground free when the movement query supplies Y.
@@ -229,7 +230,11 @@
       const den=deps?.zoneLayouts?.get?.(key)?.dens?.find(d=>String(d.id)===String(portal.denId));
       if(den&&portal.originalDenMouth)den.mouthAnchor={...portal.originalDenMouth}; // Do not leave a changed den exit after terrain relocation or scene eviction.
       restoreTransitions(key,portal);
-      if(portal.ring){portal.ring.visible=true;portal.ringRelocated=false;} // Scene owner will reposition on its next terrain rebuild.
+      if(portal.ring){
+        if(portal.originalRingPosition)portal.ring.position.set(portal.originalRingPosition.x,portal.originalRingPosition.y,portal.originalRingPosition.z);
+        portal.ring.visible=true;portal.ringRelocated=false;
+      } // Restore both the visual marker and its location when cliff geometry is retired.
+      if(portal.shelf?.puzzleCavePortal===portal.mapId)delete portal.shelf.puzzleCavePortal; // A retired portal must not permanently reserve a reward-bearing ledge.
       destroyPortal(portal);
     }
     areas.delete(key);
