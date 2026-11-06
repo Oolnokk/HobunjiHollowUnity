@@ -68,6 +68,9 @@ assert.equal(Exterior.plan({...network,balconies:[]},[profile]).length,0,
   'no fictitious entrance is generated without a reachable mini-cliff');
 
 const scene=new Group();scene.name='zone-scene';
+const entranceRing=new Mesh(new Geometry(),new Material({color:0xeac86a})); // Cached scene's original ground-level entrance marker must be restored on cliff regeneration.
+entranceRing.userData.mapEditorRef={kind:'spot',id:'den_den1_enter'};
+entranceRing.position.set(4.5,.1,10.5);scene.add(entranceRing);
 const den={id:'den1',x:3,y:8,w:3,h:3,mouthAnchor:{x:4,y:10}};
 const layoutTransition={id:'den_den1_enter',col:4,row:10,target:'building',targetMapId:mapId};
 const copiedTransition={...layoutTransition};
@@ -104,6 +107,7 @@ assert.equal(layoutTransition.target,'puzzle_cave_locked','unsolved cave entranc
 assert.equal(copiedTransition.target,'puzzle_cave_locked','cached scene cannot bypass a locked cave');
 assert.equal(layoutTransition.col,gate.entry.c);
 assert.equal(blockers.size,1,'a real physical slab blocker is registered');
+assert.equal(entranceRing.visible,true,'the cached scene marker starts visible before the gate locks');
 const blocker=[...blockers.values()][0];
 assert(blocker.enabled(),'unsolved cliff-door collision blocks movement');
 activeArea=mapId;
@@ -145,6 +149,9 @@ assert.equal(layoutTransition.target,'building','scene retirement restores origi
 assert.equal(layoutTransition.col,4,'scene retirement restores original cave entrance tile');
 assert.equal(den.mouthAnchor.x,4,'scene retirement restores the original den mouth');
 assert.equal(blockers.size,0,'scene retirement unregisters physical slab collision');
+assert.equal(entranceRing.position.x,4.5,'scene retirement restores the cached entrance marker X');
+assert.equal(entranceRing.position.y,.1,'scene retirement restores the cached entrance marker elevation');
+assert.equal(entranceRing.position.z,10.5,'scene retirement restores the cached entrance marker Z');
 assert.equal((handlers.get('hobunji-kurraya-puzzle-note')||new Set()).size,0,
   'scene retirement removes the actual live flute event listener');
 
