@@ -19,8 +19,10 @@
    if(out.some(p=>Math.hypot(p.x-x,p.z-z)<14))continue;
    if((network.balconies||[]).some(p=>Math.abs(p.y-y)<3.2&&Math.hypot(p.x-x,p.z-z)<2.7))continue;
    if((network.routes||[]).some(r=>(r.nodes||[]).some(p=>Math.abs(p.y-y)<2.1&&Math.hypot(p.x-x,p.z-z)<2.7)))continue;
+   const slot=out.length; // Stable deterministic nest number, shared with the authored cave locale index.
    const id='tzatzul:'+area+':'+s.id;
-   out.push({id,shelfId:s.id,x,z,y,dx,dz,
+   const caveMapId='map_i_den_tzatzul_'+area+'_'+slot; // Normal cave-internal map ID for game.js's existing building loader.
+   out.push({id,caveMapId,slot,shelfId:s.id,x,z,y,dx,dz,
     height:Math.max(3.5,y-(Number(s.base.y)||s.y-3)+.55),
     perchId:id+':bird-perch',caveId:id+':cave',climbable:false});
   }
@@ -30,7 +32,7 @@
   const root=new T.Group(); // A single owner makes full scene unload cheap.
   root.name='tzatzul-nest-spire:'+s.shelfId;
   root.position.set(s.x,s.y-s.height/2,s.z);
-  root.userData.tzatzulNest={id:s.id,caveId:s.caveId,climbable:false,encounterReady:false};
+  root.userData.tzatzulNest={id:s.id,caveId:s.caveId,caveMapId:s.caveMapId,climbable:false,encounterReady:false}; // Cave interior is registered, but exterior entry still requires a safe abduction transition.
   const base=new T.MeshBasicMaterial({color:0x45463f,side:T.DoubleSide});
   const rock=new T.Mesh(new T.CylinderGeometry(1.05,.32,s.height,7,3),base);
   window.NaturalSurfaceMaterials?.naturalizeMesh?.(rock,'cliffs','world-stretch'); // Canonical carved_smooth rock texture.
@@ -66,7 +68,7 @@
    for(const s of plan(area,network)){
     const support=window.PerchSupport.point(s.perchId,s.x*TILE,s.z*TILE,s.y);
     if(!window.PerchSupport.register(area,support))continue;
-    roosts.push({id:s.perchId,support,shelf:{id:s.shelfId,x:s.x,z:s.z,y:s.y},site:s}); // Record first so a render exception cannot leak a registered bird perch.
+    roosts.push({id:s.perchId,support,caveMapId:s.caveMapId,shelf:{id:s.shelfId,x:s.x,z:s.z,y:s.y},site:s}); // Record first so a render exception cannot leak a registered bird perch.
     const mesh=draw(s,scene,T);art.push(mesh);
    }
    areas.set(area,{scene,network,roosts,art});debug.builds++;debug.lastError=null;
