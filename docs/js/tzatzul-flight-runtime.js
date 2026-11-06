@@ -227,7 +227,7 @@
       z: (end.y - start.y) / (tile() * length) }; // 3D beak-first facing follows the dive, not the talon pose.
     const half = hitboxSize(bird); // Freeze body dimensions for this leg; no expensive mesh reads each frame.
     state.segment = { duration: Math.max(.55, Math.min(5, distance(start, end) / (tile() * SPEED_TILES_PER_SECOND))),
-      half, heading, lastBody: null };
+      half, heading, from: start, to: end, lastBody: null }; // World-space travel powers cave wall impact's unused-distance calculation.
     state.segment.lastBody = bodyCenter(bird, state.segment); // Swept-body starting frame includes elevated roost height.
     state.elapsed = 0; state.phase = phase; state.target = target; state.struck = false;
     bird.tzatzulDivePitchRad = phase === 'swoop' ? Math.atan2(vertical, horizontal) : 0; // Rig pitches with the nose-first body on descent.
@@ -266,7 +266,7 @@
     const opts = { attacker: bird, tag: 'sharp', aerialSwoop: true, impactCollider: 'body' };
     let applied = false;
     if (target === deps.player && typeof combat?.damagePlayer === 'function') {
-      combat.damagePlayer(damage, bird.x, bird.y, 75, opts); applied = true;
+      combat.damagePlayer(damage, bird.x, bird.y, bird._tzNestMother ? 250 : 75, opts); applied = true; // Cave boss blasts the player across the arena; the existing wall knockback path owns any secondary collision.
     } else if (typeof combat?.damageCreature === 'function') {
       combat.damageCreature(target, damage, bird.x, bird.y, 75, opts); applied = true;
     } else if (target !== deps.player && window.WildlifeSpawn?.applyWildlifeSkirmishDamage) {
@@ -294,6 +294,11 @@
       const current = bodyCenter(bird, state.segment);
       state.segment.lastBody = current;
       hit(bird, previous, current); // The complete torso is swept from last frame to this frame; no talon point or fixed attack timestamp.
+      if (!state.struck && bird._tzNestMother
+        && window.TzatzulNestEncounter?.resolveTerrainImpact?.(bird,previous,current,state.segment)) {
+        state.struck = true; // Missed a player but hit a cave obstacle; never resolve another impact on this leg.
+        returnHome(bird); return; // Follow through to the opposite rock perch with genuine injury.
+      }
     }
     if (t < 1) return;
     if (state.phase === 'swoop' && !state.struck) {
@@ -357,7 +362,9 @@
   }
   window.TzatzulFlightRuntime = Object.freeze({
     init, ensureZone, update, onDayAdvance, debugSnapshot,
-    owns: bird => actors.has(bird) && !!bird._tzFlight && bird.health > 0, // Existing hostile renderer skips ground movement for these flight-owned predators.
+    owns: bird => (actors.has(bird) || window.TzatzulNestEncounter?.owns?.(bird)) && !!bird._tzFlight && bird.health > 0, // Indoor mothers share the canonical flight/body owner; no competing ground movement.
+    beginNestDive: (bird,target) => bird?._tzNestMother === true && swoop(bird,target),
+    advanceNestFlight: (bird,dt) => bird?._tzNestMother === true && advance(bird,Math.max(0,Math.min(.1,n(dt)))),
     __test: Object.freeze({ roosts, choosePrey, swoop, returnHome, capture, carryCaptive, releaseCaptive }),
   });
 })();
