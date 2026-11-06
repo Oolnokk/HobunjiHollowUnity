@@ -159,6 +159,10 @@
         const along=start+(positive?1:-1)*t;
         return {x:alongX?along:centerX,z:alongX?centerZ:along,y:y+3.35};
       });
+      for(const anchor of anchors){
+        const mount=authored('ruinRopeMount',anchor.x,anchor.y-2.965,anchor.z); // The existing Rope Furniture mount's top anchor sits exactly on the actual physics rope pivot.
+        if(mount)mount.userData.ruinLabRopeFixture=true;
+      }
       const beam=body('ruin-abyss-ceiling-beam-'+id,
         new THREE.BoxGeometry(alongX?pitLength+1:0.5,.3,alongX?.5:pitLength+1),
         stone,centerX,y+3.4,centerZ);
@@ -395,12 +399,15 @@
       group.parent?.remove(group);
       for(const m of owned)m.geometry?.dispose?.();
       const seenMaterials=new Set(materials); // Authored fixtures have per-instance materials but share immutable cached textures.
-      for(const visual of authoredVisuals)visual.traverse?.(node=>{
+      for(const visual of authoredVisuals){
+        visual.parent?.remove(visual); // A detached group has no scene parent; FurniturePieces.track can now release its glow callback instead of retaining the entire discarded ruin.
+        visual.traverse?.(node=>{
         if(!node.isMesh)return;
         if(!node.geometry?.userData?.devRuinSharedPrimitive)node.geometry?.dispose?.();
         const mats=Array.isArray(node.material)?node.material:[node.material];
         for(const mat of mats)if(mat&&!seenMaterials.has(mat)){seenMaterials.add(mat);mat.dispose?.();}
-      });
+        });
+      }
       for(const mat of materials)mat.dispose?.();
     };
     rec.simulateHit=(index)=>{
