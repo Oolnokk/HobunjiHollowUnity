@@ -194,10 +194,12 @@
     const key = String(zoneId || '');
     const profiles = dens.map(den => den?.caveSite?.mapId && den.caveSite.schema === PROFILE_SCHEMA ? clone(den.caveSite) : rollProfile(key, den)); // One cave profile per existing den anchor, preserving all old geometry/map ids.
     if (profiles.length && !profiles.some(profile => profile.inhabitant === TYPES.ANIMAL_DEN)) {
-      const candidates = profiles.filter(profile => profile.contents !== TYPES.PUZZLE_CAVE); // Leave the one-puzzle caves uninhabited unless every generated site is one.
+      const candidates = profiles.filter(profile => profile.contents !== TYPES.PUZZLE_CAVE); // An authored Puzzle Cave must never secretly turn into a Den-Mother lair.
       const rng = makeRng(`${key}:animal-den-preservation`); // Stable slot selection guarantees legacy animal ecology survives the promotion to generic caves.
       const preserving = candidates.length ? candidates : profiles;
-      forceAnimalProfile(preserving[Math.floor(rng() * preserving.length)]);
+      const chosen = preserving[Math.floor(rng() * preserving.length)]; // If the whole zone rolled Puzzle Caves, reserve one for a proper ordinary animal den.
+      if(chosen.contents===TYPES.PUZZLE_CAVE)chosen.contents=TYPES.ORE_MINE;
+      forceAnimalProfile(chosen);
     }
     for (let index = 0; index < dens.length; index++) {
       const den = dens[index]; // Existing compatibility record consumed by terrain/collision/turnover systems.
