@@ -1203,8 +1203,8 @@
         "stoneSpikeClusters": [
           {
             "id": "spike-cluster-1",
-            "col": 9,
-            "row": 11,
+            "col": 13,
+            "row": 6,
             "width": 1,
             "height": 0.15,
             "density": 12,
@@ -1212,8 +1212,8 @@
           },
           {
             "id": "spike-cluster-2",
-            "col": 16,
-            "row": 10,
+            "col": 20,
+            "row": 13,
             "width": 1,
             "height": 0.15,
             "density": 12,
@@ -1221,8 +1221,8 @@
           },
           {
             "id": "spike-cluster-3",
-            "col": 15,
-            "row": 17,
+            "col": 13,
+            "row": 20,
             "width": 1,
             "height": 0.15,
             "density": 12,
@@ -1230,8 +1230,8 @@
           },
           {
             "id": "spike-cluster-4",
-            "col": 10,
-            "row": 18,
+            "col": 6,
+            "row": 13,
             "width": 1,
             "height": 0.15,
             "density": 12,

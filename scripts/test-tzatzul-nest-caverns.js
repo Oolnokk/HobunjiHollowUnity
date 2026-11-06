@@ -21,6 +21,13 @@ for(const area of areaNames)for(let slot=0;slot<2;slot++){
  assert(locale.tiles[locale.connectors[0].col+','+locale.connectors[0].row],'exit must be on carved floor');
  assert(locale.cavern.features.tzatzulNest.wallPerches.length>=6,'mother must have far wall perches');
  assert(locale.cavern.features.tzatzulNest.stoneSpikeClusters.length>=3,'player must have multiple risk/reward spike targets');
+ for(const spike of locale.cavern.features.tzatzulNest.stoneSpikeClusters) {
+   const cx=center.col, cy=center.row;
+   const rad=Math.hypot(spike.col-cx,spike.row-cy);
+   assert(rad>=6.5&&rad<=8.5,'stone hazard clusters must occupy optional high-risk side lanes, not the central boss path');
+   assert(locale.tiles[spike.col+','+spike.row],'stone spike clusters must sit on genuine playable cavern floor');
+ }
+
  assert(locale.cavern.features.tzatzulNest.hatchlings.length>=2,'mother has real hatchling adds specification');
 }
 const supports={point:(id,x,y,worldY)=>({id,dimension:0,x,y,worldY}),register:()=>true};
