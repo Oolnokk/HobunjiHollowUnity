@@ -45,7 +45,7 @@ async function main(){
     await page.evaluate(()=>window.HobunjiTitleScreen?.start?.());
     await page.waitForFunction(()=>!window.HobunjiTitleScreen?.isActive?.(),null,{timeout:20000});
 
-    const expected=window => window.DevRuinSingleRoomTrial.TYPES.map(([key])=>key);
+    const expected=()=>window.DevRuinSingleRoomTrial.TYPES.map(([key])=>key);
     const kinds=await page.evaluate(expected);
     const report=[]; // Per-choice verification survives later generator failures and supplies mobile-friendly CI diagnostics.
     const seeds={glyphObelisk:0x51a7cafe,ceilingRailTargets:0x17a31,melodyEcho:0x17a32,
