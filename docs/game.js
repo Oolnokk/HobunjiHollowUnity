@@ -15857,6 +15857,16 @@
       function rebindZoneResidents(mapId, info) {
         for (const c of zoneResidents(mapId)) { c.scene = info.scene; c.areaGrid = info.grid; c.areaCols = info.cols; c.areaRows = info.rows; }
       }
+      // Releasing an old zone's bandits (they cannot become data) now lives in js/zone-bandit-release.js.
+      window.ZoneBanditRelease.init({
+        zoneResidents,
+        hostileObjects,
+        corpseObjects,
+        companionObjects,
+        getCurrentArea: () => currentArea,
+        despawnCreature,
+        forgetCampState: mapId => window.BanditCamps.forgetZoneState(mapId), // Camps re-seed on the next entry.
+      });
       const _zoneCacheHistory = []; // QA record of recent trim decisions, newest last (window.__zoneCacheDebug.history).
       function trimZoneCache() {
         _zoneCacheTrimTimer = null;
@@ -15869,7 +15879,8 @@
         for (const mapId of [..._zoneScenes.keys()]) {
           if (mapId === currentArea || keep.has(mapId)) { entry.kept.push(mapId); continue; }
           releaseResidentRigs(mapId);
-          const blocker = zoneEvictionBlocker(mapId);
+          let blocker = zoneEvictionBlocker(mapId);
+          if (blocker === 'resident rig' && window.ZoneBanditRelease.releaseZone(mapId)) blocker = zoneEvictionBlocker(mapId); // Only when bandits are the sole pin; see js/zone-bandit-release.js.
           if (blocker) { entry.blocked.push(`${mapId}: ${blocker}`); window.__farmLog?.(`[zone-cache] kept ${mapId}: ${blocker}`, 'perf'); continue; }
           if (evictZoneScene(mapId)) entry.evicted.push(mapId);
         }

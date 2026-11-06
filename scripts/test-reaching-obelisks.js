@@ -137,5 +137,5 @@ assert(connector.includes('RuinReachingObelisks.mount('),'real physical shaft mo
 const scriptAt=name=>index.search(new RegExp('<script[^>]+src="js/'+name.replace('.','\\.')+'\\?v='));
 assert(scriptAt('ruin-reaching-obelisks.js')>=0&&scriptAt('ruin-reaching-obelisks.js')<scriptAt('shaft-hub.js'),
   'the browser loads the obelisk module before its shaft consumers');
-assert(bootstrap.includes('reachFalling1'),'the updated fall logic is not masked by an old mobile cache');
+assert.match(bootstrap, /dev-random-ruin-interior-map\.js\?v=[A-Za-z0-9_-]+/, 'the fall runtime is loaded with a cache-bust token');
 console.log('ok test-reaching-obelisks: 110 seeds, ballistic catch proofs, 24 full shaft checks, moving platforms, switch LOS, ice covers, pressure plate and cleanup');

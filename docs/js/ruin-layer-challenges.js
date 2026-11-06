@@ -44,7 +44,7 @@
       ||typeof isActive!=='function'||typeof onSolved!=='function')
       throw new Error('Invalid layered ruin challenge '+id+' ('+kind+').');
     const cx=room.x+room.w/2,cz=room.z+room.d/2;
-    const owned=[],materials=[],targets=[]; // Each challenge disposes ONLY its own geometry and non-shared materials.
+    const owned=[],materials=[],targets=[],authoredVisuals=[]; // Each challenge owns its geometry, authored fixture instances and their per-room materials.
     const rec={id,kind,solved:false,elapsed:0,targetCount:0,hits:0,targets,plate:null,linked:false,disposed:false};
     const group=new THREE.Group(); // Visible mechanism geometry follows the wing floor's presentation culling.
     group.name='ruin-layer-challenge-'+id;parent.add(group);
@@ -66,6 +66,8 @@
     let fireTargetId=null; // Registered only when the correct ruin's projectile runtime is live; removed on teardown.
     let fireControl=null; // This chamber removes its fire-source interaction when disposed, including on partial mounts.
     let ropeChain=null; // Native V50 rope controller owns all rope physics and checkpoint updates after registration.
+    let icePlacement=null; // The existing door-ice generator owns the visible stalagmites over the fire target.
+    let flameVisuals=[]; // Authored particle emitters are ticked and disposed with their puzzle, never left running after a reroll.
     const body=(name,geometry,mat,x,py,z)=>{
       const mesh=new THREE.Mesh(geometry,mat);
       mesh.name=name;mesh.position.set(x,py,z);
@@ -73,30 +75,63 @@
       mesh.userData.devRuinFootprintIgnore=true; // Mechanism geometry must not block floor navigation; only the physical stone gate does.
       group.add(mesh);owned.push(mesh);return mesh;
     };
+    const authored=(key,x,py,z)=>{ // Existing Furniture Author pieces are placed as visuals; the challenge retains its own hit/collision authority.
+      const furniture=root.DevRandomRuinFurniturePieces;
+      const visual=furniture?.build?.(key);
+      if(!visual)return null;
+      visual.position.set(x,py,z);
+      group.add(visual);authoredVisuals.push(visual);
+      return visual;
+    };
     const complete=()=>{
       if(rec.solved||rec.disposed||!isActive())return false;
       rec.solved=true;onSolved(rec);
       return true;
     };
-    const target=(name,x,py,z)=>{
-      const base=body(name+'-stone',new THREE.BoxGeometry(.94,.68,.68),stone,x,py,z);
-      base.raycast=()=>{}; // Decorative stone does not shadow the smaller authoritative glyph hit volume.
-      const rune=body(name+'-rune',new THREE.BoxGeometry(.6,.48,.76),idle,x,py,z);
-      rune.userData.devRuinProjectileTarget=true;
+    const target=(name,x,py,z,ceiling=false)=>{
+      const kit={ // Reuse the standalone V50 ceiling-sconce geometry and glyph art, not a second hand-built ceiling target.
+        sharedBoxGeometry:(w,h,d)=>new THREE.BoxGeometry(w,h,d),
+        makeBasic:basic,
+        naturalizeStone:mesh=>{mesh.material=stone;return mesh;}
+      };
+      const hanging=ceiling?root.DevRandomRuinCeilingTargetVisuals?.create?.(kit,{
+        parent:group,name,x,y:py+.6,z
+      }):null;
+      let base,rune,plaque=null,hitMesh,visualRoot=null;
+      if(hanging){
+        visualRoot=hanging.object;base=visualRoot;rune=hanging.hitMesh;hitMesh=hanging.hitMesh;
+        authoredVisuals.push(visualRoot); // Hanging fixture owns multiple meshes and a shared rune texture.
+      }else{
+        const stemHeight=Math.max(.9,py-y+.17); // Grounded stone pillar reaches the glyph height rather than floating in the air.
+        base=body(name+'-stone',new THREE.CylinderGeometry(.35,.43,stemHeight,8),stone,x,y+stemHeight*.5,z);
+        body(name+'-cap',new THREE.BoxGeometry(.85,.13,.85),stone,x,y+stemHeight-.035,z);
+        base.raycast=()=>{};
+        rune=body(name+'-rune-hit',new THREE.BoxGeometry(.62,.5,.2),idle,x,py,z+.43);
+        hitMesh=rune;
+        plaque=authored('ruinGlyphTarget',x,py,z+.55);
+        if(plaque){
+          // The real rune decal is visible while the transparent box remains the canonical projectile target.
+          const invisible=basic(0xffffff);
+          invisible.transparent=true;invisible.opacity=0;invisible.depthWrite=false;
+          rune.material=invisible;
+        }
+      }
       const state={
-        id:name,object:rune,hitMesh:rune,active:false,
-        hittable:()=>!rec.disposed&&!state.active&&isActive()&&rune.visible
+        id:name,object:visualRoot||rune,hitMesh,active:false,
+        hittable:()=>!rec.disposed&&!state.active&&isActive()&&(visualRoot||rune).visible
           &&Number.isFinite(Number(getPlayerY?.()))&&Math.abs(Number(getPlayerY())-y)<.9,
         onHit:()=>{
           if(state.active||rec.disposed||!isActive()
-            ||!Number.isFinite(Number(getPlayerY?.()))||Math.abs(Number(getPlayerY())-y)>=.9)return; // Cannot shoot an upstairs target through an unseen deck.
+            ||!Number.isFinite(Number(getPlayerY?.()))||Math.abs(Number(getPlayerY())-y)>=.9)return;
           state.active=true;rec.hits++;
-          rune.material=hit;
+          if(hanging)hanging.setActive(true);
+          else if(!plaque)rune.material=hit;
           options.onHit?.(rec,state);
           if(rec.hits===rec.targetCount)complete();
         },
-        base,rune,origin:{x,z,y:py},
+        base,rune,visualRoot,plaque,baseY:base.position.y,runeY:rune.position.y,origin:{x,z,y:visualRoot?py+.6:py},
       };
+      if(plaque)root.DevRandomRuinFurniturePieces?.track?.(plaque,()=>state.active?1:0);
       targets.push(state);return state;
     };
     if(kind==='pressurePlate'){
@@ -125,6 +160,10 @@
         const along=start+(positive?1:-1)*t;
         return {x:alongX?along:centerX,z:alongX?centerZ:along,y:y+3.35};
       });
+      for(const anchor of anchors){
+        const mount=authored('ruinRopeMount',anchor.x,anchor.y-2.965,anchor.z); // The existing Rope Furniture mount's top anchor sits exactly on the actual physics rope pivot.
+        if(mount)mount.userData.ruinLabRopeFixture=true;
+      }
       const beam=body('ruin-abyss-ceiling-beam-'+id,
         new THREE.BoxGeometry(alongX?pitLength+1:0.5,.3,alongX?.5:pitLength+1),
         stone,centerX,y+3.4,centerZ);
@@ -141,13 +180,36 @@
       // The standard DungeonFire runtime owns shot ignition and plume-to-ice
       // collision. The room merely authors a source brazier, a heat target,
       // and a progression gate; it never guesses from a normal arrow hit.
-      const source=body('ruin-fire-source-'+id,
-        new THREE.CylinderGeometry(.65,.8,.65,8),stone,cx-2.3,y+.37,cz);
-      body('ruin-fire-source-flame-'+id,new THREE.ConeGeometry(.38,.95,7),
-        idle,cx-2.3,y+1.18,cz);
+      const source=authored('ruinStandingBrazier',cx-2.3,y,cz)
+        ||body('ruin-fire-source-'+id,new THREE.CylinderGeometry(.65,.8,.65,8),stone,cx-2.3,y+.37,cz);
+      const createEmitter=root.AuthoredFurniture?.createEmitterVisual;
+      if(typeof createEmitter==='function'){
+        const flameRoot=new THREE.Group(); // Particle flame stays attached to the authored brazier's bowl.
+        flameRoot.name='ruin-fire-flame-'+id;
+        flameRoot.position.set(cx-2.3,y+1.2,cz);group.add(flameRoot);
+        for(const stream of [
+          {id:'yellow',colorA:'#fff56a',colorB:'#ffdc12'},
+          {id:'red',colorA:'#ff5225',colorB:'#e91b08'},
+          {id:'orange',colorA:'#ffab3b',colorB:'#ff740c'}
+        ]){
+          const emitter=createEmitter(flameRoot,{id:'ruin_fire_'+stream.id,name:'Brazier flame',type:'fire',enabled:true,
+            position:{x:0,y:0,z:0},rotation:{x:0,y:0,z:0},radius:.12,size:.16,rate:9,
+            lifetime:.7,speed:.65,spread:.25,gravity:-.05,colorA:stream.colorA,colorB:stream.colorB},11);
+          if(emitter){emitter.update?.(1/9,true);flameVisuals.push(emitter);}
+        }
+        if(!flameVisuals.length)flameRoot.parent?.remove(flameRoot);
+      }
+      if(!flameVisuals.length)body('ruin-fire-source-flame-'+id,new THREE.ConeGeometry(.35,.8,7),
+        idle,cx-2.3,y+1.3,cz); // Only a fallback when the shared authored emitter runtime is unavailable.
       const frozen=basic(0x9fdaed);
       const ice=body('ruin-fire-ice-seal-'+id,
         new THREE.BoxGeometry(2.3,2.1,.75),frozen,cx+2.1,y+1.18,cz);
+      icePlacement=root.DungeonDoorIceCoverage?.create?.({door:ice,parent:group,groundY:y,seed:id})||null;
+      if(icePlacement){
+        frozen.transparent=true;frozen.opacity=0;frozen.depthWrite=false;
+        icePlacement.iceLayer.traverse?.(node=>{node.userData.devRuinFootprintIgnore=true;});
+        authoredVisuals.push(icePlacement.iceLayer); // Exact same generated ice that melts from real Tothal doors.
+      }
       rec.fireSource=source;rec.fireSeal=ice;
       rec.meltProgress=0;rec.melting=false;
       rec.animate=dt=>{
@@ -155,7 +217,8 @@
         rec.meltProgress=Math.min(1,rec.meltProgress+Math.max(0,Math.min(.05,Number(dt)||0))/.85);
         const t=rec.meltProgress*rec.meltProgress*(3-2*rec.meltProgress); // Reverse the ice growth over a smooth .85s lerp.
         ice.scale.y=Math.max(.02,1-t);
-        ice.position.y=y+1.18-1.04*t; // Retraction sinks toward the floor, like the authored iced doors.
+        ice.position.y=y+1.18-1.04*t; // Fallback target bounds contract as the ice disappears.
+        if(icePlacement)root.DungeonDoorIceCoverage?.setGrowth?.(icePlacement,1-t);
         if(t>=1)ice.visible=false;
       };
       rec.fireRecord={
@@ -166,7 +229,7 @@
           if(!rec.fireRecord.isActive())return false;
           rec.fireRecord.active=false;
           rec.melting=true;
-          rec.fireSeal.material=hit;
+          if(!icePlacement)rec.fireSeal.material=hit;
           return complete();
         },
       };
@@ -278,7 +341,14 @@
       // play the note sequence using the equipped flute. No WRONG overlay.
       const plate=body('ruin-melody-trigger-'+id,
         new THREE.BoxGeometry(1.35,.14,1.35),plateMat,cx,y+.07,cz);
-      rec.plate=plate;
+      const plateSkin=authored('ruinRewardPlate',cx,y,cz);
+      if(plateSkin){
+        plateSkin.scale.set(1.8,1,1.8); // The authored press surface remains the same footprint as the melody's trigger region.
+        const invisible=basic(0xffffff);
+        invisible.transparent=true;invisible.opacity=0;invisible.depthWrite=false;
+        plate.material=invisible;
+      }
+      rec.plate=plate;rec.plateSkin=plateSkin;
       rec.notes=melodyFor(id);
       rec.lastDown=false;rec.attempts=0;
       if(THREE.TextureLoader&&THREE.PlaneGeometry){
@@ -302,7 +372,11 @@
       }
       rec.onMelodyResult=detail=>{
         if(rec.disposed||rec.solved||detail?.id!==id)return;
-        if(detail.solved===true){rec.plate.material=hit;complete();}
+        if(detail.solved===true){
+          if(rec.plateSkin)rec.plateSkin.traverse(node=>{if(node.isMesh&&node.material?.color)node.material.color.setHex(TARGET_COLORS.hit);});
+          else rec.plate.material=hit;
+          complete();
+        }
       };
       melodyListener=event=>rec.onMelodyResult(event?.detail); // One authoritative callback shared by browser event and tests.
       events?.addEventListener?.('hobunji-ruin-melody-result',melodyListener);
@@ -323,7 +397,7 @@
         stone,cx,y+2.72,cz);
       track.userData.devRuinCeilingRail=true;
       for(let i=0;i<2;i++){
-        const t=target(id+'-moving'+i,cx,y+2.15,cz);
+        const t=target(id+'-moving'+i,cx,y+2.15,cz,true);
         t.alongX=alongX;t.distance=distance;
         t.phase=i*Math.PI;t.speed=1.2+i*.35;
       }
@@ -405,6 +479,7 @@
     rec.targetCount=targets.length;
     rec.tick=(dt)=>{
       if(rec.disposed)return;
+      for(const emitter of flameVisuals)emitter.update?.(Math.max(0,Math.min(.05,Number(dt)||0)),true); // Reuse the authored fire renderer's own particle lifecycle.
       const player=getPlayerPosition?.(),currentY=getPlayerY?.();
       if(kind==='pressurePlate'&&isActive()&&!rec.solved){
         const standing=player&&Number.isFinite(currentY)&&Math.abs(currentY-y)<.75
@@ -452,14 +527,21 @@
         for(const t of targets){
           if(t.active)continue;
           const offset=Math.sin(rec.elapsed*t.speed+t.phase)*t.distance;
-          t.base.position.set(t.origin.x+(t.alongX?offset:0),t.origin.y,t.origin.z+(t.alongX?0:offset));
-          t.rune.position.set(t.base.position.x,t.base.position.y,t.base.position.z);
+          if(t.visualRoot){
+            t.visualRoot.position.set(t.origin.x+(t.alongX?offset:0),t.origin.y,t.origin.z+(t.alongX?0:offset));
+          }else{
+            t.base.position.set(t.origin.x+(t.alongX?offset:0),t.baseY,t.origin.z+(t.alongX?0:offset));
+            t.rune.position.set(t.base.position.x,t.runeY,t.base.position.z+.43);
+            if(t.plaque)t.plaque.position.set(t.base.position.x,t.runeY,t.base.position.z+.55);
+          }
         }
       }
       if(kind==='ropeChain'){
+        if(!ropeChain&&bus?.hasActiveRuinState?.()!==true)rec.error='Native rope controller is not attached to this ruin scene';
         if(!ropeChain&&bus?.hasActiveRuinState?.()===true){
           ropeChain=bus?.registerExternalRopeChain?.(rec.ropeSpec)||null;
           rec.ropeLinked=!!ropeChain;
+          rec.error=ropeChain?null:bus?.lastExternalRopeError?.()||'Rope controller declined the room'; // Surface registration failures in the mobile challenge badge.
           if(ropeChain)options.onLink?.(rec);
         }
         if(ropeChain&&!rec.solved&&isActive()&&player&&Number.isFinite(currentY)
@@ -507,6 +589,9 @@
       if(melodyListener)events?.removeEventListener?.('hobunji-ruin-melody-result',melodyListener);
       if(timedNoteListener)events?.removeEventListener?.('hobunji-kurraya-puzzle-note',timedNoteListener);
       if(rec.musicOpened)music?.close?.();
+      for(const emitter of flameVisuals)emitter.dispose?.();
+      flameVisuals=[];
+      if(icePlacement)root.DungeonDoorIceCoverage?.clear?.(icePlacement);
       group.parent?.remove(group);
       if(rec.authoredGate){
         // Authored furniture is built asynchronously with fresh per-part meshes.
@@ -521,6 +606,16 @@
         rec.authoredGate=null;
       }
       for(const m of owned)m.geometry?.dispose?.();
+      const seenMaterials=new Set(materials); // Authored fixtures have per-instance materials but share immutable cached textures.
+      for(const visual of authoredVisuals){
+        visual.parent?.remove(visual); // A detached group has no scene parent; FurniturePieces.track can now release its glow callback instead of retaining the entire discarded ruin.
+        visual.traverse?.(node=>{
+        if(!node.isMesh)return;
+        if(!node.geometry?.userData?.devRuinSharedPrimitive)node.geometry?.dispose?.();
+        const mats=Array.isArray(node.material)?node.material:[node.material];
+        for(const mat of mats)if(mat&&!seenMaterials.has(mat)){seenMaterials.add(mat);mat.dispose?.();}
+        });
+      }
       for(const mat of materials)mat.dispose?.();
     };
     rec.simulateHit=(index)=>{
