@@ -58,6 +58,7 @@
   };
   const document = { currentScript:{src:'https://example.test/docs/js/fur-hood-leatherworking.js'} };
   const source = read('docs/js/fur-hood-leatherworking.js');
+  assert.match(source, /config\/patterns\/fur-hoods\.json\?v=[A-Za-z0-9_-]+/, 'fur-hood runtime must request a versioned animal sprite manifest');
   vm.runInNewContext(source, {window,document,URL,fetch: async()=>({ok:true,json:async()=>painted})});
   async function main() {
     await window.FurHoodLeatherworking.ensureManifest();
@@ -122,6 +123,7 @@
     assert.match(portrait,/behindUrl: portraitRelPath\('\.\/' \+ layer\.url\)/,'animal front/back art retains identical URLs on both planes');
     assert.match(read('docs/js/equipment-panel.js'),/furHood: item\.furHood \? JSON\.parse/,'Pack to Gear transfer preserves the literal hide');
     const editor = read('docs/tools/pattern-editor/index.html');
+    assert.match(editor, /fetch\('\.\.\/\.\.\/config\/patterns\/fur-hoods\.json\?v=[A-Za-z0-9_-]+'\)/, 'pattern editor must load a fresh authored fur-hood manifest');
     for (const id of ['furAnimalSpecies','furGeneId','furWearerVariant','furAssignBtn','furDownloadManifestBtn']) {
       assert(editor.includes('id="'+id+'"'), 'missing dev animal pattern tool field '+id);
     }
