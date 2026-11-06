@@ -216,6 +216,9 @@
     restorePreviewRoots();
     await loadRepoFurnitureLibrary();
     window.__devRuinSingleRoomLab = options.singleRoom === true && options.singleRoomLab === true; // Removes V50's core-treasure moat/dais so the chosen test puzzle is the only challenge.
+    const nativeTypes=new Set(['brazier','glyphObelisk','stackedObelisk','linkedCubePillars']); // Whitelist prevents unknown or pressure-plate fixtures in the isolated dev lab.
+    window.__devRuinSingleRoomNativePuzzle=window.__devRuinSingleRoomLab&&nativeTypes.has(options.nativePuzzle)?options.nativePuzzle:null;
+    window.__devRuinSingleRoomNativeCreated=null; // Cleared between generations; never return stale success metadata.
     window.__devRuinSingleRoomPreset = options.singleRoom === true && ['medium','large','veryLarge'].includes(options.roomPreset) ? options.roomPreset : null; // Standalone Rope Chain uses a reachable large V50 chamber; statue defense keeps vast geometry.
     window.__devRuinSingleRoomLarge = options.singleRoom === true && options.roomPreset === 'veryLarge'; // Root preview opts into the generator's existing vast chamber preset.
     window.__devRuinSingleRoom = options.singleRoom === true; // Explicit root-author preview option; every ordinary generation restores the normal minimum.
@@ -267,6 +270,7 @@
       puzzleGeneration:{
         countsByRoom:Object.fromEntries(window.__devRuinPuzzleCounts || []),
         claimedMechanisms:[...(window.__devRuinPuzzleClaimedMechanisms || [])],
+        nativeLab:window.__devRuinSingleRoomNativeCreated?cloneJson(window.__devRuinSingleRoomNativeCreated):null,
       },
       puzzleFurniture,
     };
