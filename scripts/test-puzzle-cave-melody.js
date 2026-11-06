@@ -59,4 +59,12 @@ assert.equal(replay.activeIndex(),-1,'glyphs go dark in the silent measure');
 for(let t=0;t<16;t++)replay.step(first.secondsPerTick,true);
 assert.equal(replay.activeIndex(),0,'the song repeats while the player stays on the plate');
 
-console.log('Puzzle Cave melody: deterministic generation, bounded tempo, timed notes, loop, reset, and exactly-once solve OK');
+const slowFrame=Song.createSession(first);
+slowFrame.step(0,true);
+slowFrame.step(.72,true); // Simulates a memory-stressed mobile frame well beyond the former 0.25-second clamp.
+assert(Math.abs(slowFrame.snapshot().elapsed-.72)<1e-8,
+  'a lag spike must advance the real song clock instead of silently slowing its BPM');
+slowFrame.step(0,false);
+assert.equal(slowFrame.snapshot().elapsed,0,'stepping off still resets time after a stalled frame');
+
+console.log('Puzzle Cave melody: deterministic generation, bounded tempo, timed notes, lag spikes, loop, reset, and exactly-once solve OK');
