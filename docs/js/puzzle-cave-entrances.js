@@ -45,7 +45,8 @@
       if(!entryTiles.length){taken.delete(shelf.id);continue;}
       const entry=entryTiles[0]; // The actual raised tile is authoritative for the game transition, never the low terrain below it.
       const door={x:nearBack.x,z:nearBack.z,y:shelf.y};
-      const plate={x:shelf.x+normal.x*.17,z:shelf.z+normal.z*.17,y:shelf.y};
+      const plateOffset=Math.min(.68,shelf.depth*.36); // Separates the playable pressure plate from the entrance transition tile on compact two-tile ledges.
+      const plate={x:shelf.x+normal.x*plateOffset,z:shelf.z+normal.z*plateOffset,y:shelf.y};
       const melody=hash(site.signature+':outdoor-song')%2===0; // Not every entrance has an outside challenge; some have only their interior.
       out.push({mapId:site.mapId,denId:site.denId,site,shelf,door,plate,entry,
         tangent,normal,requiresSong:melody,difficulty:1+(hash(site.signature+':outdoor-difficulty')%5)});
@@ -141,7 +142,7 @@
     scene.add(group);portal.visualRoot=group;
     // The plate belongs on the registered cap, not at terrain height underneath.
     if(portal.requiresSong){
-      const plate=new THREE.Mesh(new THREE.CylinderGeometry(.68,.68,.09,24),
+      const plate=new THREE.Mesh(new THREE.CylinderGeometry(.55,.55,.09,24),
         new THREE.MeshBasicMaterial({color:0x6f6152}));
       plate.name='puzzle-cave-exterior-plate';
       plate.position.set(portal.plate.x,portal.plate.y+.035,portal.plate.z);
@@ -283,7 +284,7 @@
     for(const portal of state.portals){
       if(portal.disposed)continue;
       const onShelf=player?.onCliffBalcony===portal.shelf.id && !player?.climbing;
-      const down=onShelf&&Math.hypot(px-portal.plate.x,pz-portal.plate.z)<.68;
+      const down=onShelf&&Math.hypot(px-portal.plate.x,pz-portal.plate.z)<.55; // A separate activation circle leaves room to step up to the gate after the final note.
       if(portal.session){
         portal.session.step(dt,down);
         if(down&&!portal.lastDown&&!portal.solved){
