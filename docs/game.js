@@ -7017,6 +7017,17 @@
           // damage can find them, but companionObjects owns their movement
           // and attacks so they can follow their bandit master.
           if (c.banditCompanion) continue;
+          // The canonical wildlife tick already moved this Tzatzul's body
+          // before updateHostiles. Keep live vitals/LOD/portrait animation,
+          // but do not let the ordinary ground AI move it a second time.
+          if (window.TzatzulFlightRuntime?.owns?.(c)) {
+            const distanceTiles = Math.hypot(player.x - c.x, player.y - c.y) / TILE;
+            updateWildlifeVisualLod(c, distanceTiles);
+            if (!tickCreatureResources(c, dt, false)) continue;
+            updateCreatureMesh(c, dt, c.facing);
+            updateCreatureAnimFrame(c, dt, c._tzFlight?.phase !== 'perched');
+            continue;
+          }
           // Honeyfuzzle swarms fly home to their hive stump at dusk and tuck
           // inside it overnight (js/honeyfuzzle-hives.js) — hive-controlled
           // frames skip the generic wildlife AI entirely.

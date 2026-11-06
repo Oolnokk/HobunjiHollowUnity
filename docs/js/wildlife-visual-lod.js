@@ -19,6 +19,7 @@
     return true;
   }
   function canHide(c) {
+    if (c._tzFlight?.phase && c._tzFlight.phase !== 'perched' || c.tzatzulCarrying) return false; // Flight and original captive portraits stay visible through the spyglass.
     if (c.health <= 0 || c.isBandit || c.isCompanion || c.prone || c._branchDefense || (c.knockbackT || 0) > 0 || (c.retreatT || 0) > 0) return false;
     if (c.state === 'chase' || c.state === 'searching' || c.state === 'patrol-chase' || c.state === 'return' || c.state === 'fleeing-low-health') return false;
     if (window.Combat?.telegraph?.isBusy(c) || window.Combat?.animalAttacks?.isBusy(c)) return false;

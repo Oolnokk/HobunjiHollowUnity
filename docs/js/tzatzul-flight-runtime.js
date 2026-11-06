@@ -288,6 +288,7 @@
   }
   window.TzatzulFlightRuntime = Object.freeze({
     init, ensureZone, update, onDayAdvance, debugSnapshot,
+    owns: bird => actors.has(bird) && !!bird._tzFlight && bird.health > 0, // Existing hostile renderer skips ground movement for these flight-owned predators.
     __test: Object.freeze({ roosts, choosePrey, swoop, returnHome }),
   });
 })();

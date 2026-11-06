@@ -42,6 +42,13 @@ const deps={TILE:64,player,hostileObjects:creatures,companionObjects:companions,
     health:100,maxHealth:100,def:{attackDamage:24},...opts})};
 assert(w.TzatzulFlightRuntime.init(deps));
 assert.equal(w.TzatzulFlightRuntime.ensureZone(zone),2,'one visible mother per distant high cliff roost');
+assert.equal(w.TzatzulFlightRuntime.owns([...creatures][0]),true,'flight module owns simulated Tzatzul movement');
+assert.equal(w.TzatzulFlightRuntime.owns({ creatureKey:'tzatzul' }),false,'unregistered dev-spawned animals retain regular movement');
+const game = file('docs/game.js'); // Verify the authoritative hostile renderer delegates motion rather than starting a second AI owner.
+assert.match(game,/if \(window\.TzatzulFlightRuntime\?\.owns\?\.\(c\)\) \{[\s\S]{0,320}updateWildlifeVisualLod\(c, distanceTiles\)/);
+assert.match(game,/updateCreatureAnimFrame\(c, dt, c\._tzFlight\?\.phase !== 'perched'\);\s*continue;/);
+assert.match(file('docs/js/wildlife-visual-lod.js'),/c\.tzatzulCarrying/,
+  'far-wing visibility is retained while prey is carried');
 assert.equal(w.TzatzulFlightRuntime.ensureZone(zone),0,'repeated checks cannot duplicate mothers');
 assert.equal(native.get(zone).size,2,'two bird-only spire points are registered');
 assert(file('docs/js/tzatzul-cliff-sites.js').includes('s?.base?.footprint?.length'),
