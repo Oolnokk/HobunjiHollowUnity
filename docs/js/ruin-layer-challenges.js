@@ -478,6 +478,18 @@
       if(timedNoteListener)events?.removeEventListener?.('hobunji-kurraya-puzzle-note',timedNoteListener);
       if(rec.musicOpened)music?.close?.();
       group.parent?.remove(group);
+      if(rec.authoredGate){
+        // Authored furniture is built asynchronously with fresh per-part meshes.
+        // These are not in 'owned'; release their geometry/material on cave scene
+        // retirement while keeping the globally cached shared PNG textures alive.
+        rec.authoredGate.traverse?.(node=>{
+          if(!node.isMesh)return;
+          node.geometry?.dispose?.();
+          for(const material of Array.isArray(node.material)?node.material:[node.material])
+            material?.dispose?.();
+        });
+        rec.authoredGate=null;
+      }
       for(const m of owned)m.geometry?.dispose?.();
       for(const mat of materials)mat.dispose?.();
     };
