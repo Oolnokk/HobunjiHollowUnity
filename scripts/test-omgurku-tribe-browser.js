@@ -96,19 +96,21 @@ function exitWithResult(){setImmediate(()=>process.exit(process.exitCode||0));}
       omg.ensureWorldCamps();
       const poraState=pora.debugSnapshot(),omgState=omg.debugSnapshot();
       const missing=zones.filter(id=>!window.Combat.deps.zoneLayouts.has(id)||!poraState.zones[id]||!omgState.zones[id]);
+      const withoutOmgurkuCamp=zones.filter(id=>!(omgState.zones[id]?.smallCampCount>0)); // Report any map with no hunting camp.
       const overlap=zones.flatMap(id=>{
         const occupied=new Set(pora.reservedCampChunks(id)); // Compare reservations within each wilderness map.
         return omg.reservedCampChunks(id).filter(key=>occupied.has(key)).map(key=>id+':'+key);
       });
-      return {tribes:window.TribeCamps.list().map(t=>t.tribeId),missing,overlap,
+      return {tribes:window.TribeCamps.list().map(t=>t.tribeId),missing,withoutOmgurkuCamp,overlap,
         omgSmall:omgState.totalSmallCamps,poraSmall:poraState.totalSmallCamps,
         chiefs:[poraState.chiefZoneId,omgState.chiefZoneId]};
     },wildernessZones);
     assert.deepEqual(camps.tribes,['porakaneki','omgurku']);
     assert.deepEqual(camps.missing,[],'both tribe camp networks initialize on all four generated wilderness maps');
-    assert(camps.omgSmall>=4,'every wilderness map keeps at least one Omgurku hunting camp');
+    assert.deepEqual(camps.withoutOmgurkuCamp,[],'every wilderness map keeps at least one Omgurku hunting camp');
     assert(Math.abs(camps.omgSmall-camps.poraSmall)<=4,`rival tribes get comparable hunting camps (${camps.omgSmall} Omgurku / ${camps.poraSmall} Porakaneki)`);
     assert.deepEqual(camps.overlap,[],'Omgurku camps never share a stream chunk with Porakaneki camps');
+    assert(camps.chiefs.every(id=>wildernessZones.includes(id)),'both chief camps have wilderness maps');
     assert.notEqual(camps.chiefs[0],camps.chiefs[1],'the two chief camps are on different maps');
 
     console.log('Omgurku tribe: building the arena fighters');
@@ -130,7 +132,7 @@ function exitWithResult(){setImmediate(()=>process.exit(process.exitCode||0));}
         entity.def.aggroRangePx=0;deps.hostileObjects.add(entity);return entity;
       };
       const omg=await spawn('omgurku',-0.4),pora=await spawn('porakaneki',0.4); // Start within hatchet reach so the smoke tests attack dispatch, not arena navigation.
-      window.__tribeQa={omg,pora};
+      window.__tribeQa={omg,pora,sawMutualTargets:false}; // Remember engagement even if a hit breaks targeting.
       const ref=omg.avatarRef;
       for(let i=0;i<3;i++)await new Promise(resolve=>requestAnimationFrame(resolve)); // Let the hostile loop pose the weapon once.
       const rider=new THREE.Vector3();ref.riderMount.riderFrame.getWorldPosition(rider);
@@ -162,19 +164,20 @@ function exitWithResult(){setImmediate(()=>process.exit(process.exitCode||0));}
     let fight;
     try{
       const result=await page.waitForFunction(()=>{
-        const {omg,pora}=window.__tribeQa,live=window.Combat.deps.hostileObjects;
-        const engaged=omg._chunkCombatTarget===pora&&pora._chunkCombatTarget===omg;
-        const hit=omg.health<omg.maxHealth||pora.health<pora.maxHealth;
+        const qa=window.__tribeQa; // Track engagement across frames within the same timeout.
+        const {omg,pora}=qa,live=window.Combat.deps.hostileObjects;
         if(!live.has(omg)||!live.has(pora))return {despawned:true};
-        return engaged&&hit&&{neutral:[omg._porakanekiPlannerControlled,pora._porakanekiPlannerControlled],health:[omg.health,pora.health]};
-      },null,{timeout:30000,polling:100}); // Both targeting and damage must come from the live game loop.
+        qa.sawMutualTargets ||= omg._chunkCombatTarget===pora&&pora._chunkCombatTarget===omg;
+        const hit=omg.health<omg.maxHealth||pora.health<pora.maxHealth;
+        return qa.sawMutualTargets&&hit&&{neutral:[omg._porakanekiPlannerControlled,pora._porakanekiPlannerControlled],health:[omg.health,pora.health]};
+      },null,{timeout:30000}); // Sample every frame so short-lived targeting still counts.
       fight=await result.jsonValue();
     }catch(error){
       const state=await page.evaluate(()=>{
-        const {omg,pora}=window.__tribeQa;
+        const {omg,pora,sawMutualTargets}=window.__tribeQa;
         const pick=e=>({state:e.state,hp:e.health+'/'+e.maxHealth,weapon:e.def.weaponKey,
           targetsRival:!!e._chunkCombatTarget,attackBusy:!!e._enemyAttackBusyLastFrame,x:e.x,y:e.y});
-        return {omg:pick(omg),pora:pick(pora),area:window.GridTileAccessors.getCurrentArea()};
+        return {omg:pick(omg),pora:pick(pora),sawMutualTargets,area:window.GridTileAccessors.getCurrentArea()};
       }).catch(()=>null); // A crashed page may no longer be able to report fighter state.
       throw new Error(`Rival fight did not land a hit. Fighter state: ${JSON.stringify(state)}`,{cause:error});
     }finally{
