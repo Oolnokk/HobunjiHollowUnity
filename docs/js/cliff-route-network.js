@@ -558,6 +558,13 @@
   }
   function releaseArea(area) {
     const id = String(area), network = activeByArea.get(id);
+    // Retire scene-bound cliff doorway/locale meshes at the same authoritative
+    // lifecycle boundary as the terrain graph; do not retain inactive zone
+    // THREE objects in either of the small mounting registries.
+    if(typeof globalThis==='object'){
+      globalThis.PuzzleCaveEntrances?.clear?.(id);
+      globalThis.LocaleCliffWallMounts?.clear?.(id);
+    }
     if (network) cache.delete(network.grid); // Unload retires this area's topology, not persistent reward state.
     activeByArea.delete(id);
     rewardMeshesByArea.delete(id); // No retained references to disposed THREE instances.
