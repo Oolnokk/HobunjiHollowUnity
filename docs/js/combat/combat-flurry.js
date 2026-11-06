@@ -83,7 +83,7 @@
         { actionKind: 'offensiveHeldFlurry', abilityId: 'acceleratingFlurry' },
       ) || { tempoMultiplier: 1 };
       const fundedTempo = Math.max(1, Number(spendResult.tempoMultiplier) || 1); // Furious Stamina accelerates only the effective-cost portion it actually funded.
-      const timeScale = 1 / ((window.ResourceSystem?.getExhaustionSpeed(deps.player) ?? 1) * shapeStats.speed);
+      const timeScale = 1 / ((window.ResourceSystem?.getExhaustionSpeed(deps.player) ?? 1) * (shapeStats.speed * (window.DoubleEdgedCombatTrinkets?.attackSpeed?.() || 1)));
       const windupS = WINDUP_S * timeScale / fundedTempo;
       const strikeS = STRIKE_S * timeScale / fundedTempo;
       const dirSign = count % 2 === 0 ? -1 : 1;
@@ -127,7 +127,7 @@
         windupFrac: windupS / (windupS + strikeS),
         strikeFrac: 1,
         pose: window.AttackPoseTemplates?.poseFor('hatchet_swing'), // The editor's Flurry template.
-        holdS: HOLD_S / shapeStats.speed,
+        holdS: HOLD_S / (shapeStats.speed * (window.DoubleEdgedCombatTrinkets?.attackSpeed?.() || 1)),
         afflictionIds: Object.keys(attackAfflictions),
         coneRangePx: rangePx,
         coneHalfConeRad: halfConeRad,
