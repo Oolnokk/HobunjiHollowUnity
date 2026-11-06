@@ -440,14 +440,41 @@
         rearHeadwearXray.delete(mesh);
       }
   }
+  function restoreCarriedMaterial(material,original){
+    if(!material||!original)return;
+    if(material.depthWrite===original.depthWrite&&material.depthTest===original.depthTest
+      &&material.transparent===original.transparent)return;
+    material.depthWrite=original.depthWrite;
+    material.depthTest=original.depthTest;
+    material.transparent=original.transparent;
+    material.needsUpdate=true;
+  }
   function restoreCarriedMesh(mesh,snapshot){
     mesh.renderOrder=snapshot.order;
-    for(const [material,original] of snapshot.materials){
-      material.depthWrite=original.depthWrite;
-      material.depthTest=original.depthTest;
-      material.transparent=original.transparent;
-      material.needsUpdate=true;
-    }
+    for(const [material,original] of snapshot.materials)restoreCarriedMaterial(material,original);
+  }
+  function carriedVisualMeshes(burden){
+    const meshes=new Set(burden?.meshColliders||[]); // Physical colliders remain authoritative for hits, not for visual coverage.
+    // Authored decals, loaded GLB detail meshes, and other children aren't
+    // in meshColliders. They must cross the same back-PNG layer as their parent.
+    // Points/Sprites/particle effects aren't part of the solid furniture pass.
+    burden?.group?.traverse?.(node=>{
+      if(!node?.isMesh||node.visible===false)return;
+      const materials=Array.isArray(node.material)?node.material:[node.material];
+      if(materials.some(material=>material&&material.visible!==false))meshes.add(node);
+    });
+    return meshes;
+  }
+  function syncCarriedMaterials(mesh,snapshot){
+    const current=(Array.isArray(mesh.material)?mesh.material:[mesh.material]).filter(Boolean); // Track material replacements on dynamically loaded furniture.
+    for(const [material,original] of snapshot.materials)
+      if(!current.includes(material))restoreCarriedMaterial(material,original);
+    snapshot.materials=snapshot.materials.filter(([material])=>current.includes(material));
+    for(const material of current)
+      if(!snapshot.materials.some(([tracked])=>tracked===material))
+        snapshot.materials.push([material,{
+          depthWrite:material.depthWrite,depthTest:material.depthTest,transparent:material.transparent
+        }]);
   }
   function setHeldRearXray(cask) {
     if(!cask) {
@@ -472,8 +499,10 @@
     // every time, including after transitions, rather than leaving stale x-ray
     // state on whichever object was last selected.
     const activeMeshes=new Map(); // Associates each currently carried geometry with its held/back rendering rule.
-    for(const [burden,mode] of [[held,'held'],[backCarried,'stowed']])
-      for(const mesh of burden?.meshColliders||[])activeMeshes.set(mesh,mode);
+    for(const mesh of held?.meshColliders||[])activeMeshes.set(mesh,'held');
+    // The render pass applies to every visible part of the back Burden,
+    // including non-colliding decals and newly loaded furniture detail.
+    for(const mesh of carriedVisualMeshes(backCarried))activeMeshes.set(mesh,'stowed');
     for(const [mesh,snapshot] of [...heldRenderOrders])
       if(!activeMeshes.has(mesh)){
         restoreCarriedMesh(mesh,snapshot);
@@ -486,6 +515,7 @@
           .map(material=>[material,{depthWrite:material.depthWrite,depthTest:material.depthTest,transparent:material.transparent}])
       });
       const snapshot=heldRenderOrders.get(mesh);
+      syncCarriedMaterials(mesh,snapshot);
       // 1.5 is reserved for the weapon replay. A stowed Burden instead enters
       // the PNG transparent draw queue so renderOrder can place it between the
       // owner's rear and front faces, even when the furniture is normally opaque.
