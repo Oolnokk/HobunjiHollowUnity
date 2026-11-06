@@ -13,7 +13,13 @@
     ['dungeonFire','Dungeon fire / ice'],
     ['ropeChain','Bottomless rope chain'],
     ['statueDefense','Key Statue defense'],
+    ['nativeBrazier','V50 torch-to-brazier route'],
+    ['nativeGlyphObelisk','V50 hidden glyph obelisks'],
+    ['nativeStackedObelisk','V50 stacked obelisk'],
+    ['nativeLinkedCubePillars','V50 linked cube pillars'],
   ]); // Used by both the mobile selector and the generation validator.
+  const NATIVE_VARIANTS=Object.freeze({nativeBrazier:'brazier',nativeGlyphObelisk:'glyphObelisk',
+    nativeStackedObelisk:'stackedObelisk',nativeLinkedCubePillars:'linkedCubePillars'}); // Maps test-only choices to actual V50 activator families.
   const VALID=new Set(TYPES.map(([key])=>key)); // Used to exclude retired or unsupported puzzles from forced and weighted lab selection.
   function pick(seed,requested='weighted',planner=root.RuinLayerPlan){
     const selection=String(requested||'weighted');
@@ -33,5 +39,5 @@
     const kind=rooms[Math.floor(value*rooms.length)].challenge;
     return {kind,mode:'weighted',population:rooms.length};
   }
-  return Object.freeze({TYPES,pick});
+  return Object.freeze({TYPES,NATIVE_VARIANTS,pick});
 });
