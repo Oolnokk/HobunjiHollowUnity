@@ -163,6 +163,36 @@ assert(rolled.filter(p => p.contents === 'puzzle_cave').every(p => p.inhabitant 
 assert.equal(Cave.__test.caveTitle('mushroom_cave', 'animal_den'), 'Mushroom Cave — Animal Den', 'label names both layers');
 assert.equal(Cave.__test.caveTitle('ore_mine', 'none'), 'Ore-rich Cave', 'uninhabited caves are named by contents only');
 
+// Real Puzzle Cave generation must carve an accessible one-puzzle room instead
+// of silently labelling a former den cave while leaving it empty.
+const puzzleCaves=[]; // Seeded one-room caverns used to cover both authored puzzle mechanisms.
+for(let i=0;i<32 && (!puzzleCaves.some(map=>map.cavePuzzle?.kind==='fireSconces') ||
+                      !puzzleCaves.some(map=>map.cavePuzzle?.kind==='timedMelody'));i++){
+  puzzleCaves.push(decorate(profile('map_i_test_puzzle_'+i,'puzzle_cave')));
+}
+assert(puzzleCaves.some(map=>map.cavePuzzle?.kind==='fireSconces'),
+  'a fire-sconce Puzzle Cave can be generated');
+assert(puzzleCaves.some(map=>map.cavePuzzle?.kind==='timedMelody'),
+  'a timed-melody Puzzle Cave can be generated');
+for(const map of puzzleCaves){
+  const puzzle=map.cavePuzzle;
+  assert(puzzle && puzzle.room.width===9 && puzzle.room.depth===9,
+    'Puzzle Cave always receives its own nine-by-nine room');
+  const floorKeys=new Set(map.floor.map(tile=>tile.join(','))); // Source-of-truth carved floor validates puzzle placement.
+  for(let row=puzzle.room.row;row<puzzle.room.row+9;row++)
+    for(let col=puzzle.room.col;col<puzzle.room.col+9;col++)
+      assert(floorKeys.has(col+','+row), 'the whole challenge room remains walkable after cavern collision carving');
+  assert.equal(map.creatureSpawns.length,0,'Puzzle Cave contains no inherited Den-Mother spawns');
+  if(puzzle.kind==='fireSconces'){
+    const charges=map.caveShattercasks.filter(charge=>charge.kind==='flameShattercask'&&charge.guaranteed);
+    assert.equal(charges.length,2,'two usable flame charges prevent a one-use fire-sconce softlock');
+    assert(charges.every(charge=>floorKeys.has(charge.col+','+charge.row)),
+      'both flame charges are on rendered cave floor');
+    assert(Math.hypot(charges[0].col-charges[1].col,charges[0].row-charges[1].row)>=2,
+      'two charges do not overlap');
+  }
+}
+
 const mineMap = decorate(profile('map_i_test_mine', 'ore_mine'));
 assert.equal(mineMap.denMotherKind, null, 'cave without an animal den strips Den-Mother');
 assert.equal(mineMap.nestCol, null, 'cave without an animal den strips nest');
