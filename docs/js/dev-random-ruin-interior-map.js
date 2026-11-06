@@ -19,6 +19,8 @@
   const PAD = 2;
   let entryPadX=PAD,entryPadZ=PAD; // Placement of the current V50 entry room used by floor projection, physics, and collision audit.
   const PLAYER_RADIUS = 0.28;
+  const BLOCK_PUSH_HOLD_S = 0.14; // Brief bracing before walking into a block moves it.
+  const BLOCK_PUSH_SLIDE_S = 0.24; // One authored grid step takes a quarter second.
   const CONTROL_RANGE = 1.65;
   const MAX_STEP_HEIGHT = 0.42;
   const FALL_MS = 650;
@@ -608,9 +610,15 @@
       ruin.controls.push({kind:type,object:a,promptRoot:topSegment||a,range:type==='stackedObelisk'?2.05:CONTROL_RANGE,touchIcon:type==='stackedObelisk'?'↻':'✋',label:type==='stackedObelisk'?'Turn Obelisk':type==='brazier'?'DEV Ignite Brazier':type==='glyphObelisk'?'DEV Trigger Glyph':'Activate '+type,
         onPress:()=>{m.target=m.target>.5?0:1;}});
     }
+    ruin.blockPushers = [];
     for (const block of ruin.pushBlocks) {
       if (block.userData?.previewMotion?.type !== 'pushPuzzleBlock') continue; // Elevator blocks retain their height-aware motion-runtime control.
-      ruin.controls.push({kind:'pushBlock',object:block,label:'Push Stone Block',onPress:()=>pushBlock(block)});
+      const route = block.userData.pushPath;
+      const step = route?.length > 1 ? Math.hypot(route[1].x-route[0].x, route[1].z-route[0].z) : 0;
+      const pusher = {block, localStep:step || localCellSize(ruin.meta)}; // Keeps each push on the generator's validated lattice.
+      ruin.blockPushers.push(pusher);
+      ruin.controls.push({kind:'pushBlock',object:block,label:'Push Stone Block',range:.36,touchIcon:'✋',
+        onPress:()=>pushBlock(pusher,getPushFace(pusher,.36),true)});
     }
     ruin.controls.push({kind:'exit',object:null,label:'Leave Test Ruin',point:ruin.spawn,onPress:leaveRuin});
     ruin.occupancy = TileOccupancy.create({
@@ -631,20 +639,81 @@
     }
   }
 
-  function pushBlock(block) {
-    const p=centerFor(block), px=deps.player.x/deps.TILE, pz=deps.player.y/deps.TILE;
-    const route=Array.isArray(block.userData?.pushPath)?block.userData.pushPath:[]; // Authored V50 route defines the intended per-push spacing for pressure puzzles.
-    let authoredStep=0;
-    for(let i=1;i<route.length&&!authoredStep;i++){const dx=Number(route[i]?.x)-Number(route[i-1]?.x),dz=Number(route[i]?.z)-Number(route[i-1]?.z),distance=Math.hypot(dx,dz);if(distance>.05)authoredStep=distance;}
-    const localStep=authoredStep||localCellSize(ruin.meta), worldStep=localStep*RUIN_TILE_SCALE; // Keep runtime pushes on the same lattice the generator validated.
-    const dx=p.x-px,dz=p.z-pz; let sx=0,sz=0;
-    if (Math.abs(dx)>=Math.abs(dz)) sx=Math.sign(dx)||1; else sz=Math.sign(dz)||1;
-    const nx=p.x+sx*worldStep,nz=p.z+sz*worldStep;
-    if (!DS.sampleSupport(nx,nz,{minY:-4,maxY:5,pad:.02})) return deps.showToast?.('The block cannot be pushed there.',false);
-    const hit=DS.blockerAt(nx,nz,{radius:.06,actorHeight:1,ignoreRuinSource:block.userData.__devRuinOccupancySource});
-    if (hit) return deps.showToast?.('Something blocks the stone block.',false);
-    // The locale root carries the 2x horizontal scale, so child transforms remain in V50's original local units.
-    block.position.x+=sx*localStep; block.position.z+=sz*localStep; block.updateMatrixWorld?.(true); ruin.api.syncPressurePlates(ruin.localeRoot); ruin.occupancy?.refresh(); updateBadge();
+  function getPushFace(pusher, reach) {
+    const box = ruin.occupancy?.pushBlockBox(pusher.block);
+    if (!box || Math.abs(ruin.supportY - box.min.y) > .3) return null;
+    const x = (box.min.x+box.max.x)/2, z = (box.min.z+box.max.z)/2; // World-space center for facing and sweep.
+    const halfX = (box.max.x-box.min.x)/2, halfZ = (box.max.z-box.min.z)/2;
+    const dx = x-deps.player.x/deps.TILE, dz = z-deps.player.y/deps.TILE;
+    const gapX = Math.abs(dx)-halfX, gapZ = Math.abs(dz)-halfZ;
+    const alongX = gapX > gapZ;
+    const gap = alongX ? gapX : gapZ;
+    // The square's corners are for walking around. Only a face can take a push.
+    if (gap < .04 || gap > reach || (alongX ? Math.abs(dz)>halfZ*.74 : Math.abs(dx)>halfX*.74)) return null;
+    return {x,z,halfX,halfZ,y:box.min.y,height:box.max.y-box.min.y,gap,
+      sx:alongX?Math.sign(dx):0,sz:alongX?0:Math.sign(dz)};
+  }
+
+  function pushBlock(pusher, face, manual = false) {
+    if (ruin.blockSlide || !face) return false;
+    const {block,localStep} = pusher;
+    const worldStep = localStep*RUIN_TILE_SCALE;
+    const radius = Math.max(.02,Math.max(face.halfX,face.halfZ)-.035); // Small clearance keeps a V50 cube from scraping the walls of a one-cell route.
+    const options = {radius, actorHeight:face.height, y:face.y, worldY:face.y+.1,
+      ignoreRuinSource:block.userData.__devRuinOccupancySource};
+    const probes = Math.ceil(worldStep/.18); // Sweep the entire footprint, including obstacles between grid stops.
+    for (let i=1;i<=probes;i++) {
+      const x=face.x+face.sx*worldStep*i/probes, z=face.z+face.sz*worldStep*i/probes;
+      const supported = [[0,0],[-radius,-radius],[-radius,radius],[radius,-radius],[radius,radius]]
+        .every(([dx,dz])=>DS.sampleSupport(x+dx,z+dz,{minY:face.y-.13,maxY:face.y+.13}));
+      if (!supported || DS.blockerAt(x,z,options)) {
+        if (manual) deps.showToast?.('The stone block cannot move that way.',false);
+        return false;
+      }
+    }
+    ruin.blockSlide={block,x:block.position.x,z:block.position.z,dx:face.sx*localStep,dz:face.sz*localStep,elapsed:0};
+    ruin.blockBrace=null;
+    return true;
+  }
+
+  function updateBlockPushing(dt) {
+    const slide=ruin.blockSlide;
+    if (slide) {
+      slide.elapsed+=dt;
+      const t=Math.min(1,slide.elapsed/BLOCK_PUSH_SLIDE_S);
+      const blend=t*t*(3-2*t); // Ease into and out of the push, then land exactly on the lattice.
+      slide.block.position.x=slide.x+slide.dx*blend;
+      slide.block.position.z=slide.z+slide.dz*blend;
+      slide.block.updateMatrixWorld?.(true);
+      if (t===1) ruin.blockSlide=null;
+      return;
+    }
+    const player=deps.player;
+    const strength=Math.hypot(player.inputX||0,player.inputY||0); // The game's camera-resolved keyboard, controller and touch intent.
+    if (!ruin.blockPushers?.length || strength<.25 || player.inputStrength<.25 || player.prone ||
+        player.dodging || player.lunging || player.knockbackT>0 || player.climbing || player.onClimbSurface ||
+        ruin.falling || window.CharacterActionLocks?.isLocked?.('player','movement') ||
+        window.DevRandomRuinSimplePuzzles?.ownsPlayerMotion?.() ||
+        document.getElementById('menuPanel')?.classList.contains('open') || puzzleLabMenu?.panel.hidden===false) {
+      ruin.blockBrace=null;
+      return;
+    }
+    let contact=null;
+    for (const pusher of ruin.blockPushers) {
+      const face=getPushFace(pusher,.29);
+      if (!face || (face.sx*player.inputX+face.sz*player.inputY)/strength<.85) continue;
+      if (!contact || face.gap<contact.face.gap) contact={pusher,face};
+    }
+    if (!contact) {ruin.blockBrace=null;return;}
+    const {pusher,face}=contact;
+    let brace=ruin.blockBrace;
+    if (brace?.pusher!==pusher || brace.sx!==face.sx || brace.sz!==face.sz)
+      brace=ruin.blockBrace={pusher,sx:face.sx,sz:face.sz,elapsed:0};
+    brace.elapsed+=dt;
+    if (brace.elapsed>=BLOCK_PUSH_HOLD_S) {
+      brace.elapsed=0;
+      pushBlock(pusher,face);
+    }
   }
 
   function isLitMaterial(material) {
@@ -1085,7 +1154,9 @@
         await enterRuin(); updateBadge();
         generationMark('entered');
         const retryCount=attempt;
-        if(singleRoomTrial)deps.showToast?.('Puzzle Lab: '+soloChoice.kind+' · one room · no loot.',true);
+        if(singleRoomTrial)deps.showToast?.(soloChoice.kind==='nativePushBlock'
+          ?'Walk into a flat side to push the block. Interact pushes it one space. No loot.'
+          :'Puzzle Lab: '+soloChoice.kind+' · one room · no loot.',true);
         else if(opts.site) deps.showToast?.('You enter the '+(opts.label||'ruin').toLowerCase()+'.',true);
         else deps.showToast?.(retryCount?('Rejected '+retryCount+' unsolvable ruin'+(retryCount===1?'':'s')+'; entered #'+candidateSeed+'.'):('Entered Random Test Ruin #'+candidateSeed+' as '+MAP_ID+'.'),true);
         return true;
@@ -1613,6 +1684,7 @@
   }
   const MECHANISM_REAPPLY_MS=1000; // Safety net: unchanged mechanisms are still re-posed once a second.
   function updateMechanisms(dt){
+    updateBlockPushing(dt); // Plate overlap sees the same interpolated pose that collision and rendering use.
     mechanismSignalRoots();
     for(const plate of ruin.pressurePlateRoots)ruin.api.syncPressurePlates(plate);
     ruin.api.tickRuntime(dt);
@@ -1851,6 +1923,7 @@
         blocked:[...blocked],open:[...open]};
     },
     isShaftNetworkComplete:()=>ruin?.shaftLayerRuntime?ruin.shaftNetworkComplete===true:true, // No allocation in the hot Sanctum Great Door update path.
+    isSlidingPushBlock:block=>ruin?.blockSlide?.block===block, // Keeps the separate floor-settling pass from adjusting a block mid-slide.
     getGenerationProgress:()=>({phase:generationPhase,elapsedS:+((performance.now()-generationStartedMs)/1000).toFixed(1),attempts:lastGenerationAudit?.attempts?.length||0}),getDarknessSettings,setDebugBadgePart,getOcclusionMeshes:()=>ruin?.occlusionMeshes||null,setPlayerWorldPoint,getPlayerSupportY,getPlayerGroundSupportY,shaftSegmentHit,shaftCreatureCanEnter,syncShaftCreatureFloor,registerShaftGrid,unregisterShaftGrid:scope=>ruin?.shaftGrids?.delete(scope),setLevelRelativeSupport:on=>{if(ruin)ruin.levelRelativeSupport=on!==false;return !!ruin?.levelRelativeSupport;},getGroundSupportYAt,setMechanismTarget,lockMechanism,unlockMechanism,mechanismInfo,syncPlayerPresentationHeight:syncRuinPresentationHeight,getState:()=>ruin?{mapId:MAP_ID,storyVault:ruin.storyVault ? {footprints:ruin.storyVaultFootprintCount,doorBlocks:false,puzzles:0,decalReady:ruin.storyVaultDecalReady,decalError:ruin.storyVaultDecalError||null} : null,seed:ruin.seed,theme:ruin.theme,specialBoss:ruin.specialBoss,ruinName:ruin.ruinName,hachutu:!!ruin.hachutu,shaftHub:!!ruin.shaftHub,singleRoomTrial:ruin.singleRoomTrial||null,noLoot:ruin.noLoot===true,shaftConnection:ruin.shaftConnection||null, // The mobile debug snapshot reports the laboratory's chosen puzzle and reward policy.shaftLayerRuntime:ruin.shaftLayerRuntime?.getState?.()||null,
     nativeV50Runtime:ruin.nativeV50Runtime?.getState?.()||null,
     runtimeWallPlanes:ruin.entranceWallPlanes||null,
