@@ -72,6 +72,8 @@
   let audioDeps = null; // Captured DevSpawner.grantLoot so rubble uses ordinary inventory/loot handling.
   let gameDeps = null; // game.js-owned inventory, resource-visual and mine-descent helpers (see init()); Combat.deps carries none of them.
   let elapsed = 0, lastArea = '', lastEvent = 'not started';
+  let lastBlastAttribution = null; // Latest player/root source for mobile burden damage and chain diagnostics.
+  const flaskmasterFactor = key => Math.max(1, Number(window.TrinketSystem?.combatMultiplier?.(key)) || 1); // Player-only equipped bonus, captured at the physical hit or throw.
   let promptClaim = ''; // Stable current input claim; avoids rewriting global input policy every 140ms.
   let offeredPileId = null; // Sticky aimed rubble pile so the arch does not blink as the reticle crosses a tile edge.
   const PILE_REACH = 1.65; // Same reach as Shattercask pickup.
@@ -1574,6 +1576,7 @@
     }
     const active=records.get(c.mapId)?.scene||scene();
     if(!active)return false;
+    if(c.kind==='shattercask')c._flaskmasterSource={power:flaskmasterFactor('shatterPower'),radius:flaskmasterFactor('shatterRadius'),rootId:c.id,origin:'player-throw'}; // Capture launch-time bonus before the equipment can change in flight.
     setHeldRearXray(null);
     active.add(c.group);c.group.position.copy(origin);
     c.group.quaternion.copy(quat);c.group.scale.copy(scale);
@@ -2056,22 +2059,23 @@
       const footingLoss=options.footingDamage!==undefined
         ?Math.max(0,Number(options.footingDamage)*(1-dist/radius))
         :Math.max(8,24*(1-dist/radius)); // Preserve Shattercask's original minimum Footing loss unless a new blast explicitly overrides it.
-      window.ResourceSystem?.spendFooting?.(actor,footingLoss,reason);
+      const footingScale=Math.max(0,Number(options.footingDamageScale)||1); // Flaskmaster boosts combat Footing impacts, never terrain destruction.
+      window.ResourceSystem?.spendFooting?.(actor,footingLoss*footingScale,reason);
     }
   }
-  function triggerBurdenBlastAt(mapId,x,z,radius,ignoreId='') {
+  function triggerBurdenBlastAt(mapId,x,z,radius,ignoreId='',source=null) { // Preserve the initial player-owned flask bonus along each physical Shattercask chain.
     const rec=records.get(String(mapId));
     if(!rec?.vases)return 0;
     const limit=Math.max(0,Number(radius)||0),hit=[];
     for(const burden of rec.vases.values()) {
       if(!burden||burden.id===ignoreId||burden.exploded||burden.carried||burden.flying||!burden.group?.parent)continue;
       burden.group.updateWorldMatrix?.(true,true);
-      const world=burden.group.getWorldPosition(new THREE.Vector3());
-      if(Math.hypot(world.x-x,world.z-z)<=limit)hit.push(burden);
+      const world=burden.group.getWorldPosition?.(new THREE.Vector3())||burden.group.position; // Provisional Burdens without a stable world matrix still remain valid chain targets.
+      if(world&&Math.hypot(world.x-x,world.z-z)<=limit)hit.push(burden);
     }
     let count=0;
     for(const burden of hit) {
-      if(burden.kind==='shattercask'){if(detonate(burden,'chain-blast'))count++;}
+      if(burden.kind==='shattercask'){if(detonate(burden,'chain-blast',source))count++;} // Witch-bomb and other non-Shattercask secondary effects never inherit the trinket.
       else if(burden.kind==='hronalWitchBomb') {
         const handler=burden.impactHandler||BURDEN_IMPACT_HANDLERS.get(burden.kind);
         if(typeof handler==='function'&&handler(burden,'witch-bomb-chain')!==false)count++;
@@ -2157,6 +2161,9 @@
       return typeof handler==='function'?handler(cask,cause,attacker)!==false:false; // Future physical Burdens own their impact; they are never mistaken for explosive pottery.
     }
     if(cask.kind==='soursap')return detonateFruit(cask,cause);
+    const attribution=(attacker&&typeof attacker==='object'&&attacker.rootId?attacker:null)||(cause==='throw-impact'?cask._flaskmasterSource:null); // Actor references and environmental hits cannot claim player equipment.
+    const flaskmasterPower=Math.max(1,Number(attribution?.power)||1); // Composed once at the root and snapshotted for a blast chain.
+    const flaskmasterRadius=Math.max(1,Number(attribution?.radius)||1); // A subsequent gear swap cannot boost or weaken a fired Shattercask.
     cask.exploded=true;
     window.AudioSystem?.playObjectSfxKey?.('shattercaskBlast'); // Central detonation gate covers thrown impacts and weapon-triggered blasts exactly once.
     if(held===cask){cancelShatterAim();held=null;setHeldRearXray(null);if(backCarried)setHeldRearXray(backCarried);prompt();deps()?.refreshActionBar?.();}
@@ -2177,8 +2184,10 @@
     const x=impact.x,z=impact.z;
     const y=(cask.carried||cask.flying||cask.plinthAttached)?impact.y:baseHeight(cask.col,cask.row)+.30; // An attached charge explodes at its live surface position.
     shatterVisual(rec?.scene||scene(),x,z,y);
-    applyBlast(cask.mapId,x,z);
-    const cleared=destroyTerrain(cask.mapId,rec,x,z);
+    applyBlast(cask.mapId,x,z,{radius:RADIUS*flaskmasterRadius,damage:DAMAGE*flaskmasterPower,minimumDamage:8*flaskmasterPower,footingDamageScale:flaskmasterPower});
+    lastBlastAttribution={id:cask.id,cause,rootId:attribution?.rootId||null,origin:attribution?.origin||'unattributed',power:flaskmasterPower,radius:flaskmasterRadius}; // Exposes player-only chain origin in the game's mobile diagnostics.
+    const cleared=destroyTerrain(cask.mapId,rec,x,z); // The environmental terrain-clearing radius remains at its unmodified setting.
+    triggerBurdenBlastAt(cask.mapId,x,z,RADIUS*flaskmasterRadius,cask.id,attribution); // A marked-exploded root cannot recursively detonate twice.
     lastEvent='blast '+cask.id+' via '+cause+', terrain='+cleared;
     window.__farmLog?.('[shattercask] '+lastEvent,'world');
     return true;
@@ -2212,7 +2221,8 @@
         try{handled=vase.strikeHandler(vase,{attacker:opts.actor,source:'melee'})===true;}catch(error){console.warn('[burden] strike handler failed',error);}
         if(handled)break;
       }
-      detonate(vase,'melee',opts.actor);break;
+      const source=opts.actor===deps()?.player?{power:flaskmasterFactor('shatterPower'),radius:flaskmasterFactor('shatterRadius'),rootId:vase.id,origin:'player-melee'}:opts.actor; // Existing non-player strike ownership is passed through without equipment bonuses.
+      detonate(vase,'melee',source);break;
     }
   }
   function projectileHit(start,end,radius,limit,mapId) {
@@ -2281,13 +2291,14 @@
     }
     return result;
   }
-  function hitProjectile(candidate) {
+  function hitProjectile(candidate,playerProjectile=false) { // RangedWeapons reports real projectile ownership after its own collision routing.
     if(!candidate?.vase||candidate.vase===backCarried)return false; // An old raycast result must not independently hit a Burden after it is stowed.
     const burden=candidate.vase;
     if(burden.kind==='soursap'&&burden.hanging)return startFruitFall(burden,'projectile'); // Shot branch fruit falls before exploding at terrain contact.
     const handler=burden.impactHandler||BURDEN_IMPACT_HANDLERS.get(burden.kind)||burden.data?.carryable?.impactHandler;
     if(typeof handler==='function')return handler(burden,'projectile')!==false; // New Burden types keep their own throw-impact effect, regardless of the source mechanism.
-    return detonate(burden,'projectile');
+    const source=playerProjectile?{power:flaskmasterFactor('shatterPower'),radius:flaskmasterFactor('shatterRadius'),rootId:burden.id,origin:'player-projectile'}:null; // Neutral for wild, enemy and environmental projectiles.
+    return detonate(burden,'projectile',source);
   }
   function updateBursts(dt) {
     for(let i=burstEffects.length-1;i>=0;i--) {
@@ -2540,7 +2551,7 @@
     contextButtons,collectAimedPile,promptButtons,RUBBLE_YIELD,
     startShatterAim,releaseShatterAim,cancelShatterAim,detonate,heldHandTarget,
     projectileHit,hitProjectile,senseTargets,sweepMelee,tick,attachRuntime,
-    debugSnapshot:()=>({lastEvent,latestChange:'Stowed Burdens attach directly to the live portrait plane and take carrier hits, not separate projectile hits.',backCarryMount:backCarried?{parent:backCarried.group?.parent?.name||backCarried.group?.parent?.type||null,portraitAttached:!!backCarryPortrait(backCarryRoot())&&backCarried.group?.parent===backCarryPortrait(backCarryRoot()),rootFallback:backCarried.group?.parent===backCarryRoot(),collision:'carrier-hitbox'}:null,crates:window.CratePiles?.debugSnapshot?.()||null,backCarried:backCarriedInfo(),fruitCarryProfile:fruitCarryTemplate===FRUIT_CARRY_FALLBACK?'fallback':'authored',area:area(),held:held?.id||null,emittingVases:[...allActive().values()].filter(v=>v.emitters?.length).length,
+    debugSnapshot:()=>({lastEvent,lastBlastAttribution,latestChange:'Stowed Burdens mount on the portrait plane; Flaskmaster tracks player-owned throws, melee hits and ranged Shattercask chains.',backCarryMount:backCarried?{parent:backCarried.group?.parent?.name||backCarried.group?.parent?.type||null,portraitAttached:!!backCarryPortrait(backCarryRoot())&&backCarried.group?.parent===backCarryPortrait(backCarryRoot()),rootFallback:backCarried.group?.parent===backCarryRoot(),collision:'carrier-hitbox'}:null,crates:window.CratePiles?.debugSnapshot?.()||null,backCarried:backCarriedInfo(),fruitCarryProfile:fruitCarryTemplate===FRUIT_CARRY_FALLBACK?'fallback':'authored',area:area(),held:held?.id||null,emittingVases:[...allActive().values()].filter(v=>v.emitters?.length).length,
       vases:[...allActive().values()].map(v=>({id:v.id,kind:v.kind,col:v.col,row:v.row,carried:v.carried,hanging:!!v.hanging,flying:!!v.flying,plinthAttached:!!v.plinthAttached,hangingMechanismId:v.hangingMechanismId||null})),
       fruitFalls:[...fallingFruits.values()].map(f=>({id:f.fruit.id,y:f.fruit.group.position.y,cause:f.cause})),
       downwardBurdenFalls:[...downwardFalls.values()].map(f=>({id:f.burden.id,y:f.burden.group.position.y,velocity:+f.velocity.toFixed(2),cause:f.cause})),
