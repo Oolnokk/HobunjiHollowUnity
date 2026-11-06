@@ -1867,6 +1867,27 @@
     if(context.meta?.rooms?.length!==1||!source||!selection?.kind)throw new Error('Puzzle Lab requires exactly one V50 room.');
     const Challenge=window.RuinLayerChallenges; // Reuses the multi-floor game's actual puzzle implementation.
     if(!Challenge?.TYPES?.includes(selection.kind))throw new Error('Missing playable puzzle type '+selection.kind);
+    const nativeKind=window.DevRuinSingleRoomTrial?.NATIVE_VARIANTS?.[selection.kind]||null; // Native V50 trial fixtures keep their own authoritative controls and mechanism state.
+    if(nativeKind){
+      const fixture=context.meta?.singleRoomNative,mechanism=window.DevRandomRuin?.mechanismInfo?.(fixture?.mechanismId);
+      if(fixture?.kind!==nativeKind||!mechanism?.root||!mechanism.gated)
+        throw new Error('Selected native V50 puzzle was not mounted: '+selection.kind);
+      const owner=state; // Native selection and completion belong to this one reroll's context.
+      const trial={id:fixture.mechanismId,kind:selection.kind,ready:true,linked:true,solved:false,disposed:false,
+        nativeFixture:fixture,
+        tick(){
+          if(trial.disposed||trial.solved||state!==owner||!inRuin())return;
+          const active=window.DevRandomRuin?.mechanismInfo?.(fixture.mechanismId);
+          if(active?.progress>=.98){
+            trial.solved=true;owner.singleRoomSolved=true;
+            deps?.showToast?.('Native V50 puzzle complete! The test room awards no loot.',true);
+          }
+        },
+        dispose(){trial.disposed=true;},
+      };
+      state.singleRoomChallenge=trial;
+      return; // No secondary RuinLayerChallenges construct; V50's original scene/hitboxes already own this puzzle.
+    }
     const bounds=roomBounds(context.meta,source); // V50's exact scaled room footprint, without a second layout generator.
     const room={id:'single-room-lab',x:bounds.minX,z:bounds.minZ,w:bounds.maxX-bounds.minX,d:bounds.maxZ-bounds.minZ};
     const entry=String(context.meta?.entrance?.side||'west').toLowerCase();
