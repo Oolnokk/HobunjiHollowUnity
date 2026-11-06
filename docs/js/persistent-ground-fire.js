@@ -58,7 +58,7 @@
       &&Math.hypot(px-patch.x,pz-patch.z)<=patch.radius+Math.max(0,Number(distance)||0));
   }
   function update(dt) {
-    const elapsed=Math.max(0,Math.min(.25,Number(dt)||0));
+    const elapsed=Number.isFinite(Number(dt)) ? Math.max(0,Number(dt)) : 0; // A slow/mobile frame still advances the real fire lifetime, not a 250ms-capped clock.
     if(!zones.length||!elapsed)return; // Idle worlds skip even the area/scene getters and entity scans.
     const area=String(deps?.getCurrentArea?.()||''),scene=deps?.getActiveScene?.();
     const tile=Number(deps?.TILE)||64;
@@ -67,7 +67,9 @@
       if(patch.area!==area||(patch.scene&&patch.scene!==scene)||patch.age>=patch.seconds){
         dispose(patch);zones.splice(index,1);continue;
       }
-      patch.age+=elapsed;patch.damageTimer+=elapsed;
+      patch.age+=elapsed;
+      if(patch.age>=patch.seconds){dispose(patch);zones.splice(index,1);continue;} // Expire before applying fresh damage on a frame after the fire is gone.
+      patch.damageTimer+=elapsed;
       if(patch.mesh){
         const pulse=Math.sin(patch.age*11)*.12+1;
         for(const child of patch.mesh.children){
