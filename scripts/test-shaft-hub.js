@@ -451,7 +451,7 @@ for(const side of ['north','east','south','west']){
   const climb={registerGrid:()=>3,clearScope(){}};
   const dev={registerShaftGrid(){},unregisterShaftGrid(){}};
   const occupancy={create(config){return {cols:config.cols,rows:config.rows,getPosition:config.getPlayerPosition}}};
-  const preplanned=Plan.compose({seed:23,anchorX:320,anchorZ:320}); // Deliberately differs from the old post-generation anchor.
+  const preplanned=Plan.compose({seed:23,anchorX:320,anchorZ:320,shaftTraversal:'buttress'}); // Deliberately differs from the old post-generation anchor.
   const connected=Connector.connect({rec,ruin,seed:23,meta,preplanned,THREE,makeTile,DynamicSurfaces:DS,
     ShaftHub:H,ClimbSurfaces:climb,DevRandomRuin:dev,TileOccupancy:occupancy,
     RuinLayerPlan:Plan,RuinShaftCorridor:Corridor,RuinLayerPlayable:Playable,RuinLayerChallenges:Challenges,RuinLayerDefense:Defense,CellGrid3D:G,

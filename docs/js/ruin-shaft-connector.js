@@ -65,7 +65,8 @@
     // coordinates while the original V50 room stays at its authored position.
     const anchorX=Math.ceil(Math.max(rec.cols+spacing,spacing*3)/spacing)*spacing;
     const anchorZ=Math.ceil(Math.max(rec.rows+spacing,spacing*3)/spacing)*spacing;
-    const plan=preplanned||RuinLayerPlan.compose({seed,spacing,anchorX,anchorZ,shaftSize:33,floorHeight:4});
+    const plan=preplanned||RuinLayerPlan.compose({seed,spacing,anchorX,anchorZ,shaftSize:45,floorHeight:16,
+      shaftTraversal:ruin.storyVault||ruin.hachutu?'buttress':null});
     if(preplanned&&!preplanned.options.groundEntranceSide&&(preplanned.shaft.anchor.x<rec.cols+spacing||preplanned.shaft.anchor.z<rec.rows+spacing))
       throw new Error('Reserved native V50 shaft overlaps the original entry-floor V50 footprint');
     if(!plan.ok)throw new Error('Layer plan invalid: '+plan.checks.filter(c=>!c.ok).map(c=>c.name).join(', '));
@@ -74,7 +75,8 @@
       ...(f.nativePort?[{floor:f.floor,side:f.nativePort.side}]:[]),
     ]); // All E-side native V50 entrances are reserved before V50 emits any floor scene. // Every generated room chain now receives a separate physical doorway.
     const shaftOptions={seed,floors:plan.floorCount,chambers:false,wall:plan.options.shaftWall,
-      shaft:plan.options.shaftSize,spacing:plan.options.floorHeight,entranceSide:plan.options.groundEntranceSide||'W',portals};
+      shaft:plan.options.shaftSize,spacing:plan.options.floorHeight,traversal:plan.options.shaftTraversal,
+      entranceSide:plan.options.groundEntranceSide||'W',portals};
     const hub=ShaftHub.compose(shaftOptions); // The real shared room; origin is set below after determining its full masonry shell.
     const originX=plan.shaft.anchor.x-Math.floor(hub.cols/2),originZ=plan.shaft.anchor.z-Math.floor(hub.rows/2); // The pre-generation anchor owns every portal and wing, including the rendered shaft.
     const placed=ShaftHub.compose({...shaftOptions,originX,originZ});
@@ -169,6 +171,7 @@
       floorCount:plan.floorCount,totalWingsPlanned:plan.totalWings,braziersPlanned:plan.totalBraziers,
       hallwayTiles:route.tiles.length,addedFloorTiles:allFloor.length,
       straightVestibule:!!plan.options.groundEntranceSide,
+      traversal:plan.options.shaftTraversal, // Mobile diagnostics and ruin movement inspect the same chosen method.
       thresholdConnected:!!plan.options.groundEntranceSide};
     const scope='dev-ruin-shaft-corridor'; // Distinct disposal scope from normal V50 floor supports.
     const corridorSupportRects=RuinShaftCorridor.rectangles(route.tiles); // Group adjacent stone into broad collision supports.
@@ -177,9 +180,17 @@
       topY:placed.grid.baseY,priority:1}));
     ruin.shaftConnection.supportRects=corridorSupportRects.length;
     const unmountVisual=visual(route.tiles.filter(([c,r])=>!oldFloor.has(key(c,r))),THREE,rec.scene,placed.grid.baseY,rec.floorSet);
-    let layerRuntime=null,nativeRuntime=null,styleCleanup=null; // Gameplay and V50 decorative masonry share session cleanup.
-    ruin.shaftConnectorCleanup=()=>{styleCleanup?.();nativeRuntime?.dispose();layerRuntime?.dispose();unmountVisual();DS.clearScope(scope);};
+    let layerRuntime=null,nativeRuntime=null,obeliskRuntime=null,styleCleanup=null; // Gameplay mechanisms share the shaft session lifecycle.
+    ruin.shaftConnectorCleanup=()=>{styleCleanup?.();nativeRuntime?.dispose();layerRuntime?.dispose();obeliskRuntime?.dispose();ruin.shaftObeliskRuntime=null;unmountVisual();DS.clearScope(scope);};
     const registered=ShaftHub.mount(placed,{THREE,parent:rec.scene,ClimbSurfaces,DynamicSurfaces:DS,DevRandomRuin});
+    if(placed.obelisks){
+      if(!root.RuinReachingObelisks?.mount)throw new Error('Selected Reaching Obelisks module is not loaded.');
+      obeliskRuntime=root.RuinReachingObelisks.mount(placed.obelisks,{
+        scope:'shaft-obelisks',THREE,parent:rec.scene,DynamicSurfaces:DS,ClimbSurfaces,
+        tradition:ruin.theme,getPlayerPosition,getPlayerY,projectileBus:root.DevRandomRuinSimplePuzzles,onStateChange,
+      });
+    }
+    ruin.shaftObeliskRuntime=obeliskRuntime; // Height-aware fall, switch updates and mobile badge all reuse this one runtime.
     layerRuntime=RuinLayerPlayable.mount({
       rec,ruin,plan,hub:placed,makeTile,THREE,DynamicSurfaces:DS,CellGrid3D,
       RuinShaftCorridor,RuinLayerChallenges,RuinLayerDefense,DevRandomRuin,getPlayerPosition,getPlayerY,showToast,onStateChange

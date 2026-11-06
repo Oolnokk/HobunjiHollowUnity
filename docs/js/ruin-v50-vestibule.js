@@ -13,7 +13,7 @@
     if(!orientation||!LayerPlan?.compose||!ShaftHub?.compose||!Connector?.entranceOutside)
       throw new Error('V50 entrance cannot be oriented toward a physical shaft.');
     const plan=LayerPlan.compose({seed,spacing:64,anchorX:anchor,anchorZ:anchor,
-      shaftSize:33,floorHeight:4,nativeV50:true,plinthTrial,groundEntranceSide:orientation.hub});
+      shaftSize:45,floorHeight:16,nativeV50:true,plinthTrial,groundEntranceSide:orientation.hub});
     if(!plan.ok)throw new Error('V50 vestibule shaft plan invalid: '+plan.checks.filter(c=>!c.ok).map(c=>c.name).join(','));
     const portals=plan.floors.flatMap(f=>[
       ...f.wings.map(w=>({floor:f.floor,side:w.side})),
@@ -21,7 +21,7 @@
     ]);
     const shell=ShaftHub.compose({seed,floors:plan.floorCount,chambers:false,
       wall:plan.options.shaftWall,shaft:plan.options.shaftSize,
-      spacing:plan.options.floorHeight,entranceSide:orientation.hub,portals,
+      spacing:plan.options.floorHeight,traversal:plan.options.shaftTraversal,entranceSide:orientation.hub,portals,
       originX:anchor-Math.floor((plan.options.shaftSize+plan.options.shaftWall*2)/2),
       originZ:anchor-Math.floor((plan.options.shaftSize+plan.options.shaftWall*2)/2)});
     if(!shell.ok)throw new Error('V50 vestibule shaft geometry is invalid.');
