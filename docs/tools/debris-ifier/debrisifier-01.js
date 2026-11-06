@@ -22,7 +22,7 @@
     if (embeddedRuntime) {
       try {
         const request = new XMLHttpRequest(); // Used only by the hidden dev generator so the API bytes cannot be starved behind the live game's startup asset queue.
-        request.open('GET', 'debrisifier-v50-api.js?v=20261105soloNative1', false);
+        request.open('GET', 'debrisifier-v50-api.js?v=20261105soloPush2', false);
         request.send(null);
         const ok = (request.status >= 200 && request.status < 300) || (request.status === 0 && !!request.responseText);
         if (!ok) throw new Error(`V50 dev API HTTP ${request.status}`);
