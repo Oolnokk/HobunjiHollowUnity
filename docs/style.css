@@ -576,7 +576,7 @@
     #menuBtn.open  { background: var(--accent-dim); border-color: rgba(249,226,138,0.5); }
 
     /* ── Farm editor toggle button ───────────────────────── */
-    #farmEditBtn, #mapEditBtn {
+    #farmEditBtn, #mapEditBtn, #devRuinLabBtn {
       position: fixed;
       left: calc(var(--play-right) - 10 * var(--col)); top: calc(var(--oy) + 2 * var(--row));
       width: calc(4 * var(--col)); height: calc(2 * var(--row));
@@ -591,8 +591,10 @@
       box-shadow: 0 4px 16px rgba(0,0,0,0.35);
       transition: background 0.15s; cursor: pointer;
     }
-    #farmEditBtn:hover, #mapEditBtn:hover { background: rgba(255,255,255,0.12); }
-    #farmEditBtn.fed-open, #mapEditBtn.fed-open { background: rgba(100,220,130,0.22); border-color: rgba(100,220,130,0.5); }
+    #farmEditBtn:hover, #mapEditBtn:hover, #devRuinLabBtn:hover { background: rgba(255,255,255,0.12); }
+    #farmEditBtn.fed-open, #mapEditBtn.fed-open, #devRuinLabBtn[aria-expanded="true"] { background: rgba(100,220,130,0.22); border-color: rgba(100,220,130,0.5); }
+    #devRuinLabBtn { left: calc(var(--play-right) - 15 * var(--col)); }
+    #devRuinLabBtn[hidden], #devRuinLabPanel[hidden] { display: none; }
 
     /* ── Dev spawn menu toggle button (same slot as #farmEditBtn) ────── */
     #devSpawnBtn {
@@ -647,7 +649,7 @@
 
 
     /* ── Farm editor panel ───────────────────────────────── */
-    #farmEditorPanel, #mapEditPanel, #devSpawnPanel, #furniturePlacerPanel, #farmworkPanel {
+    #farmEditorPanel, #mapEditPanel, #devSpawnPanel, #furniturePlacerPanel, #farmworkPanel, #devRuinLabPanel {
       position: fixed;
       right: 2px;
       top: calc(var(--oy) + 4 * var(--row));
@@ -663,6 +665,8 @@
       backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
       overflow: hidden;
     }
+    #devRuinLabPanel select { width: 100%; min-height: 36px; font: inherit; }
+    #devRuinLabPanel .fed-action-btn { min-height: 36px; }
     /* Farmwork uses the same readable modal shell and controller highlight as Furniture Placement. */
     #farmworkPanel { color: var(--text); width: clamp(275px, 30vw, 360px); z-index: 60; }
     #farmworkContents { display: block; }

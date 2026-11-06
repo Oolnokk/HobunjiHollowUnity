@@ -166,7 +166,7 @@
   <script src="js/metal-armor-system.js?v=20261104hPatternQuick1435a"></script>
   <script src="config/colors/config.js?v=20261026h7f369c3"></script>
   <script src="config/attachment-rig-profiles.js?v=20261026homgurkulower03"></script>
-  <link rel="stylesheet" href="style.css?v=20261104puzzleHud1">
+  <link rel="stylesheet" href="style.css?v=20261105puzzleHud2">
   <link rel="stylesheet" href="cooking-ui.css?v=20261009mobiletarget3">
   <link rel="stylesheet" href="ui-element-editor.css?v=20260814a">
   <!-- Shared gameplay presentation: mirrors the outlined text + light translucent containers used by character/save select. -->
@@ -600,7 +600,7 @@
   <script src="js/ruin-wall-faces.js?v=20261106walls1"></script> <!-- Merged stretch-to-fit wall faces; shaft-hub.js builds its stone from them. -->
   <script src="js/shaft-hub.js?v=20261106hcbcd73f"></script>
   <script src="js/ruin-layer-plan.js?v=20261104directVestibule1"></script>
-  <script src="js/dev-ruin-single-room-trial.js?v=20261105soloAudit2"></script> <!-- Samples actual ruin-room puzzle selection odds for the one-room developer lab. -->
+  <script src="js/dev-ruin-single-room-trial.js?v=20261106h729a2dc"></script> <!-- Samples actual ruin-room puzzle selection odds for the one-room developer lab. -->
   <script src="js/ruin-shaft-corridor.js?v=20261104directVestibule1"></script>
   <script src="js/ruin-layer-defense.js?v=20261104soloNoLoot1"></script>
   <script src="js/ruin-layer-challenges.js?v=20261105soloAudit5"></script>
@@ -904,7 +904,7 @@
   <script src="js/targetables.js?v=1"></script>
   <script src="js/shattercasks.js?v=20261105backface4"></script>
   <script src="js/crate-piles.js?v=20261105hf6df591"></script>
-  <script src="js/hronal-witch-bombs.js?v=20261104h83c7695"></script>
+  <script src="js/hronal-witch-bombs.js?v=20261106ha49d50c"></script>
   <!-- Hanging ropes: the shared rope swing arithmetic (pure) and the rope component burdens hang from. Needs Shattercasks at
        call time only. See docs/architecture/ruin-capabilities.md. -->
   <script src="js/rope-core.js?v=1"></script>
@@ -1021,6 +1021,7 @@
   <!-- Off-farm Dev Mode map-authoring bridge. It deliberately occupies the
        farm pencil's slot only where the Farm Editor is inapplicable. -->
   <button id="mapEditBtn" aria-label="Toggle map editor bridge" title="Map Edit" style="display:none;">🗺️</button>
+  <button id="devRuinLabBtn" type="button" aria-label="Puzzle Lab" aria-controls="devRuinLabPanel" aria-expanded="false" hidden>🧩</button>
 
   <!-- Dev Testing Arena creature-spawner toggle — same top-right slot as the
        farm editor pencil, shown only while standing in the Testing Arena -->
@@ -1116,6 +1117,21 @@
 
   <!-- Runtime-side half of the live Map Editor workflow. Authoring stays in
        tools/map-editor; this panel identifies the active runtime map/layout. -->
+  <div id="devRuinLabPanel" aria-label="Puzzle Lab" hidden>
+    <div class="fed-header">
+      <span>🧩 Puzzle Lab</span>
+      <button class="fed-close" id="devRuinLabClose" type="button" aria-label="Close Puzzle Lab">✕</button>
+    </div>
+    <div class="fed-scroll">
+      <p id="devRuinLabStatus" class="map-edit-detail" role="status"></p>
+      <div class="fed-section map-edit-actions">
+        <label for="devRuinLabChoice">Puzzle or mechanism</label>
+        <select id="devRuinLabChoice"></select>
+        <button class="fed-action-btn" id="devRuinLabLoad" type="button">Load selected fixture</button>
+        <button class="fed-action-btn" id="devRuinLabReset" type="button">Reset current fixture</button>
+      </div>
+    </div>
+  </div>
   <div id="mapEditPanel" style="display:none;" aria-label="Map editor bridge">
     <div class="fed-header">
       <span>🗺️ Map Edit</span>
@@ -2894,7 +2910,7 @@
   <!-- Camera-safe utility spyglass: capture Fishing/ActionArcUI init before game.js boots; action-arch prompt and lens are created at DOM ready. -->
   <script src="js/utility-spyglass.js?v=20261103spyglassControls3"></script>
   <!-- Dev-only Random Test Ruin runtime; injects nothing unless Dev Mode is on. -->
-  <script src="js/dev-random-ruin-bootstrap.js?v=20261105soloAudit4"></script>
+  <script src="js/dev-random-ruin-bootstrap.js?v=20261106h7526743"></script>
   <!-- Dev Testing Switchbox: dev-only performance kill switches (audio,
        NPC/creature AI, water sim, low-poly foliage). Must load after
        audio-system.js/water-system.js/foliage-generator.js (wraps their

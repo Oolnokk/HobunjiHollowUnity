@@ -398,7 +398,7 @@
     }
   }
 
-  function buildRooms(kit,context) {
+  function mountWorld(kit,context) {
     clear();
     if(context.hachutu===true||!context.floorSet?.size)return;
     const rooms=context.meta?.rooms||[];
@@ -411,6 +411,12 @@
     };
     world.group.name='dev_random_ruin_dungeon_fire';
     kit.group().add(world.group);
+    return rooms;
+  }
+
+  function buildRooms(kit,context) {
+    const rooms=mountWorld(kit,context);
+    if(!rooms)return;
     const sourcePoint=choosePoint(kit,context,rooms[0],'center');
     if(sourcePoint)world.source=buildSourceBrazier(kit,sourcePoint,0);
     const netRooms=[rooms[Math.min(rooms.length-1,1)]||rooms[0]];
@@ -424,9 +430,23 @@
     lastEvent='generated:'+world.theme;
   }
 
+  const FIXTURE_KINDS=['ignitionBrazier','burnableNet','burdenIcicle']; // Shared with the solo composer's dispatch.
+  function buildFixture(kit,context,kind) {
+    const rooms=mountWorld(kit,context);
+    if(!rooms)return null;
+    const source=choosePoint(kit,context,rooms[0],'center'); // An ignition source lets a normal projectile exercise the selected fire target.
+    const target=kind==='ignitionBrazier'?null:choosePoint(kit,context,rooms[0],'edge');
+    if(!source||(kind!=='ignitionBrazier'&&!target)){clear();return null;}
+    world.isolated=true;
+    world.source=buildSourceBrazier(kit,source,0);
+    if(kind==='burnableNet')return buildNet(target,world.ceilingY,0);
+    if(kind==='burdenIcicle')return buildIcicle(target,world.ceilingY,0);
+    return world.source;
+  }
+
   function update(_kit,_now,dt) {
     if(!world||dt<=0)return;
-    if(world.theme==='tothal'&&world.walls.length<2&&world.iceScanTries<6){
+    if(!world.isolated&&world.theme==='tothal'&&world.walls.length<2&&world.iceScanTries<6){
       world.iceScanElapsed+=dt;
       if(world.iceScanTries===0||world.iceScanElapsed>=.5){
         world.iceScanElapsed=0;world.iceScanTries++;
@@ -509,7 +529,7 @@
     lastEvent='cleared';
   }
 
-  SP.registerComposer({id:'dungeonFire',buildRooms,update,controls,snapshot,clear});
+  SP.registerComposer({id:'dungeonFire',buildRooms,fixtureKinds:FIXTURE_KINDS,buildFixture,update,controls,snapshot,clear});
   window.DevRandomRuinDungeonFire=Object.freeze({
     snapshot,clear,
     armNextProjectile:()=>window.DungeonFire?.armNextProjectile?.()===true,

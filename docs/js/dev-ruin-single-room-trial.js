@@ -19,12 +19,32 @@
     ['nativeLinkedCubePillars','V50 linked cube pillars'],
     ['nativePushBlock','V50 stone push-block course'],
   ]); // Used by both the mobile selector and the generation validator.
+  const MECHANISMS=Object.freeze([
+    ['stoneDoor','Rising stone door'],
+    ['ceilingGlyph','Ceiling projectile glyph'],
+    ['melodyPlate','Melody demonstration plate'],
+    ['safePathGrid','Safe-path tile grid'],
+    ['stoneCanopy','Stone projectile canopy'],
+    ['cyclingLift','Cycling stone lift'],
+    ['sarcophagus','Skeleton sarcophagi'],
+    ['ropeSwing','Single rope swing'],
+    ['ropePump','Pump-to-height rope'],
+    ['ropeTransfer','Rope-to-rope transfer'],
+    ['ignitionBrazier','Projectile ignition brazier'],
+    ['burnableNet','Burnable ceiling net'],
+    ['burdenIcicle','Burden-bearing icicle'],
+    ['pillarBridge','Rising pillar bridge'],
+    ['witchBombTube','Witch-bomb ceiling dispenser'],
+  ]); // Individually selectable fixtures, excluded from weighted puzzle draws.
+  const AUTHORED_MECHANISMS=Object.freeze({pillarBridge:'ruinPillarBridge',witchBombTube:'witchBombCeilingTube'}); // Authored pieces loaded before the fixture mounts.
   const NATIVE_VARIANTS=Object.freeze({nativeBrazier:'brazier',nativeGlyphObelisk:'glyphObelisk',
     nativeStackedObelisk:'stackedObelisk',nativeLinkedCubePillars:'linkedCubePillars',
     nativePushBlock:'pressurePlate'}); // Maps test-only choices to actual V50 activator families.
   const VALID=new Set(TYPES.map(([key])=>key)); // Used to exclude retired or unsupported puzzles from forced and weighted lab selection.
+  const MECHANISM_IDS=new Set(MECHANISMS.map(([key])=>key)); // Identifies direct fixture choices before the weighted planner runs.
   function pick(seed,requested='weighted',planner=root.RuinLayerPlan){
     const selection=String(requested||'weighted');
+    if(MECHANISM_IDS.has(selection))return {kind:selection,mode:'mechanism',population:1};
     if(selection!=='weighted'){
       if(!VALID.has(selection))throw new Error('Unknown single-room puzzle type: '+selection);
       return {kind:selection,mode:'forced',population:1};
@@ -41,5 +61,5 @@
     const kind=rooms[Math.floor(value*rooms.length)].challenge;
     return {kind,mode:'weighted',population:rooms.length};
   }
-  return Object.freeze({TYPES,NATIVE_VARIANTS,pick});
+  return Object.freeze({TYPES,MECHANISMS,AUTHORED_MECHANISMS,NATIVE_VARIANTS,pick});
 });

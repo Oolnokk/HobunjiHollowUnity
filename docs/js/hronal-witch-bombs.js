@@ -235,6 +235,10 @@
       onLost:record=>clearDispenserSlot(key,record),
     });
     if (!bomb) {dispenser.dispensing=false;return false;}
+    if (dispensers.get(key)!==dispenser) {
+      window.Shattercasks.discardBurden?.(bomb); // The room or dispenser was removed while its payload loaded.
+      return false;
+    }
     dispenser.activeBombId=bomb.id;
     if (!window.Shattercasks.releaseBurdenDownward(bomb,'ceiling-witch-bomb')) {
       window.Shattercasks.discardBurden(bomb);

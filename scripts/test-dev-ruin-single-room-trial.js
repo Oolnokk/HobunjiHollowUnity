@@ -18,6 +18,12 @@ for(let length=11;length<=18;length++){
 assert.equal(valid.size,11);
 assert.deepEqual(Object.values(solo.NATIVE_VARIANTS),['brazier','glyphObelisk','stackedObelisk','linkedCubePillars','pressurePlate']);
 for(const kind of valid){const selected=solo.pick(19,kind,planner);assert.equal(selected.kind,kind);assert.equal(selected.mode,'forced');}
+const mechanisms=new Set(solo.MECHANISMS.map(([kind])=>kind)); // Each listed component must resolve independently of the generator weights.
+assert.equal(mechanisms.size,solo.MECHANISMS.length);
+for(const kind of mechanisms){
+  assert(!valid.has(kind),'component fixtures and complete puzzles have distinct ids');
+  assert.deepEqual(solo.pick(19,kind,null),{kind,mode:'mechanism',population:1});
+}
 assert.throws(()=>solo.pick(10,'unknown',planner),/Unknown single-room puzzle/);
 assert.throws(()=>solo.pick(10,'pressurePlate',planner),/Unknown single-room puzzle/);
 assert.equal(solo.pick(10,'nativePushBlock',planner).kind,'nativePushBlock','routed pressure-block puzzle remains available under its distinct name');

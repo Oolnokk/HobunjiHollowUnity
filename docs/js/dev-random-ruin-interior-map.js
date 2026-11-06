@@ -952,6 +952,9 @@
       const puzzleOptions=readPuzzleGenerationOptions(); // Capture the user's simple-mode selection before booting the same-origin hidden tool; generation must not be able to fall back to defaults during iframe startup.
       const soloChoice=singleRoomTrial?window.DevRuinSingleRoomTrial?.pick(requestedSeed,opts.puzzleType||'weighted'):null; // One actual normal-plan challenge selection, fixed across solvability retries.
       if(singleRoomTrial&&!soloChoice)throw new Error('Single-room puzzle selector is unavailable.');
+      const labFurnitureKey=window.DevRuinSingleRoomTrial?.AUTHORED_MECHANISMS?.[soloChoice?.kind]; // Only authored fixtures need a furniture definition.
+      const labFurniture=labFurnitureKey?await window.AuthoredFurniture?.load?.(labFurnitureKey):null;
+      if(labFurnitureKey&&!labFurniture)throw new Error('Puzzle Lab could not load '+labFurnitureKey+'.');
        const nativeSoloType=singleRoomTrial?window.DevRuinSingleRoomTrial?.NATIVE_VARIANTS?.[soloChoice.kind]||null:null; // Selects an original V50 mechanism family instead of the layered challenge adapter.
       await window.DevRandomRuinConfig?.reload?.(); // docs/config/random-ruin/ruin-config.json; edits apply to the next ruin.
       const cfg=(path,fallback)=>window.DevRandomRuinConfig?.get?.(path,fallback)??fallback;
@@ -980,7 +983,7 @@
           size:cfg('generation.size','medium'),density:cfg('generation.density',62),
           roomMin:singleVestibule?1:cfg('generation.roomMin',3),
           roomMax:singleVestibule?1:cfg('generation.roomMax',6),singleRoom:singleVestibule,singleRoomLab:singleRoomTrial, // Avoid a default core moat or raised treasure display conflicting with the one selected challenge.
-          ...(singleRoomTrial&&(['statueDefense','ropeChain'].includes(soloChoice.kind)||nativeSoloType)?{roomPreset:['statueDefense','nativePushBlock'].includes(soloChoice.kind)?'veryLarge':nativeSoloType==='glyphObelisk'?'medium':'large'}:{}), // Defense requires 18x18; rope gaps stay within the normal rope hop distance.
+          ...(soloChoice?.mode==='mechanism'?{roomPreset:'veryLarge'}:singleRoomTrial&&(['statueDefense','ropeChain'].includes(soloChoice.kind)||nativeSoloType)?{roomPreset:['statueDefense','nativePushBlock'].includes(soloChoice.kind)?'veryLarge':nativeSoloType==='glyphObelisk'?'medium':'large'}:{}), // Standalone mechanisms need clearance from the chamber walls.
           puzzles:singleVestibule?{
              ...Object.fromEntries(Object.keys(puzzleOptions).map(key=>[key,false])),
              ...(nativeSoloType?{[nativeSoloType]:true,maxPerRoom:1,...(nativeSoloType==='brazier'?{stackedObelisk:true}:{})}:{})
@@ -1010,7 +1013,7 @@
           rec.mapData.exits[0].tiles=[[Math.floor(rec.spawn.x),Math.floor(rec.spawn.z)]];
         }
         buildingScenes.set(MAP_ID,rec);
-        ruin={preplannedShaft:planned,nativeV50Pending:[],seed:candidateSeed,hachutu:requestedRuinType==='hachutu',theme,specialBoss:!!specialDef,ruinName:generationLabel,specialGlyph:specialDef?.glyph||null,requestedSeed,sourceSeed:generated.seed,api,locale:generated.locale,meta,puzzleOptions:{...puzzleOptions},puzzleGeneration:generated.puzzleGeneration,
+        ruin={preplannedShaft:planned,nativeV50Pending:[],seed:candidateSeed,hachutu:requestedRuinType==='hachutu',theme,specialBoss:!!specialDef,ruinName:generationLabel,specialGlyph:specialDef?.glyph||null,requestedSeed,sourceSeed:generated.seed,api,locale:generated.locale,meta,puzzleOptions:{...puzzleOptions},puzzleGeneration:generated.puzzleGeneration,labFurniture,
           entranceWallPlanes:generated.runtimeWallPlanes,entranceHallways:generated.runtimeHallways,
           ...rec,compactVestibule:singleVestibule&&!singleRoomTrial,singleRoomTrial:soloChoice,noLoot:singleRoomTrial,entryFloorSet:new Set(rec.floorSet),mechanisms:new Map(),controls:[],activators:[],pushBlocks:[],supportId:null,supportY:0,falling:null,generationAttempt:attempt+1,stoneAgeRequested,stoneAge:false,composedTrialForced:opts.composedTrial===true}; // Rerolls only retain explicit overrides, never an automatically selected encounter. // Keep parent-runtime safe-path/rope/trap flags that the V50 API correctly ignores.
         registerFloor(meta); discoverRuntimeObjects();
@@ -1090,7 +1093,14 @@
 
       const last=lastGenerationAudit.attempts[lastGenerationAudit.attempts.length-1];
       throw new Error('No solvable ruin found in '+maxAttempts+' attempts'+(last?.failures?.length?': '+last.failures[0]:'')+'.');
-    } catch(error) { generationMark('failed-'+String(error?.message||error).slice(0,80));console.error('[Random Test Ruin interior]',error); deps.showToast?.('Random Test Ruin failed: '+error.message,false); clearRuntime(true); return false; }
+    } catch(error) {
+      generationMark('failed-'+String(error?.message||error).slice(0,80));
+      console.error('[Random Test Ruin interior]',error);
+      if(singleRoomTrial&&deps.getCurrentArea?.()===MAP_ID)await leaveRuin();
+      else clearRuntime(true);
+      deps.showToast?.('Random Test Ruin failed: '+error.message,false);
+      return false;
+    }
     finally { if(button){button.disabled=false;button.textContent='Generate';} if(soloLaunch)soloLaunch.disabled=false; }
   }
 
@@ -1315,13 +1325,14 @@
       entering.lastAcceptedPx={x:deps.player.x,y:deps.player.y}; entering.lastSafePx={...entering.lastAcceptedPx};
       syncRuinPresentationHeight(entering.supportY);
       deps._snapCameraTarget?.(); deps.refreshActionBar?.(); deps.closeMenu?.();
+      refreshPuzzleLabMenu();
     });
   }
 
   function leaveRuin() {
-    if (!ruin || deps.getCurrentArea?.()!==MAP_ID) return;
+    if (deps?.getCurrentArea?.()!==MAP_ID) return;
     const leaving=ruin;
-    const relocated=leaving.storyVault ? window.RuinSites?.storyVaultSite?.('map_western_slope') : null; // A Tothal Shift may move the unique quest burrow while the player is underground.
+    const relocated=leaving?.storyVault ? window.RuinSites?.storyVaultSite?.('map_western_slope') : null; // A Tothal Shift may move the unique quest burrow while the player is underground.
     const back=relocated
       ? {area:relocated.zoneId,x:(relocated.col+.5)*deps.TILE,y:(relocated.row+1.5)*deps.TILE}
       : returnAnchor||{area:'farm',x:(deps.COLS/2)*deps.TILE,y:(deps.ROWS/2)*deps.TILE};
@@ -1356,6 +1367,7 @@
   }
 
   function clearRuntime(removeMap=true) {
+    if(ruin?.singleRoomTrial)window.DevRandomRuinSimplePuzzles?.clear?.(); // Release the old lab's rope, fire and encounter state before rebuilding its scene.
     window.RuinEncounters?.clearScope?.(MAP_ID); // No statue encounter or enemy survives a regenerated map.
     window.HangingRopes?.clearScope?.(MAP_ID); // Disarm attached bombs and remove hanging rope visuals.
     window.FurniturePuzzleRuntime?.clearMap?.(MAP_ID); // The map ID is reused on reroll: release authored support, inputs and pending animations before scene disposal.
@@ -1395,6 +1407,7 @@
     DS.clearScope(SCOPE);
     if(ruin){detach(ruin.localeRoot);detach(ruin.particleRoot);detach(ruin.ceilingMesh);ruin.ceilingMesh?.geometry?.dispose?.();} if(removeMap) buildingScenes?.delete(MAP_ID);
     ruin=null;
+    refreshPuzzleLabMenu();
     clearRuinPresentationHeight();
     // A reroll deliberately keeps the hidden V50 realm alive. Its API's
     // restorePreviewRoots() reclaims these detached roots before rebuilding,
@@ -1640,7 +1653,7 @@
   }
   DS.addBeforeRenderClient(()=>{if(!ruin)return;if(deps.getCurrentArea?.()!==MAP_ID)return;const now=performance.now(),dt=clamp((now-frameLastMs)/1000,0,.05);frameLastMs=now;updateTransitDoors(dt);updateMechanisms(dt);reconcilePlayer(now);ruin.shaftLayerRuntime?.tick?.(dt);ruin.nativeV50Runtime?.tick?.(dt);ruin.shaftStyleTick?.();});
 
-  const BADGE_PART_ORDER=['base','hooks','motion','simple','hachutu','lich','coverage','shaft'];
+  const BADGE_PART_ORDER=['base','solo','challenge','hooks','motion','simple','hachutu','lich','coverage','shaft'];
   function setDebugBadgePart(part,text){
     // All ruin diagnostics write a *named segment* instead of caching/appending the entire
     // shared badge text. This makes frame-client order irrelevant and prevents runaway growth.
@@ -1703,7 +1716,63 @@
     setDebugBadgePart('base',MAP_ID+' · seed '+ruin.seed+' · '+(ruin.meta.rooms?.length||0)+' rooms · '+solvabilityLabel+' · puzzles '+maxRoomPuzzles+'/'+capLabel+' max-room · tiles R'+(occupancy?.blocked.length||0)+' G'+(occupancy?.causes.length||0)+' B'+(occupancy?.effects.length||0)+' · cliff '+(ruin.denMaterialMeshCount||0)+' · oldstone '+(ruin.legacyStoneMaterialCount||0)+' · unlit +'+(ruin.unlitConvertedMaterialCount||0)+'/lit '+(ruin.remainingLitMaterialCount||0)+' · combat '+(ruin.wallStyle==='cavern'?'✓':'?')+' · '+ruin.theme+' · dark '+darknessLabel+' · rev '+(occupancy?.revision||0));
     b.style.display='';
   }
+  let puzzleLabMenu; // Holds the in-arena HUD controls for entry, reroll and exit.
+  function closePuzzleLabMenu(){
+    if(!puzzleLabMenu)return;
+    puzzleLabMenu.panel.hidden=true;
+    puzzleLabMenu.button.setAttribute('aria-expanded','false');
+  }
+  function refreshPuzzleLabMenu(){
+    if(!puzzleLabMenu)return;
+    const {button,choice,status,labels}=puzzleLabMenu;
+    const trial=ruin?.singleRoomTrial; // Only a developer's active one-room lab may expose the tab.
+    const visible=!!trial&&devModeEnabled()&&deps?.getCurrentArea?.()===MAP_ID;
+    button.hidden=!visible;
+    if(!visible){closePuzzleLabMenu();return;}
+    choice.value=trial.kind;
+    status.textContent=(labels.get(trial.kind)||trial.kind)+' · Seed '+ruin.seed+' · No loot';
+  }
+  function bindPuzzleLabMenu(){
+    if(puzzleLabMenu)return;
+    const button=document.getElementById('devRuinLabBtn');
+    const panel=document.getElementById('devRuinLabPanel');
+    const catalog=window.DevRuinSingleRoomTrial; // Both the panel and validation read the same catalog.
+    if(!button||!panel||!catalog)return;
+    const choice=document.getElementById('devRuinLabChoice');
+    const load=document.getElementById('devRuinLabLoad');
+    const reset=document.getElementById('devRuinLabReset');
+    const status=document.getElementById('devRuinLabStatus');
+    const labels=new Map([...catalog.TYPES,...catalog.MECHANISMS]); // Translates the active fixture id for the HUD.
+    choice.add(new Option('Random puzzle (ruin odds)','weighted'));
+    for(const [label,entries] of [['Complete puzzles',catalog.TYPES],['Individual mechanisms',catalog.MECHANISMS]]){
+      const group=document.createElement('optgroup'); // Separates the normal puzzle roll from direct component testing.
+      group.label=label;
+      for(const [key,name] of entries)group.append(new Option(name,key));
+      choice.append(group);
+    }
+    puzzleLabMenu={button,panel,choice,status,labels};
+    button.addEventListener('click',()=>{
+      if(button.hidden)return;
+      panel.hidden=!panel.hidden;
+      button.setAttribute('aria-expanded',String(!panel.hidden));
+      if(!panel.hidden)choice.focus();
+    });
+    const close=()=>{closePuzzleLabMenu();if(!button.hidden)button.focus();}; // Returns keyboard focus to the tab.
+    document.getElementById('devRuinLabClose')?.addEventListener('click',close);
+    panel.addEventListener('keydown',event=>{if(event.key==='Escape'){event.stopPropagation();close();}});
+    const launch=async replay=>{
+      if(button.hidden||load.disabled||!ruin?.singleRoomTrial||deps.getCurrentArea?.()!==MAP_ID)return;
+      const {seed,theme,singleRoomTrial}=ruin; // Preserve the actual generated seed and tradition for a reset.
+      const puzzleType=replay?singleRoomTrial.kind:choice.value;
+      load.disabled=reset.disabled=true;
+      try{await generate(replay?seed:randomSeed(),{singleRoomTrial:true,puzzleType,theme});}
+      finally{load.disabled=reset.disabled=false;}
+    };
+    load.addEventListener('click',()=>launch(false));
+    reset.addEventListener('click',()=>launch(true));
+  }
   function installSettingsButton(){
+    bindPuzzleLabMenu();
     if(!devModeEnabled())return;
     const arena=document.getElementById('devTeleportArenaBtn'); // Used as the stable Settings anchor for the Random Test Ruin controls.
     if(!arena||document.getElementById('devRandomTestRuinBtn'))return;
@@ -1756,7 +1825,7 @@
 
   window.DevRandomRuin=Object.freeze({getVestibuleRoots:()=>ruin?{stone:ruin.vestibuleStone||null,props:ruin.stoneAgeStats?.props||0,bindings:ruin.rootGrowthBindings?.length||0,rooted:!!ruin.rootedMechanisms,ms:ruin.vestibuleRootMs||0,error:ruin.vestibuleRootError||null}:null,generate,generateStoryVault,reroll:()=>ruin?.shaftTest?generateShaftTest():generate(randomSeed(),ruin?.singleRoomTrial?{singleRoomTrial:true,puzzleType:ruin.singleRoomTrial.mode==='weighted'?'weighted':ruin.singleRoomTrial.kind}:{hachutu:ruin?.hachutu===true,rootMechanisms:ruin?.rootedMechanisms===true,stoneAge:ruin?.stoneAgeRequested===true,composedTrial:ruin?.composedTrialForced===true?true:undefined}),clear:()=>{if(deps?.getCurrentArea?.()===MAP_ID)leaveRuin();else clearRuntime(true);},leave:leaveRuin,exitTo,getInteractionControls:()=>ruin?ruin.controls.filter(control=>control.kind!=='story-vault-pedestal'||window.DelversGuild?.vaultPhase?.()==='search').map(control=>({...control,range:Number.isFinite(Number(control.range))?Number(control.range):CONTROL_RANGE})):[],getNativeV50TestRuntime:()=>devModeEnabled()?ruin?.nativeV50Runtime||null:null, // Developer-mode-only diagnostic handle for Playwright to exercise the actual generated puzzle controls and stage gates; not a gameplay solver.
     getRuntimeContext:()=>ruin?{scene:ruin.scene,grid:ruin.grid,root:ruin.localeRoot,meta:ruin.meta,floorSet:ruin.floorSet,ceilingY:ruin.ceilingY,spawn:{...ruin.spawn},cols:ruin.cols,rows:ruin.rows,sanctumMapSize:ruin.sanctumMapSize,sanctumPlan:ruin.sanctumPlan||null,
-    shaftEntrance:ruin.compactVestibule?window.RuinShaftConnector?.entranceOutside?.(ruin.meta,{x:entryPadX,z:entryPadZ},RUIN_TILE_SCALE)||null:null,seed:ruin.seed,theme:ruin.theme,specialBoss:ruin.specialBoss,ruinName:ruin.ruinName,hachutu:!!ruin.hachutu,stoneAge:!!ruin.stoneAge,stoneAgeStats:ruin.stoneAgeStats||null,shaftHub:!!ruin.shaftHub,singleRoomTrial:ruin.singleRoomTrial||null,noLoot:ruin.noLoot===true,puzzleOptions:{...ruin.puzzleOptions}}:null,getPuzzleGenerationOptions:()=>readPuzzleGenerationOptions(),setPuzzleGenerationOptions:options=>savePuzzleGenerationOptions(options),getOccupancySnapshot:()=>ruin?.occupancy?.snapshot?.()||null,getLastSolvabilityAudit:()=>lastGenerationAudit?JSON.parse(JSON.stringify(lastGenerationAudit)):null,getShaftNetworkState:()=>ruin?.shaftLayerRuntime?.getState?.()||null,
+    shaftEntrance:ruin.compactVestibule?window.RuinShaftConnector?.entranceOutside?.(ruin.meta,{x:entryPadX,z:entryPadZ},RUIN_TILE_SCALE)||null:null,seed:ruin.seed,theme:ruin.theme,specialBoss:ruin.specialBoss,ruinName:ruin.ruinName,hachutu:!!ruin.hachutu,stoneAge:!!ruin.stoneAge,stoneAgeStats:ruin.stoneAgeStats||null,shaftHub:!!ruin.shaftHub,singleRoomTrial:ruin.singleRoomTrial||null,labFurniture:ruin.labFurniture,noLoot:ruin.noLoot===true,puzzleOptions:{...ruin.puzzleOptions}}:null,getPuzzleGenerationOptions:()=>readPuzzleGenerationOptions(),setPuzzleGenerationOptions:options=>savePuzzleGenerationOptions(options),getOccupancySnapshot:()=>ruin?.occupancy?.snapshot?.()||null,getLastSolvabilityAudit:()=>lastGenerationAudit?JSON.parse(JSON.stringify(lastGenerationAudit)):null,getShaftNetworkState:()=>ruin?.shaftLayerRuntime?.getState?.()||null,
     getShaftCollisionMap:(requestedFloor=0)=>{
       if(!ruin?.shaftGrids?.size)return null;
       const count=ruin.shaftHubPlan?.floorCount||1;

@@ -45,8 +45,10 @@ async function main(){
     await page.evaluate(()=>window.HobunjiTitleScreen?.start?.());
     await page.waitForFunction(()=>!window.HobunjiTitleScreen?.isActive?.(),null,{timeout:20000});
 
-    const expected=()=>window.DevRuinSingleRoomTrial.TYPES.map(([key])=>key);
+    const expected=()=>[...window.DevRuinSingleRoomTrial.TYPES,...window.DevRuinSingleRoomTrial.MECHANISMS].map(([key])=>key);
     const kinds=await page.evaluate(expected);
+    const labTab=page.locator('#devRuinLabBtn'); // The in-arena route is covered separately from direct fixture generation.
+    if(await labTab.isVisible())throw new Error('Puzzle Lab tab appeared before entering the arena');
     const report=[]; // Per-choice verification survives later generator failures and supplies mobile-friendly CI diagnostics.
     const seeds={glyphObelisk:0x51a7cafe,ceilingRailTargets:0x17a31,melodyEcho:0x17a32,
       dungeonFire:0x17a33,ropeChain:0x2468ace0,statueDefense:0x17a35,
@@ -56,9 +58,20 @@ async function main(){
       const row={kind,seed:seeds[kind]||12,ok:false,ready:false,linked:false};
       report.push(row);
       try{
+        if(kind==='stoneDoor'){
+          await labTab.click();
+          await page.selectOption('#devRuinLabChoice',kind);
+          await page.click('#devRuinLabLoad');
+          await page.waitForFunction(()=>window.DevRandomRuin?.getState?.()?.singleRoomTrial?.kind==='stoneDoor'
+            &&window.DevRandomRuin?.getGenerationProgress?.()?.phase==='entered',null,{timeout:60000});
+          if(!await labTab.isVisible())throw new Error('Puzzle Lab tab disappeared after switching fixtures');
+          if(await page.locator('#devRuinLabPanel').isVisible())throw new Error('Puzzle Lab panel stayed open after switching fixtures');
+          row.generated=true;
+        }else{
         row.generated=await page.evaluate(async ({kind,seed})=>window.DevRandomRuin.generate(seed,{
           singleRoomTrial:true,puzzleType:kind,
         }),{kind,seed:row.seed});
+        }
         if(!row.generated){row.error='Generation returned false';continue;}
         for(let attempt=0;attempt<35;attempt++){
           const s=await page.evaluate(()=>{
