@@ -239,7 +239,14 @@ function testRuntime() {
   assert.equal(charge.group.parent,currentBodyRoot,'missing portrait temporarily falls back to the rebuilt character root');
   assert.equal(window.Shattercasks.debugSnapshot().backCarryMount.rootFallback,true);
   const rigidPortrait=new Group();rigidPortrait.name='npc_avatar_front_plane';rigidPortrait.isMesh=true; // Rebuilt legacy avatar lacks the skinned plane.
-  rigidPortrait.position.set(0,.14,.02);activeAvatar.add(rigidPortrait);
+  rigidPortrait.position.set(0,.14,.02);
+  rigidPortrait.renderOrder=2;
+  rigidPortrait.material=new MeshBasicMaterial({depthTest:true,depthWrite:true,transparent:true}); // Native rigid front face must obscure the stowed geometry.
+  activeAvatar.add(rigidPortrait);
+  const rigidBack=new Group();rigidBack.name='npc_avatar_back_plane';rigidBack.isMesh=true; // Separate legacy back face has independent depth state.
+  rigidBack.renderOrder=2;
+  rigidBack.material=new MeshBasicMaterial({depthTest:true,depthWrite:true,transparent:true});
+  activeAvatar.add(rigidBack);
   window.Shattercasks.tick(.02);
   assert.equal(charge.group.parent,rigidPortrait,'late-loaded rigid portrait replaces the root fallback automatically');
   assert.equal(window.Shattercasks.debugSnapshot().backCarryMount.portraitAttached,true);
@@ -252,12 +259,19 @@ function testRuntime() {
   assert.equal(chargePart.material.transparent,true,'the back object keeps the transparent PNG queue while hands are occupied');
   assert.equal(secondPart.renderOrder,1.4,'the additional hand burden keeps its ordinary held-order layer');
   assert.equal(secondPart.material.transparent,false,'hand burden does not inherit the back object blend mode');
+  assert.equal(rigidBack.renderOrder,2.05,'rigid rear plane precedes the stowed burden even with another item held');
+  assert.equal(rigidBack.material.depthWrite,false,'rigid rear PNG does not block the stowed burden depth');
+  assert.equal(rigidPortrait.renderOrder,2.25,'rigid front PNG follows the stowed burden and remains opaque to it');
+  assert.equal(rigidPortrait.material.depthWrite,true,'rigid front PNG retains its occluding depth');
   assert(!window.Shattercasks.stowOnBack(),'a second held burden cannot overwrite the occupied back slot');
   assert.equal(window.Shattercasks.backCarriedInfo()?.id,charge.id,'the first back burden remains untouched');
   assert(window.Shattercasks.discardBurden(second),'clear the extra hand burden before retrieving from back');
   assert.equal(secondPart.renderOrder,0,'discard restores the second Burden original render order');
   assert.equal(secondPart.material.depthWrite,true,'discard restores the second Burden depth writing');
   assert(window.Shattercasks.takeFromBack(),'tool-arch selection retrieves the same instance');
+  assert.equal(rigidBack.renderOrder,2,'retrieving from the back restores the native rigid rear order');
+  assert.equal(rigidBack.material.depthWrite,true,'retrieving from the back restores rear PNG depth writing');
+  assert.equal(rigidPortrait.renderOrder,2,'retrieving from the back restores the native rigid front order');
   assert.equal(window.Shattercasks.debugSnapshot().held,charge.id);
   assert(originalTarget.hitbox(),'retrieval restores the held burden own hitbox, separate from stowed carrier hits');
   assert.equal(charge.group.parent,headJoint,'retrieval restores the ORIGINAL held-object mount');
