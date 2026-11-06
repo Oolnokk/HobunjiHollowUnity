@@ -306,4 +306,89 @@ assert.equal(regularDeps.inventory.berry, 0, 'turn-in consumes the requested inv
 assert(regularPopups.some(entry => entry.kind === 'currency' && entry.message === '+' + overdue.gold + 'g'), 'regular task money is included in the floating reward list');
 
 
-console.log('npc crafting commissions regression: ok');
+// Exercise the shipped game.js openNpcDialogue function directly, not just its
+// source-code ordering. Special first-dialogue options must not hide ready jobs.
+const dialogueStart = gameSource.indexOf('async function openNpcDialogue(walker, opts = null) {'); // Bounds the game-owned interaction router without copying production logic.
+const dialogueEnd = gameSource.indexOf('// advanceNpcDialogue now lives', dialogueStart); // Stops before the next top-level game helper.
+assert(dialogueStart > 0 && dialogueEnd > dialogueStart, 'production openNpcDialogue function is available for executable regression coverage');
+const dialogueRouterSource = gameSource.slice(dialogueStart, dialogueEnd); // Exact shipped function evaluated in a minimal DOM-free harness.
+
+async function runRealNpcDialogueRoute({ npcId, readyTask = null, tutorialActive = false, queued = false, options = null }) {
+  const rendered = []; // Captures the synthetic choice screens made by the real dialogue router.
+  const calls = []; // Captures fallback/provider calls when a turn-in is not ready.
+  const dialogueWorld = {
+    DialogueContent: {
+      recordNpcMemory() {}, renderRelationshipHearts: () => '',
+      hasQueuedConversationTree: () => queued,
+      beginNpcConversation: () => calls.push('ordinary-conversation'),
+      beginSyntheticChoice: () => calls.push('synthetic'),
+      renderDlgNode: node => rendered.push(node),
+    },
+    ProceduralTasks: {
+      getTurnInReadyTaskForNpc(id) {
+        assert.equal(id, npcId, 'the dialogue looks up quests by the requesting NPC id');
+        return readyTask;
+      },
+      maybeProposeRequest: async () => null,
+      maybeOfferFavor: () => null,
+    },
+    CombatTutorial: { active: () => tutorialActive },
+    NpcCraftingCommissionDelivery: commissionContext.NpcCraftingCommissionDelivery,
+    WorldPopupText: { clearInteractionPrompts() {} },
+    DialogueCameraFraming: { end() {} },
+    CinematicCameraRuntime: { beginDialogue() {} },
+  }; // Runtime-owned systems stubbed only at their dependency boundaries.
+  const context = {
+    window: dialogueWorld,
+    THREE: { MathUtils: { radToDeg: value => value } },
+    ITEM_DEFS: { berry: { label: 'Berry' } },
+    currentArea: 'town', dialogueOpen: false, _dialogueWalker: null,
+    activeCameraMode: null, activeCameraTarget: null, dialogueEntryCameraAzimuthDeg: 0,
+    _npcDialogueEl: { classList: { add() {} }, setAttribute() {} },
+    _npcDialogueNameEl: { textContent: '' }, _npcDialogueHeartsEl: { innerHTML: '' },
+    _arcContainerEl: { classList: { add() {} } },
+    isPlayerInCombat: () => false, activeCameraAzimuthRad: () => 0,
+    holsterToolForDialogue() {}, npcDialogueCameraMode: () => 'portrait',
+    beginNpcDialogueStaging() {}, updateDialogueZoomIndicator() {},
+    isGeneralStoreNpcOnDuty: () => false,
+    isCarpenterNpcOnDuty: () => false,
+  }; // Only the runtime dependencies referenced by the actual NPC dialogue function.
+  const openDialogue = vm.runInNewContext(dialogueRouterSource + '\nopenNpcDialogue;', context);
+  const npc = { rec: { id: npcId, name: npcId }, root: {}, pause: 0 }; // Uses canonical NPC IDs from saved commissions.
+  await openDialogue(npc, options);
+  return { rendered, calls, npc };
+}
+
+(async () => {
+  const readyClothing = {
+    id: 'spearhead-quest', kind: 'favor', npcId: 'spearhead_unumanuk', items: [],
+    commission: { type: 'clothing', articleLabel: 'Fine Hood', recipientName: 'Jubmir' },
+  }; // Saved ready commission from Spearhead, regardless of his default offer-generation policy.
+  const spearhead = await runRealNpcDialogueRoute({ npcId: 'spearhead_unumanuk', readyTask: readyClothing, tutorialActive: true });
+  assert.equal(spearhead.rendered[0]?.choices?.[0]?.actions?.[0]?.type, 'turnInTask', 'Spearhead accepts ready crafting work even when his lesson menu is active');
+  assert.equal(spearhead.rendered[0]?.choices?.[0]?.actions?.[0]?.taskId, readyClothing.id, 'Spearhead hand-in targets the correct task');
+  assert.match(spearhead.rendered[0].choices[0].label, /Fine Hood for Jubmir/, 'the dialogue identifies the crafted garment and intended recipient');
+  assert(!spearhead.calls.includes('ordinary-conversation'), 'Spearhead training did not displace the ready hand-in');
+
+  const noWorkDuringTraining = await runRealNpcDialogueRoute({ npcId: 'spearhead_unumanuk', tutorialActive: true });
+  assert(noWorkDuringTraining.calls.includes('ordinary-conversation'), 'Spearhead resumes his training conversation when no hand-in is ready');
+  assert.equal(noWorkDuringTraining.rendered.length, 0, 'no spurious turn-in is offered during training');
+
+  const readyFurniture = {
+    id: 'jubmir-quest', kind: 'favor', npcId: 'jubmir', items: [],
+    commission: { type: 'furniture', furnitureLabel: 'Wooden Chair' },
+  }; // Jubmir's own requested job, independent of his special traveling shop menu.
+  const jubmir = await runRealNpcDialogueRoute({ npcId: 'jubmir', readyTask: readyFurniture });
+  assert.equal(jubmir.rendered[0]?.choices?.[0]?.actions?.[0]?.type, 'turnInTask', 'Jubmir accepts his own commission rather than only showing See Wares');
+  assert.equal(jubmir.rendered[0]?.choices?.[0]?.actions?.[0]?.taskId, readyFurniture.id, 'Jubmir hand-in targets his own task');
+  assert.match(jubmir.rendered[0].choices[0].label, /Wooden Chair/, 'Jubmir sees a proper furniture hand-in');
+
+  const jubmirWithoutWork = await runRealNpcDialogueRoute({ npcId: 'jubmir' });
+  assert.equal(jubmirWithoutWork.rendered[0]?.choices?.[0]?.label, 'See Wares', 'Jubmir retains his default shop dialogue when no commission is ready');
+
+  const queuedStory = await runRealNpcDialogueRoute({ npcId: 'jubmir', readyTask: readyFurniture, queued: true });
+  assert(queuedStory.calls.includes('ordinary-conversation') && !queuedStory.rendered.length, 'explicitly queued story conversations retain their scripted priority');
+
+  console.log('npc crafting commissions regression: ok (including real NPC dialogue routing)');
+})().catch(error => { console.error(error); process.exitCode = 1; });
+
