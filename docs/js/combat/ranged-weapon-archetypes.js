@@ -476,7 +476,7 @@
     }
     pendingThrownHold = null;
     const def = window.RangedWeapons.config[itemKey];
-    thrownCharge = { itemKey, source, pointerId, startedAt: performance.now(), paidChargeCost: 0 };
+    thrownCharge = { itemKey, source, pointerId, startedAt: performance.now(), paidChargeCost: 0, committedChargeCost: 0 }; // Tracks actual and pre-tax committed Stamina separately.
     window.RangedWeapons.setLoaded?.(itemKey, false);
     const totalS = Math.max(0.05, Number(def.throwDurationS) || ((def.chargeWindupS || 0.5096) + (def.fireDurationS || 0.5304)));
     window.RangedWeapons.triggerPlayerVisual?.(totalS, {
@@ -501,14 +501,14 @@
     const shapeStats = window.WeaponShapeStats?.current?.() || { efficiency: 1 }; // Matches Charged Breaker's weapon-efficiency adjustment for the same pose-cost curve.
     const staminaCostMul = 1 + (Number(effects.stats?.staminaCostMul) || 0);
     const baseCost = ranged?.chargeStaminaCostForPose?.(poseCharge, staminaCostMul)
-      ?? (() => { const pose = Math.max(0, Math.min(1, Number(poseCharge) || 0)); return (pose <= 0.48 ? 12 * pose / 0.48 : 12 + 6 * (pose - 0.48) / 0.52) * staminaCostMul; })(); // Backward-compatible fallback for isolated editor/test hosts without the runtime helper.
+      ?? (() => { const pose = Math.max(0, Math.min(1, Number(poseCharge) || 0)); return (pose < 0.48 ? 0 : 24 + 30 * (pose - 0.48) / 0.52) * staminaCostMul; })(); // Backward-compatible fallback for isolated editor/test hosts without the runtime helper.
     return Math.max(0, baseCost / Math.max(0.05, Number(shapeStats.efficiency) || 1));
   }
 
   function payThrownChargeStamina(charge, poseCharge, reason = 'Thrown weapon charge') {
     if (!charge) return 0;
     const targetPaid = thrownChargeCostForPose(poseCharge, charge.itemKey);
-    const remainder = Math.max(0, targetPaid - (Number(charge.paidChargeCost) || 0));
+    const remainder = Math.max(0, targetPaid - (Number(charge.committedChargeCost) || 0)); // Compare against committed pre-ResourceSystem cost, never the perk-discounted amount.
     if (!(remainder > 0)) return 0;
     const payment = window.ResourceSystem?.spendStamina?.(
       window.Combat?.deps?.player,
@@ -517,6 +517,7 @@
       { actionKind: 'offensiveHeldCharge', abilityId: 'thrownWeapon' },
     );
     const paid = Math.max(0, Number(payment?.enhancedPaid || 0) + Number(payment?.spent || 0) + Number(payment?.excess || 0));
+    charge.committedChargeCost = targetPaid; // Guarantees the same visible pose cannot be billed twice after discounts or enhanced Stamina.
     charge.paidChargeCost = (Number(charge.paidChargeCost) || 0) + paid;
     return paid;
   }
