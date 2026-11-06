@@ -571,7 +571,7 @@ async function arenaScenario() {
   assert.equal(rearHeadwear.material.depthWrite,false,'back headwear cannot mask the stowed Burden');
   assert.equal(rebuilt.renderOrder,2.25,'skinned front PNG is drawn after the back Burden');
   assert.equal(rebuilt.material[0].visible,true,'front-facing skin stays visible while back-stowing');
-  assert.equal(game.Shattercasks.debugSnapshot().rearPortraitXray.stowedParts,1,'mobile debug reports actual stowed render parts');
+  assert.equal(game.Shattercasks.debugSnapshot().rearPortraitXray.stowedParts,2,'mobile debug counts both the burden body and its noncolliding authored decal');
   assert.equal(game.Shattercasks.hitProjectile({vase:stowed}),false,'stowed charge cannot receive an independent projectile hit');
   const beforePortraitYaw=stowed.group.getWorldPosition(new Vector3()); // A visual-only deadzone turn must reach its child.
   const authoredStowLocal=stowed.group.position.clone();
