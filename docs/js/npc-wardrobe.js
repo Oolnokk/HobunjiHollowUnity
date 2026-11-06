@@ -250,7 +250,7 @@
   }
 
   // ── Gift acceptance ──────────────────────────────────────────────
-  function offerClothing(npcId, instance) {
+  function offerClothing(npcId, instance, options = {}) {
     if (instance?.cursed) return { accepted: false, worn: false, cursed: true }; // Cursed clothing never enters an NPC wardrobe by gift or commission, whatever the caller checked.
     const walker = findWalker(npcId);
     const rec = findRecord(npcId); // Gift targets normally have a walker, but canonical lookup keeps wardrobe mutation tied to persistent NPC data.
@@ -258,7 +258,7 @@
     const offeredTraits = window.ItemTraits?.computeItemTraits(instance.cosmeticId, instance) || [];
     // No default-trait data at all (should not happen once init() has run)
     // fails open rather than silently rejecting every gift forever.
-    const accepted = defaults.size === 0 || offeredTraits.some(t => defaults.has(t));
+    const accepted = options.commission === true || defaults.size === 0 || offeredTraits.some(t => defaults.has(t)); // A validated crafting commission must be delivered even when the recipient would reject the same garment as an unsolicited gift.
     if (!accepted) return { accepted: false, worn: false };
 
     const list = stored[npcId] || (stored[npcId] = []);
