@@ -59,7 +59,7 @@
   }
   function update(dt) {
     const elapsed=Math.max(0,Math.min(.25,Number(dt)||0));
-    if(!elapsed&&!zones.length)return;
+    if(!zones.length||!elapsed)return; // Idle worlds skip even the area/scene getters and entity scans.
     const area=String(deps?.getCurrentArea?.()||''),scene=deps?.getActiveScene?.();
     const tile=Number(deps?.TILE)||64;
     for(let index=zones.length-1;index>=0;index--){
