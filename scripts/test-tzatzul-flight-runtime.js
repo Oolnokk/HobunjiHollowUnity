@@ -98,6 +98,28 @@ for(let i=0;i<60&&farBird._tzFlight.phase==='swoop';i++)w.TzatzulFlightRuntime.u
 assert.equal(hits,beforeElevationDodge,'elevated target cannot be hit by a body diving to ground level');
 player.onBranch=null;player.branchSurfaceY=0;
 player.x=originalPlayerX;player.y=originalPlayerY;
+// Capture uses the ORIGINAL live prey and its native elevated perch; no replacement corpse or cloned rig.
+const carryPrey={creatureKey:'gar-wolf',health:40,areaId:zone,x:farBird.x,y:farBird.y,state:'patrol'};
+assert(w.TzatzulFlightRuntime.__test.capture(farBird,carryPrey),'live animal is captured by the swooping bird');
+assert.strictEqual(farBird._tzFlight.captive,carryPrey,'bird retains original prey object');
+assert.equal(farBird.tzatzulCarrying,true,'gripping art is selected');
+assert.equal(carryPrey.tzatzulCapturedBy,farBird._tzFlight.identity.id,'prey is marked against double targeting');
+assert(w.TzatzulFlightRuntime.__test.carryCaptive(farBird),'prey follows the native elevated flight support');
+assert.strictEqual(carryPrey.onPerch,farBird.onPerch,'same support carries prey through 3D flight');
+assert(w.TzatzulFlightRuntime.__test.releaseCaptive(carryPrey,'returned to roost'),'arrival safely releases surviving prey');
+assert.equal(carryPrey.state,'patrol','native animal AI state restored');
+assert.equal(carryPrey.tzatzulCapturedBy,null,'no stale capture owner');
+assert.equal(farBird.tzatzulCarrying,false,'gripping pose cleared');
+assert.equal(w.TzatzulFlightRuntime.__test.releaseCaptive(carryPrey,'duplicate'),false,'release is idempotent');
+assert.equal(w.TzatzulFlightRuntime.debugSnapshot().captures,1,'mobile capture census counts only one event');
+const dyingPrey={creatureKey:'gar-wolf',health:10,areaId:zone,x:farBird.x,y:farBird.y,state:'chase'};
+assert(w.TzatzulFlightRuntime.__test.capture(farBird,dyingPrey));
+dyingPrey.health=0;
+assert.equal(w.TzatzulFlightRuntime.__test.carryCaptive(farBird),false,'dead prey cannot remain attached to a living bird');
+assert.equal(farBird._tzFlight.captive,null,'death cleanup clears the bird owner');
+assert.equal(dyingPrey.tzatzulCapturedBy,null,'death cleanup clears the prey owner');
+assert.equal(w.TzatzulFlightRuntime.__test.capture(farBird,player),false,'player capture waits for playable nest encounter');
+player.x=originalPlayerX;player.y=originalPlayerY;
 const initialKeyCount=w.TzatzulFlightRuntime.debugSnapshot().populationKeys;
 bird.health=0;w.TzatzulFlightRuntime.update(.1);
 assert.equal(w.TzatzulFlightRuntime.debugSnapshot().active,1);
