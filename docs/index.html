@@ -504,6 +504,10 @@
   <!-- Old, un-looted bandit corpses swap their full humanoid rig for a flat marker
        (window.BanditCorpseRetirement); game.js calls init(...) and tick(...). -->
   <script src="js/bandit-corpse-retirement.js?v=20261106bcr1"></script>
+  <!-- An old zone's bandits are released so the zone cache can evict it, and its camps
+       re-seed on the next visit (window.ZoneBanditRelease); game.js calls init(...) and
+       releaseZone(...) from trimZoneCache. -->
+  <script src="js/zone-bandit-release.js?v=20261106zbr1"></script>
   <!-- Sell Crate + Supply Box farm world objects (window.FarmCrates) —
        self-contained aside from deps injected via init(), so load order
        relative to the other systems above doesn't matter; must load
@@ -2967,7 +2971,7 @@
   <script src="js/delvers-vault-signal.js?v=20261031storyVault1"></script>
   <script src="js/bed-lie-pose.js?v=20261102mattressxray2"></script> <!-- Surface-aligned sleep presentation; game.js injects the live player and calendar. -->
   <script src="js/lunge-targeting.js?v=1"></script>
-  <script src="game.js?v=20261106hfc48515"></script>
+  <script src="game.js?v=20261106hac6c44a"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261029hguild2"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->
