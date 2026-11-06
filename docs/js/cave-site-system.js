@@ -95,7 +95,6 @@
   let wildlifeDeps = null; // Captured from WildlifeSpawn.init; used for current area/player/hostile collection and damage helpers.
   let devSpawnerDeps = null; // Captured from DevSpawner.init; used for the existing generalized loot grant helper.
   let caveRuntimeTimer = 0; // Throttles interior proximity/runtime work to CAVE_RUNTIME_INTERVAL_S.
-  let cavePuzzleTickElapsed = 0; // Accumulates real frame time for the throttled music/fire challenge tick; prevents BPM drift.
   let stateIdentity = null; // World|Tothal-cycle key used to reload the correct cave discovery/loot state.
   let savedCaveState = null; // { version, identity, sites } — the world-save payload (see ensureStateLoaded).
   let saveDeps = null; // { save } from game.js; persistState() asks the game to write the world save.
@@ -1383,13 +1382,12 @@
   function updateCurrentCaveRuntime(dt = 0) {
     const elapsed=Math.max(0,Number(dt)||0);
     caveClock += elapsed;
+    const mapId = String(wildlifeDeps?.getCurrentArea?.() || ''); // One area read, shared by the fast score clock and slow cave interactions.
+    const activePuzzle=puzzleChallengesByMapId.get(mapId)?.challenge;
+    if(activePuzzle){activePuzzle.tick(elapsed);activePuzzle.animate?.(elapsed);} // 16th notes last only 150 ms at 100 BPM: a throttled cave tick would skip glyph windows.
     caveRuntimeTimer -= elapsed;
-    cavePuzzleTickElapsed += elapsed;
     if (caveRuntimeTimer > 0) return;
-    const puzzleElapsed=Math.min(.25,cavePuzzleTickElapsed); // Match written BPM despite the cave's lower-frequency runtime callback.
-    cavePuzzleTickElapsed=0;
     caveRuntimeTimer = CAVE_RUNTIME_INTERVAL_S;
-    const mapId = String(wildlifeDeps?.getCurrentArea?.() || '');
     const plan = plansByMapId.get(mapId); // Only caverns decorated this session have a plan; checked first so open-world ticks do no profile work.
     const profile = plan && sitesByMapId.get(mapId);
     if (!profile) { lastCaveArea = null; return; }
@@ -1409,8 +1407,6 @@
     }
     ensureBodies(profile, plan, state);
     updateBodies(profile, plan, state);
-    const puzzle=puzzleChallengesByMapId.get(mapId)?.challenge; // No scene traversal or new allocations in the mobile cave tick.
-    if(puzzle){puzzle.tick(puzzleElapsed);puzzle.animate?.(puzzleElapsed);}
     maybeEnterRuin(profile, plan, state);
   }
 
