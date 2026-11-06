@@ -56,7 +56,7 @@
       const textures=new Set([floorMat.map,wallMat.map].filter(Boolean)); // Shared clones must be released once after their owning corridor materials.
       floorMat.dispose();wallMat.dispose();textures.forEach(texture=>texture.dispose?.());};
   }
-  function connect({rec,ruin,seed,meta,pad=2,tileScale=2,THREE,makeTile,DynamicSurfaces:DS,ShaftHub,ClimbSurfaces,DevRandomRuin,TileOccupancy,RuinLayerPlan,RuinShaftCorridor,RuinLayerPlayable,RuinLayerChallenges,RuinLayerDefense,RuinV50NativeFloors,preplanned=null,nativeFloors=[],prepareMaterials=null,CellGrid3D,getPlayerPosition,getPlayerY,showToast,onStateChange}={}){
+  function connect({rec,ruin,seed,meta,pad=2,tileScale=2,THREE,makeTile,DynamicSurfaces:DS,ShaftHub,ClimbSurfaces,DevRandomRuin,TileOccupancy,RuinLayerPlan,RuinShaftCorridor,RuinLayerPlayable,RuinLayerChallenges,RuinLayerDefense,RuinV50NativeFloors,RuinReachingObelisks=root.RuinReachingObelisks,preplanned=null,nativeFloors=[],prepareMaterials=null,CellGrid3D,getPlayerPosition,getPlayerY,showToast,onStateChange}={}){
     if(!rec||!ruin||!meta||!THREE||!DS||!ShaftHub||!RuinLayerPlan||!RuinShaftCorridor||!RuinLayerPlayable||!RuinLayerChallenges||!RuinLayerDefense||!CellGrid3D||preplanned?.nativeFloorCount&&!RuinV50NativeFloors||!makeTile)
       throw new Error('Shaft connector dependencies are incomplete.');
     const spacing=64; // Snap multi-story anchors far apart; floor room networks fill the open cells.
@@ -184,8 +184,8 @@
     ruin.shaftConnectorCleanup=()=>{styleCleanup?.();nativeRuntime?.dispose();layerRuntime?.dispose();obeliskRuntime?.dispose();ruin.shaftObeliskRuntime=null;unmountVisual();DS.clearScope(scope);};
     const registered=ShaftHub.mount(placed,{THREE,parent:rec.scene,ClimbSurfaces,DynamicSurfaces:DS,DevRandomRuin});
     if(placed.obelisks){
-      if(!root.RuinReachingObelisks?.mount)throw new Error('Selected Reaching Obelisks module is not loaded.');
-      obeliskRuntime=root.RuinReachingObelisks.mount(placed.obelisks,{
+      if(!RuinReachingObelisks?.mount)throw new Error('Selected Reaching Obelisks module is not loaded.');
+      obeliskRuntime=RuinReachingObelisks.mount(placed.obelisks,{
         scope:'shaft-obelisks',THREE,parent:rec.scene,DynamicSurfaces:DS,ClimbSurfaces,
         tradition:ruin.theme,getPlayerPosition,getPlayerY,projectileBus:root.DevRandomRuinSimplePuzzles,onStateChange,
       });

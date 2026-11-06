@@ -7,6 +7,7 @@
   if(cjs)module.exports=api;else root.RuinReachingObelisks=api;
 })(typeof self!=='undefined'?self:globalThis,function(Grid){
   'use strict';
+  const root=typeof self!=='undefined'?self:globalThis; // Runtime globals (ProceduralFurniture, IceStalagmiteCoverage, ...) are looked up lazily.
   const GRAVITY=13; // Shared unpowered flight acceleration from RopeLaunch/Shattercasks.
   const UNBUFFED_MOVE_PX_S=238; // game.js base MOVE_SPEED, also documented in companion-movement-speed.js.
   const TILE_PIXELS=55; // Common player tile coordinate scaling; the test ruin projects one world cell per tile.

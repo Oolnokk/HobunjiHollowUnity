@@ -83,7 +83,7 @@ const savedIce=globalThis.IceStalagmiteCoverage;
 let icePieces=0;
 globalThis.IceStalagmiteCoverage={build:(T,source,settings)=>{
   assert(source.children.length>0&&source.children.length<=64,'1x1 invisible furniture cubes are batched instead of left as an enormous draw-call field');
-  assert(settings.iceFacets>=3&&settings.iceTipSharpness>0&&settings.iceLean>=0,'author's full procedural spike recipe is used');
+  assert(settings.iceFacets>=3&&settings.iceTipSharpness>0&&settings.iceLean>=0,'authors full procedural spike recipe is used');
   icePieces+=source.children.length;
   const g=new Group(),node=new Mesh(new Geometry(),new Material());g.add(node);return g;
 }};
@@ -134,7 +134,8 @@ const bootstrap=fs.readFileSync('docs/js/dev-random-ruin-bootstrap.js','utf8');
 assert(runtime.includes('function reconcileObeliskPlayer(now,x,z)'),'mid-air falling is integrated with actual player support/pose');
 assert(runtime.includes('PlayerDowned?.dieImmediately?.(\'reaching-obelisks-'),'the pit bypasses downed and footing states');
 assert(connector.includes('RuinReachingObelisks.mount('),'real physical shaft mounts the new motion machinery');
-assert(index.includes('ruin-reaching-obelisks.js')&&index.indexOf('ruin-reaching-obelisks.js')<index.indexOf('shaft-hub.js'),
+const scriptAt=name=>index.search(new RegExp('<script[^>]+src="js/'+name.replace('.','\\.')+'\\?v='));
+assert(scriptAt('ruin-reaching-obelisks.js')>=0&&scriptAt('ruin-reaching-obelisks.js')<scriptAt('shaft-hub.js'),
   'the browser loads the obelisk module before its shaft consumers');
 assert(bootstrap.includes('reachFalling1'),'the updated fall logic is not masked by an old mobile cache');
 console.log('ok test-reaching-obelisks: 110 seeds, ballistic catch proofs, 24 full shaft checks, moving platforms, switch LOS, ice covers, pressure plate and cleanup');
