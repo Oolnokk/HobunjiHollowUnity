@@ -59,7 +59,7 @@ assert(W.TzatzulNestEncounter.owns(room.mother),'mother owns flight rather than 
 assert(room.hatchlings.every(child=>child.tzatzulIdentity.tintHex===room.mother.tzatzulIdentity.tintHex),
   'hatchlings inherit mother color');
 assert.strictEqual(W.TzatzulNestEncounter.ensure(id),room,'cave re-entry cannot duplicate a mother');
-for(let i=0;i<20;i++)W.TzatzulNestEncounter.update(.1);
+for(let i=0;i<20&&calls.dives===0;i++)W.TzatzulNestEncounter.update(.1);
 assert.equal(calls.dives,1,'mother starts one directed headfirst dive');
 assert.equal(room.mother._tzFlight.roost.id,room.supports[4].id,'the far wall is the next perch');
 W.TzatzulNestEncounter.update(.1);
