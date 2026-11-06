@@ -12,6 +12,12 @@
   assert.deepEqual(manifest.pendingAssets,[],'All authored fur-hood assets must be present');
   assert.equal(manifest.species.nelk.parts.tletingan_male.back,expectedNelkBack,'Nelk Tletingan back is connected to the shipped PNG');
   assert.equal(manifest.species.nelk.parts.mashtzarr_male.back,'assets/cosmetics/clothes/hood/furhood_nelk-back_mashtz_m.png','Mashtzarr keeps the renamed real art');
+  for (const variant of ['tletingan_male', 'mashtzarr_male']) {
+    const grehlrParts = manifest.species.grehlr.parts[variant]; // Ensures both authored Grehlr fits keep the face but no longer attach the rear animal overlay.
+    assert(grehlrParts.front?.includes('furhood_grehlr-front_'), variant + ' must retain the Grehlr front artwork');
+    assert.equal(grehlrParts.back, undefined, variant + ' must omit the Grehlr-specific rear sprite');
+    assert(manifest.species['gar-wolf'].parts[variant].back, variant + ' other animals must retain their rear artwork');
+  }
   assert(index.entries.some(entry => entry.id === 'fur_hood'), 'new wearable cosmetic is published in portrait registry');
   assert.deepEqual(Object.keys(cosmetic.speciesVariants).sort(), ['mashtzarr_male','tletingan_male']);
   for (const [key, suffix] of Object.entries({ tletingan_male:'tl_m', mashtzarr_male:'mashtz_m' })) {
@@ -92,6 +98,13 @@
     assert.equal(mashtz.length,2,'inherited Mashtzarr head sees wolf front and back');
     assert(tl.every(part=>part.url.includes('_tl_m.png')),'Tletingan artwork is selected');
     assert(mashtz.every(part=>part.url.includes('_mashtz_m.png')),'Mashtzarr artwork is selected');
+    const grehlr = { kind:'grehlr', genotype:{base:{color:'#997755'}}, baseColor:'#997755' }; // Uses a normal crafted-hood shape to validate production special-part selection.
+    for (const [species, gender] of [['nuhongan', 'female'], ['kenkari', 'male']]) {
+      const parts = window.FurHoodLeatherworking.specialPartsFor(grehlr, species, gender); // The same resolver supplies both worn portraits and the loom preview.
+      assert.equal(parts.length, 1, species + ' Grehlr fur hood must contain only the animal-front sprite');
+      assert.equal(parts[0].role, 'animalFront', species + ' must not render a Grehlr animalBack overlay');
+      assert(parts[0].url.includes('furhood_grehlr-front_'), species + ' Grehlr face art must remain present');
+    }
     const weaving = read('docs/js/clothing-weaving-system.js');
     const portrait = read('docs/js/portrait-utils.js');
     assert.match(weaving,/furHood: clone\(item\.furHood\)/,'portraits receive genotype apart from weaving');
