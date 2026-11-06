@@ -128,6 +128,46 @@
       cells.forEach((cell,i)=>{const p=where(cell);object.setMatrixAt(i,matrix.makeTranslation(p.x,p.y,p.z));});
       object.instanceMatrix.needsUpdate=true;activeRoot.add(object);owner.geometryCount++;
     }
+    // A wing's stone as real faces (js/ruin-wall-faces.js) instead of one-unit instanced boxes: the floor merges into
+    // big rectangles and each wall line into runs, all cut into stretch-to-fit patches of at most 6 units. The few
+    // longest runs of each wing are feature walls, one mesh each in a flagged group the style pass engraves (one
+    // engraving atlas per mesh, so each must be a connected wall, and the count is capped to bound GPU memory). Atlases
+    // are capped at 512 px, so a long corridor wall is cut into pieces of at most WING_FEATURE_MAX units first: one
+    // engraving over 86 units would get a few pixels per unit and read as mush.
+    const WING_FEATURE_RUN=4,WING_FEATURE_MAX=10,WING_FEATURES_PER_WING=4,WALL_HEIGHT=2.3,WALL_THICKNESS=.14,PATCH={h:6,v:6};
+    function masonry(wingName,y,floorCells,wallsX,wallsZ){
+      const Faces=root.RuinWallFaces;
+      const add=(name,data,parent=activeRoot)=>{
+        if(!data.positions.length)return null;
+        const node=new THREE.Mesh(Faces.toGeometry(THREE,data),material);node.name=name;parent.add(node);owner.geometryCount++;return node;
+      };
+      if(floorCells.length){
+        let minX=Infinity,minZ=Infinity,maxX=-Infinity,maxZ=-Infinity;
+        for(const [x,z] of floorCells){minX=Math.min(minX,x);maxX=Math.max(maxX,x);minZ=Math.min(minZ,z);maxZ=Math.max(maxZ,z);}
+        const w=maxX-minX+1,h=maxZ-minZ+1,mask=new Uint8Array(w*h);
+        for(const [x,z] of floorCells)mask[(z-minZ)*w+(x-minX)]=1;
+        const rects=Faces.mergeMask(mask,w,h).map(r=>({axis:'y',side:1,plane:0,a0:r.i0,a1:r.i1,b0:r.j0,b1:r.j1}));
+        add(wingName+'-floor',Faces.buildQuads(rects,{origin:{x:minX,y,z:minZ},size:{x:1,y:1,z:1},patch:PATCH}));
+      }
+      const runs=Faces.mergeEdges([
+        ...wallsX.map(([cx,z,faces])=>({along:'x',line:z,from:cx-.5,to:cx+.5,side:faces})),
+        ...wallsZ.map(([x,cz,faces])=>({along:'z',line:x,from:cz-.5,to:cz+.5,side:faces})),
+      ]);
+      const pieces=runs.flatMap(run=>{
+        const count=Math.max(1,Math.ceil((run.to-run.from)/WING_FEATURE_MAX-1e-9)),out=[];
+        for(let i=0;i<count;i++)out.push({along:run.along,line:run.line,side:run.side,from:run.from+(run.to-run.from)*i/count,to:run.from+(run.to-run.from)*(i+1)/count}); // side travels with each piece: a wall is only ever engraved on the face you can see
+        return out;
+      });
+      const features=pieces.filter(piece=>piece.to-piece.from>=WING_FEATURE_RUN)
+        .sort((a,b)=>(b.to-b.from)-(a.to-a.from)).slice(0,WING_FEATURES_PER_WING);
+      const featured=new Set(features);
+      const wallOptions={y0:y,y1:y+WALL_HEIGHT,thickness:WALL_THICKNESS,patch:PATCH};
+      if(features.length){
+        const group=new THREE.Group();group.name='ruin-wing-feature-walls';group.userData.ruinFeatureWalls=true;activeRoot.add(group);
+        for(const run of features)add('wing-feature-wall',Faces.buildEdgeWallQuads([run],wallOptions),group);
+      }
+      add(wingName+'-walls',Faces.buildEdgeWallQuads(pieces.filter(piece=>!featured.has(piece)),wallOptions));
+    }
     function setGate(record,blocked){
       if(!record?.gate)return;
       for(const [x,z] of record.gate.tiles){
@@ -180,15 +220,19 @@
         // The wing portal shares the shaft's outward threshold on the proper story; avoid closing its inward face.
         const wallsX=[],wallsZ=[];
         for(const [x,z] of walkCells){
-          if(!tiles.has(key(x-1,z))&&!(key(x,z)===entryKey&&side.dx===1))wallsZ.push([x,z+.5]);
-          if(!tiles.has(key(x+1,z))&&!(key(x,z)===entryKey&&side.dx===-1))wallsZ.push([x+1,z+.5]);
-          if(!tiles.has(key(x,z-1))&&!(key(x,z)===entryKey&&side.dz===1))wallsX.push([x+.5,z]);
-          if(!tiles.has(key(x,z+1))&&!(key(x,z)===entryKey&&side.dz===-1))wallsX.push([x+.5,z+1]);
+          // The third entry is the way the wall faces: toward the walkable cell that owns it.
+          if(!tiles.has(key(x-1,z))&&!(key(x,z)===entryKey&&side.dx===1))wallsZ.push([x,z+.5,1]);
+          if(!tiles.has(key(x+1,z))&&!(key(x,z)===entryKey&&side.dx===-1))wallsZ.push([x+1,z+.5,-1]);
+          if(!tiles.has(key(x,z-1))&&!(key(x,z)===entryKey&&side.dz===1))wallsX.push([x+.5,z,1]);
+          if(!tiles.has(key(x,z+1))&&!(key(x,z)===entryKey&&side.dz===-1))wallsX.push([x+.5,z+1,-1]);
         }
         const wingName='floor'+floor.floor+'-'+wing.side;
-        instance(wingName+'-floor',new THREE.BoxGeometry(1,.12,1),supportedCells,material,([x,z])=>({x:x+.5,y:floor.y-.06,z:z+.5}));
-        instance(wingName+'-wall-ns',new THREE.BoxGeometry(1,2.3,.14),wallsX,material,([x,z])=>({x,y:floor.y+1.15,z}));
-        instance(wingName+'-wall-ew',new THREE.BoxGeometry(.14,2.3,1),wallsZ,material,([x,z])=>({x,y:floor.y+1.15,z}));
+        if(root.RuinWallFaces)masonry(wingName,floor.y,supportedCells,wallsX,wallsZ);
+        else{ // Loaded without the face mesher: the original one-unit boxes.
+          instance(wingName+'-floor',new THREE.BoxGeometry(1,.12,1),supportedCells,material,([x,z])=>({x:x+.5,y:floor.y-.06,z:z+.5}));
+          instance(wingName+'-wall-ns',new THREE.BoxGeometry(1,2.3,.14),wallsX,material,([x,z])=>({x,y:floor.y+1.15,z}));
+          instance(wingName+'-wall-ew',new THREE.BoxGeometry(.14,2.3,1),wallsZ,material,([x,z])=>({x,y:floor.y+1.15,z}));
+        }
         const rectangles=Corridors.rectangles(supportedCells); // The abyss has NO physical floor and NO DynamicSurfaces standing rectangle.
         rectangles.forEach((r,i)=>{
           const spec={id:scope+'-'+wing.id+'-'+i,scope,priority:1,

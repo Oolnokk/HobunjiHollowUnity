@@ -10,6 +10,7 @@ const Plan=require('../docs/js/ruin-layer-plan.js');
 const Corridor=require('../docs/js/ruin-shaft-corridor.js');
 const Connector=require('../docs/js/ruin-shaft-connector.js');
 const Playable=require('../docs/js/ruin-layer-playable.js');
+globalThis.RuinWallFaces=require('../docs/js/ruin-wall-faces.js'); // The wings and shaft build their stone from merged faces when this is loaded, as index.html loads it.
 const Challenges=require('../docs/js/ruin-layer-challenges.js'); // Canonical projectile and plate stage logic. // Tests mounted stone wings, challenge gates and braziers.
 const NativeV50=require('../docs/js/ruin-v50-native-floors.js'); // Actual V50 story layout and pre-reserved footprint enforcement.
 
@@ -267,7 +268,7 @@ for(const start of [{x:20,z:1},{x:1,z:25},{x:100,z:30},{x:32,z:100}]){
 // Real connector wiring using lightweight Three/occupancy doubles.
 // No real browser is required to prove the returned floor tiles meet both ends.
 class Group {
-  constructor(){this.children=[];this.parent=null}
+  constructor(){this.children=[];this.parent=null;this.userData={}}
   add(node){this.children.push(node);node.parent=this}
   remove(node){this.children=this.children.filter(n=>n!==node);node.parent=null}
   traverse(fn){fn(this);for(const n of this.children)n.traverse?n.traverse(fn):fn(n)}
@@ -280,11 +281,13 @@ class Mesh extends Group{
     this.scale={x:1,y:1,z:1};this.rotation={x:0,y:0,z:0};} // Include rotation for the horizontal rope-abyss fog plane.
 }
 class Material {clone(){return new Material()}dispose(){}}
+class BufferAttribute {constructor(array,itemSize){this.array=array;this.itemSize=itemSize}}
+class BufferGeometry {constructor(){this.attributes={}}setAttribute(name,attribute){this.attributes[name]=attribute}setIndex(index){this.index=index}dispose(){}} // The shaft's stone is real merged faces now (js/ruin-wall-faces.js).
 class InstancedMesh {
   constructor(geometry,material,count){this.geometry=geometry;this.material=material;this.count=count;this.instances=[];this.instanceMatrix={needsUpdate:false};}
   setMatrixAt(i,matrix){this.instances[i]=matrix.xyz}
 }
-const THREE={Group,Mesh,BoxGeometry:Geometry,PlaneGeometry:Geometry,Matrix4,
+const THREE={Group,Mesh,BoxGeometry:Geometry,PlaneGeometry:Geometry,BufferGeometry,BufferAttribute,Matrix4,
   CylinderGeometry:Geometry,ConeGeometry:Geometry,MeshBasicMaterial:Material,InstancedMesh,FrontSide:0};
 const Defense={create:options=>({
   id:options.id,kind:'statueDefense',ready:true,solved:false,
@@ -454,6 +457,30 @@ for(const side of ['north','east','south','west']){
     RuinLayerPlan:Plan,RuinShaftCorridor:Corridor,RuinLayerPlayable:Playable,RuinLayerChallenges:Challenges,RuinLayerDefense:Defense,CellGrid3D:G,
     getPlayerPosition:()=>({x:player.x,z:player.z}),getPlayerY:()=>player.y});
   assert(connected.hub.ok,'integrated octagonal room passed reachability');
+  // The shaft's stone is merged stretch-to-fit faces in one masonry group (so decorateRuin can engrave the walls),
+  // not a field of one-unit instanced boxes that repeat the texture per cell.
+  let shaftShell=null;rec.scene.traverse(node=>{if(node.name==='shaft-hub')shaftShell=node;});
+  assert(shaftShell,'the shaft shell is mounted');
+  const masonry=shaftShell.children.find(node=>node.name==='shaft-hub-masonry');
+  assert(masonry,'stone lives in a dedicated masonry group, apart from climb markings');
+  const stone=Object.fromEntries(masonry.children.map(mesh=>[mesh.name,mesh]));
+  for(const name of ['shaft-hub-walls','shaft-hub-ledges','shaft-hub-octagonal-floor'])
+    assert(stone[name]?.geometry?.attributes?.position?.array?.length>0,name+' has real merged geometry');
+  assert(stone['shaft-hub-walls'].geometry.attributes.uv.array.every(value=>value>=0&&value<=1),'every wall patch stretches its texture 0..1');
+  // Broad walls are separate meshes in their own group: the pattern decorator makes one atlas per mesh, so engraving
+  // hundreds of disjoint strips in one mesh would shrink the atlas to nothing.
+  const featureGroup=masonry.children.find(node=>node.name==='shaft-hub-feature-walls');
+  assert(featureGroup&&featureGroup.children.length>=4&&featureGroup.children.length<=24,'the broad shaft walls are individual meshes in a feature group, capped to bound engraving atlas memory');
+  for(const mesh of featureGroup.children){
+    assert.equal(mesh.name,'shaft-hub-feature-wall','one shared name, so they form a single pattern type');
+    const p=mesh.geometry.attributes.position.array,lo=[1e9,1e9,1e9],hi=[-1e9,-1e9,-1e9];
+    for(let i=0;i<p.length;i+=3)for(let k=0;k<3;k++){lo[k]=Math.min(lo[k],p[i+k]);hi[k]=Math.max(hi[k],p[i+k]);}
+    assert(Math.max(hi[0]-lo[0],hi[2]-lo[2])>=3-1e-6&&hi[1]-lo[1]>=2-1e-6,'a feature wall is at least 3 wide and 2 tall');
+  }
+  assert(!featureGroup.children.includes(stone['shaft-hub-walls']),'the plain strips are not in the engraved group');
+  assert(stone['shaft-hub-walls'].geometry.attributes.position.array.length/12<4000,'faces are merged, not one quad per cell');
+  const boxes=[];shaftShell.traverse(node=>{if(node instanceof InstancedMesh)boxes.push(node.name);});
+  assert.deepEqual(boxes,[],'no instanced one-unit stone boxes remain in the shaft shell');
   assert.equal(connected.hub.grid.originX+Math.floor(connected.hub.cols/2),preplanned.shaft.anchor.x);
   assert.equal(connected.hub.grid.originZ+Math.floor(connected.hub.rows/2),preplanned.shaft.anchor.z);
   assert.equal(ruin.occupancy.cols,rec.cols,'occupancy must include all mounted wings');
@@ -464,6 +491,25 @@ for(const side of ['north','east','south','west']){
   assert.deepEqual(ruin.occupancy.getPosition(),{x:5,z:7},'occupancy must reuse injected player adapter');
   const network=connected.layerRuntime;
   network.tick(0);
+  // Wings draw their stone as merged stretch-to-fit faces too, with a capped handful of engravable feature walls each.
+  const wingBoxes=[],wingFloors=[],wingWalls=[],wingFeatureGroups=[];
+  network.group.traverse(node=>{
+    if(node instanceof InstancedMesh&&/-(floor|wall-ns|wall-ew)$/.test(node.name))wingBoxes.push(node.name);
+    if(node.userData?.ruinFeatureWalls)wingFeatureGroups.push(node);
+    if(/^floor\d+-[NESW]-floor$/.test(node.name||''))wingFloors.push(node);
+    if(/^floor\d+-[NESW]-walls$/.test(node.name||''))wingWalls.push(node);
+  });
+  assert.deepEqual(wingBoxes,[],'no instanced one-unit boxes remain in any wing');
+  assert(wingFloors.length>=2&&wingFloors.every(mesh=>mesh.geometry.attributes.position.array.length>0&&mesh.geometry.attributes.uv.array.every(v=>v>=0&&v<=1)),'each wing floor is merged stretch-to-fit faces');
+  assert(wingWalls.length>=1,'wing walls are merged faces');
+  for(const group of wingFeatureGroups)for(const mesh of group.children){ // One face only: two opposed faces collapse the pattern decorator's atlas to a sliver.
+    const p=mesh.geometry.attributes.position.array,n=mesh.geometry.attributes.normal.array;
+    const across=axis=>{let lo=1e9,hi=-1e9;for(let i=axis;i<p.length;i+=3){lo=Math.min(lo,p[i]);hi=Math.max(hi,p[i]);}return hi-lo;};
+    assert(Math.min(across(0),across(2))<1e-6,'a feature wall is one flat face, not a two-faced slab');
+    assert(new Set(Array.from({length:n.length/3},(_,i)=>n[i*3]+','+n[i*3+2])).size===1,'and every patch of it faces the same way');
+  }
+  assert(wingFeatureGroups.length>=1&&wingFeatureGroups.every(group=>group.children.length>=1&&group.children.length<=4&&group.children.every(mesh=>mesh.name==='wing-feature-wall')),
+    'each wing has between one and four engravable feature walls, one mesh each (the cap bounds engraving atlas memory)');
   const upperVisual=network.group.children.find(c=>c.name==='ruin-layer-floor-1');
   assert.equal(upperVisual?.visible,false,'upper floor meshes must not cover player viewed from below');
   assert.equal(network.group.children.find(c=>c.name==='ruin-layer-floor-0')?.visible,true);
