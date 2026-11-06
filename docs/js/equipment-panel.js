@@ -335,7 +335,7 @@
   function groupClothingForDisplay(items) {
     const groups = []; // Ordered by first appearance, so stacks don't jump around as quantities change.
     const bySignature = new Map(); // Used only for the current render; every saved item remains individual.
-    const maxPerTile = Math.max(1, Math.floor(Number(window.InventoryStacks?.STACK_SIZE) || 99)); // Reuses normal Pack's limit of 99 per box.
+    const maxPerTile = Math.max(1, Math.floor(Number(window.InventoryStacks?.STACK_SIZE) || 999)); // Reuses normal Pack's limit of 999 per box.
     for (const item of (items || [])) {
       if (!item || typeof item !== 'object') continue;
       const signature = clothingStackSignature(item); // The complete gameplay/appearance data (apart from provenance) determines identity.

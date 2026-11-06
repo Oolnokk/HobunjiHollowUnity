@@ -16,9 +16,9 @@
   <script src="js/audio-mix.js?v=20261025qol2"></script> <!-- Master/Music/Effects volume; must load before any audio code creates an AudioContext or <audio>. -->
   <script src="js/sprite-raycast-guard.js?v=20261024a"></script> <!-- Skips Sprite hit tests for camera-less world rays (r128 otherwise logs + throws per ray). -->
   <script src="js/tap-reliability.js?v=20261010a"></script>
-  <!-- Bag stack sizing (99 per box, overflow spills into another box).
+  <!-- Bag stack sizing (999 per box, overflow spills into another box).
        Must load before every module that grants inventory items. -->
-  <script src="js/inventory-stacks.js?v=20261102-animalhides1"></script>
+  <script src="js/inventory-stacks.js?v=20261105-stack999"></script>
   <script src="js/scene-ready-poller.js?v=20260920startup4"></script>
   <!-- Dev Companion bridge (window.DevCompanion): session-tied channel to the
        docs/tools/dev-companion window. Loaded before every config-fetching

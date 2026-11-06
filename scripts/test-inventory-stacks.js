@@ -1,6 +1,6 @@
 'use strict';
 
-// Executes docs/js/inventory-stacks.js: 99 is a per-box display size, not a
+// Executes docs/js/inventory-stacks.js: 999 is a per-box display size, not a
 // per-item cap — overflow spills into another box of the same item.
 const assert = require('assert');
 const fs = require('fs');
@@ -10,18 +10,21 @@ const window = {};
 vm.runInNewContext(fs.readFileSync('docs/js/inventory-stacks.js', 'utf8'), { window, Math, Number, Object });
 const { STACK_SIZE, MAX_TOTAL, stackCounts, clampTotal } = window.InventoryStacks;
 
-assert.equal(STACK_SIZE, 99);
-assert.ok(MAX_TOTAL > STACK_SIZE * 10, 'the per-item ceiling allows many full stacks');
+assert.equal(STACK_SIZE, 999);
+assert.equal(MAX_TOTAL, 9999, 'the per-item ceiling remains independent of display stack size');
+assert.equal(window.InventoryStacks.getDebug().stackSize, STACK_SIZE, 'mobile diagnostics expose the live stack size');
 assert.deepEqual(stackCounts(0), []);
 assert.deepEqual(stackCounts(5), [5]);
-assert.deepEqual(stackCounts(99), [99]);
-assert.deepEqual(stackCounts(100), [99, 1]);
-assert.deepEqual(stackCounts(250), [99, 99, 52]);
+assert.deepEqual(stackCounts(250), [250]);
+assert.deepEqual(stackCounts(999), [999]);
+assert.deepEqual(stackCounts(1000), [999, 1]);
+assert.deepEqual(stackCounts(2500), [999, 999, 502]);
+assert.deepEqual(stackCounts(MAX_TOTAL), [...Array(10).fill(999), 9], 'a capped inventory still spills safely into 11 slots');
 assert.deepEqual(stackCounts(undefined), []);
 assert.equal(clampTotal(MAX_TOTAL + 5), MAX_TOTAL);
 assert.equal(clampTotal(NaN), 0);
 
-// No grant site should still clamp a bag count to a single 99 stack.
+// No grant site should clamp a bag count to an old 9/99-item cap.
 const files = ['docs/game.js', ...fs.readdirSync('docs/js').filter(f => f.endsWith('.js')).map(f => `docs/js/${f}`),
   ...fs.readdirSync('docs/js/combat').filter(f => f.endsWith('.js')).map(f => `docs/js/combat/${f}`)];
 const offenders = [];
