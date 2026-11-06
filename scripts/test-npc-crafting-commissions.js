@@ -9,6 +9,7 @@ const masterySource = read('docs/js/crafting-mastery-system.js');
 const dyesSource = read('docs/js/dye-trait-labels.js');
 const generatorSource = read('docs/js/npc-crafting-commission-generator.js');
 const deliverySource = read('docs/js/npc-crafting-commission-delivery.js');
+const gameSource = read('docs/game.js');
 const adapterSource = read('docs/js/npc-crafting-commissions.js');
 const craftingPanelSource = read('docs/js/crafting-panel.js');
 
@@ -39,6 +40,8 @@ assert.match(deliverySource, /awardMotes\(moteReward, `commission:\$\{taskId\}`,
 assert.match(deliverySource, /mastery\.saveState\(masteryBefore\)/, 'failed literal delivery rolls back the Mote award');
 
 assert.match(adapterSource, /getTurnInReadyTaskForNpc = function npcCraftingCommissionTurnInReady/, 'commission readiness overrides the empty-items false positive');
+assert.match(gameSource, /turnInTask: taskId => window\.ProceduralTasks\.turnInTask\(taskId\)/, 'dialogue resolves live commission handler instead of capturing the generic fetch-only function');
+assert.match(gameSource, /NpcCraftingCommissionDelivery\?\.turnInPrompt\?\./, 'NPC hand-in label uses the commission type even when there are no fetch items');
 assert.match(adapterSource, /__craftCommissionDebug/, 'mobile-friendly commission diagnostics exist');
 assert.match(dyesSource, /colorTraitsForHsv/, 'dye labels reuse the gifting color classifier');
 assert.match(dyesSource, /dye-trait-readout/, 'swatch menus have a visible mobile classification readout');
@@ -155,6 +158,8 @@ assert(quote.gold > 70 + (4 * 6 * 1.5), 'crafting income covers material opportu
 assert(quote.favor >= 6, 'commission Favor is rewarded in the same 40-point-per-heart scale as gifts');
 taskDeps.setQuestStatus(offered.id, 'available', {});
 assert.equal(commissionInventory.chairBlueprint, 1, 'acceptance grants the required blueprint');
+const furniturePrompt = commissionContext.NpcCraftingCommissionDelivery.turnInPrompt(offered); // The dialogue must not label an empty commission item list as "Here's your .".
+assert.match(furniturePrompt.label, /Wooden Chair/, 'furniture hand-in names the actual craft, not an empty fetch-item list');
 commissionInventory.chairFurniture = 1;
 const result = commissionContext.ProceduralTasks.turnInTask(offered.id);
 assert.equal(result.ok, true, 'commission consumes the freshly crafted piece');
@@ -194,6 +199,48 @@ assert(feasible.every(trait => palette[0].traits.includes(trait)), 'every AND-ed
 assert.equal(commissionContext.NpcCraftingCommissionGenerator.__test.colorRequirement(['hueBlue']), null, 'locked dyes never produce undeliverable commissions');
 unlockedDyeIds.add('blue-muted-dark');
 assert(commissionContext.NpcCraftingCommissionGenerator.__test.colorRequirement(['hueBlue', 'dark'])?.includes('dark'), 'unlocked dye traits become valid immediately');
+
+// Functional special-NPC clothing turn-in: a ready commission from Spearhead creates
+// a garment for Jubmir and uses the commission-only wardrobe path, not the ordinary
+// gift acceptance rules. The quest remains owned by Spearhead for Favor/turn-in.
+let commissionedPack = [{
+  uid: 'newly-woven-hood', cosmeticId: 'fine_hood#loom:newly-woven-hood',
+  baseCosmeticId: 'fine_hood', slot: 'hood', weaveMaterial: 'light', craftedAt: 200,
+  colorA: palette[0],
+}]; // Live inventory pack read by the commission matcher and consumed after delivery.
+let commissionRecipient = null; // Records which NPC receives the real wardrobe garment.
+let commissionOption = null; // Proves the delivery path deliberately opts out of unsolicited gift style vetoes.
+taskDeps.getPackClothing = () => commissionedPack;
+taskDeps.setPackClothing = items => { commissionedPack = items; };
+commissionContext.NpcWardrobe = {
+  offerClothing(npcId, item, options) {
+    commissionRecipient = npcId;
+    commissionOption = options;
+    return { accepted: options?.commission === true };
+  },
+};
+const clothingTaskId = 'special-npc-clothing';
+taskDeps.setQuestStatus(clothingTaskId, 'available', {
+  kind: 'favor', npcId: 'spearhead_unumanuk', npcName: 'Spearhead', domain: 'crafting', items: [],
+  rewardGold: 200, rewardFriendship: 8, rewardMotes: 2, tier: 1,
+  commission: {
+    type: 'clothing', articleId: 'fine_hood', articleLabel: 'Fine Hood',
+    slot: 'hood', material: 'light', patterned: false, startedAt: 100,
+    dyeSlots: [{ key: 'A', traits: ['hueRed'] }],
+    recipientId: 'jubmir', recipientName: 'Jubmir',
+  },
+});
+const specialReady = commissionContext.ProceduralTasks.getTurnInReadyTaskForNpc('spearhead_unumanuk');
+assert.equal(specialReady?.id, clothingTaskId, 'crafting commission is ready when talking to the original NPC who requested it');
+const specialPrompt = commissionContext.NpcCraftingCommissionDelivery.turnInPrompt(specialReady);
+assert.match(specialPrompt.label, /Fine Hood for Jubmir/, 'clothing hand-in names the garment and recipient');
+assert.equal(commissionContext.ProceduralTasks.turnInTask(clothingTaskId).ok, true, 'ready crafting commission can be delivered by special NPC requester');
+assert.equal(commissionRecipient, 'jubmir', 'commission physically delivers the garment to its intended wearer');
+assert.equal(commissionOption?.commission, true, 'commission-specific wardrobe context reaches the recipient');
+assert.equal(commissionedPack.length, 0, 'the actual matching garment leaves the player pack');
+assert.equal(commissionProgress[clothingTaskId].status, 'completed', 'special-NPC commission becomes completed exactly once');
+assert.equal(commissionContext.ProceduralTasks.getTurnInReadyTaskForNpc('spearhead_unumanuk'), null, 'completed commission is no longer offered');
+
 
 
 // Both quest-log preview and ordinary task turn-in read this single method.
