@@ -348,6 +348,22 @@
     {
       "key": "ruinClimbHoldsSingle",
       "file": "config/furniture-authored/ruinClimbHoldsSingle.json"
+    },
+    {
+      "key": "ruinPassageDoor",
+      "file": "config/furniture-authored/ruinPassageDoor.json"
+    },
+    {
+      "key": "ruinPassageDoorNarrow",
+      "file": "config/furniture-authored/ruinPassageDoorNarrow.json"
+    },
+    {
+      "key": "ruinPassageDoorSlim",
+      "file": "config/furniture-authored/ruinPassageDoorSlim.json"
+    },
+    {
+      "key": "ruinPassageDoorWide",
+      "file": "config/furniture-authored/ruinPassageDoorWide.json"
     }
   ]
 }

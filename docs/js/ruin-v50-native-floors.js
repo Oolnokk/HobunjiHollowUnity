@@ -453,7 +453,10 @@
             throw new Error('Native V50 gate does not span actual supported hallway cells: '+native.id);
           const lowerY=Math.min(...doorHeights),upperY=Math.max(...doorHeights);
           const surfaceY=floor.y+lowerY,gateHeight=2.35+upperY-lowerY; // The bottom and top of the mesh cover uneven plateau thresholds without a gap.
-          const object=primitive(group,'v50-native-gate-'+item.floor+'-'+i,
+          const authoredGate=root.DevRandomRuinFurniturePieces?.buildPassageGate?.({ // Carved door with one seal; the plain box below is only the fallback until its JSON has loaded.
+            span,height:gateHeight,normalAxis:door.axis==='x'?'x':'z',parent:group,name:'v50-native-gate-'+item.floor+'-'+i,
+            position:{x,y:surfaceY,z}});
+          const object=authoredGate?authoredGate.object:primitive(group,'v50-native-gate-'+item.floor+'-'+i,
             new THREE.BoxGeometry(door.axis==='x'?.8:span,gateHeight,door.axis==='x'?span:.8),
             gateMaterial,x,surfaceY+gateHeight/2,z);
           challenge.gate={tiles,object,grid,surfaceY,height:gateHeight};
