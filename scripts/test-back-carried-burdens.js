@@ -118,6 +118,7 @@ function testRuntime() {
     new MeshBasicMaterial({name:'npc_avatar_skinned_front_material'}),
     new MeshBasicMaterial({name:'npc_avatar_skinned_back_material'})]);
   portrait.name='player_avatar_skinned_plane_assembly'; // Active skinned portrait and its back-only x-ray clone.
+  portrait.renderOrder=2; // The native PNG draw order must be restored after back carry or avatar rebuild.
   portrait.position.set(.08,.2,-.12);portrait.scale.setScalar(1.2);
   const firstAvatar=new Group();firstAvatar.name='original_player_avatar'; // Live avatar instance can be swapped without removing its predecessor immediately.
   firstAvatar.userData.neckRig={skinnedPlane:portrait};
@@ -153,6 +154,8 @@ function testRuntime() {
     },
   });
   assert(charge);
+  const chargePart={renderOrder:0,material:new MeshBasicMaterial({transparent:false,depthTest:true,depthWrite:true})}; // Physical part used to verify held/back layer transitions.
+  charge.meshColliders=[chargePart];
   charge.meshBounds={isEmpty:()=>false,getCenter:target=>target.set(4,.5,3)}; // Legacy cached geometric target, not a carrier-hitbox proxy.
   const originalTarget=targetSources.get('shattercasks')('map_back_test').find(entry=>entry.owner===charge);
   assert(originalTarget?.hitbox(),'the same physical Burden is independently targetable before being carried');
@@ -162,6 +165,16 @@ function testRuntime() {
   assert.equal(window.Shattercasks.debugSnapshot().held,null);
   assert.equal(window.Shattercasks.backCarriedInfo()?.id,charge.id);
   assert.equal(charge.group.parent,portrait,'stowed burden is a DIRECT child of the live skinned portrait plane');
+  assert.equal(chargePart.renderOrder,2.15,'the back Burden renders after the rear PNG');
+  assert.equal(chargePart.material.transparent,true,'opaque furniture joins the transparent PNG sort queue while stowed');
+  assert.equal(chargePart.material.depthTest,true,'world terrain can still occlude the back Burden');
+  assert.equal(chargePart.material.depthWrite,false,'back furniture cannot hide the front PNG by writing depth');
+  assert.equal(portrait.renderOrder,2.25,'the real skinned front PNG renders after the stowed Burden');
+  const rearPass=firstAvatar.children.find(child=>child.userData?.shattercaskRearOverlay);
+  assert.equal(rearPass?.renderOrder,2.05,'the isolated skinned back PNG renders before the Burden');
+  assert.equal(rearPass?.material[1].depthWrite,false,'rear pixels do not prevent the stowed Burden from rendering');
+  assert.equal(portrait.material[0].visible,true,'front PNG remains visible');
+  assert.equal(portrait.material[1].visible,false,'the original skinned back pass is not drawn twice');
   const authoredBurdenPoint=new Vector3(.13,.22,-.16).multiply(charge.group.scale).applyQuaternion(charge.group.quaternion);
   const actualAttachment=charge.group.position.clone().add(authoredBurdenPoint);
   for(const [axis,expected] of Object.entries({x:.12,y:-.08,z:.04}))
@@ -232,14 +245,25 @@ function testRuntime() {
   assert.equal(window.Shattercasks.debugSnapshot().backCarryMount.portraitAttached,true);
   const second=window.Shattercasks.registerBurden({mapId:currentArea,scene,group:new Group(),
     id:'test-hand-burden',kind:'inertStatue',hanging:false,data:{carryable:{}}});
+  const secondPart={renderOrder:0,material:new MeshBasicMaterial({transparent:false,depthTest:true,depthWrite:true})}; // Checks that held and stowed materials remain independently classified.
+  second.meshColliders=[secondPart];
   assert(window.Shattercasks.pickUp(second),'hands can still carry a different burden while the back is occupied');
+  assert.equal(chargePart.renderOrder,2.15,'picking up a second burden does not remove the back object x-ray');
+  assert.equal(chargePart.material.transparent,true,'the back object keeps the transparent PNG queue while hands are occupied');
+  assert.equal(secondPart.renderOrder,1.4,'the additional hand burden keeps its ordinary held-order layer');
+  assert.equal(secondPart.material.transparent,false,'hand burden does not inherit the back object blend mode');
   assert(!window.Shattercasks.stowOnBack(),'a second held burden cannot overwrite the occupied back slot');
   assert.equal(window.Shattercasks.backCarriedInfo()?.id,charge.id,'the first back burden remains untouched');
   assert(window.Shattercasks.discardBurden(second),'clear the extra hand burden before retrieving from back');
+  assert.equal(secondPart.renderOrder,0,'discard restores the second Burden original render order');
+  assert.equal(secondPart.material.depthWrite,true,'discard restores the second Burden depth writing');
   assert(window.Shattercasks.takeFromBack(),'tool-arch selection retrieves the same instance');
   assert.equal(window.Shattercasks.debugSnapshot().held,charge.id);
   assert(originalTarget.hitbox(),'retrieval restores the held burden own hitbox, separate from stowed carrier hits');
   assert.equal(charge.group.parent,headJoint,'retrieval restores the ORIGINAL held-object mount');
+  assert.equal(chargePart.renderOrder,1.4,'retrieved furniture returns to the existing held-order layer');
+  assert.equal(chargePart.material.transparent,false,'retrieval restores the authored opaque material');
+  assert.equal(chargePart.material.depthWrite,false,'hand-held furniture retains the established rear-PNG behavior');
   assert(window.Shattercasks.stowOnBack());
   assert.equal(charge.group.parent,rigidPortrait,'restowing reattaches directly to the rebuilt portrait');
   player.health-=10; // Affliction damage alone must never trigger a back-mounted collision.
@@ -249,6 +273,9 @@ function testRuntime() {
   window.Shattercasks.tick(.02);
   assert.equal(causes.length,1,'a direct impact triggers even if enhanced Health absorbs damage');
   assert.equal(causes[0],'carrier-direct-hit');
+  assert.equal(chargePart.renderOrder,0,'explosion restores the stowed Burden original order');
+  assert.equal(chargePart.material.transparent,false,'explosion restores the stowed Burden original material mode');
+  assert.equal(chargePart.material.depthWrite,true,'explosion restores the stowed Burden original depth state');
   assert.equal(window.Shattercasks.backCarriedInfo(),null,'hit-triggered explosion clears the back slot');
   assert.equal(window.Shattercasks.getBurden(charge.id),null,'the original physical item is consumed');
 
