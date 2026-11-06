@@ -112,7 +112,6 @@ async function main(){
       console.log('Solo puzzle audit:',JSON.stringify({kind:row.kind,ok:row.ok,error:row.error||null,
         snapshot:row.snapshot?.trial||null,fixture:row.snapshot?.fixture||null}));
     }
-    const fs=require('node:fs');
     fs.mkdirSync('test-artifacts',{recursive:true});
     fs.writeFileSync('test-artifacts/solo-puzzle-audit.json',JSON.stringify({report,errors:errors.slice(-40)},null,2));
     const failures=report.filter(row=>!row.ok);
