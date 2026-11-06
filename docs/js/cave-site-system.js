@@ -732,7 +732,8 @@
         songOptions:{difficulty:puzzle.difficulty}, // Deterministic 1–2-measure challenge range, not a universal easy one-measure song.
         isActive:()=>String(wildlifeDeps?.getCurrentArea?.()||'')===key && puzzleChallengesByMapId.get(key)?.scene===scene,
         onSolved:()=>{
-          state.puzzleSolved=true;state.puzzleRewardTier=challenge.song?.rewardTier||2;
+          state.puzzleSolved=true;
+          state.puzzleRewardTier=Math.max(Number(state.outdoorPuzzleTier)||1,challenge.song?.rewardTier||2); // Outside song difficulty also influences the exclusive cave reward.
           persistState();
           grantPuzzleCaveReward(profile,plan,state);
         },
@@ -1003,6 +1004,25 @@
     return runtimeStateBySignature.get(profile.signature);
   }
 
+  function exteriorPuzzleState(mapId) {
+    const site=sitesByMapId.get(String(mapId)); // Exterior cliff-gate and interior loot share the same persistent cave signature.
+    if(!site)return {solved:false,tier:1};
+    const state=stateFor(site);
+    return {solved:!!state.outdoorPuzzleSolved,tier:Number(state.outdoorPuzzleTier)||1};
+  }
+
+  function markExteriorPuzzleSolved(mapId,rewardTier) {
+    const site=sitesByMapId.get(String(mapId)); // One solved record per generated cave incarnation, not per render.
+    if(!site)return false;
+    const state=stateFor(site);
+    if(state.outdoorPuzzleSolved)return false;
+    state.outdoorPuzzleSolved=true;
+    state.outdoorPuzzleTier=Math.max(1,Math.min(5,Math.floor(Number(rewardTier)||1)));
+    if(!state.puzzleRewardClaimed)state.puzzleRewardTier=Math.max(Number(state.puzzleRewardTier)||1,state.outdoorPuzzleTier);
+    persistState();
+    return true;
+  }
+
   function syncTransitionLabels(zoneId) {
     if (!zoneSites(zoneId).length) return 0;
     const byMapId = sitesByMapId; // Cave lookup used to rename old den transitions without changing ids/targets.
@@ -1069,6 +1089,7 @@
       devSpawnerDeps?.corpseObjects?.delete?.(record.entity);
       if (resident) devSpawnerDeps?.despawnCreature?.(record.entity);
     }
+    window.PuzzleCaveEntrances?.forgetCave?.(mapId); // A relocated cave's old elevated entrance must be retired with its old save signature.
     puzzleChallengesByMapId.get(mapId)?.challenge?.dispose?.();
     puzzleChallengesByMapId.delete(mapId); // Retire the timed puzzle's listeners and authored meshes with the cavern.
     plansByMapId.delete(mapId);
@@ -1403,7 +1424,8 @@
   function updateCurrentCaveRuntime(dt = 0) {
     const elapsed=Math.max(0,Number(dt)||0);
     caveClock += elapsed;
-    const mapId = String(wildlifeDeps?.getCurrentArea?.() || ''); // One area read, shared by the fast score clock and slow cave interactions.
+    const mapId = String(wildlifeDeps?.getCurrentArea?.() || '');
+    window.PuzzleCaveEntrances?.update?.(elapsed,mapId); // Mini-cliff door admission uses the same per-frame input clock as interior notes. // One area read, shared by the fast score clock and slow cave interactions.
     const activePuzzle=puzzleChallengesByMapId.get(mapId)?.challenge;
     if(activePuzzle){activePuzzle.tick(elapsed);activePuzzle.animate?.(elapsed);} // 16th notes last only 150 ms at 100 BPM: a throttled cave tick would skip glyph windows.
     caveRuntimeTimer -= elapsed;
@@ -1449,7 +1471,10 @@
     // intentionally independent of the cavern/wildlife wrappers below so a
     // parser-order difference cannot let game.js initialize one subsystem
     // before CaveSiteSystem has captured the shared runtime helpers.
-    wrapInit(wildlife, deps => { wildlifeDeps = deps; }, '__caveSiteInitWrapped');
+    wrapInit(wildlife, deps => {
+      wildlifeDeps = deps; // The original wildlife adapter remains the single authority for player/scene/area state.
+      window.PuzzleCaveEntrances?.init?.(deps); // Reuses existing state rather than building another parallel game runtime.
+    }, '__caveSiteInitWrapped');
     wrapInit(window.DevSpawner, deps => { devSpawnerDeps = deps; }, '__caveSiteInitWrapped');
 
     if (cavern && !cavern.__caveSiteSynthesisWrapped && typeof cavern.synthesizeCavernMapData === 'function') {
@@ -1511,7 +1536,8 @@
       ready: integrationsInstalled,
       currentArea,
       latestChange: 'Puzzle Caves reserve one carved challenge chamber and require a timed song or both flame sconces. Solved state and pending trinket reward persist; exterior mini-cliff attachment still pending.',
-      groundFire: window.PersistentGroundFire?.debugSnapshot?.() || null, // Mobile-safe inspection of active fire without devtools.
+      groundFire: window.PersistentGroundFire?.debugSnapshot?.() || null,
+      cliffEntrances: window.PuzzleCaveEntrances?.debugSnapshot?.() || null, // Mobile-accessible outside score, raised support and gate lock state. // Mobile-safe inspection of active fire without devtools.
       zoneCount: zones.length,
       caveCount: sites.length,
       caves: sites.map(site => ({ mapId: site.mapId, zoneId: site.zoneId, denId: site.denId, contents: site.contents, inhabitant: site.inhabitant, label: site.discoveredLabel })),
@@ -1541,6 +1567,7 @@
     TYPES,
     TYPE_LABELS,
     applyWorkspaceProfiles,
+    exteriorPuzzleState,markExteriorPuzzleSolved,
     sitesForZone,
     profileForMapId,
     isAnimalDenSite,
