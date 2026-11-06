@@ -78,6 +78,7 @@ async function main(){
           getPlayerY:()=>0,getPlayerPosition:()=>player,
         });
         if(music.song.bpm>100||music.song.measures!==2)throw Error('Generated score violates requested tempo/length');
+        const songBpm=music.song.bpm; // Preserved after teardown for the mobile Chromium smoke result.
         if(!collision.blocksBox(area,gateX,gateZ,.18))throw Error('Closed melody slab is not collidable');
         music.tick(0);
         if(opened!==1)throw Error('Stepping onto a real plate did not enter the instrument session');
@@ -96,7 +97,7 @@ async function main(){
         music.dispose();music=null;
         if(collision.providerIds().length!==countBefore||group.children.length!==0)
           throw Error('Composed cave mechanisms leaked scene geometry or collision providers');
-        return {passed:true,notes:opened,songsSolved:state.solved,sconces:state.lit,tempo:music?.song?.bpm};
+        return {passed:true,instrumentSessions:opened,songsSolved:state.solved,sconces:state.lit,bpm:songBpm};
       }finally{
         fire?.dispose?.();music?.dispose?.();
       }
