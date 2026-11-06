@@ -5406,12 +5406,17 @@
       // resolved — same assumption docs/game.js's other cached config
       // loaders make (see loadBanditGangConfig). Moved into
       // docs/js/loot-rolling.js; game.js just wires it up and kicks it off.
+      let shopStockCatalogReady = false; // The async shop config callback is gated until barn/house defaults and item registration exist.
+      let shopStockApplyPending = false; // Replays a fast cached config resolution once the late game startup declarations initialize.
       window.LootRolling.init({
         weaponDamageTypeForTool,
         getCurrentArea: () => currentArea,
         getPlayerData: () => _playerData,
         calendar,
-        applyLoadedShopStock: () => _applyLoadedShopStock(),
+        applyLoadedShopStock: () => {
+          if (shopStockCatalogReady) _applyLoadedShopStock();
+          else shopStockApplyPending = true; // Promise may resolve during staged startup; never touch BARN_TIERS in its TDZ.
+        },
       });
       window.LootRolling.loadLootShopConfig();
 
@@ -17184,6 +17189,11 @@
         });
       }
       _registerHousePieceDeedItemDefs();
+      shopStockCatalogReady = true; // Barn/house catalog declarations and both item registration helpers are initialized.
+      if (shopStockApplyPending) {
+        shopStockApplyPending = false;
+        _applyLoadedShopStock(); // Apply cached shop stock once, after defaults exist; slower network resolutions use the normal callback.
+      }
 
       // ── Fish catalog ────────────────────────────────────────────
       // Keyed by zone category. "town" is the only zone with real river/stream
