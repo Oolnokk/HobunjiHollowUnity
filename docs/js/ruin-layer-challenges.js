@@ -348,6 +348,7 @@
         }
       }
       if(kind==='ropeChain'){
+        if(!ropeChain&&bus?.hasActiveRuinState?.()!==true)rec.error='Native rope controller is not attached to this ruin scene';
         if(!ropeChain&&bus?.hasActiveRuinState?.()===true){
           ropeChain=bus?.registerExternalRopeChain?.(rec.ropeSpec)||null;
           rec.ropeLinked=!!ropeChain;
