@@ -53,7 +53,6 @@ async function main(){
       // acquire shoulder-camera pointer lock in Chromium's test context.
       await page.evaluate(()=>window.ShoulderCamPointerLock?.release());
       await page.waitForFunction(()=>!document.pointerLockElement,null,{timeout:10000});
-      return previousTarget;
     };
     const expected=()=>[...window.DevRuinSingleRoomTrial.TYPES,...window.DevRuinSingleRoomTrial.MECHANISMS].map(([key])=>key);
     const kinds=await page.evaluate(expected);
@@ -69,7 +68,7 @@ async function main(){
       report.push(row);
       try{
         if(kind==='stoneDoor'){
-          console.log('Puzzle Lab HUD pointer lock before click:',await releaseCameraForHud());
+          await releaseCameraForHud();
           await labTab.click({timeout:10000});
           await page.locator('#devRuinLabPanel').waitFor({state:'visible',timeout:10000});
           await page.selectOption('#devRuinLabChoice',kind);
@@ -79,7 +78,7 @@ async function main(){
             &&window.DevRandomRuin?.getGenerationProgress?.()?.phase==='entered',null,{timeout:60000});
           if(!await labTab.isVisible())throw new Error('Puzzle Lab tab disappeared after switching fixtures');
           if(await page.locator('#devRuinLabPanel').isVisible())throw new Error('Puzzle Lab panel stayed open after switching fixtures');
-          console.log('Puzzle Lab HUD pointer lock before click:',await releaseCameraForHud());
+          await releaseCameraForHud();
           await labTab.click({timeout:10000});
           await page.waitForFunction(()=>document.getElementById('devRuinLabFeedback')?.dataset.phase==='ready');
           await page.keyboard.press('Escape');
