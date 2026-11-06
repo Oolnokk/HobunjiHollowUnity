@@ -1,5 +1,5 @@
 // Isolated ruin puzzle selection. Random mode samples actual challenge-room
-// allocations made by the live multi-floor RuinLayerPlan, not hand-maintained weights.
+// allocations made by the live multi-floor RuinLayerPlan, excluding lab-disabled puzzle families.
 (function(root,factory){
   const api=factory(root);
   if(typeof module==='object'&&module.exports)module.exports=api;
@@ -7,7 +7,6 @@
 })(typeof self!=='undefined'?self:globalThis,function(root){
   'use strict';
   const TYPES=Object.freeze([
-    ['pressurePlate','Pressure plate'],
     ['glyphObelisk','Projectile glyph targets'],
     ['ceilingRailTargets','Moving ceiling targets'],
     ['melodyEcho','Melody echo'],
@@ -15,7 +14,7 @@
     ['ropeChain','Bottomless rope chain'],
     ['statueDefense','Key Statue defense'],
   ]); // Used by both the mobile selector and the generation validator.
-  const VALID=new Set(TYPES.map(([key])=>key)); // Rejects unknown persisted or external selections before entering the ruin.
+  const VALID=new Set(TYPES.map(([key])=>key)); // Used to exclude retired or unsupported puzzles from forced and weighted lab selection.
   function pick(seed,requested='weighted',planner=root.RuinLayerPlan){
     const selection=String(requested||'weighted');
     if(selection!=='weighted'){
