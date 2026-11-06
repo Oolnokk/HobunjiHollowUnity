@@ -8,7 +8,9 @@
 })(typeof self!=='undefined'?self:globalThis,function(Grid){
   'use strict';
   const GRAVITY=13; // Shared unpowered flight acceleration from RopeLaunch/Shattercasks.
-  const UNBUFFED_SPEED=3.5; // Conservative horizontal tiles/second for the shaft's no-buff landing proof; intentionally not increased by player buffs.
+  const UNBUFFED_MOVE_PX_S=238; // game.js base MOVE_SPEED, also documented in companion-movement-speed.js.
+  const TILE_PIXELS=55; // Common player tile coordinate scaling; the test ruin projects one world cell per tile.
+  const UNBUFFED_SPEED=UNBUFFED_MOVE_PX_S/TILE_PIXELS*.81; // Safe 19% allowance for acceleration and input delay, with no speed buffs.
   const SIZE=4; // Every obelisk is a four-cell-wide solid rectangular column with a four-cell mantle top.
   const DEATH_DEPTH=8; // Pit bottom sits below the entire ground-story gallery.
   const TRAVERSAL='reachingObelisks';
