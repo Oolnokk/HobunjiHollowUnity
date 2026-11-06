@@ -153,12 +153,13 @@ function decorate(p) {
 }
 
 // Two independent layers: every contents type and every inhabitant occurs.
-const CONTENTS = ['ore_mine', 'trapped_cache', 'catacomb', 'ruin_entrance', 'mushroom_cave'];
+const CONTENTS = ['ore_mine', 'trapped_cache', 'catacomb', 'ruin_entrance', 'mushroom_cave', 'puzzle_cave'];
 const INHABITANTS = ['animal_den', 'bandit_hideout', 'none'];
 const rolled = Array.from({ length: 400 }, (_, i) => Cave.__test.rollProfile('map_roll_zone', { id: `animalDen_${i}`, x: i * 7, y: i * 3 }));
 for (const type of CONTENTS) assert(rolled.some(p => p.contents === type), `contents ${type} can roll`);
 for (const type of INHABITANTS) assert(rolled.some(p => p.inhabitant === type), `inhabitant ${type} can roll`);
 assert(rolled.every(p => CONTENTS.includes(p.contents) && INHABITANTS.includes(p.inhabitant)), 'every cave has exactly one contents and one inhabitant');
+assert(rolled.filter(p => p.contents === 'puzzle_cave').every(p => p.inhabitant === 'none'), 'one-room puzzle caves contain no bandit or Den-Mother inhabitants');
 assert.equal(Cave.__test.caveTitle('mushroom_cave', 'animal_den'), 'Mushroom Cave — Animal Den', 'label names both layers');
 assert.equal(Cave.__test.caveTitle('ore_mine', 'none'), 'Ore-rich Cave', 'uninhabited caves are named by contents only');
 
