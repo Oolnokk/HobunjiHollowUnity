@@ -85,7 +85,7 @@
       if(!standing){
         standing=true;elapsed=0;progress=0;cycle=0;
       }else if(!solved){
-        const delta=clamp(Number(dt)||0,0,.25);
+        const delta=Number.isFinite(Number(dt))?Math.max(0,Number(dt)):0; // Keep real BPM on slow frames rather than stretching every note by silently truncating elapsed time.
         const previousCycle=Math.floor(tickAt()/song.cycleTicks);
         elapsed+=delta;
         const nextCycle=Math.floor(tickAt()/song.cycleTicks);
