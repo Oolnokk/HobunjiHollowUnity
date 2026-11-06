@@ -866,15 +866,20 @@ function campfireRecipe() {
     box(.34, .28, -.27, .075, .56, .075, .85, { color: '#765236' }),
     box(-.34, .28, .27, .075, .56, .075, .85, { color: '#765236' }),
     box(.34, .28, .27, .075, .56, .075, .85, { color: '#765236' }),
-    box(0, .72, 0, .34, .055, .34, 1, { color: '#9b672f' }),
-    box(0, .96, 0, .265, .39, .265, 1, { color: '#e7ad55', surfaceOpacity: .62, materialLighting: 'unlit' }),
-    ...[[-.15, -.15], [.15, -.15], [-.15, .15], [.15, .15]].map(([x, z]) =>
-      cyl(x, .96, z, .025, .42, .025, 1, { color: '#9b672f', segments: 8 })),
-    cyl(0, 1.19, 0, .36, .12, .36, 1, { color: '#9b672f', topScaleX: .48, topScaleZ: .48, segments: 12 }),
-    cyl(0, 1.27, 0, .09, .08, .09, 1, { color: '#b98243', segments: 8 }),
-    box(0, 1.41, 0, .20, .025, .025, 1, { color: '#9b672f' }),
-    box(-.09, 1.34, 0, .025, .14, .025, 1, { color: '#9b672f' }),
-    box(.09, 1.34, 0, .025, .14, .025, 1, { color: '#9b672f' }),
+    // Miniature brass lantern + internal candle; mirrors the authored accessory while JSON loads.
+    box(0, .681, 0, .238, .022, .238, 1, { color: '#9b672f', segments: 4 }),
+    box(0, .777, 0, .1855, .156, .1855, 1, { color: '#e7ad55', surfaceOpacity: .62, materialLighting: 'unlit', segments: 4 }),
+    cyl(0, .748, 0, .061, .092, .061, 1, { color: '#f3dba8', segments: 12 }),
+    cyl(0, .814, 0, .034, .045, .034, 1, { color: '#ffe16b', surfaceOpacity: .98, materialLighting: 'unlit', topScaleX: .16, topScaleZ: .16, depthWrite: false, segments: 12 }),
+    cyl(-.105, .777, -.105, .0175, .168, .0175, 1, { color: '#9b672f', segments: 12 }),
+    cyl(.105, .777, -.105, .0175, .168, .0175, 1, { color: '#9b672f', segments: 12 }),
+    cyl(-.105, .777, .105, .0175, .168, .0175, 1, { color: '#9b672f', segments: 12 }),
+    cyl(.105, .777, .105, .0175, .168, .0175, 1, { color: '#9b672f', segments: 12 }),
+    cyl(0, .869, 0, .252, .048, .252, 1, { color: '#9b672f', topScaleX: .48, topScaleZ: .48, segments: 12 }),
+    cyl(0, .901, 0, .063, .032, .063, 1, { color: '#b98243', segments: 12 }),
+    box(-.063, .929, 0, .0175, .056, .0175, 1, { color: '#9b672f', segments: 4 }),
+    box(.063, .929, 0, .0175, .056, .0175, 1, { color: '#9b672f', segments: 4 }),
+    box(0, .957, 0, .14, .01, .0175, 1, { color: '#9b672f', segments: 4 }),
   ];
 
   // Placeholder weathered-stone statue/totem: a plinth, a tapered column, and
