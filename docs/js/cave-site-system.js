@@ -866,13 +866,31 @@
     // A few ordinary caves also contain loose charges; never consume reserved content tiles.
     const freeChargeTiles = awayFromEntrance.filter(tile => !blockedKeys.has(tileKey(tile.col,tile.row))
       && !plan.shattercasks.some(charge => Math.hypot(charge.col-tile.col,charge.row-tile.row)<4));
-    if (contents===TYPES.PUZZLE_CAVE && plan.puzzleCave?.kind==='fireSconces' && freeChargeTiles.length){
-      const charge=sortTilesByDistance(freeChargeTiles,plan.puzzleCave.col,plan.puzzleCave.row,false)
-        .find(tile=>Math.hypot(tile.col-plan.puzzleCave.col,tile.row-plan.puzzleCave.row)>4);
-      if(charge){
-        plan.shattercasks.push({id:'puzzle-flame-charge',col:charge.col,row:charge.row,kind:'flameShattercask',guaranteed:true});
-        blockedKeys.add(tileKey(charge.col,charge.row)); // Flame cask is an optional physical alternative to crafted Fire Flasks.
+    if (contents===TYPES.PUZZLE_CAVE && plan.puzzleCave?.kind==='fireSconces'){
+      // A single charge can ignite only one distant sconce if the player misses the
+      // midpoint. Provide two expendable charges on guaranteed navigable chamber
+      // floor, so Fire Flasks are an alternative rather than a softlock requirement.
+      const chamber=plan.puzzleCave; // Authoritative carved room and entrance-side supply center.
+      const floorKeys=new Set(allTiles.map(tile=>tileKey(tile.col,tile.row))); // New floor after CavernGenerator expanded the room.
+      const rockKeys=new Set((mapData.oreRocks||[]).map(rock=>tileKey(rock.col,rock.row))); // Avoid pre-existing cave ore.
+      const supplyCandidates=[
+        {col:chamber.col-2,row:chamber.row-2},{col:chamber.col+2,row:chamber.row-2},
+        {col:chamber.col-2,row:chamber.row-1},{col:chamber.col+2,row:chamber.row-1},
+        {col:chamber.col-1,row:chamber.row-3},{col:chamber.col+1,row:chamber.row-3},
+        ...sortTilesByDistance(freeChargeTiles,chamber.col,chamber.row,false),
+      ]; // Spawn in front of the southern stone gate; fall back to existing unreserved cave tiles.
+      for(const tile of supplyCandidates){
+        if(plan.shattercasks.length>=2)break;
+        const key=tileKey(tile.col,tile.row);
+        if(!floorKeys.has(key)||rockKeys.has(key)||
+          (mapData.exits||[]).some(exit=>(exit.tiles||[]).some(pair=>tileKey(pair[0],pair[1])===key))||
+          plan.shattercasks.some(charge=>Math.hypot(charge.col-tile.col,charge.row-tile.row)<2))continue;
+        plan.shattercasks.push({id:'puzzle-flame-charge-'+(plan.shattercasks.length+1),
+          col:tile.col,row:tile.row,kind:'flameShattercask',guaranteed:true});
+        blockedKeys.add(key); // Occupies actual cave floor; never spawned within a wall or cave exit.
       }
+      if(plan.shattercasks.length<2)window.__farmLog?.(
+        '[puzzle-cave] not enough clear floor for both flame charges; crafted Fire Flasks remain usable','warn');
     }
     if (contents!==TYPES.PUZZLE_CAVE && (profile.inhabitant === TYPES.BANDIT_HIDEOUT || rng()<.38) && freeChargeTiles.length) {
       const tile = freeChargeTiles[Math.floor(rng()*freeChargeTiles.length)];
