@@ -387,6 +387,7 @@
       tileY: t => deps.tileSurfaceYInArea(t, mapId), // Same Y authority used by the player, creatures and scheduled NPCs.
     });
     if (network) {
+      window.PuzzleCaveEntrances?.mount?.(mapId,network,zScene); // Reserve one valid raised mini-cliff per Puzzle Cave before the shared ore/chest renderer runs.
       // The dungeon's registered-support system is authoritative for all
       // mini-cliffs, including overlapping X/Z across multiple Y levels.
       window.CliffElevatedSurfaces?.mount?.(network, {
