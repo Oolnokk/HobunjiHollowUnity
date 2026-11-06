@@ -403,11 +403,6 @@
 
         if (window.DialogueContent?.hasQueuedConversationTree?.(rec?.id)) { window.DialogueContent.beginNpcConversation(rec); return; }
 
-        if (rec?.id === 'spearhead_unumanuk' && window.CombatTutorial?.active()) {
-          window.DialogueContent?.beginNpcConversation(rec); // Automatic coaching must not be displaced by procedural requests.
-          return;
-        }
-
         // Task turn-in — checked before everything else (including a fresh
         // request/favor ask): if this NPC posted/asked a quest that's now
         // sitting ready in the player's log, offer to hand it over right
@@ -426,6 +421,11 @@
               { label: 'Not yet.', actions: [] },
             ],
           });
+          return;
+        }
+
+        if (rec?.id === 'spearhead_unumanuk' && window.CombatTutorial?.active()) {
+          window.DialogueContent?.beginNpcConversation(rec); // Resume active coaching unless a finished task was just handed in; never replace training with a new request/favor.
           return;
         }
 
