@@ -750,6 +750,24 @@
         for(const sconce of challenge.sconces||[]){sconce.lit=true;sconce.flame.visible=true;} // Solved fire gates keep their lit torches after re-entry.
         grantPuzzleCaveReward(profile,plan,state); // Retry a pending payout when definitions or saves are repaired.
       }
+      // The authored slab is visual; the existing DynamicSurfaces collision registry
+      // owns the actual closed gate. Scope by map so stacked areas cannot collide.
+      const gateId='puzzle-cave-interior-gate:'+key; // Registered blocker removed with the challenge's scene lifetime.
+      const gateRegistry=window.DynamicSurfaces; // Shared collision authority for cliffs, ruins and cave entrances.
+      if(gateRegistry?.registerBlocker){
+        gateRegistry.registerBlocker({
+          id:gateId,scope:key,
+          bounds:{minX:room.x+room.w/2-2.53,maxX:room.x+room.w/2+2.53,
+            minZ:room.z+room.d-.96,maxZ:room.z+room.d-.67},
+          enabled:()=>!challenge.disposed&&!challenge.solved,
+          blocksAt:(_x,_z,_height,_record,_radius,opts)=>{
+            const y=Number(opts?.worldY??opts?.floorY??opts?.y);
+            return !Number.isFinite(y)||Math.abs(y)<2; // Ignore unrelated elevated surfaces above this ground-floor slab.
+          },
+        });
+        const previousDispose=challenge.dispose.bind(challenge); // Keep the original composed challenge teardown intact.
+        challenge.dispose=()=>{gateRegistry.remove?.(gateId);previousDispose();};
+      }
       puzzleChallengesByMapId.set(key,{scene,challenge}); // Scene ownership ensures no duplicates after interior regeneration.
       return challenge;
     }catch(error){
