@@ -112,15 +112,20 @@
   function climbFaces(pillar,topY=pillar.topY,rotation=pillar.rotation){
     const start=Math.ceil(topY-pillar.catchDepth),end=Math.floor(topY),faces=[];
     const left=Math.round(pillar.x-SIZE/2),back=Math.round(pillar.z-SIZE/2);
-    const normals=[Grid.DIR.N,Grid.DIR.E,Grid.DIR.S,Grid.DIR.W];
+    const normals=[Grid.DIR.N,Grid.DIR.W,Grid.DIR.S,Grid.DIR.E];
+    // Two tile wide winding bands: on each successive vertical cell the
+    // band advances one tile along its face, then crosses the exact shared
+    // corner onto the next face. A two-row strip stays connected all the way
+    // from its lowest catch point to the mantle lip.
     for(let y=start;y<end;y++){
-      const turn=(Math.floor((end-y-1)/2)+rotation)%4;
-      for(let step=1;step<=2;step++){
-        let c=left+step,r=back+step;
-        if(turn===0)r=back;
-        if(turn===1)c=left+SIZE-1;
-        if(turn===2)r=back+SIZE-1;
-        if(turn===3)c=left;
+      const descent=end-y-1,phase=Math.floor(descent/3),turn=(phase+rotation)%4;
+      const along=descent%3;
+      for(let step=0;step<2;step++){
+        let c=left,r=back;
+        if(turn===0)c=left+(2-along)+step; // N: east to west
+        if(turn===1)r=back+along+step;     // W: north to south
+        if(turn===2){r=back+SIZE-1;c=left+along+step;} // S: west to east
+        if(turn===3){c=left+SIZE-1;r=back+(2-along)+step;} // E: south to north
         faces.push({c,r,l:y,dir:normals[turn],style:'obelisk-stone'});
       }
     }
