@@ -49,7 +49,7 @@ async function main(){
       options:[...document.querySelector('#devRandomRuinSinglePuzzleType')?.options||[]].map(o=>o.value),
     }));
     assert.equal(ui.button,true);
-    assert.deepEqual(ui.options,['weighted','glyphObelisk','ceilingRailTargets','melodyEcho','dungeonFire','ropeChain','statueDefense']);
+    assert.deepEqual(ui.options,['weighted','glyphObelisk','ceilingRailTargets','melodyEcho','dungeonFire','ropeChain','statueDefense','nativeBrazier','nativeGlyphObelisk','nativeStackedObelisk','nativeLinkedCubePillars']);
 
     // One specific puzzle, and the genuine projectile-target runtime must link.
     const forced=await page.evaluate(seed=>window.DevRandomRuin.generate(seed,{
@@ -118,7 +118,26 @@ async function main(){
     assert.equal(ropeInfo.chains,1);
     assert.equal(ropeInfo.voidAtCenter,true);
     assert.equal(ropeInfo.centerSupport,null,'the rope abyss must have no ordinary V50 floor support');
-    console.log('Browser puzzle lab: forced glyph, planner-weighted, real rope void and live hooks passed.');
+
+    // Native V50 mode must mount an original V50 obelisk and linked stone door.
+    const native=await page.evaluate(seed=>window.DevRandomRuin.generate(seed,{
+      singleRoomTrial:true,puzzleType:'nativeStackedObelisk',
+    }),0x4ed17f2a);
+    assert.equal(native,true,'native V50 obelisk lab must enter');
+    await page.waitForFunction(()=>window.DevRandomRuinSimplePuzzles?.snapshot?.().singleRoomChallenge?.ready===true,null,{timeout:20000});
+    const nativeInfo=await page.evaluate(()=>({
+      state:window.DevRandomRuin.getState(),
+      puzzle:window.DevRandomRuinSimplePuzzles.snapshot().singleRoomChallenge,
+      mechanism:window.DevRandomRuin.mechanismInfo('single_room_native_v50_goal'),
+    }));
+    assert.equal(nativeInfo.state.rooms,1);
+    assert.equal(nativeInfo.state.noLoot,true);
+    assert.equal(nativeInfo.puzzle.kind,'nativeStackedObelisk');
+    assert.equal(nativeInfo.puzzle.linked,true);
+    assert.equal(nativeInfo.state.puzzleGeneration.nativeLab.kind,'stackedObelisk');
+    assert.equal(nativeInfo.mechanism?.gated,true);
+
+    console.log('Browser puzzle lab: glyph, weighted, rope void, native V50 obelisk and real hooks passed.');
   }catch(error){
     console.error('Standalone puzzle lab smoke failure:',error);
     console.error('Recent browser errors:',errors.slice(-25).join('\n'));
