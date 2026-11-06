@@ -21,6 +21,27 @@ for (const id of ['simple_hood', 'fur_lined_hood']) {
 assert.equal(simple.slot, 'hood');
 assert.equal(lined.slot, 'hood');
 
+const fine = json('docs/config/cosmetics/fine_hood.json'); // Fine Hood is the source of truth for each wearer's rear silhouette.
+const configSource = read('docs/config/scratchbones-config.js'); // The real rear-view replacement registry resolves Fine Hood's back assets.
+const configContext = { window: {} }; // Isolates configuration evaluation from the test process's globals.
+vm.runInNewContext(configSource, configContext, { filename: 'scratchbones-config.js', timeout: 5000 });
+const backRules = configContext.window.SCRATCHBONES_CONFIG.game.assets.pngPlaneAvatar.behindView.layerReplacements; // Used to compare each new hood to Fine Hood's existing renderer mapping.
+const hiddenFurTrim = backRules.find(rule => rule.idIncludes?.includes('fur-lined-hood') && rule.urlIncludes?.includes('furlinedhood-trim'));
+assert.equal(hiddenFurTrim?.hide, true, 'fur-lined front trim must not appear over the shared Fine Hood rear sprite');
+for (const [key, variant] of Object.entries(fine.speciesVariants)) {
+  const frontFineUrl = variant.parts.head.layers.front.image.url;
+  const fineBackRule = backRules.find(rule => rule.urlIncludes?.some(fragment => frontFineUrl.includes(fragment)) && rule.url?.includes('finehood-back'));
+  assert(fineBackRule, key + ': Fine Hood behind sprite is not mapped');
+  const expectedBackUrl = './assets/' + fineBackRule.url;
+  for (const [label, hood] of [['simple', simple], ['fur-lined', lined]]) {
+    const layers = hood.speciesVariants[key]?.parts?.head?.layers;
+    assert(layers?.front, key + ': missing ' + label + ' front hood layer');
+    assert.equal(layers.front.behindImage?.url, expectedBackUrl, key + ': ' + label + ' rear art differs from Fine Hood');
+    assert(assetExists(expectedBackUrl), key + ': missing shared Fine Hood rear PNG ' + expectedBackUrl);
+  }
+  assert.equal(lined.speciesVariants[key].parts.head.layers.front_trim.behindImage, undefined, key + ': fur trim must not override the rear sprite');
+}
+
 for (const [key, suffix] of [['tletingan_male', 'tl_m'], ['mashtzarr_male', 'mashtz_m']]) {
   const plain = simple.speciesVariants[key].parts.head.layers;
   const fur = lined.speciesVariants[key].parts.head.layers;
@@ -40,7 +61,6 @@ for (const oldName of ['simplehood-furtrim_tl_m.png', 'simplehood-trim_fur_masht
   assert(!fs.existsSync(path.join(root, 'docs/assets/cosmetics/clothes/hood', oldName)), 'obsolete trim sprite: ' + oldName);
 }
 
-const configSource = read('docs/config/scratchbones-config.js');
 const originalFur = read('docs/js/fur-hood-leatherworking.js');
 const weaving = read('docs/js/clothing-weaving-system.js');
 new vm.Script(configSource, { filename: 'scratchbones-config.js' });
