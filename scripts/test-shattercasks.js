@@ -334,6 +334,7 @@ class Raycaster {
 }
 function authoredGroup() {
   const group=new Node(),mesh=new Mesh({attributes:{position:{count:3}},authoredMock:true},new Material({visible:true}));
+  mesh.renderOrder=0; // Match THREE.Mesh's default order so post-carry restoration is asserted precisely.
   group.add(mesh);
   group.userData.meshById=new Map([['silhouette',mesh]]);
   return group;
