@@ -76,11 +76,11 @@ async function run() {
   assert.deepEqual(plain(persistence.groupsFor('egg', 2).map(group => group.count)), [2]);
   assert.equal(window.FarmAnimals.addToStable('egg', { inventoryVariant: 'generic' }).ok, false, 'stale generic selection is rejected');
 
-  window.CookingSystem = { availableQualityEntries: () => [{ stars: 5, count: 101 }, { stars: 2, count: 3 }] };
-  const boxes = stacks.variants('fruit', 104, true);
-  assert.deepEqual(plain(boxes.map(box => [box.stars, box.count])), [[5, 99], [5, 2], [2, 3]]);
+  window.CookingSystem = { availableQualityEntries: () => [{ stars: 5, count: 1001 }, { stars: 2, count: 3 }] };
+  const boxes = stacks.variants('fruit', 1004, true);
+  assert.deepEqual(plain(boxes.map(box => [box.stars, box.count])), [[5, 999], [5, 2], [2, 3]]);
   assert.equal(new Set(boxes.map(box => box.stackId)).size, 3, 'overflow and quality boxes each have a unique selection identity');
-  assert.deepEqual(plain(stacks.variants('wood', 100).map(box => box.count)), [99, 1]);
+  assert.deepEqual(plain(stacks.variants('wood', 1000).map(box => box.count)), [999, 1]);
   assert.deepEqual(plain(stacks.variants('wood', 0)), []);
 
   const [first, second] = await Promise.all([stacks.headIcon('grehlr', coat), stacks.headIcon('grehlr', reordered)]);
