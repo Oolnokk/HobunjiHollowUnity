@@ -47,7 +47,7 @@ assert.ok(encounters.includes('if(enc.noLoot)entity.ruinNoLoot=true'));
 assert.ok(corpses.includes('if (c.ruinNoLoot===true)return [];')||corpses.includes('if(c.ruinNoLoot===true)return [];'));
 assert.ok(corpses.includes('if(c.ruinNoLoot===true)return {ok:false'));
 assert.ok(interior.includes('singleRoomLab:singleRoomTrial'));
-assert.ok(interior.includes("soloChoice.kind==='statueDefense'?'veryLarge':'large'"));
+assert.ok(interior.includes("soloChoice.kind==='statueDefense'?'veryLarge':nativeSoloType==='glyphObelisk'?'medium':'large'"),'statue, rope and native V50 puzzle types retain their correct authored room size');
 assert.ok(read('docs/tools/debris-ifier/debrisifier-v50-api.js').includes('window.__devRuinSingleRoomLab ='));
 assert.ok(read('docs/tools/debris-ifier/debrisifier-01.js').includes("['flat puzzle lab floor',"));
 assert.ok(read('docs/tools/debris-ifier/debrisifier-01.js').includes("['clear solo chamber support pillars',")); // A normal V50 support column cannot overlap the selected challenge center.
