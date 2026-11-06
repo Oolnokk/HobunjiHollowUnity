@@ -374,6 +374,22 @@
         updateAuthoredDoor(); // A solved save that loads the model late still shows a fully raised gate.
       }).catch(error=>root.__farmLog?.('[puzzle-cave] authored cliff gate unavailable: '+error.message,'warn'));
     }
+    if((kind==='timedMelody'||kind==='fireSconces')&&options.area){
+      const DS=options.DynamicSurfaces||root.DynamicSurfaces;
+      if(DS?.registerBlocker){
+        const gateZ=room.z+room.d-1.05; // Same real slab position as the 9x9 cave chamber's authored door.
+        rec.colliderId='puzzle-cave-interior-gate:'+options.area+':'+id;
+        DS.registerBlocker({
+          id:rec.colliderId,scope:'puzzle-cave-interior:'+options.area,
+          bounds:{minX:cx-2.35,maxX:cx+2.35,minZ:gateZ-.18,maxZ:gateZ+.18},
+          enabled:()=>!rec.disposed&&isActive()&&(!rec.solved||(Number(rec.doorRise)||0)<.98),
+          blocksAt:(_x,_z,_h,_r,_radius,query)=>{
+            const elevation=Number(query?.y??query?.floorY??query?.worldY);
+            return !Number.isFinite(elevation)||Math.abs(elevation-y)<1.4; // Raised cave platforms in future maps do not inherit a ground-level blocker.
+          },
+        });
+      }
+    }
     rec.targetCount=targets.length;
     rec.tick=(dt)=>{
       if(rec.disposed)return;
@@ -473,6 +489,7 @@
       for(const remove of linkDisposers)remove();
       if(fireTargetId)fire?.unregisterTarget?.(fireTargetId);
       if(fireControl)options.removeControl?.(fireControl);
+      if(rec.colliderId)(options.DynamicSurfaces||root.DynamicSurfaces)?.remove?.(rec.colliderId); // One owner for both collision removal and room teardown.
       if(ropeChain)bus?.removeExternalRopeChain?.(ropeChain);
       if(melodyListener)events?.removeEventListener?.('hobunji-ruin-melody-result',melodyListener);
       if(timedNoteListener)events?.removeEventListener?.('hobunji-kurraya-puzzle-note',timedNoteListener);
