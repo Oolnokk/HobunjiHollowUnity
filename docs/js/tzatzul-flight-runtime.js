@@ -56,7 +56,12 @@
       const state = bird._tzFlight, support = supports.get(state?.roostId);
       if (!support) continue;
       state.roost = support;
-      if (state.phase === 'perched') window.PerchSupport?.attach?.(bird, support);
+      if (state.phase === 'perched' || state.phase === 'await-roost') {
+        if (window.PerchSupport?.attach?.(bird, support)) {
+          state.phase = 'perched'; state.elapsed = 0; state.rest = REST_SECONDS;
+          state.target = null; bird.tzatzulFlightPose = 'perched'; bird.tzatzulDivePitchRad = 0;
+        }
+      } // A regenerated roost can rescue a bird stranded by scene replacement.
     }
     for (const [slot, roost] of available.entries()) {
       if (spawnedThisDay.has(roost.id)) continue;
@@ -190,10 +195,15 @@
     prey.state = 'tzatzul-carried';
     return true;
   }
+  function canCarry(prey) {
+    const size = String(prey?.genotype?.sizeClass || prey?.sizeClass || prey?.def?.defaultSizeClass || 'medium').toLowerCase();
+    return size === 'small' || size === 'medium'; // Attacks can hit large creatures, but talons cannot lift them.
+  }
   function capture(bird, prey) {
     if (!prey || prey === deps.player || prey.isPlayer || !(prey.health > 0)
-      || prey.tzatzulCapturedBy || captured.has(prey) || !bird?._tzFlight
-      || !bird.onPerch || !window.PerchSupport?.attach?.(prey, bird.onPerch, bird.branchT)) return false;
+      || !canCarry(prey) || prey.tzatzulCapturedBy || captured.has(prey) || !bird?._tzFlight
+      || bird._tzFlight.captive || !bird.onPerch
+      || !window.PerchSupport?.attach?.(prey, bird.onPerch, bird.branchT)) return false;
     captured.set(prey, { bird, state: prey.state, areaId: prey.areaId }); // Original creature, clothing and loot survive transport.
     bird._tzFlight.captive = prey; bird.tzatzulCarrying = true; // Switch the authored flying body to its gripping sprite.
     prey.tzatzulCapturedBy = bird._tzFlight.identity.id; prey.state = 'tzatzul-carried';
@@ -291,10 +301,14 @@
     }
     state.segment = null;
     if (state.phase === 'swoop') { returnHome(bird); return; }
-    if (state.phase === 'return' && window.PerchSupport?.attach?.(bird, state.roost)) {
-      if (state.captive) releaseCaptive(state.captive, 'returned to roost');
-      state.phase = 'perched'; state.elapsed = 0; state.rest = REST_SECONDS;
-      state.target = null; bird.tzatzulFlightPose = 'perched'; bird.tzatzulDivePitchRad = 0;
+    if (state.phase === 'return') {
+      const arrived = !!window.PerchSupport?.attach?.(bird, state.roost);
+      if (state.captive) releaseCaptive(state.captive, arrived ? 'returned to roost' : 'roost lost');
+      state.phase = arrived ? 'perched' : 'await-roost'; // No segment-less return loop holding the same prey forever.
+      state.elapsed = 0; state.rest = REST_SECONDS; state.target = null;
+      bird.tzatzulFlightPose = arrived ? 'perched' : 'glide';
+      if (arrived) bird.tzatzulDivePitchRad = 0;
+      else mark(bird, 'lost roost; released prey and awaiting replacement');
     }
   }
   let lastArea = null; // Changed-zone detection disposes only old spire scene roots.
@@ -317,6 +331,7 @@
       }
       const state = bird._tzFlight;
       if (!state) continue;
+      if (state.phase === 'await-roost') continue; // Only ensureZone can restore a missing physical perch.
       if (state.phase !== 'perched') { advance(bird, step); continue; }
       state.elapsed += step;
       if (state.elapsed < state.rest) continue;

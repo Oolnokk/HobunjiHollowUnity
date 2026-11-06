@@ -119,6 +119,33 @@ assert.equal(w.TzatzulFlightRuntime.__test.carryCaptive(farBird),false,'dead pre
 assert.equal(farBird._tzFlight.captive,null,'death cleanup clears the bird owner');
 assert.equal(dyingPrey.tzatzulCapturedBy,null,'death cleanup clears the prey owner');
 assert.equal(w.TzatzulFlightRuntime.__test.capture(farBird,player),false,'player capture waits for playable nest encounter');
+const oversized={creatureKey:'nazgraku',health:200,def:{defaultSizeClass:'large'},
+  areaId:zone,x:farBird.x,y:farBird.y};
+assert.equal(w.TzatzulFlightRuntime.__test.capture(farBird,oversized),false,
+  'a large animal can be attacked but is too heavy for Tzatzul talons');
+const firstCaptive={creatureKey:'gar-wolf',health:10,areaId:zone,state:'patrol'};
+const secondCaptive={creatureKey:'bandit',health:20,areaId:zone,state:'patrol'};
+assert(w.TzatzulFlightRuntime.__test.capture(farBird,firstCaptive));
+assert.equal(w.TzatzulFlightRuntime.__test.capture(farBird,secondCaptive),false,
+  'one bird cannot replace a captive while the first remains suspended');
+assert.strictEqual(farBird._tzFlight.captive,firstCaptive);
+assert(w.TzatzulFlightRuntime.__test.releaseCaptive(firstCaptive,'test'));
+const originalAttach=supports.attach;
+supports.attach=function(actor,point,t){ // Simulate a destroyed physical roost while line flight remains valid.
+  if(actor===farBird && point.dimension===0) return false;
+  return originalAttach(actor,point,t);
+};
+assert(w.TzatzulFlightRuntime.__test.capture(farBird,secondCaptive));
+assert(w.TzatzulFlightRuntime.__test.returnHome(farBird));
+for(let i=0;i<80&&farBird._tzFlight.phase==='return';i++)w.TzatzulFlightRuntime.update(.1);
+assert.equal(farBird._tzFlight.phase,'await-roost','missing landing perch cannot create an endless return');
+assert.equal(farBird._tzFlight.captive,null,'lost roost releases surviving prey without an invisible cave');
+assert.equal(secondCaptive.tzatzulCapturedBy,null,'lost roost clears captive ownership');
+supports.attach=originalAttach;
+w.TzatzulFlightRuntime.ensureZone(zone);
+assert.equal(farBird._tzFlight.phase,'perched','the original perch can recover after scene regeneration');
+assert.match(file('docs/js/wildlife-visual-lod.js'),/c\.tzatzulCapturedBy/,
+  'captured wildlife bypass ordinary distance hiding while airborne');
 player.x=originalPlayerX;player.y=originalPlayerY;
 const initialKeyCount=w.TzatzulFlightRuntime.debugSnapshot().populationKeys;
 bird.health=0;w.TzatzulFlightRuntime.update(.1);
