@@ -674,7 +674,10 @@
     const distance = deps.TILE * 0.8;
     const spawnX = beastmaster.x + Math.cos(angle) * distance;
     const spawnY = beastmaster.y + Math.sin(angle) * distance;
+    const genotypeKind = window.CreatureGenetics?.SPECIES_ALIAS?.[creatureKey] || creatureKey; // Resolves coat aliases for the standard genetics roll.
+    const genotype = window.CreatureGenetics?.makeDefaultGenotype?.(genotypeKind) || null; // The factory uses this to paint the hound's coat, patterns, and eyes.
     const hound = deps.makeCreatureEntity(creatureKey, spawnX, spawnY, {
+      genotype,
       scene: beastmaster.scene,
       grid: beastmaster.areaGrid,
       cols: beastmaster.areaCols,
@@ -712,7 +715,7 @@
     deps.companionObjects.add(hound);
     rec.gangIds.add(hound.id);
     window.__farmLog?.(
-      `[bandits] Slagothim Beastmaster spawned ${creatureKey} companion ${hound.id} (${hound.maxHealth} HP, ${tunedDef.attackDamage} damage).`,
+      `[bandits] Slagothim Beastmaster spawned ${creatureKey} companion ${hound.id} (${hound.maxHealth} HP, ${tunedDef.attackDamage} damage; coat ${hound.genotype?.base?.color || 'missing'}).`,
       'wildlife',
     );
     return hound;

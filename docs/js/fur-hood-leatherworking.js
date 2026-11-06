@@ -5,7 +5,7 @@
   const HOOD_ID = 'fur_hood'; // The one reusable cosmetic definition; literal coats are saved separately on each crafted article.
   const SPECIES_UNLOCK_COST = 2; // Every animal species has its own one-time world-shared Crafting Mastery purchase.
   const SPECIES_UNLOCK_PREFIX = 'furHoodSpecies:'; // Stable saved rank IDs distinguish recipes for each source animal.
-  const MANIFEST = 'config/patterns/fur-hoods.json'; // Repo-authored source of genotype motif definitions and optional animal silhouette sprites.
+  const MANIFEST = 'config/patterns/fur-hoods.json?v=20261106grehlr1'; // Repo-authored source of genotype motif definitions and optional animal silhouette sprites.
   const scriptUrl = document.currentScript?.src || ''; // Resolve manifest from this script, regardless of whether the game or a tool loads it.
   const manifestUrl = scriptUrl ? new URL('../' + MANIFEST, scriptUrl).href : MANIFEST;
   const fallbackManifest = { schema: 'hobunji_fur_hoods.v1', species: {} }; // A missing manifest must not destroy already-owned natural hoods.

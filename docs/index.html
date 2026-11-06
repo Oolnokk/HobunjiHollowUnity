@@ -16,9 +16,9 @@
   <script src="js/audio-mix.js?v=20261025qol2"></script> <!-- Master/Music/Effects volume; must load before any audio code creates an AudioContext or <audio>. -->
   <script src="js/sprite-raycast-guard.js?v=20261024a"></script> <!-- Skips Sprite hit tests for camera-less world rays (r128 otherwise logs + throws per ray). -->
   <script src="js/tap-reliability.js?v=20261010a"></script>
-  <!-- Bag stack sizing (99 per box, overflow spills into another box).
+  <!-- Bag stack sizing (999 per box, overflow spills into another box).
        Must load before every module that grants inventory items. -->
-  <script src="js/inventory-stacks.js?v=20261102-animalhides1"></script>
+  <script src="js/inventory-stacks.js?v=20261105-stack999"></script>
   <script src="js/scene-ready-poller.js?v=20260920startup4"></script>
   <!-- Dev Companion bridge (window.DevCompanion): session-tied channel to the
        docs/tools/dev-companion window. Loaded before every config-fetching
@@ -157,7 +157,7 @@
   <script src="debug.js?v=20261024h557d69c"></script>
   <!-- Global gameplay/UI config must load before CSS so config-backed custom properties are available on first paint. -->
   <script src="config/config.js?v=20261026h7f369c3"></script>
-  <script src="config/scratchbones-config.js?v=20261104lined1"></script>
+  <script src="config/scratchbones-config.js?v=20261106hoodrear1"></script>
   <!-- Canonical source-art color fill math shared by portraits, creatures, weaving, tools, terrain, and item sprites. -->
   <script src="js/color-fill.js?v=20260923colorfill7"></script>
   <!-- Shared frame-budget yield for long async pixel jobs (clothing weaving, creature genetics). -->
@@ -249,7 +249,7 @@
   <script src="js/roadside-koma-hedges.js?v=20261105koma1"></script> <!-- Path-adjacent shrub row detection, separate from general foliage. -->
   <script src="js/dungeon-door-ice-coverage.js?v=20261103doorice1"></script>
   <!-- Procedural furniture (replaces GLB-based furniture rendering) -->
-  <script src="js/procedural-furniture.js?v=20261105h2c9a161"></script>
+  <script src="js/procedural-furniture.js?v=20261106hlantern9"></script>
   <script src="js/furniture-puzzle-properties.js?v=20261103h9f3db40"></script>
   <script src="js/furniture-puzzle-runtime.js?v=20261104statueRecall1"></script>
   <script src="js/interior-door-tiles.js?v=20261104crossheightAudit2"></script>
@@ -400,7 +400,7 @@
        window.BanditCombat.makeEntity/loadGangConfig/loadCampLocaleDefs, so
        must load after combat-bandit.js above, and before game.js, which
        calls window.BanditCamps.init(...) during its own setup. -->
-  <script src="js/bandit-camps.js?v=20261104soloNoLoot1"></script>
+  <script src="js/bandit-camps.js?v=20261105beastmasterCoat1"></script>
   <!-- Bounty board (hunt a named bandit captain, destroy his camp) —
        window.BountyBoard. Reads window.BanditCamps/window.BanditCombat
        directly, so must load after both above, and before game.js, which
@@ -408,7 +408,7 @@
   <script src="js/bounty-board.js?v=20261008h416634c"></script>
   <!-- Loads docs/config/combat/attack-values.json and overrides every
        combat-*.js module's hardcoded defaults with it. -->
-  <script src="js/combat/combat-config-loader.js?v=20261105koma2"></script>
+  <script src="js/combat/combat-config-loader.js?v=20261106grehlr3"></script>
   <!-- Shared timed-effect HUD, skill progression, food processing rules, and
        hearth cooking. These modules own their state/UI and expose narrow
        adapters to game.js. -->
@@ -504,7 +504,7 @@
        relative to the other systems above doesn't matter; must load
        before game.js, which calls window.FarmCrates.init(...) during its
        own setup. -->
-  <script src="js/farm-crates.js?v=20261102-animalhides2"></script>
+  <script src="js/farm-crates.js?v=20261105-stack999"></script>
   <!-- Procedural tasks: bulletin board + trusted-NPC favors
        (window.ProceduralTasks) — self-contained aside from deps injected
        via init(), so load order relative to the other systems above
@@ -598,20 +598,21 @@
   <script src="js/cliff-elevated-surfaces.js?v=20261105hEdgeProof2"></script> <!-- Wilderness balconies reuse CellGrid3D and scoped DynamicSurfaces; terrain heightfield stays intact. -->
   <!-- Climbable wall surfaces (window.ClimbSurfaces): attach + move along a wall.
        Needs ClimbSystem (registered as a world-climb provider by game.js). -->
-  <script src="js/climb-surfaces.js?v=20261103rawfacefix1"></script>
-  <script src="js/shaft-hub.js?v=20261104octagon2"></script>
+  <script src="js/climb-surfaces.js?v=20261105h89e1026"></script>
+  <script src="js/ruin-wall-faces.js?v=20261106walls1"></script> <!-- Merged stretch-to-fit wall faces; shaft-hub.js builds its stone from them. -->
+  <script src="js/shaft-hub.js?v=20261106hcbcd73f"></script>
   <script src="js/ruin-layer-plan.js?v=20261104directVestibule1"></script>
   <script src="js/dev-ruin-single-room-trial.js?v=20261104solo1"></script> <!-- Samples actual ruin-room puzzle selection odds for the one-room developer lab. -->
   <script src="js/ruin-shaft-corridor.js?v=20261104directVestibule1"></script>
   <script src="js/ruin-layer-defense.js?v=20261104soloNoLoot1"></script>
   <script src="js/puzzle-cave-melody.js?v=20261105puzzleCaves1"></script><!-- Reusable rhythm grid and timed plate-gated cave songs. -->
-  <script src="js/ruin-layer-challenges.js?v=20261106audit2"></script>
-  <script src="js/ruin-layer-playable.js?v=20261104gateCleanup2"></script>
-  <script src="js/ruin-v50-native-mechanisms.js?v=20261105polish3"></script>
-  <script src="js/ruin-v50-native-floors.js?v=20261104autoplayTopology7"></script>
+  <script src="js/ruin-layer-challenges.js?v=20261106h014c5af"></script>
+  <script src="js/ruin-layer-playable.js?v=20261106ha9f48ae"></script>
+  <script src="js/ruin-v50-native-mechanisms.js?v=20261105hc10ba02"></script>
+  <script src="js/ruin-v50-native-floors.js?v=20261105hd86bc92"></script>
   <script src="js/ruin-shaft-connector.js?v=20261105polish2"></script>
   <script src="js/ruin-v50-vestibule.js?v=20261104directVestibule1"></script>
-  <script src="js/ruin-multifloor-v50-style.js?v=20261105polish2"></script> <!-- Vertical hub room composed on a CellGrid3D: balconies, doors, climbable buttresses; see docs/architecture/vertical-grid.md -->
+  <script src="js/ruin-multifloor-v50-style.js?v=20261106h753f499"></script> <!-- Vertical hub room composed on a CellGrid3D: balconies, doors, climbable buttresses; see docs/architecture/vertical-grid.md -->
   <!-- Wilderness fog-of-war, discovered-locale tracking, and map rendering
        (window.WildernessMap) — reads window.BanditCamps/window.BountyBoard
        at draw time (already global by then), so load order relative to the
@@ -824,7 +825,7 @@
        window.EquipmentPanel directly (including at top-level, in
        window.__climbDebug) and calls window.EquipmentPanel.init(...)
        during its own setup. -->
-  <script src="js/equipment-panel.js?v=20261104linedhood1"></script>
+  <script src="js/equipment-panel.js?v=20261105-stack999"></script>
   <!-- Per-map terrain tile texture overrides (window.TerrainTileMaterials:
        resolveTileMat/resolveCliffMat/loadTerrainTileTexture) — must load
        before game.js, which calls window.TerrainTileMaterials.init(...) near
@@ -906,7 +907,7 @@
        dependencies; must load before shattercasks.js, which feeds them. See docs/architecture/ruin-capabilities.md. -->
   <script src="js/world-events.js?v=1"></script>
   <script src="js/targetables.js?v=1"></script>
-  <script src="js/shattercasks.js?v=20261105puzzleFire1"></script>
+  <script src="js/shattercasks.js?v=20261106h458819a"></script>
   <script src="js/crate-piles.js?v=20261105hf6df591"></script>
   <script src="js/hronal-witch-bombs.js?v=20261104h83c7695"></script>
   <!-- Hanging ropes: the shared rope swing arithmetic (pure) and the rope component burdens hang from. Needs Shattercasks at
@@ -927,7 +928,7 @@
   <script src="js/stampable-locale-defs.js?v=20261102h082455e"></script>
   <script src="js/tothal-zone-cache.js?v=20261102a"></script>
   <script src="js/ruin-sites.js?v=20261031storyVault1"></script>
-  <script src="js/zone-den-totem-features.js?v=20261105cliffPortal1"></script>
+  <script src="js/zone-den-totem-features.js?v=20261106hf29f0b5"></script>
   <script src="js/transition-markers.js?v=20261004h46d3bfb"></script>
   <!-- Wilderness-zone grass and rich-foliage-patch billboards
        (window.ZoneGrassBillboards) — pure scene-graph generation, no
@@ -2898,7 +2899,7 @@
   <!-- Camera-safe utility spyglass: capture Fishing/ActionArcUI init before game.js boots; action-arch prompt and lens are created at DOM ready. -->
   <script src="js/utility-spyglass.js?v=20261103spyglassControls3"></script>
   <!-- Dev-only Random Test Ruin runtime; injects nothing unless Dev Mode is on. -->
-  <script src="js/dev-random-ruin-bootstrap.js?v=20261106h3bb873a"></script>
+  <script src="js/dev-random-ruin-bootstrap.js?v=20261106h5037cb4"></script>
   <!-- Dev Testing Switchbox: dev-only performance kill switches (audio,
        NPC/creature AI, water sim, low-poly foliage). Must load after
        audio-system.js/water-system.js/foliage-generator.js (wraps their
