@@ -69,6 +69,8 @@ const game=fs.readFileSync(path.join(__dirname,'../docs/game.js'),'utf8');
 const html=fs.readFileSync(path.join(__dirname,'../docs/index.html'),'utf8');
 const mesa=fs.readFileSync(path.join(__dirname,'../docs/js/zone-plateau-mesa.js'),'utf8');
 assert(html.indexOf('cell-grid-3d.js')<html.indexOf('cliff-elevated-surfaces.js'),'module load order');
+assert(html.includes('dynamic-surfaces.js?v='),'the main game must load DynamicSurfaces, not just the isolated test harness');
+assert(html.indexOf('dynamic-surfaces.js?v=')<html.indexOf('cliff-elevated-surfaces.js'),'the dynamic surface registry exists before any wilderness balcony mount');
 assert(mesa.includes('CliffElevatedSurfaces?.mount?.(network'),'register on mesa rebuild');
 assert(mesa.includes('tileY: t => deps.tileSurfaceYInArea(t, mapId)'),
   'outdoor route nodes use the same ground height as player and wildlife');
