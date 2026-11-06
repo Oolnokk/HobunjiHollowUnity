@@ -993,7 +993,7 @@
         entryPadX=placement?.padX??PAD;entryPadZ=placement?.padZ??PAD;
         const planned=singleRoomTrial?null:placement?.plan||window.RuinLayerPlan?.compose?.({
           seed:candidateSeed,spacing:64,anchorX:320,anchorZ:320,
-          shaftSize:33,floorHeight:4,nativeV50:requestedRuinType!=='hachutu',plinthTrial:trialRequested,
+          shaftSize:45,floorHeight:16,nativeV50:requestedRuinType!=='hachutu',plinthTrial:trialRequested,
         });
         if(!singleRoomTrial&&!planned?.ok)throw new Error('Pre-generation shaft reservation is invalid.');
         api.snapMechanismState(0); api.pausePreviewLoop();
