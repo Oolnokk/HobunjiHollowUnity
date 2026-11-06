@@ -380,8 +380,10 @@
       if(skinnedRearOverlays.has(mesh)){
         const record=skinnedRearOverlays.get(mesh);
         record.overlay.renderOrder=stowed?STOWED_REAR_RENDER_ORDER:CARRIED_REAR_RENDER_ORDER;
-        record.overlay.material[1].depthWrite=!stowed;
-        record.overlay.material[1].needsUpdate=true;
+        if(record.overlay.material[1].depthWrite===stowed){
+          record.overlay.material[1].depthWrite=!stowed;
+          record.overlay.material[1].needsUpdate=true; // Only recompile when switching between held and stowed depth modes.
+        }
         mesh.renderOrder=stowed?STOWED_FRONT_RENDER_ORDER:record.order;
         return;
       }
