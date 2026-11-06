@@ -74,6 +74,7 @@ async function main(){
               const d=object.userData||{},kind=d.activatorType;
               if(kind)counts[kind]=(counts[kind]||0)+1;
               if(d.pushable)counts.pushable=(counts.pushable||0)+1;
+              if(d.pushPuzzle?.totalPushes>=6&&d.pushPuzzle?.directionChanges>=2)counts.routedPush=(counts.routedPush||0)+1; // Must be the deliberate multi-turn push course, not a trivial pressure plate.
               if(d.requiresCarriedTorch)counts.requiresCarriedTorch=(counts.requiresCarriedTorch||0)+1;
             });
             return {area:window.GridTileAccessors?.getCurrentArea?.(),trial,
@@ -92,12 +93,14 @@ async function main(){
           const expectedNative={nativeBrazier:'brazier',nativeGlyphObelisk:'glyphObelisk',
             nativeStackedObelisk:'stackedObelisk',nativeLinkedCubePillars:'linkedCubePillars',
             nativePushBlock:'pressurePlate'}[kind];
-          row.ok=s.rooms===1&&s.noLoot&&s.trial.kind===kind&&s.trial.ready===true
-            &&(!needsLink||s.trial.linked===true)
+          row.ok=s.rooms===1&&s.noLoot&&!s.trial.error&&s.trial.kind===kind&&s.trial.ready===true
+            &&(!needsLink||(s.trial.linked===true&&s.targets>0))
+            &&(kind!=='dungeonFire'||(s.trial.fireLinked===true&&s.controls>0))
+            &&(kind!=='melodyEcho'||s.trial.noteCount>=4)
             &&(kind!=='ropeChain'||(s.trial.ropeLinked===true&&s.ropes>0))
             &&(!native||(s.mechanism?.gated===true&&s.mechanism.rootPresent===true
               &&s.fixture?.kind===expectedNative&&(s.counts[expectedNative]||0)>0))
-            &&(kind!=='nativePushBlock'||(s.counts.pushable||0)>0)
+            &&(kind!=='nativePushBlock'||((s.counts.pushable||0)>0&&(s.counts.routedPush||0)>0&&s.mechanism.signalLinked===true))
             &&(kind!=='nativeBrazier'||(s.counts.requiresCarriedTorch||0)>0)
             &&(kind!=='statueDefense'||s.controls>=2);
           if(row.ok||(!row.ready&&row.error&&!/Rope controller declined/.test(row.error)))break;
