@@ -340,7 +340,10 @@
     // npc_avatar_back_plane at all, so a rigid-only x-ray silently did nothing
     // on the normal player neck rig.
     const rigidSeen=new Set(),frontSeen=new Set(),skinnedSeen=new Set(),headwearSeen=new Set();
-    body?.traverse?.(mesh=>{
+    const liveAvatar=window.WorldPortraitLife?.getPlayerAvatar?.()?.group; // Restricts rear passes to the current portrait, not stale siblings kept during an avatar rebuild.
+    const renderRoot=liveAvatar&&isUnderBody(liveAvatar,body)?liveAvatar:body;
+    const liveSkinned=renderRoot===liveAvatar?liveAvatar?.userData?.neckRig?.skinnedPlane:null; // New rigs can replace their skinned plane without removing its predecessor yet.
+    renderRoot?.traverse?.(mesh=>{
       if(!mesh?.isMesh||mesh.userData?.shattercaskRearOverlay)return;
       // Skinned rear headwear is an independent surface. A skinned torso-only
       // rear overlay never brings it forward through the held Shattercask.
@@ -380,6 +383,8 @@
       }
       if(!mesh.isSkinnedMesh||!Array.isArray(mesh.material)
         ||mesh.material[1]?.name!=='npc_avatar_skinned_back_material'||!mesh.parent)return;
+      if(stowed&&liveSkinned?.isSkinnedMesh&&isUnderBody(liveSkinned,renderRoot)
+        &&mesh!==liveSkinned)return; // The old plane can linger in the same avatar root until its replacement is fully installed.
       skinnedSeen.add(mesh);
       if(skinnedRearOverlays.has(mesh)){
         const record=skinnedRearOverlays.get(mesh);
