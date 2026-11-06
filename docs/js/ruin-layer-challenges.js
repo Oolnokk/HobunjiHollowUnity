@@ -128,7 +128,7 @@
           options.onHit?.(rec,state);
           if(rec.hits===rec.targetCount)complete();
         },
-        base,rune,visualRoot,plaque,origin:{x,z,y:visualRoot?py+.6:py},
+        base,rune,visualRoot,plaque,baseY:base.position.y,runeY:rune.position.y,origin:{x,z,y:visualRoot?py+.6:py},
       };
       if(plaque)root.DevRandomRuinFurniturePieces?.track?.(plaque,()=>state.active?1:0);
       targets.push(state);return state;
@@ -341,8 +341,9 @@
           if(t.visualRoot){
             t.visualRoot.position.set(t.origin.x+(t.alongX?offset:0),t.origin.y,t.origin.z+(t.alongX?0:offset));
           }else{
-            t.base.position.set(t.origin.x+(t.alongX?offset:0),t.origin.y,t.origin.z+(t.alongX?0:offset));
-            t.rune.position.set(t.base.position.x,t.origin.y,t.base.position.z+.43);
+            t.base.position.set(t.origin.x+(t.alongX?offset:0),t.baseY,t.origin.z+(t.alongX?0:offset));
+            t.rune.position.set(t.base.position.x,t.runeY,t.base.position.z+.43);
+            if(t.plaque)t.plaque.position.set(t.base.position.x,t.runeY,t.base.position.z+.55);
           }
         }
       }
