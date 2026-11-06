@@ -48,6 +48,20 @@ async function main(){
     // independent save/creator UI. Hide that unrelated overlay in this harness.
     await page.addStyleTag({content:'#ob-overlay{display:none!important}'});
 
+    const clickLabTab=async()=>{
+      try {
+        await page.locator('#devRuinLabBtn').click({timeout:10000});
+      } catch (error) {
+        const hitTest=await page.locator('#devRuinLabBtn').evaluate(button=>{
+          const rect=button.getBoundingClientRect();
+          const x=rect.x+rect.width/2, y=rect.y+rect.height/2;
+          const stack=document.elementsFromPoint(x,y).slice(0,6).map(el=>el.id||el.tagName);
+          return {x,y,width:rect.width,height:rect.height,pointerEvents:getComputedStyle(button).pointerEvents,
+            viewport:[innerWidth,innerHeight],stack};
+        });
+        throw new Error('Puzzle Lab tab could not be clicked '+JSON.stringify(hitTest),{cause:error});
+      }
+    };
     const expected=()=>[...window.DevRuinSingleRoomTrial.TYPES,...window.DevRuinSingleRoomTrial.MECHANISMS].map(([key])=>key);
     const kinds=await page.evaluate(expected);
     const labTab=page.locator('#devRuinLabBtn'); // The in-arena route is covered separately from direct fixture generation.
@@ -62,7 +76,7 @@ async function main(){
       report.push(row);
       try{
         if(kind==='stoneDoor'){
-          await labTab.click();
+          await clickLabTab();
           await page.selectOption('#devRuinLabChoice',kind);
           assert.match(await page.locator('#devRuinLabHint').textContent(),/raise or lower/);
           await page.click('#devRuinLabLoad');
@@ -70,7 +84,7 @@ async function main(){
             &&window.DevRandomRuin?.getGenerationProgress?.()?.phase==='entered',null,{timeout:60000});
           if(!await labTab.isVisible())throw new Error('Puzzle Lab tab disappeared after switching fixtures');
           if(await page.locator('#devRuinLabPanel').isVisible())throw new Error('Puzzle Lab panel stayed open after switching fixtures');
-          await labTab.click();
+          await clickLabTab();
           await page.waitForFunction(()=>document.getElementById('devRuinLabFeedback')?.dataset.phase==='ready');
           await page.keyboard.press('Escape');
           assert.equal(await page.locator('#devRuinLabPanel').isVisible(),false,'Escape closes the panel after switching fixtures');
