@@ -9,6 +9,7 @@
   'use strict';
   const areas=new Map(); // Area -> mounted portal records; used for scene cleanup and per-frame transition admission.
   let deps=null; // WildlifeSpawn's existing game adapter, used for authoritative player, layouts and scene transitions.
+  let lastArea=null; // Tracks the immediately previous area so returning from a cave can restore its actual elevated balcony support.
   const portalTag='puzzle-cave-cliff-door'; // Consistent debugging and collider identity for each generated entrance.
   const hash=value=>{let h=2166136261>>>0;for(const c of String(value)){h^=c.charCodeAt(0);h=Math.imul(h,16777619)>>>0;}return h>>>0;};
   const clamp=(n,lo,hi)=>Math.max(lo,Math.min(hi,n));
@@ -224,6 +225,8 @@
     const key=safeArea(area),state=areas.get(key);
     if(!state)return;
     for(const portal of state.portals){
+      const den=deps?.zoneLayouts?.get?.(key)?.dens?.find(d=>String(d.id)===String(portal.denId));
+      if(den&&portal.originalDenMouth)den.mouthAnchor={...portal.originalDenMouth}; // Do not leave a changed den exit after terrain relocation or scene eviction.
       restoreTransitions(key,portal);
       if(portal.ring){portal.ring.visible=true;portal.ringRelocated=false;} // Scene owner will reposition on its next terrain rebuild.
       destroyPortal(portal);
@@ -251,6 +254,11 @@
         attachMusic(portal);
       }
       portal.shelf.puzzleCavePortal=portal.mapId; // Reserve this cap before the shared reward renderer instantiates its ore/chest.
+      const den=deps?.zoneLayouts?.get?.(key)?.dens?.find(d=>String(d.id)===String(portal.denId));
+      if(den){
+        portal.originalDenMouth=den.mouthAnchor?{...den.mouthAnchor}:null; // The den's X/Z seed and persistent cave signature stay unchanged.
+        den.mouthAnchor={x:portal.entry.c,y:portal.entry.r}; // The existing interior exit now points to the true cliff doorway rather than a vanished ground-level facade.
+      }
       addPhysicalGate(portal);
       createPresentation(portal,scene);
       portal.facadeHidden=concealDenFacade(key,portal.denId); // Async default cave façade may be loaded before/after the portal.
@@ -262,8 +270,15 @@
   function update(dt,activeArea=null){
     const area=safeArea(activeArea||deps?.getCurrentArea?.());
     const state=areas.get(area);
+    const wasInside=state?.portals.find(p=>p.mapId===lastArea); // Only a return from THIS cave should place the player on its elevated shelf.
+    lastArea=area;
     if(!state)return;
     const player=deps?.player,tile=Number(deps?.TILE)||64;
+    if(wasInside&&player&&!player.climbing){
+      player.x=(wasInside.entry.c+.5)*tile;player.y=(wasInside.entry.r+.5)*tile;
+      player.onCliffBalcony=wasInside.shelf.id;
+      player.climbSurfaceY=wasInside.shelf.y; // Same exact elevation owner as the existing cliff climbing movement system.
+    }
     const px=Number(player?.x)/tile,pz=Number(player?.y)/tile;
     for(const portal of state.portals){
       if(portal.disposed)continue;
