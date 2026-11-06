@@ -2432,7 +2432,7 @@
     return {
       active:true,
       seed:state.buildSeed,
-      singleRoomChallenge:state.context.singleRoomTrial?{...state.context.singleRoomTrial,solved:state.singleRoomSolved,ready:!!state.singleRoomChallenge&&state.singleRoomChallenge.ready!==false,error:state.singleRoomError||state.singleRoomChallenge?.error||null,ropeError:lastExternalRopeError,attempts:state.singleRoomChallenge?.attempts||0,linked:state.singleRoomChallenge?.linked??false,ropeLinked:state.singleRoomChallenge?.ropeLinked??false}:null, // Defense readiness/errors are asynchronous; don't claim it is ready before authored assets finish loading.
+      singleRoomChallenge:state.context.singleRoomTrial?{...state.context.singleRoomTrial,solved:state.singleRoomSolved,ready:!!state.singleRoomChallenge&&state.singleRoomChallenge.ready!==false,error:state.singleRoomError||state.singleRoomChallenge?.error||null,ropeError:lastExternalRopeError,attempts:state.singleRoomChallenge?.attempts||0,linked:state.singleRoomChallenge?.linked??false,ropeLinked:state.singleRoomChallenge?.ropeLinked??false,fireLinked:state.singleRoomChallenge?.fireLinked??false,noteCount:state.singleRoomChallenge?.notes?.length||0,targetCount:state.singleRoomChallenge?.targetCount||0}:null, // Defense readiness/errors are asynchronous; don't claim it is ready before authored assets finish loading.
       safeGrids:state.safeGrids.map(grid=>({
         hallId:grid.hallId,
         axis:grid.axis,
