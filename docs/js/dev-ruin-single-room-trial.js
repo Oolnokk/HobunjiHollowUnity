@@ -17,9 +17,11 @@
     ['nativeGlyphObelisk','V50 hidden glyph obelisks'],
     ['nativeStackedObelisk','V50 stacked obelisk'],
     ['nativeLinkedCubePillars','V50 linked cube pillars'],
+    ['nativePushBlock','V50 stone push-block course'],
   ]); // Used by both the mobile selector and the generation validator.
   const NATIVE_VARIANTS=Object.freeze({nativeBrazier:'brazier',nativeGlyphObelisk:'glyphObelisk',
-    nativeStackedObelisk:'stackedObelisk',nativeLinkedCubePillars:'linkedCubePillars'}); // Maps test-only choices to actual V50 activator families.
+    nativeStackedObelisk:'stackedObelisk',nativeLinkedCubePillars:'linkedCubePillars',
+    nativePushBlock:'pressurePlate'}); // Maps test-only choices to actual V50 activator families.
   const VALID=new Set(TYPES.map(([key])=>key)); // Used to exclude retired or unsupported puzzles from forced and weighted lab selection.
   function pick(seed,requested='weighted',planner=root.RuinLayerPlan){
     const selection=String(requested||'weighted');
