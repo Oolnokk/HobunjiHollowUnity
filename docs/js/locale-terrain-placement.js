@@ -597,6 +597,7 @@
       npcAnchors: (locale.npcAnchors || []).map(anchor => ({ ...scaledPoint(selected.anchorC, selected.anchorR, compiled.scale, anchor), npcId: anchor.npcId, name: anchor.name, facing: anchor.facing })),
       objects: (locale.objects || []).map(object => ({
         id: object.id, kind: object.kind, key: object.key, label: object.label,
+        wallMountId: object.wallMountId || undefined, // Locale Editor placeholder association survives stamping into unknown runtime cliff geometry.
         ...scaledPoint(selected.anchorC, selected.anchorR, compiled.scale, object),
         w: Math.max(1, Number(object.w) || 1) * compiled.scale,
         h: Math.max(1, Number(object.h) || 1) * compiled.scale,
