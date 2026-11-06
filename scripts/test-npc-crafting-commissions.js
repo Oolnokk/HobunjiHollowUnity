@@ -239,6 +239,13 @@ taskDeps.setQuestStatus(clothingTaskId, 'available', {
     recipientId: 'jubmir', recipientName: 'Jubmir',
   },
 });
+// Do not turn a correctly assigned but physically unready commission into a fake hand-in.
+commissionedPack[0].craftedAt = 50;
+assert.equal(commissionContext.ProceduralTasks.getTurnInReadyTaskForNpc('spearhead_unumanuk'), null, 'an older pre-commission garment cannot be handed to Spearhead');
+commissionedPack[0].craftedAt = 200;
+commissionedPack[0].cursed = { kind: 'circlet' };
+assert.equal(commissionContext.ProceduralTasks.getTurnInReadyTaskForNpc('spearhead_unumanuk'), null, 'a cursed commissioned garment must not be offered as ready');
+delete commissionedPack[0].cursed;
 const specialReady = commissionContext.ProceduralTasks.getTurnInReadyTaskForNpc('spearhead_unumanuk');
 assert.equal(specialReady?.id, clothingTaskId, 'crafting commission is ready when talking to the original NPC who requested it');
 const specialPrompt = commissionContext.NpcCraftingCommissionDelivery.turnInPrompt(specialReady);
@@ -262,6 +269,9 @@ taskDeps.setQuestStatus(jubmirTaskId, 'available', {
     blueprintKey: 'chairBlueprint', startingOwned: 0, rewardMotes: 2, rewardGold: 180,
   },
 });
+commissionInventory.chairFurniture = 0;
+assert.equal(commissionContext.ProceduralTasks.getTurnInReadyTaskForNpc('jubmir'), null, 'Jubmir gets no premature hand-in while the commissioned furniture is missing');
+commissionInventory.chairFurniture = 1;
 const jubmirReady = commissionContext.ProceduralTasks.getTurnInReadyTaskForNpc('jubmir'); // Shared turn-in lookup called before Jubmir's shop options.
 assert.equal(jubmirReady?.id, jubmirTaskId, 'Jubmir is recognized as the commission requester, independent of his See Wares menu');
 assert.match(commissionContext.NpcCraftingCommissionDelivery.turnInPrompt(jubmirReady).label, /Wooden Chair/, 'Jubmir receives a proper furniture turn-in prompt');
