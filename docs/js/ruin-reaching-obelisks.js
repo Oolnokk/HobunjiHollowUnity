@@ -23,16 +23,19 @@
   const random=seed=>{let s=(seed>>>0)||1;return()=>{s=(s+0x6d2b79f5)>>>0;let t=s;t=Math.imul(t^(t>>>15),t|1);t^=t+Math.imul(t^(t>>>7),t|61);return((t^(t>>>14))>>>0)/4294967296;}};
   const inside=(p,x,z,pad=0)=>Math.abs(x-p.x)<=SIZE/2+pad&&Math.abs(z-p.z)<=SIZE/2+pad;
   const gap=(a,b)=>Math.max(0,Math.hypot(a.x-b.x,a.z-b.z)-SIZE);
-  const at=(side,mid,edge,inward,lateral)=>{
-    const d=SIDES[side];return {x:mid+d.inX*inward+d.tX*lateral,z:mid+d.inZ*inward+d.tZ*lateral};
-  };
   // Per story: A starts lowered against the upper gallery; D's strand becomes
   // usable when A's plate rotates its climb faces. C sees B's back-mounted
   // target, whereas an archer on A faces the target's hidden (rear) side.
   function compose(options={}){
     const o={shaft:45,wall:8,spacing:16,floors:4,seed:1,originX:0,originZ:0,baseY:0,balconySides:['N','E','S','W'],...options};
     if(!Number.isInteger(o.spacing)||o.spacing<12||o.shaft<37||o.floors<2||o.floors>5)throw new Error('Reaching Obelisks requires a spacious, high shaft.');
-    const mid=o.wall+(o.shaft-1)/2,edge=o.wall+7; // Whole-cell faces align with the real pillar walls.
+    const mid=o.wall+(o.shaft-1)/2,edge=7; // Whole-cell facings align with the stone geometry.
+    const point=(side,inward,lateral)=>{const d=SIDES[side];
+      const base={N:{x:mid,z:o.wall},E:{x:o.wall+o.shaft-1,z:mid},
+        S:{x:mid,z:o.wall+o.shaft-1},W:{x:o.wall,z:mid}}[side];
+      return {x:base.x+d.inX*(edge+inward)+d.tX*lateral,
+        z:base.z+d.inZ*(edge+inward)+d.tZ*lateral};
+    };
     const rng=random(o.seed^0xa487351d),pillars=[],targets=[],plates=[],routes=[];
     const toWorld=(point)=>({x:o.originX+point.x,z:o.originZ+point.z});
     for(let story=0;story<o.floors-1;story++){
@@ -40,10 +43,10 @@
       const base=o.baseY+story*o.spacing,landing=base+o.spacing;
       const jitter=(rng()<.5?-1:1); // Small seeded sideward variation, retained across the story's solution graph.
       const positions={
-        A:at(side,mid,edge,0),
-        D:at(side,mid,edge+6,5*jitter),
-        C:at(side,mid,edge+13,7*jitter),
-        B:at(side,mid,edge+13,-6*jitter),
+        A:point(side,0,0),
+        D:point(side,6,5*jitter),
+        C:point(side,13,7*jitter),
+        B:point(side,13,-6*jitter),
       };
       const heights={A:[base+8,landing],B:[base+7,base+11],C:[base+2,base+2],D:[base+5,base+5]};
       const byName={};
