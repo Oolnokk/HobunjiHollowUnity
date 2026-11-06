@@ -18,8 +18,16 @@ const zone='map_northern_cliffs'; // The real selected cliff biome.
 const creatures=new Set(); // Shared hostiles Set from the production injection contract.
 const companions=new Set(); // The same shared companion Set available to wildlife prey selection.
 const player={x:128,y:128,health:100}; // Real Tzatzul prey type is the player.
+const targetFoot = a => a?.onBranch ? a.branchSurfaceY : 0; // In test the world floor is at y=0, except for explicitly perched prey.
 let hits=0; // Counts exact damage calls; a single swoop cannot hit repeatedly.
 const w={PerchSupport:supports,__farmLog(){},
+  RangedWeapons: { actorHitbox(actor) {
+    const width = actor.creatureKey === 'tzatzul' ? 2.2 : .72; // Mimics the canonical 3D actorHitbox width/height contract.
+    const height = actor.creatureKey === 'tzatzul' ? 2.2 : 1.16;
+    const x = actor.x/64, z = actor.y/64, floor = targetFoot(actor);
+    return { width, depth: width, height, center: {x,y:floor+height/2,z},
+      box:{min:{x:x-width/2,y:floor,z:z-width/2},max:{x:x+width/2,y:floor+height,z:z+width/2}} };
+  } },
   TzatzulRegistration:{identityFor:(a,i)=>({id:a+':'+i,tintHex:'#bb7777'})},
   TzatzulLiveVisuals:{release(){}},
   TzatzulCliffSites:{ensure:(area)=>area===zone?[
@@ -62,15 +70,26 @@ const farBird=[...creatures][1]; // Distinct mother used to test long dives at t
 player.x=farBird.x-64*9;player.y=farBird.y;
 const beforeContact=hits;
 assert(w.TzatzulFlightRuntime.__test.swoop(farBird,player));
+assert(farBird.tzatzulDivePitchRad<0,'bird angles downward headfirst as it begins the dive');
 for(let i=0;i<60&&farBird._tzFlight.phase==='swoop';i++)w.TzatzulFlightRuntime.update(.1);
-assert.equal(hits,beforeContact+1,'stationary prey nine tiles away is struck at talon contact');
+assert.equal(hits,beforeContact+1,'stationary prey nine tiles away is hit by the swept torso');
+assert.equal(w.TzatzulFlightRuntime.debugSnapshot().lastBodyContact.collider,'body',
+  'body, rather than talon or a timed attack, is the recorded damaging collider');
 const beforeDodge=hits;
 farBird.x=2240;farBird.y=128;farBird.branchSurfaceY=7;
 player.x=farBird.x-64*9;player.y=farBird.y;
 assert(w.TzatzulFlightRuntime.__test.swoop(farBird,player));
-player.x+=64*3; // Player evades the frozen target point after the dive commits.
+player.y+=64*3; // Dodge sideways; stepping toward the bird along the attack path would still collide.
 for(let i=0;i<60&&farBird._tzFlight.phase==='swoop';i++)w.TzatzulFlightRuntime.update(.1);
-assert.equal(hits,beforeDodge,'dodging three tiles after the dive commits avoids contact');
+assert.equal(hits,beforeDodge,'three-tile lateral dodge avoids the entire swept body');
+const beforeElevationDodge=hits;
+farBird.x=2240;farBird.y=128;farBird.branchSurfaceY=7;
+player.x=farBird.x-64*9;player.y=farBird.y; player.onBranch=null;
+assert(w.TzatzulFlightRuntime.__test.swoop(farBird,player));
+player.onBranch={};player.branchSurfaceY=6; // Dodge upward after attack commits: 2D proximity alone is not a 3D hit.
+for(let i=0;i<60&&farBird._tzFlight.phase==='swoop';i++)w.TzatzulFlightRuntime.update(.1);
+assert.equal(hits,beforeElevationDodge,'elevated target cannot be hit by a body diving to ground level');
+player.onBranch=null;player.branchSurfaceY=0;
 player.x=originalPlayerX;player.y=originalPlayerY;
 const initialKeyCount=w.TzatzulFlightRuntime.debugSnapshot().populationKeys;
 bird.health=0;w.TzatzulFlightRuntime.update(.1);

@@ -10,12 +10,13 @@
   const HUNT_RANGE_TILES = 12; // Target query only occurs once per resting cycle.
   const REST_SECONDS = 5; // Birds visibly perch instead of permanently orbiting.
   const SPEED_TILES_PER_SECOND = 7; // Flight travel across world tiles.
-  const STRIKE_RANGE_TILES = 1.15; // Moving targets can dodge the frozen swoop destination.
-  const STRIKE_AT_PROGRESS = .98; // Talons strike at contact, not far from a long-distance target.
+  const BODY_WIDTH_FRACTION = .30; // Damaging torso/core is narrower than the full articulated wing-span portrait.
+  const BODY_HEIGHT_FRACTION = .34; // Half-height of the headfirst body box, based on the existing creature hitbox.
+  const NOSE_LEAD_FRACTION = .33; // Moves the body toward the head/beak along its actual 3D flight direction.
   const spawnedThisDay = new Set(); // Prevents post-death immediate respawning.
   const actors = new Set(); // Only Tzatzul, not all hostile creatures, are animated each tick.
   const stats = { spawned: 0, flights: 0, swoops: 0, hits: 0, misses: 0,
-    retreats: 0, last: null }; // Mobile-readable diagnostics, no live object references.
+    retreats: 0, last: null, lastBodyContact: null }; // Mobile-readable diagnostics, no live object references.
   let deps = null; // WildlifeSpawn injected authoritative gameplay world contract.
   let flightSerial = 0; // Unique ephemeral line-perch IDs for traveling birds.
 
@@ -100,6 +101,61 @@
     } // Wild animals, enemy bandits and both sides' animal companions can be swoop targets.
     return target;
   }
+  function hitboxSize(bird) {
+    const box = window.RangedWeapons?.actorHitbox?.(bird); // Shared combat geometry, not the wing/rider/talon rig.
+    const width = Math.max(.5, n(box?.width, n(bird.def?.modelWidth, 1.6)));
+    const height = Math.max(.5, n(box?.height, n(bird.halfHeight, width / 2) * 2));
+    const depth = Math.max(.5, n(box?.depth, width));
+    return {
+      x: Math.max(.24, Math.min(1.05, width * BODY_WIDTH_FRACTION)),
+      y: Math.max(.24, Math.min(.85, height * BODY_HEIGHT_FRACTION)),
+      z: Math.max(.24, Math.min(1.05, depth * BODY_WIDTH_FRACTION)),
+    }; // Only the torso/body is damaging; the wings and carried talons are not.
+  }
+  function targetBox(target) {
+    const hitbox = window.RangedWeapons?.actorHitbox?.(target); // Same authoritative 3D target body volume used by ranged and melee combat.
+    if (hitbox?.box?.min && hitbox?.box?.max) {
+      const offsetX = n(target.x) / tile() - n(hitbox.center?.x, n(target.x) / tile());
+      const offsetZ = n(target.y) / tile() - n(hitbox.center?.z, n(target.y) / tile());
+      return {
+        min: { x: hitbox.box.min.x + offsetX, y: hitbox.box.min.y, z: hitbox.box.min.z + offsetZ },
+        max: { x: hitbox.box.max.x + offsetX, y: hitbox.box.max.y, z: hitbox.box.max.z + offsetZ },
+      }; // Correct a same-frame cached hitbox for actual X/Z movement (a last-second dodge).
+    }
+    const width = Math.max(.35, n(target.def?.modelWidth, target === deps.player ? .72 : .8));
+    const height = Math.max(.55, n(target.halfHeight, target === deps.player ? .58 : width / 2) * 2);
+    const foot = Number.isFinite(target.branchSurfaceY) && target.onBranch ? target.branchSurfaceY
+      : Number.isFinite(target.climbSurfaceY) && target.climbing ? target.climbSurfaceY
+      : surface(target.x, target.y);
+    const x = n(target.x) / tile(), z = n(target.y) / tile();
+    return { min: { x: x - width / 2, y: foot, z: z - width / 2 },
+      max: { x: x + width / 2, y: foot + height, z: z + width / 2 } };
+  }
+  function bodyCenter(bird, segment) {
+    const half = segment.half; // Collision box is transported with the bird's body throughout the dive.
+    const lead = Math.min(.28, Math.min(half.x, half.z) * NOSE_LEAD_FRACTION);
+    return { x: n(bird.x) / tile() + segment.heading.x * lead,
+      y: n(bird.branchSurfaceY, surface(bird.x, bird.y)) + half.y + segment.heading.y * lead,
+      z: n(bird.y) / tile() + segment.heading.z * lead };
+  }
+  function sweptBodyHit(start, end, half, box) {
+    // Continuous AABB sweep in world units: a large dt can never tunnel the headfirst body through prey.
+    let entry = 0, exit = 1;
+    for (const axis of ['x', 'y', 'z']) {
+      const delta = end[axis] - start[axis];
+      const min = box.min[axis] - half[axis], max = box.max[axis] + half[axis];
+      if (Math.abs(delta) < 1e-8) {
+        if (start[axis] < min || start[axis] > max) return null;
+        continue;
+      }
+      let a = (min - start[axis]) / delta, b = (max - start[axis]) / delta;
+      if (a > b) [a, b] = [b, a];
+      entry = Math.max(entry, a);
+      exit = Math.min(exit, b);
+      if (entry > exit) return null;
+    }
+    return entry <= 1 && exit >= 0 ? entry : null;
+  }
   function startLeg(bird, endpoint, phase, target = null) {
     const state = bird._tzFlight, perch = window.PerchSupport;
     if (!state || !perch) return false;
@@ -108,8 +164,17 @@
     const end = { x: n(endpoint.x), y: n(endpoint.y), worldY: n(endpoint.worldY, start.worldY) };
     const support = perch.line('tzatzul:flight:' + ++flightSerial + ':' + state.identity.id, start, end);
     if (!perch.attach(bird, support, 0)) return false;
-    state.segment = { duration: Math.max(.55, Math.min(5, distance(start, end) / (tile() * SPEED_TILES_PER_SECOND))) };
+    const horizontal = Math.hypot(end.x - start.x, end.y - start.y) / tile();
+    const vertical = end.worldY - start.worldY;
+    const length = Math.max(1e-6, Math.hypot(horizontal, vertical));
+    const heading = { x: (end.x - start.x) / (tile() * length), y: vertical / length,
+      z: (end.y - start.y) / (tile() * length) }; // 3D beak-first facing follows the dive, not the talon pose.
+    const half = hitboxSize(bird); // Freeze body dimensions for this leg; no expensive mesh reads each frame.
+    state.segment = { duration: Math.max(.55, Math.min(5, distance(start, end) / (tile() * SPEED_TILES_PER_SECOND))),
+      half, heading, lastBody: null };
+    state.segment.lastBody = bodyCenter(bird, state.segment); // Swept-body starting frame includes elevated roost height.
     state.elapsed = 0; state.phase = phase; state.target = target; state.struck = false;
+    bird.tzatzulDivePitchRad = phase === 'swoop' ? Math.atan2(vertical, horizontal) : 0; // Rig pitches with the nose-first body on descent.
     bird.tzatzulFlightPose = 'flap';
     bird.state = 'idle'; // Avoid an additional ground-pathfinding owner for aerial movement.
     bird.facing = Math.atan2(end.y - start.y, end.x - start.x);
@@ -118,8 +183,11 @@
     return true;
   }
   function swoop(bird, target) {
-    const ok = startLeg(bird, { x: target.x, y: target.y,
-      worldY: surface(target.x, target.y) + .48 }, 'swoop', target);
+    if (!target || !(target.health > 0)) return false;
+    const box = targetBox(target); // Aim once at the prey's BODY, including its real elevation and size.
+    const half = hitboxSize(bird);
+    const aim = Math.max(box.min.y, (box.min.y + box.max.y) / 2 - half.y);
+    const ok = startLeg(bird, { x: target.x, y: target.y, worldY: aim }, 'swoop', target);
     if (ok) stats.swoops++;
     return ok;
   }
@@ -127,18 +195,19 @@
     const state = bird._tzFlight;
     return startLeg(bird, state.roost, 'return');
   }
-  function hit(bird) {
+  function hit(bird, previous, current) {
     const state = bird._tzFlight;
     if (state.struck) return false;
-    state.struck = true;
     const target = state.target;
-    if (!(target?.health > 0) || (!viable(bird, target) && target !== deps.player)
-      || distance(bird, target) > tile() * STRIKE_RANGE_TILES) {
-      stats.misses++; return false;
-    }
+    if (!(target?.health > 0) || target.areaId && target.areaId !== bird.areaId
+      || target.creatureKey === 'tzatzul' || target.creatureKey === 'tzatzul-hatchling'
+      || target._denHidden || target.state === 'dying') return false;
+    const entry = sweptBodyHit(previous, current, state.segment.half, targetBox(target));
+    if (entry === null) return false; // No pre-timed hit: only actual 3D torso/body overlap can deal damage.
+    state.struck = true; // One collision/attack per committed swoop, even across long frames.
     const combat = window.Combat?.deps;
     const damage = Math.max(1, n(bird.def?.attackDamage, 24));
-    const opts = { attacker: bird, tag: 'sharp', aerialSwoop: true };
+    const opts = { attacker: bird, tag: 'sharp', aerialSwoop: true, impactCollider: 'body' };
     let applied = false;
     if (target === deps.player && typeof combat?.damagePlayer === 'function') {
       combat.damagePlayer(damage, bird.x, bird.y, 75, opts); applied = true;
@@ -147,8 +216,11 @@
     } else if (target !== deps.player && window.WildlifeSpawn?.applyWildlifeSkirmishDamage) {
       window.WildlifeSpawn.applyWildlifeSkirmishDamage(bird, target, damage); applied = true;
     }
-    if (applied) { stats.hits++; mark(bird, 'sharp dive hit'); }
-    else stats.misses++;
+    stats.lastBodyContact = { at: Date.now(), id: state.identity.id,
+      target: target === deps.player ? 'player' : target.creatureKey || 'creature',
+      sweptFraction: +entry.toFixed(3), phase: state.phase, collider: 'body' };
+    if (applied) { stats.hits++; mark(bird, 'headfirst body dive hit'); }
+    else { stats.misses++; mark(bird, 'body contact (damage unavailable)'); }
     return applied;
   }
   function advance(bird, dt) {
@@ -159,13 +231,21 @@
     bird.branchT = t;
     window.PerchSupport?.constrain?.(bird); // Reuses native onBranch and branchSurfaceY movement/portrait height.
     bird.tzatzulFlightPose = t < .15 || t > .85 ? 'flap' : 'glide';
-    if (state.phase === 'swoop' && t >= STRIKE_AT_PROGRESS) hit(bird);
+    if (state.phase === 'swoop') {
+      const previous = state.segment.lastBody;
+      const current = bodyCenter(bird, state.segment);
+      state.segment.lastBody = current;
+      hit(bird, previous, current); // The complete torso is swept from last frame to this frame; no talon point or fixed attack timestamp.
+    }
     if (t < 1) return;
+    if (state.phase === 'swoop' && !state.struck) {
+      state.struck = true; stats.misses++; mark(bird, 'body missed committed dive');
+    }
     state.segment = null;
     if (state.phase === 'swoop') { returnHome(bird); return; }
     if (state.phase === 'return' && window.PerchSupport?.attach?.(bird, state.roost)) {
       state.phase = 'perched'; state.elapsed = 0; state.rest = REST_SECONDS;
-      state.target = null; bird.tzatzulFlightPose = 'perched';
+      state.target = null; bird.tzatzulFlightPose = 'perched'; bird.tzatzulDivePitchRad = 0;
     }
   }
   let lastArea = null; // Changed-zone detection disposes only old spire scene roots.

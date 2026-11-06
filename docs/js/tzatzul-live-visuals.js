@@ -71,9 +71,11 @@
             (Number(perspective.y) || 0) / unit + 2);
         },
       }; // Cheap game-space viewpoint; no additional scene camera or RAF.
-      try { state.rig.update(camera?.getWorldPosition ? camera : fallback,
-        pose, seconds, !!actor.tzatzulCarrying); }
-      catch (error) { debug.lastError = String(error); }
+      try {
+        state.rig.update(camera?.getWorldPosition ? camera : fallback,
+          pose, seconds, !!actor.tzatzulCarrying);
+        state.rig.root.rotation.z = pose !== 'perched' ? Number(actor.tzatzulDivePitchRad) || 0 : 0; // Pitch the authored body/head into its 3D swoop; restore level glide and perch poses.
+      } catch (error) { debug.lastError = String(error); }
     }
     state.lastPose = pose;
     debug.lastPose = pose;
