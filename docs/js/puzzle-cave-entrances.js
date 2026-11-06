@@ -36,21 +36,34 @@
         const d=distance(source,a)-distance(source,b);
         return d || String(a.id).localeCompare(String(b.id));
       });
-      if(!candidates.length)continue; // Never relocate a cave onto an unsupported cliff.
-      const shelf=candidates[0];taken.add(shelf.id);
-      const normal=shelf.normal,tangent=shelf.tangent;
-      const nearBack={x:shelf.x-normal.x*(shelf.depth*.5-.18),z:shelf.z-normal.z*(shelf.depth*.5-.18)};
-      const entryTiles=shelf.footprint
-        .filter(t=>root.CliffRouteNetwork?.shelfContains?.(shelf,t.c+.5,t.r+.5,-.08)!==false)
-        .sort((a,b)=>distance(nearBack,{x:a.c+.5,z:a.r+.5})-distance(nearBack,{x:b.c+.5,z:b.r+.5}));
-      if(!entryTiles.length){taken.delete(shelf.id);continue;}
-      const entry=entryTiles[0]; // The actual raised tile is authoritative for the game transition, never the low terrain below it.
-      const door={x:nearBack.x,z:nearBack.z,y:shelf.y};
-      const plateOffset=Math.min(.68,shelf.depth*.36); // Separates the playable pressure plate from the entrance transition tile on compact two-tile ledges.
-      const plate={x:shelf.x+normal.x*plateOffset,z:shelf.z+normal.z*plateOffset,y:shelf.y};
-      const melody=hash(site.signature+':outdoor-song')%2===0; // Not every entrance has an outside challenge; some have only their interior.
-      out.push({mapId:site.mapId,denId:site.denId,site,shelf,door,plate,entry,
-        tangent,normal,requiresSong:melody,difficulty:1+(hash(site.signature+':outdoor-difficulty')%5)});
+      for(const shelf of candidates){
+        const normal=shelf.normal,tangent=shelf.tangent;
+        const nearBack={x:shelf.x-normal.x*(shelf.depth*.5-.18),z:shelf.z-normal.z*(shelf.depth*.5-.18)};
+        const supports=(x,z)=>root.CliffRouteNetwork?.shelfContains?.(shelf,x,z,-.13)!==false;
+        const entryTiles=shelf.footprint
+          .filter(t=>supports(t.c+.5,t.r+.5))
+          .sort((a,b)=>distance(nearBack,{x:a.c+.5,z:a.r+.5})-distance(nearBack,{x:b.c+.5,z:b.r+.5}));
+        if(!entryTiles.length)continue; // A transition tile must actually lie inside the walkable cap outline.
+        const entry=entryTiles[0]; // The actual raised tile is authoritative for the world transition, never lower ground.
+        const door={x:nearBack.x,z:nearBack.z,y:shelf.y};
+        const preferred={x:shelf.x+normal.x*Math.min(.68,shelf.depth*.36),
+          z:shelf.z+normal.z*Math.min(.68,shelf.depth*.36)};
+        const samples=[]; // Valid footfall points: intersection of supported footprint cells and the irregular mini-cliff cap.
+        for(const tile of shelf.footprint)for(const dx of [0,-.28,.28])for(const dz of [0,-.28,.28]){
+          const x=tile.c+.5+dx,z=tile.r+.5+dz;
+          if(!supports(x,z)||Math.hypot(x-(entry.c+.5),z-(entry.r+.5))<=.65
+            ||Math.hypot(x-door.x,z-door.z)<=.58)continue; // Music plate and entry are physically separate interactions.
+          samples.push({x,z});
+        }
+        if(!samples.length)continue; // Try the next reachable balcony, not an unsupported plate that traps the cave.
+        samples.sort((a,b)=>distance(a,preferred)-distance(b,preferred));
+        const plate={...samples[0],y:shelf.y};
+        taken.add(shelf.id);
+        const melody=hash(site.signature+':outdoor-song')%2===0;
+        out.push({mapId:site.mapId,denId:site.denId,site,shelf,door,plate,entry,
+          tangent,normal,requiresSong:melody,difficulty:1+(hash(site.signature+':outdoor-difficulty')%5)});
+        break;
+      }
     }
     return out;
   }
