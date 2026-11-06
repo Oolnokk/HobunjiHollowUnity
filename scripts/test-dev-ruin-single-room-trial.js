@@ -15,9 +15,10 @@ for(let length=11;length<=18;length++){
   const span=pit.maxX-pit.minX,count=Math.max(3,Math.min(8,Math.ceil((span-1)/2.25)+1));
   assert.ok((span-1)/(count-1)<=2.25,'normal rope catch distances must be physically achievable');
 }
-assert.equal(valid.size,7);
+assert.equal(valid.size,6);
 for(const kind of valid){const selected=solo.pick(19,kind,planner);assert.equal(selected.kind,kind);assert.equal(selected.mode,'forced');}
 assert.throws(()=>solo.pick(10,'unknown',planner),/Unknown single-room puzzle/);
+assert.throws(()=>solo.pick(10,'pressurePlate',planner),/Unknown single-room puzzle/);
 assert.throws(()=>solo.pick(10,'weighted',null),/RuinLayerPlan is unavailable/);
 const counts=new Map(); // Measured output of the live dungeon stage weights.
 for(let seed=1;seed<=200;seed++){
@@ -30,7 +31,7 @@ for(let seed=1;seed<=200;seed++){
   counts.set(selected.kind,(counts.get(selected.kind)||0)+1);
 }
 assert.equal(counts.size,valid.size);
-assert.ok(counts.get('pressurePlate')>counts.get('dungeonFire'));
+assert.equal(counts.has('pressurePlate'),false,'retired pressure plate must never enter the random lab');
 const interior=read('docs/js/dev-random-ruin-interior-map.js');
 const simple=read('docs/js/dev-random-ruin-simple-puzzles.js');
 const defense=read('docs/js/ruin-layer-defense.js');
@@ -51,4 +52,4 @@ assert.ok(read('docs/tools/debris-ifier/debrisifier-01.js').includes("['flat puz
 assert.ok(read('docs/tools/debris-ifier/debrisifier-01.js').includes("['clear solo chamber support pillars',")); // A normal V50 support column cannot overlap the selected challenge center.
 assert.ok(read('docs/index.html').includes('dev-ruin-single-room-trial.js'));
 assert.match(read('docs/js/dev-random-ruin-bootstrap.js'), /dev-random-ruin-simple-puzzles\.js\?v=[A-Za-z0-9_-]+/);
-console.log('Single-room puzzle lab: 200 planner seeds, seven forced choices, isolation and no-loot contracts passed.');
+console.log('Single-room puzzle lab: 200 planner seeds, six forced choices, isolation and no-loot contracts passed.');
