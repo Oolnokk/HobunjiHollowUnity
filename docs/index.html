@@ -586,7 +586,7 @@
        other systems above doesn't matter; must load before game.js, which
        calls window.ClimbSystem.init(...) during its own setup. -->
   <script src="js/perch-support.js?v=20261105perchAudit7"></script> <!-- Point/line perches and shared branch-fall release on prone, death, or knockback. -->
-  <script src="js/cliff-route-network.js?v=20261105hcd658a0"></script> <!-- Shared graph for selected exterior handholds, balcony terrain and wildlife routes. -->
+  <script src="js/cliff-route-network.js?v=20261105cliffPortal1"></script> <!-- Shared graph for selected exterior handholds, balcony terrain and wildlife routes. -->
   <script src="js/climb-system.js?v=20261105perchAudit7"></script>
   <script src="js/cliff-crawl-presentation.js?v=20261104cliffCrawlAudit3"></script> <!-- Surface-relative limb crawl and temporary hiding of hand-held equipment; ruins/trees stay on their existing animations. -->
   <script src="js/creature-cliff-climb.js?v=20261104cliffAudit1"></script>
@@ -874,7 +874,7 @@
        window.ZonePlateauMesa.buildPlateauMesa(...) lazily, whenever a
        zone with tiered plateaus is first built or a plateau-top tile
        changes at runtime — never synchronously during initial boot. -->
-  <script src="js/zone-plateau-mesa.js?v=20261105hGrassTops2"></script>
+  <script src="js/zone-plateau-mesa.js?v=20261105cliffPortal1"></script>
   <script src="js/wilderness-bedrock.js?v=20261027a"></script>
   <!-- One world-UV texture-backed mesh per water surface group. Dynamic
        flood/trench meshes are rebuilt only when the water simulation ticks;
@@ -896,7 +896,8 @@
        synchronously during initial boot. -->
   <script src="js/locale-cave-runtime.js?v=20261010h40fea5e"></script>
   <!-- Promotes wilderness den anchors into generic cave sites; wraps WildlifeSpawn/CavernGenerator/DevSpawner, all loaded above. -->
-  <script src="js/cave-site-system.js?v=20261105puzzleCaves1"></script>
+  <script src="js/puzzle-cave-entrances.js?v=20261105cliffPortal1"></script><!-- Real mini-cliff cliffDoor placement, exterior timed plate, and authoritative gated transition. -->
+  <script src="js/cave-site-system.js?v=20261105cliffPortal1"></script>
   <!-- Two-necked Shattercask runtime. Loaded after Combat/DevSpawner/CaveSiteSystem so their
        hooks bind before game.js initializes the subsystems; also handles touch prompts. -->
   <!-- Capability/event substrate (window.WorldEvents, window.Targetables): pure registries with no
@@ -924,7 +925,7 @@
   <script src="js/stampable-locale-defs.js?v=20261102h082455e"></script>
   <script src="js/tothal-zone-cache.js?v=20261102a"></script>
   <script src="js/ruin-sites.js?v=20261031storyVault1"></script>
-  <script src="js/zone-den-totem-features.js?v=20261102furnsurface2"></script>
+  <script src="js/zone-den-totem-features.js?v=20261105cliffPortal1"></script>
   <script src="js/transition-markers.js?v=20261004h46d3bfb"></script>
   <!-- Wilderness-zone grass and rich-foliage-patch billboards
        (window.ZoneGrassBillboards) — pure scene-graph generation, no
