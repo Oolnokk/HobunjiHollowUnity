@@ -952,6 +952,7 @@
       const puzzleOptions=readPuzzleGenerationOptions(); // Capture the user's simple-mode selection before booting the same-origin hidden tool; generation must not be able to fall back to defaults during iframe startup.
       const soloChoice=singleRoomTrial?window.DevRuinSingleRoomTrial?.pick(requestedSeed,opts.puzzleType||'weighted'):null; // One actual normal-plan challenge selection, fixed across solvability retries.
       if(singleRoomTrial&&!soloChoice)throw new Error('Single-room puzzle selector is unavailable.');
+       const nativeSoloType=singleRoomTrial?window.DevRuinSingleRoomTrial?.NATIVE_VARIANTS?.[soloChoice.kind]||null:null; // Selects an original V50 mechanism family instead of the layered challenge adapter.
       await window.DevRandomRuinConfig?.reload?.(); // docs/config/random-ruin/ruin-config.json; edits apply to the next ruin.
       const cfg=(path,fallback)=>window.DevRandomRuinConfig?.get?.(path,fallback)??fallback;
       const themeTypes = cfg('sanctum.boss.types', ['tothal', 'hronal', 'kanthic']).filter(type => ['tothal', 'hronal', 'kanthic'].includes(type)); // One seeded tradition owns this ruin's lich, loot and future themed features.
@@ -979,8 +980,12 @@
           size:cfg('generation.size','medium'),density:cfg('generation.density',62),
           roomMin:singleVestibule?1:cfg('generation.roomMin',3),
           roomMax:singleVestibule?1:cfg('generation.roomMax',6),singleRoom:singleVestibule,singleRoomLab:singleRoomTrial, // Avoid a default core moat or raised treasure display conflicting with the one selected challenge.
-          ...(singleRoomTrial&&['statueDefense','ropeChain'].includes(soloChoice.kind)?{roomPreset:soloChoice.kind==='statueDefense'?'veryLarge':'large'}:{}), // Defense requires 18x18; rope gaps stay within the normal rope hop distance.
-          puzzles:singleVestibule?Object.fromEntries(Object.keys(puzzleOptions).map(key=>[key,false])):puzzleOptions,
+          ...(singleRoomTrial&&(['statueDefense','ropeChain'].includes(soloChoice.kind)||nativeSoloType)?{roomPreset:soloChoice.kind==='statueDefense'?'veryLarge':'large'}:{}), // Defense requires 18x18; rope gaps stay within the normal rope hop distance.
+          puzzles:singleVestibule?{
+             ...Object.fromEntries(Object.keys(puzzleOptions).map(key=>[key,false])),
+             ...(nativeSoloType?{[nativeSoloType]:true,maxPerRoom:1,...(nativeSoloType==='brazier'?{stackedObelisk:true}:{})}:{})
+           }:puzzleOptions,
+           nativePuzzle:nativeSoloType, // The embedded V50 generator authors its real stone gate and matching activator inside the lab.
           ...(stoneAgeRequested?{pieceSet:'stoneAge',floorProps:'pillarsOnly'}:{})}); // V50 retains the configured multi-room/hallway topology; the quarter-scale stone skin uses its exact walkable/elevation cells.
         generationMark('projecting-v50-layout-'+(attempt+1));
         const meta=generated.locale?.meta?.interiorShell; if(!meta) throw new Error('V50 generated no interiorShell metadata.');
