@@ -26429,6 +26429,13 @@
             }
           }
 
+          // Dev AI-free testing must not freeze timed Puzzle Cave scores, exterior
+          // pressure plates, or the physical stone-gate opening animation.
+          // In normal play the WildlifeSpawn wrapper already calls the puzzle
+          // runtime once; this alternate path runs only while that wrapper is skipped.
+          if (window.DevTestingSwitchbox?.flags?.noNpcBehavior)
+            window.CaveSiteSystem?.tickPuzzleRuntime?.(dt);
+
           const miscGameplayPerf = window.PerfProfiler?.begin('misc gameplay'); // Dens/climbing/tent interactions and transition-spot checks below.
           window.ClimbSystem?.updateFallenNests?.(dt);
           window.DenNestSystem.updateNestInteraction(dt);
