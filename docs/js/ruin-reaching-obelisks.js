@@ -32,7 +32,7 @@
   function compose(options={}){
     const o={shaft:45,wall:8,spacing:16,floors:4,seed:1,originX:0,originZ:0,baseY:0,balconySides:['N','E','S','W'],...options};
     if(!Number.isInteger(o.spacing)||o.spacing<12||o.shaft<37||o.floors<2||o.floors>5)throw new Error('Reaching Obelisks requires a spacious, high shaft.');
-    const mid=o.wall+(o.shaft-1)/2,edge=o.wall+6.5;
+    const mid=o.wall+(o.shaft-1)/2,edge=o.wall+7; // Whole-cell faces align with the real pillar walls.
     const rng=random(o.seed^0xa487351d),pillars=[],targets=[],plates=[],routes=[];
     const toWorld=(point)=>({x:o.originX+point.x,z:o.originZ+point.z});
     for(let story=0;story<o.floors-1;story++){
@@ -45,7 +45,7 @@
         C:at(side,mid,edge+13,7*jitter),
         B:at(side,mid,edge+13,-6*jitter),
       };
-      const heights={A:[base+5,landing],B:[base+8,base+11],C:[base+3,base+3],D:[base+6,base+6]};
+      const heights={A:[base+8,landing],B:[base+7,base+11],C:[base+2,base+2],D:[base+5,base+5]};
       const byName={};
       for(const name of ['A','B','C','D']){
         const p=positions[name],id='obelisk-f'+story+'-'+name;
@@ -55,9 +55,9 @@
         byName[name]=result;pillars.push(result);
       }
       const a=byName.A,b=byName.B,c=byName.C,d=byName.D;
-      // C is deliberately reachable from the lower ring by climbing/descending;
+      // C is reached by descending from A via D, never by an invisible ground shortcut;
       // the D→A catch is gated by A's rotation rather than an invisible switch.
-      const segments=[['ring',c], [c,d], [d,a], [a,'gallery']];
+      const segments=[[a,d], [d,c], [c,d], [d,a], [a,'gallery']];
       const flights=segments.filter(pair=>typeof pair[0]==='object'&&typeof pair[1]==='object').map(pair=>{
         const horizontalGap=gap(pair[0],pair[1]),minimumDepth=catchDepthForGap(horizontalGap);
         return {from:pair[0].id,to:pair[1].id,gap:horizontalGap,
@@ -76,7 +76,7 @@
         story,face:'towardD',normal:{x:Math.sign(d.x-c.x),z:Math.sign(d.z-c.z)}};
       plates.push(plate);targets.push(switchA,switchB);
       routes.push({story,side,entryY:base,exitY:landing,
-        states:['A lowered: step onto its plate','A rotated: descend to C','C: shoot B target from its visible face',
+        states:['A lowered: climb from the gallery onto its plate','A rotated: descend through D to C','C: shoot B target from its visible face',
           'D: grab A rotated strand','A raised: step to the upper gallery'],
         flights,requires:[plate.id,switchA.id],galleryPillarId:a.id,approachPillarId:c.id});
     }
@@ -131,7 +131,7 @@
     if(!plan?.ok)throw new Error('Cannot mount an unverified obelisk route.');
     const {THREE,DynamicSurfaces:DS,ClimbSurfaces:CS,parent,getPlayerPosition,getPlayerY}=deps;
     if(!THREE?.Group||!parent?.add||!DS?.registerSurface||!CS?.register)throw new Error('Obelisk runtime dependencies are missing.');
-    const scope=deps.scope||'shaft-obelisks',group=new THREE.Group(),owned=[],materials=[],links=[],surfaceIds=[];
+    const scope=deps.scope||'shaft-obelisks',group=new THREE.Group(),owned=[],materials=[],links=[];
     const basic=color=>{const mat=new THREE.MeshBasicMaterial({color});materials.push(mat);return mat;};
     const stone=root.ProceduralFurniture?.makePartMaterial?.({materialTexture:'carved_smooth.png',materialLighting:'unlit',materialFillMode:'never',color:'#726d63'})||basic(0x726d63);
     if(!materials.includes(stone))materials.push(stone);
@@ -188,14 +188,15 @@
     // The climb registrations keep their normalized references, so a moving
     // pillar can carry climbable faces without unregister/re-register churn.
     const refreshFaces=record=>{
-      for(const id of record.worldFaces)CS.remove(id);
+      for(const entry of record.worldFaces){CS.remove(entry.id);entry.visual?.parent?.remove(entry.visual);
+        entry.visual?.traverse(n=>{n.geometry?.dispose();if(n.material&&!materials.includes(n.material))n.material.dispose();});}
       record.worldFaces=[];
       for(const [i,face] of climbFaces(record,Math.round(record.y),record.rotation).entries()){
         const id=scope+'-climb-'+record.id+'-'+i;
         const normalized=CS.register({...face,id,scope});
-        record.worldFaces.push(id);
         const visual=CS.buildVisual?.(THREE,normalized);
-        if(visual){visual.name=id;record.holder.add(visual);record.climbArt||=[];record.climbArt.push(visual);}
+        if(visual){visual.name=id;group.add(visual);} // buildVisual is already in world coordinates.
+        record.worldFaces.push({id,surface:normalized,visual});
       }
     };
     for(const record of columns.values())refreshFaces(record);
@@ -246,10 +247,7 @@
     const turnPillar=plate=>{
       const record=plate.pillar;
       record.rotation=(record.rotation+1)%4;record.rotationTarget=record.rotation;
-      for(const art of record.climbArt||[]){
-        art.parent?.remove(art);art.traverse(n=>{n.geometry?.dispose();if(n.material&&n.material!==stone)n.material.dispose();});
-      }
-      record.climbArt=[];refreshFaces(record);record.updateShape();
+      refreshFaces(record);record.updateShape();
       plate.node.material=green;plate.triggered=true;deps.onStateChange?.();
     };
     const tick=dt=>{
@@ -257,15 +255,14 @@
       const elapsedStep=clamp(Number(dt)||0,0,.05);elapsed+=elapsedStep;link();
       for(const pillar of columns.values()){
         if(Math.abs(pillar.y-pillar.desiredY)>.0001){
+          const oldY=pillar.y;
           pillar.y+=clamp(pillar.desiredY-pillar.y,-elapsedStep*2.5,elapsedStep*2.5);
           pillar.updateShape();
-          // Face registration is kept at exact whole-height steps. Only its
-          // owner moves; existing player grip sessions are not invalidated.
-          const rounded=Math.round(pillar.y);
-          if(rounded!==pillar.lastFacesAt){
-            for(const art of pillar.climbArt||[])art.parent?.remove(art);
-            pillar.climbArt=[];refreshFaces(pillar);pillar.lastFacesAt=rounded;
-          }
+          const delta=pillar.y-oldY;
+          // Keep the SAME surface objects while the obelisk moves: an attached
+          // climber never loses its handhold when the supporting pillar rises.
+          for(const entry of pillar.worldFaces){entry.surface.y0+=delta;entry.surface.y1+=delta;
+            if(entry.visual)entry.visual.position.y+=delta;}
         }
       }
       const pos=getPlayerPosition?.(),y=Number(getPlayerY?.());
@@ -290,7 +287,6 @@
     const dispose=()=>{
       if(disposed)return;disposed=true;
       for(const remove of links)remove();
-      for(const id of surfaceIds)CS.remove(id);
       DS.clearScope(scope);CS.clearScope(scope);
       group.parent?.remove(group);
       for(const node of owned)node.geometry?.dispose?.();
