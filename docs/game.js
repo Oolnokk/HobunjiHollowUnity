@@ -18511,6 +18511,16 @@
       }
 
       function updateMovement(dt) {
+        if (player.tzatzulCapturedBy) {
+          // TzatzulFlightRuntime owns the original player's position and elevation
+          // during a successful beak-first capture. Joystick/controller movement
+          // must not overwrite the bird's shared perch path or restart combat.
+          playerAutoWalk = null;
+          input.x = 0; input.y = 0;
+          player.vx = 0; player.vy = 0;
+          player.inputX = 0; player.inputY = 0; player.inputStrength = 0;
+          return;
+        }
         syncMobileAutoTargetCombatState();
         syncMobileAutoTargetButton(); // Target availability refreshes even when prone, mounted, or another mode skips ordinary movement.
         updateMobileArchCombatAimLifecycle();
@@ -31737,6 +31747,8 @@
         player,
         calendar,
         damagePlayer, // Used by js/cave-site-system.js's one-shot cache traps (it captures this dependency bag).
+        enterBuilding, // Native async cavern loader + return-exit ownership for Tzatzul player abduction.
+        canPlayerOccupy, // Check the exterior safe return tile before committing a nest transition.
       });
 
       window.CavernGenerator?.init({
