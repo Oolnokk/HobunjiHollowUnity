@@ -8,6 +8,7 @@
 })(typeof globalThis!=='undefined'?globalThis:this,function(root){
   'use strict';
   const areas=new Map(); // Area -> mounted portal records; used for scene cleanup and per-frame transition admission.
+  const glyphTextures=new Map(); // Shared immutable Scratchbone textures reused by every exterior music score; portal teardown disposes materials, not their shared maps.
   let deps=null; // WildlifeSpawn's existing game adapter, used for authoritative player, layouts and scene transitions.
   let lastArea=null; // Tracks the immediately previous area so returning from a cave can restore its actual elevated balcony support.
   const portalTag='puzzle-cave-cliff-door'; // Consistent debugging and collider identity for each generated entrance.
@@ -125,8 +126,12 @@
     board.translateZ?.(.055);
     for(let index=0;index<count;index++){
       const note=portal.song.notes[index],glyphNumber=note.index+1;
-      const texture=new THREE.TextureLoader().load('assets/hud/scratchbone'+glyphNumber+'.png');
-      if(THREE.SRGBColorSpace)texture.colorSpace=THREE.SRGBColorSpace;
+      let texture=glyphTextures.get(glyphNumber); // One loader per Scratchbone note instead of one GPU texture per generated cave.
+      if(!texture){
+        texture=new THREE.TextureLoader().load('assets/hud/scratchbone'+glyphNumber+'.png');
+        if(THREE.SRGBColorSpace)texture.colorSpace=THREE.SRGBColorSpace;
+        glyphTextures.set(glyphNumber,texture);
+      }
       const material=new THREE.MeshBasicMaterial({map:texture,color:0xc6baab,transparent:true,depthWrite:false,side:THREE.DoubleSide});
       const mesh=new THREE.Mesh(new THREE.PlaneGeometry(.20,.24),material);
       mesh.name='puzzle-cave-outdoor-glyph-'+index;
