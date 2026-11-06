@@ -46,7 +46,7 @@
         A:point(side,0,0),
         D:point(side,6,5*jitter),
         C:point(side,13,7*jitter),
-        B:point(side,13,-6*jitter),
+        B:point(side,13,1*jitter),
       };
       const heights={A:[base+8,landing],B:[base+7,base+11],C:[base+2,base+2],D:[base+5,base+5]};
       const byName={};
