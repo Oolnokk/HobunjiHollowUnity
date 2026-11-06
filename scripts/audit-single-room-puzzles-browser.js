@@ -48,20 +48,12 @@ async function main(){
     // independent save/creator UI. Hide that unrelated overlay in this harness.
     await page.addStyleTag({content:'#ob-overlay{display:none!important}'});
 
-    const clickLabControl=async id=>{
-      // Use the same viewport hit-test coordinates for the preflight and the
-      // trusted mouse input. Locator.click can choose a different point for
-      // fixed HUD controls while the WebGL compositor settles after travel.
-      const hit=await page.waitForFunction(id=>{
-        const button=document.getElementById(id);
-        if(!button||button.disabled)return null;
-        const rect=button.getBoundingClientRect();
-        const x=rect.x+rect.width/2, y=rect.y+rect.height/2;
-        return button.contains(document.elementFromPoint(x,y))?{x,y}:null;
-      },id,{timeout:10000});
-      const {x,y}=await hit.jsonValue();
-      await hit.dispose();
-      await page.mouse.click(x,y);
+    const releaseCameraForHud=async()=>{
+      // The programmatic arena entry closes the game menu, which can
+      // acquire shoulder-camera pointer lock in Chromium's test context.
+      await page.evaluate(()=>window.ShoulderCamPointerLock?.release());
+      await page.waitForFunction(()=>!document.pointerLockElement,null,{timeout:10000});
+      return previousTarget;
     };
     const expected=()=>[...window.DevRuinSingleRoomTrial.TYPES,...window.DevRuinSingleRoomTrial.MECHANISMS].map(([key])=>key);
     const kinds=await page.evaluate(expected);
@@ -77,16 +69,18 @@ async function main(){
       report.push(row);
       try{
         if(kind==='stoneDoor'){
-          await clickLabControl('devRuinLabBtn');
+          console.log('Puzzle Lab HUD pointer lock before click:',await releaseCameraForHud());
+          await labTab.click({timeout:10000});
           await page.locator('#devRuinLabPanel').waitFor({state:'visible',timeout:10000});
           await page.selectOption('#devRuinLabChoice',kind);
           assert.match(await page.locator('#devRuinLabHint').textContent(),/raise or lower/);
-          await clickLabControl('devRuinLabLoad');
+          await page.locator('#devRuinLabLoad').click({timeout:10000});
           await page.waitForFunction(()=>window.DevRandomRuin?.getState?.()?.singleRoomTrial?.kind==='stoneDoor'
             &&window.DevRandomRuin?.getGenerationProgress?.()?.phase==='entered',null,{timeout:60000});
           if(!await labTab.isVisible())throw new Error('Puzzle Lab tab disappeared after switching fixtures');
           if(await page.locator('#devRuinLabPanel').isVisible())throw new Error('Puzzle Lab panel stayed open after switching fixtures');
-          await clickLabControl('devRuinLabBtn');
+          console.log('Puzzle Lab HUD pointer lock before click:',await releaseCameraForHud());
+          await labTab.click({timeout:10000});
           await page.waitForFunction(()=>document.getElementById('devRuinLabFeedback')?.dataset.phase==='ready');
           await page.keyboard.press('Escape');
           assert.equal(await page.locator('#devRuinLabPanel').isVisible(),false,'Escape closes the panel after switching fixtures');

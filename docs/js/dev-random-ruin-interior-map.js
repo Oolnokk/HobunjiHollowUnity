@@ -1851,6 +1851,7 @@
       if(button.hidden)return;
       if(!panel.hidden){closePuzzleLabMenu();return;}
       panel.hidden=false;
+      window.ShoulderCamPointerLock?.release?.();
       button.setAttribute('aria-expanded','true');
       puzzleLabMenu.lock=window.CharacterActionLocks?.acquire?.({
         owner:'dev-ruin-puzzle-lab',reason:'Choosing a test fixture',
