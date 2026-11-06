@@ -79,13 +79,15 @@
       delete t.puzzleCaveCliffY;delete t.puzzleCaveCliffId;
     }
   }
-  function concealDenFacade(area,denId){
-    const scene=deps?.zoneScenes?.get?.(area)?.scene||areas.get(area)?.scene;
+  function concealDenFacade(portal){
+    const scene=deps?.zoneScenes?.get?.(portal.area)?.scene||areas.get(portal.area)?.scene;
     const group=scene?.getObjectByName?.('animalDenEntrances');
     let hidden=false;
-    for(const mesh of group?.children||[])if(String(mesh.userData?.denId)===String(denId)){
-      mesh.visible=false;hidden=true; // The old den's whole authored doorway/furniture must never cover the cliff portal.
+    for(const mesh of group?.children||[])if(String(mesh.userData?.denId)===String(portal.denId)){
+      if(!portal.hiddenDenMeshes.has(mesh))portal.hiddenDenMeshes.set(mesh,mesh.visible); // Preserve each authored facade's original visibility for scene retirement.
+      mesh.visible=false;hidden=true; // Never leave the legacy cave facade overlapping the cliff-mounted entrance.
     }
+    portal.facadeHidden=hidden;
     return hidden;
   }
   function syncTransitionRing(portal,allowed){
@@ -239,6 +241,8 @@
         if(portal.originalRingPosition)portal.ring.position.set(portal.originalRingPosition.x,portal.originalRingPosition.y,portal.originalRingPosition.z);
         portal.ring.visible=true;portal.ringRelocated=false;
       } // Restore both the visual marker and its location when cliff geometry is retired.
+      for(const [mesh,visible] of portal.hiddenDenMeshes)mesh.visible=visible; // The legacy entrance becomes visible again if a future cliff reroll has no usable portal.
+      portal.hiddenDenMeshes.clear();
       if(portal.shelf?.puzzleCavePortal===portal.mapId)delete portal.shelf.puzzleCavePortal; // A retired portal must not permanently reserve a reward-bearing ledge.
       destroyPortal(portal);
     }
@@ -255,7 +259,7 @@
       ...p,area:key,disposed:false,solved:!p.requiresSong,justSolved:false,
       musicOpened:false,lastDown:false,openWait:0,
       rise:p.requiresSong?0:1,progress:null,glyphs:[],visualRoot:null,
-      blockerId:null,
+      blockerId:null,hiddenDenMeshes:new Map(),facadeCheckElapsed:0, // Captured visibility and slow recheck for asynchronously added den entrance meshes.
     }));
     const state={area:key,network,scene,portals};
     areas.set(key,state);
@@ -272,9 +276,8 @@
       }
       addPhysicalGate(portal);
       createPresentation(portal,scene);
-      portal.facadeHidden=concealDenFacade(key,portal.denId); // Async default cave façade may be loaded before/after the portal.
+      concealDenFacade(portal); // Existing den facade is hidden; late-arriving meshes are checked on the runtime clock.
       applyTransitions(key,portal,false); // Default closed until player reaches the actual elevated entry tile.
-      concealDenFacade(key,portal.denId);
     }
     return portals;
   }
@@ -315,7 +318,10 @@
       const enabled=portal.solved&&portal.rise>=.98&&portal.openWait<=0&&nearDoor&&(!portal.requiresSong||!down);
       applyTransitions(area,portal,enabled); // World-transition owner sees a real locked target until the slab has physically risen.
       syncTransitionRing(portal,enabled);
-      if(!portal.facadeHidden)portal.facadeHidden=concealDenFacade(area,portal.denId); // Stop searching scene meshes once the legacy façade is hidden.
+      portal.facadeCheckElapsed+=Math.max(0,Number(dt)||0);
+      if(portal.facadeCheckElapsed>=.75||!portal.facadeHidden){
+        portal.facadeCheckElapsed=0;concealDenFacade(portal); // Catch late den-facade meshes without scanning every game frame.
+      }
     }
   }
   function forgetCave(mapId){
