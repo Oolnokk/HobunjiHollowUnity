@@ -2432,7 +2432,7 @@
     return {
       active:true,
       seed:state.buildSeed,
-      singleRoomChallenge:state.context.singleRoomTrial?{...state.context.singleRoomTrial,solved:state.singleRoomSolved,ready:!!state.singleRoomChallenge&&state.singleRoomChallenge.ready!==false,error:state.singleRoomError||state.singleRoomChallenge?.error||null,attempts:state.singleRoomChallenge?.attempts||0,linked:state.singleRoomChallenge?.linked??false,ropeLinked:state.singleRoomChallenge?.ropeLinked??false}:null, // Defense readiness/errors are asynchronous; don't claim it is ready before authored assets finish loading.
+      singleRoomChallenge:state.context.singleRoomTrial?{...state.context.singleRoomTrial,solved:state.singleRoomSolved,ready:!!state.singleRoomChallenge&&state.singleRoomChallenge.ready!==false,error:state.singleRoomError||state.singleRoomChallenge?.error||null,ropeError:lastExternalRopeError,attempts:state.singleRoomChallenge?.attempts||0,linked:state.singleRoomChallenge?.linked??false,ropeLinked:state.singleRoomChallenge?.ropeLinked??false}:null, // Defense readiness/errors are asynchronous; don't claim it is ready before authored assets finish loading.
       safeGrids:state.safeGrids.map(grid=>({
         hallId:grid.hallId,
         axis:grid.axis,
@@ -2518,16 +2518,21 @@
     return true;
   }
 
+  let lastExternalRopeError=null; // Exposed in mobile/browser diagnostics when a layered rope room cannot bind to native rope physics.
   function registerExternalRopeChain(spec){
     // Layered ruin rooms use the *same* ride, pump, release-flight, mid-air
     // catch and checkpoint machinery as the V50 abyss hallway. No second
     // player-motion implementation or teleports are introduced here.
     const active=window.DevRandomRuin?.getRuntimeContext?.(); // Prevent old sessions from claiming ropes during a fast generation reroll.
+    lastExternalRopeError=null;
     if(!state||!inRuin()||state.root!==active?.root||!spec?.id
       ||!Array.isArray(spec.anchors)||spec.anchors.length<3||!spec.bounds
-      ||!spec.entry||!spec.exit)return null;
+      ||!spec.entry||!spec.exit){
+      lastExternalRopeError=!state?'puzzle state absent':!inRuin()?'not inside ruin':state.root!==active?.root?'stale puzzle scene':'invalid rope anchors or banks';
+      return null;
+    }
     const id=String(spec.id);
-    if(state.ropeChains.some(c=>c.id===id))return null;
+    if(state.ropeChains.some(c=>c.id===id)){lastExternalRopeError='chain id already registered: '+id;return null;}
     const ropes=[]; // Native rider ropes owned by this external floor; removed when the wing is destroyed.
     const room={id:'layer_'+id};
     const length=Math.max(ROPE_MIN_LENGTH,Number(spec.length)||2.43);
@@ -2566,6 +2571,7 @@
         if(index>=0)state.ropes.splice(index,1);
         disposeRopeObject(rope);
       }
+      lastExternalRopeError=String(error?.stack||error?.message||error).slice(0,500); // Mobile badge and isolated browser checks expose the original rope constructor failure.
       console.warn('[Random Test Ruin] external rope chain creation failed:',id,error);
       return null;
     }
@@ -2603,6 +2609,7 @@
   window.DevRandomRuinSimplePuzzles=Object.freeze({
     getInteractionControls,
     addFurnitureRope,removeFurnitureRope,registerExternalProjectileTarget,
+    lastExternalRopeError:()=>lastExternalRopeError, // Dev-mobile diagnostic access for failed rope registrations.
     registerExternalRopeChain,removeExternalRopeChain,
     hasActiveRuinState:()=>!!state&&inRuin()&&state.root===window.DevRandomRuin?.getRuntimeContext?.()?.root, // External fire/ranged challenges must not bind to an old generation.
     isNoClimbSurface:id=>!!state?.noClimbSurfaceIds?.has(String(id)),
