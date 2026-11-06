@@ -351,6 +351,7 @@
         if(!ropeChain&&bus?.hasActiveRuinState?.()===true){
           ropeChain=bus?.registerExternalRopeChain?.(rec.ropeSpec)||null;
           rec.ropeLinked=!!ropeChain;
+          rec.error=ropeChain?null:bus?.lastExternalRopeError?.()||'Rope controller declined the room'; // Surface registration failures in the mobile challenge badge.
           if(ropeChain)options.onLink?.(rec);
         }
         if(ropeChain&&!rec.solved&&isActive()&&player&&Number.isFinite(currentY)
