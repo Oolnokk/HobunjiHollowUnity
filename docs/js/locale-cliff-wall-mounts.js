@@ -20,7 +20,8 @@
     for(const route of network?.routes||[]){
       if(!route?.normal||!Array.isArray(route.nodes)||!route.nodes.length)continue;
       const baseY=Number(route.y0)||0,topY=Number(route.y1)||baseY;
-      const targetY=baseY+(topY-baseY)*Math.max(0,Math.min(1,Number(object?.visual?.mountHeightFraction)??.5));
+      const fraction=Number.isFinite(Number(object?.visual?.mountHeightFraction)) ? Number(object.visual.mountHeightFraction) : .5; // An omitted wall height means the middle of the available face, never NaN.
+      const targetY=baseY+(topY-baseY)*Math.max(0,Math.min(1,fraction));
       for(const node of route.nodes){
         if(![node.x,node.y,node.z].every(Number.isFinite))continue;
         const dx=node.x-x,dz=node.z-z,dy=node.y-targetY;
