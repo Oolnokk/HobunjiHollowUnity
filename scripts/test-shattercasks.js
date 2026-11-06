@@ -37,11 +37,15 @@ const detonateBody=code.slice(detonateStart,detonateEnd);
 assert(detonateBody.includes('if(!cask||cask.exploded)return false;') &&
   detonateBody.includes("playObjectSfxKey?.('shattercaskBlast')") &&
   code.includes("detonate(c,'throw-impact')") &&
-  (code.includes("detonate(vase,'melee')") || code.includes("detonate(vase,'melee',opts.actor)")) && // Attacker context is now forwarded for attributed impacts.
+  code.includes("detonate(vase,'melee',source)") && // The player-rooted Shattercask chain can snapshot Flaskmaster without changing enemy strike ownership.
   code.includes("const handler=burden.impactHandler||BURDEN_IMPACT_HANDLERS.get(burden.kind)||burden.data?.carryable?.impactHandler;") &&
   code.includes("if(typeof handler==='function')return handler(burden,'projectile')!==false;") &&
-  code.includes("return detonate(burden,'projectile');"),
+  code.includes("return detonate(burden,'projectile',source);"),
   'one guarded detonation boundary plays the blast cue for thrown/melee hits, while projectile hits preserve generic Burden handlers and the guarded Shattercask fallback');
+assert(code.includes("triggerBurdenBlastAt(cask.mapId,x,z,RADIUS*flaskmasterRadius,cask.id,attribution)") &&
+  code.includes("lastBlastAttribution={id:cask.id") &&
+  code.includes("const flaskmasterFactor = key =>"),
+  'player-provenance snapshots and Shattercask-only inheritance are exposed for mobile diagnostics');
 assert.equal((detonateBody.match(/playObjectSfxKey\?\.\('shattercaskBlast'\)/g)||[]).length,1,
   'the central detonation path contains one sound request');
 assert(code.includes('assets/textures/boards.png')&&code.includes('assets/textures/carved_smooth.png'),'debris uses the real body and neck textures');
