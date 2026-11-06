@@ -1534,5 +1534,17 @@
     "label": "Tl Grandbeard",
     "icon": "👕",
     "cat": "clothing"
+  },
+  "cosmetic:simple_hood": {
+    "key": "cosmetic:simple_hood",
+    "label": "Simple Hood",
+    "icon": "👕",
+    "cat": "clothing"
+  },
+  "cosmetic:fur_lined_hood": {
+    "key": "cosmetic:fur_lined_hood",
+    "label": "Fur-lined Hood",
+    "icon": "👕",
+    "cat": "clothing"
   }
 }

@@ -200,20 +200,59 @@
     return { getButtons: () => (target.provider.buttons?.(target) || []).map(button => ({ ...button, worldInteraction:true, promptRoot:target.holder })),
       onAction: action => target.provider.onAction?.(action,target) || {ok:false} };
   }
+
+  const wardrobeLockDebug = { attempts: 0, completed: 0, lastFurnitureId: null, lastOwnerId: null, lastResult: null }; // Captured by the existing mobile FurnitureTableSystem.snapshot().
+
   function wardrobeObject(area, entry) {
-    const binding = window.NpcFurnitureWardrobes?.ownerForPlacement?.(area, entry.record); // The placement's own ID/metadata selects the NPC, never proximity to the NPC.
+    const storage = window.NpcFurnitureWardrobes; // The existing NPC owner and household-member authority.
+    const binding = storage?.ownerForPlacement?.(area, entry.record);
     if (!binding || !entry.root?.parent) return null;
+    const npcId = binding.npcId; // Stale action prompts cannot access a newly reassigned person's wardrobe.
+    const chest = entry.record.key === 'chest' || entry.record.itemKey === 'chestFurniture'; // Both furniture types already open NPC wardrobe contents.
+    const kind = chest ? 'Chest' : 'Wardrobe';
+    const ownerName = () => storage.nameForOwner?.(npcId) || npcId; // Used by both the world prompt and the timing minigame.
+    const needsPick = () => !storage.isFamilyOwner?.(npcId)
+      && !window.NpcWardrobe?.hasPickedStorageLock?.(npcId, areaId(area), entry.id); // Family needs no key or pick; other NPCs need this specific lock picked once.
+    const valid = () => { // The same piece, owner and area must still exist after any round or cancellation.
+      if (entries(area).get(entry.id) !== entry || !entry.root?.parent || areaId(deps?.getArea?.()) !== areaId(area)) return false;
+      return storage.ownerForPlacement?.(area, entry.record)?.npcId === npcId && !storage.isFamilyOwner?.(npcId);
+    };
+    const openOriginal = owner => storage.openWardrobe?.(owner.npcId, area, entry.id, owner)
+      ? { ok: true, message: '', deferMemberSave: true } : { ok: false, message: 'Wardrobe unavailable.' };
     return {
-      id: 'wardrobe:' + entry.id, promptRoot: entry.root, // WorldPopupText floats over the actual rendered wardrobe or chest.
-      getButtons: () => [{ icon: '👗', label: window.NpcFurnitureWardrobes?.nameForOwner?.(binding.npcId) + "'s Wardrobe",
-        action: 'obj_open_wardrobe', style: 'primary', allowed: true, worldInteraction: true,
-        promptRoot: entry.root }],
+      id: 'wardrobe:' + entry.id, promptRoot: entry.root,
+      getButtons: () => [{
+        icon: needsPick() ? '🗝️' : '👗',
+        label: needsPick() ? 'Pick ' + ownerName() + "'s " + kind + ' Lock' : ownerName() + "'s " + kind,
+        action: 'obj_open_wardrobe', style: 'primary', allowed: true, worldInteraction: true, promptRoot: entry.root,
+      }],
       onAction: action => {
         if (action !== 'obj_open_wardrobe') return { ok: false, message: 'Unknown wardrobe action.' };
-        const current = window.NpcFurnitureWardrobes?.ownerForPlacement?.(area, entry.record); // Validate the same furniture assignment again on button press.
-        if (current?.npcId !== binding.npcId) return { ok: false, message: 'Wardrobe assignment changed.' };
-        return window.NpcFurnitureWardrobes?.openWardrobe?.(current.npcId, area, entry.id, current)
-          ? { ok: true, message: '', deferMemberSave: true } : { ok: false, message: 'Wardrobe unavailable.' };
+        const owner = storage.ownerForPlacement?.(area, entry.record); // The live furniture assignment remains authoritative.
+        if (owner?.npcId !== npcId) return { ok: false, message: 'Wardrobe assignment changed.' };
+        if (!needsPick()) return openOriginal(owner); // Original immediate access for family and previously picked storage.
+        if (!valid()) return { ok: false, message: 'This storage is no longer accessible.' };
+        const authoredTier = Number(entry.record.lockpickTier ?? entry.record.lockTier); // Authored locks may scale up to the four-ring tier; ordinary chests use tier 1, wardrobes tier 2.
+        const tier = Number.isFinite(authoredTier) && authoredTier >= 1
+          ? Math.max(1, Math.min(4, Math.round(authoredTier))) : chest ? 1 : 2;
+        const started = window.ChestLockpicking?.open?.({
+          id: 'npc-storage:' + areaId(area) + ':' + entry.id + ':' + npcId,
+          title: ownerName() + "'s " + kind, tier, valid,
+          onSuccess: () => {
+            if (!valid()) { wardrobeLockDebug.lastResult = 'invalid'; return; }
+            const live = storage.ownerForPlacement?.(area, entry.record); // Retain the NPC's real wardrobe panel and outfit restrictions.
+            if (!openOriginal(live).ok) { wardrobeLockDebug.lastResult = 'unavailable'; return; }
+            window.NpcWardrobe?.recordPickedStorageLock?.(npcId, areaId(area), entry.id); // Only a truly opened storage piece earns a permanent saved unlock.
+            wardrobeLockDebug.completed++;
+            wardrobeLockDebug.lastResult = 'unlocked';
+          },
+          onCancel: reason => { wardrobeLockDebug.lastResult = reason || 'cancelled'; },
+        });
+        wardrobeLockDebug.lastFurnitureId = entry.id;
+        wardrobeLockDebug.lastOwnerId = npcId;
+        wardrobeLockDebug.lastResult = started ? 'picking' : 'unavailable';
+        if (started) wardrobeLockDebug.attempts++;
+        return { ok: false, message: started ? '' : 'Lockpicking unavailable.', deferMemberSave: true };
       },
     };
   }
@@ -531,7 +570,7 @@
   function snapshot(area = deps?.getArea?.()) {
     return { latestChange: 'Camera lift depends only on an authored upward surface occupying the player tile or any of eight neighboring tiles; looking direction and camera pitch do not affect it.',
       surfaceCamera:{...surfaceView,probe:{...surfaceProbe,refreshMs:SURFACE_PROBE_REFRESH_MS}}, collision:{...collisionStats},
-      socialReach:deps?.npcReach?.()||6, socialIgnoresColliders:true, area: areaId(area), focused:focused?.kind || null, focusedNpc:focused?.walker?.rec?.id || null, seatReservations:seatClaims.size, placements: [...entries(area).values()].map(entry => ({ id: entry.id, tableId: entry.record.tableId || null, serviceId: entry.record.serviceId || null, wardrobeFor: window.NpcFurnitureWardrobes?.ownerForPlacement?.(area, entry.record)?.npcId || null })) };
+      socialReach:deps?.npcReach?.()||6, socialIgnoresColliders:true, area: areaId(area), focused:focused?.kind || null, focusedNpc:focused?.walker?.rec?.id || null, seatReservations:seatClaims.size, wardrobeLocks:{...wardrobeLockDebug}, placements: [...entries(area).values()].map(entry => ({ id: entry.id, tableId: entry.record.tableId || null, serviceId: entry.record.serviceId || null, wardrobeFor: window.NpcFurnitureWardrobes?.ownerForPlacement?.(area, entry.record)?.npcId || null })) };
   }
   window.FurnitureTableSystem = { nearbySurface, init, clearArea, registerPlacement, unregisterPlacement, assignTable, tableForSeat, members, findSeat, seatTransform, lieTransform, registerService, aimedService, objectAt, refreshServices, invalidateFocus, snapshot, seatKey, isSeatTaken, setSeatTarget, blocksBox, grassFootprintKeys, focusedTarget, companionSeat };
 })();

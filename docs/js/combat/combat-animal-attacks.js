@@ -268,7 +268,7 @@
   // one they were chasing).
   function gatherTargets(c, deps) {
     const out = [];
-    if (c.isCompanion) {
+    if (c.isCompanion && !c.banditCompanion) {
       for (const h of deps.hostileObjects) {
         if (h.health > 0 && h.areaId === c.areaId) out.push({ isPlayer: false, ref: h });
       }
@@ -283,7 +283,7 @@
         // ground position — never a legitimate independent target for a
         // leap/charge cone (see combat-drenkirra-pellet.js's gatherTargets
         // for the same exclusion and reasoning).
-        if (comp.stableRole === 'shoulderPet') continue;
+        if (comp.stableRole === 'shoulderPet' || (c.banditCompanion && comp.banditCompanion)) continue; // Enemy pets can strike player companions, never their allied Beastmaster pets.
         if (comp.health > 0 && comp.areaId === c.areaId) out.push({ isPlayer: false, ref: comp });
       }
     }
@@ -328,6 +328,7 @@
     c.facing = state.angle;
     c.scaleY = 1;
     c._banditLungeHopCurrent = 0; // Shared creature renderer slot for the pounce's vertical arc.
+    state.airborne = true; // Even a level-target pounce leaves the ground and collides like every aerial attack.
   }
 
   // The pounce's pitched pie-prism collider (Combat.meleeHit) as a cone-lunge
@@ -390,6 +391,17 @@
     const afflictionBonuses = window.ResourceSystem?.afflictionBonusesForTag(dmgTag);
     const stopReason = advanceLeap(c, state, dt, deps, afflictionBonuses);
     if (!stopReason) return true;
+    if (stopReason === 'blocked') {
+      window.KnockbackCollisionImpact?.resolveAerialLunge?.(c, state,
+        { kind: 'stone', label: 'Pounce into terrain' }, deps.TILE, {
+          dealHealthDamage: (entity, amount) => {
+            const before = Math.max(0, Number(entity.health) || 0);
+            deps.damageCreature?.(entity, amount, entity.x, entity.y, 0,
+              { tag: 'blunt', environmentalImpact: true, attacker: entity });
+            return { applied: Math.max(0, before - Math.max(0, Number(entity.health) || 0)), lethal: entity.health <= 0 };
+          },
+        }); // Shares the rock/resource collision rules, including a lethal creature-to-corpse transition.
+    }
     const ref = stopReason === 'target' ? state.lungeContact : null; // The first living target the moving cone caught.
     if (!ref) return false; // Ran out of travel or hit terrain: stop in place.
     const isPlayer = state.targets.some(target => target.isPlayer && target.ref === ref);

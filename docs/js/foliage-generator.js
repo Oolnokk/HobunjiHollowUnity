@@ -1091,6 +1091,7 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
 
   // Western Slope's leafless variants keep their own silhouettes but use the
   // crowned pine bark tint; NaturalSurfaceMaterials applies the same stretched PNG.
+  TREE_PRESETS.komaHedge = { ...TREE_PRESETS.bush, leafTexture: 'assets/leaves/koma_leaf.png', leafTintS: 0, leafTintL: 1 }; // Neutral white leaf-card multiplier preserves the authored iridescent Koma hues; ordinary bushes stay green.
   TREE_PRESETS.deadBush = { ...TREE_PRESETS.bush, leafless: true, barkColorHex: TREE_PRESETS.crownedPine.barkColorHex };
   TREE_PRESETS.deadTree = { ...TREE_PRESETS.bush, leafless: true, barkColorHex: TREE_PRESETS.crownedPine.barkColorHex,
     trunkLength: 4.2, trunkRadius: 0.25, trunkBend: 0.2, trunkTaper: 0.85,
@@ -1850,7 +1851,8 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
   // Surface growth uses real triangles, so authored walls, gables and furniture
   // share the same tube/noise generation as the foliage generator's own vines.
   function surfaceGrowthDefaults(kind) {
-    if (kind === 'iceStalagmites') return { texture: '', color: '#bcecff' }; // Solid ice facets do not borrow the tree-bark texture.
+    if (kind === 'iceStalagmites') return { texture: '', color: '#bcecff' };
+    if (kind === 'stoneStalagmites') return { texture: '', color: '#716d67' }; // Stone keeps its own opaque cave-material finish. // Solid ice facets do not borrow the tree-bark texture.
     const roots = kind === 'roots', sourceHex = roots ? TREE_PRESETS.shadewood.barkColorHex : TREE_PRESETS.shadewood.vineColorHex; // Roots inherit Shadewood's wood; vines inherit its vine finish.
     return (naturalSurfaces || window.NaturalSurfaceMaterials)?.surfaceDefaults?.(roots ? 'trunks' : 'vines', sourceHex) || {
       texture: roots ? 'assets/textures/wibbly_surface.png' : 'assets/textures/carved_smooth.png',
@@ -1872,7 +1874,7 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
     const finite = (key, fallback, lo, hi) => clamp(Number.isFinite(Number(value[key])) ? Number(value[key]) : fallback, lo, hi); // Bounds serialized editor inputs before allocating geometry.
     const radiusScaleMin=finite('radiusScaleMin',1,.1,3),radiusScaleMax=Math.max(radiusScaleMin,finite('radiusScaleMax',1,.1,3)); // Optional per-strand thickness bounds leave existing layers unchanged by default.
     const iceHeightMin=finite('iceHeightMin',.18,.03,10),iceHeightMax=Math.max(iceHeightMin,finite('iceHeightMax',1.3,.03,10)); // Floor-anchored crystal heights have independently bounded extrema.
-    return { kind: value.kind === 'iceStalagmites' ? 'iceStalagmites' : value.kind === 'roots' ? 'roots' : 'vines', seed: String(value.seed ?? 'surface-1').slice(0, 128),
+    return { kind: ['iceStalagmites','stoneStalagmites'].includes(value.kind) ? value.kind : value.kind === 'roots' ? 'roots' : 'vines', seed: String(value.seed ?? 'surface-1').slice(0, 128),
       style: ['cornerFill','wrap'].includes(value.style) ? value.style : 'natural', // Absent styles keep legacy recipes unchanged.
       density: finite('density',.45,.05,1), // Wrap density determines requested strands as a fraction of the per-surface limit.
       count: Math.floor(finite('count', 12, 1, 80)), strandLimit: Math.floor(finite('strandLimit', 80, 1, 80)),
@@ -1884,7 +1886,7 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
       inset: finite('inset',0,-.5,.5), // Signed placement relative to the simplified surface, independent of positive clearance.
       length: finite('length', 3, .05, 30),
       radiusScaleMin,radiusScaleMax,
-      radius: finite('radius', value.kind === 'iceStalagmites' ? .11 : .025, .002, value.kind === 'iceStalagmites' ? .6 : .3), offset: finite('offset', .008, 0, .2),
+      radius: finite('radius', ['iceStalagmites','stoneStalagmites'].includes(value.kind) ? .11 : .025, .002, ['iceStalagmites','stoneStalagmites'].includes(value.kind) ? .6 : .3), offset: finite('offset', .008, 0, .2),
       curl: finite('curl', .4, 0, 2), color: /^#[0-9a-f]{6}$/i.test(value.color) ? value.color : defaults.color,
       texture: normalizeGrowthTexture(value.texture, defaults.texture),
       target: ['all', 'walls', 'floors', 'ceilings', 'shingles', 'selected'].includes(value.target) ? value.target : 'all',
@@ -2711,7 +2713,7 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
     const group = new T.Group(); // Geometry is expressed in the target parent's local space and follows its later transform.
     group.name = 'Surface ' + settings.kind;
     group.userData.surfaceFoliage = true;
-    if (settings.kind === 'iceStalagmites') {
+    if (settings.kind === 'iceStalagmites' || settings.kind === 'stoneStalagmites') {
       // Ice shares growth-layer saving, cleanup, targeting, and JSON imports, but not root/vine tube geometry.
       if (window.IceStalagmiteCoverage?.build) return window.IceStalagmiteCoverage.build(T, parent, settings);
       group.userData.diagnostics = 'Ice stalagmites unavailable: shared ice geometry script not loaded.';
@@ -3014,6 +3016,12 @@ window.FoliageGenerator = (function createFoliageGenerator(T, naturalSurfaces) {
     buildWildernessBushMesh(col, row) {
       const seedU32 = xfnv1a(`wb_${col}_${row}`);
       return buildTreeInstance('bush', TREE_PRESETS.bush, seedU32);
+    },
+    buildKomaHedgeBushMesh(col, row) {
+      const seedU32 = xfnv1a(`wb_${col}_${row}`); // Same spatial seed as the original bush, separate shared-variant cache.
+      const bush = buildTreeInstance('komaHedge', TREE_PRESETS.komaHedge, seedU32);
+      bush.userData.komaRoadsideHedge = true; // Distinguishes visually reskinned bushes in the mobile scene inspector.
+      return bush;
     },
     buildStumpMesh(col, row) {
       const seedU32 = xfnv1a(`st_${col}_${row}`);

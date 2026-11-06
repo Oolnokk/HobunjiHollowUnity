@@ -40,10 +40,15 @@
   // px (player.x/y convention); baseWorldY/tipWorldY are THREE-unit heights
   // (player.climbSurfaceY/branchSurfaceY convention).
   const branchesByArea = new Map();
-  function resetAreaBranches(mapId) { branchesByArea.set(mapId, []); }
+  function resetAreaBranches(mapId) {
+    for (const branch of branchesByArea.get(mapId) || [])
+      if (branch) window.PerchSupport?.unregister?.(mapId, window.PerchSupport.fromBranch(branch).id);
+    branchesByArea.set(mapId, []); // Clears Shadewood only; independently registered rock perches survive a foliage rebuild.
+  }
   function registerBranch(mapId, branch) {
     if (!branchesByArea.has(mapId)) branchesByArea.set(mapId, []);
     branchesByArea.get(mapId).push(branch);
+    if (branch && !branch.felled) window.PerchSupport?.register?.(mapId, window.PerchSupport.fromBranch(branch));
   }
   function removeBranchesInBounds(mapId, bounds) {
     const branches = branchesByArea.get(mapId);
@@ -54,11 +59,27 @@
       return col < bounds.colStart || col >= bounds.colEnd || row < bounds.rowStart || row >= bounds.rowEnd;
     });
     const removed = branches.length - kept.length;
+    if (removed && window.PerchSupport?.unregister) {
+      const live = new Set(kept);
+      for (const branch of branches) if (branch && !live.has(branch))
+        window.PerchSupport.unregister(mapId, window.PerchSupport.fromBranch(branch).id);
+    }
     branchesByArea.set(mapId, kept);
     return removed;
   }
 
   const CLIMB_MAX_WALL_TILES = 4;
+  // Shared across player/creature movement and mesa rendering; cached per live grid.
+  function currentCliffNetwork() {
+    if (!deps?._isZoneArea?.(deps.getCurrentArea())) return null;
+    const grid = deps.getActiveGrid?.();
+    return window.CliffRouteNetwork?.forGrid?.(grid, {
+      area: deps.getCurrentArea(),
+      blocked: t => !t || t.incline || deps.isSolid(t.type) || ['river', 'stream', 'trench'].includes(String(t.type).toLowerCase()),
+      isBoundary: t => window.MapBoundaryGuard?.isBoundaryTile?.(t) || false,
+      tileY: t => deps.tileSurfaceYInArea(t, deps.getCurrentArea()),
+    }) || null;
+  }
   function getWallClimbTarget() {
     const player = deps.player;
     const mountHeading = window.Mounts?.rideState === 'mounted' ? Number(window.Mounts?.heading) : NaN; // Used below so cliff targeting follows the carrier while rider look remains independent.
@@ -83,11 +104,23 @@
       // route: neither their face nor their top can be climbed.
       if (window.MapBoundaryGuard?.isBoundaryTile?.(t)) return null;
       if (!t.incline) {
-        if (wallTiles === 0) return null; // nothing but open ground ahead
         if (deps.isSolid(t.type)) return null;
+        if (wallTiles === 0) {
+          // A direct discontinuity can still be a legitimate cliff, even
+          // without a painted incline tile. It may only be crossed if the
+          // shared route graph generated an actual handhold entrance.
+          const net = currentCliffNetwork();
+          const edge = net && window.CliffRouteNetwork.crossing(net, startCol, startRow, col, row);
+          return edge ? { type: 'cliffRoute', dir, route: edge.route, entry: edge.entry } : null;
+        }
         if ((t.elevTier || 0) === startElevTier) return null;
         const landElevTier = t.elevTier || 0;
+        const network = currentCliffNetwork(); // Stops unrestricted auto-ascent at every unmarked cliff face.
+        const entry = network && window.CliffRouteNetwork.crossing(network, startCol, startRow, col, row);
+        if (entry) return { type: 'cliffRoute', dir, route: entry.route, entry: entry.entry };
+        if (network && landElevTier > startElevTier) return null; // Only carved handhold paths are climbable.
         return { type: 'wall', dir, landCol: col, landRow: row, startElevTier, landElevTier, wallTiles, descending: landElevTier < startElevTier };
+
       }
       wallTiles++;
     }
@@ -212,6 +245,12 @@
   function getClimbTarget() {
     if (!deps._isZoneArea(deps.getCurrentArea())) return null;
     const player = deps.player;
+    if (player.onCliffBalcony) {
+      const network = currentCliffNetwork();
+      const shelf = window.CliffRouteNetwork?.shelfAt?.(network, player.onCliffBalcony);
+      const route = shelf && network?.routes[shelf.routeId];
+      return route ? { type: 'cliffRoute', route, entry: shelf.nodeId } : null;
+    }
     if (player.onBranch) {
       const branch = player.onBranch;
       // An enemy under the same centered ray keeps Action 1 in combat; jump
@@ -323,6 +362,32 @@
     return true;
   }
 
+  // A cliff climb stays attached between *individual* hops. Each new
+  // direction chooses a neighboring hold, including lateral/diagonal forks.
+  function startRouteClimb(climb) {
+    const player = deps.player, node = climb.route?.nodes[climb.entry];
+    if (!node || player.climbing) return false;
+    player.onCliffBalcony = null;
+    player._cliffRouteSession = {
+      area: deps.getCurrentArea(), route: climb.route, nodeIndex: climb.entry,
+      moving: false, toIndex: -1, progress: 0, phase: 0, distance: 0,
+    };
+    // Climbing faces the rock, not each new sideways/upward handhold direction.
+    const outward = climb.route.normal; // The terrain generator's actual cliff-face normal, reused by the crawl renderer.
+    if (outward && Number.isFinite(outward.x) && Number.isFinite(outward.z)) {
+      player.angle = Math.atan2(-outward.z, -outward.x);
+      deps.setFacingAngle(player.angle); deps.setTargetAimAngle(player.angle); deps.setLastMoveAngle(player.angle);
+    }
+    player.climbing = true;
+    player.x = node.x * deps.TILE; player.y = node.z * deps.TILE;
+    player.climbSurfaceY = node.y;
+    player.climbHopBounce = 0; player.vx = 0; player.vy = 0;
+    player._climbTargetBranch = null; player._climbJumpDownAxis = null;
+    player._cliffLandingShelf = null;
+    resetClimbTiming(player, { cancelable: false });
+    return true;
+  }
+
   function startClimb(climb) {
     const mountRideState = deps.getMountRideState?.() || 'none'; // Used to keep scripted climbing mutually exclusive with every mount transition phase.
     if (mountRideState !== 'none') {
@@ -343,6 +408,7 @@
       window.__farmLog?.(`[climb] blocked while mount rideState=${mountRideState}`, 'wildlife');
       return false;
     }
+    if (climb.type === 'cliffRoute') return startRouteClimb(climb);
     if (climb.type === 'branch') return startBranchClimb(climb.branch);
     if (climb.type === 'branchJumpDown') return startBranchJumpDown(climb);
 
@@ -362,6 +428,19 @@
     player.climbEndY = (climb.landRow + 0.5) * deps.TILE;
     player.climbSurfaceStartY = deps.tileSurfaceYInArea(startTile, currentArea);
     player.climbSurfaceEndY = deps.tileSurfaceYInArea(landTile, currentArea);
+    // Descending remains possible from *any* cliff. Catch a real elevated
+    // mini-cliff on the fall line before reaching the ordinary ground tile.
+    const network = descending ? currentCliffNetwork() : null;
+    const shelf = descending && window.CliffRouteNetwork?.highestBelow?.(
+      network, player.climbEndX / deps.TILE, player.climbEndY / deps.TILE,
+      player.climbSurfaceStartY, player.climbSurfaceEndY
+    );
+    player._cliffLandingShelf = shelf?.id || null;
+    if (shelf) {
+      player.climbEndX = shelf.x * deps.TILE;
+      player.climbEndY = shelf.z * deps.TILE;
+      player.climbSurfaceEndY = shelf.y;
+    }
     player.climbSurfaceY = player.climbSurfaceStartY;
     player.climbHopBounce = 0;
     player.vx = 0; player.vy = 0;
@@ -437,6 +516,7 @@
     const axisY = (branch.tipY - branch.baseY) / branch.length;
     const jumpDir = climb.dir || { x: axisX, y: axisY };
     player.onBranch = null;
+    window.PerchSupport?.forget?.(player); // Jumping down is intentional: the old point/line perch must not trigger a later phantom fall.
     player.climbing = true;
     player.climbElapsed = 0;
     player.climbHopCount = 1;
@@ -462,6 +542,7 @@
   // Snaps an entity onto a branch at fraction t along it (0 = base/trunk end,
   // 1 = tip) and derives its ground-plane position + height from that.
   function beginOnBranch(entity, branch, t) {
+    window.PerchSupport?.forget?.(entity); // Moving to a native Shadewood branch supersedes any prior authored perch.
     entity.onBranch = branch;
     entity.branchT = deps.clamp(t, 0, 1);
     entity.x = branch.baseX + (branch.tipX - branch.baseX) * entity.branchT;
@@ -533,6 +614,9 @@
   const BRANCH_KNOCKBACK_DUR_S = 0.18; // Mirrors game.js's own KNOCKBACK_DUR_S so a shove off a branch covers the same distance a ground knockback would.
   function resolveBranchKnockback(entity, fromX, fromY, speedPxS) {
     const branch = entity.onBranch;
+    if (branch && Math.abs(Number(speedPxS) || 0) > 0 && window.PerchSupport?.release) {
+      return window.PerchSupport.release(entity, 'knocked from Shadewood perch', { deferLegacyKnockback: true });
+    }
     if (!branch) return null;
     const axisX = (branch.tipX - branch.baseX) / branch.length;
     const axisY = (branch.tipY - branch.baseY) / branch.length;
@@ -592,8 +676,67 @@
     window.__farmLog?.('[climb] cancelled by moving away from the wall; dropping back down', 'wildlife');
   }
 
+  // Only selected exterior handhold routes use the surface crawl. Dungeon
+  // ladders, trees, jumps and legacy scripted climbs keep their own timings.
+  function updateRouteCrawl(player, session, dt) {
+    if (!session.moving) {
+      const raw = deps.getMovementInput?.() || { x: 0, y: 0 };
+      const next = window.CliffRouteNetwork?.nextHop?.(session.route, session.nodeIndex, { x: raw.x, z: raw.y });
+      if (!next) {
+        player.vx = 0; player.vy = 0; player.climbHopBounce = 0;
+        return; // Maintain hand/foot contact on the selected hold, including at forks.
+      }
+      session.toIndex = next.id; session.moving = true; session.progress = 0;
+      session.elapsed = 0; // Seconds elapsed on this single graph edge, not on the whole route.
+      player.climbStartX = player.x; player.climbStartY = player.y;
+      player.climbEndX = next.x * deps.TILE; player.climbEndY = next.z * deps.TILE;
+      player.climbSurfaceStartY = player.climbSurfaceY;
+      player.climbSurfaceEndY = next.y;
+      session.distance = Math.hypot(
+        (player.climbEndX - player.x) / deps.TILE,
+        (player.climbEndY - player.y) / deps.TILE,
+        next.y - player.climbSurfaceY
+      ); // True movement in the cliff plane, including lateral or diagonal traverses.
+      session.duration = Math.max(0.28, session.distance / 1.35);
+    }
+    const step = Math.max(0, Math.min(0.1, Number(dt) || 0));
+    session.elapsed += step;
+    session.progress = Math.min(1, session.elapsed / session.duration);
+    const t = session.progress;
+    // Linear path speed prevents the vertical, staggered leap-and-pause cadence.
+    // The procedural limbs provide planting, reaching and weight transfer.
+    player.x = player.climbStartX + (player.climbEndX - player.climbStartX) * t;
+    player.y = player.climbStartY + (player.climbEndY - player.climbStartY) * t;
+    player.climbSurfaceY = player.climbSurfaceStartY + (player.climbSurfaceEndY - player.climbSurfaceStartY) * t;
+    player.climbHopBounce = 0;
+    player.vx = 0; player.vy = 0;
+    session.phase += step * (session.distance / session.duration) * (Math.PI * 2 / 0.7);
+    if (t < 1) return;
+    session.nodeIndex = session.toIndex; session.moving = false; session.progress = 0;
+    const node = session.route.nodes[session.nodeIndex];
+    if (node?.balconyId) {
+      player.onCliffBalcony = node.balconyId;
+      player._cliffBalconyY = node.y;
+    }
+    if (!node?.balconyId && session.nodeIndex !== 0 && session.nodeIndex !== session.route.upperNode) {
+      return; // Stop at the chosen hold, but never hop without a fresh legal direction.
+    }
+    player._cliffRouteSession = null;
+    player.climbing = false;
+    player._climbCancelable = false;
+    player._climbDropped = false;
+  }
+
   function updateClimb(dt) {
     const player = deps.player;
+    const session = player._cliffRouteSession; // Active only for exterior directional handhold climbing.
+    if (session && session.area !== deps.getCurrentArea()) {
+      player._cliffRouteSession = null; player.climbing = false; return;
+    }
+    if (session) {
+      updateRouteCrawl(player, session, dt);
+      return;
+    }
     if (climbCancelRequested(player, dt)) dropFromClimb(player);
     const hopActiveS = player._climbHopActiveS ?? CLIMB_HOP_ACTIVE_S;
     const hopPauseS = player._climbHopPauseS ?? CLIMB_HOP_PAUSE_S;
@@ -627,6 +770,27 @@
       player.y = player.climbEndY;
       player.climbSurfaceY = player.climbSurfaceEndY;
       player.climbHopBounce = 0;
+      if (session) {
+        session.nodeIndex = session.toIndex; session.moving = false;
+        const node = session.route.nodes[session.nodeIndex];
+        if (node.balconyId) {
+          player.onCliffBalcony = node.balconyId;
+          player._cliffBalconyY = node.y;
+          player._cliffRouteSession = null;
+        } else if (session.nodeIndex !== 0 && session.nodeIndex !== session.route.upperNode) {
+          player.climbing = true; // Wait for the next input; no automatic hop chains.
+          return;
+        } else {
+          player._cliffRouteSession = null;
+        }
+      }
+      if (player._cliffLandingShelf) {
+        const net = currentCliffNetwork();
+        const landed = window.CliffRouteNetwork?.shelfAt?.(net, player._cliffLandingShelf);
+        if (landed) { player.onCliffBalcony = landed.id; player._cliffBalconyY = landed.y; }
+        player._cliffLandingShelf = null;
+        player._climbJumpDownAxis = null; // No ground-level tumble when caught by a ledge.
+      }
       player.climbing = false;
       player._climbCancelable = false;
       player._climbDropped = false;
@@ -654,7 +818,72 @@
     }
   }
 
+  // Balcony movement keeps the support elevation independent from whichever
+  // ground, plateau, or second balcony occupies the exact same X/Z cells.
+  function jumpFromBalcony(direction = null) {
+    const player = deps?.player, net = currentCliffNetwork();
+    const shelf = window.CliffRouteNetwork?.shelfAt?.(net, player?.onCliffBalcony);
+    if (!shelf || player.climbing) return false;
+    const raw = direction || deps.getMovementInput?.() || { x: shelf.normal.x, y: shelf.normal.z };
+    const length = Math.hypot(raw.x, raw.y);
+    const dir = length > 0.25 ? { x: raw.x / length, y: raw.y / length } : { x: shelf.normal.x, y: shelf.normal.z };
+    const grid = deps.getActiveGrid();
+    const takeoffX = player.x / deps.TILE, takeoffZ = player.y / deps.TILE; // Jump starts at the actual feet, not the authored balcony center.
+    let destination = null;
+    for (const distance of [0.7, 1.2, 1.8, 2.5, 3.2]) {
+      const wx = takeoffX + dir.x * distance, wz = takeoffZ + dir.y * distance;
+      if (window.CliffRouteNetwork.shelfContains(shelf, wx, wz, 0.02)) continue; // Never drop through the ledge we're standing on.
+      const tile = grid[Math.floor(wz)]?.[Math.floor(wx)];
+      const validGround = !!tile && !tile.incline && !deps.isSolid(tile.type)
+        && !window.MapBoundaryGuard?.isBoundaryTile?.(tile);
+      const floor = validGround ? deps.tileSurfaceYInArea(tile, deps.getCurrentArea()) : -Infinity;
+      // Sample raised supports independently of the ground tile. A balcony
+      // can overhang an otherwise impassable cliff or another balcony.
+      const lower = window.CliffRouteNetwork?.highestBelow?.(net, wx, wz, shelf.y, floor);
+      if ((!Number.isFinite(floor) || floor >= shelf.y - 0.1) && !lower) continue;
+      if (validGround && floor >= shelf.y - 0.1) continue; // Do not jump through a plateau roof.
+      destination = { x: wx * deps.TILE, y: wz * deps.TILE,
+        surfaceY: lower?.y ?? floor, balconyId: lower?.id || null };
+      break;
+    }
+    if (!destination) return false; // Never leap into an ungrounded/unreachable void.
+    player.onCliffBalcony = null;
+    if (!startScriptedWorldClimb({
+      endX: destination.x, endY: destination.y,
+      startWorldY: shelf.y, endWorldY: destination.surfaceY,
+      hopCount: 2, shortHops: true
+    })) { player.onCliffBalcony = shelf.id; return false; }
+    player.climbHopCount = 1;
+    player._cliffLandingShelf = destination.balconyId;
+    player._climbJumpDownAxis = dir;
+    resetClimbTiming(player, { activeS: 0.42, pauseS: 0, bounce: 0.32 });
+    return true;
+  }
+
+  function updateBalcony(dt) {
+    const player = deps?.player, net = currentCliffNetwork();
+    if (!player?.onCliffBalcony) return false;
+    const shelf = window.CliffRouteNetwork?.shelfAt?.(net, player.onCliffBalcony);
+    if (!shelf) { player.onCliffBalcony = null; return false; }
+    const raw = deps.getMovementInput?.() || { x: 0, y: 0 };
+    const length = Math.hypot(raw.x, raw.y);
+    if (length > 0.22) {
+      const distance = Math.min(1, length) * 2.1 * Math.max(0, dt);
+      const x = player.x / deps.TILE + raw.x / length * distance;
+      const z = player.y / deps.TILE + raw.y / length * distance;
+      const supported = window.CliffElevatedSurfaces?.canStandOn
+        ? window.CliffElevatedSurfaces.canStandOn(net, shelf.id, x, z, -0.12)
+        : window.CliffRouteNetwork.shelfContains(shelf, x, z, -0.12);
+      if (supported) {
+        player.x = x * deps.TILE; player.y = z * deps.TILE;
+      } else jumpFromBalcony(raw);
+    }
+    player.vx = 0; player.vy = 0;
+    return true;
+  }
+
   window.ClimbSystem = {
+    updateBalcony, jumpFromBalcony,
     init,
     getClimbTarget,
     getAimedNest,
@@ -662,6 +891,12 @@
     registerWorldClimbProvider, getWorldClimbTarget,
     startScriptedWorldClimb, // Reuses the cliff-climb hop lerp for authored non-grid climbs such as Random Test Ruin stone ladders.
     updateClimb,
+    getCrawlState: () => {
+      const player = deps?.player, session = player?._cliffRouteSession; // Renderer reads, never mutates, the traversal graph state.
+      return player?.climbing && session?.area === deps?.getCurrentArea()
+        ? { player, route: session.route, moving: session.moving, phase: session.phase, progress: session.progress, tileSize: deps.TILE }
+        : null;
+    },
     updateBranchMovement,
     constrainEntityToBranch,
     resolveBranchKnockback,
@@ -681,6 +916,9 @@
       return {
         playerClimbing: !!deps?.player?.climbing,
         playerOnBranch: !!deps?.player?.onBranch,
+        handholdRoute: deps?.player?._cliffRouteSession?.route.id ?? null,
+        handholdNode: deps?.player?._cliffRouteSession?.nodeIndex ?? null,
+        balcony: deps?.player?.onCliffBalcony ?? null,
         mountRideState: deps?.getMountRideState?.() || 'none',
         ...climbSafetyDebug,
       };
@@ -735,6 +973,7 @@
   function reattachKey(branch) { return branch.col + ',' + branch.row; }
   function seatBranchAt(entity, branch, t) {
     const clamped = clamp01(t);
+    window.PerchSupport?.forget?.(entity); // Chunk reattachment must never retain the previous perch identity.
     entity.onBranch = branch;
     entity.branchT = clamped;
     entity.x = branch.baseX + (branch.tipX - branch.baseX) * clamped;
@@ -765,7 +1004,7 @@
       const entities = [deps?.player, ...(deps?.hostileObjects || []), ...(deps?.companionObjects || [])].filter(Boolean);
       for (const branch of doomed) {
         for (const entity of entities) {
-          if (entity.onBranch !== branch) continue;
+          if (entity.onBranch !== branch && entity.onBranch?.nativeBranch !== branch) continue; // Includes wild animals perched via the global Shadewood adapter.
           if (!pendingReattach.has(area)) pendingReattach.set(area, new Map());
           const key = reattachKey(branch);
           const areaMap = pendingReattach.get(area);
@@ -790,7 +1029,8 @@
             // the tile genuinely stopped growing a tree. Any other value
             // (a fresh branch, or null from an unrelated jump-down/knockback
             // in the meantime) means this request already resolved.
-            if (request.entity.onBranch !== request.branch) continue;
+            if (request.entity.onBranch !== request.branch
+                && request.entity.onBranch?.nativeBranch !== request.branch) continue;
             releaseBranchEntity(request.entity, request.branch, 'branch no longer present after area rebuild');
           }
           areaMap.delete(key);
@@ -873,12 +1113,13 @@
 
   function releaseBranchEntity(entity, branch, reason) {
     const defense = entity?._branchDefense?.branch === branch ? entity._branchDefense : null;
-    if (!entity || (entity.onBranch !== branch && !defense)) return null;
-    const onBranch = entity.onBranch === branch;
+    const onBranch = entity?.onBranch === branch || entity?.onBranch?.nativeBranch === branch;
+    if (!entity || (!onBranch && !defense)) return null; // Chopped trees must also eject native-branch-backed point/line perch occupants.
     const t = onBranch ? clamp01(entity.branchT) : clamp01(defense?.targetT ?? defense?.t ?? 0);
     const x = onBranch ? branch.baseX + (branch.tipX - branch.baseX) * t : Number(entity.x) || branch.baseX;
     const y = onBranch ? branch.baseY + (branch.tipY - branch.baseY) * t : Number(entity.y) || branch.baseY;
     entity.onBranch = null;
+    window.PerchSupport?.forget?.(entity); // Felled-tree and streamed-branch fallback already owns this fall's damage.
     entity.branchT = 0;
     entity.branchSurfaceY = 0;
     entity.climbing = false;
@@ -897,6 +1138,7 @@
     const branch = branchList(area).find(item => Number(item.col) === Number(col) && Number(item.row) === Number(row));
     if (!branch) return { branch: null, nest: null, falls: [] };
     branch.felled = true;
+    window.PerchSupport?.unregister?.(area, window.PerchSupport.fromBranch(branch).id); // Chopped Shadewood can never be selected as a fresh perch.
     // Chopping a Soursap tree releases its fruit safely onto adjacent ground.
     // A projectile hit instead uses Burden's ballistic fall + sticky impact.
     window.Shattercasks?.releaseFruitFromTree?.(area, col, row);
@@ -962,6 +1204,7 @@
       // position sync reads as a sudden teleport.
       if (entity._territorialBehavior?.phase === 'fight') {
         entity.onBranch = null; entity.branchT = 0; entity.branchSurfaceY = 0;
+        window.PerchSupport?.forget?.(entity); // Ground pursuit intentionally abandons elevated branch support.
       }
       return false;
     }

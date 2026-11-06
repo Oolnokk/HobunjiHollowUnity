@@ -175,6 +175,7 @@
   }
 
   function beginInternal(c, fromX, fromY) {
+    window.PerchSupport?.release?.(c, 'died on perch'); // Bodies lose support immediately instead of freezing above the ground.
     window.MaskboundHeadtaker?.cancel?.(c, 'attacker-died'); // Death immediately releases a puppet's grapple, grips, foot IK and temporary head art.
     // A corpse doesn't get further updateCreatureMesh() calls to keep
     // its resource ring synced/rebuilt, so drop it now rather than
@@ -391,9 +392,41 @@
     return true;
   }
 
+  // A settled wildlife corpse whose rig was released while far away (it is
+  // plain data then) gets a brand-new rig when the player returns. This puts
+  // that rig back into the exact resting pose updateCorpses left it in: the
+  // last frame of the recorded fall when there was one, otherwise the flat
+  // fallback, plus the fire char and the ground shadow position.
+  function restoreSettledPose(c) {
+    if (!deps || c?.state !== 'corpse' || !c.avatarRef?.group) return false;
+    const TILE = deps.TILE, grp = c.avatarRef.group;
+    const col = deps.clamp(Math.floor(c.x / TILE), 0, (c.areaCols || deps.COLS) - 1);
+    const row = deps.clamp(Math.floor(c.y / TILE), 0, (c.areaRows || deps.ROWS) - 1);
+    const g = c.areaGrid || deps.getGrid();
+    const surfY = g[row]?.[col] ? deps.tileSurfaceYInArea(g[row][col], c.areaId) : 0;
+    const halfHeight = Number(c.halfHeight) || 0.3;
+    c.scaleY = 1;
+    grp.scale.y = c.isBandit && Number(c.visualScaleY) > 0 ? c.visualScaleY : 1;
+    if (c.avatarRef.frontPlane) c.avatarRef.frontPlane.rotation.y = Math.PI / 2; // Same clean flat face as a settled ragdoll (see beginInternal).
+    if (c.avatarRef.backPlane) c.avatarRef.backPlane.rotation.y = -Math.PI / 2;
+    if (c.avatarRef.legsPivot) { c.avatarRef.legsPivot.rotation.y = 0; c.avatarRef.syncHandFrame?.(); }
+    grp.rotation.set(0, Number(c.deathRestRotY) || 0, 0); // The group keeps the facing it had when it fell (deathRestRotY); the recorded pose below is applied on the pivot beneath it.
+    let recorded = false;
+    if (c.deathRecorded && window.ImpactRagdollPlayback?.startCreatureDeath) {
+      recorded = (window.ImpactRagdollPlayback.startCreatureDeath(c, c.deathDirection || 'front') || 0) > 0; // Rebuilds the pivot on the new rig.
+      if (recorded) window.ImpactRagdollPlayback.sampleCreatureDeath(c, 1); // Phase 1 is the settled tail for every cause (see _recordedPhase).
+    }
+    grp.position.set(c.x / TILE, surfY + halfHeight * (recorded ? 0.82 : 0.12), c.y / TILE);
+    if (!recorded) grp.rotation.set(Number(c.deathRestRotX) || 0, Number(c.deathRestRotY) || 0, Number.isFinite(c.deathRestRotZ) ? c.deathRestRotZ : Math.PI / 2);
+    if (c.groundShadow) c.groundShadow.position.set(grp.position.x, surfY + deps.characterGroundShadowSurfaceOffset(), grp.position.z);
+    if (c.deathCause === 'fire') { _prepareScorch(c); c.deathT = Number(c.deathDurationS) || 1; _updateScorch(c); }
+    return true;
+  }
+
   window.CreatureDeath = {
     init,
     begin,
+    restoreSettledPose,
     settleAsCorpse,
     recover,
     updateCorpses,

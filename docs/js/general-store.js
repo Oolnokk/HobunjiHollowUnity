@@ -383,5 +383,5 @@
 // to load ShippingBoxConfig, then the separate world adapter, before game boot.
 if (document.readyState === 'loading') {
   if (!window.ShippingBoxConfig) document.write('<script src="js/shipping-box-config.js?v=20261008h2a8f7cd"></scr' + 'ipt>');
-  if (!window.__shippingBoxWorldInstalled) document.write('<script src="js/shipping-box-world.js?v=20260902shipping6"></scr' + 'ipt>');
+  if (!window.__shippingBoxWorldInstalled) document.write('<script src="js/shipping-box-world.js?v=20261105h93373ec"></scr' + 'ipt>');
 }

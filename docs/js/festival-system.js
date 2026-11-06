@@ -2,7 +2,7 @@
 (() => {
   'use strict';
   let deps = null; // Runtime-owned inventory, scene, NPC, and persistence closures.
-  let state = { claims: {}, blessing: null, festivalFun: {}, funDay: null, feastBuffs: [], fullness: { stacks: 0, expiresHour: 0, durationHours: 24 }, feastBuffDurationHours: 4, potluckContests: {} }; // Per-member annual claims, pending festival relationships, isolated meal buffs and fullness.
+  let state = { claims: {}, blessing: null, festivalFun: {}, festivalFunEarned: {}, festivalFunPaid: {}, festivalMealPortions: {}, funDay: null, feastBuffs: [], fullness: { stacks: 0, expiresHour: 0, durationHours: 24 }, feastBuffDurationHours: 4, potluckContests: {} }; // Per-member annual claims, pending festival relationships, isolated meal buffs and fullness.
   let pendingDance = null; // Accepted invitations let seated/solo dancers stand and approach before capturing their procedural rigs.
   let dance = null; // Session-only dance participation; leaving the dance court cancels without awarding.
   let remembrance = null; // Active Tzizkhanash observance; completing twelve played seconds earns an annual reward.
@@ -46,7 +46,13 @@
     return { ok: true, message };
   }
   function fail(message) { lastError = message; deps?.toast?.(message, false); return { ok: false, message }; }
-  const CUP_KEY = 'festival_cup', CUP_SWIGS = 4, CUP_FUN_PER_SWIG = 20;
+  const FESTIVAL_MAX_FAVOR = 19.2; // Stardew's 120/250-heart best Luau response, at Hobunji's 40 Favor per heart.
+  const FESTIVAL_FUN_PER_FAVOR = 5; // Festival Fun's social feedback converts continuously to Favor overnight.
+  const GORKUNASH_MAX_FUN = FESTIVAL_MAX_FAVOR * FESTIVAL_FUN_PER_FAVOR; // Maximum seven-day per-NPC participation reward, 0.48 hearts.
+  const GORKUNASH_MEAL_FUN = GORKUNASH_MAX_FUN / (7 * 10); // Ten shared portions on each of seven festival days reach precisely 19.2 Favor.
+  const GORKUNASH_SOCIAL_FUN_PER_SECOND = .12; // Dancing/music takes sustained participation rather than finishing the weekly reward in seconds.
+  const GORKUNASH_START = 4 * 28 + 8 - 1; // Highheat 8, zero-based; used to settle the contest after Highheat 14.
+  const CUP_KEY = 'festival_cup', CUP_SWIGS = 4, CUP_FUN_PER_SWIG = .5; // Small keg contribution shares the same seven-day cap.
   const CUP_DEF = Object.freeze({ key:CUP_KEY, icon:'🍺', label:'Festival Airag', tags:Object.freeze(['Alcohol','Airag']), swigsPerBottle:CUP_SWIGS, spriteIcon:'festival-cup.png', noGift:true }); // Airag is the mildest authored spirit tier; the same strength table as bottled drink applies.
   const FOOD_PORTION_HOURS = 4; // Each festival bite adds four in-game hours of meal buffs.
   const FULLNESS_DURATION_HOURS = 24; // Fullness remains a separate 24-hour effect, independent of meal-buff portions.
@@ -105,7 +111,7 @@
     if (cached) return cached;
     const guests = residents(); // Never freeze an empty resident list during initial asset/NPC loading.
     if (!guests.length || !window.FestivalPotluckContest) return null;
-    const created = { days:window.FestivalPotluckContest.buildDays(guests,year(),deps?.getItemDefs?.() || {}),entry:null,rewarded:false };
+    const created = { days:window.FestivalPotluckContest.buildDays(guests,year(),deps?.getItemDefs?.() || {}),entry:null,rewarded:false,favorAwarded:false };
     state.potluckContests[key] = created;
     deps?.save?.(); // The original opponent rolls are persisted before a contribution can be accepted.
     return created;
@@ -125,7 +131,8 @@
       if (!contest) {
         const guests = residents();
         if (!guests.length) { retry = true; continue; } // Preserve the claim until real residents are ready to generate its original-year roster.
-        contest = state.potluckContests[event] = { days:window.FestivalPotluckContest.buildDays(guests,Number(match[1]),defs),entry:null,rewarded:false };
+        contest = state.potluckContests[event] = { days:window.FestivalPotluckContest.buildDays(guests,Number(match[1]),defs),entry:null,rewarded:false,
+          favorAwarded:donated.favorRewardVersion !== 1 }; // Legacy donations already paid their old entry Favor; new pending donations still qualify for championship Favor.
       }
       const snapshot = contestIngredients(definition,donated.stars); // Recover legacy donations without rewriting their recorded contest result.
       contest.entry = { key:donated.key,stars:donated.stars,label:definition.label || donated.key,
@@ -296,29 +303,64 @@
     const dinerSeat=deps?.getPlayerSeatedSeat?.(); // Normal seating feeds the shared table member array.
     const table=window.FurnitureTableSystem?.tableForSeat?.(deps.getArea(), dinerSeat);
     const diners=table ? (window.FurnitureTableSystem.members(deps.getArea(), table.id) || []).filter(member=>member.id!=='player') : [];
-    for(const member of diners) addFestivalFun(member.id,25);
-    return commit(`${meal.label}: +${FOOD_PORTION_HOURS} in-game hours of meal effects; fullness ${currentFullness()}/10; ${diners.length} tablemates gain 25 Festival Fun.`);
+    let companions = 0; // A partner receives at most ten rewarded portions per civil day, across every table and bowl.
+    for (const id of new Set(diners.map(member => member.id).filter(Boolean))) {
+      const key = eventKey() + ':' + day() + ':' + id; // Saved per-day serving ledger blocks fullness-expiry or seat-switch exploits.
+      const count = Math.min(MAX_FOOD_PORTIONS, Number(state.festivalMealPortions[key]) || 0);
+      if (count >= MAX_FOOD_PORTIONS) continue;
+      state.festivalMealPortions[key] = count + 1;
+      addFestivalFun(id, GORKUNASH_MEAL_FUN);
+      companions++;
+    }
+    return commit(meal.label + ': +' + FOOD_PORTION_HOURS + ' in-game hours of meal effects; fullness ' + currentFullness() + '/10; ' + companions + ' tablemates share a serving.');
   }
   function addFestivalFun(id,amount) {
-    if (!id || !Number.isFinite(amount)||amount<=0) return;
-    state.festivalFun[id]=(Number(state.festivalFun[id])||0)+amount;
-    window.WorldPopupText?.queueSocialGain?.('festivalFun',amount,id);
+    if (!id || !Number.isFinite(amount) || amount <= 0 || festival()?.id !== 'gorkunash') return 0;
+    const key = eventKey() + ':' + id; // Event-scoped cap lets every NPC earn independently across seven days.
+    const earned = Math.max(0, Number(state.festivalFunEarned[key]) || 0);
+    const credited = Math.min(amount, Math.max(0, GORKUNASH_MAX_FUN - earned)); // Buffet, dance/music and keg share one participation budget.
+    if (credited <= 0) return 0;
+    state.festivalFunEarned[key] = earned + credited;
+    state.festivalFun[id] = (Number(state.festivalFun[id]) || 0) + credited;
+    window.WorldPopupText?.queueSocialGain?.('festivalFun',credited,id);
+    return credited;
   }
   function settleFestivalFun() {
-    if (!deps || !window.CalendarSystem?.isInitialized?.()) return;
-    const today=day();
-    if (!Number.isFinite(state.funDay)) {state.funDay=today;return;}
+    if (!deps || !window.CalendarSystem?.isInitialized?.() || typeof window.DialogueContent?.adjustNpcFavor !== 'function') return; // Keep earned Fun pending until the Favor service is hydrated; never erase an unpaid social reward.
+    const today = day();
+    if (!Number.isFinite(state.funDay)) { state.funDay=today; return; }
     if (today<=state.funDay) return;
-    const awarded=[];
-    for(const [id,raw] of Object.entries(state.festivalFun||{})) {
-      const hearts=Math.floor(Math.max(0,Number(raw)||0)/200);
-      if(!hearts)continue;
-      giveFavor(id,hearts*40,'fun_rollover');
-      state.festivalFun[id]-=hearts*200;
-      awarded.push(`${id} +${hearts} heart${hearts===1?'':'s'}`);
+    const awarded = []; // Permanent Favor follows the same overnight conversion without losing sub-heart Festival Fun.
+    for (const [id, raw] of Object.entries(state.festivalFun || {})) {
+      const keys = Object.keys(state.festivalFunEarned).filter(key => key.endsWith(':' + id)); // A character's earned ledger is event-scoped; settled credits never borrow a future event.
+      const event = keys.sort().at(-1) || (eventKey() + ':' + id);
+      const paid = Math.max(0, Number(state.festivalFunPaid[event]) || 0);
+      const earned = Math.max(0, Number(state.festivalFunEarned[event]) || Number(raw) || 0);
+      const total = Math.round(earned / FESTIVAL_FUN_PER_FAVOR * 10000) / 10000; // Cumulative rounding makes exactly 70 meals produce 19.2, not 19.2003.
+      const points = Math.round(Math.max(0, total - paid) * 10000) / 10000;
+      if (points > 0) {
+        giveFavor(id, points, 'fun_rollover');
+        state.festivalFunPaid[event] = total;
+        awarded.push(id + ' +' + points + ' Favor');
+      }
+      delete state.festivalFun[id]; // Pending Fun is settled once, even when rounding yielded no payable points.
     }
-    state.funDay=today;
-    if(awarded.length)commit(`Festival Fun converted overnight: ${awarded.join(', ')}.`);
+    state.funDay = today;
+    if (awarded.length) commit('Festival Fun converted overnight: ' + awarded.join(', ') + '.');
+  }
+  function settlePotluckWinnings() {
+    if (!deps || !window.CalendarSystem?.isInitialized?.() || !window.FestivalPotluckContest) return;
+    if (potluckRecoveryPending) recoverPotluckEntries(); // Restore an accepted entry before deciding the champion, including older save snapshots.
+    for (const [key, contest] of Object.entries(state.potluckContests || {})) {
+      const match = /^(\d+):gorkunash$/.exec(key); // This saved seven-day entry is judged only after the gathering ends.
+      if (!match || !contest?.entry || contest.favorAwarded || day() < Number(match[1]) * 336 + GORKUNASH_START + 7) continue;
+      if (!window.DialogueContent?.adjustNpcFavor || !residents().length) continue; // NPC hydration must finish before awarding or permanently closing the annual claim.
+      contest.favorAwarded = true; // A settled win or loss cannot be replayed by reloading a save.
+      if (window.FestivalPotluckContest.winner(contest.entry, contest.days)) {
+        allFavor(FESTIVAL_MAX_FAVOR, 'potluck_win'); // Stardew's +120/250 hearts = 19.2/40 Favor for every eligible resident.
+        commit('Gorkunash potluck champion! +' + FESTIVAL_MAX_FAVOR + ' Favor with each resident.');
+      } else deps.save?.(); // Persist even a loss so no future roster change can re-award it.
+    }
   }
   function danceStartMessage() {
     const code=window.FestivalWheelDanceRuntime?.diagnostics?.()?.lastStartFailure?.code; // Report the real start gate instead of attributing every failure to room.
@@ -486,11 +528,20 @@
   }
   function restore(saved) {
     residentCacheAt = -Infinity; effectiveCache = null;
-    state = { claims: {}, blessing: null, festivalFun: {}, funDay: null, feastBuffs: [], fullness:{stacks:0,expiresHour:0,durationHours:FULLNESS_DURATION_HOURS}, feastBuffDurationHours:FOOD_PORTION_HOURS, potluckContests:{} };
+    state = { claims: {}, blessing: null, festivalFun: {}, festivalFunEarned: {}, festivalFunPaid: {}, festivalMealPortions: {}, funDay: null, feastBuffs: [], fullness:{stacks:0,expiresHour:0,durationHours:FULLNESS_DURATION_HOURS}, feastBuffDurationHours:FOOD_PORTION_HOURS, potluckContests:{} };
     heldBowl=null; seatedMeal=null; feastCache=null; remembrance=null; musicParticipation=null;
     window.NpcSharedMeals?.clear?.();
     window.FestivalLocaleActivities?.clear?.();
-    if(saved?.festivalFun&&typeof saved.festivalFun==='object')for(const [id,points] of Object.entries(saved.festivalFun))if(/^[a-z0-9_-]+$/i.test(id)&&Number.isFinite(points))state.festivalFun[id]=Math.max(0,points);
+    if(saved?.festivalFun&&typeof saved.festivalFun==='object')for(const [id,points] of Object.entries(saved.festivalFun))if(/^[a-z0-9_-]+$/i.test(id)&&Number.isFinite(points))state.festivalFun[id]=Math.min(GORKUNASH_MAX_FUN,Math.max(0,points));
+    if (saved?.festivalFunEarned && typeof saved.festivalFunEarned === 'object')
+      for (const [key, points] of Object.entries(saved.festivalFunEarned)) if (/^\d+:gorkunash:[a-z0-9_-]+$/i.test(key) && Number.isFinite(points)) state.festivalFunEarned[key] = Math.min(GORKUNASH_MAX_FUN, Math.max(0, points));
+    if (saved?.festivalFunPaid && typeof saved.festivalFunPaid === 'object')
+      for (const [key, points] of Object.entries(saved.festivalFunPaid)) if (/^\d+:gorkunash:[a-z0-9_-]+$/i.test(key) && Number.isFinite(points)) state.festivalFunPaid[key] = Math.min(FESTIVAL_MAX_FAVOR, Math.max(0, points));
+    if (saved?.festivalMealPortions && typeof saved.festivalMealPortions === 'object')
+      for (const [key, count] of Object.entries(saved.festivalMealPortions)) if (/^\d+:gorkunash:\d+:[a-z0-9_-]+$/i.test(key) && Number.isFinite(count)) state.festivalMealPortions[key] = Math.max(0, Math.min(MAX_FOOD_PORTIONS, Math.trunc(count)));
+    if (!saved?.festivalFunEarned && festival()?.id === 'gorkunash') for (const [id, pending] of Object.entries(state.festivalFun)) {
+      state.festivalFunEarned[eventKey() + ':' + id] = Math.min(GORKUNASH_MAX_FUN, pending); // Migrated old saves cannot re-earn their still-pending progress.
+    }
     if(Number.isFinite(saved?.funDay))state.funDay=saved.funDay;
     if(Number.isFinite(saved?.fullness?.expiresHour)&&Number.isFinite(saved?.fullness?.stacks)) {
       const stacks=Math.max(0,Math.min(10,saved.fullness.stacks));
@@ -523,7 +574,7 @@
       for (const [key,value] of Object.entries(saved.potluckContests)) {
         if (!/^\d+:gorkunash$/.test(key) || !Array.isArray(value?.days) || value.days.length !== 7) continue;
         state.potluckContests[key] = {days:value.days.map(d=>Array.isArray(d)?d.slice(0,6):[]),
-          entry:value.entry || null,rewarded:!!value.rewarded};
+          entry:value.entry || null,rewarded:!!value.rewarded,favorAwarded:value.favorAwarded !== false}; // Legacy contests already gave old tenfold Favor; never replay them.
       }
     }
     if (window.FestivalCalendar.blessings[saved?.blessing?.stat] && Number.isFinite(saved.blessing.expiresDay) && Number.isFinite(saved.blessing.level)) state.blessing = { stat: saved.blessing.stat, level: Math.max(1, Math.min(5, Math.trunc(saved.blessing.level))), expiresDay: saved.blessing.expiresDay };
@@ -677,6 +728,7 @@
     if (now - lastTick < 200) return;
     const elapsed = Math.max(0, Math.min(.5, (now - lastTick) / 1000));
     lastTick = now;
+    settlePotluckWinnings(); // A finished contest is paid once, after the final festival day, even if no doorstep visit occurs.
     updateDanceInvitation(elapsed);
     registerCupProvider();
     watchStage();
@@ -688,7 +740,7 @@
       if (socialParticipationS >= 1) {
         const seconds = Math.floor(socialParticipationS), position = deps.getPlayerTile(); // Award only actual played whole seconds with nearby company.
         socialParticipationS -= seconds;
-        for (const walker of deps.getWalkers()) if (walker.area === 'town' && !walker.rec?.dead && Math.hypot(walker.root.position.x-position.c, walker.root.position.z-position.r) <= 3) addFestivalFun(walker.rec.id, seconds * 15);
+        for (const walker of deps.getWalkers()) if (walker.area === 'town' && !walker.rec?.dead && Math.hypot(walker.root.position.x-position.c, walker.root.position.z-position.r) <= 3) addFestivalFun(walker.rec.id, seconds * GORKUNASH_SOCIAL_FUN_PER_SECOND);
       }
     } else socialParticipationS = 0;
     if (remembrance) {
@@ -699,7 +751,7 @@
         remembrance.elapsed+=elapsed;
         if (remembrance.elapsed>=12) {
           remembrance=null;
-          if (!claimed('remembrance')) { mark('remembrance'); allFavor(2,'remembrance'); commit('Remembrance observed with the townsfolk: +2 Favor once this Tzizkhanash.'); }
+          if (!claimed('remembrance')) { mark('remembrance'); allFavor(FESTIVAL_MAX_FAVOR,'remembrance'); commit('Remembrance observed with the townsfolk: +' + FESTIVAL_MAX_FAVOR + ' Favor once this Tzizkhanash.'); }
           else deps.toast?.('You shared a moment of remembrance.',true);
         }
       }
@@ -712,7 +764,7 @@
         musicParticipation.elapsed+=elapsed;
         if (musicParticipation.elapsed>=20) {
           musicParticipation=null;
-          if (!claimed('music')) { mark('music'); allFavor(2,'festival_music'); commit('You played along with the festival musicians: +2 Favor with the townsfolk.'); }
+          if (!claimed('music')) { mark('music'); allFavor(FESTIVAL_MAX_FAVOR,'festival_music'); commit('You played along with the festival musicians: +' + FESTIVAL_MAX_FAVOR + ' Favor with the townsfolk.'); }
         }
       }
     }
@@ -743,14 +795,14 @@
           const wholeSeconds=Math.max(0,Math.floor(elapsedPair)-(dance.awardedSeconds||0));
           if(wholeSeconds>0){
             dance.awardedSeconds+=wholeSeconds;
-            addFestivalFun(dance.targetNpcId,wholeSeconds*15);
+            addFestivalFun(dance.targetNpcId,wholeSeconds*GORKUNASH_SOCIAL_FUN_PER_SECOND); // Shared dancing obeys the same event-long cap as ordinary festival music.
             deps.save?.(); // Entire granted-second intervals survive an immediate reload.
           }
         }
         if (dance && !dance.targetNpcId && dance.elapsed >= 20) {
           const key = dance.claimKey; // Preserve identity before releasing the social pose.
           cancelDance();
-          if (!claimed(key)) { mark(key); allFavor(2, 'dance'); commit('Dance completed! +2 Favor with the townsfolk.'); }
+          if (!claimed(key)) { mark(key); allFavor(FESTIVAL_MAX_FAVOR, 'dance'); commit('Dance completed! +' + FESTIVAL_MAX_FAVOR + ' Favor with the townsfolk.'); }
           else deps.toast?.('A lovely dance. You have already earned this festival’s dance reward.', true);
         }
       }
@@ -760,7 +812,7 @@
   function diagnostics() {
     return { festival:festival()?.id||null,year:deps?year():null,layout:layout()?.activeLayoutId||'default',
       activities:activityProps().map(p=>({id:p.id,type:p.activity.type,col:p.col,row:p.row,locale:p.festivalLocale?.kind})),
-      claims:claims(),blessing:state.blessing,dance,festivalWheel:window.FestivalWheelDanceRuntime?.diagnostics?.(),heldBowl,heldCup,seatedMeal,aimedPot:potIndexAtAim(),festivalFun:state.festivalFun,
+      claims:claims(),blessing:state.blessing,dance,festivalWheel:window.FestivalWheelDanceRuntime?.diagnostics?.(),heldBowl,heldCup,seatedMeal,aimedPot:potIndexAtAim(),festivalFun:state.festivalFun,festivalFunEarned:state.festivalFunEarned,festivalFunPaid:state.festivalFunPaid,festivalMealPortions:state.festivalMealPortions,
       dailyFeast:feastMenu().map(m=>({dish:m.label,stars:m.score,ingredients:m.ingredients,effects:m.foodEffects})),contest:contestStandings(),fullness:currentFullness(),mealBuffs:foodDurationEntries(),lastError,
       pendingDance:pendingDance?{npcId:pendingDance.targetNpcId,remaining:pendingDance.remaining,settleS:pendingDance.settleS}:null,
       remembrance, musicParticipation, localeActivities:window.FestivalLocaleActivities?.diagnostics?.(),
@@ -910,14 +962,7 @@
     if(claimed('potluck'))return fail('You have already contributed a meal to this Gorkunash.');
     if(!consumeChoice('potluck',payload))return fail('Choose a cooked meal and a quality you still have.');
     const definition=deps.getItemDefs()[payload.key];
-    let recipients=0;
-    for(const rec of residents()) {
-      const evaluated=window.NpcGifting?.evaluateHeldGift?.(rec,{kind:'item',key:payload.key,stars:payload.stars});
-      if(['disliked','hated'].includes(evaluated?.tier))continue;
-      const points=Math.max(1,Number(evaluated?.favorDelta)||1)*10;
-      giveFavor(rec.id,points,'potluck');
-      recipients++;
-    }
+    // Entry is not a win: the seven-day judging result grants Favor only to the champion.
     const contest = contestData();
     if (contest) {
       const snapshot = contestIngredients(definition,payload.stars); // Snapshot real input tiers before the donated meal leaves inventory.
@@ -926,10 +971,10 @@
         ingredients:snapshot.ingredients,estimatedQuality:snapshot.estimated,
         estimatedEffects:snapshot.estimatedEffects,foodEffects:{...(definition?.foodEffects || {})}};
     }
-    mark('potluck',{key:payload.key,stars:payload.stars,day:day()});
+    mark('potluck',{key:payload.key,stars:payload.stars,day:day(),favorRewardVersion:1}); // Distinguishes new pending championship awards from already-compensated legacy entries.
     if (!contest) potluckRecoveryPending = true; // NPC loading may defer creation of an otherwise accepted donation's roster.
     feastCache = null; // The seventh physical serving pot becomes available immediately.
-    return commit(`Contributed ${definition?.label||payload.key}; 10× normal gift Favor for ${recipients} villagers who do not dislike it.`);
+    return commit(`Entered ${definition?.label||payload.key} in the potluck. The seven-day winner receives ${FESTIVAL_MAX_FAVOR} Favor with each resident.`);
   });
   registerActivity('offering', payload => {
     if (claimed('offering')) return fail('You have already made this year’s offering.');
@@ -1008,7 +1053,7 @@
     window.FestivalUI.close();
     const arena = { area: 'town', ...propCenter(prop) }; // Moves with the editor-authored ring; the existing training system owns combat and cleanup.
     const duelEvent = eventKey(); // Availability and rewards remain tied to the event that actually started this round.
-    const quest = { isAvailable: () => eventKey() === duelEvent, id: `festival_duel_${year()}`, title: 'Hachutukara — Laugh at Fear', transient: true, practice: arena, steps: [{ id: 'fearless', title: 'Friendly duel', text: 'Stand calmly against Oddclaw. Land three ordinary hits while he spars back. Our borrowed weapons cannot cost you your belongings, and we restore your resources when you finish or leave.', check: 'hit', count: 3, hostile: true, goal: 'Land three hits on Oddclaw', weapon: 'hatchet' }], onComplete: () => { if (eventKey() === duelEvent && !claimed('duel')) { mark('duel'); giveFavor('spearhead_unumanuk', 6, 'duel'); giveFavor('oddclaw_unumanuk', 6, 'duel'); commit('Fear faced! +6 Favor with Spearhead and Oddclaw.'); } } };
+    const quest = { isAvailable: () => eventKey() === duelEvent, id: `festival_duel_${year()}`, title: 'Hachutukara — Laugh at Fear', transient: true, practice: arena, steps: [{ id: 'fearless', title: 'Friendly duel', text: 'Stand calmly against Oddclaw. Land three ordinary hits while he spars back. Our borrowed weapons cannot cost you your belongings, and we restore your resources when you finish or leave.', check: 'hit', count: 3, hostile: true, goal: 'Land three hits on Oddclaw', weapon: 'hatchet' }], onComplete: () => { if (eventKey() === duelEvent && !claimed('duel')) { mark('duel'); giveFavor('spearhead_unumanuk', FESTIVAL_MAX_FAVOR, 'duel'); giveFavor('oddclaw_unumanuk', FESTIVAL_MAX_FAVOR, 'duel'); commit('Fear faced! +' + FESTIVAL_MAX_FAVOR + ' Favor with Spearhead and Oddclaw.'); } } };
     return window.CombatTutorial.start(quest, walker);
   });
   window.FestivalSystem = { init, festival, year, claims, claimed, residents, favorHearts, qualityChoices, registerActivity, perform, actionButton, npcRewardAction, receiveNpcReward, nearestActivity, activityProps, atProp, update, cancelDance, giftMultiplier, blessingMultiplier, serialize, restore, diagnostics, MASKS, STORY,

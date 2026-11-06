@@ -34,23 +34,23 @@
     ['EntityDistanceLod', 'entity-distance-lod.js?v=20260919b'],
     ['WildernessSimulationLOD', 'wilderness-simulation-lod.js?v=20261009hcee431b'],
     // Wildlife's own visibility/render-cost LOD (distance-hidden avatar/shadow/ring HUD), sibling to the bandit-sleep LOD just above.
-    ['WildlifeVisualLod', 'wildlife-visual-lod.js?v=20261009h54b7caa'],
+    ['WildlifeVisualLod', 'wildlife-visual-lod.js?v=20261105h2cefe25'],
     // Adds the Harlyao-zone second darkness pass, then re-clears lantern/furniture-light masks. Terror later supplies the cached stack darkness/radius modifiers read by this adapter.
-    ['HarlyaoNightMarchAtmosphere', 'harlyao-night-march-atmosphere.js?v=20261101haf1c484'],
+    ['HarlyaoNightMarchAtmosphere', 'harlyao-night-march-atmosphere.js?v=20261104habd63f8'],
     // Reusable solid-color translucent/emissive character treatment plus one cheap WeatherFX lantern-style glow provider per formation/object group.
-    ['Ghostify', 'ghostify.js?v=20261101h4317681'],
+    ['Ghostify', 'ghostify.js?v=20261104hf464126'],
     // Commander-led Harlyao simulation: persistent offscreen positions, regrouping followers, and individual distance-based promotion to native humanoid travel.
     ['HarlyaoNightMarch', 'harlyao-night-march-runtime.js?v=20261024h604e509'],
     // Porakaneki temporary locales can clear ordinary procedural shrub/rock clutter and relax only their own placement margins when dense wilderness would otherwise prevent any camp from existing.
-    ['PorakanekiCampPlacementPolicy', 'porakaneki-camp-placement-policy.js?v=20261027campregrowth6'],
+    ['PorakanekiCampPlacementPolicy', 'porakaneki-camp-placement-policy.js?v=20261105h58f3c87'],
     // Porakaneki camp network: distance/hysteresis LOD, shared den-to-den hunting parties, planner-owned destinations, shared hostile-loop locomotion/rendering, and seasonal chief migration.
     ['PorakanekiCamps', 'porakaneki-camps-runtime.js?v=20261031cohorts1'],
     // Keeps neutral Porakaneki off companion target lists, classifies self-defense vs initiated kills, applies Omgurku rivalry favor, and composes the faction rename into NPC database loads.
-    ['PorakanekiFactionRules', 'porakaneki-faction-rules.js?v=20261026h8b17282'],
+    ['PorakanekiFactionRules', 'porakaneki-faction-rules.js?v=20261104faction-luau1'],
     // Map-only locale proxies: chief camp is always known; each little camp gets its own independent discovery identity through the existing wilderness-map fog/discovery system.
     ['PorakanekiMapMarkers', 'porakaneki-map-markers.js?v=20261022h909ded2'],
     // A world-space spectral column follows the exact commander's bearing, settling onto the actor as the player approaches.
-    ['HarlyaoNightMarchBeacon', 'harlyao-night-march-beacon.js?v=20261021h93b0ca3'],
+    ['HarlyaoNightMarchBeacon', 'harlyao-night-march-beacon.js?v=20261104hcaf06bb'],
     // Makes the Ghoul mine-floor track the Music scheduler's exclusive looping BGM owner; chunk-distance checks are cached/throttled while gain interpolation remains smooth.
     ['HarlyaoNightMarchMusic', 'harlyao-night-march-music.js?v=20260919combatbgm2'],
     // Maps the cached music distance stage to Terror stacks, composes movement slowing into on-foot/mounted speed hooks, and exposes darkness/lantern multipliers.

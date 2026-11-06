@@ -200,7 +200,7 @@ guest.root.position={x:sameSeat.col+.5,z:sameSeat.row+.5}; // Simulates another 
 assert.equal(api.currentFullness(),1,'no bowl portion is consumed before drink-strike callback');
 queuedBite();
 assert.equal(api.currentFullness(),2,'drink strike commits exactly one serving');
-assert.equal(api.serialize().festivalFun.friend,25,'only the arrived guest sharing the table gains 25 Festival Fun');
+assert(Math.abs(api.serialize().festivalFun.friend - 96/70)<1e-8,'one shared portion grants one seventieth of the 0.48-heart weekly reward');
 assert.equal(api.festivalBowl().uses,8);
 realMs+=1000;api.update();
 assert.equal(bowlAnimationCount,1,'drinks are spaced by the authored bite interval');
@@ -212,9 +212,10 @@ player={c:47,r:43};isSeated=true;heldMode='item';
 const potluck=aimSurface('meal');
 assert.equal(potluck.provider.onAction('obj_contribute_meal',potluck).ok,true,'contribute the normal held meal directly to its serving pot');
 assert(!awarded.some(e=>e.id==='friend'&&e.reason==='festival_potluck'),'disliked meal is neutral');
-assert(awarded.some(e=>e.id==='kaboku_kunji'&&e.amount===40&&e.reason==='festival_potluck'),'liked meal gives tenfold Favor');
+assert(!awarded.some(e=>e.reason==='festival_potluck_win'),'entering a dish does not prematurely grant the seven-day championship reward');
 assert.equal(api.feastMenu().length,7,'the seven pots remain after donation');
 assert.equal(api.feastMenu()[6].label,'Your Special stew','seventh serving pot permanently holds the contest entry');
+assert.equal(api.claims().potluck.favorRewardVersion,1,'newly donated entries keep their championship eligibility in the annual claim ledger');
 const state=api.serialize();
 assert(state.feastBuffs[0].remainingHours>0,'meal remaining in-game hours are portable');
 api.restore(state);
@@ -243,12 +244,17 @@ assert.equal(api.serialize().potluckContests[originalContest].entry.ingredients[
 civilDay++;
 assert.equal(api.feastMenu().length,7,'the seven-pot layout persists next day');
 assert.equal(api.feastMenu()[6].label,'Your Special stew','the player contribution remains on display for the full festival');
-api.addFestivalFun('sloomi',201);
-api.update();
+api.addFestivalFun('sloomi',5);
+const pendingFunPay = W.DialogueContent.adjustNpcFavor; // A world may advance a day before the relationship module has hydrated.
+W.DialogueContent.adjustNpcFavor = undefined;
+api.update(); // First observation of a civil-day change must not convert and discard Fun.
 civilDay++;
 realMs+=1000;api.update();
-assert(awarded.some(e=>e.id==='sloomi'&&e.amount===40&&e.reason==='festival_fun_rollover'),'200 Festival Fun converts to a heart after midnight');
-assert.equal(api.serialize().festivalFun.sloomi,1,'leftover Festival Fun is preserved');
+assert.equal(api.serialize().festivalFun.sloomi,5,'offline Favor authority keeps all five earned Fun pending rather than marking it paid');
+W.DialogueContent.adjustNpcFavor = pendingFunPay;
+realMs+=1000;api.update();
+assert(awarded.some(e=>e.id==='sloomi'&&e.amount===1&&e.reason==='festival_fun_rollover'),'5 Festival Fun converts to 1 permanent Favor after midnight');
+assert.equal(api.serialize().festivalFun.sloomi,undefined,'settled Festival Fun is cleared while lifetime earned points persist');
 assert(persisted>0,'activities persist through existing save hook');
 assert.equal(W.MapLayoutSystem.getEffectiveMapData(town,{dateOrdinal:1}).decor.length,town.decor.length,'base town untouched outside festivals');
 let pairedActive=false, pairedSeconds=0, pairedStartCount=0, pairedStopCount=0; // Verify social invitation uses the dedicated two-avatar driver, not the solo-wheel fallback.
@@ -271,13 +277,13 @@ assert.equal(api.askFestivalDance(partner).ok,true,'accepted NPC invitation star
 assert.equal(pairedStartCount,1);
 assert.equal(danceReplies.at(-1).accepted,true);
 pairedSeconds=1.15;realMs+=400;api.update();
-assert.equal(api.serialize().festivalFun.sloomi,16,'exactly 15 Festival Fun gained for one played second plus saved overnight remainder');
+assert(Math.abs(api.serialize().festivalFun.sloomi-.12)<1e-8,'one played second grants 0.12 Festival Fun after prior credits settled');
 assert.equal(api.diagnostics().festivalWheel.active,true,'pair status is visible in mobile diagnostics');
 api.cancelDance();
 assert.equal(pairedStopCount,1,'festival cancel cleans up paired actor driver');
 favors.set('sloomi',0);assert.equal(api.askFestivalDance(partner).ok,false);assert.equal(danceReplies.at(-1).accepted,false,'refused dance is ambient speech');favors.set('sloomi',120);
 realMs+=400;api.update();
-assert.equal(api.serialize().festivalFun.sloomi,16,'interrupted paired dance cannot continue accruing Festival Fun');
+assert(Math.abs(api.serialize().festivalFun.sloomi-.12)<1e-8,'interrupted paired dance cannot continue accruing Festival Fun');
 
 // Solo wheel participation is spatial, not tied to a festival rug or bandstand.
 let wheelDancing=true, musicPlaying=false;
@@ -288,14 +294,14 @@ const beforeWheel=api.serialize().festivalFun.sloomi;
 const otherBefore=api.serialize().festivalFun.friend||0;
 function playSecond(){for(let i=0;i<4;i++){realMs+=250;api.update();}}
 playSecond();
-assert.equal(api.serialize().festivalFun.sloomi,beforeWheel+15,'existing solo wheel dance works away from festival locales');
+assert(Math.abs(api.serialize().festivalFun.sloomi-beforeWheel-.12)<1e-8,'existing solo wheel dance works away from festival locales');
 assert.equal(api.serialize().festivalFun.friend||0,otherBefore,'distant villagers receive no participation points');
 wheelDancing=false;musicPlaying=true;playSecond();
-assert.equal(api.serialize().festivalFun.sloomi,beforeWheel+30,'existing instrument wheel session shares the same nearby participation');
+assert(Math.abs(api.serialize().festivalFun.sloomi-beforeWheel-.24)<1e-8,'existing instrument wheel session shares the same nearby participation');
 musicPlaying=false;playSecond();
-assert.equal(api.serialize().festivalFun.sloomi,beforeWheel+30,'stopped wheel sessions cannot accrue points');
+assert(Math.abs(api.serialize().festivalFun.sloomi-beforeWheel-.24)<1e-8,'stopped wheel sessions cannot accrue points');
 wheelDancing=true;hour=1;playSecond();
-assert.equal(api.serialize().festivalFun.sloomi,beforeWheel+30,'festival end stops participation without blocking ordinary wheel actions');
+assert(Math.abs(api.serialize().festivalFun.sloomi-beforeWheel-.24)<1e-8,'festival end stops participation without blocking ordinary wheel actions');
 
 // A crowd larger than the dining capacity must reserve distinct chairs or stand.
 hour=17;realMs+=3000;
@@ -311,4 +317,44 @@ for(const rec of residents){
 assert(standing>0,'overflow guests without another preferred locale wait standing');
 assert(seats.size>0,'available dining chairs are still used');
 
+// A seven-day maximum is a separate cap from the contest reward: even excess dance/keg/meal attempts cannot exceed 19.2 permanent Favor.
+const championSave = api.serialize(); // Reuses the real saved seven-day opponent roster and authored participant ledger.
+const championKey = Object.keys(championSave.potluckContests).find(key => key.endsWith(':gorkunash'));
+assert(championKey,'the contribution has a persistent contest record');
+championSave.potluckContests[championKey].entry.score = 999999; // Clearly wins against all six seeded rivals across seven days.
+championSave.potluckContests[championKey].favorAwarded = false;
+api.restore(championSave);
+civilDay = 4 * 28 + 14; hour = 17; // Final Gorkunash day, before judging.
+api.addFestivalFun('sloomi',100000);
+assert(Math.abs(api.serialize().festivalFunEarned[championKey + ':sloomi'] - 96) < 1e-8,'weekly Fun is capped at exactly 19.2 Favor worth');
+civilDay++; realMs += 1000; api.update(); // First day after the full seven-day competition.
+const winGrants = awarded.filter(event=>event.reason==='festival_potluck_win');
+assert(winGrants.length>0,'winning the contest awards real Favor after the festival');
+assert(winGrants.every(event=>event.amount===19.2),'a potluck win is 120/250 Stardew hearts at 40 Favor per Hobunji heart');
+const festivalFunGrants = awarded.filter(event=>event.id==='sloomi' && event.reason==='festival_fun_rollover');
+const lifetimeFunFavor = festivalFunGrants.reduce((total,event)=>total+event.amount,0);
+assert(Math.abs(lifetimeFunFavor-19.2)<1e-8,'fractional overnight participation settlement reaches exactly 19.2, even after earlier midfestival payments');
+const awardCount = winGrants.length;
+realMs += 1000; api.update();
+assert.equal(awarded.filter(event=>event.reason==='festival_potluck_win').length,awardCount,'finished contest can never reward twice');
+assert.equal(api.serialize().potluckContests[championKey].favorAwarded,true,'judging persists across saves');
+
+// A new entry can be donated while the NPC database is still hydrating. Rebuilding it from
+// the persistent claim must not make this year's legitimate champion a legacy, ineligible winner.
+const claimOnlyEvent = championKey; // Same festival year, but an independent restored member/contest state.
+const allResidents = residents.splice(0); // Simulates world load before any NPC record has arrived.
+api.restore({claims:{[claimOnlyEvent]:{potluck:{key:'meal',stars:5,day:1156*336+120,favorRewardVersion:1}}},potluckContests:{}});
+realMs += 3100; api.update();
+assert.equal(api.serialize().potluckContests[claimOnlyEvent],undefined,'new entry cannot be judged while the resident roster is empty');
+residents.push(...allResidents);
+itemDefs.meal.festivalContestScore = 999999; // The recovered donation is a clear winner against every opponent.
+const favorAdjust = W.DialogueContent.adjustNpcFavor; // An incomplete dialogue loader must not consume the championship either.
+W.DialogueContent.adjustNpcFavor = undefined;
+realMs += 3100; api.update();
+assert.equal(api.serialize().potluckContests[claimOnlyEvent].favorAwarded,false,'an unready Favor service does not permanently consume a restored championship');
+const earlierWins = awarded.filter(entry => entry.reason === 'festival_potluck_win').length;
+W.DialogueContent.adjustNpcFavor = favorAdjust;
+realMs += 1100; api.update();
+assert.equal(api.serialize().potluckContests[claimOnlyEvent].favorAwarded,true,'recovered new entry gets judged after services become ready');
+assert(awarded.filter(entry => entry.reason === 'festival_potluck_win').length > earlierWins,'recovered champion receives Favor once NPCs and dialogue services load');
 console.log('Gorkunash locale placement, schedule shifts, seven-pot contest food, potluck, save, and heart conversion passed.');

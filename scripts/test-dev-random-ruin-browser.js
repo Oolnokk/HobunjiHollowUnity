@@ -129,7 +129,7 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
   });
   assert.equal(puzzlePanel.present, true, JSON.stringify(puzzlePanel));
   assert.equal(puzzlePanel.open, false, JSON.stringify(puzzlePanel));
-  assert.equal(puzzlePanel.checkboxCount, 7, JSON.stringify(puzzlePanel)); // glyphObelisk, safePath, ropeSwing, ropeChain, hallwayTraps, lavaBasin, sanctum
+  assert.equal(puzzlePanel.checkboxCount, 6, JSON.stringify(puzzlePanel)); // The disliked projectile hallway traps are no longer configurable.
   assert.equal(puzzlePanel.maxPresent, true, JSON.stringify(puzzlePanel));
   assert.equal(puzzlePanel.darknessEnabled, false, JSON.stringify(puzzlePanel));
   assert.equal(puzzlePanel.darknessSeverity, 100, JSON.stringify(puzzlePanel));
@@ -150,7 +150,7 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
   });
   assert.deepEqual(projectileOnlySettings, {
     pressurePlate:false,brazier:false,glyphObelisk:true,stackedObelisk:false,linkedCubePillars:false,nestedRoom:false,
-    safePath:false,ropeSwing:false,hallwayTraps:false,lavaBasin:false,sanctum:false,maxPerRoom:1,
+    safePath:false,ropeSwing:false,ropeChain:false,hallwayTraps:false,lavaBasin:false,sanctum:false,maxPerRoom:1,
   }, JSON.stringify(projectileOnlySettings));
   const constrainedSeed = 0x51a7cafe;
   const constrainedEntry = await page.evaluate(async seed => { // Observe scene entry in the same task that finishes the awaited transition, before shader warmup.
@@ -164,7 +164,8 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
     const scene = window.GridTileAccessors.getActiveScene();
     const activatorTypes = new Set();
     let bypassed = 0;
-    scene?.traverse?.(object => {
+    const baseV50=scene?.children?.find?.(object => /^dev_v50_ruin_/.test(object?.name||'')); // These Settings belong only to floor zero; native upper stories author their own puzzle families.
+    baseV50?.traverse?.(object => {
       if (object.userData?.activatorType) activatorTypes.add(object.userData.activatorType);
       if (object.userData?.runtimePuzzleBypass) bypassed++;
     });
@@ -286,7 +287,7 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
   });
   assert.equal(restoredSimpleSettings.safePath,true,JSON.stringify(restoredSimpleSettings));
   assert.equal(restoredSimpleSettings.ropeSwing,true,JSON.stringify(restoredSimpleSettings));
-  assert.equal(restoredSimpleSettings.hallwayTraps,true,JSON.stringify(restoredSimpleSettings));
+  assert.equal(restoredSimpleSettings.hallwayTraps,false,JSON.stringify(restoredSimpleSettings)); // Retired hallway trap stays disabled even after enabling every available checkbox.
   assert.equal(restoredSimpleSettings.lavaBasin,true,JSON.stringify(restoredSimpleSettings));
   assert.equal(restoredSimpleSettings.sanctum,true,JSON.stringify(restoredSimpleSettings));
   for(const key of ['pressurePlate','brazier','stackedObelisk','linkedCubePillars','nestedRoom']) assert.equal(restoredSimpleSettings[key],false,JSON.stringify(restoredSimpleSettings));
@@ -473,8 +474,8 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
         puzzleTowers,
         nativeCrackedPillars,
         negativeLevels:levels.filter(level => level < 0).length,
-        runtimeWallPlanes:generatorState?.runtimeWallPlanes || null,
-        runtimeHallways:generatorState?.runtimeHallways || null,
+        runtimeWallPlanes:window.DevRandomRuin.getState()?.runtimeWallPlanes || null,
+        runtimeHallways:window.DevRandomRuin.getState()?.runtimeHallways || null, // The generator's hidden preview has already handed every floor root to the game; these are its accepted entrance-floor audit values.
         solvability:window.DevRandomRuin.getState()?.solvability || null,
         generationAttempt:window.DevRandomRuin.getState()?.generationAttempt || 0,
         acceptedSeed:window.DevRandomRuin.getState()?.seed ?? null,
@@ -510,7 +511,7 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
         active.simple.safeGrids.length===1 && active.simple.modules.some(m=>m.type==='safePathGrid'),
         'a seed without a geometrically valid rope must show explicit layout rejections and preserve another mandatory traversal: '+JSON.stringify(active.simple));
     }
-    const swappableHallwayModules=active.simple.modules.filter(module=>module.slotKind==='hallway'&&['projectileHallwayTrap','melodyEchoTrigger','hallwayGlyphGate'].includes(module.type));
+    const swappableHallwayModules=active.simple.modules.filter(module=>module.slotKind==='hallway'&&['layerRopeChainAbyss','ropeChainAbyss','melodyEchoTrigger','hallwayGlyphGate'].includes(module.type));
     assert.ok(swappableHallwayModules.length >= 1, 'simple mode should fill at least one generic hallway module slot: '+JSON.stringify(active.simple));
     assert.ok(active.simple.checkpoints.doorwayCount > 0, 'generated ruin should expose doorway checkpoints: '+JSON.stringify(active.simple.checkpoints));
     assert.equal(active.simple.checkpoints.triggered.includes('ruin-entry'), true, 'entering the ruin must immediately establish the first checkpoint');
@@ -519,7 +520,7 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
     assert.equal(active.transport?.active, true, JSON.stringify(active.transport));
     assert.equal(active.transport?.sameOrigin, true, JSON.stringify(active.transport));
     assert.equal(active.transport?.expectedFurniturePaths, 11, JSON.stringify(active.transport));
-    assert.equal(active.transport?.patchedBindings, 31, JSON.stringify(active.transport)); // V50 currently installs 31 runtime patches; 28 is the stale pre-#1294 count.
+    assert.ok(active.transport?.patchedBindings >= 31, JSON.stringify(active.transport)); // The 31 essential V50 patches must remain; multi-floor reservations add bindings without invalidating the bridge.
     assert.equal(active.transport?.runtimePuzzleGenerationOptions, true, JSON.stringify(active.transport));
     assert.equal(active.transport?.headlessEmbeddedPreview, true, JSON.stringify(active.transport));
     assert.deepEqual(active.transport?.runtimeHallwayWidthCells, [5,6], JSON.stringify(active.transport));
@@ -812,8 +813,8 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
       assert.equal(simpleRuntime.ropeAttach?.released,true,'Dodge must transfer the player into rope ballistic flight: '+JSON.stringify(simpleRuntime));
       assert.equal(simpleRuntime.ropeAttach?.weaponRestored,true,'jumping off the rope must restore the exact previously drawn tool/weapon snapshot: '+JSON.stringify(simpleRuntime));
       } // Geometric rope fitting is optional for this seed; all rope mechanics are still fully asserted where a rope exists.
-      if(simpleRuntime.final.trapHallways.length>0) assert.ok(simpleRuntime.final.liveProjectiles>0,'a selected projectile-hallway module must actively emit projectiles: '+JSON.stringify(simpleRuntime.final));
-      else assert.ok(simpleRuntime.final.chordPlateSets.some(set=>set.slotKind==='hallway'),'a non-trap hallway slot must contain its selected reusable module: '+JSON.stringify(simpleRuntime.final));
+      assert.equal(simpleRuntime.final.trapHallways.length,0,'the removed short fireball/poison-dart hallway course must never regenerate');
+      assert.equal(simpleRuntime.final.liveProjectiles,0,'the removed hallway emitters must never spawn any projectiles');
 
       if(simpleRuntime.ropeAttach) await page.waitForFunction(() => !window.DevRandomRuinSimplePuzzles.snapshot().flight && !window.Combat.deps.player.dodging, null, { timeout:30000, polling:100 }); // Only wait for ballistic flight when a rope actually launched the player.
       const transitDoorRuntime = await page.evaluate(async () => {

@@ -263,6 +263,94 @@
     return mesh;
   }
 
+  // Index the displaced stone triangles along both possible ray axes.
+  // A horizontal cast then examines only the neighboring cliff column.
+  function makeCliffFaceSampler(meshes) {
+    const buckets = [new Map(), new Map()]; // Tangential X/Z tile -> projected stone triangles.
+    for (const mesh of meshes) {
+      const geometry = mesh.geometry;
+      const stone = geometry.groups.find(group => group.materialIndex === 1);
+      if (!stone) continue;
+      const positions = geometry.getAttribute('position').array;
+      const indices = geometry.index.array;
+      for (let i = stone.start; i < stone.start + stone.count; i += 3) {
+        const points = [0, 1, 2].map(j => {
+          const k = indices[i + j] * 3;
+          return [positions[k], positions[k + 1], positions[k + 2]];
+        });
+        for (const axis of [0, 1]) {
+          const lateral = axis * 2;
+          const [a, b, c] = points; // Project the triangle onto the lateral/height plane.
+          const determinant = (b[lateral] - a[lateral]) * (c[1] - a[1]) - (c[lateral] - a[lateral]) * (b[1] - a[1]);
+          if (Math.abs(determinant) < 0.00001) continue;
+          const along = 2 - lateral;
+          const triangle = { a, b, c, determinant, min: Math.min(a[along], b[along], c[along]),
+            max: Math.max(a[along], b[along], c[along]) };
+          const lo = Math.floor(Math.min(a[lateral], b[lateral], c[lateral]));
+          const hi = Math.floor(Math.max(a[lateral], b[lateral], c[lateral]));
+          for (let tile = lo; tile <= hi; tile++) {
+            if (!buckets[axis].has(tile)) buckets[axis].set(tile, []);
+            buckets[axis].get(tile).push(triangle);
+          }
+        }
+      }
+    }
+    return (candidate, x, y, z) => {
+      const axis = candidate.dir.x ? 1 : 0; // X-facing cliffs cast along X and index by Z.
+      const lateral = axis * 2, along = 2 - lateral;
+      const u = axis ? z : x;
+      const sign = candidate.dir.x || candidate.dir.z;
+      const start = (axis ? candidate.a.c : candidate.a.r) + 0.5 - sign * 0.65;
+      const end = (axis ? candidate.b.c : candidate.b.r) + 0.5 + sign * 0.35;
+      const min = Math.min(start, end), max = Math.max(start, end);
+      let nearest = Infinity;
+      for (const { a, b, c, determinant, min: lo, max: hi } of buckets[axis].get(Math.floor(u)) || []) {
+        if (hi < min || lo > max) continue;
+        const du = u - a[lateral], dy = y - a[1];
+        const wb = (du * (c[1] - a[1]) - dy * (c[lateral] - a[lateral])) / determinant;
+        const wc = ((b[lateral] - a[lateral]) * dy - (b[1] - a[1]) * du) / determinant;
+        if (wb < -1e-6 || wc < -1e-6 || wb + wc > 1.000001) continue;
+        const hit = a[along] + wb * (b[along] - a[along]) + wc * (c[along] - a[along]);
+        const depth = (hit - start) * sign;
+        if (depth >= 0 && depth <= max - min) nearest = Math.min(depth, nearest);
+      }
+      if (!Number.isFinite(nearest)) return null;
+      const hit = start + nearest * sign;
+      return axis ? { x: hit, z } : { x, z: hit };
+    };
+  }
+
+  function cliffObstacles(mapId) {
+    const layout = deps._zoneLayouts.get(mapId); // The same layout used by den and locale rendering.
+    const rectangles = [];
+    const add = (site, pad = 0) => {
+      const x = Number(site?.gridX ?? site?.col ?? site?.x);
+      const y = Number(site?.gridZ ?? site?.row ?? site?.y);
+      if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+      rectangles.push({ x: x - pad, y: y - pad,
+        w: Math.max(1, Number(site.footprintW ?? site.w) || 1) + 2 * pad,
+        h: Math.max(1, Number(site.footprintD ?? site.h) || 1) + 2 * pad });
+    };
+    for (const den of layout?.dens || []) {
+      add(den, 0.75); // Include the facade's uneven edge and room to enter the mouth.
+      add(den.mouthAnchor);
+      add(den.approachAnchor);
+      const collision = window.ZoneDenTotemFeatures?.denEntranceCollisionState?.(den);
+      for (const rect of collision?.rects || []) add(rect);
+    }
+    for (const cave of window.LocaleCaveRuntime?.cavesForZone?.(mapId) || []) add(cave, 0.75);
+    for (const building of layout?.buildings || []) add(building);
+    for (const instance of layout?.localeInstances || []) {
+      for (const object of instance.objects || []) {
+        const collision = object.collision;
+        if (collision?.mode === 'footprint') add(object);
+        if (collision?.mode === 'custom') add({ ...object, ...collision });
+      }
+    }
+    for (const totem of layout?.rootTotems || []) add(totem, 0.35);
+    return rectangles;
+  }
+
   // One plateau group's footprint as a continuous heightfield mesa: flat raised
   // top across the interior, blending smoothly down to ground level over the
   // outer MARGIN_TILES band — the same seam-hash + blend + steep-face-stone-skin
@@ -287,6 +375,27 @@
       const mesh = buildPlateauMesa(zScene, mapId, `tier${i}`, mesa, elevOffset, mesa.fromTier * deps.PLATEAU_UNIT, zGrid);
       if (mesh) meshes.push(mesh);
     });
+    // Routes are computed from the exact merged runtime grid (not authored
+    // sub-map coordinates). Mini-cliff caps occupy their own Y layers, so
+    // overlapping footprint tiles never overwrite the ground beneath them.
+    const network = window.CliffRouteNetwork?.forGrid?.(zGrid, {
+      area: mapId, rebuild: true, // Recompute after dug/changed tiles, not from a stale cached cliff graph.
+      blocked: t => !t || t.incline || deps.isSolid(t.type) || [deps.TileType.RIVER, deps.TileType.STREAM, deps.TileType.TRENCH].includes(t.type),
+      isBoundary: t => window.MapBoundaryGuard?.isBoundaryTile?.(t) || false,
+      sampleFace: makeCliffFaceSampler(meshes), // Use the same final vertices as the visible cliff.
+      obstacles: cliffObstacles(mapId),
+      tileY: t => deps.tileSurfaceYInArea(t, mapId), // Same Y authority used by the player, creatures and scheduled NPCs.
+    });
+    if (network) {
+      // The dungeon's registered-support system is authoritative for all
+      // mini-cliffs, including overlapping X/Z across multiple Y levels.
+      window.CliffElevatedSurfaces?.mount?.(network, {
+        isActive: () => deps.getCurrentArea?.() === mapId, // Offscreen zones cannot change an interior's support.
+      });
+      meshes.push(...window.CliffRouteNetwork.render(THREE, zScene, network,
+        deps.resolveTileMat(mapId, deps.TileType.ROCK), deps.resolveTileMat(mapId, deps.TileType.GRASS))); // Match plateau tops without grass on the rocky underside.
+      for (const route of network.routes) delete route.project; // The baked decals no longer need the triangle index.
+    }
     scheduleMesaRenderBatching(zScene, mapId, meshes);
     return meshes;
   }
@@ -467,7 +576,7 @@
     const buckets = new Map(); // batchKey|bx,bz -> source meshes
     for (const mesh of meshes) {
       const g = mesh?.geometry;
-      if (!mesh?.isMesh || !g || mesh.parent !== zScene) continue;
+      if (!mesh?.isMesh || !g || mesh.parent !== zScene || mesh.userData?.cliffGenerated) continue; // Mini-cliff inverted silhouettes must retain their own mesh and raycast/occlusion tags.
       batchStats.sourceMeshes++;
       const verts = triangleVertexCount(g);
       if (verts === 0 && mesh.visible) {

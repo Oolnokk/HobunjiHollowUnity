@@ -1,0 +1,394 @@
+// V50-authored mechanism bridge for each independently generated native dungeon story.
+// All geometry and puzzle state are owned by the original V50 objects. This adapter
+// supplies the game's shared interaction, projectile, collision and support systems.
+(function(root,factory){
+  const api=factory(root);
+  if(typeof module==='object'&&module.exports)module.exports=api;
+  else root.RuinV50NativeMechanisms=api;
+})(typeof self!=='undefined'?self:globalThis,function(host){
+  'use strict';
+  const MOTIONS=new Set(['bridge','bridgeSequence','stoneDoor','movingDais','collapsingStairs']);
+  const ACTIVATORS=new Set(['pressurePlate','torch','brazier','glyphObelisk','stackedObelisk','linkedCubePillars']);
+  const clamp=(n,a,b)=>Math.min(b,Math.max(a,n));
+  const finite=n=>Number.isFinite(Number(n));
+
+  function pickStageActivator(linked=[]){
+    // A V50 motion can have multiple legitimate trigger families. Prefer
+    // the real projectile glyph when a decorative brazier helper shares its
+    // mechanism, then authored controls, then fire transfer.
+    const priority=['glyphObelisk','linkedCubePillars','stackedObelisk','pressurePlate','brazier','torch'];
+    return [...linked].filter(actor=>actor?.userData?.activatorType)
+      .sort((a,b)=>priority.indexOf(a.userData.activatorType)-priority.indexOf(b.userData.activatorType))[0]||null;
+  }
+  function inheritedData(object,key,root){
+    for(let node=object;node;node=node.parent){
+      if(node.userData?.[key]!=null)return node.userData[key];
+      if(node===root)break;
+    }
+    return null;
+  } // Shared V50 ancestry lookup matches the canonical hit-puzzle target selection.
+  function inspect(nativeRoot){
+    const mechanisms=new Map(),activators=[],blocks=[],fixedBlocks=[],transitDoors=[]; // Fixed V50 push-route shapers must block upper-story players, not just the movable burden.
+    nativeRoot?.traverse?.(object=>{
+      const d=object.userData||{},motion=d.previewMotion?.type;
+      if(d.mechanismId&&MOTIONS.has(motion))mechanisms.set(String(d.mechanismId),object);
+      if(d.activatorType&&ACTIVATORS.has(d.activatorType)&&inheritedData(object,'linkedMechanismId',nativeRoot)){
+        // Exactly mirror HitPuzzles' ignition-target ownership: nested torch/
+        // brazier helper meshes are not independently interactive. Otherwise
+        // a native stage can select an actor that the fire-transfer runtime
+        // deliberately does not register, leaving the chamber unsolvable.
+        const parent=object.parent?.userData;
+        if((d.activatorType==='torch'||d.activatorType==='brazier')
+          &&parent?.activatorType===d.activatorType
+          &&String(inheritedData(object.parent,'linkedMechanismId',nativeRoot))===String(inheritedData(object,'linkedMechanismId',nativeRoot)))return;
+        // Retain the deepest glyph-set leaves and authored cube controls.
+        activators.push(object);
+      }
+      if(d.pushable&&(motion==='pushPuzzleBlock'||motion==='elevatorPushBlock'))blocks.push(object);
+      if(d.immovable===true&&d.blockerPurpose)fixedBlocks.push(object);
+      if(d.transitDoor)transitDoors.push(object);
+    });
+    return {mechanisms,activators,blocks,fixedBlocks,transitDoors};
+  }
+  function namespace(nativeRoot,floor){
+    const prefix='native-v50-f'+floor+'-'; // V50 restarts mechanism numbering every generated floor; parent glyph circuits need globally unique keys.
+    nativeRoot?.traverse?.(node=>{
+      for(const field of ['mechanismId','linkedMechanismId']){
+        const id=node.userData?.[field];
+        if(id!=null&&!String(id).startsWith(prefix))node.userData[field]=prefix+id;
+      }
+    });
+    return prefix;
+  }
+
+  function mount(options={}){
+    const {nativeRoot,floor,scope,api,THREE,DynamicSurfaces:DS,getPlayerPosition,getPlayerY,
+      addControl,removeControl,heightAt,showToast,onStateChange}=options;
+    if(!nativeRoot?.traverse||!api?.applyProgress||!api?.syncPressurePlates||
+       !THREE?.Box3||!DS?.registerSurface||!DS?.registerBlocker||typeof addControl!=='function')
+      throw new Error('Native V50 mechanisms require the original generator bridge, geometry and game interactions');
+    const inventory=inspect(nativeRoot);
+    const boxScratch=new THREE.Box3(); // Reused when sampling authored doors, push-block bounds and moving-surface support.
+    const states=new Map(),controls=[],surfaceIds=[],blockerIds=[],elevatorBlocks=[],bridgeDropBlocks=[]; // Upper-story nested movable blocks follow their true elevator or bridge-drop sequence.
+    const worldBox=object=>{
+      object?.updateWorldMatrix?.(true,true);
+      const box=boxScratch.setFromObject(object);
+      return box.isEmpty()?null:box;
+    };
+    const center=object=>{
+      const box=worldBox(object);
+      return box?box.getCenter(new THREE.Vector3()):object.getWorldPosition?.(new THREE.Vector3())||new THREE.Vector3();
+    };
+    const bounds=object=>{
+      const box=worldBox(object);
+      return box?{minX:box.min.x,maxX:box.max.x,minZ:box.min.z,maxZ:box.max.z}:{minX:0,maxX:0,minZ:0,maxZ:0};
+    };
+    const levelAt=object=>{
+      const c=center(object),level=heightAt?.(c.x,c.z);
+      return level!=null&&finite(level)?Number(level):Number(options.floorY)||0; // A missing height must never fall back to Number(null) = 0.
+    };
+    const nearFloor=object=>{
+      const y=Number(getPlayerY?.());
+      return Number.isFinite(y)&&Math.abs(y-levelAt(object))<1;
+    };
+    const control=record=>{
+      if(record.floorY==null)record.floorY=levelAt(record.object); // Every native upper-story action is restricted to its own physical floor by the ordinary interaction provider.
+      addControl(record);controls.push(record);return record;
+    };
+    const trackSurface=(id,object,priority=12,enabled=()=>true)=>{
+      DS.registerSurface({id,scope,priority,bounds:()=>bounds(object),
+        topY:()=>worldBox(object)?.max.y??0,enabled});
+      surfaceIds.push(id);
+    };
+    const trackBlocker=(id,object,enabled=()=>true)=>{
+      DS.registerBlocker({id,scope,bounds:()=>bounds(object),enabled,
+        blocksAt:(_x,_z,actorHeight,_rec,_radius,context)=>{
+          const box=worldBox(object),actorY=Number(context?.y??getPlayerY?.());
+          return !!box&&Number.isFinite(actorY)&&actorY<box.max.y+.08&&actorY+actorHeight>box.min.y-.08; // Native collision is evaluated against the live 3D panel/block, including when it rises, retracts or falls.
+        }});
+      blockerIds.push(id);
+    };
+    // Static props and closed door panels as exact oriented footprints, the way floor zero gets them from
+    // DevRandomRuinTileOccupancy. Without them the DS blockers above are advisory (push runtime, landings) and the
+    // player's own movement, which reads area footprints and the flat grid, walks through pillars and shut doors.
+    const Solids=host.DevRandomRuinSolidFootprints,Providers=host.AreaFootprintBlockers;
+    let solids=null,solidsId=null,solidsLive=true;
+    const storyY=Number(options.floorY)||0;
+    const onStory=()=>{const y=Number(getPlayerY?.());return Number.isFinite(y)&&y>=storyY-1.6&&y<storyY+2.6;}; // Stories share X/Z with other floors; only the player's own story collides.
+    if(Solids?.createSet&&Providers?.register){
+      solids=Solids.createSet({
+        floorY:(x,z)=>{const y=Number(heightAt?.(x,z));return Number.isFinite(y)?y:storyY;},
+        playerBox:()=>{const p=getPlayerPosition?.();return p?{x:p.x,z:p.z,half:.2}:null;},
+      });
+      for(const child of nativeRoot.children||[])solids.scan(child,'native-static'); // Not the root itself: its own name, v50_native_floor_N, trips the scanner's floor-slab exclusion and would drop every prop beneath it.
+      solidsId=scope+'-solids';
+      Providers.register(solidsId,{area:'map_i_dev_random_ruin',
+        enabled:()=>solidsLive&&onStory(),
+        blocksBox:(x,z,half,worldY)=>!!solids.blocksBox(x,z,half,worldY)});
+    }
+    for(const [id,object] of inventory.mechanisms){
+      const motion=object.userData.previewMotion.type;
+      const linked=inventory.activators.filter(activator=>String(inheritedData(activator,'linkedMechanismId',nativeRoot))===id);
+      const state={id,object,motion,linked,target:0,progress:0,solved:false,
+        requiresPuzzle:linked.length>0,lastApplied:null,reapplyAfter:0}; // Cache the last native V50 pose to avoid traversing an unchanged mechanism sixty times a second.
+      states.set(id,state);
+      if(motion==='stoneDoor'){
+        const panel=(object.children||[]).find(child=>child.isMesh&&child.geometry)||object;
+        trackBlocker(scope+'-stone-door-'+id,panel,()=>state.progress<.88);
+        solids?.scan(panel,'door',{force:true,enabled:()=>state.progress<.88}); // The same threshold, as an exact footprint the player's movement reads.
+      }else if(motion==='bridge'||motion==='bridgeSequence'){
+        const bridgeExtended=()=>{
+          const range=object.userData.previewRange||object.userData.previewMotion?.previewRange;
+          const p=range?.length===2?clamp((state.progress-range[0])/Math.max(.0001,range[1]-range[0]),0,1):state.progress; // Use the exact local motion curve that V50 draws, including nested puzzle preview ranges.
+          const extension=motion==='bridgeSequence'
+            ?(p<.22?p/.22:p<.76?1:(1-p)/.24):p;
+          return extension>.75; // Floor support is never granted under a visually retracted bridge.
+        };
+        trackSurface(scope+'-moving-bridge-'+id,object,12,bridgeExtended);
+      }else if(motion==='movingDais'){
+        trackSurface(scope+'-moving-dais-'+id,object.userData.movingDaisPlatform||object,14);
+      }else if(motion==='collapsingStairs'){
+        for(const [index,tread] of (object.userData.stairTreads||[]).entries())
+          trackSurface(scope+'-stair-'+id+'-'+index,tread,12,()=>tread.scale.y>.08);
+      }
+      if(!state.requiresPuzzle){
+        control({kind:'v50NativeMechanism',object,promptRoot:object,
+          range:1.9,priority:16,touchIcon:'✋',
+          label:()=>motion==='bridgeSequence'?'Trigger Timed Bridge'
+            :state.target>.5?'Reset Stone Mechanism':'Activate Stone Mechanism',
+          onPress:()=>{
+            if(!nearFloor(object))return;
+            if(motion==='bridgeSequence'){
+              state.progress=0;state.target=1; // The authored bridge opens, holds and retracts as the player crosses. Another press can retrigger it.
+            }else state.target=state.target>.5?0:1;
+            onStateChange?.();
+          }});
+      }
+    }
+    for(const object of inventory.activators){
+      const d=object.userData,state=states.get(String(inheritedData(object,'linkedMechanismId',nativeRoot)));
+      if(!state)continue;
+      if(d.activatorType==='linkedCubePillars'&&Array.isArray(d.rotatingSegments)){
+        for(const entry of d.rotatingSegments){
+          const segment=entry?.segment,index=Number(entry?.controlIndex);
+          if(!segment||!Number.isInteger(index))continue;
+          control({kind:'v50NativeLinkedCube',object:segment,promptRoot:segment,range:2.05,
+            touchIcon:'↻',priority:26,floorY:levelAt(object),
+            label:'Rotate Cube '+(d.labels?.[index]||index+1),
+            onPress:()=>{if(!nearFloor(object))return;
+              api.rotateLinkedCube?.(object,index,1);onStateChange?.();}});
+        }
+      }else if(d.activatorType==='stackedObelisk'&&Array.isArray(d.rotatingSegments)){
+        const rotations=d.rotatingSegments;
+        for(const [index,entry] of rotations.entries()){
+          const segment=entry?.segment;
+          if(!segment)continue;
+          control({kind:'v50NativeObelisk',object:segment,promptRoot:segment,
+            range:2.05,priority:26,touchIcon:'↻',floorY:levelAt(object),
+            label:'Turn Obelisk Ring '+(index+1),
+            onPress:()=>{
+              if(!nearFloor(object))return;
+              const old=Math.round(segment.rotation.y/(Math.PI*.5));
+              segment.rotation.y=((old+1)%4)*(Math.PI*.5);
+              const solved=rotations.every(item=>Math.abs(Math.round(item.segment.rotation.y/(Math.PI*.5))%4)===0);
+              d.solveProgress=solved?1:0;
+              if(solved){
+                state.target=1;api.applyProgress(object,1);
+                showToast?.('The obelisk aligns.',true);
+              }
+              onStateChange?.();
+            }});
+        }
+      }
+      // Glyphs, torches and braziers are intentionally NOT interact prompts.
+      // DevRandomRuinHitPuzzles' real ranged-hit and carried-torch collision
+      // code scans this native root, so they remain physical puzzles.
+    }
+    for(const fixed of inventory.fixedBlocks)
+      trackBlocker(scope+'-v50-fixed-block-'+fixed.id,fixed); // Without height-aware collision, the player can walk through original V50 push-puzzle stoppers.
+    for(const block of inventory.blocks){
+      let route=Array.isArray(block.userData.pushPath)?block.userData.pushPath:null;
+      if(!route||route.length<2)continue;
+      let step=0; // One push moves a real V50 block one authored route node; reused by the next push and the pressure plate signal.
+      const elevator=block.userData.previewMotion?.type==='elevatorPushBlock';
+      const drivingDais=elevator?[...states.values()].filter(state=>state.motion==='movingDais')
+        .sort((a,b)=>Math.hypot(center(block).x-center(a.object).x,center(block).z-center(a.object).z)
+          -Math.hypot(center(block).x-center(b.object).x,center(block).z-center(b.object).z))[0]||null:null; // V50 places the block at the same X/Z as its own nested elevator.
+      const bridgeDriver=block.userData.dropOntoPlateAfterRetraction
+        ?[...states.values()].filter(state=>state.motion==='bridgeSequence')
+          .sort((a,b)=>Math.hypot(block.position.x-a.object.position.x,block.position.z-a.object.position.z)
+            -Math.hypot(block.position.x-b.object.position.x,block.position.z-b.object.position.z))[0]||null:null; // V50 builds the bridge at this block's original bank (same local coordinate system).
+      trackBlocker(scope+'-pushblock-'+block.id,block);
+      const pushControl=control({kind:'v50NativePushBlock',object:block,promptRoot:block,range:1.8,
+        touchIcon:'✋',priority:23,label:elevator?'Push Lift Block':'Push Stone Block',
+        onPress:()=>{
+          if(step>=route.length-1)return;
+          if(bridgeDriver&&step===route.length-2){
+            showToast?.('Retract the bridge to drop the block onto its plate.',true);return; // V50's last path node is a vertical drop, never a horizontal push.
+          }
+          const playerFoot=Number(getPlayerY?.()),blockBottom=worldBox(block)?.min.y;
+          if(!Number.isFinite(playerFoot)||!Number.isFinite(blockBottom)||Math.abs(playerFoot-blockBottom)>1.1)return; // The block's real moving elevation matters more than the static floor directly below it.
+          if(bridgeDriver&&bridgeDriver.progress<.35){
+            showToast?.('Extend the stone bridge before pushing its block.',false);return;
+          }
+          if(elevator&&drivingDais){
+            const range=drivingDais.object.userData.previewRange||drivingDais.object.userData.previewMotion?.previewRange;
+            const raised=range?.length===2?drivingDais.progress>=range[1]-.01:drivingDais.progress>=.95;
+            if(!raised){showToast?.('Raise the stone elevator before pushing its block.',false);return;}
+          }
+          const next=route[step+1],current=center(block),player=getPlayerPosition?.();
+          if(!player)return;
+          const dx=Number(next.x)-Number(route[step].x),dz=Number(next.z)-Number(route[step].z);
+          const length=Math.hypot(dx,dz);if(length<.001)return;
+          // The block is pushed from behind, not remotely activated through walls.
+          const pToBlock={x:current.x-player.x,z:current.z-player.z};
+          const magnitude=Math.hypot(pToBlock.x,pToBlock.z);
+          if(magnitude>2.2||magnitude<.15)return;
+          const pushDot=(pToBlock.x*dx+pToBlock.z*dz)/(magnitude*length);
+          if(pushDot<.45){showToast?.('Stand behind the stone block to push it.',false);return;}
+          if(elevator){
+            const routeFraction=(step+1)/(route.length-1);
+            const localProgress=.45+.55*routeFraction; // V50's original lift curve reserves 0–.45 for raising the block, then .45–1 for its authored route.
+            const range=block.userData.previewRange||block.userData.previewMotion?.previewRange;
+            const progress=range?.length===2?range[0]+(range[1]-range[0])*localProgress:localProgress;
+            api.applyProgress(block,progress);
+          }else{
+            block.position.set(Number(next.x),Number(next.y)||0,Number(next.z));
+          }
+          step++;
+          api.syncPressurePlates(nativeRoot);
+          onStateChange?.();
+        }});
+      if(elevator&&drivingDais)elevatorBlocks.push({
+        block,driver:drivingDais,control:pushControl,pushes:()=>step,lastLift:null,
+      }); // The original V50 block preview curve moves it from the lower socket to its upper travel path.
+      if(bridgeDriver)bridgeDropBlocks.push({
+        block,driver:bridgeDriver,control:pushControl,ready:()=>step===route.length-2,
+        target:route[route.length-1],elapsed:0,start:null,complete:false,
+        finish:()=>{step=route.length-1;api.syncPressurePlates(nativeRoot);onStateChange?.();}
+      }); // Once the block reaches the far end, V50's OFF glyph retracts its support and gravity seats the block onto the plate.
+    }
+    for(const door of inventory.transitDoors){
+      const panel=(door.children||[]).find(child=>child?.isMesh&&child.geometry)||door;
+      const box=worldBox(panel),height=box?.max.y-box?.min.y||2;
+      const closed=Number(panel.position.y)||0;
+      const state={door,panel,open:0,target:0,closed,height,openingSide:0,
+        crossingAxis:Math.abs(Math.sin(Number(door.rotation.y)||0))>.707?'x':'z'}; // A V50 hallway exit door closes behind the player only once they actually cross its plane.
+      trackBlocker(scope+'-transit-door-'+door.id,panel,()=>state.open<.88);
+      solids?.scan(panel,'door',{force:true,enabled:()=>state.open<.88});
+      control({kind:'v50NativeTransitDoor',object:door,promptRoot:door,range:1.9,
+        priority:21,touchIcon:'✋',label:()=>state.target?'Close Stone Door':'Open Stone Door',
+        onPress:()=>{
+          if(!nearFloor(door))return;
+          state.target=state.target?0:1;
+          const player=getPlayerPosition?.(),position=center(door);
+          const signed=player?(state.crossingAxis==='x'?player.x-position.x:player.z-position.z):0;
+          state.openingSide=state.target&&player?(Math.sign(signed)||1):0; // Manual close does not leave a stale passage-side detector.
+        }});
+      inventory.transitDoors[inventory.transitDoors.indexOf(door)]=state;
+    }
+    const unreg=options.hitPuzzles?.registerExternalRoot?.(nativeRoot);
+    if(typeof unreg!=='function')
+      throw new Error('Original V50 glyph and torch hit runtime could not register the native floor');
+    if(typeof api.registerDetachedCubeRoots!=='function'){unreg();throw new Error('Original V50 linked-cube solver is unavailable for this story');}
+    const releaseCubes=api.registerDetachedCubeRoots(nativeRoot); // Restore source-owned solver actors lost during subsequent floor generations.
+    let disposed=false; // All interactions, external glyphs, dynamic support and blockers have one floor-scoped owner.
+    function tick(dt){
+      if(disposed)return;
+      const step=Math.max(0,Math.min(.05,Number(dt)||0));
+      for(const state of states.values()){
+        const d=state.object.userData,plate=d.linkedPressurePlateRoot,cubes=d.linkedCubePuzzleRoot;
+        const plateValue=Number(plate?.userData?.weightProgress),cubeValue=Number(cubes?.userData?.solveProgress);
+        let desired=state.target;
+        if(plate&&Number.isFinite(plateValue))desired=plateValue;
+        else if(cubes&&Number.isFinite(cubeValue))desired=cubeValue;
+        state.solved=desired>.95; // Real V50 solution signal drives the visible mechanism; never use the substitute wing stage to solve it.
+        state.progress+=clamp(desired-state.progress,-step*1.55,step*1.55);
+        if(Math.abs(state.progress-desired)<.001)state.progress=desired;
+        state.reapplyAfter-=step;
+        if(state.lastApplied!==state.progress||state.reapplyAfter<=0){
+          api.applyProgress(state.object,state.progress);
+          state.lastApplied=state.progress;
+          state.reapplyAfter=1; // Unchanged authored stone still gets a periodic restoration pass.
+        }
+      }
+      for(const lift of elevatorBlocks){
+        if(lift.pushes()>0)continue; // After the first push the block owns its own V50 route position, not the elevator's current animation.
+        const range=lift.driver.object.userData.previewRange||lift.driver.object.userData.previewMotion?.previewRange;
+        const progress=range?.length===2
+          ?clamp((lift.driver.progress-range[0])/Math.max(.0001,range[1]-range[0]),0,1)
+          :lift.driver.progress;
+        const lifted=.45*progress; // V50's elevatorPushBlock rises during local 0–.45, then travels across its authored floor route.
+        if(lift.lastLift!==lifted){
+          const blockRange=lift.block.userData.previewRange||lift.block.userData.previewMotion?.previewRange;
+          const command=blockRange?.length===2?blockRange[0]+(blockRange[1]-blockRange[0])*lifted:lifted;
+          api.applyProgress(lift.block,command);
+          lift.lastLift=lifted;
+        }
+        lift.control.floorY=worldBox(lift.block)?.min.y??lift.control.floorY; // Prompt follows the physical block as the stone dais lifts it.
+      }
+      for(const drop of bridgeDropBlocks){
+        if(drop.complete||!drop.ready()||drop.driver.progress>.08)continue;
+        if(!drop.start)drop.start={x:drop.block.position.x,y:drop.block.position.y,z:drop.block.position.z};
+        drop.elapsed+=step;
+        const progress=clamp(drop.elapsed/.35,0,1),start=drop.start,end=drop.target; // A real downward, accelerating V50 burden drop, not an instantaneous occupancy/door flag.
+        drop.block.position.set(start.x+(Number(end.x)-start.x)*progress,
+          start.y+(Number(end.y)-start.y)*progress*progress,
+          start.z+(Number(end.z)-start.z)*progress);
+        drop.control.floorY=worldBox(drop.block)?.min.y??drop.control.floorY;
+        if(progress>=1){drop.complete=true;drop.finish();showToast?.('The stone block settles onto the pressure plate.',true);}
+      }
+      for(const state of inventory.transitDoors){
+        state.open+=clamp(state.target-state.open,-step*2.4,step*2.4);
+        state.panel.position.y=state.closed+(state.height+.12)*(state.open*state.open*(3-2*state.open));
+        if(state.target>.5&&state.open>.9&&state.openingSide){
+          const player=getPlayerPosition?.(),position=center(state.door);
+          const signed=player?(state.crossingAxis==='x'?player.x-position.x:player.z-position.z):0;
+          if(Math.sign(signed)===-state.openingSide&&Math.abs(signed)>.48){
+            state.target=0;state.openingSide=0; // Mirrors V50's authored hallway exit behavior; a closed transit door still has its own repeatable interact control.
+          }
+        }
+      }
+    }
+    function stageCandidate(room,preferredMechanismId=null){
+      if(!room)return null;
+      if(preferredMechanismId){
+        const raw=String(preferredMechanismId),prefix='native-v50-f'+floor+'-'; // Original generator metadata is unprefixed; detached world objects are namespaced per story.
+        const id=raw.startsWith(prefix)?raw:prefix+raw;
+        const final=states.get(id);
+        if(!final||!final.linked.length)return null; // If the author recorded a final objective but its real state is missing, never misreport a preparatory control as the solution.
+        return {id:final.id,kind:pickStageActivator(final.linked)?.userData?.activatorType||'unknown',nestedFinal:true};
+      }
+      for(const state of states.values()){
+        if(state.linked.some(activator=>['ON','OFF'].includes(activator.userData?.bridgeCommand)))
+          continue; // A bridge toggle is preparatory hardware, not the final solution to the chamber's pressure-plate puzzle.
+        for(const activator of state.linked){
+          const pos=center(activator);
+          if(pos.x>room.x+.25&&pos.x<room.x+room.w-.25
+            &&pos.z>room.z+.25&&pos.z<room.z+room.d-.25)
+            return {id:state.id,kind:pickStageActivator(state.linked)?.userData?.activatorType||activator.userData.activatorType};
+        }
+      }
+      return null;
+    }
+    function dispose(){
+      if(disposed)return;disposed=true;unreg();releaseCubes();
+      solidsLive=false;if(solidsId)Providers?.remove?.(solidsId);
+      for(const record of controls)removeControl?.(record);
+      for(const id of [...surfaceIds,...blockerIds])DS.remove?.(id);
+    }
+    return {tick,dispose,inventory,states,stageCandidate,
+      isSolved:id=>states.get(String(id))?.solved===true,
+      getState:()=>({
+        mechanisms:states.size,activators:inventory.activators.length,
+        pushBlocks:inventory.blocks.length,fixedBlocks:inventory.fixedBlocks.length,
+        nestedElevatorBlocks:elevatorBlocks.length,bridgeDropBlocks:bridgeDropBlocks.length,
+        completedBridgeDrops:bridgeDropBlocks.filter(drop=>drop.complete).length,
+        transitDoors:inventory.transitDoors.length,
+        solved:[...states.values()].filter(state=>state.solved).length,
+        families:[...new Set(inventory.activators.map(item=>item.userData.activatorType))].sort(),
+        motions:[...new Set([...states.values()].map(item=>item.motion))].sort(),
+      })};
+  }
+  return Object.freeze({MOTIONS,ACTIVATORS,inspect,namespace,mount,pickStageActivator});
+});

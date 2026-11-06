@@ -50,7 +50,7 @@ const offer = bridge.getNpcSwigOfferAction(walker); assert(offer && offer.swigFr
 nowMs += 5000;
 assert(bridge.offerNpcSwig(walker),'the NPC accepts a swig');
 assert.equal(FS.festivalCup().swigs,2); assert(Math.abs(bridge.npcDrunkFraction('pahu') - .16) < 1e-9,'the swig changes real NPC sobriety');
-assert.equal(FS.diagnostics().festivalFun.pahu,20,'offered swigs bestow Festival Fun');
+assert.equal(FS.diagnostics().festivalFun.pahu,0.5,'offered swigs bestow Festival Fun');
 assert.equal(bridge.virtualSwigSerial(),2);
 
 // The keg is free and refills any time, even a full cup.

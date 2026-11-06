@@ -97,8 +97,8 @@ assert.equal(inventory.meal, 3);
 assert.equal(perform(prop, { key: 'meal', stars: 5 }).ok, true);
 assert.equal(inventory.meal, 2); assert.equal(buckets.meal[1], 1); assert.equal(buckets.meal[5], 0);
 assert.equal(api.feastMenu()[6].score,5,'old cooked foods still score from their known quality');
-assert.equal(deltas.filter(d => d.reason === 'festival_potluck').length, api.residents().length);
-assert(deltas.filter(d => d.reason === 'festival_potluck').every(d => d.amount === 10), 'potluck uses ten times normal neutral gift Favor');
+assert.equal(deltas.filter(d => d.reason === 'festival_potluck').length, 0, 'entry itself gives no guaranteed favor; only winning the judged contest rewards residents');
+assert.equal(api.serialize().potluckContests[`${year}:gorkunash`].favorAwarded, false, 'new contest remains awaiting its seven-day result');
 assert.equal(perform(prop, { key: 'meal', stars: 1 }).ok, false);
 // The game supplies only the held key; CookingSystem supplies its selected tier.
 year++;

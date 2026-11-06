@@ -90,6 +90,10 @@
       "file": "config/furniture-authored/crateStack.json"
     },
     {
+      "key": "looseCrate",
+      "file": "config/furniture-authored/looseCrate.json"
+    },
+    {
       "key": "desk",
       "file": "config/furniture-authored/desk.json"
     },
@@ -234,6 +238,14 @@
       "file": "config/furniture-authored/woodenDoor.json"
     },
     {
+      "key": "cliffDoor",
+      "file": "config/furniture-authored/cliffDoor.json"
+    },
+    {
+      "key": "cliffGate",
+      "file": "config/furniture-authored/cliffGate.json"
+    },
+    {
       "key": "hangingBanner",
       "file": "config/furniture-authored/hangingBanner.json"
     },
@@ -336,6 +348,22 @@
     {
       "key": "ruinClimbHoldsSingle",
       "file": "config/furniture-authored/ruinClimbHoldsSingle.json"
+    },
+    {
+      "key": "ruinPassageDoor",
+      "file": "config/furniture-authored/ruinPassageDoor.json"
+    },
+    {
+      "key": "ruinPassageDoorNarrow",
+      "file": "config/furniture-authored/ruinPassageDoorNarrow.json"
+    },
+    {
+      "key": "ruinPassageDoorSlim",
+      "file": "config/furniture-authored/ruinPassageDoorSlim.json"
+    },
+    {
+      "key": "ruinPassageDoorWide",
+      "file": "config/furniture-authored/ruinPassageDoorWide.json"
     }
   ]
 }

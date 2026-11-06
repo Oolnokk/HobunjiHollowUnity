@@ -1,5 +1,6 @@
-// Combat ability progression — each of the 10 weapon-tool abilities has 5
-// levels; at each one the player picks ONE of 2+ upgrade options. No
+// Combat ability progression — the 10 weapon-tool abilities and two
+// conditional combo-finisher mastery tracks each have five levels.
+// At each level the player picks ONE of 2+ upgrade options. No
 // ability applies any affliction damage on its own — every affliction an
 // attack can inflict comes from a level chosen here (see resource-
 // system.js's applyDamage, which takes an explicit opts.afflictionBonuses
@@ -32,7 +33,8 @@
 // damage) and stat bonuses. Quick Attack affliction/debuff choices are
 // returned separately as quickBonusAfflictions/quickBonusDebuffs so their
 // condition + cooldown gate can own those burst effects without changing
-// Combo/Held/Flurry behavior.
+// ordinary Combo/Held/Flurry behavior. A Combo's separate Finisher mastery
+// track uses the same scroll-unlocked effects after two consecutive landed hits.
 (() => {
   "use strict";
   if (!window.Combat) { console.error('combat-progression.js requires combat-core.js to load first'); return; }
@@ -158,6 +160,7 @@
   const AFFLICTION_LABEL = {
     bleedingHealth: 'Bleeding Health', woundedStamina: 'Wounded Stamina', poisonedHealth: 'Poisoned Health', infectedStamina: 'Infected Stamina',
     bruisedHealth: 'Bruised Health', windedStamina: 'Winded Stamina', congealedHealth: 'Congealed Health', shatteredStamina: 'Shattered Stamina',
+    scentMarkedHealth: 'Scent-marked Health',
   };
 
   function quickDebuff(id, label, desc, durationS = 12) {
@@ -173,7 +176,7 @@
   // weapon trees, but affliction picks are moved from "every hit" into the
   // condition-bonus package. Existing character saves therefore migrate
   // behavior without having their selected mastery rows remapped.
-  function quickAttackTree(levels) {
+  function quickAttackTree(levels, isBlunt = false) {
     const tree = levels.map(level => level.map(option => {
       const copy = { ...option, stat: option.stat ? { ...option.stat } : undefined };
       if (!option.afflictions) return copy;
@@ -198,7 +201,27 @@
       quickDebuff('inhibited', 'Inhibit Recovery', 'Adds a stack of Inhibited: reduced Health recovery received. Stacks up to 5 and refreshes for 12 seconds.'),
       quickInstantEffect('bleedout', 'Bleedout', 'Instantly realizes up to 12 existing Bleeding Health as Health loss; it cannot create Bleeding.', 6),
     ];
+    // All legacy rank-three cooldown-debuff indexes are now committed.
+    if (isBlunt) for (const row of tree) row.push(
+      quickDebuff('knockdown', 'Knockdown', 'A successful Quick Attack condition bonus knocks the target prone for 1 second. Assign at multiple mastery levels to add 1 second per level.', 1)
+    ); // Append only after built-in choices: existing save indexes (especially rank-three Exposed/Sapped/Unsteady) never shift.
+    for (const row of tree) row.push({
+      label: 'Scent Brand',
+      desc: 'A successful Quick Attack condition bonus adds Scent-marked Health. Animal attacks consume it for bonus damage and hostile animals prioritize marked opponents.',
+      quickBonusAfflictions: { scentMarkedHealth: 0.55 },
+    }); // Always append after old choices, including Blunt Knockdown; scroll IDs and historical save indexes stay stable.
     return tree;
+  }
+
+  // Uses EXACTLY the Quick Attack mastery payload and unlock identities, including
+  // scroll/tablet lessons; only its third-hit activation condition differs.
+  function comboFinisherTree(levels, isBlunt = false) {
+    return quickAttackTree(levels, isBlunt).map(row => row.map(option => ({
+      ...option,
+      desc: String(option.desc).replace(/Successful condition-bonus procs/g, 'Qualified third combo hits')
+        .replace(/ordinary Quick Attack hits/g, 'ordinary combo finishers')
+        .replace(/A successful Quick Attack condition bonus/g, 'A qualified third combo hit'),
+    })));
   }
 
   // Ability id -> { sharp: levels, blunt: levels } for weapon-typed
@@ -206,10 +229,12 @@
   const TREES = {
     swingCombo: { sharp: sharpTree(), blunt: bluntTree() },
     pokeCombo: { sharp: sharpTree(), blunt: bluntTree() },
-    opportunistJab: { sharp: quickAttackTree(sharpTree()), blunt: quickAttackTree(bluntTree()) },
-    exhaustCutter: { sharp: quickAttackTree(exhaustCutterSharpTree()), blunt: quickAttackTree(bluntTree()) },
-    backstabFlick: { sharp: quickAttackTree(sharpTree()), blunt: quickAttackTree(bluntTree()) },
-    mercySpike: { sharp: quickAttackTree(mercySpikeSharpTree()), blunt: quickAttackTree(bluntTree()) },
+    opportunistJab: { sharp: quickAttackTree(sharpTree()), blunt: quickAttackTree(bluntTree(), true) },
+    exhaustCutter: { sharp: quickAttackTree(exhaustCutterSharpTree()), blunt: quickAttackTree(bluntTree(), true) },
+    backstabFlick: { sharp: quickAttackTree(sharpTree()), blunt: quickAttackTree(bluntTree(), true) },
+    mercySpike: { sharp: quickAttackTree(mercySpikeSharpTree()), blunt: quickAttackTree(bluntTree(), true) },
+    swingComboFinisher: { sharp: comboFinisherTree(sharpTree()), blunt: comboFinisherTree(bluntTree(), true) },
+    pokeComboFinisher: { sharp: comboFinisherTree(sharpTree()), blunt: comboFinisherTree(bluntTree(), true) },
     chargedBreaker: { sharp: sharpTree(), blunt: bluntTree() },
     acceleratingFlurry: { sharp: sharpTree(), blunt: bluntTree() },
     counterShield: {
@@ -300,6 +325,7 @@
       deps.ITEM_DEFS[key] = { ...deps.ITEM_DEFS[key], icon: form === 'scroll' ? '📜' : '🪨', label, cat: 'material', sellPrice: 75 + 65 * rank, tags: ['Mastery', 'Combat', 'Consumable'], masteryUnlock: { type, rank, effectId: effect.id }, desc: `${effect.desc} Read to permanently unlock this bonus at Mastery ${rank} for all ${type} melee weapons. Reading consumes one copy; the learned bonus is permanent and works on all matching weapons.` };
       if (!known.has(key)) deps.inventoryItems.push({ key, icon: deps.ITEM_DEFS[key].icon, label: label.toUpperCase(), max: 99 });
     }
+    window.ObjectSpriteCatalog?.applyAll?.(deps); // Assign newly registered mastery scroll and tablet art before the inventory or held view opens.
   }
 
   function readMasteryItem(key) {
@@ -420,7 +446,9 @@
 
   // Merges every chosen level's ordinary afflictions/stats plus the
   // cooldown-gated Quick Attack bonus payloads for one ability *on this tool*.
-  function getEffects(toolKey, abilityId) {
+  // Special-finisher tracks use these same bonus fields with a different hit
+  // condition and no Quick Attack cooldown; the combo executor owns activation.
+  function getEffects(toolKey, abilityId, options = {}) {
     const afflictions = {};
     const stats = {};
     const quickBonusAfflictions = {}; // Used only by successful, cooldown-ready Quick Attack condition procs.
@@ -467,8 +495,10 @@
 
     // Increase AoE widens melee cones only; rangeMul remains reserved for
     // genuine reach upgrades such as Extended Reach mastery.
-    stats.coneWidthMul = (stats.coneWidthMul || 0) + (window.PerkSystem?.rank('combat', 'increaseAoe') || 0) * 0.1; // Consumed by every player melee cone and its HUD readiness profile.
-    stats.lungeMul = (stats.lungeMul || 0) + (window.PerkSystem?.rank('combat', 'increaseLungeDistance') || 0) * 0.12;
+    if (options.includePerks !== false) { // Combo finisher bonus effects do not reapply the base combo's global perks.
+      stats.coneWidthMul = (stats.coneWidthMul || 0) + (window.PerkSystem?.rank('combat', 'increaseAoe') || 0) * 0.1; // Shared combat perk remains on ordinary attacks.
+      stats.lungeMul = (stats.lungeMul || 0) + (window.PerkSystem?.rank('combat', 'increaseLungeDistance') || 0) * 0.12;
+    }
     return { afflictions, stats, quickBonusAfflictions, quickBonusDebuffs, quickBonusInstantEffects };
   }
 

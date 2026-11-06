@@ -526,6 +526,7 @@
       // and metal-reinforcement services. No starting stipend for motes —
       // earned through play (or the loadout page's dev-mode +1 button).
       toolMastery: {},
+      weaponFamilyProficiency: {}, // Stores character-wide kill-earned proficiency by polearms, blades, axes, bludgeons and improvised weapons.
       toolPlating: {},
       toolReinforcement: {},
       motesOfProwess: 0,

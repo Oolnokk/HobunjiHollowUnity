@@ -36,6 +36,8 @@
   const FRUIT_RADIUS = 2.6; // Soursap impact AOE, smaller than a Shattercask's destructive blast.
   const FRUIT_DAMAGE = 12; // Raw blunt icicle-style impact damage before defensive mitigation.
   let held = null; // The one intact Burden held in front of the local player.
+  let backCarried = null; // The one back-mounted physical Burden, shared by the tool arch and damage reactions.
+  let observedCarrier = null, observedAttackAt = null; // Tracks ResourceSystem's direct-hit timestamp without treating bleeding/burning ticks as physical hits.
   let aimingThrow=null,flight=null,throwRing=null;
   const MAX_THROW_RADIUS=14;
   const SHATTER_RELEASE_FALLBACK=.28;
@@ -70,8 +72,8 @@
   let audioDeps = null; // Captured DevSpawner.grantLoot so rubble uses ordinary inventory/loot handling.
   let gameDeps = null; // game.js-owned inventory, resource-visual and mine-descent helpers (see init()); Combat.deps carries none of them.
   let elapsed = 0, lastArea = '', lastEvent = 'not started';
-  let lastBlastAttribution = null; // Mobile-readable root/chain trace for the most recent Shattercask blast.
-  const flaskmasterFactor = key => Math.max(1, Number(window.TrinketSystem?.combatMultiplier?.(key)) || 1); // Current wearer's equipment; only called for explicit player throw/hit roots.
+  let lastBlastAttribution = null; // Latest player/root source for mobile burden damage and chain diagnostics.
+  const flaskmasterFactor = key => Math.max(1, Number(window.TrinketSystem?.combatMultiplier?.(key)) || 1); // Player-only equipped bonus, captured at the physical hit or throw.
   let promptClaim = ''; // Stable current input claim; avoids rewriting global input policy every 140ms.
   let offeredPileId = null; // Sticky aimed rubble pile so the arch does not blink as the reticle crosses a tile edge.
   const PILE_REACH = 1.65; // Same reach as Shattercask pickup.
@@ -125,9 +127,13 @@
   function loadPersistence() {
     const identity=worldId();
     if (storeIdentity===identity) return;
+    // World/cycle identity changes retire both physical carries. Restore the
+    // avatar's materials and detach their actual groups, not just the state
+    // pointers, or a charge could remain visibly stuck on the next avatar.
+    if(held||backCarried||backXray.size)setHeldRearXray(null);
+    for(const burden of [held,backCarried])burden?.group?.parent?.remove?.(burden.group);
     storeIdentity=identity;persisted.clear();terrainHistory.clear();pileHistory.clear();looseFruitHistory.clear();records.clear();placementCache.clear();
-    if(held||backXray.size)setHeldRearXray(null); // Never leak held portrait depth state into the next world.
-    held=null; // A different world must never inherit another world's held charge.
+    held=null;backCarried=null;observedCarrier=null;observedAttackAt=null; // A different world must not inherit physical charges.
     promptClaim='';
     if (identity.startsWith('session|')) return;
     try {
@@ -154,6 +160,13 @@
   }
   function saveConsumed(id) {
     loadPersistence();persisted.add(id);persistWorld();
+  }
+  // The inactive zone cache calls this when it tears a zone's scene down. The record and the placement cache
+  // both hold the old scene; recordFor rebuilds them (and restores unlooted rubble from the persisted history)
+  // the next time the zone is entered, exactly as it does when a zone's scene changes.
+  function releaseZone(mapId) {
+    records.delete(mapId);
+    placementCache.delete(mapId);
   }
   function recordFor(mapId, targetScene) {
     const existing=records.get(mapId);
@@ -259,6 +272,7 @@
   const authoredHitboxWorld = THREE.Box3 && new THREE.Box3();
   const hitboxMin = THREE.Vector3 && new THREE.Vector3(), hitboxMax = THREE.Vector3 && new THREE.Vector3();
   function worldHitbox(vase) {
+    if(vase===backCarried)return null; // Carrier collision, not the Burden's authored collider, owns stowed-hit detection.
     const h=vase?.data?.carryable?.hitbox;
     if(!h?.enabled || !authoredHitboxWorld || !hitboxMin || !hitboxMax)return null;
     const c=h.center||{},size=h.size||{};
@@ -289,10 +303,15 @@
     vase.emitters=null;
   }
   const backXray=new Map(),heldRenderOrders=new Map();
+  const frontXray=new Map(); // Restores the rigid front PNG draw order when the back slot is emptied.
   const skinnedRearOverlays=new Map(); // One back-only skinned draw per currently held player's neck-rigged portrait.
   const rearHeadwearXray=new Map(); // Separate skinned rear HEAD and its headwear pass were missing from the vessel x-ray.
   const CARRIED_VESSEL_RENDER_ORDER=1.4; // Used by held parts; 1.5 is reserved for weapon/tool PNG overlay classification.
-  const CARRIED_REAR_RENDER_ORDER=2.4; // After carried vessel parts, before existing hat x-ray (2.5).
+  const CARRIED_REAR_RENDER_ORDER=2.4; // Held-only rear PNG remains above the hand-carried Burden.
+  const STOWED_REAR_RENDER_ORDER=2.05; // Behind a back-stowed Burden while still above ordinary opaque world meshes.
+  const STOWED_REAR_HAT_RENDER_ORDER=2.08; // Headwear belongs to the same back-PNG occlusion side while stowed.
+  const STOWED_BURDEN_RENDER_ORDER=2.15; // The actual stowed furniture draws between the two portrait PNG faces.
+  const STOWED_FRONT_RENDER_ORDER=2.25; // Front PNG occludes the stowed Burden; headwear x-ray keeps its later 2.5 layer.
   const CARRIED_REAR_HEAD_RENDER_ORDER=2.6; // Head's back-only hat/hair pass over the held vessel and hat-front pass.
   function restoreRearHeadwear() {
     for(const [mesh,stored] of rearHeadwearXray){
@@ -314,15 +333,19 @@
     // material array without having an old overlay overwrite new state.
     if(source.material?.[1]===record.backMaterial)
       record.backMaterial.visible=record.wasVisible;
+    source.renderOrder=record.order; // Restore the original front pass when the back Burden leaves or the avatar rebuilds.
     skinnedRearOverlays.delete(source);
   }
-  function syncCarrierRearPortrait(body) {
+  function syncCarrierRearPortrait(body,stowed=false) {
     // PNGPlaneAvatar has TWO layouts: rigid front/back Mesh planes, or ONE
     // SkinnedMesh with separate front/back material groups. The latter has no
     // npc_avatar_back_plane at all, so a rigid-only x-ray silently did nothing
     // on the normal player neck rig.
-    const rigidSeen=new Set(),skinnedSeen=new Set(),headwearSeen=new Set();
-    body?.traverse?.(mesh=>{
+    const rigidSeen=new Set(),frontSeen=new Set(),skinnedSeen=new Set(),headwearSeen=new Set();
+    const liveAvatar=window.WorldPortraitLife?.getPlayerAvatar?.()?.group; // Restricts rear passes to the current portrait, not stale siblings kept during an avatar rebuild.
+    const renderRoot=liveAvatar&&isUnderBody(liveAvatar,body)?liveAvatar:body;
+    const liveSkinned=renderRoot===liveAvatar?liveAvatar?.userData?.neckRig?.skinnedPlane:null; // New rigs can replace their skinned plane without removing its predecessor yet.
+    renderRoot?.traverse?.(mesh=>{
       if(!mesh?.isMesh||mesh.userData?.shattercaskRearOverlay)return;
       // Skinned rear headwear is an independent surface. A skinned torso-only
       // rear overlay never brings it forward through the held Shattercask.
@@ -333,39 +356,60 @@
           rearHeadwearXray.set(mesh,{order:mesh.renderOrder,materials:materials.map(material=>
             [material,{depthTest:material.depthTest,depthWrite:material.depthWrite}])});
         }
-        mesh.renderOrder=CARRIED_REAR_HEAD_RENDER_ORDER;
+        mesh.renderOrder=stowed?STOWED_REAR_HAT_RENDER_ORDER:CARRIED_REAR_HEAD_RENDER_ORDER;
         for(const material of (Array.isArray(mesh.material)?mesh.material:[mesh.material]))
-          if(material){material.depthTest=true;material.depthWrite=true;}
+          if(material){
+            material.depthTest=true;
+            material.depthWrite=!stowed; // Back headwear cannot obscure a Burden shown through the back portrait.
+          }
         return;
       }
-      if(mesh.name==='npc_avatar_back_plane') {
+      if(mesh.name==='npc_avatar_front_plane'||mesh.name==='player_avatar_front_plane'){
+        frontSeen.add(mesh);
+        if(stowed&&!frontXray.has(mesh))frontXray.set(mesh,mesh.renderOrder);
+        if(stowed)mesh.renderOrder=STOWED_FRONT_RENDER_ORDER;
+        return;
+      }
+      if(mesh.name==='npc_avatar_back_plane'||mesh.name==='player_avatar_back_plane') {
         rigidSeen.add(mesh);
         const material=Array.isArray(mesh.material)?mesh.material[0]:mesh.material;
         if(!material)return;
         if(!backXray.has(mesh))backXray.set(mesh,{
           material,depthTest:material.depthTest,depthWrite:material.depthWrite,order:mesh.renderOrder});
-        mesh.renderOrder=CARRIED_REAR_RENDER_ORDER;
-        // Depth test stays ON: only the held vessel is transparent to the
-        // rear portrait, not the walls/terrain between the camera and player.
+        mesh.renderOrder=stowed?STOWED_REAR_RENDER_ORDER:CARRIED_REAR_RENDER_ORDER;
+        // Keep world depth tests, but never let the rear PNG write depth over
+        // a stowed Burden that must render in front of it.
         material.depthTest=true;
+        material.depthWrite=stowed?false:backXray.get(mesh).depthWrite;
         return;
       }
       if(!mesh.isSkinnedMesh||!Array.isArray(mesh.material)
         ||mesh.material[1]?.name!=='npc_avatar_skinned_back_material'||!mesh.parent)return;
+      if(stowed&&liveSkinned?.isSkinnedMesh&&isUnderBody(liveSkinned,renderRoot)
+        &&mesh!==liveSkinned)return; // The old plane can linger in the same avatar root until its replacement is fully installed.
       skinnedSeen.add(mesh);
-      if(skinnedRearOverlays.has(mesh))return;
+      if(skinnedRearOverlays.has(mesh)){
+        const record=skinnedRearOverlays.get(mesh);
+        record.overlay.renderOrder=stowed?STOWED_REAR_RENDER_ORDER:CARRIED_REAR_RENDER_ORDER;
+        if(record.overlay.material[1].depthWrite===stowed){
+          record.overlay.material[1].depthWrite=!stowed;
+          record.overlay.material[1].needsUpdate=true; // Only recompile when switching between held and stowed depth modes.
+        }
+        mesh.renderOrder=stowed?STOWED_FRONT_RENDER_ORDER:record.order;
+        return;
+      }
       const backMaterial=mesh.material[1];
       const hiddenFront=new THREE.MeshBasicMaterial({visible:false}); // Back-only overlay: never re-render the opposite face.
       const rearMaterial=backMaterial.clone(); // Same PNG, alpha test, and skinning; independent depth/layer state.
       rearMaterial.visible=true;
       rearMaterial.depthTest=true;
-      rearMaterial.depthWrite=true; // Preserve world occlusion and subsequent portrait depth behavior.
+      rearMaterial.depthWrite=!stowed; // Stowed Burdens require the rear pass not to mask their pixels; held keeps its original depth.
       rearMaterial.needsUpdate=true;
       const overlay=new THREE.SkinnedMesh(mesh.geometry,[hiddenFront,rearMaterial]);
       overlay.name='shattercask_carrier_rear_only_xray';
       overlay.userData.shattercaskRearOverlay=true;
       overlay.frustumCulled=false;
-      overlay.renderOrder=CARRIED_REAR_RENDER_ORDER;
+      overlay.renderOrder=stowed?STOWED_REAR_RENDER_ORDER:CARRIED_REAR_RENDER_ORDER;
       overlay.bindMode=mesh.bindMode;
       overlay.bind(mesh.skeleton,mesh.bindMatrix); // Share animated bones: no new skinning rig or geometry.
       overlay.matrixAutoUpdate=false;
@@ -374,7 +418,8 @@
         overlay.matrixWorld.copy(mesh.matrixWorld); // Follow live body/neck motion, not a frozen pickup pose.
       };
       mesh.parent.add(overlay);
-      skinnedRearOverlays.set(mesh,{overlay,backMaterial,wasVisible:backMaterial.visible});
+      skinnedRearOverlays.set(mesh,{overlay,backMaterial,wasVisible:backMaterial.visible,order:mesh.renderOrder});
+      mesh.renderOrder=stowed?STOWED_FRONT_RENDER_ORDER:mesh.renderOrder;
       backMaterial.visible=false; // Original rear pass must not double-blend under the overlaid rear.
     });
     // The player can rebuild its portrait asynchronously while carrying.
@@ -390,6 +435,11 @@
     }
     for(const source of [...skinnedRearOverlays.keys()])
       if(!skinnedSeen.has(source))removeSkinnedRearOverlay(source);
+    for(const [mesh,order] of [...frontXray])
+      if(!stowed||!frontSeen.has(mesh)){
+        mesh.renderOrder=order;
+        frontXray.delete(mesh);
+      }
     // The avatar can also replace its head plane independently of the torso.
     for(const [mesh,original] of [...rearHeadwearXray])
       if(!headwearSeen.has(mesh)){
@@ -400,6 +450,42 @@
         }
         rearHeadwearXray.delete(mesh);
       }
+  }
+  function restoreCarriedMaterial(material,original){
+    if(!material||!original)return;
+    if(material.depthWrite===original.depthWrite&&material.depthTest===original.depthTest
+      &&material.transparent===original.transparent)return;
+    material.depthWrite=original.depthWrite;
+    material.depthTest=original.depthTest;
+    material.transparent=original.transparent;
+    material.needsUpdate=true;
+  }
+  function restoreCarriedMesh(mesh,snapshot){
+    mesh.renderOrder=snapshot.order;
+    for(const [material,original] of snapshot.materials)restoreCarriedMaterial(material,original);
+  }
+  function carriedVisualMeshes(burden){
+    const meshes=new Set(burden?.meshColliders||[]); // Physical colliders remain authoritative for hits, not for visual coverage.
+    // Authored decals, loaded GLB detail meshes, and other children aren't
+    // in meshColliders. They must cross the same back-PNG layer as their parent.
+    // Points/Sprites/particle effects aren't part of the solid furniture pass.
+    burden?.group?.traverse?.(node=>{
+      if(!node?.isMesh||node.visible===false)return;
+      const materials=Array.isArray(node.material)?node.material:[node.material];
+      if(materials.some(material=>material&&material.visible!==false))meshes.add(node);
+    });
+    return meshes;
+  }
+  function syncCarriedMaterials(mesh,snapshot){
+    const current=(Array.isArray(mesh.material)?mesh.material:[mesh.material]).filter(Boolean); // Track material replacements on dynamically loaded furniture.
+    for(const [material,original] of snapshot.materials)
+      if(!current.includes(material))restoreCarriedMaterial(material,original);
+    snapshot.materials=snapshot.materials.filter(([material])=>current.includes(material));
+    for(const material of current)
+      if(!snapshot.materials.some(([tracked])=>tracked===material))
+        snapshot.materials.push([material,{
+          depthWrite:material.depthWrite,depthTest:material.depthTest,transparent:material.transparent
+        }]);
   }
   function setHeldRearXray(cask) {
     if(!cask) {
@@ -412,39 +498,125 @@
         }
       }
       backXray.clear();
+      for(const [mesh,order] of frontXray)mesh.renderOrder=order;
+      frontXray.clear();
       for(const source of [...skinnedRearOverlays.keys()])removeSkinnedRearOverlay(source);
       restoreRearHeadwear();
-      for(const [mesh,snap] of heldRenderOrders) {
-        mesh.renderOrder=snap.order;
-        for(const [material,depthWrite] of snap.materials){
-          material.depthWrite=depthWrite;
-          material.needsUpdate=true;
-        }
-      }
+      for(const [mesh,snap] of heldRenderOrders)restoreCarriedMesh(mesh,snap);
       heldRenderOrders.clear();
       return;
     }
-    // The held furniture is still fully visible and depth-tested against the
-    // world; it simply stops writing depth over the character's rear PNG.
-    for(const mesh of cask.meshColliders||[]) {
+    // The hands and back can each hold a different real Burden. Reconcile both
+    // every time, including after transitions, rather than leaving stale x-ray
+    // state on whichever object was last selected.
+    const activeMeshes=new Map(); // Associates each currently carried geometry with its held/back rendering rule.
+    for(const mesh of held?.meshColliders||[])activeMeshes.set(mesh,'held');
+    // The render pass applies to every visible part of the back Burden,
+    // including non-colliding decals and newly loaded furniture detail.
+    for(const mesh of carriedVisualMeshes(backCarried))activeMeshes.set(mesh,'stowed');
+    for(const [mesh,snapshot] of [...heldRenderOrders])
+      if(!activeMeshes.has(mesh)){
+        restoreCarriedMesh(mesh,snapshot);
+        heldRenderOrders.delete(mesh);
+      }
+    for(const [mesh,mode] of activeMeshes){
       if(!heldRenderOrders.has(mesh))heldRenderOrders.set(mesh,{
         order:mesh.renderOrder,
-        materials:(Array.isArray(mesh.material)?mesh.material:[mesh.material])
-          .filter(Boolean).map(material=>[material,material.depthWrite])
+        materials:(Array.isArray(mesh.material)?mesh.material:[mesh.material]).filter(Boolean)
+          .map(material=>[material,{depthWrite:material.depthWrite,depthTest:material.depthTest,transparent:material.transparent}])
       });
-      // Keep physical furniture in the normal colour pass. The held-object
-      // renderer treats 1.5 as a legacy PNG marker and would replay this
-      // vessel over the rear portrait, regardless of its depthWrite setting.
-      mesh.renderOrder=CARRIED_VESSEL_RENDER_ORDER;
-      for(const material of (Array.isArray(mesh.material)?mesh.material:[mesh.material]))
-        if(material&&material.depthWrite!==false){
+      const snapshot=heldRenderOrders.get(mesh);
+      syncCarriedMaterials(mesh,snapshot);
+      // 1.5 is reserved for the weapon replay. A stowed Burden instead enters
+      // the PNG transparent draw queue so renderOrder can place it between the
+      // owner's rear and front faces, even when the furniture is normally opaque.
+      mesh.renderOrder=mode==='stowed'?STOWED_BURDEN_RENDER_ORDER:CARRIED_VESSEL_RENDER_ORDER;
+      for(const [material,original] of snapshot.materials){
+        const transparent=mode==='stowed'?true:original.transparent;
+        const depthTest=mode==='stowed'?true:original.depthTest;
+        if(material.depthWrite!==false||material.transparent!==transparent||material.depthTest!==depthTest){
           material.depthWrite=false;
+          material.transparent=transparent;
+          material.depthTest=depthTest;
           material.needsUpdate=true;
         }
+      }
     }
-    syncCarrierRearPortrait(carryDeps()?.playerMesh);
+    syncCarrierRearPortrait(backCarried?backCarryRoot():carryDeps()?.playerMesh,!!backCarried);
   }
   function carryDeps() { return window.ProceduralHandAttachments?.gameDeps || deps() || {}; }
+  // Stowed Burdens mount directly to the current player portrait plane, never a head/hand socket.
+  // The character root supplies the authored posterior frame and serves as a temporary loading fallback.
+  function backCarryRoot(){
+    const composer=window.PlayerBodyTransformComposer; // Authoritative character root, used to locate the live portrait and resolve authored offsets.
+    return typeof composer?.getPlayerMesh==='function'?composer.getPlayerMesh():carryDeps()?.playerMesh;
+  }
+  let backPortraitCache=null; // Cached {body,plane}; back-carry retargets itself after avatar/portrait rebuilds.
+  function isUnderBody(node,body){
+    for(let cursor=node;cursor;cursor=cursor.parent)if(cursor===body)return true;
+    return false;
+  }
+  function backCarryPortrait(body){
+    if(!body?.traverse)return null;
+    const activeAvatar=window.WorldPortraitLife?.getPlayerAvatar?.()?.group||null; // Canonical current player portrait, even while the previous PNG still belongs to this rig.
+    if(activeAvatar){
+      if(!isUnderBody(activeAvatar,body)){backPortraitCache=null;return null;} // During a rebuild, never mount onto a stale sibling.
+      const liveSkinned=activeAvatar.userData?.neckRig?.skinnedPlane; // A portrait plane can be rebuilt inside the SAME avatar root.
+      if(liveSkinned?.isSkinnedMesh&&isUnderBody(liveSkinned,activeAvatar)){
+        backPortraitCache={body,avatar:activeAvatar,plane:liveSkinned};
+        return liveSkinned; // Prefer the rig's current plane over a cached predecessor that has not been detached yet.
+      }
+      if(backPortraitCache?.body===body&&backPortraitCache.avatar===activeAvatar
+        &&backPortraitCache.plane?.parent&&isUnderBody(backPortraitCache.plane,activeAvatar))return backPortraitCache.plane;
+    }else if(backPortraitCache?.body===body&&!backPortraitCache.avatar
+      &&backPortraitCache.plane?.parent&&isUnderBody(backPortraitCache.plane,body))return backPortraitCache.plane;
+    const searchRoot=activeAvatar||body; // When game.js has a live avatar, scope detection to it so an old visible portrait cannot win.
+    let skinned=null,front=null;
+    const directRig=activeAvatar?.userData?.neckRig;
+    if(directRig?.skinnedPlane?.isSkinnedMesh&&isUnderBody(directRig.skinnedPlane,searchRoot))
+      skinned=directRig.skinnedPlane;
+    if(!skinned)searchRoot.traverse(node=>{
+      if(!node?.isMesh||node.userData?.shattercaskRearOverlay)return;
+      if(!skinned&&node.isSkinnedMesh&&node.material?.[1]?.name==='npc_avatar_skinned_back_material')
+        skinned=node;
+      if(!front&&(node.name==='npc_avatar_front_plane'||node.name==='player_avatar_front_plane'))
+        front=node; // Legacy avatars need the forward-facing plane, never the reversed back plane.
+    });
+    const plane=skinned||front||null;
+    backPortraitCache=plane?{body,avatar:activeAvatar,plane}:null;
+    return plane;
+  }
+  function worldRigQuaternion(node){
+    const chain=[],quaternion=new THREE.Quaternion(); // One-off portrait attachment calculation; avoid decomposing mirrored avatar matrices.
+    for(let cursor=node;cursor;cursor=cursor.parent)chain.unshift(cursor);
+    for(const part of chain)quaternion.multiply(part.quaternion);
+    return quaternion;
+  }
+  function moveBackBurdenToPortrait(vase,body,portrait,backConfig){
+    body.updateWorldMatrix?.(true,false);
+    portrait.updateWorldMatrix?.(true,false);
+    const worldPosition=body.localToWorld(vase.group.position.clone()); // Solve once at mount; repeated solving would cancel the portrait's own deadzone yaw.
+    const worldRotation=worldRigQuaternion(body).multiply(vase.group.quaternion);
+    const bodyScale=body.getWorldScale(new THREE.Vector3());
+    const portraitScale=portrait.getWorldScale(new THREE.Vector3());
+    const localScale=new THREE.Vector3(
+      vase.group.scale.x*bodyScale.x/(portraitScale.x||1),
+      vase.group.scale.y*bodyScale.y/(portraitScale.y||1),
+      vase.group.scale.z*bodyScale.z/(portraitScale.z||1));
+    const inversePortraitRotation=worldRigQuaternion(portrait).invert();
+    portrait.add(vase.group); // Real physical Burden is parented directly to the portrait mesh, not a proxy or the carrier root.
+    vase.group.position.copy(portrait.worldToLocal(worldPosition));
+    vase.group.quaternion.copy(inversePortraitRotation.multiply(worldRotation));
+    vase.group.scale.copy(localScale);
+    // Portrait-local attachment coordinate, defaulting to the center of the portrait.
+    // The burden's authored anchor is moved onto this point rather than inheriting
+    // the body-root posterior position. Its rotation continues following the plane.
+    const anchor=backConfig?.portraitAnchor||{}; // Authored attachment coordinate on the carrier portrait.
+    const burdenPoint=backConfig?.position||{}; // Point on the burden that must meet the portrait anchor.
+    const localBurdenPoint=new THREE.Vector3(finite(burdenPoint.x),finite(burdenPoint.y),finite(burdenPoint.z))
+      .multiply(vase.group.scale).applyQuaternion(vase.group.quaternion);
+    vase.group.position.set(finite(anchor.x),finite(anchor.y),finite(anchor.z)).sub(localBurdenPoint);
+  }
   function heldItemHolder(){
     const d=carryDeps();
     return d?.getHeldItemHandTarget?.()?.holder
@@ -473,10 +645,14 @@
     return{holder,position,quaternion};
   }
   function alignHeldVase(vase) {
-    const body=carryDeps()?.playerMesh;
+    const isBack=backCarried===vase;
+    const body=isBack?backCarryRoot():carryDeps()?.playerMesh;
     if(!body||!vase?.group?.quaternion||!posteriorLocal)return false;
+    const portrait=isBack?backCarryPortrait(body):null; // Stowed-only artwork parent; held retains its original rig parent and pose.
+    if(portrait&&vase.group.parent===portrait)return true; // Preserve independent portrait rotation between animation frames.
     if(vase.group.parent!==body)body.add(vase.group);
-    const cfg=vase.data?.carryable?.billboardAnchor||{},a=cfg.position||{},r=cfg.rotation||{},o=cfg.posteriorOffset||{};
+    const carryable=vase.data?.carryable||{}; // The back pose uses authored transforms, with an inverted held pose as its fallback.
+    const cfg=(isBack&&carryable.backCarry)||carryable.billboardAnchor||{},a=cfg.position||{},r=cfg.rotation||{},o=cfg.posteriorOffset||{};
     const playerSpecies=String(body.userData?.speciesId||body.userData?.species||'mao-ao').toLowerCase();
     const playerGender=String(body.userData?.gender||'male').toLowerCase();
     const profile=window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters?.[`${playerSpecies}::${playerGender}`]
@@ -496,7 +672,7 @@
     // Never inherit the *generic held-item holder's* extra bottle/tool rotation
     // or its world position: doing so rotates authored Z clearance into a
     // different axis and makes authoring disagree with gameplay.
-    heldAnchorEuler.set(finite(r.x)*Math.PI/180,finite(r.y)*Math.PI/180,finite(r.z)*Math.PI/180);
+    heldAnchorEuler.set(finite(r.x)*Math.PI/180,(finite(r.y)+(isBack&&!carryable.backCarry?180:0))*Math.PI/180,finite(r.z)*Math.PI/180);
     authoredAnchorQuat.setFromEuler(heldAnchorEuler).invert();
     vase.group.quaternion.copy(authoredAnchorQuat);
     const size=Math.max(.1,finite(cfg.size,1));
@@ -507,6 +683,7 @@
     heldAnchorOffset.set(finite(a.x),finite(a.y),finite(a.z))
       .multiplyScalar(vase.group.scale.x).applyQuaternion(vase.group.quaternion);
     vase.group.position.copy(posteriorLocal).add(posteriorOffset).sub(heldAnchorOffset);
+    if(isBack&&portrait)moveBackBurdenToPortrait(vase,body,portrait,cfg);
     const base=aimingThrow?.socketBase;
     if(aimingThrow?.vase===vase&&base){
       const live=currentThrowSocketPose();
@@ -808,7 +985,8 @@
       ?[...records.values()].map(rec=>rec.vases.get(burdenOrId)).find(Boolean)
       :burdenOrId;
     if(!burden||burden.exploded)return false;
-    if(held===burden){held=null;cancelShatterAim();setHeldRearXray(null);prompt();deps()?.refreshActionBar?.();}
+    if(held===burden){held=null;cancelShatterAim();setHeldRearXray(null);if(backCarried)setHeldRearXray(backCarried);prompt();deps()?.refreshActionBar?.();}
+    if(backCarried===burden){backCarried=null;setHeldRearXray(null);if(held)setHeldRearXray(held);deps()?.refreshActionBar?.();}
     downwardFalls.delete(burden.id);fallingFruits.delete(burden.id);
     const rec=records.get(burden.mapId);
     if(rec?.vases.get(burden.id)===burden)rec.vases.delete(burden.id);
@@ -916,6 +1094,7 @@
     const world = fruit.group.getWorldPosition(new THREE.Vector3());
     if (held === fruit) {
       cancelShatterAim(); setHeldRearXray(null); held = null;
+      if(backCarried)setHeldRearXray(backCarried); // Dropping hand fruit must not hide the separate back burden.
       prompt(); deps()?.refreshActionBar?.();
     }
     rec.scene.add(fruit.group);
@@ -1024,7 +1203,7 @@
   function senseTargets(targetScene) {
     const out=[];
     for(const rec of records.values())if(rec.scene===targetScene)for(const cask of rec.vases.values())
-      if(!cask.exploded)out.push(cask.group);
+      if(!cask.exploded&&cask!==backCarried)out.push(cask.group); // Stowed Burdens use their carrier's hitbox, never their own target mesh.
     return out;
   }
   function switchEquipment() {
@@ -1050,6 +1229,99 @@
     deps()?.showToast?.('Carrying ' + cask.displayName + ' — Action 1: hold and release to throw; Action 2: drop.',false);
     return true;
   }
+  function backCarriedInfo(){
+    return backCarried&&!backCarried.exploded
+      ?{id:backCarried.id,kind:backCarried.kind,displayName:backCarried.displayName}:null;
+  }
+  function backCarrierPosition(burden){
+    if(!burden||backCarried!==burden)return null;
+    const p=playerPosition();
+    if(!p)return null;
+    burden.group?.updateWorldMatrix?.(true,true);
+    const world=burden.group?.getWorldPosition?.(carriedWorldPosition);
+    return {x:p.x,z:p.z,y:world?.y??baseHeight(Math.floor(p.x),Math.floor(p.z))+.3};
+  }
+  function stowOnBack(){
+    if(!held||backCarried||held.exploded||held.flying||held.mapId!==area())return false;
+    const burden=held;
+    cancelShatterAim();
+    held=null;backCarried=burden;
+    burden.carried=true;
+    alignHeldVase(burden);
+    setHeldRearXray(burden);
+    observedCarrier=deps()?.player||null;
+    observedAttackAt=Number.isFinite(Number(observedCarrier?.lastAttackReceivedAt))?Number(observedCarrier.lastAttackReceivedAt):null;
+    lastEvent='stowed '+burden.id+' on back';
+    prompt();syncToolArchPickup();deps()?.refreshActionBar?.();
+    deps()?.showToast?.(burden.displayName+' stowed on back — select it from the tool arch to take it out.',false);
+    return true;
+  }
+  function takeFromBack(){
+    if(held||!backCarried||backCarried.exploded||backCarried.mapId!==area())return false;
+    window.ActionArcUI?.stowForCarry?.();
+    const burden=backCarried;
+    backCarried=null;held=burden;
+    alignHeldVase(burden);
+    setHeldRearXray(burden);
+    Object.assign(lastEquipment,switchEquipment());
+    lastEvent='retrieved '+burden.id+' from back';
+    prompt();syncToolArchPickup();deps()?.refreshActionBar?.();
+    deps()?.showToast?.('Carrying '+burden.displayName+' — Action 1: throw; Action 2: drop.',false);
+    return true;
+  }
+  function impactBackOnCarrierHit(cause='carrier-hit'){
+    const burden=backCarried;
+    if(!burden||burden.exploded)return false;
+    const explosive=burden.kind==='shattercask'||burden.kind==='soursap'
+      ||burden.explodeOnCarrierHit===true||burden.data?.carryable?.explodeOnHit===true;
+    if(!explosive)return false; // A witch-bomb's fuse continues, but an ordinary hit does not trigger it.
+    return detonate(burden,cause);
+  }
+  function trackCarrierDamage(){
+    const player=deps()?.player||null,receivedAt=Number(player?.lastAttackReceivedAt);
+    if(observedCarrier!==player){
+      observedCarrier=player;
+      observedAttackAt=Number.isFinite(receivedAt)?receivedAt:null;
+      return;
+    }
+    // ResourceSystem.applyDamage writes this timestamp for a direct hit even
+    // when enhanced Health absorbs the impact. Affliction ticks never write it.
+    if(Number.isFinite(receivedAt)&&Number.isFinite(observedAttackAt)&&receivedAt>observedAttackAt){
+      observedAttackAt=receivedAt;
+      impactBackOnCarrierHit('carrier-direct-hit');
+    }else if(Number.isFinite(receivedAt))observedAttackAt=receivedAt;
+  }
+  function transferBackToArea(mapId){
+    const burden=backCarried,targetScene=scene();
+    if(!burden||burden.mapId===mapId||!mapId||!targetScene)return;
+    const oldMapId=burden.mapId,oldId=burden.id; // Used to retire the original static spawn before changing the physical object's identity.
+    const oldRecord=records.get(oldMapId);
+    const newRecord=recordFor(mapId,targetScene);
+    if(oldRecord?.vases.get(oldId)===burden)oldRecord.vases.delete(oldId);
+    // Shattercasks are normally regenerated from their stable area-local IDs.
+    // Mark the ORIGINAL placement consumed on first departure, without
+    // destroying the item in the player's possession.
+    if(burden.kind==='shattercask'&&!burden._backOriginalSpawnRetired){
+      burden._backOriginalSpawnRetired=true;
+      saveConsumed(oldMapId+':'+oldId);
+      // Reserve a separate ID BEFORE the destination's async authored
+      // furniture loads. Otherwise its unspawned static charge could be
+      // silently suppressed by the traveling charge with the same local ID.
+      burden._backTravelId='traveling_back_'+(++devArenaSpawnSerial)+'_'+oldId;
+    }
+    // Keep the traveling identity stable between rooms. Other Burden kinds
+    // retain their authored IDs unless a populated destination collides.
+    let nextId=burden._backTravelId||oldId,serial=1;
+    while(newRecord.vases.has(nextId)&&newRecord.vases.get(nextId)!==burden)
+      nextId=(burden._backTravelId||oldId)+'_back_'+serial++;
+    if(burden._backTravelId)burden._backTravelId=nextId;
+    burden.id=nextId;
+    newRecord.vases.set(nextId,burden);
+    burden.mapId=mapId;
+    burden.group.userData.shattercaskId=nextId;
+    burden.group.userData.shattercaskMap=mapId;
+    lastEvent='carried '+nextId+' into '+mapId;
+  }
   // Takes the carried burden out of the player's hands without placing it anywhere; the caller owns
   // positioning it next (hanging it on a rope). Mirrors the hand-off in placeHeldBurdenOnSurface.
   function detachHeldBurden() {
@@ -1058,6 +1330,7 @@
     cancelShatterAim(); setHeldRearXray(null);
     burden.carried = false;
     held = null;
+    if(backCarried)setHeldRearXray(backCarried);
     prompt();
     deps()?.refreshActionBar?.();
     lastEvent = 'released ' + burden.id + ' from the hands';
@@ -1090,6 +1363,7 @@
     const world = burden.group.getWorldPosition(carriedWorldPosition);
     burden.col = Math.floor(world.x); burden.row = Math.floor(world.z);
     held = null;
+    if(backCarried)setHeldRearXray(backCarried);
     prompt();
     deps()?.refreshActionBar?.();
     lastEvent = 'placed ' + burden.id + ' on burden plinth ' + burden.plinthSurfaceId;
@@ -1127,6 +1401,7 @@
     cask.group.position.set(cask.col+.5,baseHeight(cask.col,cask.row),cask.row+.5);
     refreshMeshBounds(cask);
     cask.carried=false;held=null;
+    if(backCarried)setHeldRearXray(backCarried);
     try{cask.onDrop?.(cask);}catch(error){console.warn('[burden] drop callback failed',error);}
     prompt(); // Immediately restore nearby normal world interactions.
     deps()?.refreshActionBar?.();
@@ -1135,14 +1410,17 @@
   }
   function nearInteraction() {
     const p=playerPosition(),rec=records.get(area());
-    if(!p||!rec)return null;
+    if(!p)return null; // Interactive crate piles need not have any Shattercask spawns in this area.
     let choice=null,smallest=1.65;
-    for(const vase of rec.vases.values()) {
+    for(const vase of rec?.vases.values()||[]) {
       if(vase.exploded||vase.carried||vase.flying||vase.hanging||vase.plinthAttached)continue;
       const d=distance(p,{x:vase.col+.5,z:vase.row+.5});
       if(d<smallest){smallest=d;choice={type:'vase',obj:vase};}
     }
-    for(const pile of rec.piles.values()) {
+    const crates=window.CratePiles?.nearestInteractable?.(area(),p.x,p.z);
+    if(crates){const pos=crates.group.getWorldPosition(new THREE.Vector3());const d=distance(p,{x:pos.x,z:pos.z});
+      if(d<smallest){smallest=d;choice={type:'cratePile',obj:crates};}}
+    for(const pile of rec?.piles.values()||[]) {
       const d=distance(p,{x:pile.x??pile.col+.5,z:pile.z??pile.row+.5});
       if(d<smallest){smallest=d;choice={type:'pile',obj:pile};}
     }
@@ -1221,11 +1499,11 @@
     const active=scene();if(!active)return;
     if(throwRing.parent!==active)active.add(throwRing);
     const groundY=thrownGround(target.x,target.z); // Same landing surface used by the physical throw.
+    const previewRadius=held?.kind==='soursap'?FRUIT_RADIUS:held?.kind==='looseCrate'?1:RADIUS;
     const changed=throwRing.userData.targetX!==target.x||throwRing.userData.targetZ!==target.z
       ||throwRing.userData.groundY!==groundY
-      ||throwRing.userData.radius!==(held?.kind === 'soursap' ? FRUIT_RADIUS : RADIUS); // Resample only when the target or its terrain height changes.
+      ||throwRing.userData.radius!==previewRadius; // Resample only when the target or its terrain height changes.
     throwRing.position.set(target.x,groundY+.035,target.z);
-    const previewRadius = held?.kind === 'soursap' ? FRUIT_RADIUS : RADIUS; // Burden-specific AOE on the same projected reticle.
     throwRing.scale.setScalar(previewRadius);
     if(changed){
       const positions=throwRing.geometry.attributes?.position; // Local Z becomes height after the ground-plane rotation.
@@ -1280,7 +1558,6 @@
   function launchShattercask(){
     if(!held||!aimingThrow?.target)return false;
     const c=held;
-    if(c.kind==='shattercask') c._flaskmasterSource = { power: flaskmasterFactor('shatterPower'), radius: flaskmasterFactor('shatterRadius'), rootId: c.id, origin: 'player-throw' }; // Save throw-time ownership until impact; soursap and other Burdens never inherit this bonus.
     let target=aimingThrow.target;
     c.group.updateWorldMatrix?.(true,true);
     const origin=c.group.getWorldPosition?.(new THREE.Vector3())||c.group.position.clone();
@@ -1299,10 +1576,12 @@
     }
     const active=records.get(c.mapId)?.scene||scene();
     if(!active)return false;
+    if(c.kind==='shattercask') c._flaskmasterSource = {power:flaskmasterFactor('shatterPower'),radius:flaskmasterFactor('shatterRadius'),rootId:c.id,origin:'player-throw'}; // Capture launch-time bonus before the equipment can change in flight.
     setHeldRearXray(null);
     active.add(c.group);c.group.position.copy(origin);
     c.group.quaternion.copy(quat);c.group.scale.copy(scale);
     c.carried=false;c.flying=true;held=null;cancelShatterAim();
+    if(backCarried)setHeldRearXray(backCarried);
     prompt();deps()?.refreshActionBar?.(); // Return the ordinary actions when the thrown cask leaves the hand.
     const distanceTiles=Math.hypot(target.x-origin.x,target.z-origin.z);
     flight={vase:c,origin,target,distanceTiles,
@@ -1350,6 +1629,10 @@
     Object.freeze({icon:'↗',label:'Throw Shattercask',action:'shattercask_throw',inputAction:'action1',style:'primary',allowed:true}),
     Object.freeze({icon:'⬇',label:'Drop Shattercask',action:'shattercask_drop',inputAction:'action2',style:'secondary',allowed:true}),
   ]); // Shared by computeActionButtonsImpl while carrying; no per-frame allocations.
+  const CARRIED_CRATE_ACTION_BUTTONS=Object.freeze([
+    Object.freeze({...CARRIED_ACTION_BUTTONS[0],label:'Throw Wooden Crate'}),
+    Object.freeze({...CARRIED_ACTION_BUTTONS[1],label:'Drop Wooden Crate'}),
+  ]);
   const CARRIED_FRUIT_ACTION_BUTTONS=Object.freeze([
     Object.freeze({icon:'↗',label:'Throw Soursap Fruit',action:'shattercask_throw',inputAction:'action1',style:'primary',allowed:true}),
     Object.freeze({icon:'⬇',label:'Drop Soursap Fruit',action:'shattercask_drop',inputAction:'action2',style:'secondary',allowed:true}),
@@ -1357,10 +1640,12 @@
   const HANG_ACTION_BUTTON=Object.freeze({icon:'↟',label:'Hang on Rope',action:'shattercask_drop',inputAction:'action2',style:'secondary',allowed:true});
   const CARRIED_HANG_ACTION_BUTTONS=Object.freeze([CARRIED_ACTION_BUTTONS[0],HANG_ACTION_BUTTON]);
   const CARRIED_FRUIT_HANG_ACTION_BUTTONS=Object.freeze([CARRIED_FRUIT_ACTION_BUTTONS[0],HANG_ACTION_BUTTON]);
+  const CARRIED_CRATE_HANG_ACTION_BUTTONS=Object.freeze([CARRIED_CRATE_ACTION_BUTTONS[0],HANG_ACTION_BUTTON]);
   function actionButtons(){
     if(!held)return null;
     const canHang=window.HangingRopes?.findHook?.(held); // The release action and its label share the same hook search.
     if(held.kind==='soursap')return canHang?CARRIED_FRUIT_HANG_ACTION_BUTTONS:CARRIED_FRUIT_ACTION_BUTTONS;
+    if(held.kind==='looseCrate')return canHang?CARRIED_CRATE_HANG_ACTION_BUTTONS:CARRIED_CRATE_ACTION_BUTTONS;
     return canHang?CARRIED_HANG_ACTION_BUTTONS:CARRIED_ACTION_BUTTONS;
   }
   function grantLoot(items) {
@@ -1449,6 +1734,7 @@
     if(held)return window.HangingRopes?.tryHang?.(held)===true||drop(); // Near a rope with a free hook, the carry-release action hangs the burden on it.
     const target=nearInteraction();
     if(target?.type==='vase')return pickUp(target.obj);
+    if(target?.type==='cratePile')return !!window.CratePiles?.takeCrate?.(target.obj);
     if(target?.type==='pile')return collectPile(target.obj);
     return false;
   }
@@ -1476,21 +1762,25 @@
     }
     return result;
   }
-  function toolArchAction(){return !held&&facedShattercask()?'pickup':null;}
-  function toolArchTap(){return toolArchAction()==='pickup'&&pickUp(facedShattercask());}
+  // The existing gameplay controller dispatcher recognizes the literal 'pickup' claim.
+  // Keep that claim for back-stow too, so pointer, key and pad all use one Tool Select owner.
+  function toolArchAction(){return held&&!backCarried?'pickup':!held&&facedShattercask()?'pickup':null;}
+  function toolArchTap(){return toolArchAction()==='pickup'&&(held?stowOnBack():pickUp(facedShattercask()));}
   let lastToolArchAction=null;
   function syncToolArchPickup() {
     if(typeof document==='undefined')return;
     const btn=document.getElementById?.('toolBtn');
     if(!btn)return;
     const action=toolArchAction();
-    if(action===lastToolArchAction)return;
-    lastToolArchAction=action;
+    const labelAction=action?(held?'stow':'pickup'):null; // Same controller claim, different contextual button label.
+    if(labelAction===lastToolArchAction)return;
+    lastToolArchAction=labelAction;
     btn.classList?.toggle?.('shattercask-context',!!action);
     if(action){
-      btn.dataset.shattercaskIcon='✋';
-      btn.setAttribute?.('aria-label','Pick up ' + facedShattercask().displayName);
-      btn.title='Pick up ' + facedShattercask().displayName;
+      btn.dataset.shattercaskIcon=held?'🎒':'✋';
+      const label=held?'Store '+held.displayName+' on back':'Pick up '+facedShattercask().displayName;
+      btn.setAttribute?.('aria-label',label);
+      btn.title=label;
     }else{
       btn.removeAttribute?.('data-shattercask-icon');
       btn.setAttribute?.('aria-label','Select tool, or dequip if a tool is already out');
@@ -1506,9 +1796,12 @@
     // Interact or the optional, normally unbound Action 4/5 inputs. A nearby
     // intact cask claims Interact; rubble is an ordinary arch button instead
     // (see contextButtons) so touch players can collect it too.
-    const vase=nearVase();
+    // Prompt the same nearest object that interact() will actually operate on.
+    const target=held?null:nearInteraction();
+    const vase=target?.type==='vase'?target.obj:null;
+    const crate=target?.type==='cratePile'?target.obj:null;
     const hang=held&&window.HangingRopes?.findHook?.(held); // Refresh the input label when a hook enters or leaves reach.
-    const claim=held?'carried:'+held.id+(hang?':hang':''):vase?'vase:'+vase.id:'';
+    const claim=held?'carried:'+held.id+(hang?':hang':''):vase?'vase:'+vase.id:crate?'crate:'+crate.id:'';
     if(claim!==promptClaim){
       if(held)window.WorldActionInputClaims?.setClaims?.('shattercask',[
         {actionId:'action1',label:'Throw ' + held.displayName,priority:810,
@@ -1517,8 +1810,14 @@
       ]);
       else if(vase)window.WorldActionInputClaims?.setClaims?.('shattercask',
         [{actionId:'interact',label:'Pick up ' + vase.displayName,priority:410,onPress:interact}]);
+      else if(crate)window.WorldActionInputClaims?.setClaims?.('shattercask',
+        [{actionId:'interact',label:'Take Wooden Crate',priority:410,onPress:interact}]);
       else window.WorldActionInputClaims?.clearClaims?.('shattercask');
       promptClaim=claim;
+      if(crate&&!crate.promptButtons)crate.promptButtons=Object.freeze([Object.freeze({
+        icon:'📦',label:'Take Wooden Crate',action:'shattercask_pickup_prompt',allowed:true,
+        worldInteraction:true,inputAction:'interact',promptRoot:crate.group,
+      })]);
       if(vase&&!vase.promptButtons)vase.promptButtons=Object.freeze([Object.freeze({
         icon:'✋',label:'Pick up ' + vase.displayName,action:'shattercask_pickup_prompt',allowed:true,
         worldInteraction:true,inputAction:'interact',promptRoot:vase.group,
@@ -1529,9 +1828,13 @@
   // module used to draw its own WorldPopupText list, which game.js's
   // per-frame sync cleared ~120ms later: the visible prompt flicker.
   function promptButtons() {
-    if(held||!promptClaim.startsWith('vase:'))return null;
+    if(held||!promptClaim)return null;
     if(window.WorldActionInputClaims?.claimFor?.('interact')?.ownerId!=='shattercask')return null;
-    const vase=records.get(area())?.vases.get(promptClaim.slice(5));
+    if(promptClaim.startsWith('crate:')){
+      const p=playerPosition(),crate=p&&window.CratePiles?.nearestInteractable?.(area(),p.x,p.z);
+      return crate?.id===promptClaim.slice(6)?crate.promptButtons||null:null;
+    }
+    const vase=promptClaim.startsWith('vase:')?records.get(area())?.vases.get(promptClaim.slice(5)):null;
     return vase&&!vase.exploded&&!vase.carried?vase.promptButtons||null:null;
   }
   function baseHeight(col,row) {
@@ -1739,7 +2042,7 @@
     for(const actor of d?.npcWalkers||[])targets.push(actor);
     const seen=new Set();
     for(const actor of targets) {
-      if(!actor||seen.has(actor)||actor.health<=0||actor.areaId && actor.areaId!==mapId||actor.area&&actor.area!==mapId)continue;
+      if(!actor||actor===options.excludeActor||seen.has(actor)||actor.health<=0||actor.areaId && actor.areaId!==mapId||actor.area&&actor.area!==mapId)continue;
       seen.add(actor);
       const ax=Number(actor.x)/t, az=Number(actor.y)/t;
       if(!Number.isFinite(ax)||!Number.isFinite(az))continue;
@@ -1756,23 +2059,23 @@
       const footingLoss=options.footingDamage!==undefined
         ?Math.max(0,Number(options.footingDamage)*(1-dist/radius))
         :Math.max(8,24*(1-dist/radius)); // Preserve Shattercask's original minimum Footing loss unless a new blast explicitly overrides it.
-      const footingScale = Math.max(0, Number(options.footingDamageScale) || 1); // Shattercask Flaskmaster boosts combat Footing impacts, but never terrain-resource destruction.
-      window.ResourceSystem?.spendFooting?.(actor,footingLoss * footingScale,reason);
+      const footingScale=Math.max(0,Number(options.footingDamageScale)||1); // Flaskmaster boosts combat Footing impacts, never terrain destruction.
+      window.ResourceSystem?.spendFooting?.(actor,footingLoss*footingScale,reason);
     }
   }
-  function triggerBurdenBlastAt(mapId,x,z,radius,ignoreId='',source=null) {
+  function triggerBurdenBlastAt(mapId,x,z,radius,ignoreId='',source=null) { // Preserve the initial player-owned flask bonus along each physical Shattercask chain.
     const rec=records.get(String(mapId));
     if(!rec?.vases)return 0;
     const limit=Math.max(0,Number(radius)||0),hit=[];
     for(const burden of rec.vases.values()) {
       if(!burden||burden.id===ignoreId||burden.exploded||burden.carried||burden.flying||!burden.group?.parent)continue;
       burden.group.updateWorldMatrix?.(true,true);
-      const world=burden.group.getWorldPosition?.(new THREE.Vector3()) || burden.group.position; // Real Three groups use world coordinates; headless/test or provisional Burdens can use their stable local position.
-      if(world && Math.hypot(world.x-x,world.z-z)<=limit)hit.push(burden);
+      const world=burden.group.getWorldPosition?.(new THREE.Vector3())||burden.group.position; // Provisional Burdens without a stable world matrix still remain valid chain targets.
+      if(world&&Math.hypot(world.x-x,world.z-z)<=limit)hit.push(burden);
     }
     let count=0;
     for(const burden of hit) {
-      if(burden.kind==='shattercask'){if(detonate(burden,'chain-blast',source))count++;} // Only a traceable player-rooted Shattercask chain inherits Flaskmaster.
+      if(burden.kind==='shattercask'){if(detonate(burden,'chain-blast',source))count++;} // Witch-bomb and other non-Shattercask secondary effects never inherit the trinket.
       else if(burden.kind==='hronalWitchBomb') {
         const handler=burden.impactHandler||BURDEN_IMPACT_HANDLERS.get(burden.kind);
         if(typeof handler==='function'&&handler(burden,'witch-bomb-chain')!==false)count++;
@@ -1828,7 +2131,9 @@
     if(!fruit||fruit.exploded)return false;
     fruit.group.updateWorldMatrix?.(true,true);
     const world=fruit.group.getWorldPosition(new THREE.Vector3());
-    if(held===fruit){held=null;cancelShatterAim();setHeldRearXray(null);prompt();deps()?.refreshActionBar?.();}
+    const carrierImpact=backCarrierPosition(fruit);
+    if(carrierImpact){world.x=carrierImpact.x;world.z=carrierImpact.z;backCarried=null;setHeldRearXray(null);if(held)setHeldRearXray(held);deps()?.refreshActionBar?.();}
+    if(held===fruit){held=null;cancelShatterAim();setHeldRearXray(null);if(backCarried)setHeldRearXray(backCarried);prompt();deps()?.refreshActionBar?.();}
     fallingFruits.delete(fruit.id);
     looseFruitHistory.get(fruit.mapId)?.delete(fruit.id);
     const rec=records.get(fruit.mapId);
@@ -1849,26 +2154,29 @@
     window.__farmLog?.('[burden] '+lastEvent,'world');
     return true;
   }
-  function detonate(cask,cause='weapon',source=null) {
+  function detonate(cask,cause='weapon',attacker=null) {
     if(!cask||cask.exploded)return false;
     if(cask.kind!=='soursap'&&cask.kind!=='shattercask') {
       const handler=cask.impactHandler||BURDEN_IMPACT_HANDLERS.get(cask.kind)||cask.data?.carryable?.impactHandler;
-      return typeof handler==='function'?handler(cask,cause)!==false:false; // Future physical Burdens own their impact; they are never mistaken for explosive pottery.
+      return typeof handler==='function'?handler(cask,cause,attacker)!==false:false; // Future physical Burdens own their impact; they are never mistaken for explosive pottery.
     }
     if(cask.kind==='soursap')return detonateFruit(cask,cause);
-    const attribution = (source && typeof source === 'object' ? source : null) || (cause === 'throw-impact' ? cask._flaskmasterSource : null); // Explicit throw/hit origin or inherited chain; environmental hits are unboosted.
-    const flaskmasterPower = Math.max(1, Number(attribution?.power) || 1); // Snapshotted by the wearer at the root action, not inferred from blast proximity.
-    const flaskmasterRadius = Math.max(1, Number(attribution?.radius) || 1); // The source persists through arbitrarily long chains, including midflight equipment swaps.
+    const attribution=(attacker&&typeof attacker==='object'&&attacker.rootId?attacker:null)||(cause==='throw-impact'?cask._flaskmasterSource:null); // Actor references and environmental hits cannot claim player equipment.
+    const flaskmasterPower=Math.max(1,Number(attribution?.power)||1); // Composed once at the root and snapshotted for a blast chain.
+    const flaskmasterRadius=Math.max(1,Number(attribution?.radius)||1); // A subsequent gear swap cannot boost or weaken a fired Shattercask.
     cask.exploded=true;
     window.AudioSystem?.playObjectSfxKey?.('shattercaskBlast'); // Central detonation gate covers thrown impacts and weapon-triggered blasts exactly once.
-    if(held===cask){cancelShatterAim();held=null;setHeldRearXray(null);prompt();deps()?.refreshActionBar?.();}
+    if(held===cask){cancelShatterAim();held=null;setHeldRearXray(null);if(backCarried)setHeldRearXray(backCarried);prompt();deps()?.refreshActionBar?.();}
     if(flight?.vase===cask)flight=null;
     const rec=records.get(cask.mapId);
+    const carrierImpact=backCarrierPosition(cask); // Hit-triggered charges explode at the carrier's exact tile position.
     const impact={x:cask.group.position.x,y:cask.group.position.y,z:cask.group.position.z};
     if((cask.carried||cask.flying||cask.plinthAttached)&&cask.group.getWorldPosition&&carriedWorldPosition){
       const world=cask.group.getWorldPosition(carriedWorldPosition);
       impact.x=world.x;impact.y=world.y;impact.z=world.z;
     }
+    if(carrierImpact){impact.x=carrierImpact.x;impact.y=carrierImpact.y;impact.z=carrierImpact.z;
+      backCarried=null;setHeldRearXray(null);if(held)setHeldRearXray(held);deps()?.refreshActionBar?.();}
     cask.group.parent?.remove(cask.group);
     disposeEmitters(cask);
     rec?.vases.delete(cask.id);
@@ -1877,9 +2185,9 @@
     const y=(cask.carried||cask.flying||cask.plinthAttached)?impact.y:baseHeight(cask.col,cask.row)+.30; // An attached charge explodes at its live surface position.
     shatterVisual(rec?.scene||scene(),x,z,y);
     applyBlast(cask.mapId,x,z,{radius:RADIUS*flaskmasterRadius,damage:DAMAGE*flaskmasterPower,minimumDamage:8*flaskmasterPower,footingDamageScale:flaskmasterPower});
-    lastBlastAttribution = { id:cask.id,cause,rootId:attribution?.rootId||null,origin:attribution?.origin||'unattributed',power:flaskmasterPower,radius:flaskmasterRadius }; // Copyable diagnostics prove chain inheritance or neutrality.
-    const cleared=destroyTerrain(cask.mapId,rec,x,z); // Environmental demolition remains unchanged by combat-only equipment.
-    triggerBurdenBlastAt(cask.mapId,x,z,RADIUS*flaskmasterRadius,cask.id,attribution); // A Shattercask chain propagates its original wearer attribution; marks exploded before recursing.
+    lastBlastAttribution={id:cask.id,cause,rootId:attribution?.rootId||null,origin:attribution?.origin||'unattributed',power:flaskmasterPower,radius:flaskmasterRadius}; // Exposes player-only chain origin in the game's mobile diagnostics.
+    const cleared=destroyTerrain(cask.mapId,rec,x,z); // The environmental terrain-clearing radius remains at its unmodified setting.
+    triggerBurdenBlastAt(cask.mapId,x,z,RADIUS*flaskmasterRadius,cask.id,attribution); // A marked-exploded root cannot recursively detonate twice.
     lastEvent='blast '+cask.id+' via '+cause+', terrain='+cleared;
     window.__farmLog?.('[shattercask] '+lastEvent,'world');
     return true;
@@ -1889,6 +2197,7 @@
     if(held && opts.actor===deps()?.player)drop();
     const collider=window.Combat?.meleeColliderVolume?.(opts.actor,opts);
     if(!collider)return;
+    window.CratePiles?.sweepMelee?.(collider,opts);
     for(const vase of allActive().values()) {
       // Hanging Soursap must be plucked from its branch or knocked down by a
       // ranged projectile; a melee swing through the canopy cannot bypass the fall.
@@ -1912,7 +2221,7 @@
         try{handled=vase.strikeHandler(vase,{attacker:opts.actor,source:'melee'})===true;}catch(error){console.warn('[burden] strike handler failed',error);}
         if(handled)break;
       }
-      const source = opts.actor===deps()?.player ? {power:flaskmasterFactor('shatterPower'),radius:flaskmasterFactor('shatterRadius'),rootId:vase.id,origin:'player-melee'} : null; // Enemy hits cannot claim the wearer's bonus.
+      const source=opts.actor===deps()?.player?{power:flaskmasterFactor('shatterPower'),radius:flaskmasterFactor('shatterRadius'),rootId:vase.id,origin:'player-melee'}:opts.actor; // Existing non-player strike ownership is passed through without equipment bonuses.
       detonate(vase,'melee',source);break;
     }
   }
@@ -1939,7 +2248,7 @@
     let result=null;
     meshRaycastQueries++;
     for(const vase of rec.vases.values()){
-      if(vase.exploded || vase.flying || (vase.hanging&&vase.hangingMechanismId) || !vase.meshColliders?.length)continue; // A ceiling mechanism owns its covered payload until fire releases it; the dropped Burden re-enters normal projectile collision.
+      if(vase.exploded || vase===backCarried || vase.flying || (vase.hanging&&vase.hangingMechanismId) || !vase.meshColliders?.length)continue; // A back-stowed Burden is hit only when its carrier is hit, not via its own projectile mesh.
       if(vase.carried)refreshMeshBounds(vase);
       else vase.group.updateWorldMatrix?.(true,true);
       if(vase.meshBounds && shatterRayBox && shatterRayBoxPoint) {
@@ -1982,13 +2291,13 @@
     }
     return result;
   }
-  function hitProjectile(candidate, playerProjectile = false) {
-    if(!candidate?.vase)return false;
+  function hitProjectile(candidate,playerProjectile=false) { // RangedWeapons reports real projectile ownership after its own collision routing.
+    if(!candidate?.vase||candidate.vase===backCarried)return false; // An old raycast result must not independently hit a Burden after it is stowed.
     const burden=candidate.vase;
     if(burden.kind==='soursap'&&burden.hanging)return startFruitFall(burden,'projectile'); // Shot branch fruit falls before exploding at terrain contact.
     const handler=burden.impactHandler||BURDEN_IMPACT_HANDLERS.get(burden.kind)||burden.data?.carryable?.impactHandler;
     if(typeof handler==='function')return handler(burden,'projectile')!==false; // New Burden types keep their own throw-impact effect, regardless of the source mechanism.
-    const source = playerProjectile ? {power:flaskmasterFactor('shatterPower'),radius:flaskmasterFactor('shatterRadius'),rootId:burden.id,origin:'player-projectile'} : null; // RangedWeapons provides the authoritative owner; falling/environmental projectiles remain neutral.
+    const source=playerProjectile?{power:flaskmasterFactor('shatterPower'),radius:flaskmasterFactor('shatterRadius'),rootId:burden.id,origin:'player-projectile'}:null; // Neutral for wild, enemy and environmental projectiles.
     return detonate(burden,'projectile',source);
   }
   function updateBursts(dt) {
@@ -2019,11 +2328,15 @@
   function tick(dt=0) {
     const mapId=area();
     if(held && held.mapId!==mapId)drop();
+    if(backCarried&&backCarried.mapId!==mapId)transferBackToArea(mapId);
+    if(backCarried)alignHeldVase(backCarried); // Reattach after avatar and area rebuilds.
     if(flight&&flight.vase.mapId!==mapId){flight.vase.flying=false;flight=null;}
     updateShatterThrow(dt);
     updateFruitFalls(Math.min(.1,Math.max(0,Number(dt)||0)));
     updateBurdenFalls(dt); // Net/icicle payloads share the same timed tick and live collision helpers as player-thrown Burdens.
+    window.CratePiles?.tick?.(dt); // Wood shards and walk-over supply drops share the Burden combat frame.
     window.HronalWitchBombs?.tick?.(dt); // Spawn-time fuse and carrier-drop state share the normal Burden combat frame.
+    trackCarrierDamage(); // Catches direct game.js health hits as well as Combat delegates.
     window.KeyStatues?.tick?.(dt); // Detached Key Statues are restored through their original dispenser.
     window.HangingRopes?.tick?.(dt); // Ropes carrying burdens swing and release them (js/hanging-ropes.js).
     updateBursts(Math.min(.1,Math.max(0,Number(dt)||0)));
@@ -2045,6 +2358,7 @@
       promptClaim='';
     }
     if(targetScene)ensureArea(mapId,targetScene,grid());
+    if(backCarried)setHeldRearXray(backCarried); // Restore back-render depth after an asynchronous avatar rebuild.
     if(held) {
       setHeldRearXray(held); // Recheck both rigid/skinned rear portraits after async avatar rebuilds (7 Hz).
       const p=playerPosition(),equipment=switchEquipment();
@@ -2060,6 +2374,22 @@
     if(combat?.init&&!combat.init.__shattercaskMeleeSetup) {
       const original=combat.init.bind(combat);
       const wrapped=function shattercaskCombatInit(injected) {
+        if(typeof injected?.damagePlayer==='function'&&!injected.damagePlayer.__backBurdenDamage){
+          const originalDamage=injected.damagePlayer; // Shared Combat damage callback also notifies carried explosives.
+          const wrappedDamage=function(...args){
+            const player=injected.player,before=Number(player?.health);
+            const result=originalDamage(...args);
+            const after=Number(player?.health);
+            if(Number.isFinite(before)&&Number.isFinite(after)&&after<before){
+              observedCarrier=player;
+              observedAttackAt=Number.isFinite(Number(player?.lastAttackReceivedAt))?Number(player.lastAttackReceivedAt):null;
+              impactBackOnCarrierHit('carrier-combat-hit');
+            }
+            return result;
+          };
+          wrappedDamage.__backBurdenDamage=true;
+          injected.damagePlayer=wrappedDamage;
+        }
         const result=original(injected);
         if(typeof injected?.clearVegetationInAttackCone==='function'
           &&!injected.clearVegetationInAttackCone.__shattercaskStrike) {
@@ -2189,6 +2519,7 @@
       position:()=>({x:burden.col+.5,z:burden.row+.5}),
       hasCap:cap=>cap==='burden'||(cap==='hangable'&&!!burden.hanging)||(cap==='explosive'&&TARGETABLE_EXPLOSIVE_KINDS.has(burden.kind))||(cap==='lungeStop'&&burden.lungeStop===true),
       hitbox:()=>{
+        if(burden===backCarried)return null; // Invalidate even previously cached Targetables wrappers while stowed.
         const box=worldHitbox(burden)||(burden.meshBounds&&!burden.meshBounds.isEmpty()?burden.meshBounds:null);
         if(!box||!targetableCenter)return null;
         box.getCenter(targetableCenter);
@@ -2209,26 +2540,28 @@
   });
 
   window.Shattercasks=Object.freeze({
-    init,RADIUS,FRUIT_RADIUS,Burden,registerFruit,rebindFruitBranch,pickUpFruit,discardFruit,releaseFruitFromTree,
+    init,releaseZone,RADIUS,FRUIT_RADIUS,Burden,registerFruit,rebindFruitBranch,pickUpFruit,discardFruit,releaseFruitFromTree,
+    backCarriedInfo,backCarrierPosition,stowOnBack,takeFromBack,impactBackOnCarrierHit,
     spawn:ensureArea,spawnRandomInDevArena,pickUp,drop,interact,toolArchAction,toolArchTap,actionButtons,
     heldBurdenInfo,placeHeldBurdenOnSurface,retrievePlacedBurden,
     registerHangingBurden,registerBurden:registerHangingBurden,createHangingBurden,createHangingShattercask,releaseBurdenDownward,releaseBurdenWithVelocity,detachHeldBurden,refreshBurdenBounds,discardBurden,registerBurdenFactory,registerBurdenImpactHandler,
     getBurden:(id,mapId=area())=>records.get(String(mapId))?.vases.get(String(id))||null,
     activeBurdenRecords:(mapId=area())=>[...(records.get(String(mapId))?.vases.values()||[])],
-    applyBlast,triggerBurdenBlastAt,
+    applyBlast,triggerBurdenBlastAt,grantBurdenLoot:grantLoot,
     contextButtons,collectAimedPile,promptButtons,RUBBLE_YIELD,
     startShatterAim,releaseShatterAim,cancelShatterAim,detonate,heldHandTarget,
     projectileHit,hitProjectile,senseTargets,sweepMelee,tick,attachRuntime,
-    debugSnapshot:()=>({lastEvent,lastBlastAttribution,latestChange:'Flaskmaster tracks player throw/hit roots and propagates through Shattercask-only blast chains.',fruitCarryProfile:fruitCarryTemplate===FRUIT_CARRY_FALLBACK?'fallback':'authored',area:area(),held:held?.id||null,emittingVases:[...allActive().values()].filter(v=>v.emitters?.length).length,
+    debugSnapshot:()=>({lastEvent,lastBlastAttribution,latestChange:'Stowed Burdens mount on the portrait plane; Flaskmaster tracks player-owned throws, melee hits and ranged Shattercask chains.',backCarryMount:backCarried?{parent:backCarried.group?.parent?.name||backCarried.group?.parent?.type||null,portraitAttached:!!backCarryPortrait(backCarryRoot())&&backCarried.group?.parent===backCarryPortrait(backCarryRoot()),rootFallback:backCarried.group?.parent===backCarryRoot(),collision:'carrier-hitbox'}:null,crates:window.CratePiles?.debugSnapshot?.()||null,backCarried:backCarriedInfo(),fruitCarryProfile:fruitCarryTemplate===FRUIT_CARRY_FALLBACK?'fallback':'authored',area:area(),held:held?.id||null,emittingVases:[...allActive().values()].filter(v=>v.emitters?.length).length,
       vases:[...allActive().values()].map(v=>({id:v.id,kind:v.kind,col:v.col,row:v.row,carried:v.carried,hanging:!!v.hanging,flying:!!v.flying,plinthAttached:!!v.plinthAttached,hangingMechanismId:v.hangingMechanismId||null})),
       fruitFalls:[...fallingFruits.values()].map(f=>({id:f.fruit.id,y:f.fruit.group.position.y,cause:f.cause})),
       downwardBurdenFalls:[...downwardFalls.values()].map(f=>({id:f.burden.id,y:f.burden.group.position.y,velocity:+f.velocity.toFixed(2),cause:f.cause})),
       savedLooseFruit:[...(looseFruitHistory.get(area())?.keys()||[])],
       rubble:[...(records.get(area())?.piles.values()||[])].map(p=>({id:p.id,col:p.col,row:p.row})),
       effects:burstEffects.length,loadedWorld:storeIdentity,devArenaSpawnPending,
-      rearPortraitXray:{rigidPlanes:backXray.size,skinnedBackOnlyPasses:skinnedRearOverlays.size,
+      rearPortraitXray:{rigidPlanes:backXray.size,frontOverlays:frontXray.size,skinnedBackOnlyPasses:skinnedRearOverlays.size,
         rearHeadwearOverlays:rearHeadwearXray.size,
         heldPartsWithoutDepthWrite:heldRenderOrders.size,
+        stowedParts:[...heldRenderOrders.keys()].filter(mesh=>mesh.renderOrder===STOWED_BURDEN_RENDER_ORDER).length,
         heldPartsInWeaponReplay:[...heldRenderOrders.keys()].filter(mesh=>mesh.userData?.hobunjiHeldObjectPlane===true).length,
         skinnedNames:[...skinnedRearOverlays.keys()].map(mesh=>mesh.name)},
       performance:{ruinSnapshotReads,textureBatchesCreated,

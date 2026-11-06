@@ -242,16 +242,19 @@
     const ctx = lightingDeps.lctx;
     const projected = [];
     for (const light of lights) {
+      const visibility = light.keepVisibleAtDistance === true ? 1
+        : (window.CloudForestFog?.outdoorLightVisibilityAt?.(light.x, light.y, light.z, Number(light.radiusTiles)) ?? 1); // Ordinary ghost halos fade like other outdoor lights; explicitly authored directional beacons are exempt.
+      if (visibility <= 0) continue;
       const center = lightingDeps.worldToOverlay(light.x, light.y, light.z);
       const radius = lightScreenRadius(light, Number(light.radiusTiles));
       if (!lightMaskIntersectsViewport(center, radius, light)) continue;
-      projected.push({ light, center, radius });
+      projected.push({ light, center, radius, visibility }); // Retain one distance factor for the darkness and glow passes.
     }
 
     ctx.save();
     ctx.globalCompositeOperation = 'destination-out';
-    for (const { light, center, radius } of projected) {
-      const intensity = clamp(Number(light.intensity ?? 0.75), 0, 1);
+    for (const { light, center, radius, visibility } of projected) {
+      const intensity = clamp(Number(light.intensity ?? 0.75) * visibility, 0, 1);
       const gradient = ctx.createRadialGradient(center.x, center.y, 0, center.x, center.y, radius);
       gradient.addColorStop(0, `rgba(0,0,0,${0.62 * intensity})`);
       gradient.addColorStop(0.35, `rgba(0,0,0,${0.36 * intensity})`);
@@ -263,12 +266,12 @@
     }
 
     ctx.globalCompositeOperation = 'screen';
-    for (const { light, center, radius } of projected) {
+    for (const { light, center, radius, visibility } of projected) {
       const color = normalizedColor(light.color || DEFAULT_COLOR);
       const r = Math.round(color.r * 255);
       const g = Math.round(color.g * 255);
       const b = Math.round(color.b * 255);
-      const intensity = clamp(Number(light.intensity ?? 0.75), 0, 1);
+      const intensity = clamp(Number(light.intensity ?? 0.75) * visibility, 0, 1);
       const gradient = ctx.createRadialGradient(center.x, center.y, 0, center.x, center.y, radius * 0.9);
       gradient.addColorStop(0, `rgba(${r},${g},${b},${0.16 * intensity})`);
       gradient.addColorStop(0.45, `rgba(${r},${g},${b},${0.07 * intensity})`);

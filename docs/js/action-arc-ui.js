@@ -103,13 +103,16 @@
     _arcBd.className = 'arc-backdrop';
     document.body.appendChild(_arcBd);
     const activeTool = deps.getActiveTool();
-    const n = deps.WHEEL_SLOTS.length, step = (ARC_S - ARC_E) / (n - 1);
-    deps.WHEEL_SLOTS.forEach((slot, i) => {
+    const backBurden=window.Shattercasks?.backCarriedInfo?.(); // Adds one virtual entry without modifying saved equipment slots.
+    const slots=backBurden?[...deps.WHEEL_SLOTS,'backBurden']:deps.WHEEL_SLOTS;
+    const n=slots.length,step=n>1?(ARC_S-ARC_E)/(n-1):0;
+    slots.forEach((slot, i) => {
       const deg = ARC_S - i * step;
-      const eq = deps.equipmentSlots[slot], def = eq ? deps.TOOL_ITEM_DEFS[eq] : null;
+      const isBack=slot==='backBurden';
+      const eq = !isBack?deps.equipmentSlots[slot]:null, def = eq ? deps.TOOL_ITEM_DEFS[eq] : null;
       const fallbackIcon = {shovel:'⛏️',hoe:'🪓',weapon:'🗡️',axe:'🪓',pick:'⛏️',harpoon:'🎣'}[slot] || '🔧';
-      const icon  = deps.toolSelectIconHTML(def, fallbackIcon, '1.4em');
-      const label = {shovel:'Shovel',hoe:'Hoe',weapon:'Weapon',axe:'Axe',pick:'Pick',harpoon:'Harpoon'}[slot] || slot;
+      const icon  = isBack?'🎒':deps.toolSelectIconHTML(def, fallbackIcon, '1.4em');
+      const label = isBack?backBurden.displayName:({shovel:'Shovel',hoe:'Hoe',weapon:'Weapon',axe:'Axe',pick:'Pick',harpoon:'Harpoon'}[slot] || slot);
       const el = _mkSlot(deg, icon, label, activeTool === slot ? 'arc-active' : '');
       _arcSlots.push({ angle: deg, el, data: slot });
       if (activeTool === slot) _arcActive = i;
@@ -412,8 +415,11 @@
     const selectedSpyglass = _arcOpen === 'entries:utilities' && slot?.data?.id === 'spyglass'; // Used to restore cursorless camera look only after the utility backdrop is gone.
     if (slot && slot.data?.id !== 'spyglass') window.Spyglass?.stow?.('other utility or equipment selected');
     if (_arcOpen === 'tool' && slot) {
-      deps.setHeldMode('tool'); deps.setLastHeldFarmTool(slot.data);
-      deps.setActiveTool(slot.data); // calls refreshActionBar internally
+      if(slot.data==='backBurden')window.Shattercasks?.takeFromBack?.();
+      else {
+        deps.setHeldMode('tool'); deps.setLastHeldFarmTool(slot.data);
+        deps.setActiveTool(slot.data); // calls refreshActionBar internally
+      }
     } else if (_arcOpen === 'item' && slot?.data.type === 'item') {
       deps.setHeldMode('item');
       deps.setActiveItemIndex(slot.data.index);
@@ -459,17 +465,15 @@
       scrollTool(dir) {
         window.Spyglass?.stow?.('tool selected');
         if (_arcOpen !== 'tool') _openToolArc();
-        const activeTool = deps.getActiveTool();
-        const idx = deps.WHEEL_SLOTS.indexOf(activeTool);
-        const next = (idx + dir + deps.WHEEL_SLOTS.length) % deps.WHEEL_SLOTS.length;
-        deps.setHeldMode('tool');
-        deps.setLastHeldFarmTool(deps.WHEEL_SLOTS[next]);
-        deps.setActiveTool(deps.WHEEL_SLOTS[next]);
-        _arcSlots.forEach((s, i) => {
-          const active = s.data === deps.getActiveTool();
-          s.el.classList.toggle('arc-active', active);
-          if (active) _arcActive = i;
-        });
+        const idx=_arcActive>=0?_arcActive:_arcSlots.findIndex(s=>s.data===deps.getActiveTool());
+        const next=(idx+dir+_arcSlots.length)%_arcSlots.length;
+        const chosen=_arcSlots[next]?.data;
+        if(chosen!=='backBurden'){
+          deps.setHeldMode('tool');
+          deps.setLastHeldFarmTool(chosen);
+          deps.setActiveTool(chosen);
+        }
+        _setActive(next); // Back-carried Burdens are taken into the hands only when the selector commits.
       },
       scrollItem(dir) {
         window.Spyglass?.stow?.('item selected');

@@ -8,6 +8,10 @@
 //                    projectile target face in place of V50's placeholder
 //                    inn-sign decals: OFF (orange) until struck, ON (green).
 //   ruinGreatDoor    the sanctum door (built by js/dev-random-ruin-sanctum.js).
+//   ruinPassageDoor, ruinPassageDoorNarrow, ruinPassageDoorSlim, ruinPassageDoorWide
+//                    the hallway gates (buildPassageGate below): the entrance-door design, i.e.
+//                    the Great Door without its ring of sigils and with one centre seal, cut to
+//                    the 5-wide, 3-wide, 2-wide and 1-tile gate widths the ruin builds.
 //   ruinBlueBrazierBowl, ruinStandingBrazier, ruinSanctumLadder,
 //   ruinSanctumCoffin, ruinDungeonChestT1-4, ruinRewardPlate
 //                    props the sanctum, chest and rope-payoff modules build
@@ -28,7 +32,16 @@
   const KEYS = ['ruinDoorSeal', 'ruinGlyphTarget', 'ruinGreatDoor',
     'ruinBlueBrazierBowl', 'ruinStandingBrazier', 'ruinSanctumLadder', 'ruinSanctumCoffin',
     'ruinDungeonChestT1', 'ruinDungeonChestT2', 'ruinDungeonChestT3', 'ruinDungeonChestT4', 'ruinRewardPlate',
-    'ruinDisplayPedestal', 'ruinDisplayCoffin'];
+    'ruinDisplayPedestal', 'ruinDisplayCoffin',
+    'ruinPassageDoorSlim', 'ruinPassageDoorNarrow', 'ruinPassageDoor', 'ruinPassageDoorWide'];
+  // Outer widths match scripts/authoring/build-ruin-passage-doors.py; PASSAGE_HEIGHT is the height they are authored at.
+  const PASSAGE_VARIANTS = Object.freeze([
+    { key:'ruinPassageDoorSlim', outer:1 },
+    { key:'ruinPassageDoorNarrow', outer:2 },
+    { key:'ruinPassageDoor', outer:3 },
+    { key:'ruinPassageDoorWide', outer:5 },
+  ]);
+  const PASSAGE_HEIGHT = 2.4;
   const DISPLAY_SKINS = { displayPedestal:'ruinDisplayPedestal', stoneCoffin:'ruinDisplayCoffin' }; // V50 generatedDisplayType -> authored skin.
   for (const key of KEYS) A.load(key);
 
@@ -152,6 +165,49 @@
     return track(seal, state);
   }
 
+  // V50 marks every display pedestal and coffin with a gold diamond showing the first letter of the item's
+  // label (createItemSpriteMaterial): a stand-in for treasure that was never replaced, and what reads as
+  // diamonds with an "S" or a "5" on them. Hidden, not removed: the sanctum finds its goal pedestals through
+  // these planes (findGoalSprites reads isSurfaceItemSprite and the parent), so they must stay in the scene.
+  function hidePlaceholderItems(root) {
+    let hidden = 0;
+    root?.traverse?.(object => {
+      if (!object.userData?.isSurfaceItemSprite || object.userData.devRuinPlaceholderHidden) return;
+      object.visible = false;
+      object.userData.devRuinPlaceholderHidden = true;
+      hidden++;
+    });
+    return hidden;
+  }
+
+  // The variant whose outer width is closest to a gate's span.
+  function passageVariantFor(span) {
+    const width = Number(span) || PASSAGE_VARIANTS[PASSAGE_VARIANTS.length - 1].outer;
+    let best = PASSAGE_VARIANTS[0];
+    for (const variant of PASSAGE_VARIANTS) if (Math.abs(variant.outer - width) < Math.abs(best.outer - width)) best = variant;
+    return best;
+  }
+
+  // A hallway gate door standing at `position` (its floor centre), facing along `normalAxis`
+  // ('x' or 'z'), stretched to `span` x `height`. Returns { root, object, key } where `object` is
+  // the leaf: the caller toggles object.visible as the gate shuts and opens, and the frame stays
+  // put either way. Null until the variant's JSON has loaded, so callers keep their old box as the
+  // fallback. Collision is the caller's (the voxel grid), so every mesh here is footprint-ignored.
+  function buildPassageGate({ span, height = PASSAGE_HEIGHT, normalAxis = 'z', parent = null, name = 'passage-gate', position = null } = {}) {
+    const variant = passageVariantFor(span);
+    const root = build(variant.key);
+    if (!root) return null;
+    root.name = name;
+    root.scale.set((Number(span) || variant.outer) / variant.outer, (Number(height) || PASSAGE_HEIGHT) / PASSAGE_HEIGHT, 1);
+    root.rotation.y = normalAxis === 'x' ? Math.PI / 2 : 0; // Authored facing is +Z; 'x' turns it to face +X.
+    if (position) root.position.set(Number(position.x) || 0, Number(position.y) || 0, Number(position.z) || 0);
+    const leaf = pivotParts(root, ['leaf'], new THREE.Vector3(), 'leaf:' + name); // Distinct prefix: gate-name searches must still count one node per gate.
+    if (!leaf.children.length) return null;
+    track(root, () => 0); // Shut gate: the seal glows red.
+    parent?.add(root);
+    return { root, object:leaf, key:variant.key };
+  }
+
   // Replaces each placeholder decal mesh with a glyph plaque of the same
   // size, standing where the decal stood.
   function mountGlyphPlaques(decalMeshes, state, flash) {
@@ -220,6 +276,7 @@
 
   window.DevRandomRuinFurniturePieces = Object.freeze({
     KEYS, ready, build, solid, pivotParts, skinDisplays, track, attachSeal, mountGlyphPlaques,
+    passageVariantFor, buildPassageGate, hidePlaceholderItems,
     snapshot:() => ({
       loaded:Object.fromEntries(KEYS.map(key => [key, ready(key)])),
       tracked:[...tracked].map(entry => ({ key:entry.group.userData.ruinFurnitureKey, state:+Number(entry.state()).toFixed(2), inScene:inScene(entry.group) })),

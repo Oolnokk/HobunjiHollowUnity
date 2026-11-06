@@ -30,6 +30,9 @@
 
   function init(injectedDeps) {
     deps = injectedDeps;
+    Promise.all([window.AuthoredFurniture?.load?.('crateStack'),window.AuthoredFurniture?.load?.('looseCrate')]).then(() => {
+      for (const zoneId of _banditCampInstances.keys()) ensureBanditCampMeshes(zoneId);
+    });
     _loadBanditTentPiece().then(piece => {
       if (!piece) return;
       for (const zoneId of _banditCampInstances.keys()) ensureBanditCampMeshes(zoneId);
@@ -267,6 +270,7 @@
 
   function _disposeBanditProp(zoneId, entry) {
     _restoreBanditTentGridCollision(zoneId, entry);
+    if(entry.propId)window.CratePiles?.unregisterPile?.(zoneId,entry.propId);
     const zScene = deps.zoneScenes.get(zoneId)?.scene;
     if (zScene) {
       zScene.remove(entry.mesh);
@@ -278,7 +282,7 @@
   }
 
   function ensureBanditCampMeshes(zoneId) {
-    const zi = deps.zoneScenes.get(zoneId);
+    const zi = deps?.zoneScenes?.get?.(zoneId); // The async authored-crate/tent load may finish before a zone scene is registered.
     if (!zi) return;
     let meshes = _banditCampMeshes.get(zoneId);
     if (!meshes) { meshes = new Map(); _banditCampMeshes.set(zoneId, meshes); }
@@ -316,6 +320,17 @@
           const sfxDef = window.Music?.resolveFurnitureSfx?.({ sfxKey: 'fireplace' });
           const sfxSource = window.Music?.registerFurnitureSfxSource?.(zoneId, center.x / deps.TILE, center.y / deps.TILE, sfxDef);
           meshes.set(obj.id, { mesh, light, sfxSource, collisionTiles: [], propId: obj.id });
+        } else if (obj.key === 'crateStack') {
+          // Do not create a non-interactive placeholder while the authored recipe loads.
+          // init() invokes ensureBanditCampMeshes again after that promise resolves.
+          const recipe=window.AuthoredFurniture?.peek?.('crateStack');
+          if(!recipe)continue;
+          const mesh=window.AuthoredFurniture.buildGroup(recipe);
+          mesh.position.set(obj.x+.5,y,obj.y+.5);
+          deps.markOutline(mesh);zi.scene.add(mesh);
+          meshes.set(obj.id,{mesh,light:null,sfxSource:null,collisionTiles:[],propId:obj.id});
+          window.CratePiles?.registerPile?.({id:obj.id,mapId:zoneId,scene:zi.scene,group:mesh,
+            count:obj.crateCount??3,lootable:true,onChange:count=>{obj.crateCount=count;}});
         } else if (obj.key && window.ProceduralFurniture) {
           const result = deps.makeDecorativeFurnitureMesh(obj.x, obj.y, obj.key, zi.scene, zoneId);
           if (!result) continue;
@@ -659,7 +674,10 @@
     const distance = deps.TILE * 0.8;
     const spawnX = beastmaster.x + Math.cos(angle) * distance;
     const spawnY = beastmaster.y + Math.sin(angle) * distance;
+    const genotypeKind = window.CreatureGenetics?.SPECIES_ALIAS?.[creatureKey] || creatureKey; // Resolves coat aliases for the standard genetics roll.
+    const genotype = window.CreatureGenetics?.makeDefaultGenotype?.(genotypeKind) || null; // The factory uses this to paint the hound's coat, patterns, and eyes.
     const hound = deps.makeCreatureEntity(creatureKey, spawnX, spawnY, {
+      genotype,
       scene: beastmaster.scene,
       grid: beastmaster.areaGrid,
       cols: beastmaster.areaCols,
@@ -697,7 +715,7 @@
     deps.companionObjects.add(hound);
     rec.gangIds.add(hound.id);
     window.__farmLog?.(
-      `[bandits] Slagothim Beastmaster spawned ${creatureKey} companion ${hound.id} (${hound.maxHealth} HP, ${tunedDef.attackDamage} damage).`,
+      `[bandits] Slagothim Beastmaster spawned ${creatureKey} companion ${hound.id} (${hound.maxHealth} HP, ${tunedDef.attackDamage} damage; coat ${hound.genotype?.base?.color || 'missing'}).`,
       'wildlife',
     );
     return hound;
@@ -997,6 +1015,7 @@
     const tracked = _banditCampInstances.get(zoneId) || [];
     for (const rec of clearedRecs) {
       window.WildernessMap?.forgetDiscoveredThreat?.(rec.discoveryKey);
+      for(const obj of rec.props||[])if(obj.key==='crateStack')window.CratePiles?.forgetPile?.(zoneId,obj.id);
       for (const id of rec.instance.stampedObjectIds) removeBanditCampProp(zoneId, id);
       window.TemporaryLocales.release(view, rec.instance);
       _syncBanditFlora(zoneId, rec.instance.removedObjectSnapshots, true);
@@ -1008,6 +1027,8 @@
   }
 
   function forgetZoneBanditState(zoneId) {
+    for(const rec of _banditCampInstances.get(zoneId)||[])for(const obj of rec.props||[])
+      if(obj.key==='crateStack')window.CratePiles?.unregisterPile?.(zoneId,obj.id);
     _banditCampMeshes.delete(zoneId);
     _banditCampInstances.delete(zoneId);
     _banditZoneViews.delete(zoneId);
@@ -1356,11 +1377,13 @@
       holdSeconds,
       holdLabel: 'Searching ' + (c.name || c.def.label) + '...',
       getButtons() {
+        if (c.ruinNoLoot===true)return []; // No corpse loot prompt in the isolated puzzle lab.
         if (holdSeconds > 0) return [{ icon: c.lootIcon || '🦴', label: 'Hold to Search', action: 'corpse_hold_loot', style: 'primary', allowed: true, worldInteraction: true, promptRoot: c.avatarRef?.group || null }];
         return [{ icon: '🪙', label: 'Loot ' + (c.name || c.def.label), action: 'obj_loot_corpse', style: 'primary', allowed: true }];
       },
       onAction(action) {
         if (action !== 'obj_loot_corpse') return { ok: false, message: 'Unknown action.' };
+        if(c.ruinNoLoot===true)return {ok:false,message:'This test-room opponent carries no loot.'}; // Also protects against calling the corpse action directly.
         const parts = grantBanditLoot(deps.rollLootPool(c.def.lootPool, { entity: c }));
         const specialAmmo = window.RangedWeapons?.rollSpecialAmmoLoot?.() || 0;
         if (specialAmmo) parts.push(`🏹 Special Ammo×${specialAmmo}`);

@@ -72,6 +72,7 @@
       }
     }
 
+    window.ObjectSpriteCatalog?.applyAll?.(injectedDeps); // Covers static gathered/processed inventory items alongside the crop-specific authored art.
     lastItemSync = { ok: true, patchedDefs, patchedEntries };
     return { ...lastItemSync };
   }

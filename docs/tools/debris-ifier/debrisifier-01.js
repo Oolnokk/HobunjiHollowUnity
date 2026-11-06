@@ -22,7 +22,7 @@
     if (embeddedRuntime) {
       try {
         const request = new XMLHttpRequest(); // Used only by the hidden dev generator so the API bytes cannot be starved behind the live game's startup asset queue.
-        request.open('GET', 'debrisifier-v50-api.js?v=20261031h72b24e2', false);
+        request.open('GET', 'debrisifier-v50-api.js?v=20261104soloPreset1', false);
         request.send(null);
         const ok = (request.status >= 200 && request.status < 300) || (request.status === 0 && !!request.responseText);
         if (!ok) throw new Error(`V50 dev API HTTP ${request.status}`);
@@ -37,7 +37,7 @@
       return;
     }
     const api = document.createElement('script'); // Standalone editor usage keeps the ordinary external-script loader.
-    api.src = 'debrisifier-v50-api.js?v=20261031h72b24e2';
+    api.src = 'debrisifier-v50-api.js?v=20261104soloPreset1';
     api.onerror = () => fail('V50 dev API did not load.');
     document.head.appendChild(api);
   }
@@ -120,11 +120,30 @@ function runtimeChooseMechanismActivatorType(rng,forcedType=null,linkedCubeDoor=
     const elevatorSocketCallNeedle = "const elevatorSocket=createElevatorWellSocket(material,daisWidth,daisDepth,rise+.07);";
     const elevatorSocketCallReplacement = "const socketExit=path?.[1]?{dx:Math.sign(path[1].x-source.x),dz:Math.sign(path[1].z-source.z)}:null,elevatorSocket=createElevatorWellSocket(material,daisWidth,daisDepth,rise+.07,socketExit);";
 
+    // Test the union before committing either a room or its hallway. V50
+    // normalizes its unbounded coordinates afterward, retaining two margin
+    // cells on every edge; the planner's allocation therefore bounds that union.
+    const allocationHelper = `function runtimeInteriorAllocationFits(rooms,hallways,room,hall){
+  const allocation=window.__devRuinLayoutReservation;
+  if(!allocation)return true;
+  const rects=[...rooms,...hallways,room,...(hall?[hall]:[])];
+  const cols=Math.max(...rects.map(r=>r.col+r.w))-Math.min(...rects.map(r=>r.col))+4;
+  const rows=Math.max(...rects.map(r=>r.row+r.h))-Math.min(...rects.map(r=>r.row))+4;
+  const scale=INTERIOR_CELL_SIZE*allocation.tileScale;
+  return cols*scale<=allocation.w&&rows*scale<=allocation.d;
+}
+`;
     const patches = [
+      ['native allocation helper', 'function generateInteriorRoomNetwork(', allocationHelper+'function generateInteriorRoomNetwork('],
+      ['native first-room allocation', '  rooms.push(first);degrees.set(first.id,0);', "  if(!runtimeInteriorAllocationFits([],[],first,null))throw new Error('First V50 room exceeds its floor allocation');\n  rooms.push(first);degrees.set(first.id,0);"],
+      ['native attachment allocation', '          if(!interiorRectClear(floorSet,hall)||!interiorRectClear(floorSet,room))continue;', '          if(!runtimeInteriorAllocationFits(rooms,hallways,room,hall)||!interiorRectClear(floorSet,hall)||!interiorRectClear(floorSet,room))continue;'],
+      ['native escape allocation', '      if(!interiorRectClear(floorSet,hall)||!interiorRectClear(floorSet,room))throw new Error(', '      if(!runtimeInteriorAllocationFits(rooms,hallways,room,hall)||!interiorRectClear(floorSet,hall)||!interiorRectClear(floorSet,room))throw new Error('],
       // The immutable generator is shared with gameplay; only the root author's explicit option allows one room.
-      ['vast single-room preview', 'function interiorRoomPreset(profileKind,rng,forcedLabel=null){', "function interiorRoomPreset(profileKind,rng,forcedLabel=null){if(window.__devRuinSingleRoom===true&&window.__devRuinSingleRoomLarge===true)forcedLabel='veryLarge';"],
+      ['vast single-room preview', 'function interiorRoomPreset(profileKind,rng,forcedLabel=null){', "function interiorRoomPreset(profileKind,rng,forcedLabel=null){if(window.__devRuinSingleRoom===true&&window.__devRuinSingleRoomPreset)forcedLabel=window.__devRuinSingleRoomPreset;"],
       ['single-room preview range', 'function interiorRoomRange(){', 'function interiorRoomRange(){if(window.__devRuinSingleRoom===true)return{min:1,max:1};'],
       ['single-room preview network', 'Math.round(Number(roomRange.min)||3),2,12)', 'Math.round(Number(roomRange.min)||3),window.__devRuinSingleRoom===true?1:2,12)'],
+      ['flat puzzle lab floor', 'plateauData=generateInteriorPlateauPlan(network,rng,density)', 'plateauData=window.__devRuinSingleRoomLab?{levelByCell:Object.fromEntries([...network.floorSet].map(key=>[key,0])),regions:[],focuses:[],stepHeight:INTERIOR_PLATEAU_STEP_HEIGHT,coreTreasureFocusId:null,singleCoreTreasure:false}:generateInteriorPlateauPlan(network,rng,density)'],
+      ['clear solo chamber support pillars', 'if(tallAsset){\n    for(const room of network.rooms){', 'if(tallAsset&&!window.__devRuinSingleRoomLab){\n    for(const room of network.rooms){'], // The chosen standalone puzzle owns the chamber's usable floor; ordinary V50 rooms retain their full support network. // Only explicit dev labs skip V50 core-treasure scenery; ordinary ruins are byte-for-byte unchanged.
       ['repository-tree binding', treeNeedle, treeReplacement],
       ['raw-asset URL helper', rawNeedle, rawReplacement],
       ['Roughbrick loader', brickNeedle, brickReplacement],

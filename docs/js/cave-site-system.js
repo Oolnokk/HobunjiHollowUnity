@@ -510,6 +510,16 @@
     const trapCount = trapCandidates.length ? 1 + (rng() < 0.45 ? 1 : 0) : 0;
     plan.traps = pickSpacedTiles(rng, trapCandidates, trapCount, blockedKeys, 2).map((tile, index) => ({ id: `${plan.cache.id}_trap_${index + 1}`, col: tile.col, row: tile.row, damage: 9 + Math.floor(rng() * 7), tag: rng() < 0.5 ? 'sharp' : 'blunt' }));
     mapData.caveTraps = clone(plan.traps);
+    // Fill the deep chamber with mundane supplies, but leave the chest approach and traps clear.
+    const crateCandidates=candidates.filter(tile=>{
+      const distance=Math.hypot(tile.col-cacheTile.col,tile.row-cacheTile.row);
+      return distance>=1.4&&distance<=4&&!blockedKeys.has(tileKey(tile.col,tile.row));
+    });
+    const crates=pickSpacedTiles(rng,crateCandidates,Math.min(4,Math.max(2,Math.floor(crateCandidates.length/3))),blockedKeys,1.15);
+    for(const [index,tile] of crates.entries()) {
+      const id=plan.cache.id+'_crate_'+(index+1);
+      addProp(mapData,{id,key:'crateStack',col:tile.col,row:tile.row,rotY:Math.floor(rng()*4)*90});
+    }
   }
 
   function addCatacombLayer(mapData, rng, candidates, blockedKeys, plan) {
@@ -623,6 +633,8 @@
     buildMushroomClusters(mapId, mapData, scene);
     const id = String(mapId); // Shared key with the mushroom index and cave profile.
     const propRecord = { scene, groups: new Map() }; // Replaced on rebuild; late async furniture loads cannot register in a stale cave.
+    for(const [propId,group] of propMeshesByMapId.get(id)?.groups||[])if(group.userData?.caveSiteProp?.key==='crateStack')
+      window.CratePiles?.unregisterPile?.(id,propId);
     propMeshesByMapId.set(id, propRecord);
     const A = window.AuthoredFurniture;
     if (!A?.load || !A?.buildGroup || !scene || !mapData?.caveProps?.length) return Promise.resolve(0);
@@ -638,6 +650,17 @@
       group.userData.caveSiteProp = { mapId, id: prop.id, key: prop.key };
       scene.add(group);
       propRecord.groups.set(prop.id, group); // Only actual, scene-attached props become candidate Sense Mode targets.
+      if(prop.key==='crateStack'){
+        const profile=sitesByMapId.get(id); // Cache cave crate counts in its existing world-save state.
+        const saved=profile?stateFor(profile):null;
+        const count=saved?.crateCounts?.[prop.id]??prop.crateCount??3;
+        window.CratePiles?.registerPile?.({id:prop.id,mapId:id,group,scene,lootable:true,persistViaParent:true,
+          count,onChange:remaining=>{
+            prop.crateCount=remaining;
+            if(saved){saved.crateCounts||={};saved.crateCounts[prop.id]=remaining;persistState(true);}
+          },
+        });
+      }
       return 1;
     }))).then(built => built.reduce((sum, n) => sum + n, 0));
   }
@@ -933,6 +956,8 @@
     banditPopulatedMaps.delete(mapId);
     for (const oldGroup of mushroomMeshesByMapId.get(mapId)?.values() || []) oldGroup.parent?.remove(oldGroup);
     mushroomMeshesByMapId.delete(mapId);
+    for(const [propId,group] of propMeshesByMapId.get(mapId)?.groups||[])if(group.userData?.caveSiteProp?.key==='crateStack')
+      window.CratePiles?.unregisterPile?.(mapId,propId);
     propMeshesByMapId.delete(mapId); // Do not retain props for an erased or relocated cave.
     mushroomScenesByMapId.delete(mapId);
     mushroomVisualDayByMapId.delete(mapId);
@@ -1064,10 +1089,32 @@
   function objectAt(mapId, col, row) {
     const id = String(mapId); // Used to select only this cave's authored clusters.
     const plan = plansByMapId.get(id);
-    if (!plan?.mushrooms?.length || String(wildlifeDeps?.getCurrentArea?.() || '') !== id) return null;
+    if (!plan || String(wildlifeDeps?.getCurrentArea?.() || '') !== id) return null;
+    const profile = sitesByMapId.get(id); // The cave profile validates both cache and Duskcap world interactions.
+    const cache = plan.cache; // The authored chest now requires an explicit press instead of proximity auto-loot.
+    if (profile && cache && cache.col === col && cache.row === row && !stateFor(profile).cacheOpened
+      && caveDistanceTiles(cache) <= CACHE_OPEN_RADIUS_TILES) {
+      return {
+        id: cache.id, type: 'treasure_chest', col, row, label: '🗝️ Hidden Cave Cache',
+        getButtons: () => [{ icon: '🗝️', label: 'Pick Cave Cache Lock', action: 'obj_pick_cave_cache', style: 'primary', allowed: true }],
+        onAction(action) {
+          if (action !== 'obj_pick_cave_cache') return { ok: false, message: 'Unknown action.' };
+          const valid = () => String(wildlifeDeps?.getCurrentArea?.() || '') === id
+            && plansByMapId.get(id) === plan && !stateFor(profile).cacheOpened
+            && caveDistanceTiles(cache) <= CACHE_OPEN_RADIUS_TILES;
+          if (!valid()) return { ok: false, message: 'The cache is out of reach.' };
+          const started = window.ChestLockpicking?.open?.({
+            id: cache.id, title: 'Hidden Cave Cache', tier: cache.tier || 2,
+            valid,
+            onSuccess: () => grantCacheLoot(profile, plan, stateFor(profile)), // Keep the original saved cave loot path.
+          });
+          return { ok: false, message: started ? '' : 'Lockpicking unavailable.', deferMemberSave: true };
+        },
+      };
+    }
+    if (!plan.mushrooms?.length) return null;
     const mushroom = plan.mushrooms.find(item => item.col === col && item.row === row);
     if (!mushroom || caveDistanceTiles(mushroom) > MUSHROOM_INTERACT_RADIUS_TILES) return null;
-    const profile = sitesByMapId.get(id);
     if (!profile || !mushroomAvailable(stateFor(profile), mushroom)) return null;
     const meshes = mushroomMeshesByMapId.get(id);
     if (meshes && !meshes.has(mushroom.id)) return null;
@@ -1244,7 +1291,7 @@
     markDiscovered(profile, state);
     ensureOccupants(profile, plan, state);
     triggerTraps(profile, plan, state);
-    grantCacheLoot(profile, plan, state);
+    // Hidden caches are awarded through the explicit lockpicking interaction, never proximity alone.
     // The cave scene is cached across visits: restore missing stalks after
     // their three-day regrowth window, without rebuilding the cave each tick.
     if (mushroomVisualDayByMapId.has(mapId) && mushroomVisualDayByMapId.get(mapId) !== currentDay()) {

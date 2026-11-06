@@ -18,8 +18,17 @@
     try { localStorage.setItem(STORAGE_KEY, String(n)); } catch (_) {}
     return true;
   }
+  // A settled wildlife corpse has no AI, combat or animation state left, so it
+  // streams like any other far actor: data stays (position, loot, genes), the
+  // rig is released, and the lying pose is restored when it is promoted again.
+  // Dying bodies still need their rig for the fall; bandits, companions and
+  // skeletons that revive after looting never stream.
+  function isStreamableCorpse(c) {
+    return c.state === 'corpse' && c.health <= 0 && !!c.streamVisuals && !c.isBandit && !c.isCompanion && !c.keepCorpseAfterLoot && !c.corpseLooted && !c.isAmphibiousFishCorpse;
+  }
   function canHide(c) {
-    if (c.health <= 0 || c.isBandit || c.isCompanion || c.prone || c._branchDefense || (c.knockbackT || 0) > 0 || (c.retreatT || 0) > 0) return false;
+    if (c.health <= 0) return isStreamableCorpse(c);
+    if (c.isBandit || c.isCompanion || c.prone || c._branchDefense || (c.knockbackT || 0) > 0 || (c.retreatT || 0) > 0) return false;
     if (c.state === 'chase' || c.state === 'searching' || c.state === 'patrol-chase' || c.state === 'return' || c.state === 'fleeing-low-health') return false;
     if (window.Combat?.telegraph?.isBusy(c) || window.Combat?.animalAttacks?.isBusy(c)) return false;
     return true;
@@ -56,7 +65,7 @@
   window.WildlifeVisualLod = Object.freeze({
     init: injected => { deps = injected; },
     beginFrame: () => { promotionsRemaining = Math.max(1, Math.min(8, Number(config().promotionsPerFrame) || 1)); },
-    update, canHide, setWakeRadius, wakeRadius, releaseRadius, HIDE_TILES, SHOW_TILES,
+    update, canHide, isStreamableCorpse, setWakeRadius, wakeRadius, releaseRadius, HIDE_TILES, SHOW_TILES,
     snapshot: () => ({ wakeRadiusTiles: wakeRadius(), releaseRadiusTiles: releaseRadius(), promotions, retirements, promotionsPerFrame: Number(config().promotionsPerFrame) || 1 }),
   });
 })();

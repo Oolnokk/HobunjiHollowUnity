@@ -26,12 +26,21 @@ vm.runInContext(fs.readFileSync('docs/js/interior-door-tiles.js', 'utf8'), conte
 (async () => {
   const interactables = new Map();
   const scene = { add(object) { this.door = object; } };
+  const THREE = { Box3: class { setFromObject(group) { // Representative 2-unit authored door used to exercise elevation-aware ray blockers.
+    this.min = { y: group.position.y };
+    this.max = { y: group.position.y + 2 };
+    return this;
+  } } };
   await window.InteriorDoorTiles.build({
-    THREE: {}, scene, mapId: 'map_i_test', mapData: { doorTiles: [[3, 3]] },
+    THREE, scene, mapId: 'map_i_test', mapData: { doorTiles: [[3, 3]] },
     floorSet: new Set(['3,3', '3,2']), surfaceYAt: () => 0,
     registerInteractable: (c, r, interactable) => interactables.set(`${c},${r}`, interactable),
   });
 
+  assert.equal(window.InteriorDoorTiles.blocksBox('map_i_test',3.5,3.5,.1), true, 'walkers are blocked by a closed door at any unspecified height');
+  assert.equal(window.InteriorDoorTiles.blocksBox('map_i_test',3.5,3.5,.1,1), true, 'rays intersecting the authored closed door are blocked');
+  assert.equal(window.InteriorDoorTiles.blocksBox('map_i_test',3.5,3.5,.1,3), false, 'high shots may pass above the door');
+  assert.equal(window.InteriorDoorTiles.blocksBox('map_i_test',3.5,3.5,.1,-1), false, 'low shots may pass below an elevated door');
   assert.equal(registered.length, 1);
   assert.equal(registered[0].mapId, 'interiorDoors:map_i_test');
   const door = interactables.get('3,3');

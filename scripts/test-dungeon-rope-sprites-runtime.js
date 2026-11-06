@@ -48,8 +48,10 @@ class Geometry {
   dispose(){this.disposed=true}
 }
 class Mesh {
-  constructor(geometry,material){this.geometry=geometry;this.material=material;this.position=new Vector3();this.scale=new Vector3(1,1,1);this.userData={};this.isMesh=true;this.orientations=[];this.quaternion={setFromRotationMatrix:m=>{this.orientations.push([...m.axes])}}}
-  updateMatrixWorld(){this.matrixRefreshes=(this.matrixRefreshes||0)+1}
+  constructor(geometry,material){this.geometry=geometry;this.material=material;this.position=new Vector3();this.scale=new Vector3(1,1,1);this.userData={};this.children=[];this.isMesh=true;this.renderOrder=0;this.frustumCulled=true;this.orientations=[];this.quaternion={setFromRotationMatrix:m=>{this.orientations.push([...m.axes])}}}
+  add(child){this.children.push(child);child.parent=this;return this}
+  traverse(visit){visit(this);for(const child of this.children)child.traverse(visit)}
+  updateMatrixWorld(){this.matrixRefreshes=(this.matrixRefreshes||0)+1;for(const child of this.children)child.updateMatrixWorld()}
 }
 const drawCalls=[]; // Measures full sprite draws into the four-sided transparent net atlas.
 const makeCanvas=()=>({width:0,height:0,getContext:()=>({
@@ -80,6 +82,50 @@ vm.runInContext(read('docs/js/furniture-surface-png-runtime.js'),context);
   assert(Math.abs(plane.geometry.parameters.width-imageW/imageH)<1e-8);
   assert.equal(plane.material.transparent,true);
   assert.equal(plane.scale.y,2);
+  const tip=plane.ropeBrushTip; // The textured child replaces the visible sphere, but the ruin can keep its original raycast proxy.
+  assert(tip && plane.children.includes(tip),'brush end is parented directly to the rope plane');
+  assert.equal(tip.material.map,plane.material.map,'both planes reuse the identical rope PNG texture');
+  assert.equal(tip.frustumCulled,true,'off-screen rope ends are culled instead of drawing for every rope');
+  assert.equal(tip.renderOrder,plane.renderOrder,'rope tip does not overpaint nearer sprites via a global render-order override');
+  assert.equal(tip.geometry.getAttribute('position').count,6,'brush end is one quad made of two triangles');
+  assert.equal(tip.geometry.getAttribute('uv').count,6,'brush end stretches one full rope PNG across its quad');
+  const texCoords=tip.geometry.getAttribute('uv').array;
+  assert.equal(Math.min(...texCoords),0,'brush UVs use the PNG origin');
+  assert.equal(Math.max(...texCoords),1,'brush UVs use the entire PNG without repeat');
+  const vertices=tip.geometry.getAttribute('position');
+  const xs=Array.from({length:vertices.count},(_,i)=>vertices.getX(i));
+  const ys=Array.from({length:vertices.count},(_,i)=>vertices.getY(i));
+  assert(Math.abs(Math.max(...xs)-Math.min(...xs)-.3)<1e-6,'quad X bounds exactly match the former 0.3-diameter sphere');
+  assert(Math.abs(Math.max(...ys)-Math.min(...ys)-.3)<1e-6,'quad Y bounds exactly match the former 0.3-diameter sphere');
+  const widthAtY=y=>Math.max(...xs.filter((_,i)=>Math.abs(ys[i]-y)<1e-6))-Math.min(...xs.filter((_,i)=>Math.abs(ys[i]-y)<1e-6));
+  assert(widthAtY(Math.max(...ys))>widthAtY(Math.min(...ys)),'quad widens toward the physical bob (local +Y)');
+  assert.equal(tip.position.y,.5,'brush plane is centered at the swinging bob (parent local +Y)');
+  assert.equal(tip.scale.y,.5,'tip cancels rope-length stretch');
+  art.updateRopePlane(plane,{x:0,y:5,z:0},bob,null);
+  assert(Math.abs(tip.scale.y*plane.scale.y-1)<1e-9,'tip stays square for different rope lengths');
+  art.updateRopePlane(plane,anchor,bob,null);
+  // Resolve the actual orientation basis, so a backwards tip at the ceiling anchor fails.
+  const tipCenterInWorld = () => {
+    const axes=plane.orientations.at(-1);
+    const offsetY=plane.scale.y*tip.position.y,offsetZ=tip.position.z;
+    return {
+      x:plane.position.x+axes[3]*offsetY+axes[6]*offsetZ,
+      y:plane.position.y+axes[4]*offsetY+axes[7]*offsetZ,
+      z:plane.position.z+axes[5]*offsetY+axes[8]*offsetZ,
+    };
+  };
+  for (const [a,b] of [
+    [{x:0,y:3,z:0},{x:0,y:1,z:0}],
+    [{x:1,y:8,z:2},{x:3.2,y:6.6,z:3}],
+    [{x:4,y:5,z:6},{x:1,y:4,z:5}],
+  ]) {
+    art.updateRopePlane(plane,a,b,null);
+    const center=tipCenterInWorld();
+    assert(Math.hypot(center.x-b.x,center.y-b.y,center.z-b.z)<.0031,
+      'brush end remains at the real bob through rope rotations');
+    assert(Math.abs(tip.scale.y*plane.scale.y-1)<1e-9,'brush tip stays square while rope tilts');
+  }
+  art.updateRopePlane(plane,anchor,bob,null);
   const cameraA={getWorldPosition(out){return out.set(0,2,5)}};
   const cameraB={getWorldPosition(out){return out.set(5,2,0)}};
   plane.onBeforeRender(null,null,cameraA);
@@ -87,6 +133,7 @@ vm.runInContext(read('docs/js/furniture-surface-png-runtime.js'),context);
   plane.onBeforeRender(null,null,cameraB);
   assert.notDeepEqual(plane.orientations.at(-1),a,'rope stays camera-facing even when no simulation tick occurs');
   assert.equal(plane.matrixRefreshes,2,'renderer matrix refreshed after billboard turn');
+  assert.equal(tip.matrixRefreshes,2,'brush child inherits the refreshed camera-facing transform');
   const net=art.createNetFrustum();
   assert.equal(net.geometry.getAttribute('position').count,24,'four faces, two triangles each');
   assert.equal(net.geometry.getAttribute('uv').count,24);

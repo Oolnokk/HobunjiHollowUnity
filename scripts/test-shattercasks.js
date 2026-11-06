@@ -37,11 +37,15 @@ const detonateBody=code.slice(detonateStart,detonateEnd);
 assert(detonateBody.includes('if(!cask||cask.exploded)return false;') &&
   detonateBody.includes("playObjectSfxKey?.('shattercaskBlast')") &&
   code.includes("detonate(c,'throw-impact')") &&
-  code.includes("detonate(vase,'melee',source)") &&
+  code.includes("detonate(vase,'melee',source)") && // The player-rooted Shattercask chain can snapshot Flaskmaster without changing enemy strike ownership.
   code.includes("const handler=burden.impactHandler||BURDEN_IMPACT_HANDLERS.get(burden.kind)||burden.data?.carryable?.impactHandler;") &&
   code.includes("if(typeof handler==='function')return handler(burden,'projectile')!==false;") &&
   code.includes("return detonate(burden,'projectile',source);"),
   'one guarded detonation boundary plays the blast cue for thrown/melee hits, while projectile hits preserve generic Burden handlers and the guarded Shattercask fallback');
+assert(code.includes("triggerBurdenBlastAt(cask.mapId,x,z,RADIUS*flaskmasterRadius,cask.id,attribution)") &&
+  code.includes("lastBlastAttribution={id:cask.id") &&
+  code.includes("const flaskmasterFactor = key =>"),
+  'player-provenance snapshots and Shattercask-only inheritance are exposed for mobile diagnostics');
 assert.equal((detonateBody.match(/playObjectSfxKey\?\.\('shattercaskBlast'\)/g)||[]).length,1,
   'the central detonation path contains one sound request');
 assert(code.includes('assets/textures/boards.png')&&code.includes('assets/textures/carved_smooth.png'),'debris uses the real body and neck textures');
@@ -99,7 +103,7 @@ const reticle=fs.readFileSync(path.join(root,'docs/js/combat/ranged-hud-reticle.
 assert(reticle.includes('FILTER_ORANGE') && reticle.includes('wouldHitShattercask'),
   'ranged reticle has orange Shattercask interception state');
 assert(ranged.includes('function wouldHitShattercask()') &&
-  ranged.includes("first={kind:'shattercask'"),'reticle shares projectile hit prediction');
+  ranged.includes('window.Shattercasks?.projectileHit?.'),'reticle shares projectile hit prediction');
 const handDriver=fs.readFileSync(path.join(root,'docs/js/procedural-hand-frame-driver.js'),'utf8');
 assert(handDriver.includes("target.mode === 'authored-world'") &&
   handDriver.includes('window.Shattercasks?.heldHandTarget'),
@@ -192,8 +196,10 @@ assert(author.includes('posteriorAnchorForModel(model') &&
   author.includes('carry_reference_posterior') &&
   author.includes('carry_reference_attachment') &&
   author.includes('carryPosteriorZ') &&
-  author.includes('tempOffset.copy(previewPosterior)'),
-  'editor previews the same posterior-based mount with visible hip/offset guide and adjustable Z');
+  author.includes('tempOffset.copy(mountPoint)') &&
+  author.includes("const mountPoint=isBack?") &&
+  author.includes('carryPortraitAnchorRow'),
+  'editor preserves the held posterior preview and gives back-stowed burdens a separate portrait-coordinate mount');
 assert(author.includes('state.carryable.handTargets[id].rotation') &&
   author.includes("handLocalEuler.setFromQuaternion(handAbsolute,'XYZ')") &&
   author.includes("new THREE.AxesHelper(.095)") &&
@@ -233,6 +239,10 @@ class Vector3 {
   add(v){this.x+=v.x;this.y+=v.y;this.z+=v.z;return this;}
   addScaledVector(v,k){this.x+=v.x*k;this.y+=v.y*k;this.z+=v.z*k;return this;}
   multiplyScalar(v){this.x*=v;this.y*=v;this.z*=v;return this;}
+  multiply(v){this.x*=v.x;this.y*=v.y;this.z*=v.z;return this;} // Used by the portrait-parent transform fixture.
+  divide(v){this.x/=v.x||1;this.y/=v.y||1;this.z/=v.z||1;return this;}
+  sub(v){this.x-=v.x;this.y-=v.y;this.z-=v.z;return this;}
+  applyQuaternion(q){const y=Number(q?.yaw)||0,x=this.x,z=this.z;this.x=x*Math.cos(y)+z*Math.sin(y);this.z=z*Math.cos(y)-x*Math.sin(y);return this;}
   lengthSq(){return this.x*this.x+this.y*this.y+this.z*this.z;}
   length(){return Math.sqrt(this.lengthSq());}
   normalize(){return this.multiplyScalar(1/(this.length()||1));}
@@ -240,11 +250,40 @@ class Vector3 {
   distanceTo(v){return Math.hypot(this.x-v.x,this.y-v.y,this.z-v.z);}
 }
 function vector() {return new Vector3();}
+class Euler {
+  constructor(x=0,y=0,z=0){this.set(x,y,z);} // Exercises production carry offsets in their authored Euler order.
+  set(x,y,z){this.x=x;this.y=y;this.z=z;return this;}
+}
+class Quaternion {
+  constructor(){this.yaw=0;} // This suite needs yaw composition; the separate portrait test covers parent transforms explicitly.
+  setFromEuler(e){this.yaw=e.y;return this;}
+  copy(q){this.yaw=q.yaw;return this;}
+  multiply(q){this.yaw+=q.yaw;return this;}
+  premultiply(q){this.yaw+=q.yaw;return this;}
+  invert(){this.yaw=-this.yaw;return this;}
+  clone(){const q=new Quaternion();return q.copy(this);}
+}
 class Node {
-  constructor(){this.children=[];this.position=vector();this.scale=vector();this.rotation=vector();this.userData={};this.parent=null;}
-  add(other){this.children.push(other);other.parent=this;}
+  constructor(){
+    this.children=[];this.position=vector();this.scale=new Vector3(1,1,1);
+    this.rotation=vector();this.quaternion=new Quaternion();this.userData={};this.parent=null;this.isObject3D=true;
+  }
+  add(other){other.parent?.remove?.(other);this.children.push(other);other.parent=this;}
   remove(other){this.children=this.children.filter(child=>child!==other);other.parent=null;}
   traverse(callback){callback(this);for(const child of this.children)child.traverse(callback);}
+  updateWorldMatrix(){}
+  localToWorld(point){for(let node=this;node;node=node.parent)point.multiply(node.scale).applyQuaternion(node.quaternion).add(node.position);return point;}
+  worldToLocal(point){
+    const chain=[];for(let node=this;node;node=node.parent)chain.unshift(node);
+    for(const node of chain)point.sub(node.position).applyQuaternion(node.quaternion.clone().invert()).divide(node.scale);
+    return point;
+  }
+  getWorldPosition(target){return this.localToWorld(target.set(0,0,0));}
+  getWorldScale(target){target.set(1,1,1);for(let node=this;node;node=node.parent)target.multiply(node.scale);return target;}
+  getWorldQuaternion(target){
+    const chain=[];for(let node=this;node;node=node.parent)chain.unshift(node);
+    target.yaw=0;for(const node of chain)target.multiply(node.quaternion);return target;
+  }
   getObjectByProperty(key,value){
     if(this[key]===value)return this;
     for(const child of this.children){const match=child.getObjectByProperty(key,value);if(match)return match;}
@@ -283,10 +322,11 @@ class Raycaster {
       if(!mesh.geometry?.authoredMock || !parent)continue;
       const ray=this.ray,dx=ray.direction.x;
       if(Math.abs(dx)<1e-9)continue;
-      const distance=(parent.position.x+mesh.position.x-ray.origin.x)/dx;
+      const world=parent.getWorldPosition(new Vector3()); // The exact physical Burden can be parented under the player during pickup.
+      const distance=(world.x+mesh.position.x-ray.origin.x)/dx;
       if(distance<this.near || distance>this.far)continue;
-      const y=ray.origin.y+distance*ray.direction.y-parent.position.y;
-      const z=ray.origin.z+distance*ray.direction.z-parent.position.z;
+      const y=ray.origin.y+distance*ray.direction.y-world.y;
+      const z=ray.origin.z+distance*ray.direction.z-world.z;
       // A narrow tapered neck rising to .89, and a broader rounded body.
       const inBody=y>=.04&&y<=.57&&Math.abs(z)<.26;
       const inNeck=y>.57&&y<=.88&&Math.abs(z)<.11;
@@ -298,11 +338,15 @@ class Raycaster {
 }
 function authoredGroup() {
   const group=new Node(),mesh=new Mesh({attributes:{position:{count:3}},authoredMock:true},new Material({visible:true}));
+  mesh.renderOrder=0; // Match THREE.Mesh's default order so post-carry restoration is asserted precisely.
   group.add(mesh);
-  group.userData.meshById=new Map([['silhouette',mesh]]);
+  const decal=new Mesh({attributes:{position:{count:3}}},new Material({visible:true,transparent:true,depthTest:true,depthWrite:false})); // Real furniture decals are nested noncolliding Meshes.
+  decal.renderOrder=0;decal.userData.furnitureDecal=true;mesh.add(decal);
+  group.userData.meshById=new Map([['silhouette',mesh]]); // Deliberately excludes the decal, mirroring authored collision registration.
+  group.userData.authoredDecalMeshes=[decal];
   return group;
 }
-const THREE = {Group:Node,Mesh,SkinnedMesh,InstancedMesh,Object3D,Vector3,Raycaster,RingGeometry,
+const THREE = {Group:Node,Mesh,SkinnedMesh,InstancedMesh,Object3D,Vector3,Euler,Quaternion,Raycaster,RingGeometry,
   TetrahedronGeometry:Geometry,SphereGeometry:Geometry,CylinderGeometry:Geometry,DodecahedronGeometry:Geometry,
   MeshBasicMaterial:Material,MeshLambertMaterial:Material,DoubleSide:2,AdditiveBlending:3,
   TextureLoader:class{load(){return{dispose(){}};}}};
@@ -411,10 +455,12 @@ async function arenaScenario() {
   tiles[4][2]={type:'wall'};
   tiles[5][2]={type:'grass',solid:true};
   const activeScene=new Node();
-  const player={x:4.5*64,y:4.5*64,angle:0,health:100};
+  const player={x:4.5*64,y:4.5*64,angle:0,health:100,lastAttackReceivedAt:100};
   const deps={TILE:64,player,getCurrentArea:()=>currentArea,getActiveScene:()=>activeScene,
     worldSurfaceY:()=>0,hostileObjects:new Set(),showToast(){}};
+  const blasts=[]; // Captures the canonical WorldEvents blast origin to check carrier-centered detonation.
   const game={console,THREE,localStorage,__hobunjiPlayerProfile:{worldId:'arena-regression'},
+    WorldEvents:{emit:(type,detail)=>{if(type==='blast')blasts.push(detail);}},
     EnvironmentSurfaceMicroPlateau:{bindGroundProjection(mesh){groundProjectionBinds++;mesh.userData.environmentGroundProjection=true;}},
     Combat:{deps,init(){},update(){},beginStagedAction(){},spawnMeleeTrail(){}},
     GridTileAccessors:{getActiveScene:()=>activeScene,getActiveGrid:()=>tiles,
@@ -451,7 +497,9 @@ async function arenaScenario() {
     new Material({name:'npc_avatar_skinned_back_material',visible:true,depthTest:true,depthWrite:true})
   ]);
   portrait.name='player_skinned_plane_assembly';
+  portrait.renderOrder=2; // Original front PNG draw order for held/stowed restoration checks.
   portrait.bind({bones:[]},{});
+  body.position.set(player.x/64,0,player.y/64); // Mirror live game.js: the avatar root tracks the actor's tile position.
   body.add(portrait);
   const rearHeadwear=new Mesh({},new Material({depthTest:true,depthWrite:false,visible:true}));
   rearHeadwear.name='player_avatar_back_hat_xray_plane';
@@ -487,8 +535,8 @@ async function arenaScenario() {
   const isLegacyHeldPlane=vm.runInNewContext('('+heldRenderer.match(/function isLegacyHeldPlane\(object\) \{[\s\S]*?\n  \}/)[0]+')',
     {LEGACY_HELD_RENDER_ORDER:1.5});
   assert(isLegacyHeldPlane({isMesh:true,renderOrder:1.5,userData:{}}),'fixture exercises the reserved weapon replay order');
-  for(const mesh of activeScene.children.find(node=>node.userData?.shattercaskId===first.id).userData.meshById.values())
-    assert.equal(isLegacyHeldPlane(mesh),false,'physical cask stays in world colour pass below rear portrait');
+  for(const mesh of game.Shattercasks.getBurden(first.id,currentArea).group.userData.meshById.values())
+    assert.equal(isLegacyHeldPlane(mesh),false,'carried physical cask stays in the world colour pass below rear portrait');
   // A late portrait rebuild must replace the overlay and restore the old
   // material before attaching the new skinned back on the next poll.
   const rebuilt=new SkinnedMesh(portrait.geometry,[
@@ -496,6 +544,7 @@ async function arenaScenario() {
     new Material({name:'npc_avatar_skinned_back_material',visible:true,depthTest:true,depthWrite:true})
   ]);
   rebuilt.name='player_rebuilt_skinned_plane_assembly';
+  rebuilt.renderOrder=2; // The rebuilt avatar retains the same native front/back sort order.
   rebuilt.bind(portrait.skeleton,portrait.bindMatrix);
   body.remove(portrait);body.add(rebuilt);
   game.Combat.update(.18);
@@ -503,7 +552,50 @@ async function arenaScenario() {
   assert.equal(rearState.skinnedBackOnlyPasses,1,'avatar rebuild replaces, not duplicates, the rear x-ray');
   assert.equal(portrait.material[1].visible,true,'replaced avatar rear material is restored');
   assert.equal(rebuilt.material[1].visible,false,'new rear group owns the overlay');
-  assert.equal(game.Shattercasks.toolArchAction(),null,'while carrying, Tool Select is no longer the Drop action');
+  assert.equal(game.Shattercasks.toolArchAction(),'pickup','held Burden claims Tool Select for the back slot');
+  assert(game.Shattercasks.toolArchTap(),'tool selection stows the original Burden on the back');
+  assert.equal(game.Shattercasks.debugSnapshot().held,null,'back stow frees both hands');
+  assert.equal(game.Shattercasks.debugSnapshot().backCarried?.id,first.id,'back slot references the physical original Burden');
+  const stowed=game.Shattercasks.getBurden(first.id,currentArea); // Confirms the original burden is attached to the current rendered portrait, not a copy.
+  assert.equal(stowed.group.parent,rebuilt,'stowed charge is parented directly to the rebuilt portrait plane');
+  assert.equal(game.Shattercasks.debugSnapshot().backCarryMount.portraitAttached,true);
+  const stowedMesh=stowed.group.userData.meshById.values().next().value; // Real authored furniture part must draw between back and front PNGs.
+  const stowedDecal=stowed.group.userData.authoredDecalMeshes[0]; // The noncolliding visual child must use the same face ordering as the modeled part.
+  assert(!stowed.meshColliders.includes(stowedDecal),'decals are not borrowed into the hit-detection colliders');
+  const stowedRear=body.children.find(node=>node.userData?.shattercaskRearOverlay);
+  assert.equal(stowedRear?.renderOrder,2.05,'stowed rear skinned pass precedes furniture');
+  assert.equal(stowedRear?.material[1].depthWrite,false,'rear skinned depth cannot mask the back-carried furniture');
+  assert.equal(stowedMesh.renderOrder,2.15,'back-stowed geometry follows rear PNG order');
+  assert.equal(stowedDecal.renderOrder,2.15,'back-stowed noncolliding decals remain visible through the rear PNG');
+  assert.equal(stowedDecal.material.depthWrite,false,'decal keeps its original no-depth-write rule');
+  assert.equal(stowedMesh.material.transparent,true,'opaque furniture switches into the PNG transparent queue while stowed');
+  assert.equal(stowedMesh.material.depthTest,true,'back furniture remains hidden by closer walls and terrain');
+  assert.equal(stowedMesh.material.depthWrite,false,'back furniture cannot cover the front PNG through depth writes');
+  assert.equal(rearHeadwear.renderOrder,2.08,'back headwear is also behind the stowed Burden');
+  assert.equal(rearHeadwear.material.depthWrite,false,'back headwear cannot mask the stowed Burden');
+  assert.equal(rebuilt.renderOrder,2.25,'skinned front PNG is drawn after the back Burden');
+  assert.equal(rebuilt.material[0].visible,true,'front-facing skin stays visible while back-stowing');
+  assert.equal(game.Shattercasks.debugSnapshot().rearPortraitXray.stowedParts,2,'mobile debug counts both the burden body and its noncolliding authored decal');
+  assert.equal(game.Shattercasks.hitProjectile({vase:stowed}),false,'stowed charge cannot receive an independent projectile hit');
+  const beforePortraitYaw=stowed.group.getWorldPosition(new Vector3()); // A visual-only deadzone turn must reach its child.
+  const authoredStowLocal=stowed.group.position.clone();
+  rebuilt.quaternion.setFromEuler(new Euler(0,.8,0));
+  game.Combat.update(.016);
+  const afterPortraitYaw=stowed.group.getWorldPosition(new Vector3());
+  assert(Math.hypot(afterPortraitYaw.x-beforePortraitYaw.x,afterPortraitYaw.z-beforePortraitYaw.z)>1e-4,
+    'stowed charge follows its portrait when the deadzone changes the plane yaw');
+  assert.deepEqual(stowed.group.position,authoredStowLocal,'the authored back offset is not reset against the portrait yaw');
+  assert.equal(game.Shattercasks.actionButtons(),null,'normal tool actions return while a back burden is stowed');
+  assert(game.Shattercasks.takeFromBack(),'the tool arch takes the back Burden into the hands');
+  assert.equal(game.Shattercasks.debugSnapshot().held,first.id,'retrieval does not replace the burden with an inventory copy');
+  assert.equal(game.Shattercasks.debugSnapshot().backCarried,null,'retrieval clears the back slot');
+  assert.equal(rebuilt.renderOrder,2,'taking the Burden back into the hands restores native front PNG order');
+  assert.equal(stowedRear.material[1].depthWrite,true,'held Burdens retain the original rear-pass depth rules');
+  assert.equal(rearHeadwear.renderOrder,2.6,'retrieval restores the held-only rear headwear layer');
+  assert.equal(rearHeadwear.material.depthWrite,true,'retrieval restores held-only rear headwear depth');
+  assert.equal(stowedMesh.renderOrder,1.4,'retrieved furniture returns to the standard held layer');
+  assert.equal(stowedDecal.renderOrder,0,'a hand-held decal returns to its pre-stowed draw order');
+  assert.equal(stowedMesh.material.transparent,undefined,'retrieval restores the authored material transparency');
   deps.getPlayerInteractionRay=()=>({origin:{x:player.x/64-2,y:1,z:player.y/64},direction:{x:1,y:-.5,z:0}});
   assert(game.WorldActionInputClaims.dispatch('action1','press',{source:'desktop-mouse'}),
     'Action 1 press starts aiming through the shared cross-device input claim');
@@ -543,6 +635,10 @@ async function arenaScenario() {
     'Action 2 release stays consumed even after dropping');
   assert.equal(game.Shattercasks.debugSnapshot().held,null,'no ghost held charge remains');
   assert.equal(rebuilt.material[1].visible,true,'drop restores real skinned back PNG rendering');
+  assert.equal(rebuilt.renderOrder,2,'drop restores the original front PNG render order');
+  assert.equal(stowedMesh.renderOrder,0,'drop restores the furniture normal render order');
+  assert.equal(stowedDecal.renderOrder,0,'drop restores the furniture decal native draw order');
+  assert.equal(stowedMesh.material.depthWrite,undefined,'drop restores the furniture original depth-write configuration');
   assert.equal(rearHeadwear.renderOrder,2,'drop restores the native rear head render order');
   assert.equal(rearHeadwear.material.depthWrite,false,'drop restores the native headwear depth semantics');
   assert.equal(body.children.filter(node=>node.userData?.shattercaskRearOverlay).length,0,
@@ -561,17 +657,32 @@ async function arenaScenario() {
   assert(game.Shattercasks.toolArchTap(),'dropped charge can be picked up again');
   assert(game.Shattercasks.startShatterAim(),'aim can restart with the same preview');
   assert.equal(groundProjectionBinds,1,'repeated aiming reuses the same projected mesh');
-  const carried=game.Shattercasks.debugSnapshot().vases.find(vase=>vase.carried); // Locates the actual held charge through the public diagnostics.
+  const carried=game.Shattercasks.activeBurdenRecords().find(vase=>vase.carried); // Actual physical burden; its original tile is not its position while held.
   const rayAt=(sx,sy,sz,ex,ey,ez)=>game.Shattercasks.projectileHit({x:sx,y:sy,z:sz},{x:ex,y:ey,z:ez},0,1,currentArea);
-  const cx=carried.col+.5,cz=carried.row+.5; // Randomly placed neighbours can shadow one approach, so take the first ray that reaches the carried charge.
-  const impact=[rayAt(cx-1,.4,cz,cx+1,.4,cz),rayAt(cx+1,.4,cz,cx-1,.4,cz),rayAt(cx,.4,cz-1,cx,.4,cz+1),rayAt(cx,.4,cz+1,cx,.4,cz-1)]
-    .find(hit=>hit?.vase?.carried); // Uses the real incoming projectile path.
+  const world=carried.group.getWorldPosition(new Vector3()); // Weapon/portrait transforms move the carried geometry in world space.
+  const cx=world.x,cy=world.y+.35,cz=world.z; // Shoot through the modeled body, never its stale spawn coordinates.
+  const impact=[rayAt(cx-.5,cy,cz,cx+.5,cy,cz),rayAt(cx+.5,cy,cz,cx-.5,cy,cz),
+    rayAt(cx,cy,cz-.5,cx,cy,cz+.5),rayAt(cx,cy,cz+.5,cx,cy,cz-.5)]
+    .find(hit=>hit?.vase===carried); // Still tests an incoming projectile hitting the held burden, independent of its carrier.
   assert(impact,'a projectile can hit a charge during aiming');
   assert(game.Shattercasks.hitProjectile(impact),'incoming projectile detonates the held charge');
   assert.equal(ring.visible,false,'a charge destroyed while aiming cannot leave its preview behind');
   assert.equal(cancelledThrows,1,'incoming hit also cancels the shared held throw pose');
   assert.equal(game.Shattercasks.debugSnapshot().throwAim,null,'detonation clears aim');
   assert.equal(rebuilt.material[1].visible,true,'detonation restores the rear portrait');
+  const spare=game.Shattercasks.activeBurdenRecords().find(vase=>!vase.exploded&&!vase.carried);
+  assert(spare,'a second real Burden is available for back impact validation');
+  player.x=(spare.col+.5)*64;player.y=(spare.row+.5)*64;
+  body.position.set(player.x/64,0,player.y/64); // The physical body root follows the actor between item pickups.
+  assert(game.Shattercasks.pickUp(spare),'pickup of a spare charge succeeds');
+  assert(game.Shattercasks.stowOnBack(),'spare charge is stowed on the back');
+  assert.equal(game.Shattercasks.debugSnapshot().backCarried?.id,spare.id);
+  player.lastAttackReceivedAt+=500; // ResourceSystem's direct-hit timestamp advances for a real impact.
+  game.Combat.update(.016);
+  assert.equal(game.Shattercasks.debugSnapshot().backCarried,null,'taking a hit detonates the back charge');
+  assert.equal(game.Shattercasks.getBurden(spare.id,currentArea),null,'the real charge is consumed exactly once');
+  assert.equal(blasts.at(-1)?.x,player.x/64,'back explosion uses the carrier exact world X');
+  assert.equal(blasts.at(-1)?.z,player.y/64,'back explosion uses the carrier exact world Z');
   for(let r=1;r<8;r++)for(let c=1;c<8;c++)tiles[r][c]={type:'rock'};
   await assert.rejects(game.Shattercasks.spawnRandomInDevArena(),/No unoccupied walkable tile/);
   assert.equal(modelBuilds,4,'no art created for rejected requests');

@@ -9,6 +9,8 @@
   const MAP_ID = 'map_i_dev_random_ruin';
   const PULSE_SECONDS = 1; // Hronal pillar warning: three pulses at one-second spacing.
   const PILLAR_RADIUS = 3.1; // Hronal trigger and eruption radius, measured in tiles.
+  const BOSS_PILLAR_RISE_SECONDS = .72; // Summoned pillars vertically scale from ground over the same animation.
+  const BOSS_PILLAR_MAX_ACTIVE = 3; // Keep independently telegraphed overlapping boss columns bounded.
   // Minecraft-like ground friction (ice slipperiness .98 x normal drag .91 ≈ .892)
   // at a 20 Hz reference step. Normal movement's collision/swept handling stays
   // authoritative; no post-frame position override or accumulated hold timer.
@@ -21,6 +23,7 @@
   const LIGHT_CAP = 120; // Bound per-frame 2D light-mask work on large generated sites.
   const BOSS_ICICLE_TRACK_SPEED = 9; // Ceiling emitter pursuit speed in tiles/sec during Nanahi's kneeling attack.
   let world = null; // Active composer state, invalidated on reroll/exit.
+  let arenaWorld = null; // Lightweight Testing Arena host for the same rising Hronal pillar state machine; never replaces the generated ruin composer.
   let audioContext = null; // Hronal warning gain and independently pitched icicle-impact playback.
   let rockHitBuffer=null,rockHitLoading=null; // Once-per-session 1.5x-pitched, 1x-duration break-rock sample.
   let lastEvent = 'none'; // Shown in the mobile Dev Random Ruin diagnostic.
@@ -38,7 +41,8 @@
   const pointOf = (actor, tile) => ({ x:(Number(actor.x) || 0) / tile, z:(Number(actor.y) || 0) / tile });
   const floorY = (kit, x, z) => Number(kit.sampleSupport(x, z)?.y) || Number(world?.context?.meta?.floorSurfaceY) || 0;
   const cellExists = (x, z) => !!world?.context?.floorSet?.has(tileKey(x, z));
-  const clearAt = (x, z, y) => cellExists(x, z) && !window.DevRandomRuinTileOccupancy?.solidAt?.(x, z, .27, y + .35);
+  const clearAt = (x, z, y) => cellExists(x, z) && (world?.isTestingArena || !window.DevRandomRuinTileOccupancy?.solidAt?.(x, z, .27, y + .35))
+    && (!world?.isTestingArena || world.kit.deps?.canOccupyAt?.(x*world.kit.deps.TILE,z*world.kit.deps.TILE,world.kit.deps.TILE*.32)!==false); // Arena consults native terrain, not the last generated ruin's occupancy.
   function roomAt(point) {
     if (!world) return null;
     for (const room of world.rooms) {
@@ -523,6 +527,119 @@
     }
     return converted;
   }
+  function makeBoxExplodingPillar(kit,x,z,y,height,id,summoned=false,boss=null) {
+    const group=new THREE.Group();
+    group.position.set(x,y,z);group.name='hronal_exploding_pillar';
+    const shaft=new THREE.Mesh(new THREE.BoxGeometry(.62,height,.62),kit.makeBasic(0x65554b)); // Existing 0.62×0.62 preset footprint is immutable during growth.
+    shaft.position.y=height/2;group.add(shaft);
+    const cracks=[];
+    for(let face=0;face<4;face++) {
+      const crack=new THREE.Mesh(new THREE.PlaneGeometry(.045,height*.68),
+        new THREE.MeshBasicMaterial({color:0xff8a21,transparent:true,opacity:.14,depthWrite:false,side:THREE.DoubleSide}));
+      crack.position.set(0,height*.5,.319);crack.rotation.y=face*Math.PI/2;
+      crack.position.applyAxisAngle(new THREE.Vector3(0,1,0),face*Math.PI/2);
+      group.add(crack);cracks.push(crack);
+    }
+    group.scale.y=summoned?.001:1; // Group pivot stays at ground level so only the height rises visibly.
+    world.group.add(group);
+    const tag=summoned?'lich-theme-boss-'+id:'lich-theme-pillars'; // Separate tag allows single boss-pillar collision cleanup.
+    const pillar={x,z,y,height,width:.62,group,cracks,phase:summoned?'emerging':'idle',elapsed:0,pulses:0,riseElapsed:0,temporary:summoned,owner:boss,tag,arena:!!world.isTestingArena}; // Only generated ruins own DevRandomRuinTileOccupancy registration.
+    world.pillars.push(pillar);
+    if(!pillar.arena)window.DevRandomRuinTileOccupancy?.addSolidBox?.(id,
+      {cx:x,cz:z,halfX:.31,halfZ:.31},()=>pillar.phase!=='spent'&&pillar.phase!=='emerging',tag); // Fixed footprint; the arena instead uses a live AreaFootprintBlockers provider.
+    return pillar;
+  }
+  function clearArenaBossPillars() {
+    if(!arenaWorld)return;
+    const active=arenaWorld; // Teardown acts on this one arena scene even if a generated ruin world has since become active.
+    active.unregisterFootprint?.(); // Remove the Testing Arena's native player/NPC/projectile blocker before disposing its meshes.
+    for(const pillar of active.pillars)releaseBossPillar(pillar);
+    for(const burst of active.bursts){burst.mesh.geometry?.dispose?.();burst.mesh.material?.dispose?.();}
+    active.group.parent?.remove?.(active.group);
+    arenaWorld=null;
+  }
+  function ensureArenaBossWorld(boss) {
+    if(!boss?.scene?.add)return null;
+    if(arenaWorld?.scene===boss.scene)return arenaWorld;
+    clearArenaBossPillars();
+    const deps=boss._specialToolDeps||{}; // Actual injected arena deps, not a second collision/height implementation.
+    const tile=Number(deps.TILE)||64; // Sprite-grid-to-world conversion for the stand-alone demo arena.
+    const grid=boss.areaGrid||[]; // Existing arena geometry establishes a safe extent when available.
+    const centerX=Math.floor((Number(boss.x)||0)/tile),centerZ=Math.floor((Number(boss.y)||0)/tile);
+    const minX=grid.length?0:centerX-9,minZ=grid.length?0:centerZ-9;
+    const maxX=grid[0]?.length||centerX+10,maxZ=grid.length||centerZ+10;
+    const floorSet=new Set(); // One arena-local walkable-grid cache, initialized once; the real terrain occupancy check still validates each placement.
+    for(let z=minZ;z<maxZ;z++)for(let x=minX;x<maxX;x++)floorSet.add(tileKey(x,z));
+    const group=new THREE.Group();group.name='azgarlu_arena_exploding_pillars';boss.scene.add(group);
+    const kit={
+      deps:{...deps,TILE:tile},
+      makeBasic:color=>new THREE.MeshBasicMaterial({color}),
+      sampleSupport:(x,z)=>({y:Number(deps.worldSurfaceY?.(x*tile,z*tile))||0}), // Same actual arena heightmap as creature movement.
+    };
+    const surface=Number(deps.worldSurfaceY?.(boss.x,boss.y))||0;
+    arenaWorld={scene:boss.scene,isTestingArena:true,theme:'hronal',kit,group,context:{floorSet,root:group,meta:{floorSurfaceY:surface}},
+      rooms:[{id:'arena',bounds:{minX,maxX,minZ,maxZ}}],ceilingY:surface+4.2,
+      pillars:[],bossPillarSequence:0,bursts:[],lights:[],dummy:new THREE.Object3D(),unregisterFootprint:null}; // Same rising-pillar state machine, with an arena-local physical blocker.
+    const arena=arenaWorld; // Stable provider identity; retired arenas cannot block later scenes.
+    arena.unregisterFootprint=window.AreaFootprintBlockers?.register?.('azgarlu-arena-pillars',{
+      area:'map_dev_arena',enabled:()=>arenaWorld===arena&&!!arena.group.parent,
+      blocksBox:(x,z,half=0,worldY=null)=>arena.pillars.some(p=>p.phase!=='emerging'&&p.phase!=='spent'
+        && Math.abs(x-p.x)<=half+.31&&Math.abs(z-p.z)<=half+.31
+        && (worldY==null||(worldY>=p.y&&worldY<=p.y+p.height))), // Player, enemies and projectiles all use native area footprint collision.
+    })||null;
+    return arenaWorld;
+  }
+  function updateArenaBossPillars(dt) {
+    if(!arenaWorld||!(dt>0))return;
+    if(!arenaWorld.group.parent){clearArenaBossPillars();return;}
+    const previous=world;world=arenaWorld; // Existing Hronal pillar update owns pulse timing, blast and debris in both arena and dungeon.
+    try {
+      const deps=arenaWorld.kit.deps;
+      const actors=[deps.player,...(deps.hostileObjects||[])].filter(a=>a&&Number(a.health)>0&&(!a.areaId||a.areaId==='map_dev_arena'));
+      updatePillars(arenaWorld.kit,dt,actors);
+      updateBursts(dt);
+    }finally{world=previous;}
+  }
+  function spawnBossPillar(boss,target) {
+    const selected=boss?.areaId==='map_dev_arena'?ensureArenaBossWorld(boss):boss?.areaId===MAP_ID?world:null; // The named guardian works in the Testing Arena and the authored dungeon.
+    if(!selected)return 0;
+    const previous=world;world=selected;
+    try{return spawnBossPillarInWorld(boss,target);}finally{world=previous;}
+  }
+  function spawnBossPillarInWorld(boss,target) {
+    if(!world||world.theme!=='hronal'||!boss?.isSpecialLich||boss.specialLichId!=='azgarlu'||!target||Number(target.health)<=0)return 0;
+    const arena=world.isTestingArena?world.rooms[0]?.bounds:window.DevRandomRuinSanctum?.getState?.()?.layout?.arena; // Generated ruin uses its sanctum walls; Testing Arena uses its own grid boundaries.
+    const tile=Number(world.kit?.deps?.TILE)||64; // Convert game actor coordinates to authored room tiles.
+    const x=Number(target.x)/tile,z=Number(target.y)/tile;
+    if(!Number.isFinite(x)||!Number.isFinite(z))return 0;
+    const chamber=arena||roomAt({x,z})?.bounds; // Test ruins without a sanctum still use their real authored room bounds.
+    if(!chamber)return 0;
+    if(world.pillars.filter(p=>p.temporary&&p.phase!=='spent').length>=BOSS_PILLAR_MAX_ACTIVE)return 0;
+    const offsets=[[1.5,0],[-1.5,0],[0,1.5],[0,-1.5],[1.1,1.1],[-1.1,-1.1]]; // Explicit fixed-footprint placement slots avoid popping directly on the target.
+    const sequence=world.bossPillarSequence++; // Rotate those safe placement slots between rare casts.
+    for(let k=0;k<offsets.length;k++) {
+      const o=offsets[(sequence+k)%offsets.length];
+      const px=Math.floor(between(x+o[0],Number(chamber.minX)+.9,Number(chamber.maxX)-1.9))+.5;
+      const pz=Math.floor(between(z+o[1],Number(chamber.minZ)+.9,Number(chamber.maxZ)-1.9))+.5;
+      const ground=floorY(world.kit,px,pz);
+      if(!clearAt(px,pz,ground)||world.pillars.some(p=>p.phase!=='spent'&&Math.hypot(p.x-px,p.z-pz)<1.2))continue;
+      const height=Math.min(4.4,world.ceilingY-ground);
+      if(height<1.7)continue;
+      makeBoxExplodingPillar(world.kit,px,pz,ground,height,'boss-'+sequence+'-'+k,true,boss);
+      window.DevRandomRuinTileOccupancy?.refresh?.();lastEvent='hronal:azgarlu-pillar-rising';
+      return 1;
+    }
+    return 0; // No pillar is created without a clear, real piece of ruin floor.
+  }
+  function releaseBossPillar(pillar) {
+    if(!pillar.arena)window.DevRandomRuinTileOccupancy?.clearSolids?.(pillar.tag); // Arena summons never touch the generated-ruin collision registry.
+    pillar.group.parent?.remove?.(pillar.group);
+    pillar.group.traverse?.(node=>{
+      if(!node.isMesh)return;
+      node.geometry?.dispose?.();
+      for(const material of Array.isArray(node.material)?node.material:[node.material])material?.dispose?.();
+    }); // Per-summon meshes own their materials and do not survive combat.
+  }
   function makePillars(kit) {
     const mixedRooms = findMixedPillarRooms(world.context); // Hollow-target rooms reuse their original non-target square support meshes.
     for (const room of world.rooms) {
@@ -541,31 +658,19 @@
       if (!point) continue;
       const y = floorY(kit, point.x, point.z), height = world.ceilingY - y;
       if (height < 1.7) continue;
-      const group = new THREE.Group();
-      group.position.set(point.x, y, point.z);
-      group.name = 'hronal_exploding_pillar';
-      const shaft = new THREE.Mesh(new THREE.BoxGeometry(.62, height, .62), kit.makeBasic(0x65554b));
-      shaft.position.y = height / 2;
-      group.add(shaft);
-      const cracks = [];
-      for (let face = 0; face < 4; face++) {
-        const crack = new THREE.Mesh(new THREE.PlaneGeometry(.045, height * .68),
-          new THREE.MeshBasicMaterial({color:0xff8a21, transparent:true, opacity:.14, depthWrite:false, side:THREE.DoubleSide}));
-        crack.position.set(0, height * .5, .319);
-        crack.rotation.y = face * Math.PI / 2;
-        crack.position.applyAxisAngle(new THREE.Vector3(0, 1, 0), face * Math.PI / 2);
-        group.add(crack); cracks.push(crack);
-      }
-      world.group.add(group);
-      const pillar = { x:point.x, z:point.z, y, height, width:.62, group, cracks, phase:'idle', elapsed:0, pulses:0 }; // Explosion state is also the live collision-footprint gate.
-      world.pillars.push(pillar);
-      window.DevRandomRuinTileOccupancy?.addSolidBox?.('hronal-pillar-'+room.id,
-        {cx:point.x,cz:point.z,halfX:.31,halfZ:.31},()=>pillar.phase!=='spent','lich-theme-pillars'); // The intact stone blocks movement; the blasted column does not.
+      makeBoxExplodingPillar(kit,point.x,point.z,y,height,'hronal-pillar-'+room.id); // Both ambient and summoned versions reuse one fixed-footprint recipe.
     }
   }
   function updatePillars(kit, dt, actors) {
     for (const pillar of world.pillars) {
       if (pillar.phase === 'spent') continue;
+      if (pillar.phase === 'emerging') {
+        pillar.riseElapsed=Math.min(BOSS_PILLAR_RISE_SECONDS,pillar.riseElapsed+dt);
+        const t=pillar.riseElapsed/BOSS_PILLAR_RISE_SECONDS;
+        pillar.group.scale.y=Math.max(.001,t*t*(3-2*t)); // Ease from the floor to full height; XZ shape and preset collision footprint stay constant.
+        if(t>=1){pillar.phase='charging';pillar.elapsed=0;pillar.pulses=0;window.DevRandomRuinTileOccupancy?.refresh?.();}
+        continue;
+      }
       if (pillar.phase === 'idle') {
         if (!actors.some(a => distance(pointOf(a, kit.deps.TILE), pillar) <= PILLAR_RADIUS)) continue;
         pillar.phase = 'charging'; pillar.elapsed = 0; pillar.pulses = 0;
@@ -603,6 +708,10 @@
         }
       }
       lastEvent = 'hronal:pillar-burst';
+    }
+    for(let i=world.pillars.length-1;i>=0;i--) {
+      const pillar=world.pillars[i];
+      if(pillar.temporary&&pillar.phase==='spent'){releaseBossPillar(pillar);world.pillars.splice(i,1);} // No lingering spawned collision or geometry.
     }
   }
   function updateIcicles(kit, dt, actors) {
@@ -982,13 +1091,14 @@
     world.playerWasAlive=false;
   }
   function buildRooms(kit,context) {
+    clearArenaBossPillars(); // Moving from the Testing Arena into a ruin cannot strand an old boss pillar scene.
     clear();
     if (context.hachutu===true || !['hronal','tothal','kanthic'].includes(context.theme) || !context.floorSet?.size) return; // The Hachutu dev wing never inherits unrelated Harlyao lich hazards or wall lighting.
     const rooms = (context.meta?.rooms || []).map((entry,index)=>({id:entry.id,index,bounds:kit.roomBounds(context.meta,entry)}));
     world = {
       theme:context.theme,context,rooms,kit,group:new THREE.Group(),dummy:new THREE.Object3D(),
       ceilingY:Number(context.ceilingY) || (Number(context.meta?.floorSurfaceY)||0) + (Number(context.meta?.wallHeight)||3),
-      lights:[],pillars:[],iceTiles:new Set(),icicles:[],icicleGeometries:[],bossIcicleVariants:[],icicleMaterial:null,bossIcicleEmitter:null,bursts:[],surfaceGeometries:new Map(),iceMesh:null,iceMaterial:null, // The single boss emitter belongs to this ruin and is discarded on clear.
+      lights:[],pillars:[],bossPillarSequence:0,iceTiles:new Set(),icicles:[],icicleGeometries:[],bossIcicleVariants:[],icicleMaterial:null,bossIcicleEmitter:null,bursts:[],surfaceGeometries:new Map(),iceMesh:null,iceMaterial:null, // The single boss emitter belongs to this ruin and is discarded on clear.
       spellPlasm:new Set(),plasmMesh:null,plasmRoomMeshes:new Map(),plasmGeometry:null,plasmMaterial:null,ownedTexture:null,sink:0,playerWasAlive:true,
     };
     world.group.name = 'dev_ruin_lich_theme_'+world.theme;
@@ -1028,6 +1138,7 @@
     world.icicleMaterial?.dispose();
     for (const burst of world.bursts) {burst.mesh.geometry.dispose();burst.mesh.material.dispose();}
     for (const pillar of world.pillars) {
+      if(pillar.temporary){releaseBossPillar(pillar);continue;} // Reroll/exit clears even partially emerged boss pillars.
       if (!pillar.sourcePillar) continue;
       pillar.sourcePillar.visible = true; // A reused V50 generator root must never retain the previous run's exploded state.
       restorePillarCameraOcclusion(pillar);
@@ -1084,6 +1195,7 @@
     movementPhysicsAt:(x,z)=>world?.theme==='tothal'&&world.iceTiles.has(tileKey(x,z))?ICE_PHYSICS:null, // No allocations per game frame.
     createSpellPlasm, // Lich drops share tile rendering, immersion and checkpoint recovery.
     trackBossBlizzard,stopBossBlizzard,triggerBossBlizzard, // Nanahi tracks one spawn point and releases one icicle into the ordinary hit/shatter handlers each time.
+    spawnBossPillar,updateArenaBossPillars,clearArenaBossPillars, // Testing Arena and the real ruin use the same preset-footprint pillar charge and explosion pipeline.
     plasmTexture:() => world?.plasmMaterial?.map || null, // Shared Kanthic material source for headless Imlao's temporary body retexture.
     isPlasmAt:(x,z)=>!!plasmPatchAt(x,z), // Exact stationary render/physics occupancy.
     clearPlasmRadius, // Dungeon Fire removes only live Kanthic tiles, rebuilding just the connected surfaces it actually changes.

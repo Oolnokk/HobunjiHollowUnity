@@ -40,7 +40,7 @@ assert(core.includes('data.footprint = { w: 2, d: 2 }'),
   'derived authored bonfire data must retain the same 2x2 footprint');
 assert(core.includes('const scale = 2'), 'bonfire must derive from the campfire at exactly double visual scale');
 assert(core.includes("id: 'candle_table_fire'"), 'candle tables must retain the runtime idempotent flame augmentation path');
-assert(core.includes("'candleTable', 'hearth'"), 'hearth must participate in the shared always-on ambient furniture VFX scheduler');
+assert(/AMBIENT_FIRE_KEYS = new Set\([^)]*'hearth'/.test(core), 'hearth must participate in the shared always-on ambient furniture VFX scheduler');
 assert(inn.furniture.some(piece => piece.itemKey === 'hearthFurniture'),
   'Inn regression fixture must contain its authored hearthFurniture instance');
 assert.match(game,

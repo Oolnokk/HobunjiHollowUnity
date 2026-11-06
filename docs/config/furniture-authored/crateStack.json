@@ -100,11 +100,94 @@
       "textureTransparent": true,
       "textureTileSize": 1,
       "tint": 0.85
+    },
+    {
+      "id": "crate_stack_lower_support",
+      "kind": "box",
+      "name": "Crate Stack Ground Support",
+      "transform": {
+        "x": 0.29,
+        "y": 0.165,
+        "z": 0.15,
+        "rx": 0,
+        "ry": -8,
+        "rz": 0,
+        "sx": 0.43,
+        "sy": 0.33,
+        "sz": 0.43
+      },
+      "color": "#87613e",
+      "segments": 4,
+      "taperAxis": "y",
+      "topScaleX": 0.92,
+      "topScaleZ": 0.92,
+      "bottomScaleX": 1,
+      "bottomScaleZ": 1,
+      "topSkewX": 0,
+      "topSkewZ": 0,
+      "innerScale": 0.68,
+      "basinDepth": 0.18,
+      "liquidContainerId": null,
+      "liquidLevel": 0.5,
+      "wonkiness": 0.015,
+      "materialRole": "wood",
+      "materialTexture": "crate_side.png",
+      "materialRotationDeg": 0,
+      "materialCapTexture": null,
+      "materialCapRotationDeg": 0,
+      "materialFillEnabled": false,
+      "materialFillColor": null,
+      "materialFillMode": "never",
+      "surfaceOpacity": 1,
+      "substanceColor": "#8b6540",
+      "substanceFillOpacity": 0,
+      "timelineUseSubstanceColor": false,
+      "textureDataUrl": null,
+      "textureName": "",
+      "textureTransparent": true,
+      "textureTileSize": 1,
+      "tint": 0.94
     }
   ],
   "seatAnchors": [],
   "particleEmitters": [],
   "processingWarps": [],
   "processTimelines": [],
-  "stompAttachPoints": []
+  "stompAttachPoints": [],
+  "notes": "Three grounded crates. The elevated crate rests across two lower crates; per-part visibility is driven by runtime crateCount.",
+  "runtimeVariants": {
+    "valueKey": "crateCount",
+    "defaultValue": 3,
+    "states": [
+      {
+        "value": 3,
+        "label": "Three crates",
+        "hiddenPartIds": []
+      },
+      {
+        "value": 2,
+        "label": "Two crates — upper removed",
+        "hiddenPartIds": [
+          "part_msc118xe_10l7z"
+        ]
+      },
+      {
+        "value": 1,
+        "label": "One crate — support removed",
+        "hiddenPartIds": [
+          "part_msc118xe_10l7z",
+          "crate_stack_lower_support"
+        ]
+      },
+      {
+        "value": 0,
+        "label": "Empty pile",
+        "hiddenPartIds": [
+          "part_msc118xe_10l7z",
+          "crate_stack_lower_support",
+          "part_msc118xe_6eib6"
+        ]
+      }
+    ]
+  }
 }

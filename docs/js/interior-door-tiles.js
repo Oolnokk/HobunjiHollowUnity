@@ -278,6 +278,11 @@
       scene.add(group);
       decorate?.(group);
       const entry = { id, puzzleMapId: state.puzzleMapId, col: c, row: r, tiles: record.tiles, group, facing: facing.facing, active: false, handOpened: false, idleFor: 0, exitId: record.exitId || null }; // setOpen() addresses the mechanism through the entry's own puzzle map id.
+      const coverBox = typeof THREE?.Box3 === 'function' ? new THREE.Box3().setFromObject(group) : null; // Measure the authored door volume once for height-aware projectile sight.
+      if (Number.isFinite(coverBox?.min?.y) && Number.isFinite(coverBox?.max?.y)) {
+        entry.projectileBottomY = coverBox.min.y; // Closed leaf/frame bottom, consulted by worldY-aware LOS queries.
+        entry.projectileTopY = coverBox.max.y; // Shots above this height clear the actual furniture.
+      }
       state.doors.push(entry);
       records.push({ id, itemKey: 'woodenDoorFurniture' });
       objectById.set(id, group);
@@ -321,11 +326,14 @@
   }
 
   // x/z/half in tile units, same convention as AreaFootprintBlockers.
-  function blocksBox(area, x, z, half = 0) {
+  function blocksBox(area, x, z, half = 0, worldY = null) {
     const state = maps.get(area);
     if (!state) return false;
     for (const entry of state.doors) {
       if (entry.exitId || !isBlocked(entry)) continue; // A map-switch doorway must remain reachable even while its mesh is closed.
+      // Footstep callers omit worldY and retain full blocking; actual arrows can pass above/below a finite door.
+      if (Number.isFinite(worldY) && Number.isFinite(entry.projectileBottomY) && Number.isFinite(entry.projectileTopY)
+        && (worldY + half < entry.projectileBottomY || worldY - half > entry.projectileTopY)) continue;
       if (entry.tiles.some(tile => x + half > tile.col && x - half < tile.col + 1 && z + half > tile.row && z - half < tile.row + 1)) return true;
     }
     return false;

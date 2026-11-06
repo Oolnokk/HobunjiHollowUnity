@@ -80,9 +80,15 @@ const server = http.createServer((req, res) => {
     await page.locator('#soloLayer').check();
     await page.locator('#resetView').click();
     await page.locator('#weapon').selectOption('grappleFlail');
-    await page.waitForFunction(() => window.HobunjiMultiSpritePreviewRenderer?.debugSnapshot()
-      ?.physics?.some(weapon => weapon.itemKey === 'grappleFlail' &&
-        weapon.loaded && weapon.connector === 'rope'), null, { timeout: 30000 });
+    await page.waitForFunction(() => {
+      const snapshot = window.HobunjiMultiSpritePreviewRenderer?.debugSnapshot();
+      // The shared assembly reports physics.loaded as soon as its asynchronous
+      // head/rope assets land; the preview catches up on the next draw frame.
+      // Both conditions must be true before testing the rendered rope.
+      return snapshot?.combined?.ready && snapshot.combined.chainReady &&
+        snapshot.physics?.some(weapon => weapon.itemKey === 'grappleFlail' &&
+          weapon.loaded && weapon.connector === 'rope');
+    }, null, { timeout: 30000 });
     const rope = await debug();
     assert.equal(rope.combined.chainReady, true, 'generated rope builds after switching weapon');
     assert(rope.physics.find(weapon => weapon.itemKey === 'grappleFlail').physics.length > 0,

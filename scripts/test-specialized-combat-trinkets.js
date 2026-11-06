@@ -86,7 +86,8 @@ function chain(mode){
   const records=new Map([['zone',{vases,scene:{}}]]);
   const events=[]; // Real blast event data from the isolated authoritative functions.
   const ctx={RADIUS:5,DAMAGE:34,records,THREE:{Vector3:class Vector3{}},
-    held:null,flight:null,BURDEN_IMPACT_HANDLERS:new Map(),carriedWorldPosition:null,
+    held:null,flight:null,backCarried:null,BURDEN_IMPACT_HANDLERS:new Map(),carriedWorldPosition:null,
+    backCarrierPosition:()=>null, // Modern stowed Burdens resolve their carrier's location before detonating; this chain fixture has none.
     lastEvent:'',lastBlastAttribution:null,
     deps:()=>({player:null,hostileObjects:new Set(),npcWalkers:new Set()}),
     tileSize:()=>64,scene:()=>({}),baseHeight:()=>0,

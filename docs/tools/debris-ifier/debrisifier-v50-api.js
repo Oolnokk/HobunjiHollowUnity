@@ -199,11 +199,24 @@
     return tagged;
   }
 
+  function normalizeLayoutReservation(raw) {
+    if (raw == null) return null;
+    const fields = ['x', 'z', 'w', 'd', 'floor', 'y', 'tileScale']; // Allocation crosses the iframe boundary as plain finite numbers.
+    if (!fields.every(key => Number.isFinite(raw[key])) || raw.x < 0 || raw.z < 0
+      || raw.w < 8 || raw.d < 8 || raw.w > 180 || raw.d > 180
+      || !Number.isInteger(raw.floor) || raw.floor < 1 || raw.tileScale !== 2)
+      throw new Error('Invalid native V50 layout reservation');
+    return Object.fromEntries(fields.map(key => [key, raw[key]]));
+  }
+
   async function generateInteriorLocale(options = {}) {
+    window.__devRuinLayoutReservation = normalizeLayoutReservation(options.layoutReservation); // Reset for every call, including ordinary single-floor previews.
     activePillarsOnly=options.floorProps==='pillarsOnly';
     await selectPieceSet(options.pieceSet);
     restorePreviewRoots();
     await loadRepoFurnitureLibrary();
+    window.__devRuinSingleRoomLab = options.singleRoom === true && options.singleRoomLab === true; // Removes V50's core-treasure moat/dais so the chosen test puzzle is the only challenge.
+    window.__devRuinSingleRoomPreset = options.singleRoom === true && ['medium','large','veryLarge'].includes(options.roomPreset) ? options.roomPreset : null; // Standalone Rope Chain uses a reachable large V50 chamber; statue defense keeps vast geometry.
     window.__devRuinSingleRoomLarge = options.singleRoom === true && options.roomPreset === 'veryLarge'; // Root preview opts into the generator's existing vast chamber preset.
     window.__devRuinSingleRoom = options.singleRoom === true; // Explicit root-author preview option; every ordinary generation restores the normal minimum.
 
@@ -221,9 +234,18 @@
     syncLocaleEnvironmentControls();
     updateOutputs();
 
+    lastGeneratedLocale = null; // V50 reports generation errors in its status label; never accept a previous floor after a failed attempt.
     await generateRuinsLocalePreview({ keepCurrentSeed: true });
     if (!lastGeneratedLocale || lastGeneratedLocale.meta?.environment !== 'interior') {
       throw new Error($('localeStatus')?.textContent || 'V50 did not produce an interior ruin.');
+    }
+    const reservation = window.__devRuinLayoutReservation; // Persist the accepted generator contract for mounting and mobile diagnostics.
+    if (reservation) {
+      const shell = lastGeneratedLocale.meta.interiorShell; // Final normalized dimensions include V50's exterior wall margin.
+      if (shell.gridCols * shell.cellSize * reservation.tileScale > reservation.w
+        || shell.gridRows * shell.cellSize * reservation.tileScale > reservation.d)
+        throw new Error('V50 generated outside its reserved floor allocation');
+      shell.layoutReservation = { ...reservation };
     }
     hydrateInteriorPlateauLevels();
     const puzzleFurniture = tagPuzzleFurniture(localePreviewRoot);
@@ -277,10 +299,20 @@
     };
   }
 
-  function takePreviewRoots() {
+  function takePreviewRoots(options = {}) {
     detachObject(localePreviewRoot);
     detachObject(mechanismParticleRoot);
-    return { localeRoot: localePreviewRoot, particleRoot: mechanismParticleRoot };
+    if (options.snapshot !== true)
+      return { localeRoot: localePreviewRoot, particleRoot: mechanismParticleRoot };
+    // V50 uses persistent preview roots. Transfer native children to
+    // distinct owners before another floor's generation clears those roots.
+    const locale=new THREE.Group(),particles=new THREE.Group();
+    locale.name='v50_native_floor_'+String(options.floor??'');
+    particles.name='v50_native_particles_'+String(options.floor??'');
+    while(localePreviewRoot.children.length)locale.add(localePreviewRoot.children[0]);
+    while(mechanismParticleRoot.children.length)particles.add(mechanismParticleRoot.children[0]);
+    locale.userData.v50DetachedFloor=options.floor??null;
+    return { localeRoot:locale,particleRoot:particles };
   }
 
   function pausePreviewLoop() {
@@ -422,10 +454,22 @@
     return rotateLinkedCubeControl(root, Number(controlIndex) || 0, direction < 0 ? -1 : 1);
   }
 
+  function registerDetachedCubeRoots(nativeRoot) {
+    if(!nativeRoot?.traverse)throw new Error('Detached V50 puzzle registration needs a traversable native root');
+    const registered=[]; // Tracks the original V50 linked-cube actors transferred to this story; next-floor generation clears V50's private registry.
+    nativeRoot.traverse(object=>{
+      if(object.userData?.activatorType!=='linkedCubePillars'
+        ||object.userData?.previewMotion?.type!=='linkedCubePair'
+        ||!object.userData?.interactive3D)return;
+      linkedCubePuzzleRoots.add(object);registered.push(object); // Reuse V50's original solver and visual animator without changing the SHA-verified generator.
+    });
+    let disposed=false; // The owning game story releases its solver actors on regeneration/map exit.
+    return ()=>{if(disposed)return;disposed=true;for(const object of registered)linkedCubePuzzleRoots.delete(object);};
+  }
   function tickRuntime(dt) {
     const safeDt = clamp(Number(dt) || 0, 0, .05);
     updateLinkedCubePuzzles(safeDt);
-    updateMechanismParticleEffects(safeDt);
+    if(!previewLoopPaused)updateMechanismParticleEffects(safeDt); // The game has detached its scene roots: emitting to V50's hidden iframe particleRoot wastes memory/CPU and is never visible in the game.
   }
 
   // Runtime-generated recovery access deliberately calls V50's real ladder
@@ -527,6 +571,7 @@
       mechanismTargetState,
       previewLoopPaused,
       previewRootAttachedToTool: localePreviewRoot.parent === scene,
+      linkedCubeSolverRoots:linkedCubePuzzleRoots.size, // Debug count includes detached upper stories.
       runtimeWallPlanes: runtimeWallPlaneState(),
       runtimeHallways: runtimeHallwayState(),
       puzzleOptions: cloneJson(window.__devRuinPuzzleOptions || null),
@@ -550,6 +595,7 @@
     createRootMechanismKeyframes,captureRootMechanismKeyframes,
     syncPressurePlates,
     rotateLinkedCube,
+    registerDetachedCubeRoots,
     tickRuntime,
     createRuntimeStoneLadder,
     inspectRuntimeTags,

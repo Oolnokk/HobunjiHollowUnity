@@ -15,7 +15,7 @@
     "function": "loadBuildingScene",
     "reason": "A chained double requestAnimationFrame forces the Den/cavern loading label to actually paint before a long synchronous carve starts; it resolves once and never reschedules.",
     "migrationStage": "not-planned",
-    "line": 14153
+    "line": 14297
   },
   {
     "file": "docs/game.js",
@@ -24,7 +24,7 @@
     "function": "runMove",
     "reason": "Steps a previewed cutscene actor toward its move target every frame and stops rescheduling once advanceActorToward reports arrival or the preview's running flag clears.",
     "migrationStage": "not-planned",
-    "line": 33335
+    "line": 34068
   },
   {
     "file": "docs/game.js",
@@ -33,7 +33,7 @@
     "function": "runFade",
     "reason": "Defers writing the fade element's target opacity to the next paint so the CSS transition actually animates instead of jumping instantly; runs once per fade stage.",
     "migrationStage": "not-planned",
-    "line": 33762
+    "line": 34224
   },
   {
     "file": "docs/game.js",
@@ -42,7 +42,7 @@
     "function": "runZoom",
     "reason": "Eases the preview camera's zoom toward a target percentage over the stage's authored duration and stops once t reaches 1.",
     "migrationStage": "not-planned",
-    "line": 33775
+    "line": 34243
   },
   {
     "file": "docs/game.js",
@@ -51,7 +51,7 @@
     "function": "cutsceneRotationTick",
     "reason": "Eases previewed actors' facing every frame for the scene's lifetime, gated on the same running flag every other preview RAF loop checks, so stopping the preview stops it too.",
     "migrationStage": "not-planned",
-    "line": 33595
+    "line": 34329
   },
   {
     "file": "docs/js/action-arc-ui.js",
@@ -142,6 +142,24 @@
     "reason": "Classic eased-tween RAF loop (self-continuing at line 670) that runs only until progress t reaches 1, then resolves and stops - a bounded, self-terminating UI animation for the sleep/wait iris transition.",
     "migrationStage": "not-planned",
     "line": 758
+  },
+  {
+    "file": "docs/js/chest-lockpicking.js",
+    "owner": "ChestLockpicking",
+    "classification": "bounded-animation",
+    "function": "frame (active ring-tumbler re-arm)",
+    "reason": "The dial physics and pin indicators advance via RAF only while a player has an active chest-lock minigame session. The frame callback stops immediately when session becomes null, and close() cancels its pending request; no session-lifetime idle loop remains after a chest is picked or cancelled.",
+    "migrationStage": "not-planned",
+    "line": 250
+  },
+  {
+    "file": "docs/js/chest-lockpicking.js",
+    "owner": "ChestLockpicking",
+    "classification": "bounded-animation",
+    "function": "open (start ring-tumbler session)",
+    "reason": "A single requestAnimationFrame starts the ring-dial animation when the overlay opens. All later frames are owned by frame(), and the registered animation is canceled on close, cancellation, invalid chest or completed lock. It is not an independent perpetual gameplay ticker.",
+    "migrationStage": "not-planned",
+    "line": 334
   },
   {
     "file": "docs/js/combat/combat-input.js",

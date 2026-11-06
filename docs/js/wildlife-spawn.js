@@ -175,6 +175,13 @@
   // below threshold before this hit.
   function applyWildlifeSkirmishDamage(attacker, target, amount) {
     if (target?.isNpcWalker) return window.WildlifeFoodWeb?.npcWalkerStrike?.(attacker, target) || false; // Named scheduling walkers lack Combat Health; defend/scare without inflicting fabricated damage.
+    // Player-owned animal companions are real hostile targets of predator bites, not wildlife sparring prey.
+    if (target?.isCompanion && !target.banditCompanion) {
+      deps.damageCreature(target, Math.max(0, amount), attacker.x, attacker.y, deps.HOSTILE_BITE_KNOCKBACK_PX_S, {
+        tag: attacker.def?.attackTag || 'sharp', attacker,
+      });
+      return;
+    }
     const factionTarget = target?.isBandit === true || target?.isTribeHunter === true || target?.isPorakanekiHunter === true || target?.banditCompanion === true;
     if (factionTarget) {
       // Predator-vs-humanoid encounters are real observed combat, not the
@@ -191,7 +198,7 @@
     }
     const floor = target.maxHealth * WILDLIFE_HP_FLOOR_FRACTION;
     const clamped = Math.max(0, Math.min(amount, target.health - floor));
-    if (clamped > 0) deps.damageCreature(target, clamped, attacker.x, attacker.y, deps.HOSTILE_BITE_KNOCKBACK_PX_S, { tag: attacker.def?.attackTag || 'sharp', attacker }); // Gives defensive wildlife the actual skirmish attacker instead of confusing it with the player.
+    if (clamped > 0) deps.damageCreature(target, clamped, attacker.x, attacker.y, deps.HOSTILE_BITE_KNOCKBACK_PX_S, { tag: attacker.def?.attackTag || 'sharp', attacker, wildlifeSkirmishFloor: floor }); // Scent damage obeys the existing nonlethal wildlife floor.
     if (target.health > 0 && target.health / target.maxHealth <= WILDLIFE_FLEE_HP_THRESHOLD) {
       target.state = 'fleeing-low-health';
       target.targetCreature = null;
@@ -616,6 +623,8 @@
     if (Math.hypot(x - Number(oldDen.x), y - Number(oldDen.y)) < DEN_RELOCATION_MIN_DISTANCE_TILES) return false;
     if (activeZone && deps.player && Math.hypot((x + w * .5) - deps.player.x / deps.TILE, (y + h * .5) - deps.player.y / deps.TILE) < DEN_RELOCATION_PLAYER_CLEARANCE_TILES) return false;
     const candidate = { x, y, w, h: h + 1 };
+    const cliffRoutes = window.CliffRouteNetwork; // A relocated cave must also clear the existing climbable cliff mesh.
+    if (cliffRoutes?.overlapsClimb(cliffRoutes.forArea(zoneId), { x: x - 0.75, y: y - 0.75, w: w + 1.5, h: h + 2.5 })) return false;
     for (const other of (layout.caveAnchors || layout.dens || [])) { // caveAnchors: every cave (js/cave-site-system.js), not just the animal dens this tick sees.
       if (!other || String(other.id) === String(den.id)) continue;
       if (rectsOverlap(candidate, { x:Number(other.x), y:Number(other.y), w:Math.max(1,Number(other.w)||1), h:Math.max(1,Number(other.h)||1)+1 }, 4)) return false;

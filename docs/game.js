@@ -1099,31 +1099,76 @@
         return Number.isFinite(resolved) ? Math.max(0, resolved) : Math.max(0, Number(entity?.maxFooting) || 0); // Legacy/no-ResourceSystem actors still use literal max Footing.
       }
 
-      // Zero-Footing transition — called only once applyHitStagger's own
-      // spendFooting has already driven entity.footing to 0. Both the player
-      // and any creature/bandit go fully prone here (immune to further
-      // Footing loss — see resource-system.js's spendFooting), then
-      // automatically recover once Footing reaches the same full unshambled
-      // target — the player uses updateProneState's in-place recovery arc,
-      // while creature AI uses beginCreatureSomersaultRecovery below.
-      // Creature planes use the same authored clips through
-      // ImpactRagdollPlayback's quarter-turned body-only adapter; humanoid leg
-      // channels remain player-only. Both kinds use a dedicated prone-throw
-      // displacement so compatibility adapters can still clear stale ordinary
-      // knockback without erasing the intentional knockdown launch.
-      function enterProneIfFootingDepleted(entity, isPlayer, direction) {
-        if (entity.footing > 0 || entity.prone) return;
+      // The same full breakThrow knockdown (launch, action interruption and
+      // pose hold) is shared by depleted Footing and the short timed Knockdown
+      // debuff. Temporary knockdown does not modify the target's Footing.
+      function enterPronePose(entity, isPlayer, direction, temporary) {
+        if (entity.prone) return false;
+        entity._temporaryKnockdownProne = temporary === true; // Used by prone recovery and the two distinct prone attack multipliers.
         entity.prone = true;
-        // damageCreature already cancelled any in-progress attack; the
-        // creature playback holds its final breakThrow frame until recovery.
         if (!isPlayer) {
           window.ImpactRagdollPlayback?.triggerCreature(entity, 'breakThrow', direction, { durationMultiplier: 1 });
-          return;
+          return true;
         }
         player.somersaultRecovering = false;
         player.vx = 0; player.vy = 0;
         window.Combat?.cancelAllStaged?.();
         window.ImpactRagdollPlayback?.trigger('breakThrow', direction, { durationMultiplier: 1 });
+        return true;
+      }
+
+      // Normal 0-Footing hits have already launched the victim in applyHitStagger.
+      // Their recovery still needs a full refill, irrespective of any timed debuff.
+      function enterProneIfFootingDepleted(entity, isPlayer, direction) {
+        if (entity.footing > 0 || entity.prone) return;
+        enterPronePose(entity, isPlayer, direction, false);
+      }
+
+      function enterTimedKnockdown(entity, options = {}) {
+        if (!entity || !(entity.health > 0) || entity._downed) return false;
+        const isPlayer = entity === player; // Only the local player uses the procedural humanoid ragdoll channel.
+        const interruptingGetUp = isPlayer && entity.prone && player.somersaultRecovering; // A new hit must supersede an unfinished recovery arc.
+        if (entity.prone && !interruptingGetUp) return false; // Already prone: only the expiry timer should extend, never replay the fall.
+        const facingAngle = isPlayer ? (Number(entity.angle) || 0) : (Number(entity.facing) || 0);
+        const direction = hitDirectionRelativeToFacing(facingAngle, entity.x, entity.y, options.fromX, options.fromY);
+        if (isPlayer) {
+          _nestHoldT = 0;
+          player._nestTakeActive = false;
+          window.BanditCamps?.interruptTentHold?.();
+          window.CorpseHoldLoot?.interrupt?.();
+        } else {
+          // Direct perk/buff applications must perform the same instantaneous
+          // attack cancellation as a 0-Footing hit, even without damageCreature.
+          window.Combat?.telegraph?.cancel?.(entity);
+          window.Combat?.animalAttacks?.cancel?.(entity);
+          window.EnemyDodge?.cancel?.(entity);
+          if (entity.isBandit) {
+            entity._banditAction?.cancel?.();
+            entity._banditAction = null;
+            entity.telegraphState = null;
+            entity._banditComboIndex = 0;
+            window.RangedWeapons?.cancelBanditAction?.(entity);
+            window.BanditCombat?.cancelLunge?.(entity);
+          }
+        }
+        startProneThrow(entity, isPlayer, facingAngle, direction);
+        if (interruptingGetUp) {
+          player.somersaultRecovering = false; // The old get-up callback must no longer clear prone while Knockdown is active.
+          player.vx = 0; player.vy = 0;
+          window.Combat?.cancelAllStaged?.();
+          window.ImpactRagdollPlayback?.trigger('breakThrow', direction, { durationMultiplier: 1 }); // Replaces the in-flight recovery arc with a fresh full fall.
+          return true;
+        }
+        return enterPronePose(entity, isPlayer, direction, !(Number(entity.footing) <= 0)); // A victim already at 0 Footing keeps the stronger genuine prone source.
+      }
+
+      window.HobunjiKnockdown = { enter: enterTimedKnockdown }; // Called only on first timed Knockdown application by ResourceSystem.
+
+      function proneRecoveryReady(entity) {
+        if (window.ResourceSystem?.hasTimedDebuff?.(entity, 'knockdown')) return false; // Duration must end before either prone source may recover.
+        return entity._temporaryKnockdownProne === true
+          ? (Number(entity.footing) > 0) // The timed effect never drains Footing, so no full-refill requirement.
+          : entity.footing >= proneRecoveryFootingTarget(entity); // Genuine Footing breaks keep their original full-refill rule.
       }
 
       // Called from updateHostiles once a prone creature's Footing reaches
@@ -1135,6 +1180,7 @@
       // chaining falls out of that existing call for free.
       function beginCreatureSomersaultRecovery(c, targetPlayer) {
         c.prone = false;
+        c._temporaryKnockdownProne = false; // The departing actor no longer has a timed-prone source.
         c.state = 'chase';
         c.targetPlayer = targetPlayer;
         window.ResourceSystem?.spendStamina(c, SOMERSAULT_STAMINA_COST, 'somersault recovery');
@@ -4991,7 +5037,7 @@
       window.HobunjiCacheAudit?.register('game.creatureTexCache', () => _creatureTexCache.front.size);
       function _getCreatureFrontTexture(url) {
         if (!_creatureTexCache.front.has(url)) {
-          const tex = new THREE.TextureLoader().load(url);
+          const tex = new THREE.TextureLoader().load(url, window.CreatureTextureCache?.capLoadedTexture); // Oversized art (grehlr 3000x2250) is scaled once at load; see creature-texture-cache.js.
           tex.colorSpace = THREE.SRGBColorSpace;
           _creatureTexCache.front.set(url, tex);
         }
@@ -4999,7 +5045,7 @@
       }
       function _getCreatureBackTexture(url) {
         if (!_creatureTexCache.back.has(url)) {
-          const tex = new THREE.TextureLoader().load(url);
+          const tex = new THREE.TextureLoader().load(url, window.CreatureTextureCache?.capLoadedTexture); // Same cap as the front texture.
           tex.colorSpace = THREE.SRGBColorSpace;
           tex.wrapS = THREE.RepeatWrapping;
           tex.repeat.set(-1, 1);
@@ -5285,14 +5331,17 @@
           if (avatarRef.backPlane) avatarRef.backPlane.position.y = offsetY;
         });
         window.WildlifeSpawn?.restoreHerdMotherVisuals?.(c); // Recreates shared-map saddle babies after a data-only mother's promotion.
+        if (c.state === 'corpse') window.CreatureDeath?.restoreSettledPose?.(c); // A corpse promoted from data lies exactly where and how it settled.
       }
 
       function releaseCreatureVisuals(c) {
-        if (!c.streamVisuals || c.isCompanion || c.health <= 0 || c._wildlifeVisualsReleased) return;
+        if (!c.streamVisuals || c.isCompanion || c._wildlifeVisualsReleased) return;
+        if (c.health <= 0 && !window.WildlifeVisualLod.isStreamableCorpse(c)) return; // Dying bodies and revivable skeletons keep their rig; a settled wildlife corpse is plain data when far away.
         disposeCreaturePresentation(c); // Releases only visuals; health, genes, movement state, and population keys remain registered.
         c.avatarRef = dataCreatureAvatar();
         c.groundShadow = null;
         c._carriedBabyVisuals = null;
+        c._deathRecordedThrow = null; c._deathScorch = null; c._impactRagdollPlayback = null; // Pose state belonged to the released rig; CreatureDeath.restoreSettledPose rebuilds it on promotion.
         c._wildlifeVisualsReleased = true;
         c._wildlifeVisualLodHidden = true;
         c.currentFrameUrl = null;
@@ -5302,6 +5351,7 @@
       function despawnCreature(c) {
         if (c?.maskboundTroop === 'headtaker') window.MaskboundHeadtaker?.cancel?.(c, 'despawn'); // Release the player's neck/input lock before removing this attacker and its visual rig.
         clearKnockbackLedgeMotion(c);
+        window.AnimalVocalizations?.releaseCreature?.(c); // Drops the scheduler's strong tracking-set reference; without this every despawned wild animal (and its whole rig object graph) stayed reachable forever.
         disposeCreaturePresentation(c); // Ordinary despawns and data-only retirement share one visual disposal owner.
       }
 
@@ -5378,7 +5428,7 @@
         return {
           id: 'corpse_' + c.id,
           type: 'creature_corpse',
-          promptRoot: c.avatarRef?.group || null,
+          promptRoot: c._wildlifeVisualsReleased ? null : (c.avatarRef?.group || null), // A far, data-only corpse has no rig to anchor a prompt to.
           getButtons() {
             return [{ icon: '🍖', label: 'Butcher ' + c.def.label, action: 'obj_loot_corpse', style: 'primary', allowed: true }];
           },
@@ -5498,6 +5548,7 @@
         if (c.isBandit) { c._banditAction = null; window.RangedWeapons?.cancelBanditAction?.(c); window.BanditCombat?.cancelLunge?.(c); }
         hostileObjects.delete(c);
         companionObjects.delete(c);
+        window.AnimalVocalizations?.releaseCreature?.(c); // A dead creature is never ticked again, so nothing else would ever drop it from the vocalization scheduler's strong set.
         const mineDeathArea = window.TownMine?.floorFromMapId?.(c.areaId) ? c.areaId : c.zoneId;
         if (!c.isCompanion && !c._mineDescentDeathRolled && window.TownMine?.floorFromMapId?.(mineDeathArea)) {
           c._mineDescentDeathRolled = true;
@@ -5572,6 +5623,7 @@
           amount = banditTryGuard(c, amount, actorAttacker || player);
           if (!actorAttacker && !c.combatTutorialTarget) window.SkillSystem?.award?.('combat', window.SkillSystem?.XP_GAINS?.combatHit || 1, 'landed hit');
         }
+        if (!environmentalImpact) amount *= window.ResourceSystem?.getProneAttackMultiplier?.(c) ?? 1; // 1.75x temporary, 2.5x true Footing-break; scales direct damage and attack afflictions once.
         const resourceDamage = environmentalImpact ? { health: amount, footing: 0 } : hitResourceDamage(amount, dmgOpts);
         const impactMultiplier = environmentalImpact ? 1 : (window.AlchemySystem?.getFootingDamageMultiplier?.() || 1) * (1 + (window.PerkSystem?.rank('combat', 'increaseFootingDamage') || 0) * 0.1); // Collision profiles are already authored at final strength.
         resourceDamage.footing *= impactMultiplier;
@@ -5661,6 +5713,7 @@
           amount *= window.ResourceSystem?.timedDebuffModifier?.(attacker, 'outgoingDamage') ?? 1;
           amount *= window.SkillSystem?.damageTakenMultiplier?.() || 1;
         }
+        if (!environmentalImpact) amount *= window.ResourceSystem?.getProneAttackMultiplier?.(player) ?? 1; // Same prone vulnerability for the player; collision damage remains unchanged.
         const resourceDamage = environmentalImpact ? { health: amount, footing: 0 } : hitResourceDamage(amount, dmgOpts);
         // Lets a held defensive ability (Counter Shield) absorb the hit and
         // riposte instead of applying damage normally — only one hold
@@ -5722,6 +5775,13 @@
       }); // Shared registry is initialized once and can be used by future sacred-ground mechanics.
 
       function respawnPlayer(reason = 'death') {
+        window.ResourceSystem?.clearTimedDebuff?.(player, 'knockdown'); // No death/checkpoint may carry timed immobilization into the next life.
+        player._temporaryKnockdownProne = false; // Reset 1.75x attack vulnerability and the temporary source before any respawn branch.
+        if (player.prone) {
+          player.prone = false;
+          player.somersaultRecovering = false;
+          window.ImpactRagdollPlayback?.stop?.(); // Clear the held break-throw rig before placing the player at a respawn point.
+        }
         window.PlayerDowned?.reset?.(); // Any respawn ends the downed state.
         if (window.DevRandomRuinSimplePuzzles?.respawnAtCheckpoint?.(reason)) { window.CompanionDowned?.reviveAll?.({ reason: 'player-respawn', teleport: 'deferred' }); return; } // Session ruin checkpoints override every canonical death source before mine/totem/farm recovery while preserving the source for mobile diagnostics.
         if (window.CombatTutorial?.active?.()) {
@@ -5756,6 +5816,8 @@
           player.stamina = player.maxStamina;
           if (Number.isFinite(player.maxFooting)) player.footing = player.maxFooting; // Death reset should not strand an arena test subject prone at the entry point.
           player.prone = false;
+          player._temporaryKnockdownProne = false;
+          window.ResourceSystem?.clearTimedDebuff?.(player, 'knockdown'); // Arena respawns cannot preserve the previous knockdown lock.
           if (player.staggered) { player.staggered.active = false; player.staggered.endsAt = 0; }
           for (const id of Object.keys(window.ResourceSystem?.AFFLICTIONS || {})) {
             const buildup = window.ResourceSystem?.getAffliction?.(player, id) || 0; // Clears lethal/punishing carry-over so the test respawn cannot immediately die again from the previous bout.
@@ -6180,6 +6242,17 @@
         // Map-boundary escarpments are airtight to creatures too (fromX/Y lets
         // one that is already standing on one walk off it).
         if (window.MapBoundaryGuard?.blocksCreatureStep?.(window.GridTileAccessors.getActiveGrid(), TILE, fromX, fromY, wx, wy)) return false;
+        if (_isZoneArea(currentArea)) {
+          const g = actor?.areaGrid || window.GridTileAccessors.getActiveGrid();
+          const toTile = g?.[row]?.[col];
+          if (toTile?.incline && !actor?._cliffClimb) return false; // Faces require selected handholds, even for animals with canClimb.
+          if (!toTile) return false;
+          if (Number.isFinite(fromX) && Number.isFinite(fromY) && !actor?._cliffClimb) {
+            const fromTile = g?.[Math.floor(fromY / TILE)]?.[Math.floor(fromX / TILE)];
+            if (fromTile && fromTile !== toTile && fromTile.type !== TileType.RAMP && toTile.type !== TileType.RAMP &&
+                Math.abs(tileSurfaceYInArea(toTile, currentArea) - tileSurfaceYInArea(fromTile, currentArea)) > 0.55) return false;
+          }
+        }
         return true;
       }
 
@@ -6235,6 +6308,9 @@
         // silently false rather than throwing, and c.x/c.y would end up
         // permanently NaN with nothing downstream ever catching it directly.
         if (!Number.isFinite(tx) || !Number.isFinite(ty)) { c.vx = 0; c.vy = 0; return false; }
+        // One central navigation entry for herds, prey, companions and
+        // returning wildlife. The route graph prevents shortcutting vertically.
+        if (window.CreatureCliffClimb?.navigate?.(c, tx, ty, speed, dt)) return true;
         const dx = tx - c.x, dy = ty - c.y;
         const dist = Math.hypot(dx, dy);
         if (dist < 1) { c.vx = 0; c.vy = 0; return false; }
@@ -6896,6 +6972,8 @@
       function releasePreviousAreaCreatureTextures() {
         if (_lastInactiveCreatureTextureArea === currentArea || cutscenePreviewActive) return;
         _lastInactiveCreatureTextureArea = currentArea;
+        noteZoneVisited(currentArea); // Fires once per area change; the inactive zone cache trims shortly after the arrival settles.
+        scheduleZoneCacheTrim();
         for (const c of hostileObjects) if (c.areaId !== currentArea) {
           releaseInactiveCreatureTextures(c);
           releaseCreatureVisuals(c); // An inactive zone keeps creature data, not full animal rigs.
@@ -6908,7 +6986,38 @@
         return hidden;
       }
 
+      // Settled wildlife corpses leave hostileObjects, so the per-creature LOD
+      // above never saw them and each kept a full rig for the whole session.
+      // This drives the same distance owner for them on a short timer, and
+      // releases them outright once the player is in another area.
+      let _corpseVisualLodAt = 0;
+      function updateCorpseVisualLod() {
+        const now = performance.now();
+        if (now - _corpseVisualLodAt < 400) return; // Wall clock, so a slow frame rate does not stretch the interval.
+        _corpseVisualLodAt = now;
+        for (const c of corpseObjects) { // Promotion shares the per-frame allowance set by updateHostiles, so corpses wake over successive ticks.
+          if (!window.WildlifeVisualLod.isStreamableCorpse(c)) continue;
+          if (c.areaId !== currentArea) { if (!c._wildlifeVisualsReleased) releaseCreatureVisuals(c); continue; }
+          updateWildlifeVisualLod(c, Math.hypot(player.x - c.x, player.y - c.y) / TILE);
+        }
+      }
+      function tickCorpses(dt) {
+        window.CreatureDeath.updateCorpses(dt);
+        updateCorpseVisualLod();
+        window.BanditCorpseRetirement.tick(performance.now()); // Bandit corpses cannot stream to data, so old ones lose their rig instead (js/bandit-corpse-retirement.js); throttled inside.
+      }
+
       window.WildlifeVisualLod.init({ createVisuals: createCreatureVisuals, releaseVisuals: releaseCreatureVisuals }); // Existing LOD owns streamed wildlife presentation lifetime.
+      // Bandit corpse rig retirement now lives in js/bandit-corpse-retirement.js.
+      window.BanditCorpseRetirement.init({
+        corpseObjects,
+        getPlayer: () => player,
+        getTile: () => TILE,
+        getCurrentArea: () => currentArea,
+        getDefaultScene: () => scene,
+        disposeCreaturePresentation, // The same shared owner despawnCreature uses.
+        tileSurfaceYInArea,
+      });
 
       function updateHostiles(dt) {
         for (const entity of hostileObjects) {
@@ -7006,7 +7115,7 @@
           // humanoid a live actor target and zeroes its player aggro; chase,
           // leash and sight below must follow that actor, not the player.
           const chunkCombatTarget = c.isBandit && c._chunkCombatTarget?.health > 0 && c._chunkCombatTarget.areaId === c.areaId ? c._chunkCombatTarget : null;
-          const targetPlayer = chunkCombatTarget || c.targetPlayer || nearestPlayer(c.x, c.y);
+          let targetPlayer = chunkCombatTarget || c.targetPlayer || nearestPlayer(c.x, c.y); // Scent priority can change this frame's active chase target before movement/attack.
           if (window.ClimbSystem?.updateBranchDefender?.(c, entityDt, targetPlayer)) continue;
           // Attackers scale cliffs after a target that climbed away from them
           // (js/creature-cliff-climb.js); the scripted climb owns position.
@@ -7017,8 +7126,8 @@
           // entirely this frame" escape hatch, gated on its own per-creature
           // marker so it never touches the Nestmother's branch-defend flow.
           if (c.onBranch && window.HobunjiCloudForestWildlife?.updateBranchDweller?.(c, entityDt)) continue;
-          const dxp = targetPlayer.x - c.x, dyp = targetPlayer.y - c.y;
-          const distToPlayer = Math.hypot(dxp, dyp);
+          let dxp = targetPlayer.x - c.x, dyp = targetPlayer.y - c.y; // Refreshed when scent chooses a different player in this same AI tick.
+          let distToPlayer = Math.hypot(dxp, dyp);
           const distFromHome = Math.hypot(c.x - c.homeX, c.y - c.homeY);
           const visuallyLodSleeping = updateWildlifeVisualLod(c, distToPlayer / TILE); // Rechecks after target selection before choosing the resource cadence.
           if (!tickCreatureResources(c, entityDt, visuallyLodSleeping)) continue;
@@ -7081,6 +7190,16 @@
             beginEnemySearch(c, targetPlayer);
           }
           if (c.state === 'return' && distFromHome < TILE * 0.6) c.state = 'idle';
+          // Scent-marked opponents take priority without bypassing wild animals' existing
+          // aggro, leash, perception or attack-commitment rules.
+          window.AnimalScentTargeting?.prioritizeWild?.(
+            c, players, companionObjects, currentArea, opponent => enemyCanSeeTarget(c, opponent, def.aggroRangePx), LEASH_REENTER_FRAC
+          );
+          if (c.state === 'chase' && c.targetPlayer && c.targetPlayer !== targetPlayer) {
+            targetPlayer = c.targetPlayer; // The chosen scent opponent must own movement, alignment and strikes immediately.
+            dxp = targetPlayer.x - c.x; dyp = targetPlayer.y - c.y;
+            distToPlayer = Math.hypot(dxp, dyp);
+          }
           if (window.VoorgAssRearKick?.isHoldingKickPose?.(c)) {
             c.state = 'chase'; // Preserve the already-fired rear-kick freeze through the one-second impact pose even if its target died or fled outside the leash.
           }
@@ -7140,7 +7259,7 @@
             // as ordinary knockback. ImpactRagdollPlayback simultaneously
             // drives the quarter-turned animal/bandit breakThrow pose.
             advanceCreatureProneThrow(c, entityDt);
-            if (c.footing >= proneRecoveryFootingTarget(c) && !(c.proneThrowT > 0) && !c._knockbackLedgeFall) beginCreatureSomersaultRecovery(c, targetPlayer);
+            if (proneRecoveryReady(c) && !(c.proneThrowT > 0) && !c._knockbackLedgeFall) beginCreatureSomersaultRecovery(c, targetPlayer);
           } else if (c.knockbackT > 0) {
             // Reeling from a hit; let the impulse play out before resuming AI.
             // Per-axis canOccupyAt check (same primitive/radius convention as
@@ -8737,6 +8856,11 @@
               }
             }
           }
+          if (isBanditCompanion) {
+            target = window.AnimalScentTargeting?.prioritizeEnemyCompanion?.(
+              c, master, player, companionObjects, currentArea, ALERT_RANGE_PX, target
+            ) || target; // Enemy pets focus marked opponents until the mark has been spent.
+          }
           // Sicced (weapon Flourish, js/combat/combat-enchantments.js) makes
           // one living marked enemy the player companion's exclusive target,
           // overriding the proximity pick above until no Sicced enemy lives.
@@ -8803,8 +8927,9 @@
             _clearCompanionTreasureCue(c, dt, 'prone');
             _clearCompanionWatchIdle(c, 'prone');
             advanceCreatureProneThrow(c, dt);
-            if (c.footing >= proneRecoveryFootingTarget(c) && !(c.proneThrowT > 0) && !c._knockbackLedgeFall) {
+            if (proneRecoveryReady(c) && !(c.proneThrowT > 0) && !c._knockbackLedgeFall) {
               c.prone = false;
+              c._temporaryKnockdownProne = false; // Companion standing back up also clears the temporary prone source.
               window.ResourceSystem?.spendStamina(c, SOMERSAULT_STAMINA_COST, 'somersault recovery');
               c.retreatT = Math.max(c.retreatT || 0, FORCED_SOMERSAULT_RETREAT_S);
             }
@@ -8889,7 +9014,7 @@
                         strikeS: BITE_TELEGRAPH_STRIKE_S,
                         onStrike: () => {
                           if (target.health > 0 && Math.hypot(target.x - c.x, target.y - c.y) <= def.attackRangePx) {
-                            const damageOptions = { tag: def.attackTag || 'sharp', afflictionBonuses: window.ResourceSystem?.afflictionBonusesForTag(def.attackTag) }; // Used by either faction's fallback bite damage route.
+                            const damageOptions = { tag: def.attackTag || 'sharp', afflictionBonuses: window.ResourceSystem?.afflictionBonusesForTag(def.attackTag), attacker: c }; // Fallback animal bites retain their attacker identity for scent spending and debuff attribution.
                             if (target === player) damagePlayer(def.attackDamage, c.x, c.y, COMPANION_BITE_KNOCKBACK_PX_S, damageOptions);
                             else if (window.CompanionOffense) window.CompanionOffense.damageCreature(damageCreature, c, target, def.attackDamage, c.x, c.y, COMPANION_BITE_KNOCKBACK_PX_S, damageOptions); // Shared Whistle/Sicced companion empowerment (js/combat/companion-offense.js).
                             else damageCreature(target, def.attackDamage, c.x, c.y, COMPANION_BITE_KNOCKBACK_PX_S, damageOptions);
@@ -9321,6 +9446,7 @@
         member.animalHides = window.AnimalHides?.serialize?.() || { version: 1, pack: {} }; // Persist individual hide genetics beside the world-member's count inventory.
         member.wildBerryState = window.WildBerries.serializeState();
         member.zoneTreasureState = window.WildTreasure.serializeState();
+        member.cliffBalconyRewards = window.CliffRouteNetwork?.serializeRewards?.() || {}; // Layer-specific dig/mining state independent of the ground tile.
         member.wildernessChunkState = serializeWildernessChunkState();
         member.wildernessCampfireState = window.WildernessCampfire?.serialize?.() || null;
         member.felledTreeState = serializeZoneFelledTreeState();
@@ -10050,7 +10176,7 @@
         // (and any ledge fall it can become) prevents the roll from cancelling
         // displacement that still has to resolve.
         if (!(player.proneThrowT > 0) && !player._knockbackLedgeFall
-            && player.footing >= proneRecoveryFootingTarget(player)) {
+            && proneRecoveryReady(player)) {
           beginSomersaultRecovery();
         }
       }
@@ -10067,13 +10193,15 @@
       const SOMERSAULT_RECOVERY_DUR_S = 0.5;
       function beginSomersaultRecovery() {
         if (!player.prone || player.somersaultRecovering) return false;
-        if (player.footing < proneRecoveryFootingTarget(player)) {
-          showToast("Footing hasn't recovered enough yet.", false);
+        if (!proneRecoveryReady(player)) {
+          if (!window.ResourceSystem?.hasTimedDebuff?.(player, 'knockdown'))
+            showToast("Footing hasn't recovered enough yet.", false);
           return false;
         }
         player.somersaultRecovering = true;
         window.ImpactRagdollPlayback?.beginRecoveryArc(SOMERSAULT_RECOVERY_DUR_S, () => {
           player.prone = false;
+          player._temporaryKnockdownProne = false; // Reset the 1.75x state after the normal in-place get-up arc.
           player.somersaultRecovering = false;
         });
         return true;
@@ -10173,6 +10301,7 @@
         if (climb && (climb.type === 'branchJumpDown' || dodgeInputIsForward())) { window.ClimbSystem.startClimb(climb); return; }
         const worldClimb = window.ClimbSystem.getWorldClimbTarget?.(); // Non-grid ledges (ruins) climb from the same forward dodge.
         if (worldClimb && dodgeInputIsForward()) { worldClimb.start(); return; }
+        if (player.onCliffBalcony && window.ClimbSystem?.jumpFromBalcony?.()) return; // Side/back dodge leaps from the raised ledge to the highest lower support.
         performDodge();
       }
 
@@ -10906,6 +11035,7 @@
         }; // Restricts tile-owned meshes to one streaming chunk.
         const includeTiles = options.includeTiles !== false; // Lets the global path layer build without duplicating ordinary tiles.
         const includeGlobalPath = options.includeGlobalPath !== false; // Keeps the one zone-wide route mesh outside streamed chunks.
+        const komaCosmeticSites = includeTiles ? window.RoadsideKomaHedges?.hedgePlan?.(zGrid, mapId) : null; // Cached entire-zone, generated from real roads but emitted in chunk-local lifecycle.
         const _floorBuckets = new Map();
         const _addToBucket = (matKey, geo, x, y, z) => {
           if (!geo) return;
@@ -10957,6 +11087,21 @@
           const tile = zGrid[r][c];
           const cx = c + 0.5, cz = r + 0.5;
           const tierY = (tile.elevTier || 0) * PLATEAU_UNIT;
+
+          // Guaranteed long Koma hedgerows are *decorative*, not SHRUB terrain:
+          // keep the roadside shoulder walkable and collision/pathfinding/save state untouched.
+          // Adding to this chunk's floorMeshes also guarantees unload/abort cleanup.
+          if (tile.type === TileType.GRASS && komaCosmeticSites?.has(c + ',' + r)) {
+            const komaBush = window.FoliageGenerator?.buildKomaHedgeBushMesh?.(c, r); // Cached variant geometry and material, never regenerated from scratch for each tile.
+            if (komaBush) {
+              komaBush.position.set(cx, tileSurfaceY(TileType.GRASS) + tierY, cz);
+              komaBush.userData.roadsideKomaCosmetic = true; // Exposes planned bush ownership to Pixel Probe and mobile diagnostics.
+              komaBush.userData.skipOcclusionFade = true; // Short decorative plants never trigger the player/companion camera fade.
+              zScene.add(komaBush);
+              _markOutline(komaBush);
+              meshes.push(komaBush);
+            }
+          }
 
           // A genuine plateau-top tile is normally left to buildPlateauMesa's
           // own continuous lid entirely (skipFloor) — but that lid already
@@ -11041,10 +11186,13 @@
               const isShadewood   = isTreeZone && EXTERIOR_ZONES[mapId]?.cloudForest && (tile.floraKind === 'copse' || !tile.floraKind);
               const isBush   = tile.floraKind === 'bush';
               const isStump  = tile.floraKind === 'beehive';
+              const isKomaHedge = !isDeadTree && !isDeadBush && !isCrownedPine && !isShadewood && !isStump
+                && window.RoadsideKomaHedges?.isHedgeBush?.(zGrid, c, r, mapId); // Only shrub lines beside Slagothim wilderness roads.
               const vegGroup = isDeadTree ? window.FoliageGenerator.buildDeadTreeMesh(c, r)
                              : isDeadBush ? window.FoliageGenerator.buildDeadBushMesh(c, r)
                              : isCrownedPine ? window.FoliageGenerator.buildCrownedPineMesh(c, r)
                              : isShadewood   ? window.FoliageGenerator.buildShadewoodMesh(c, r)
+                             : isKomaHedge   ? window.FoliageGenerator.buildKomaHedgeBushMesh(c, r)
                              : isBush        ? window.FoliageGenerator.buildWildernessBushMesh(c, r)
                              : isStump       ? window.FoliageGenerator.buildStumpMesh(c, r)
                              : window.FoliageGenerator.buildShrubMesh(c, r);
@@ -11382,6 +11530,7 @@
 
         const info = { scene: zScene, grid: zGrid, cols: ZCOLS, rows: ZROWS, transitions, occlusionMeshes, canopyZones, cullables, chunkController: null, pathNet: zonePathNet };
         _zoneScenes.set(mapId, info);
+        rebindZoneResidents(mapId, info); // Creatures that outlived an evicted copy of this zone point at the new scene and grid.
 
         const floorRegistry = _zoneFloorMeshGroups.get(mapId); // Tracks global path meshes plus every currently loaded chunk floor object.
         const waterRegistry = _zoneWaterMeshes.get(mapId); // Tracks only resident water meshes for shared water animation/debug consumers.
@@ -12590,6 +12739,8 @@
         isBuildingArea: _isBuildingArea,
         furnitureBlocksMovementAt,
         npcGridForArea,
+        npcSurfaceY, // Cliff route graph uses the same tier surface as scheduled NPCs.
+        tileSurfaceYInArea, // Injected so graph builds never depend on tile coordinate metadata.
         npcMovementConfig,
         npcTransitionPool,
         buildingScenes: _buildingScenes,
@@ -13038,6 +13189,7 @@
           },
           update(dt) {
             this._lastUpdateDt = dt; // Animal-facing deadzone/smoothing consumes the same real dt as updateCreatureMesh.
+            if (window.NpcPathfinding?.updateCliffClimb?.(this, dt)) return; // A selected cliff crossing owns all three world coordinates during its hops.
             // Scheduled NPCs don't carry creature Health; a Nazgraku bite provokes
             // a visible nonlethal flight instead of a fake resource-system death.
             // Existing moveToward stays responsible for walking/collision and
@@ -13249,7 +13401,7 @@
               // normally from wherever it was left.
               if (isVisibleArea) {
                 this._updateStationWander(target, dt);
-                const wty = npcSurfaceY(this.area, Math.floor(root.position.x), Math.floor(root.position.z));
+                const wty = this._cliffNpcY ?? npcSurfaceY(this.area, Math.floor(root.position.x), Math.floor(root.position.z));
                 root.position.y += (wty - root.position.y) * (1 - Math.exp(-13.4 * dt)); // Framerate-independent ground-snap: same catch-up feel at any dt, not just one frame's worth per call.
                 if (this._moveSpeedTiles > 0.05) {
                   const npcBobEffort = window.FormatUtils.clamp(this._moveSpeedTiles / (cfg.speedTilesPerSecond ?? 1.25), 0, 1);
@@ -13398,7 +13550,7 @@
               this.routeNode = this.routeTarget; this.routeTarget = null; this.routePath = null; this.state = 'on-route';
             }
             if (this.state === 'breakoff') this.state = 'idle';
-            const ty = npcSurfaceY(this.area, Math.floor(root.position.x), Math.floor(root.position.z));
+            const ty = this._cliffNpcY ?? npcSurfaceY(this.area, Math.floor(root.position.x), Math.floor(root.position.z));
             root.position.y += (ty - root.position.y) * (1 - Math.exp(-13.4 * dt)); // Framerate-independent ground-snap.
             // Bob animation when moving — mirrors the player's own
             // effort-based move bob (updateMovement): amplitude ramps from
@@ -15570,7 +15722,157 @@
         _zoneMineableRockMeshes.delete(mapId);
         _zoneGrassMeshes.delete(mapId);
         _zoneMesaMeshGroups.delete(mapId);
+        window.CliffElevatedSurfaces?.clear?.(mapId); // Release only this wilderness area's stacked support scope on unload.
+        window.CliffRouteNetwork?.releaseArea?.(mapId); // Drop transient scene/route references; saved balcony rewards survive.
       }
+
+      // ── Inactive wilderness zone cache ────────────────────────────────
+      // A wilderness scene used to stay cached forever once built, so every
+      // zone the player had ever entered kept its scene graph, GPU buffers and
+      // per-tile data (about 170 MB of JS heap and several hundred MB of
+      // process memory each). Only the current zone plus the most recent
+      // inactive one(s) stay built now
+      // (SCRATCHBONES_CONFIG.game.zoneCache.maxInactiveZones, default 1).
+      // Older zones are torn down with _disposeZoneScene and rebuilt by the
+      // ordinary enterZone path from _zoneLayouts, the tile deltas and the
+      // persist maps, which already restore edited tiles, felled trees, mined
+      // rocks, berries, reagents and treasure. Wildlife, bandit camps and the
+      // player's campfire keep their own state and re-attach on entry; NPCs are
+      // parked until the zone is rebuilt and ordinary creatures drop to data. A
+      // zone with a resident that must keep its rig (a bandit, a dying body)
+      // is never evicted.
+      const _zoneVisitOrder = []; // Wilderness zone ids, most recently entered last.
+      let _zoneCacheTrimTimer = null;
+      function zoneCacheMaxInactive() {
+        const configured = Number(window.SCRATCHBONES_CONFIG?.game?.zoneCache?.maxInactiveZones);
+        return Number.isFinite(configured) && configured >= 0 ? Math.floor(configured) : 1;
+      }
+      function noteZoneVisited(mapId) {
+        if (!_isZoneArea(mapId)) return;
+        const at = _zoneVisitOrder.indexOf(mapId);
+        if (at >= 0) _zoneVisitOrder.splice(at, 1);
+        _zoneVisitOrder.push(mapId);
+      }
+      function zoneResidents(mapId) {
+        const residents = [];
+        for (const set of [hostileObjects, corpseObjects]) for (const c of set) if ((c.areaId || c.zoneId) === mapId) residents.push(c);
+        return residents;
+      }
+      // Ordinary creatures (wildlife and ambient hostiles) are rebuilt from their
+      // own data by createCreatureVisuals, so an inactive zone can hold them as
+      // plain data and the distance LOD promotes them again on return. Anything
+      // with its own rig builder or a rider/follower relationship stays put.
+      function canHoldAsData(c) {
+        if (c.isBandit || c.isCompanion || c.banditCompanion || c.maskboundTroop || c.mountedBy || c.rider || !c.def) return false;
+        return c.health > 0 || window.WildlifeVisualLod.isStreamableCorpse({ ...c, streamVisuals: true });
+      }
+      function releaseResidentRigs(mapId) {
+        for (const c of zoneResidents(mapId)) {
+          if (c._wildlifeVisualsReleased || !canHoldAsData(c)) continue;
+          c.streamVisuals = true; // From here on it streams by distance like any other wildlife.
+          releaseCreatureVisuals(c);
+        }
+      }
+      // NPCs have a parked state for a zone whose scene does not exist yet
+      // (_pendingZoneAdd, see makeNpcWalker/transferToArea); buildZoneScene drops
+      // them back in at the nearest walkable tile when the zone is rebuilt.
+      function parkZoneNpcs(mapId) {
+        const area = normalizeNpcArea(mapId);
+        for (const w of npcWalkers) {
+          if (normalizeNpcArea(w.area) !== area) continue;
+          if (w.root._npcScene) w.root._npcScene.remove(w.root); else w.root.parent?.remove?.(w.root);
+          w.root._npcScene = null; w.root._pendingZoneAdd = mapId;
+          w.resetRouteState?.();
+        }
+      }
+      function zoneEvictionBlocker(mapId) {
+        if (mapId === window.DevSpawner?.DEV_ARENA_ZONE_ID || mapId === window.DevSpawner?.WILDERNESS_LAB_ZONE_ID) return 'dev zone';
+        for (const c of zoneResidents(mapId)) if (!c._wildlifeVisualsReleased && !c.isCompanion) return 'resident rig';
+        return null;
+      }
+      // _disposeZoneScene frees geometry only, because tileMats and the house
+      // wall builder's materials are shared by every map. An evicted zone would
+      // otherwise leave all of its other materials and textures resident, and its
+      // rebuild would create a second set (about 370 textures per cycle). Anything
+      // still referenced by a scene that stays alive is skipped; r128 re-uploads a
+      // disposed resource on next use, so a skipped-or-missed share costs a
+      // re-upload at worst.
+      function materialTextures(material) {
+        const found = [];
+        for (const key in material) { const value = material[key]; if (value?.isTexture) found.push(value); }
+        if (material.uniforms) for (const uniform of Object.values(material.uniforms)) if (uniform?.value?.isTexture) found.push(uniform.value);
+        return found;
+      }
+      function materialsOf(object) { return Array.isArray(object.material) ? object.material : [object.material]; }
+      function collectLiveSceneResources() {
+        const materials = new Set(), textures = new Set();
+        const scenes = [scene, townScene, ...[..._buildingScenes.values()].map(b => b?.scene), ...[..._zoneScenes.values()].map(zi => zi.scene)];
+        for (const s of scenes) s?.traverse?.(object => {
+          for (const material of materialsOf(object)) {
+            if (!material || materials.has(material)) continue;
+            materials.add(material);
+            for (const texture of materialTextures(material)) textures.add(texture);
+          }
+        });
+        return { materials, textures };
+      }
+      function disposeSceneResources(zoneScene, live) {
+        const seen = new Set(); let materials = 0, textures = 0;
+        zoneScene.traverse(object => {
+          for (const material of materialsOf(object)) {
+            if (!material || seen.has(material) || live.materials.has(material)) continue;
+            seen.add(material);
+            for (const texture of materialTextures(material)) if (!live.textures.has(texture)) { texture.dispose(); textures++; }
+            material.dispose(); materials++;
+          }
+        });
+        return { materials, textures };
+      }
+      function evictZoneScene(mapId) {
+        const zi = _zoneScenes.get(mapId);
+        if (!zi) return false;
+        const persisted = _captureLivePreviewZonePersistence(mapId); // _disposeZoneScene was written for terrain regeneration and drops this saved state.
+        window.WildernessCampfire?.releaseVisualIfZone?.(mapId); // Keeps the saved campfire; only its visual belonged to this scene.
+        for (const c of zoneResidents(mapId)) { c.scene = null; c.areaGrid = null; } // Data-only residents must not keep the old scene and grid alive; rebindZoneResidents restores them.
+        parkZoneNpcs(mapId);
+        _disposeZoneScene(mapId);
+        _restoreLivePreviewZonePersistence(mapId, persisted);
+        const freed = disposeSceneResources(zi.scene, collectLiveSceneResources()); // _zoneScenes no longer lists this zone, so only scenes that stay alive count as users.
+        // Modules that keep strong, zone-keyed references to the old scene or grid (found with a heap snapshot).
+        window.HeldObjectRenderOrder?.forgetScene?.(zi.scene);
+        window.CratePiles?.releaseZone?.(mapId);
+        window.PorakanekiCampPlacementPolicy?.forgetZone?.(mapId);
+        window.Shattercasks?.releaseZone?.(mapId);
+        window.WorldPopupText?.releaseScene?.(zi.scene);
+        zi.scene.clear(); // One stale reference to a mesh would otherwise keep the whole old zone reachable through its parent chain.
+        window.__farmLog?.(`[zone-cache] evicted ${mapId} (${freed.materials} materials, ${freed.textures} textures released)`, 'perf');
+        return true;
+      }
+      function rebindZoneResidents(mapId, info) {
+        for (const c of zoneResidents(mapId)) { c.scene = info.scene; c.areaGrid = info.grid; c.areaCols = info.cols; c.areaRows = info.rows; }
+      }
+      const _zoneCacheHistory = []; // QA record of recent trim decisions, newest last (window.__zoneCacheDebug.history).
+      function trimZoneCache() {
+        _zoneCacheTrimTimer = null;
+        const entry = { at: Date.now(), current: currentArea, order: [..._zoneVisitOrder], built: [..._zoneScenes.keys()], skipped: null, kept: [], evicted: [], blocked: [] };
+        _zoneCacheHistory.push(entry);
+        if (_zoneCacheHistory.length > 40) _zoneCacheHistory.shift();
+        if (cutscenePreviewActive || _tothalShiftPromise) { entry.skipped = cutscenePreviewActive ? 'cutscene preview' : 'tothal shift'; return; }
+        const inactive = _zoneVisitOrder.filter(id => id !== currentArea && _zoneScenes.has(id));
+        const keep = new Set(inactive.slice(Math.max(0, inactive.length - zoneCacheMaxInactive())));
+        for (const mapId of [..._zoneScenes.keys()]) {
+          if (mapId === currentArea || keep.has(mapId)) { entry.kept.push(mapId); continue; }
+          releaseResidentRigs(mapId);
+          const blocker = zoneEvictionBlocker(mapId);
+          if (blocker) { entry.blocked.push(`${mapId}: ${blocker}`); window.__farmLog?.(`[zone-cache] kept ${mapId}: ${blocker}`, 'perf'); continue; }
+          if (evictZoneScene(mapId)) entry.evicted.push(mapId);
+        }
+      }
+      function scheduleZoneCacheTrim() {
+        if (_zoneCacheTrimTimer) return;
+        _zoneCacheTrimTimer = setTimeout(trimZoneCache, 6000); // Never in the frame the player arrives: a freshly entered area gets a few quiet seconds first.
+      }
+      window.__zoneCacheDebug = { trim: trimZoneCache, order: () => [..._zoneVisitOrder], built: () => [..._zoneScenes.keys()], blocker: zoneEvictionBlocker, history: () => _zoneCacheHistory.map(e => ({ ...e })), sceneRef: id => _zoneScenes.get(id)?.scene || null, gridRef: id => _zoneScenes.get(id)?.grid || null }; // QA hook, mirrors window.__regenerateWildernessLab.
 
       // Finds one already-built wilderness shrub/tree group by indexed tile
       // lookup and removes it with light list bookkeeping. The grass floor
@@ -16340,6 +16642,103 @@
         });
       }
 
+      function getCliffBalconyResourceAt(col, row) {
+        if (!_isZoneArea(currentArea) || !player.onCliffBalcony) return null;
+        const routeNet = window.CliffRouteNetwork?.forArea?.(currentArea); // Reuse rendered Y-layer state rather than the underlying single-height grid.
+        const shelf = window.CliffRouteNetwork?.shelfAt?.(routeNet, player.onCliffBalcony);
+        if (!shelf || !shelf.footprint.some(f => f.c === col && f.r === row)) return null;
+        const state = window.CliffRouteNetwork.getRewardState(currentArea, shelf.id);
+        if (state.claimed) return null;
+        const areaAtCreation = currentArea; // Asynchronous lockpicking validates the original area/ledge before paying.
+        const isAvailable = () => currentArea === areaAtCreation && player.onCliffBalcony === shelf.id &&
+          window.CliffRouteNetwork.shelfAt(window.CliffRouteNetwork.forArea(currentArea), shelf.id) === shelf &&
+          !window.CliffRouteNetwork.getRewardState(currentArea, shelf.id).claimed;
+        const award = () => {
+          const rewards = [];
+          if (shelf.reward === 'oreRock') {
+            const amount = 2 + (shelf.routeId % 3); // Fixed per-rock amount; prevents rerolling on repeated failed actions.
+            inventory.stone = Math.min(window.InventoryStacks.MAX_TOTAL, (inventory.stone || 0) + amount);
+            rewards.push(amount + ' Stone');
+            const metals = Object.keys(ORE_DEFS || {});
+            const oreKey = metals.length ? metals[shelf.routeId % metals.length] : null;
+            const oreItem = oreKey ? metalOreItemKey(oreKey) : null;
+            if (oreItem) {
+              inventory[oreItem] = Math.min(window.InventoryStacks.MAX_TOTAL, (inventory[oreItem] || 0) + 2);
+              window.TownMine?.recordHeldOres?.([oreKey]);
+              rewards.push('2 ' + (ORE_DEFS[oreKey]?.label || oreKey));
+              window.HobunjiActivityEvents?.emit('ore_mined', { oreKey });
+            }
+            window.SkillSystem?.award?.('mining', window.SkillSystem?.XP_GAINS?.rock || 8, 'mined cliff ore');
+            window.HobunjiActivityEvents?.emit('rock_broken', { area: currentArea });
+          } else {
+            const metalLoot = window.WildTreasure?.rollTreasureMetalBarLoot?.() || {}; // Existing wilderness buried-chest metal picker.
+            for (const [itemKey, amount] of Object.entries(metalLoot)) {
+              inventory[itemKey] = Math.min(window.InventoryStacks.MAX_TOTAL, (inventory[itemKey] || 0) + amount);
+              rewards.push(amount + ' ' + (ITEM_DEFS[itemKey]?.label || itemKey));
+            }
+            const gold = 14 + (shelf.routeId % 7) * 4;
+            inventory.gold = (inventory.gold || 0) + gold;
+            rewards.push(gold + 'g');
+            window.HobunjiActivityEvents?.emit('chest_opened', { buried: true, mapId: currentArea });
+          }
+          window.CliffRouteNetwork.setRewardStage(currentArea, shelf.id, 'claimed');
+          refreshItemScroll(); buildInventoryGrid(); buildPackClothingSection();
+          return { ok: true, zoneVisualsUpdated: true, message: 'Found: ' + rewards.join(', ') };
+        };
+        return {
+          id: shelf.id + '-resource', col, row, type: 'cliff_balcony_resource',
+          label: shelf.reward === 'oreRock' ? 'Ore Rock' : 'Buried Cliff Chest',
+          getButtons() {
+            if (shelf.reward === 'oreRock') return [{
+              icon: '⛏️', label: 'Mine the balcony ore rock',
+              action: 'obj_balcony_mine', inputAction: 'action1', worldInteraction: true,
+              style: 'primary', allowed: activeTool === 'pick' && heldMode === 'tool',
+            }];
+            if (!state.revealed) return [{
+              icon: '🪏', label: 'Dig for buried treasure',
+              action: 'obj_balcony_dig', inputAction: 'action1', worldInteraction: true,
+              style: 'primary', allowed: activeTool === 'shovel' && heldMode === 'tool',
+            }];
+            return [{
+              icon: '🗝️', label: 'Open the cliff chest',
+              action: 'obj_balcony_open', inputAction: 'action1', worldInteraction: true,
+              style: 'primary', allowed: true,
+            }];
+          },
+          onAction(action) {
+            if (!isAvailable()) return { ok: false, message: 'That ledge is no longer accessible.' };
+            if (action === 'obj_balcony_mine' && shelf.reward === 'oreRock') {
+              if (activeTool !== 'pick' || heldMode !== 'tool') return { ok: false, message: 'Equip a pick to mine this rock.' };
+              return award();
+            }
+            if (action === 'obj_balcony_dig' && shelf.reward !== 'oreRock' && !state.revealed) {
+              if (activeTool !== 'shovel' || heldMode !== 'tool') return { ok: false, message: 'Equip a shovel to dig here.' };
+              window.CliffRouteNetwork.setRewardStage(currentArea, shelf.id, 'revealed');
+              awardToolUseMasteryXp('shovel');
+              return { ok: true, zoneVisualsUpdated: true, message: 'The dirt breaks away, revealing a buried chest.' };
+            }
+            if (action === 'obj_balcony_open' && shelf.reward !== 'oreRock' && state.revealed) {
+              const valid = () => isAvailable() && window.CliffRouteNetwork.getRewardState(currentArea, shelf.id).revealed;
+              const started = window.ChestLockpicking?.open?.({
+                id: shelf.id, title: 'Cliff Chest', tier: 1, valid,
+                onSuccess: () => {
+                  if (!valid()) return;
+                  const result = award();
+                  if (result.message) showToast(result.message, result.ok);
+                  if (result.ok) {
+                    const saved = window.HobunjiRuntimeSave?.flushNow?.({ reason: 'cliff-balcony-chest-opened' })
+                      ?? (saveMemberWorldData(), { ok: true });
+                    if (saved?.ok === false || saved?.captured === false) showToast('Chest opened, but save was not confirmed.', false);
+                  }
+                },
+              });
+              return { ok: false, deferMemberSave: true, message: started ? '' : 'Lockpicking unavailable.' };
+            }
+            return { ok: false, message: 'Unavailable.' };
+          },
+        };
+      }
+
       function getWorldObjectAt(col, row) {
         // FurnitureTableSystem.objectAt answers "what is the camera ray focused on" and ignores
         // col/row, so only the reticle tile may use it; placement/occupancy probes of other
@@ -16347,6 +16746,8 @@
         const aim = getReticleTile();
         const furniture = aim.col === col && aim.row === row ? window.FurnitureTableSystem?.objectAt(currentArea, col, row) : null; // Exterior chairs and attached surface furniture use ordinary world inputs.
         if (furniture) return furniture;
+        const cliffResource = getCliffBalconyResourceAt(col, row); // Real elevation layer wins over objects on ground below.
+        if (cliffResource) return cliffResource;
         const corpse = getCorpseObjectAt(col, row);
         if (corpse) return corpse;
         if (currentArea === 'interior') return interiorWorldObjects.get(col + ',' + row) || null;
@@ -16366,6 +16767,16 @@
         const groomingKit = interiorFurnitureObjects.find(obj => obj.area === 'farm' && obj.key === 'groomingKit' && obj.col === col && obj.row === row); // Lookup from placed records also covers restored/moved furniture without another registry.
         if (groomingKit) return makeGroomingInteractable();
         return worldObjects.get(col + ',' + row) || null;
+      }
+
+      // Aimed interactions use the rendered livestock planes, not the
+      // reservation tile that is updated at the START of a wandering hop.
+      // Ordinary getWorldObjectAt stays tile-based for occupancy, placement,
+      // collision, and all other world-object consumers.
+      function getAimedFarmInteractionObject(col, row) {
+        const object = getWorldObjectAt(col, row); // Existing furniture/corpse/processor focus retains priority over livestock.
+        if (currentArea !== 'farm' || (object && object.type !== 'animal')) return object;
+        return window.FarmAnimals?.aimedAnimal?.() || null; // A ray miss must not activate an animal merely because its reserved tile is under the ground reticle.
       }
 
       function worldObjectMorningTick() {
@@ -16912,6 +17323,7 @@
       function applyItemSpriteIcon(el, def, key) {
         if (!el || !def) return;
         window.ItemProcessing.normalizeAlcoholItemDef(def);
+        window.ObjectSpriteCatalog?.ensure?.(key, def); // Dynamic items acquire artwork before the existing Pack/HUD/arch sprite renderer.
         window.AlcoholInventoryUI?.applySwigBadge?.(el, key, def);
         if (!def.spriteIcon) { clearItemSpriteIcon(el, true); return; }
         // The source PNG replaces the emoji immediately; the recolored canvas
@@ -18371,6 +18783,10 @@
           return;
         }
 
+        // Real stacked mini-cliff footprints own movement while the player
+        // stands on them, independently of any underlying ground tile.
+        if (player.onCliffBalcony && window.ClimbSystem?.updateBalcony?.(dt)) return;
+
         if (player.onBranch) {
           window.ClimbSystem.updateBranchMovement(dt);
           return;
@@ -18930,6 +19346,10 @@
         // Combat and its selectors target actors/world space, including when
         // the centered camera reticle reaches a cave wall or leaves the grid.
         if (tool === 'weapon' || tool === 'ranged') return true;
+        // Mini-cliffs are real separate floor layers. Never let terrain
+        // tools edit the ground tile beneath an elevated balcony.
+        if (typeof player !== 'undefined' && player?.onCliffBalcony &&
+            ['pick', 'shovel', 'hoe', 'axe', 'machete', 'seeds'].includes(tool)) return false;
         const tile = window.GridTileAccessors.getActiveGrid()?.[row]?.[col]; // Terrain tools require an actual aimed tile.
         if (!tile) return false;
         // A mineable ore rock is the one ROCK-tile exception to the blanket
@@ -19851,7 +20271,7 @@
         // and now sittable furniture — see the mapData.furniture loader).
         return currentArea === 'interior' ? getInteriorInteractableAt(_r.col, _r.row)
           : (_isBuildingArea(currentArea) || currentArea === 'town') ? (_buildingInteractables.get(currentArea + ',' + _r.col + ',' + _r.row) || getCorpseObjectForAction(action, _r.col, _r.row) || getWorldObjectAt(_r.col, _r.row))
-          : getCorpseObjectForAction(action, _r.col, _r.row) || getWorldObjectAt(_r.col, _r.row);
+          : getCorpseObjectForAction(action, _r.col, _r.row) || getAimedFarmInteractionObject(_r.col, _r.row);
       }
 
       function useActiveAction() {
@@ -20556,11 +20976,27 @@
         }
         // Auto-reserved plateau cliff-face ring — impassable except where a
         // ramp tile explicitly cuts through it (which never sets `incline`).
-        if (tile.incline) return null;
-        // Map-boundary escarpment tops are airtight scenery. A player who is
-        // somehow already standing on one (old save, teleport) may still walk
-        // off it rather than being welded in place.
-        if (tile.mapBoundary && !window.GridTileAccessors.getActiveGrid()[Math.floor(player.y / TILE)]?.[Math.floor(player.x / TILE)]?.mapBoundary) return null;
+        if (tile.incline || tile.mapBoundary) {
+          // Cliffs stop walking, but rays can clear their finite physical height.
+          // Auto-reserved incline rings store the LOWER adjacent tier; their
+          // true upper lip is the highest adjacent walkable plateau or ramp.
+          let cliffTopY = tileSurfaceYInArea(tile, currentArea); // Only projectile cover uses this ceiling; walking remains blocked.
+          if (projectile && tile.incline) {
+            const grid = window.GridTileAccessors.getActiveGrid();
+            for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+              const neighbour = grid[row + dz]?.[col + dx];
+              if (neighbour && !neighbour.incline && !neighbour.mapBoundary) {
+                cliffTopY = Math.max(cliffTopY, tileSurfaceYInArea(neighbour, currentArea));
+              }
+            }
+          }
+          const intersectsCliff = !projectile || worldY <= cliffTopY + 0.01;
+          if (tile.incline && intersectsCliff) return null;
+          // Preserve the original escape exception for an actor already on
+          // a boundary tile; it does not give ordinary walkers a route up.
+          if (tile.mapBoundary && intersectsCliff
+            && (projectile || !window.GridTileAccessors.getActiveGrid()[Math.floor(player.y / TILE)]?.[Math.floor(player.x / TILE)]?.mapBoundary)) return null; // Only actors stuck on old-save boundary tiles may step off; shots never inherit their escape exception.
+        }
         // Rivers/streams are swimmable, not blocked — the player has no
         // canSwim tag of their own (see CREATURE_DB's comment on the flag),
         // so this is always the slow "non-swimmer" pace; see isPlayerSwimming
@@ -23645,6 +24081,7 @@
         // The full item definition supplies procedural bottle art and tint data.
         const def = ITEM_DEFS[item.key] || item;
         window.ItemProcessing.normalizeAlcoholItemDef(def);
+        window.ObjectSpriteCatalog?.ensure?.(item.key, def); // Held sprite planes use the same newly authored art as Pack and action-arch icons.
         // Width starts square and gains the source sprite's aspect ratio after load.
         const w = HELD_ITEM_PLANE_WIDTH * (ITEM_HELD_PLANE_SCALE[item.key] ?? 1) * (isThrowFlaskItem(item) ? HELD_FLASK_SIZE_MULT : 1);
         const geo = new THREE.PlaneGeometry(w, w);
@@ -24930,6 +25367,7 @@
         // flips (see startClimb/updateClimb).
         const ruinStandY = window.DevRandomRuin?.getPlayerSupportY?.(); // Used by the Random Test Ruin to feed dynamic multi-level support into the canonical body, shadow, resource-ring, held-equipment, and shoulder-pet render path.
         const ordinaryStandY = player.onBranch ? player.branchSurfaceY
+          : player.onCliffBalcony ? player._cliffBalconyY
           : player.onClimbSurface ? player.wallClimbY
           : player.climbing ? player.climbSurfaceY
           : Number.isFinite(ruinStandY) ? ruinStandY
@@ -25970,14 +26408,14 @@
               const hostilePerf = window.PerfProfiler?.begin('hostiles'); // Measures the complete current-area hostile AI and visual synchronization pass.
               updateHostiles(dt);
               window.PerfProfiler?.end(hostilePerf);
-              window.CreatureDeath.updateCorpses(dt);
+              tickCorpses(dt);
             } else if (_isBuildingArea(currentArea)) {
               // Ordinary building interiors still have no wild spawns; this
               // branch only keeps any authored interior hostile/corpse active.
               const hostilePerf = window.PerfProfiler?.begin('hostiles'); // Uses the same timing bucket for authored interior combatants.
               updateHostiles(dt);
               window.PerfProfiler?.end(hostilePerf);
-              window.CreatureDeath.updateCorpses(dt);
+              tickCorpses(dt);
             }
           }
 
@@ -26955,7 +27393,7 @@
           const label = t.label || (t.target === 'interior' ? 'Enter House' : t.target === 'town' ? 'Leave Farm' : 'Travel');
           const btnsSpot = [];
           btnsSpot.push({ icon, label, action: 'use_spot', style: 'primary', allowed: true });
-          const obj2 = getWorldObjectAt(reticle.col, reticle.row);
+          const obj2 = getAimedFarmInteractionObject(reticle.col, reticle.row);
           if (obj2) obj2.getButtons(reticle).forEach(b => btnsSpot.push(b));
           return btnsSpot;
         }
@@ -27005,14 +27443,15 @@
 
         if (_isZoneArea(currentArea) && !player.climbing) {
           const climbTarget = window.ClimbSystem?.getClimbTarget?.();
-          if (climbTarget?.type === 'wall') {
+          if (climbTarget?.type === 'wall' || climbTarget?.type === 'cliffRoute') {
             // Cliff face: the prompt floats on the wall itself, straight
             // ahead at camera height (same placement the Random Test Ruin
             // interaction list uses), so it reads as a mark on the rock.
             const rideState = window.Mounts?.rideState ?? 'none';
             const mounted = rideState === 'mounted';
-            const wallAllowed = rideState === 'none' || mounted;
-            const dir = climbTarget.dir;
+            const manualCliff = climbTarget.type === 'cliffRoute'; // Show the new controlled-hop route only while dismounted.
+            const wallAllowed = manualCliff ? rideState === 'none' : rideState === 'none' || mounted;
+            const dir = climbTarget.dir || { x: 0, y: 0 };
             const startCol = Math.floor(player.x / TILE), startRow = Math.floor(player.y / TILE);
             const faceX = dir.x ? (startCol + (dir.x > 0 ? 1 : 0)) * TILE - dir.x * TILE * 0.12 : player.x;
             const faceY = dir.y ? (startRow + (dir.y > 0 ? 1 : 0)) * TILE - dir.y * TILE * 0.12 : player.y;
@@ -27020,11 +27459,11 @@
             const cameraY = camera?.position?.y;
             const promptY = Math.max(floorY + 0.9, Math.min(floorY + 2.4, Number.isFinite(cameraY) ? cameraY : floorY + 1.5));
             _climbPromptAnchor.position.set(faceX / TILE, promptY, faceY / TILE);
-            const wallLabel = climbTarget.descending
-              ? (mounted ? 'Leap Down' : 'Jump Down')
+            const wallLabel = manualCliff ? 'Climb Handholds'
+              : climbTarget.descending ? (mounted ? 'Leap Down' : 'Jump Down')
               : (mounted ? 'Leap Up' : 'Climb');
             btns.push({
-              icon: climbTarget.descending ? '🪂' : '🧗',
+              icon: climbTarget.descending && !manualCliff ? '🪂' : '🧗',
               label: wallAllowed ? wallLabel : 'Dismount to Climb',
               action: 'climb_branch', style: 'secondary', allowed: wallAllowed,
               worldInteraction: true, promptRoot: _climbPromptAnchor,
@@ -27054,7 +27493,7 @@
         // live in _buildingInteractables instead, same as building interiors.
         const obj = currentArea === 'town'
           ? _buildingInteractables.get('town,' + reticle.col + ',' + reticle.row) || getWorldObjectAt(reticle.col, reticle.row)
-          : getWorldObjectAt(reticle.col, reticle.row);
+          : getAimedFarmInteractionObject(reticle.col, reticle.row);
         if (obj) {
           const objBtns = obj.getButtons(reticle);
           objBtns.forEach(b => btns.push(b));
@@ -27173,7 +27612,7 @@
         // Was farm-only (world objects didn't exist elsewhere) — now
         // unconditional so a lootable corpse's identity in any area (zones
         // included) still invalidates the cache and rebuilds its button.
-        const obj = getWorldObjectAt(reticle.col, reticle.row);
+        const obj = getAimedFarmInteractionObject(reticle.col, reticle.row);
         const nearbyNpcKey = nearbyNpcWalker?.rec?.id || nearbyNpcWalker?.root?.uuid || 'none';
         const nearbyNpcActivityKey = nearbyNpcWalker?.currentScheduleTarget?.activity || 'none';
         const nearbyNpcShopKey = nearbyNpcWalker && isSmithyNpcInBronzeworks(nearbyNpcWalker) ? smithyAction()
@@ -27210,13 +27649,14 @@
         if (interactionButton) {
           _worldInteractionPromptAnchor.position.set(
             reticle.col + 0.5,
-            activeSurfaceYAtWorld(reticle.col + 0.5, reticle.row + 0.5) + 0.55,
+            (interactionButton?.action?.startsWith('obj_balcony_') && player.onCliffBalcony
+              ? player._cliffBalconyY : activeSurfaceYAtWorld(reticle.col + 0.5, reticle.row + 0.5)) + 0.55,
             reticle.row + 0.5,
           );
         }
         const interactionRoot = interactionButton?.promptRoot
           || nearbyNpcWalker?.root
-          || obj?.promptRoot || obj?.root || obj?.group || obj?.mesh
+          || obj?.promptRoot || obj?.root || obj?.group || obj?.avatarRef?.group || obj?.mesh
           || (interactionButton ? _worldInteractionPromptAnchor : null);
         const promptActionIds = ['action1', 'action2', 'action3', 'interact'];
         const promptInputs = promptButtons.map((button, index) => { // Used by each floating row to render its rebound input and matching arch color independently.
@@ -30792,7 +31232,7 @@
         resetPractice: (gapTiles = 2, practice) => { // Oddclaw stands at row 11.5; melee exercises start within reach.
           player.health = player.maxHealth; player.stamina = player.maxStamina; player.footing = player.maxFooting;
           player.afflictions = {}; player.exhaustion = { active: false, blackStamina: 100 };
-          player.prone = false; player.staggered = { active: false, endsAt: 0 };
+          player.prone = false; player._temporaryKnockdownProne = false; window.ResourceSystem?.clearTimedDebuff?.(player, 'knockdown'); player.staggered = { active: false, endsAt: 0 };
           player.knockbackT = 0; player.dodging = false; player.dodgeCooldownT = 0;
           player.x = (practice?.c ?? 10.5) * TILE; player.y = ((practice?.r ?? 11.5) + gapTiles) * TILE;
           player.vx = 0; player.vy = 0;
@@ -31604,7 +32044,9 @@
       });
 
       window.ZonePlateauMesa?.init({
-        NORMAL_TOP, PLATEAU_UNIT, TileType, CARVED_TILE_TYPES,
+        NORMAL_TOP, PLATEAU_UNIT, TileType, CARVED_TILE_TYPES, isSolid,
+        tileSurfaceYInArea, // The renderer and navigation graph must agree on exact terrain Y, including ramps and raised tiles.
+        getCurrentArea: () => currentArea, // Keeps offscreen cliff supports out of the dungeon and other zones.
         resolveTileMat, displaceZoneGeometry,
         ROCK_MOUND_CELLS_PER_TILE,
         _zoneScenes, _zoneLayouts, _zoneMesaMeshGroups,
@@ -31739,6 +32181,7 @@
         getActiveGrid: window.GridTileAccessors.getActiveGrid,
         getActiveCols: window.GridTileAccessors.getActiveCols,
         getActiveRows: window.GridTileAccessors.getActiveRows,
+        creatureCanEnterTile,
       });
 
       window.LungeTargeting?.init({ player, getHostiles: () => hostileObjects, getCurrentArea: () => currentArea });
@@ -32107,6 +32550,9 @@
       });
 
       window.FarmAnimals?.init({
+        getPlayerInteractionRay: currentPlayerInteractionRay, // Same camera/cursor ray rendered by Show Interaction Raycast.
+        getInteractionFrameTime: () => lastTime, // Stable rAF cache key used to share one livestock pick across input/UI queries.
+        getCurrentArea: () => currentArea, // Livestock ray picking is farm-only.
         COLS,
         ROWS,
         TILE,
@@ -32589,6 +33035,7 @@
         window.ReagentPlants.restoreZoneReagentState(playerData.alchemyReagentState);
         window.WildBerries.restoreState(playerData.wildBerryState);
         window.WildTreasure.restoreState(playerData.zoneTreasureState);
+        window.CliffRouteNetwork?.restoreRewards?.(playerData.cliffBalconyRewards);
         restoreWildernessChunkState(playerData.wildernessChunkState);
         window.WildernessCampfire?.restore(playerData.wildernessCampfireState);
         restoreZoneFelledTreeState(playerData.felledTreeState);

@@ -10,6 +10,12 @@
   const CHARGE_INTERVAL = 18; // Seconds between Kanthic charge sequences.
   const KNEEL_INTERVAL = 13; // Seconds between Tothal's overlapping ceiling barrages.
   const CHARGE_SPEED_TILES = 10; // Horizontal speed while Imlao dives in a straight line.
+  const AZGARLU_MELEE_PHASE_MULT = 3; // Three melee-length phases for every one magic phase: roughly 75% melee combat.
+  const AZGARLU_LUNGE_TILES = 2.3; // Azgarlu's own aerial hammer travel; shared swept terrain collision still governs horizontal clearance.
+  const AZGARLU_DODGE_SECONDS = .33; // Readable zero-gravity dodge travel and invulnerability period.
+  const AZGARLU_DODGE_COOLDOWN = 2.2; // Prevents indefinite evasive immunity while the player is attacking.
+  const AZGARLU_ALTITUDE_SPEED = 2.8; // Rate of the gradual return to the usual lich hover after combo/strike-Hold retention.
+
   const activePatches = new Set(); // Each finite tile-plasm handle is disposed on timeout or exit.
   const droplets = new Set(); // Reused bounded drip particles for Imlao's plasm transformation.
   let lastEvent = 'idle'; // Mobile diagnostic showing last special-lich action.
@@ -225,9 +231,21 @@
     entity.specialLichId = spec.id;
     entity.name = spec.name;
     entity._specialBossSettings = settingsFor(type); // Workshop attack sliders govern the live boss, not just its preview.
-    entity._specialMode = type==='hronal'?'magic':null;
-    entity._specialModeClock = 0; // Hronal switches stance and hover on this independent cadence.
-    entity._specialHoverBlend = 1; // Lerp target is zero while fighting on foot.
+    entity._specialMode = type==='hronal'?'melee':null; // Azgarlu leads with his hammer; magic is the rarer follow-up phase.
+    entity._specialModeClock = 0; // Hronal tracks melee and magic phase durations independently.
+    entity._specialHoverBlend = 1; // Named liches remain in the shared hover pipeline even during warhammer attacks.
+    entity._specialHoverOffsetWorld = 0; // Additional signed altitude beyond natural lich hover, owned by Azgarlu's airborne maneuvers.
+    entity._specialAirMotion = null; // Active altitude interpolation for a lunge or dodge, advanced from the existing lich tick.
+    entity._specialLunge = null; // Collision-swept XY translation during a zero-gravity hammer swing.
+    entity._specialDodge = null; // Collision-swept reactive air dodge with its own short invulnerability.
+    entity._specialDodgeCooldownS = 0; // Limits reactive dodges while Azgarlu is otherwise free to attack.
+    entity._specialDodgeCount = 0; // Alternates rising and falling evasions rather than always climbing.
+    entity._specialLastThreatId = null; // Each distinct player attack can only prompt one dodge attempt.
+    entity._specialComboStep = 0; // Next shared swing-combo step; resets once the actual combo window expires.
+    entity._specialComboUntilMs = 0; // Existing Combo Reset timer keeps airborne height during the available continuation window.
+    entity._specialStrikeHoldUntilMs = 0; // Shared swing step's authored Hold preserves altitude even after a final attack.
+    entity._specialHoverTarget = 1; // Unlike the old melee stance, hammer swings no longer ground Azgarlu.
+
     entity._specialCooldown = type==='kanthic'?8:7; // Special move clock; stagger from initial ordinary cast.
     entity._specialStage = null; // Tothal kneel or Kanthic charge-sequence data.
     entity._specialDripClock = 0; // Limits new droplet meshes to a low fixed rate.
@@ -243,44 +261,172 @@
     lastEvent = 'spawn:' + spec.id;
     return entity;
   }
-  function finishStaged(actor) {
-    actor._banditAction = null;
-    actor.telegraphState = null;
-    actor._lichCastingAbility = null;
+  function azgarluModelHeight(actor) {
+    return Math.max(.25, Number(actor?.avatarRef?.modelHeight) || Number(actor?.halfHeight) * 2 || 1); // Shared authored portrait size scales every vertical maneuver.
+  }
+  function azgarluAltitude(actor, delta) {
+    const height=azgarluModelHeight(actor); // Uses the actual visual scale rather than fixed world units.
+    const current=Number(actor._specialHoverOffsetWorld)||0; // Every maneuver begins wherever the last one left him.
+    return Math.max(-height*.32,Math.min(height*1.5,current+delta)); // Can lunge below/above natural hover without clipping through the floor.
+  }
+  function beginAzgarluAltitudeMove(actor, destination, durationS, kind) {
+    actor._specialAirMotion={
+      kind,from:Number(actor._specialHoverOffsetWorld)||0,to:destination,elapsed:0,
+      duration:Math.max(.06,durationS),
+    }; // Linear, non-ballistic flight to a new persistent elevation; gravity never pulls the body down during the maneuver.
+    lastEvent='azgarlu:air-'+kind;
+  }
+  function updateAzgarluAltitude(actor,dt) {
+    const motion=actor._specialAirMotion; // One movement interpolator handles both dodges and lunges, without another animation loop.
+    if(motion) {
+      motion.elapsed=Math.min(motion.duration,motion.elapsed+Math.max(0,dt));
+      const t=motion.elapsed/motion.duration;
+      actor._specialHoverOffsetWorld=motion.from+(motion.to-motion.from)*(t*t*(3-2*t)); // Smooth zero-gravity transit to the new hover.
+      if(t>=1)actor._specialAirMotion=null;
+    } else if(performance.now()>Math.max(Number(actor._specialComboUntilMs)||0,Number(actor._specialStrikeHoldUntilMs)||0)) {
+      const offset=Number(actor._specialHoverOffsetWorld)||0; // Height remains frozen throughout any continuation window or authored strike Hold.
+      const next=offset*Math.max(0,1-Math.max(0,dt)*AZGARLU_ALTITUDE_SPEED);
+      actor._specialHoverOffsetWorld=Math.abs(next)<.003?0:next; // Ease back to ordinary hover only after both clocks have elapsed.
+    }
+  }
+  function stepAzgarluLunge(actor,dt,deps) {
+    const flight=actor._specialLunge; // Horizontal component of the same altitude-changing airborne attack.
+    if(!flight)return false;
+    flight.elapsed=Math.min(flight.duration,flight.elapsed+Math.max(0,dt));
+    const t=flight.elapsed/flight.duration, eased=1-Math.pow(1-t,3);
+    const x=flight.startX+flight.directionX*flight.distance*eased;
+    const y=flight.startY+flight.directionY*flight.distance*eased;
+    const swept=deps?.sweptMove?.(actor.x,actor.y,x,y,(px,py)=>deps.canOccupyAt(px,py,(deps.TILE||TILE_FALLBACK)*.32));
+    if(swept){actor.x=swept.x;actor.y=swept.y;} // Never bypass existing walls and room collision on a fast aerial dash.
+    actor._banditLungeT=Math.max(0,flight.duration-flight.elapsed);
+    if(t>=1 || (swept && Math.hypot(swept.x-x,swept.y-y)>.025*(deps?.TILE||TILE_FALLBACK))) {
+      actor._specialLunge=null;actor._banditLunging=false;actor._banditLungeT=0;
+    }
+    return true;
+  }
+  function beginAzgarluLunge(actor,target,deps,angle,step,index,rangePx) {
+    const tile=deps?.TILE||TILE_FALLBACK; // Shared tile unit determines collision sweep and lunge range.
+    const dist=Math.hypot(target.x-actor.x,target.y-actor.y);
+    const distance=Math.min(tile*AZGARLU_LUNGE_TILES*(Number(step.lungeMul)||1)/2,Math.max(0,dist-rangePx*.68));
+    const duration=Math.max(.12,(Number(step.windupS)||.3)+(Number(step.strikeS)||.08)); // Travel finishes alongside the shared attack's strike.
+    const aiming=window.Combat?.meleeAimSolution?.(actor,target,angle,0);
+    const currentTargetY=window.RangedWeapons?.actorHitbox?.(target)?.center?.y;
+    const currentActorY=window.RangedWeapons?.actorHitbox?.(actor)?.center?.y;
+    const vertical=Number.isFinite(currentTargetY)&&Number.isFinite(currentActorY)?currentTargetY-currentActorY:0;
+    const variation=[.46,-.52,.26][index%3]*azgarluModelHeight(actor); // Each step can climb or descend even against a level opponent.
+    const offset=azgarluAltitude(actor,vertical*.60+variation);
+    beginAzgarluAltitudeMove(actor,offset,duration,'lunge');
+    actor._specialLunge={startX:actor.x,startY:actor.y,directionX:Math.cos(angle),directionY:Math.sin(angle),distance,duration,elapsed:0};
+    actor._banditLunging=true;actor._banditLungeDur=duration;actor._banditLungeT=duration;actor._banditLungeAimPitch=aiming?.pitch||0;
+    actor.avatarRef?.legs?.beginLunge?.(Math.cos(angle),Math.sin(angle)); // Reuse the existing creature-lunge leg solver.
+  }
+  function updateAzgarluDodge(actor,dt,target,deps,angle) {
+    actor._specialDodgeCooldownS=Math.max(0,(actor._specialDodgeCooldownS||0)-dt);
+    const move=actor._specialDodge; // Already committed dodge retains its chosen direction and height until completed.
+    if(move) {
+      move.elapsed=Math.min(move.duration,move.elapsed+Math.max(0,dt));
+      const travel=(deps?.TILE||TILE_FALLBACK)*5.2*dt;
+      const x=actor.x+move.dx*travel,y=actor.y+move.dy*travel;
+      const swept=deps?.sweptMove?.(actor.x,actor.y,x,y,(px,py)=>deps.canOccupyAt(px,py,(deps.TILE||TILE_FALLBACK)*.32));
+      if(swept){actor.x=swept.x;actor.y=swept.y;}
+      actor.dodgeT=Math.max(0,move.duration-move.elapsed);
+      if(move.elapsed>=move.duration || !swept || Math.hypot(swept.x-x,swept.y-y)>.025*(deps?.TILE||TILE_FALLBACK)){
+        actor._specialDodge=null;actor.dodging=false;actor.dodgeT=0;
+      }
+      return {aimAngle:angle,moving:!!actor._specialDodge,handled:true};
+    }
+    if(actor._specialDodgeCooldownS>0 || actor._banditAction || actor._specialLunge || actor.prone || !target)return null;
+    const threat=window.Combat?.currentPlayerMeleeThreat?.();
+    if(!threat || !threat.attacker || threat.attacker!==deps?.player)return null;
+    const id=threat.id ?? threat.startAt ?? threat.startedAt;
+    if(id!=null && id===actor._specialLastThreatId)return null;
+    const distance=Math.hypot(actor.x-threat.attacker.x,actor.y-threat.attacker.y);
+    const reach=(Number(threat.rangePx)||0)+(Number(threat.lungePx)||0)*.7+(deps?.TILE||TILE_FALLBACK)*.45;
+    const yaw=Number.isFinite(Number(threat.yaw))?Number(threat.yaw):(Number(threat.attacker.angle)||0);
+    const direction=Math.atan2(actor.y-threat.attacker.y,actor.x-threat.attacker.x);
+    const yawError=Math.abs(Math.atan2(Math.sin(direction-yaw),Math.cos(direction-yaw)));
+    if(distance>reach||yawError>(Number(threat.halfConeRad)||.5)+.20)return null;
+    if(id!=null)actor._specialLastThreatId=id; // One aerial evasion per real attack, never every frame of the same windup.
+    const sign=((actor._specialDodgeCount||0)%2===0)?1:-1;
+    const dx=-Math.sin(direction)*sign,dy=Math.cos(direction)*sign; // Step sideways out of the actual player's attack line.
+    const tile=deps?.TILE||TILE_FALLBACK;
+    const probe=deps?.sweptMove?.(actor.x,actor.y,actor.x+dx*tile*1.45,actor.y+dy*tile*1.45,(px,py)=>deps.canOccupyAt(px,py,tile*.32));
+    if(!probe || Math.hypot(probe.x-actor.x,probe.y-actor.y)<tile*.2)return null; // No dodge through blocked ruin walls.
+    actor._specialDodgeCount=(actor._specialDodgeCount||0)+1;
+    actor._specialDodge={dx,dy,duration:AZGARLU_DODGE_SECONDS,elapsed:0};
+    actor._specialDodgeCooldownS=AZGARLU_DODGE_COOLDOWN;
+    actor.dodging=true;actor.dodgeT=AZGARLU_DODGE_SECONDS;
+    actor.invulnUntil=performance.now()+AZGARLU_DODGE_SECONDS*1000;
+    beginAzgarluAltitudeMove(actor,azgarluAltitude(actor,sign*azgarluModelHeight(actor)*.6),AZGARLU_DODGE_SECONDS,'dodge');
+    window.CombatVocalizations?.playDodge?.(actor);
+    return {aimAngle:angle,moving:true,handled:true};
+  }
+  function finishStaged(actor,completed=false,finalStep=false) {
+    if(window.BanditCombat?.finishAction)window.BanditCombat.finishAction(actor); // Preserve the shared Strike Hold/return tail after the staged hit resolves.
+    else actor._banditAction=null;
+    actor.telegraphState=null;actor._lichCastingAbility=null;
+    if(completed) {
+      actor._specialMeleeCooldown=finalStep?setting(actor,'meleeCooldownSeconds',1.45):Math.max(.25,Number(actor._banditSwingHoldS)||.43); // Give each authored Strike Hold time to read before the next combo swing.
+      if(finalStep){actor._specialComboStep=0;actor._specialComboUntilMs=0;} // A finished third strike has no further combo continuation.
+    } else {
+      actor._specialComboStep=0;actor._specialComboUntilMs=0;actor._specialLunge=null;actor._banditLunging=false;
+    }
   }
   function meleeAI(actor,dt,target,deps,angle,dist) {
-    if (actor._banditAction) return {aimAngle:angle,moving:false,handled:true};
-    const tile = deps?.TILE || TILE_FALLBACK;
-    let moving = false;
-    if (dist>tile*2.0) moving=!!deps?.moveCreatureToward?.(actor,target.x,target.y,actor.def.chaseSpeed,dt);
-    actor._specialMeleeCooldown = Math.max(0,(actor._specialMeleeCooldown||0)-dt);
-    if (dist < tile*2.25 && actor._specialMeleeCooldown<=0 && window.Combat?.beginStagedAction) {
-      actor.facing = angle;
-      actor.telegraphState='windup';
-      actor._banditSwingAnim='chop';
-      actor._banditSwingPose = null;
-      actor._specialMeleeCooldown = setting(actor,'meleeCooldownSeconds',1.45);
-      actor._banditAction=window.Combat.beginStagedAction({
-        windupS:.29,strikeS:.16,recoverS:.18,
-        data:{isBandit:true,attacker:actor,voiceCategory:'heavyAttack'},
-        onStrike:()=>{
-          actor.telegraphState='strike';
-          if (Number(target.health)<=0 || Math.hypot(target.x-actor.x,target.y-actor.y)>tile*2.35) return;
-          const a=Math.atan2(target.y-actor.y,target.x-actor.x);
-          if (Math.abs(Math.atan2(Math.sin(a-actor.facing),Math.cos(a-actor.facing)))>1.1) return;
-          if (window.Combat?.meleeHit && !window.Combat.meleeHit(actor,target,{rangePx:tile*2.35,halfConeRad:1.1,yaw:actor.facing})) return;
-          const sourceX=actor.x===target.x?actor.x-1:actor.x;
-          const damage=setting(actor,'meleeDamage',21); // Workshop-authored magical warhammer damage.
-          const impact={tag:'blunt',attacker:actor,footingDamageMultiplier:2};
-          if (target===deps?.player) deps?.damagePlayer?.(damage,sourceX,actor.y,tile*6,impact);
-          else deps?.damageCreature?.(target,damage,sourceX,actor.y,tile*6,impact);
-          window.AudioSystem?.playWeaponHitSfx?.('blunt',actor.x,actor.y,actor.areaId);
-          lastEvent='azgarlu:warhammer';
-        },
-        onComplete:()=>finishStaged(actor),onCancel:()=>finishStaged(actor),
-      });
+    const tile=deps?.TILE||TILE_FALLBACK;
+    const lunging=stepAzgarluLunge(actor,dt,deps); // Finish the physical flight even during a staged windup or strike.
+    if(actor._banditAction) {
+      const aim=window.Combat?.meleeAimSolution?.(actor,target,actor.facing||angle,actor._banditAimPitch||0); // The hammer follows a moving target vertically during windup and Strike Hold.
+      if(Number.isFinite(aim?.pitch))actor._banditAimPitch=aim.pitch;
+      return {aimAngle:actor.facing||angle,moving:lunging,handled:true};
     }
-    return {aimAngle:angle,moving,handled:true};
+    actor._specialMeleeCooldown=Math.max(0,(actor._specialMeleeCooldown||0)-dt);
+    if(performance.now()>(actor._specialComboUntilMs||0))actor._specialComboStep=0; // Uses Combat.comboData.COMBO_RESET_S, the player's actual continuation threshold.
+    let moving=lunging;
+    if(!lunging && dist>tile*1.8)moving=!!deps?.moveCreatureToward?.(actor,target.x,target.y,actor.def.chaseSpeed,dt);
+    if(dist>=tile*4.7||actor._specialMeleeCooldown>0||!window.Combat?.beginStagedAction)return {aimAngle:angle,moving,handled:true};
+    const combo=window.Combat?.comboData,steps=combo?.swingCombo||[];
+    const index=(actor._specialComboStep||0)%Math.max(1,steps.length||3);
+    const step=steps[index]||{windupS:.345,strikeS:.07,holdS:.43,returnS:.18,rangeMul:1,lungeMul:2,halfConeDeg:30,anim:'sweep'};
+    const rangePx=tile*2.35*(Number(step.rangeMul)||1); // Azgarlu's oversized warhammer retains its current reach across the shared combo steps.
+    const halfConeRad=Math.max(.75,(Number(step.halfConeDeg)||30)*Math.PI/180); // Large hammer arc remains readable while using real pitched 3D hitboxes.
+    const pose=window.Combat?.comboStepPose?.('swingCombo',step)||step.pose||null;
+    actor.facing=angle;
+    actor._banditAimPitch=window.Combat?.meleeAimSolution?.(actor,target,angle,0)?.pitch||0; // Authoritative 3D aim, including straight up/down.
+    actor._banditSwingAnim=step.anim||'sweep';actor._banditSwingPose=pose;
+    actor._banditSwingDirSign=step.dirSign||1;actor._banditSwingPower=pose?1:(Number(step.power)||1);
+    actor._banditSwingPoseScale=1;actor._banditSwingWindupCurve=null;
+    actor._banditSwingHoldS=Number(step.holdS)||.43;actor._banditSwingReturnS=Number(step.returnS)||.18;
+    actor._specialComboStep=index+1;
+    const startMs=performance.now(); // The same attack-start clock the player's combo uses for COMBO_RESET_S.
+    const continuationS=Math.max(.1,Number(combo?.COMBO_RESET_S)||1.8);
+    actor._specialComboUntilMs=startMs+continuationS*1000;
+    actor._specialStrikeHoldUntilMs=startMs+((Number(step.windupS)||.345)+(Number(step.strikeS)||.07)+actor._banditSwingHoldS)*1000;
+    actor.telegraphState='windup';
+    beginAzgarluLunge(actor,target,deps,angle,step,index,rangePx);
+    actor._banditAction=window.Combat.beginStagedAction({
+      windupS:Number(step.windupS)||.345,strikeS:Number(step.strikeS)||.07,recoverS:0,
+      data:{isBandit:true,attacker:actor,comboId:'swingCombo',comboStep:index,voiceCategory:'heavyAttack'},
+      onStrike:()=>{
+        actor.telegraphState='strike';
+        if(!(Number(target.health)>0)||actor.prone)return;
+        const strikeAim=window.Combat?.meleeAimSolution?.(actor,target,actor.facing,actor._banditAimPitch||0); // Final height-aware aim resolves after the zero-gravity lunge, not at its original altitude.
+        if(Number.isFinite(strikeAim?.pitch))actor._banditAimPitch=strikeAim.pitch;
+        const actualHit=window.Combat?.meleeHit?.(actor,target,{rangePx,halfConeRad,yaw:actor.facing,pitch:actor._banditAimPitch||0});
+        window.Combat?.spawnMeleeTrail?.({actor,scene:actor.scene,yaw:actor.facing,pitch:actor._banditAimPitch||0,rangePx,halfConeRad,color:0xff8533});
+        if(!actualHit)return;
+        const sourceX=actor.x===target.x?actor.x-1:actor.x;
+        const damage=setting(actor,'meleeDamage',21)*(Number(step.damageMul)||1); // Workshop base damage composed with the player's authored three-step multipliers.
+        const impact={tag:'blunt',attacker:actor,footingDamageMultiplier:2};
+        if(target===deps?.player)deps?.damagePlayer?.(damage,sourceX,actor.y,tile*6,impact);
+        else deps?.damageCreature?.(target,damage,sourceX,actor.y,tile*6,impact);
+        window.AudioSystem?.playWeaponHitSfx?.('blunt',actor.x,actor.y,actor.areaId);
+        lastEvent='azgarlu:warhammer-'+(index+1);
+      },
+      onComplete:()=>finishStaged(actor,true,index>=steps.length-1&&steps.length>0),
+      onCancel:()=>finishStaged(actor,false),
+    });
+    return {aimAngle:angle,moving:true,handled:true};
   }
   function shockwave(actor,deps) {
     const tile=deps?.TILE||TILE_FALLBACK;
@@ -334,6 +480,10 @@
   function handleAI(actor,dt,target,deps,angle,dist) {
     if(!actor?.isSpecialLich)return null;
     if(!target || !(Number(target.health)>0)) {
+      if(actor.lichType==='hronal') {
+        actor._specialDodge=null;actor._specialLunge=null;actor.dodging=false;actor._banditLunging=false; // Target loss interrupts an otherwise unstepped aerial maneuver safely.
+        actor._specialComboStep=0;actor._specialComboUntilMs=0;
+      }
       if(actor.lichType==='tothal' && actor._specialStage?.kind==='kneel') {
         window.DevRandomRuinLichThemes?.stopBossBlizzard?.(actor);
         actor._specialStage=null;actor._specialCooldown=setting(actor,'specialCooldownSeconds',KNEEL_INTERVAL); // Cancel an interrupted barrage without orphaning its emitter.
@@ -342,9 +492,14 @@
       return null;
     }
     if(actor.lichType==='hronal') {
-      if (ruleFor('hronal').specialAttacks?.melee === false) {actor._specialMode='magic';return null;} // Disable boss-specific melee without affecting the underlying Hronal spell.
+      const evasive=updateAzgarluDodge(actor,dt,target,deps,angle); // Reactive air dodges work during either hammer or rare pillar-casting phase.
+      if(evasive)return evasive;
+      if(ruleFor('hronal').specialAttacks?.melee===false){actor._specialMode='magic';return null;} // Workshop can disable melee without changing ordinary Hronal spells.
       actor._specialModeClock+=dt;
-      if(actor._specialModeClock>=setting(actor,'switchSeconds',3.4)&&!actor._banditAction) {
+      const switchSeconds=setting(actor,'switchSeconds',3.4);
+      const phaseSeconds=switchSeconds*(actor._specialMode==='melee'?AZGARLU_MELEE_PHASE_MULT:1); // Approximate 75/25 melee/magic duty cycle.
+      const continuing=actor._banditAction||actor._specialLunge||performance.now()<Math.max(actor._specialComboUntilMs||0,actor._specialStrikeHoldUntilMs||0); // Do not switch into magic while holding the warhammer's finishing strike.
+      if(actor._specialModeClock>=phaseSeconds&&!continuing) {
         actor._specialModeClock=0;
         actor._specialMode=actor._specialMode==='magic'?'melee':'magic';
         lastEvent='azgarlu:stance-'+actor._specialMode;
@@ -554,7 +709,11 @@
       actor._specialHoverTarget=kneel?0:1;
     }
     if(actor.lichType==='hronal') {
-      actor._specialHoverTarget=actor._specialMode==='melee'?0:1;
+      actor._specialHoverTarget=1; // Both stances remain airborne; only active maneuvers choose a different hover height.
+      if(actor.prone||!(Number(actor.health)>0)){
+        actor._specialAirMotion=null;actor._specialLunge=null;actor._specialDodge=null;
+        actor._specialHoverOffsetWorld=0;actor._banditLunging=false;actor.dodging=false;
+      }else updateAzgarluAltitude(actor,dt);
       patternWarhammer(actor); // Actual verdigris-glyph texture follows the ordinary held warhammer.
     }
     if(actor.lichType==='kanthic') {

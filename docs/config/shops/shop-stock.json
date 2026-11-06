@@ -166,6 +166,14 @@
             "conditions": {}
           },
           {
+            "id": "simple_hood",
+            "label": "Simple Hood",
+            "category": "hood",
+            "usesB": false,
+            "price": 40,
+            "conditions": {}
+          },
+          {
             "id": "fine_hood",
             "label": "Fine Hood",
             "category": "hood",

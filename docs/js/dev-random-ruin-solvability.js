@@ -29,6 +29,8 @@
 
     const scope = String(options.scope || 'dev-random-ruin-interior');
     const pad = Number(options.pad) || 0;
+    const padX=Number.isFinite(options.padX)?options.padX:pad; // Shared V50 room projection can be translated to the shaft's snapped anchor.
+    const padZ=Number.isFinite(options.padZ)?options.padZ:pad;
     const tileScale = Number(options.tileScale) || 1;
     const controlRange = Number(options.controlRange) || 1.65;
     const maxStepHeight = Number(options.maxStepHeight) || .42;
@@ -75,10 +77,10 @@
 
     function roomBounds(room) {
       return {
-        minX:pad + Number(room.col) * worldCell,
-        maxX:pad + (Number(room.col) + Number(room.w)) * worldCell,
-        minZ:pad + Number(room.row) * worldCell,
-        maxZ:pad + (Number(room.row) + Number(room.h)) * worldCell,
+        minX:padX + Number(room.col) * worldCell,
+        maxX:padX + (Number(room.col) + Number(room.w)) * worldCell,
+        minZ:padZ + Number(room.row) * worldCell,
+        maxZ:padZ + (Number(room.row) + Number(room.h)) * worldCell,
       };
     }
 
@@ -449,8 +451,8 @@
       const door = doorways.find(entry => String(entry.from || '').startsWith('hall_') && entry.to === room.id);
       if (!door) return null;
       const doorway = door.axis === 'x'
-        ? { x:pad + Number(door.boundary) * worldCell, z:pad + Number(door.center) * worldCell }
-        : { x:pad + Number(door.center) * worldCell, z:pad + Number(door.boundary) * worldCell };
+        ? { x:padX + Number(door.boundary) * worldCell, z:padZ + Number(door.center) * worldCell }
+        : { x:padX + Number(door.center) * worldCell, z:padZ + Number(door.boundary) * worldCell };
       const bounds = roomBounds(room);
       const roomCenter = { x:(bounds.minX + bounds.maxX) * .5, z:(bounds.minZ + bounds.maxZ) * .5 };
       const dx = Math.sign(roomCenter.x - doorway.x), dz = Math.sign(roomCenter.z - doorway.z);

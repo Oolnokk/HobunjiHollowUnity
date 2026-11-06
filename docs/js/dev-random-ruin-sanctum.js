@@ -66,16 +66,19 @@
     };
   }
 
-  function planLayout(baseCols, baseRows, dims = layoutDims()) {
-    const { aw, ad, vw, vd } = dims;
-    const rows = Math.max(baseRows, ad + 6);
-    const x0 = baseCols + 1;
+  function planLayout(baseCols, baseRows, dims = layoutDims(), options = {}) {
+    const {aw,ad,vw,vd}=dims;
+    const rows=Math.max(baseRows,ad+6);
+    const westOf=Number(options.leftOfX); // East-facing V50 vestibules put the physical shaft on the east; keep this endgame-only sanctuary on the unused west.
+    const westPlacement=Number.isFinite(westOf)&&westOf>0;
+    const x0=westPlacement?Math.floor(westOf-aw-PASSAGE_LEN-vw-5):baseCols+1;
+    if(westPlacement&&x0<2)throw new Error('Not enough west-side clearance for the boss sanctum');
     const z0 = Math.floor((rows - ad) / 2);
     const zc = z0 + ad / 2; // Whole-tile line the passage and vault centre on.
     const arena = { minX:x0, maxX:x0 + aw, minZ:z0, maxZ:z0 + ad };
     const passage = { minX:arena.maxX, maxX:arena.maxX + PASSAGE_LEN, minZ:zc - PASSAGE_W / 2, maxZ:zc + PASSAGE_W / 2 };
     const vault = { minX:passage.maxX, maxX:passage.maxX + vw, minZ:zc - vd / 2, maxZ:zc + vd / 2 };
-    return { cols:vault.maxX + 3, rows, arena, passage, vault, zc };
+    return {cols:Math.max(baseCols,vault.maxX+3),rows,arena,passage,vault,zc,westPlacement};
   }
 
   function rectTiles(rect, out) {
@@ -83,8 +86,8 @@
       for (let r = Math.floor(rect.minZ); r < Math.ceil(rect.maxZ); r++) out.add(`${c},${r}`);
   }
 
-  function reserve(baseCols, baseRows) {
-    const plan = planLayout(baseCols, baseRows);
+  function reserve(baseCols, baseRows, options = {}) {
+    const plan=planLayout(baseCols,baseRows,layoutDims(),options);
     const tiles = new Set();
     rectTiles(plan.arena, tiles); rectTiles(plan.passage, tiles); rectTiles(plan.vault, tiles);
     return { cols:plan.cols, rows:plan.rows, tiles, plan };
@@ -318,7 +321,7 @@
       ? `Blue fire takes hold (${lit}/${total}). A seal on the Great Door answers it.`
       : 'The last brazier flares blue — somewhere, the Great Door hums awake.', true);
     window.__farmLog?.(`[random-ruin] brazier ${brazier.id} lit ${lit}/${total}`, 'world');
-    if (lit === total) awakenDoor();
+    if (lit === total) tryAwakenDoor();
     return true;
   }
 
@@ -389,12 +392,17 @@
 
   function chooseDoorSite(kit, context, rng) {
     const floorY = Number(context.meta?.floorSurfaceY) || 0;
-    const doorways = (context.meta?.doorways || []).map((door, index) => kit.doorwayWorld(context.meta, door, index)).filter(Boolean);
+    const doorways=(context.meta?.doorways||[]).map((door,index)=>kit.doorwayWorld(context.meta,door,index)).filter(Boolean);
+    if(context.shaftEntrance)doorways.push(context.shaftEntrance); // Do not place the Great Door over the one physical exit to the shaft.
     const sites = [], why = { walls:0, narrow:0, short:0, floor:0, blocked:0, solid:0, doorway:0, spawn:0 };
     for (const wall of wallCandidates(context)) {
       why.walls++;
-      const site = evaluateDoorSite(kit, context, wall, floorY, doorways, why);
-      if (site && site.spawnDistance > 5) sites.push(site); else if (site) why.spawn++;
+      const site=evaluateDoorSite(kit,context,wall,floorY,doorways,why);
+      if(!site)continue;
+      if(context.shaftEntrance&&Math.hypot(site.x-context.shaftEntrance.x,site.z-context.shaftEntrance.z)<DOOR_WIDTH+2){
+        why.doorway++;continue; // Both full-width furniture assemblies must have clearance, not merely non-overlapping center points.
+      }
+      if(site.spawnDistance>5)sites.push(site);else why.spawn++;
     }
     s.doorSiteStats = why;
     if (!sites.length) return null;
@@ -504,6 +512,26 @@
     return hidden;
   }
 
+  function shaftSealsPending(){
+    // Normal Harlyao ruins now have actual braziers at the end of every
+    // physical floor wing. The Great Door requires these in addition to the
+    // original V50 blue seals; Hachutu has its own independent boss route.
+    const network=window.DevRandomRuin?.getShaftNetworkState?.();
+    return network&&!network.complete?network:null;
+  }
+
+  function sealedDoorLabel(){
+    const local=s?.braziers?.filter(b=>b.lit).length||0,total=s?.braziers?.length||0;
+    const pending=shaftSealsPending();
+    return pending&&local===total
+      ?'Great Door (Shaft '+pending.lit+'/'+pending.braziers+')'
+      :'Great Door (Sealed '+local+'/'+total+')';
+  }
+  function awakeDoorLabel(){
+    const pending=shaftSealsPending(); // One read per context-menu refresh, not three redundant deep snapshots.
+    return pending?'Great Door (Shaft '+pending.lit+'/'+pending.braziers+')':'Open the Great Door';
+  }
+
   function buildGreatDoor(kit, context, site, decalCount) {
     const floorY = Number(context.meta?.floorSurfaceY) || 0;
     s.hiddenDecor = clearDoorFootprint(context, site);
@@ -521,13 +549,23 @@
     }, null, kit.SCOPE);
     door.control = {
       kind:'greatDoor', object:door.group, promptRoot:door.group, range:2.3, priority:24, claimAction1:true, touchIcon:'🚪',
-      label:() => door.state === 'sealed' ? `Great Door (Sealed ${s.braziers.filter(b => b.lit).length}/${s.braziers.length})`
-        : door.state === 'awake' ? 'Open the Great Door'
+      label:() => door.state === 'sealed' ? sealedDoorLabel()
+        : door.state === 'awake' ? awakeDoorLabel()
         : door.state === 'opening' ? 'The Great Door is opening…'
         : 'Enter the Sanctum',
       onPress:() => pressGreatDoor(),
     };
     return door;
+  }
+
+  function tryAwakenDoor(){
+    // The local blue seals and the physically separate multi-story braziers
+    // are BOTH prerequisites. Keep the stone door visibly sealed until the
+    // last required source is lit instead of merely denying its interaction.
+    if(!s?.door||s.door.state!=='sealed')return false;
+    if(s.braziers.some(b=>!b.lit)||window.DevRandomRuin?.isShaftNetworkComplete?.()===false)return false;
+    awakenDoor();
+    return s.door.state==='awake';
   }
 
   function awakenDoor() {
@@ -545,11 +583,18 @@
     const door = s?.door;
     if (!door) return;
     if (door.state === 'sealed') {
-      const lit = s.braziers.filter(b => b.lit).length;
-      deps?.showToast?.(`The Great Door is sealed. ${lit}/${s.braziers.length} of its seals glow — light the blue braziers at the end of each puzzle.`, false);
+      const lit = s.braziers.filter(b => b.lit).length,pending=shaftSealsPending();
+      if(pending&&lit===s.braziers.length)
+        deps?.showToast?.('The shaft braziers still bind the Great Door ('+pending.lit+'/'+pending.braziers+').',false);
+      else deps?.showToast?.(`The Great Door is sealed. ${lit}/${s.braziers.length} of its blue seals glow.`,false);
       return;
     }
     if (door.state === 'awake') {
+      const pending=shaftSealsPending(); // Door cannot skip the physically separate upper-story puzzle objectives.
+      if(pending){
+        deps?.showToast?.('The Great Door remains sealed by the shaft. Light all '+pending.braziers+' wing braziers ('+pending.lit+'/'+pending.braziers+').',false);
+        return;
+      }
       door.state = 'opening';
       deps?.showToast?.('The Great Door grinds down into the floor.', true);
       return;
@@ -1052,7 +1097,7 @@
     if (!site) { s.rejects.push('no clear wall for the Great Door'); return; }
     s.door = buildGreatDoor(kit, context, site, s.braziers.length);
     buildSanctum(kit, context, s.braziers.length, s.rng);
-    if (!s.braziers.length) awakenDoor(); // A ruin whose puzzles carry no goals leaves the door unsealed.
+    if (!s.braziers.length) tryAwakenDoor(); // A ruin without local blue goals still requires all shaft-wing braziers.
     kit.recordModulePlacement('greatDoorSanctum', 'room', 'sanctum', { braziers:s.braziers.length, bossType:s.bossType, door:{ x:+site.x.toFixed(2), z:+site.z.toFixed(2) } });
   }
 
@@ -1073,7 +1118,8 @@
       if (!s) return;
       deps = kit.deps || deps;
       if (!s.built) { try { build(kit); } catch (error) { s.built = true; s.rejects.push(String(error?.message || error)); console.warn('[Random Test Ruin sanctum] build failed', error); } }
-      const allLit = s.braziers.length > 0 && s.braziers.every(b => b.lit) || (s.door && s.door.state !== 'sealed');
+      tryAwakenDoor(); // Cheap scalar check; respond immediately to the last upper-floor brazier.
+      const allLit = !!s.door && s.door.state !== 'sealed';
       for (const brazier of s.braziers) updateFire(brazier.fire, now, dt);
       for (const fire of s.arenaFires || []) updateFire(fire, now, dt);
       for (const fire of s.vaultFires || []) {
@@ -1130,6 +1176,7 @@
   // The live grid's size already includes the reserved wing; the V50 base
   // size is recovered by subtracting the wing's fixed width.
   function reservedLayout(context) {
+    if(context?.sanctumPlan?.arena&&context.sanctumPlan?.vault)return context.sanctumPlan; // Preserve the reserved west-side location instead of guessing from enlarged map dimensions.
     const size = context?.sanctumMapSize || context; // Shaft wing appends rows after the sanctum reserves its tiles.
     const cols = Number(size?.cols) || 0, rows = Number(size?.rows) || 0;
     const wing = planLayout(0, rows).cols; // Width the wing adds (base 0).

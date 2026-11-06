@@ -156,7 +156,10 @@
     const next = clamp(current + Number(amount), FAVOR_MIN, FAVOR_MAX);
     const applied = Math.round((next - current) * 10) / 10;
     if (!applied) return 0;
-    state.favor = next;
+    if (typeof window.DialogueContent?.adjustNpcFavor === 'function') {
+      return window.DialogueContent.adjustNpcFavor(npcId, applied, reason); // Combat-caused tribal standing passes through the same canonical faction-rank/Favor path.
+    }
+    state.favor = next; // Legacy fallback for isolated combat/tests without a loaded relationship authority.
     window.DialogueContent?.recordNpcMemory?.(npcId, reason);
     window.WorldPopupText?.queueReward?.('favor', `${applied > 0 ? '+' : '-'}${Math.abs(applied)} ${label} Favor`);
     return applied;

@@ -27,15 +27,7 @@
   const cfg = (path, fallback) => window.DevRandomRuinConfig?.get?.(path, fallback) ?? fallback; // docs/config/random-ruin/ruin-config.json // Standalone pit lift footprint; the rest of the pit floor stays open for its chest.
   const COMPOUND_ELEVATOR_TOP_RISE = .88; // Balcony→rope→elevator compositions begin as a visibly elevated landing before the glyph starts the descent cycle.
   const GRID_WALL_CLEARANCE = 0.52; // Used by safe-path grids so every plate center clears the ruin player's 0.28u collision radius plus the authored wall thickness.
-  const HALL_FIRE_BURNING = 18;
-  const HALL_POISON = 16;
-  const HALL_SHOT_PERIOD = 0.9;
   const CANOPY_MIN_HEADROOM = 1.6; // Clear height required under a canopy slab anywhere it overhangs.
-  const HALL_CHARGE_SECONDS = 0.45; // Each emitter's mouth heats up over this window before it fires, so the rhythm can be read and dodged.
-  const HALL_TRAP_COLORS = Object.freeze({
-    fire:{ dim:0x4a1e0e, hot:0xffa040, shot:0xff6a22 },
-    poison:{ dim:0x1f3a18, hot:0xa6ff5c, shot:0x9cff5a },
-  });
   const ROPE_FALL_BURNING = 14;
   const ROPE_GRAB_RADIUS = RopeCore.GRAB_RADIUS;
   const ROPE_BODY_RADIUS = RopeCore.BODY_RADIUS; // Gives the traversal rope real world-space thickness instead of a screen-space one-pixel THREE.Line.
@@ -223,7 +215,16 @@
     for(let step=1;step<=steps;step++){
       const t=step/steps;
       const point={x:Number(from.x)+dx*t,y:Number(from.y)+(Number(to.y)-Number(from.y))*t,z:Number(from.z)+dz*t};
-      if(ropeBlockedAt(point.x,point.z,radius,point.y))return{blocked:true,last,point};
+      // Ordinary V50 occupancy is one 2D slice. A rope traveller in a
+      // stacked wing must also respect this floor's real SOLID voxel gates,
+      // or ballistic release could bypass an unsolved challenge while
+      // reconcilePlayer deliberately yields movement ownership to the rope.
+      const layeredMotion=!!state?.activeRope?.externalRopeChain||!!state?.flight?.layerRopeChain;
+      const shaftHit=layeredMotion?window.DevRandomRuin?.shaftSegmentHit?.(
+        {x:last.x,y:last.y+.8,z:last.z},{x:point.x,y:point.y+.8,z:point.z},
+        radius,(start,end,hitbox,hitRadius)=>segmentBoxInterval(start,end,hitbox.box,hitRadius)):null;
+      if(ropeBlockedAt(point.x,point.z,radius,point.y)||shaftHit!==null&&shaftHit!==undefined)
+        return{blocked:true,last,point};
       last=point;
     }
     return{blocked:false,last:to,point:null};
@@ -277,10 +278,10 @@
 
   function segmentBoxInterval(start,end,rawBox,radius=0) {
     if(!rawBox)return null;
-    const box=rawBox.clone();box.expandByScalar(Math.max(0,Number(radius)||0));
+    const padding=Math.max(0,Number(radius)||0); // Voxel hitboxes are plain {min,max}; Three.Box3 projectile targets use the same arithmetic.
     let enter=0,exit=1;
     for(const axis of ['x','y','z']){
-      const delta=end[axis]-start[axis],min=box.min[axis],max=box.max[axis];
+      const delta=end[axis]-start[axis],min=rawBox.min[axis]-padding,max=rawBox.max[axis]+padding;
       if(Math.abs(delta)<1e-9){if(start[axis]<min||start[axis]>max)return null;continue;}
       let a=(min-start[axis])/delta,b=(max-start[axis])/delta;if(a>b)[a,b]=[b,a];
       enter=Math.max(enter,a);exit=Math.min(exit,b);if(enter>exit)return null;
@@ -352,9 +353,10 @@
     return record;
   }
 
-  function playKurrayaPlateNote(index) {
-    const pitch=CHORD_PITCHES[Math.max(0,Math.min(CHORD_PITCHES.length-1,Number(index)||0))]; // Each plate owns one stable chord tone.
-    window.AudioSystem?.playObjectSfx?.({url:KURRAYA_NOTE_URL,volume:.58,pitchVarianceMul:0},1,pitch);
+  function playKurrayaPlateNote(index, tuning) {
+    const midi=window.KurrayaPuzzle?.pitchFor?.(index,tuning); // The bronze plate uses the same currently selected scale as the eight-note puzzle instrument.
+    if (!Number.isFinite(midi)) return;
+    window.AudioSystem?.playObjectSfx?.({url:KURRAYA_NOTE_URL,volume:.58,pitchVarianceMul:0},1,Math.pow(2,(midi-60)/12));
   }
 
   function playStoneUnlockKchunk() {
@@ -408,9 +410,9 @@
   function clearState() {
     if (!state) return;
     for (const composer of composers) { try { composer.clear?.(); } catch (error) { console.warn('[Random Test Ruin] composer clear failed', error); } }
+    state.singleRoomChallenge?.dispose?.(); // Release all projectile hooks, rope mounts, flute listeners and statue encounter state before disposing the room.
     restoreRopeEquipment();
-    const activeEchoId = window.MusicMinigame?.state?.echoChallenge?.id; // Only an instrument session launched by this ruin is closed when the scene is discarded.
-    if (activeEchoId && state.chordPlateSets.some(set => set.id === activeEchoId)) window.MusicMinigame?.close?.();
+    for (const set of state.chordPlateSets) cancelEchoPlayback(set); // Stop scheduled demonstration notes on reroll/exit without closing the player's ordinary instrument.
     for (const entity of state.spawnedMinions) disposeSpawnedMinion(entity); // Session/reroll ownership matches ordinary camp teardown; no sarcophagus enemy can leak into the next generated ruin.
     state.spawnedMinions.clear();
     for (const id of state.surfaceIds) DS.remove?.(id);
@@ -709,9 +711,13 @@
     return chain;
   }
 
-  function ropeChainPitAt(x,z) {
+  function ropeChainPitAt(x,z,feetY=null) {
+    // A vertical ruin can contain the same X/Z location at multiple story
+    // heights. A pit on one floor must never kill somebody walking below it.
+    const y=Number(feetY); // Player feet elevation for vertically stacked shaft wings.
     return state?.ropeChains?.find(chain=>x>chain.bounds.minX+.015&&x<chain.bounds.maxX-.015
-      &&z>chain.bounds.minZ+.015&&z<chain.bounds.maxZ-.015)||null;
+      &&z>chain.bounds.minZ+.015&&z<chain.bounds.maxZ-.015
+      &&(!chain.external||!Number.isFinite(y)||(y>=chain.floorY-3.4&&y<=chain.floorY+1.35)))||null;
   }
 
   function instantRopeChainDeath() {
@@ -727,14 +733,18 @@
     const player=playerWorld();
     if(!player)return;
     for(const chain of state.ropeChains)for(const side of ['start','end']){
-      const point=chain[side],id=chain.checkpointIds[side];
+      if(chain.external&&Math.abs(player.y-chain.floorY)>.85)continue; // Different stacked story at the same X/Z must not overwrite this wing's fatal-void checkpoint.
+      const point=side==='start'?chain.entry:chain.exit,id=chain.checkpointIds[side];
       if(state.checkpoints.active?.id===id)continue;
       const along=chain.axis==='x'?player.x:player.z,cross=chain.axis==='x'?player.z:player.x;
       const pointAlong=chain.axis==='x'?point.x:point.z;
       const minCross=chain.axis==='x'?chain.bounds.minZ:chain.bounds.minX;
       const maxCross=chain.axis==='x'?chain.bounds.maxZ:chain.bounds.maxX;
-      if(Math.abs(along-pointAlong)>1.1||cross<minCross+.45||cross>maxCross-.45||!sampleSupport(player.x,player.z))continue;
-      activateCheckpoint(id,point,true); // Entering either side replaces the other side, including after a reverse traversal.
+      const support=chain.external?DS.sampleSupport?.(player.x,player.z,{
+        minY:chain.floorY-.32,maxY:chain.floorY+.32,pad:.02,
+      }):sampleSupport(player.x,player.z);
+      if(Math.abs(along-pointAlong)>1.1||cross<minCross+.45||cross>maxCross-.45||!support)continue;
+      activateCheckpoint(id,point,true,chain.external?chain.floorY:null); // Entering either side replaces the other side, including after a reverse traversal.
       return;
     }
   }
@@ -822,7 +832,8 @@
   function releaseRope(rope) {
     if (!rope?.attached) return false;
     const bob = updateRopeVisual(rope);
-    state.flight = { ...RopeCore.releaseFlight(rope, bob), ropeId:rope.id };
+    state.flight = { ...RopeCore.releaseFlight(rope, bob), ropeId:rope.id,
+      layerRopeChain:rope.externalRopeChain===true }; // Preserve 3D gate collision authority after rope release.
     rope.attached = false;
     rope.braking = false;
     state.activeRope = null;
@@ -891,8 +902,10 @@
       || new THREE.Mesh(sharedCylinderGeometry(ROPE_BODY_RADIUS,ROPE_BODY_RADIUS,1,8),window.ProceduralFurniture.makePartMaterial({materialTexture:'boards.png',materialLighting:'unlit',color:'#c9ad77',materialFillEnabled:true,materialFillColor:'#c9ad77',materialFillMode:'always',materialRepeatU:4,surfaceOpacity:.98}));
     ropeMesh.name='dev_ruin_swing_rope_'+room.id+suffix;
     ropeMesh.frustumCulled=true;ropeMesh.userData.devRandomRuinSwingRope=true;state.group.add(ropeMesh);
-    const marker=new THREE.Mesh(sharedSphereGeometry(.15,10,8),makeBasic(0xd1b682));
+    const gripRadius=(window.DungeonRopeArt?.ROPE_END_DIAMETER || .30)*.5; // The existing grip hitbox shares the new brush-tip plane's XY dimensions.
+    const marker=new THREE.Mesh(sharedSphereGeometry(gripRadius,10,8),makeBasic(0xd1b682));
     marker.name='dev_ruin_swing_rope_grip_'+room.id+suffix;
+    marker.material.colorWrite=false;marker.material.depthWrite=false; // Invisible raycast/prompt target: the PNG brush tip is the only visible rope end.
     marker.userData.interactive3D=true;marker.userData.devRuinInteractionType='ropeSwing';state.group.add(marker);
     return {
       id:'rope-'+room.id+(idSuffix?'-'+idSuffix:''),
@@ -1082,112 +1095,6 @@
     return null;
   }
 
-  // side is -1/+1 across the hallway; the glowing mouth faces the hallway
-  // centre and is tinted by what this emitter shoots.
-  const hallTrapHot = new THREE.Color();
-  function createEmitterFixture(id,x,y,z,axis,side,kind) {
-    const mesh=naturalizeStone(new THREE.Mesh(sharedBoxGeometry(.24,.24,.24),makeBasic(0x808080)));
-    mesh.name=id;
-    mesh.position.set(x,y+.42,z);
-    mesh.userData.devRandomRuinHallTrapEmitter=true;
-    const colors=HALL_TRAP_COLORS[kind];
-    const mouthMaterial=makeBasic(colors.dim);
-    const mouth=new THREE.Mesh(axis==='x'?sharedBoxGeometry(.17,.17,.02):sharedBoxGeometry(.02,.17,.17),mouthMaterial);
-    mouth.name=id+'_mouth';
-    mouth.userData.devRuinFootprintIgnore=true;
-    if(axis==='x')mouth.position.z=-side*.125;else mouth.position.x=-side*.125;
-    mesh.add(mouth);
-    state.group.add(mesh);
-    return { mesh, mouthMaterial, kind, colors };
-  }
-
-  function spawnTrapProjectile(trap, station) {
-    const fire = (station.sequence++ % 2) === 0;
-    station.side *= -1;
-    const side = station.side;
-    const cross = trap.crossHalf + .08;
-    let x=station.x, z=station.z, vx=0, vz=0;
-    if (trap.axis === 'x') {
-      z=trap.centerCross+cross*side;
-      vz=-side*4.8;
-    } else {
-      x=trap.centerCross+cross*side;
-      vx=-side*4.8;
-    }
-    let mesh;
-    if (fire) {
-      mesh=new THREE.Mesh(sharedSphereGeometry(.13,8,6),makeBasic(HALL_TRAP_COLORS.fire.shot));
-    } else {
-      mesh=new THREE.Mesh(sharedBoxGeometry(.4,.08,.08),makeBasic(HALL_TRAP_COLORS.poison.shot));
-      mesh.rotation.y=trap.axis==='x'?Math.PI*.5:0;
-    }
-    mesh.name='dev_ruin_hall_projectile_'+trap.id+'_'+station.index+'_'+station.sequence;
-    mesh.position.set(x,station.y+.42,z); // Leaves from the emitter mouth instead of above it.
-    mesh.userData.devRandomRuinHallTrapProjectile=fire?'fire':'poison';
-    state.group.add(mesh);
-    state.projectiles.push({
-      mesh,
-      kind:fire?'fire':'poison',
-      x,z,y:station.y+.42,
-      vx,vz,
-      age:0,
-      maxAge:Math.max(1.1,(trap.crossHalf*2+.8)/4.8+.35),
-      trapId:trap.id,
-    });
-  }
-
-  function buildHallwayTraps(context, rng, usedHallways = new Set(), forcedHallways = null) {
-    const hallways=(context.meta?.hallways||[])
-      .filter(hall => !usedHallways.has(hall.id) && (hall.axis==='x'?Number(hall.w):Number(hall.h))>=5)
-      .sort((a,b)=>(b.axis==='x'?Number(b.w):Number(b.h))-(a.axis==='x'?Number(a.w):Number(a.h)));
-    const selected=Array.isArray(forcedHallways)?forcedHallways.filter(Boolean):shuffle(hallways,rng).slice(0,Math.min(2,hallways.length));
-    const cs=worldCellSize(context.meta);
-    for(const hall of selected){
-      const axis=hall.axis==='z'?'z':'x';
-      const longStart=PAD+(axis==='x'?Number(hall.col):Number(hall.row))*cs;
-      const longLength=(axis==='x'?Number(hall.w):Number(hall.h))*cs;
-      const crossStart=PAD+(axis==='x'?Number(hall.row):Number(hall.col))*cs;
-      const crossWidth=(axis==='x'?Number(hall.h):Number(hall.w))*cs;
-      const centerCross=crossStart+crossWidth*.5;
-      const crossHalf=Math.max(.45,crossWidth*.5-.16);
-      const stations=[];
-      for(let index=0;index<3;index++){
-        const u=(index+1)/4;
-        const along=longStart+longLength*u;
-        const x=axis==='x'?along:centerCross;
-        const z=axis==='x'?centerCross:along;
-        const support=sampleSupport(x,z);
-        if(!support)continue;
-        const y=Number(support.y);
-        const fixtureOffset=crossHalf+.02;
-        const side=index%2?1:-1,sequence=index;
-        // spawnTrapProjectile flips side and alternates fire/poison on every
-        // shot, so each emitter always shoots the same kind: the first shot
-        // comes from -side with the kind of this station's starting sequence.
-        const firstKind=sequence%2===0?'fire':'poison',otherKind=firstKind==='fire'?'poison':'fire';
-        const kindFor=emitterSide=>emitterSide===-side?firstKind:otherKind;
-        const emitters={};
-        for(const [suffix,emitterSide] of [['a',-1],['b',1]]){
-          const ex=axis==='x'?x:centerCross+emitterSide*fixtureOffset,ez=axis==='x'?centerCross+emitterSide*fixtureOffset:z;
-          emitters[emitterSide]=createEmitterFixture('dev_ruin_hall_emitter_'+hall.id+'_'+index+'_'+suffix,ex,y,ez,axis,emitterSide,kindFor(emitterSide));
-        }
-        stations.push({index,x,z,y,side,sequence,nextAt:.38+index*.28,emitters});
-      }
-      if(!stations.length)continue;
-      state.trapHallways.push({
-        id:String(hall.id),
-        axis,
-        centerCross,
-        crossHalf,
-        longStart,
-        longLength,
-        stations,
-      });
-      usedHallways.add(hall.id);
-      recordModulePlacement('projectileHallwayTrap','hallway',hall.id,{axis}); // Ordinary alternating wall traps now occupy the same generic hallway-module slot as other procedural pieces.
-    }
-  }
-
   // Trigger spots on fixed V50 floor cells at one height, clear of props:
   // never on a dais, bridge, lift or other surface that moves.
   function squareOnStaticFloor(points) {
@@ -1277,10 +1184,22 @@
     const noteCount=4+(rng()>.7?1:0); // Short, variable-length phrase: four or five notes chosen from the same eight buttons as the normal puzzle instrument.
     const noteSlots=window.KurrayaPuzzle?.NOTE_CODES.length ?? 8; // Match the instrument range in game and the standalone ruin preview.
     const melody=Array.from({length:noteCount},()=>Math.min(noteSlots-1,Math.max(0,Math.floor(rng()*noteSlots))));
-    const set={id,slotKind:isHallway?'hallway':'room',root,plates,notes:melody,attempts:0,mistakes:0,solved:false,solveCount:0,onComplete:typeof slot.onComplete==='function'?slot.onComplete:null};
+    const inscription=window.RuinMelodyGlyphDecal?.create?.({
+      root,plate:plates[0],notes:melody,
+      bounds:slot.bounds||roomBounds(context.meta,owner),
+      hallway:isHallway,hallAxis:owner?.axis,
+      sampleSupport,
+      blockedAt:(x,z,radius)=>Boolean(window.DevRandomRuinTileOccupancy?.blocksAt?.(x,z,radius) ||
+        window.DevRandomRuinTileOccupancy?.solidAt?.(x,z,radius)),
+      makeStoneMaterial:()=>window.ProceduralFurniture.makePartMaterial({
+        materialTexture:'carved_smooth.png',materialLighting:'unlit',color:'#c2b39b',
+        materialFillEnabled:true,materialFillColor:'#c2b39b',materialFillMode:'always',
+      }),
+    }); // A carved floor inscription reads the actual generated notes and remains independent of the trigger's interaction surface.
+    const set={id,slotKind:isHallway?'hallway':'room',root,plates,notes:melody,inscription,heardNotes:[],playbackTimers:[],attempts:0,mistakes:0,solved:false,solveCount:0,onComplete:typeof slot.onComplete==='function'?slot.onComplete:null}; // Each set listens to the player's rolling note history independently of its pressure-plate playback.
     state.chordPlateSets.push(set); // Retain the established composer reference while replacing its internal musical challenge.
     if(isHallway)usedHallways?.add?.(owner.id);
-    recordModulePlacement('melodyEchoTrigger',set.slotKind,id,{triggerCount:1,noteCount});
+    recordModulePlacement('melodyEchoTrigger',set.slotKind,id,{triggerCount:1,noteCount,hasGlyphDecal:!!inscription});
     return set;
   }
 
@@ -1755,25 +1674,17 @@
   }
 
   function buildSwappableHallwayModules(context,rng,usedHallways) {
-    const allowTraps=context.puzzleOptions?.hallwayTraps!==false; // Keeps legacy glyph/melody/trap hallway modules independently optional.
-    const allowChains=context.puzzleOptions?.ropeChain!==false; // Makes rope-chain hallway toggles effective even when trap hallways are disabled.
+    const allowChains=context.puzzleOptions?.ropeChain!==false; // Optional rope traversal stays available; removed wall-fire/poison courses cannot be selected.
     const candidates=shuffle((context.meta?.hallways||[]).filter(hall=>!usedHallways.has(hall.id)&&(hall.axis==='x'?Number(hall.w):Number(hall.h))>=5),rng);
-    const selected=candidates.slice(0,Math.min(2,candidates.length)); // Two generic hallway slots replace the previous unconditional two-trap pass.
+    const selected=candidates.slice(0,Math.min(2,candidates.length)); // Keep two independent hallway module slots, but use only the existing rope, melody and glyph mechanics.
     for(const hall of selected){
       const roll=rng();
-      if(allowChains&&(!allowTraps||roll<.3)){
-        const chain=buildRopeChainHallway(context,rng,hall,usedHallways);
-        if(chain)continue;
-      }
-      if(!allowTraps)continue;
-      if(roll<.5){
-        const chord=buildChordPlateSet(context,rng,{kind:'hallway',owner:hall},usedHallways);
-        if(chord)continue;
-      }else if(roll<.72){
-        const glyph=buildHallwayGlyphGate(context,hall,usedHallways);
-        if(glyph)continue;
-      }
-      buildHallwayTraps(context,rng,usedHallways,[hall]);
+      const builders=allowChains&&roll<.33
+        ? [()=>buildRopeChainHallway(context,rng,hall,usedHallways),()=>buildChordPlateSet(context,rng,{kind:'hallway',owner:hall},usedHallways),()=>buildHallwayGlyphGate(context,hall,usedHallways)]
+        : roll<.65
+          ? [()=>buildChordPlateSet(context,rng,{kind:'hallway',owner:hall},usedHallways),()=>buildHallwayGlyphGate(context,hall,usedHallways),...allowChains?[()=>buildRopeChainHallway(context,rng,hall,usedHallways)]:[]]
+          : [()=>buildHallwayGlyphGate(context,hall,usedHallways),()=>buildChordPlateSet(context,rng,{kind:'hallway',owner:hall},usedHallways),...allowChains?[()=>buildRopeChainHallway(context,rng,hall,usedHallways)]:[]];
+      for(const build of builders)if(build())break;
     }
   }
 
@@ -1797,10 +1708,14 @@
     return {x:crossX,z:door.z,side:Math.sign(b)||1};
   }
 
-  function activateCheckpoint(id, point, announce = true) {
+  function activateCheckpoint(id, point, announce = true, fixedStoryY = null) {
     if (!state || !point) return false;
-    const support=sampleSupport(point.x,point.z);
-    const final={x:point.x,z:point.z,y:Number(support?.y ?? point.y ?? 0)};
+    const storyY=fixedStoryY===null?null:Number(fixedStoryY); // External stacked checkpoints must never snap to a higher story sharing X/Z.
+    const support=Number.isFinite(storyY)?DS.sampleSupport?.(point.x,point.z,{
+      minY:storyY-.32,maxY:storyY+.32,pad:.02,
+    }):sampleSupport(point.x,point.z);
+    const final={x:point.x,z:point.z,
+      y:Number.isFinite(storyY)?storyY:Number(support?.y ?? point.y ?? 0)};
     state.checkpoints.active={id,point:final,at:performance.now()};
     state.checkpoints.triggered.add(id);
     state.checkpoints.activationCount++;
@@ -1824,7 +1739,7 @@
     if(previous){
       const jumped=Math.hypot(nowPoint.x-previous.x,nowPoint.z-previous.z)>.75;
       for(const door of state.checkpoints.doorways){
-        if(state.ropeChains.some(chain=>chain.doorIds.has(door.id)))continue; // A rope hallway's endpoints use its own mutually replacing checkpoints.
+        if(state.ropeChains.some(chain=>chain.doorIds?.has?.(door.id)))continue; // Externally authored chains have no V50 hallway doorway list. // A rope hallway's endpoints use its own mutually replacing checkpoints.
         const crossing=doorwayCrossing(door,previous,nowPoint);
         const proximity=!crossing&&jumped?doorwayProximity(door,nowPoint):null;
         const trigger=crossing||proximity;
@@ -1945,6 +1860,59 @@
     return true;
   }
 
+
+  // One real V50 room with exactly one playable dungeon challenge.
+  function buildSingleRoomTrial(context){
+    const source=context.meta?.rooms?.[0],selection=context.singleRoomTrial; // Frozen generator choice, including across solvability retries.
+    if(context.meta?.rooms?.length!==1||!source||!selection?.kind)throw new Error('Puzzle Lab requires exactly one V50 room.');
+    const Challenge=window.RuinLayerChallenges; // Reuses the multi-floor game's actual puzzle implementation.
+    if(!Challenge?.TYPES?.includes(selection.kind))throw new Error('Missing playable puzzle type '+selection.kind);
+    const bounds=roomBounds(context.meta,source); // V50's exact scaled room footprint, without a second layout generator.
+    const room={id:'single-room-lab',x:bounds.minX,z:bounds.minZ,w:bounds.maxX-bounds.minX,d:bounds.maxZ-bounds.minZ};
+    const entry=String(context.meta?.entrance?.side||'west').toLowerCase();
+    const side=({north:'S',south:'N',east:'W',west:'E'})[entry]||'E'; // The far bank / targets face away from the room entrance.
+    const centerX=room.x+room.w*.5,centerZ=room.z+room.d*.5;
+    const floorY=Number(sampleSupport(centerX,centerZ)?.y??context.meta?.floorSurfaceY??0);
+    if(selection.kind==='statueDefense'&&(room.w<18||room.d<18))throw new Error('Key Statue defense needs an 18 x 18 room.');
+    if(selection.kind==='ropeChain'){
+      const pit=Challenge.ropePitForRoom(room,side); // The identical pit-bank sizing used by playable shaft wings.
+      if(!pit)throw new Error('The generated chamber cannot fit a rope-chain crossing.');
+      const cs=worldCellSize(context.meta);let count=0; // Tracks deactivated V50 supports so the abyss is genuinely floorless.
+      for(const [col,row] of context.meta.floorCells||[]){
+        const x=PAD+(Number(col)+.5)*cs,z=PAD+(Number(row)+.5)*cs;
+        if(x<=pit.minX+.01||x>=pit.maxX-.01||z<=pit.minZ+.01||z>=pit.maxZ-.01)continue;
+        const support=DS.sampleSupport?.(x,z,{scope:SCOPE,minY:-6,maxY:10,pad:0});
+        if(support?.id==='devruin-floor-'+col+','+row&&support.record){
+          DS.registerSurface({...support.record,enabled:false});
+          state.ropeChainDisabledSurfaces.push(support.record);count++;
+        }
+        const tile=context.grid?.[Math.floor(z)]?.[Math.floor(x)];
+        if(tile){state.ropeChainPitTiles.push({tile,original:tile.bottomless});tile.bottomless=true;}
+      }
+      if(!count)throw new Error('The rope-chain puzzle did not expose floorless cells.');
+      const pitId='dev_ruin_single_room_abyss'; // The same surface ledger cleans this up on reroll or leaving.
+      DS.registerPit({id:pitId,scope:SCOPE,bounds:pit});state.surfaceIds.add(pitId);
+      const fog=new THREE.Mesh(new THREE.PlaneGeometry(pit.maxX-pit.minX,pit.maxZ-pit.minZ),makeBasic(0x08090b));
+      fog.name=pitId+'_mask';fog.rotation.x=-Math.PI/2;
+      fog.position.set((pit.minX+pit.maxX)*.5,floorY+.18,(pit.minZ+pit.maxZ)*.5);
+      fog.userData.devRuinFootprintIgnore=true;fog.userData.devRandomRuinBottomlessFog=true;
+      state.group.add(fog); // Opaque mask hides original V50 floor art; registered pit owns gameplay.
+    }
+    const owner=state; // A fast reroll cannot receive late puzzle callbacks from the old room.
+    const removeControl=control=>{const i=owner.controls.indexOf(control);if(i>=0)owner.controls.splice(i,1);};
+    state.singleRoomChallenge=Challenge.compose({
+      THREE,parent:state.group,room,y:floorY,id:'single-room-'+context.seed,kind:selection.kind,side,
+      mapId:MAP_ID,standaloneRoom:true,noLoot:context.noLoot===true,
+      isActive:()=>state===owner&&inRuin(),
+      onSolved:()=>{owner.singleRoomSolved=true;deps?.showToast?.('Puzzle complete! The test room awards no loot.',true);},
+      getPlayerPosition:playerWorld,
+      getPlayerY:()=>window.DevRandomRuin?.getPlayerGroundSupportY?.()??playerWorld()?.y??floorY,
+      addControl:control=>owner.controls.push(control),removeControl,
+      showToast:(message,ok)=>deps?.showToast?.(message,ok),
+    });
+    window.DevRandomRuinTileOccupancy?.scanSolids?.(state.group,SCOPE);
+  }
+
   function buildForContext(context) {
     clearState();
     const group=new THREE.Group();
@@ -1990,6 +1958,7 @@
       lastPlayerWorld:null,
       checkpoints:null,
       buildSeed:Number(context.seed)||0,
+      singleRoomChallenge:null,singleRoomSolved:false,singleRoomError:null, // Compact mobile diagnostics and the in-game runtime snapshot consume these fields.
     };
     buildCheckpoints(context);
     installModularProjectileHook(); // Reusable ceiling glyphs and stone canopies share one projectile seam no matter which procedural composer places them.
@@ -1999,6 +1968,11 @@
     const options=context.puzzleOptions||{};
     const kit=composerKit();
     state.kit=kit;
+    if(context.singleRoomTrial){
+      try{buildSingleRoomTrial(context);}catch(error){state.singleRoomError=String(error?.message||error);console.warn('[Puzzle Lab] could not mount puzzle',error);deps?.showToast?.('Puzzle Lab: '+state.singleRoomError,false);}
+      updateBadge(true);
+      return; // Never run other composers: no additional rooms, chest payoffs, or ambient challenges.
+    }
     for(const composer of composers){ // Room-claiming composers run first so standalone modules never take their rooms.
       if(context.hachutu===true&&composer.id!=='hachutuTemple')continue; // Exclusive developer-only content, never mixed with Harlyao composers.
       try{composer.buildRooms?.(kit,context,rng,usedRooms,options);}catch(error){console.warn('[Random Test Ruin] composer buildRooms failed',error);}
@@ -2052,7 +2026,7 @@
         freeRooms.splice(freeRooms.indexOf(room),1);usedRooms.add(room.id);break;
       }
     }
-    if(options.hallwayTraps!==false||options.ropeChain!==false)buildSwappableHallwayModules(context,rng,usedHallways);
+    buildSwappableHallwayModules(context,rng,usedHallways); // Wall-projectile obstacle courses are retired; hallway slots now prefer useful puzzles.
     for(const composer of composers){ // Late composers take whatever rooms the standalone modules left free.
       try{composer.buildLate?.(kit,context,rng,usedRooms,options);}catch(error){console.warn('[Random Test Ruin] composer buildLate failed',error);}
     }
@@ -2174,42 +2148,72 @@
     }
   }
 
+  function cancelEchoPlayback(set) {
+    for (const timer of set.playbackTimers) clearTimeout(timer);
+    set.playbackTimers.length=0; // A new step or ruin teardown cannot leave delayed example notes sounding.
+  }
+
+  function replayEchoSet(set) {
+    cancelEchoPlayback(set);
+    const tuning=window.KurrayaPuzzle?.settings?.(); // Capture one tuning for the entire phrase, even if the Music Lab settings change during playback.
+    set.notes.forEach((note,index)=>{
+      if (index===0) playKurrayaPlateNote(note,tuning); // The first note sounds on contact with the plate.
+      else {
+        const timer=setTimeout(()=>{
+          const pendingIndex=set.playbackTimers.indexOf(timer);
+          if(pendingIndex>=0)set.playbackTimers.splice(pendingIndex,1); // A played note is no longer pending in mobile diagnostics.
+          if (state && inRuin() && !set.solved && state.chordPlateSets.includes(set)) playKurrayaPlateNote(note,tuning);
+        },index*620);
+        set.playbackTimers.push(timer);
+      }
+    });
+  }
+
   function completeEchoSet(set) {
     if (!set || set.solved) return;
     set.solved = true; set.solveCount++;
+    cancelEchoPlayback(set);
     for (const plate of set.plates) plate.material.color.setHex(CHORD_PLATE_SOLVED_COLOR);
-    playStoneUnlockKchunk();
-    deps?.showToast?.(set.onComplete ? 'The melody echoes through the stone. Machinery unlocks.' : 'The melody echoes through the stone.',true);
+    playStoneUnlockKchunk(); // Success is communicated by the physical mechanism, not a text notification.
     try { set.onComplete?.(set); } catch (error) { console.warn('[Random Test Ruin] melody completion failed',error); }
   }
 
-  window.addEventListener('hobunji-ruin-melody-result', event => {
-    if (!state || !inRuin()) return;
-    const set = state.chordPlateSets.find(entry => entry.id === event.detail?.id);
-    if (!set || set.solved) return;
-    set.mistakes = Math.max(set.mistakes,Number(event.detail.mistakes)||0);
-    if (event.detail.solved === true) completeEchoSet(set);
-    else deps?.showToast?.('Not quite. Hear the sequence again and retry.',false);
+  function syncEchoInscription(set) {
+    if (!set.inscription || set.inscription.matchesNotes(set.notes)) return;
+    if (set.inscription.setNotes(set.notes)) {
+      set.heardNotes.length=0; // Changing the authored phrase never inherits a partial attempt against the previous melody.
+      cancelEchoPlayback(set);
+    }
+  }
+
+  window.addEventListener('hobunji-kurraya-puzzle-note', event => {
+    if (!state || !inRuin() || event.detail?.area !== MAP_ID) return;
+    const note=event.detail?.noteIndex; // Only player-entered single notes may advance a ruin melody; the plate's automatic example never emits them.
+    if (!Number.isInteger(note) || note<0 || note>=(window.KurrayaPuzzle?.NOTE_CODES?.length ?? 8)) return;
+    for (const set of state.chordPlateSets) {
+      if (set.solved) continue;
+      syncEchoInscription(set);
+      set.heardNotes.push(note);
+      if (set.heardNotes.length>set.notes.length) set.heardNotes.shift(); // A sliding suffix accepts the phrase anywhere in an uninterrupted stream of note events.
+      if (window.KurrayaPuzzle?.matchSuffix?.(set.heardNotes,[{notes:set.notes}])) completeEchoSet(set);
+    }
   });
 
   function updateChordPlateSets() {
     const player=playerWorld();
     if(!player)return;
     for(const set of state.chordPlateSets){
+      syncEchoInscription(set); // Live authoring/generator updates can replace the inscription without rebuilding the room.
       for(const plate of set.plates){
         const down=Math.abs(player.x-plate.x)<=.39&&Math.abs(player.z-plate.z)<=.39;
         plate.mesh.position.y=plate.y+.03-(down?.035:0);
         if(down&&!plate.down&&!set.solved){
           plate.pressCount++;
-          const challenge={id:set.id,notes:set.notes}; // The normal five-note instrument owns playback/answer checking, not another hand-built input or audio path.
-          const started=window.MusicMinigame?.beginPlayerSession?.({echoChallenge:challenge});
-          if(started){
-            set.attempts++;
-            plate.material.color.setHex(CHORD_PLATE_PLAYED_COLOR);
-            deps?.showToast?.('Listen to the bronze trigger’s melody, then repeat its notes on your instrument.',true);
-          }else deps?.showToast?.(window.MusicMinigame?.state?.active?'Finish or close your current instrument session first.':'Equip an instrument to hear and repeat this melody.',false);
+          set.attempts++;
+          plate.material.color.setHex(CHORD_PLATE_PLAYED_COLOR);
+          replayEchoSet(set); // Stepping onto the plate plays the sample; leaving and returning plays it again without resetting note recognition.
         }
-        if (!set.solved && !window.MusicMinigame?.state?.active) plate.material.color.setHex(CHORD_PLATE_IDLE_COLOR);
+        if (!set.solved && !down) plate.material.color.setHex(CHORD_PLATE_IDLE_COLOR);
         plate.down=down;
       }
     }
@@ -2255,7 +2259,15 @@
       if((!rope.airOnly&&!rope.ropeChainHallId)||rope.attached||rope.id===f.ropeId)continue; // Endpoint ropes remain catchable from the air in either direction.
       if(ropeCatchPoint(rope,f)){catchRopeInFlight(rope,f);return;}
     }
-    const support=sampleSupport(f.x,f.z,f.y+.25);
+    const chain=ropeChainPitAt(f.x,f.z,f.y);
+    // The player must die BEFORE sampling floors lower down the same X/Z:
+    // a missed upper-story catch could otherwise land on a lower deck and
+    // evade the instant-death abyss. Likewise never mistake an overhead
+    // support at another level for the intended landing bank.
+    if(chain&&f.y<chain.floorY-.5){instantRopeChainDeath();return;}
+    const support=state.flight?.layerRopeChain
+      ?DS.sampleSupport?.(f.x,f.z,{minY:f.y-.2,maxY:f.y+.25,pad:.02})
+      :sampleSupport(f.x,f.z,f.y+.25);
     if(support&&f.vy<=0&&f.y<=Number(support.y)+.08){
       f.y=Number(support.y);
       setPlayerWorld(f,true,true);
@@ -2263,8 +2275,6 @@
       state.lastPlayerWorld=clonePoint(f);
       return;
     }
-    const chain=ropeChainPitAt(f.x,f.z);
-    if(chain&&f.y<chain.floorY-.5){instantRopeChainDeath();return;} // No downed state on a missed airborne rope catch.
     if(f.y<-2.5&&!DS.sampleSupport?.(f.x,f.z,{minY:-60,maxY:f.y+.25,pad:.02})){ // Only a fall out of the world returns to the checkpoint; deep pits and lava are fallen into, not teleported out of.
       respawnAtCheckpoint('rope-fall');
       return;
@@ -2302,50 +2312,13 @@
     updateRopeHazards(now); // No proximity auto-grab: walking near a hanging rope caught players unintentionally; ropes are taken only through the 'Grab Rope' prompt.
   }
 
-  function updateHallwayTraps(dt) {
-    state.elapsed+=dt;
-    for(const trap of state.trapHallways){
-      for(const station of trap.stations){
-        if(state.elapsed>=station.nextAt){
-          spawnTrapProjectile(trap,station);
-          station.nextAt+=HALL_SHOT_PERIOD;
-        }
-        const charge=Math.max(0,Math.min(1,1-(station.nextAt-state.elapsed)/HALL_CHARGE_SECONDS));
-        for(const [emitterSide,emitter] of Object.entries(station.emitters||{})){
-          const next=Number(emitterSide)===-station.side; // The emitter that fires next heats up; the other stays at its dim tint.
-          emitter.mouthMaterial.color.setHex(emitter.colors.dim).lerp(hallTrapHot.setHex(emitter.colors.hot),next?charge*charge:0);
-        }
-      }
-    }
-    const player=playerWorld();
-    for(let index=state.projectiles.length-1;index>=0;index--){
-      const projectile=state.projectiles[index];
-      projectile.age+=dt;
-      projectile.x+=projectile.vx*dt;projectile.z+=projectile.vz*dt;
-      projectile.mesh.position.x=projectile.x;projectile.mesh.position.z=projectile.z;
-      let hit=false;
-      if(player&&Math.hypot(player.x-projectile.x,player.z-projectile.z)<.34&&Math.abs(player.y-projectile.y)<1.05){
-        if(projectile.kind==='fire')window.ResourceSystem?.addAffliction?.(deps.player,'burningHealth',HALL_FIRE_BURNING);
-        else window.ResourceSystem?.addAffliction?.(deps.player,'poisonedHealth',HALL_POISON);
-        deps.showToast?.(projectile.kind==='fire'?'Scorched by a wall trap!':'Poisoned by a wall dart!',false);
-        hit=true;
-      }
-      if(hit||projectile.age>=projectile.maxAge){
-        projectile.mesh.parent?.remove?.(projectile.mesh);
-        disposeOwnedGeometry(projectile.mesh.geometry);
-        projectile.mesh.material?.dispose?.();
-        state.projectiles.splice(index,1);
-      }
-    }
-  }
-
   function updateBadge(force=false) {
     if(!state)return;
     const now=performance.now();
     if(!force&&now-lastBadgeAt<250)return; // Diagnostics are human-readable, not simulation state; 4 Hz is plenty and avoids a layout-affecting DOM mutation every frame.
     lastBadgeAt=now;
     const cp=state.checkpoints;
-    const segment=' · simple G'+state.safeGrids.length+' R'+state.ropes.length+' T'+state.trapHallways.length+' CP '+cp.triggered.size+'/'+(cp.doorwayCount+1);
+    const segment=' · simple G'+state.safeGrids.length+' R'+state.ropes.length+' CP '+cp.triggered.size+'/'+(cp.doorwayCount+1);
     window.DevRandomRuin?.setDebugBadgePart?.('simple',segment); // Never compose from a previous badge string.
   }
 
@@ -2369,10 +2342,17 @@
     updateSarcophagusModules(dt);
     updateOssuaryComposers();
     updateRopes(now,dt);
-    for(const composer of composers){if(context.hachutu===true&&composer.id!=='hachutuTemple')continue;try{composer.update?.(state.kit,now,dt);}catch(error){console.warn('[Random Test Ruin] composer update failed',error);}}
-    updateHallwayTraps(dt);
+    state.singleRoomChallenge?.tick?.(dt); // Live wing implementations handle inputs and completion, not fake test interactions.
+    state.singleRoomChallenge?.animate?.(dt);
+    if(!context.singleRoomTrial)for(const composer of composers){if(context.hachutu===true&&composer.id!=='hachutuTemple')continue;try{composer.update?.(state.kit,now,dt);}catch(error){console.warn('[Random Test Ruin] composer update failed',error);}} // Solo never updates unrelated composers even when they retain internal autonomous timers.
     updateDoorwayCheckpoints();
     updateRopeChainCheckpoints(); // Side checkpoint claims override other doorway updates in the same frame.
+    if(state.context?.singleRoomTrial){
+      const choice=state.context.singleRoomTrial;
+      const error=state.singleRoomError||state.singleRoomChallenge?.error||null; // Async statue asset/encounter failures must appear in the mobile debug badge.
+      const phase=error?'ERR '+error:state.singleRoomSolved?'SOLVED':state.singleRoomChallenge?.ready===false?'loading':'active';
+      window.DevRandomRuin?.setDebugBadgePart?.('challenge',' · '+choice.kind+' '+phase+' · drops OFF');
+    }else window.DevRandomRuin?.setDebugBadgePart?.('challenge','');
     updateBadge();
   }
 
@@ -2380,7 +2360,7 @@
     if(!state||!inRuin())return [];
     const controls=state.controls.slice();
     for(const control of (window.DevRandomRuinDungeonChests?.controlsFor?.(state.elevatorChests)||[]))controls.push(control);
-    for(const composer of composers){if(state.context.hachutu===true&&composer.id!=='hachutuTemple')continue;for(const control of (composer.controls?.(state.kit)||[]))controls.push(control);}
+    if(!state.context.singleRoomTrial)for(const composer of composers){if(state.context.hachutu===true&&composer.id!=='hachutuTemple')continue;for(const control of (composer.controls?.(state.kit)||[]))controls.push(control);} // No stale composer prompts in isolated mode.
     for(const candidate of state.ropes){
       if(candidate.attached||state.flight||candidate.airOnly||candidate.burden)continue; // Air-only ropes in a rope-to-rope chain are caught mid-swing, never from the floor; a rope with a burden hanging on it is not a rider's.
       controls.push({
@@ -2431,6 +2411,7 @@
     return {
       active:true,
       seed:state.buildSeed,
+      singleRoomChallenge:state.context.singleRoomTrial?{...state.context.singleRoomTrial,solved:state.singleRoomSolved,ready:!!state.singleRoomChallenge&&state.singleRoomChallenge.ready!==false,error:state.singleRoomError||state.singleRoomChallenge?.error||null,attempts:state.singleRoomChallenge?.attempts||0,linked:state.singleRoomChallenge?.linked??false,ropeLinked:state.singleRoomChallenge?.ropeLinked??false}:null, // Defense readiness/errors are asynchronous; don't claim it is ready before authored assets finish loading.
       safeGrids:state.safeGrids.map(grid=>({
         hallId:grid.hallId,
         axis:grid.axis,
@@ -2452,7 +2433,8 @@
         ceilingY:+rope.ceilingY.toFixed(3),ceilingMounted:rope.mount?.parent===state.group,weaponStowed:!!state.ropeHeldToolSnapshot,
         anchor:clonePoint(rope.anchor),bob:clonePoint(rope.bob),grabPoint:clonePoint(rope.grabPoint),
         bottomY:+(rope.anchor.y-rope.length).toFixed(3),minBobY:+(rope.minBobY||0).toFixed(3),
-        thickMesh:rope.mesh?.isMesh===true,collisionStops:rope.collisionStops||0,autoGrabCount:rope.autoGrabCount||0,lavaVisible:rope.hazard?.mesh?.visible!==false,
+        thickMesh:rope.mesh?.isMesh===true,brushEnd:!!rope.mesh?.ropeBrushTip,gripProxyInvisible:rope.marker?.material?.colorWrite===false, // Mobile debug snapshot confirms the replacement without a console.
+        collisionStops:rope.collisionStops||0,autoGrabCount:rope.autoGrabCount||0,lavaVisible:rope.hazard?.mesh?.visible!==false,
         startTopY:+(rope.startPlatform?.topY||0).toFixed(3),endTopY:+(rope.endPlatform?.topY||0).toFixed(3),
       })),
       ropeChains:state.ropeChains.map(chain=>({hallId:chain.id,axis:chain.axis,bounds:chain.bounds,
@@ -2460,7 +2442,7 @@
       flight:state.flight?clonePoint(state.flight):null,
       ropeEquipment:{holstered:state.ropeEquipmentHolsterCount,restored:state.ropeEquipmentRestoreCount,currentlyStowed:!!state.ropeHeldToolSnapshot},
       trapHallways:state.trapHallways.map(trap=>({id:trap.id,axis:trap.axis,stations:trap.stations.length})),
-      chordPlateSets:state.chordPlateSets.map(set=>({id:set.id,slotKind:set.slotKind,kind:'melodyEcho',notes:set.notes.slice(),attempts:set.attempts,mistakes:set.mistakes,solved:set.solved,solveCount:set.solveCount,pressCounts:set.plates.map(plate=>plate.pressCount)})),
+      chordPlateSets:state.chordPlateSets.map(set=>({id:set.id,slotKind:set.slotKind,kind:'melodyEcho',notes:set.notes.slice(),inscription:set.inscription?.diagnostics?.()||null,heardNotes:set.heardNotes.slice(),pendingDemoNotes:set.playbackTimers.length,attempts:set.attempts,mistakes:set.mistakes,solved:set.solved,solveCount:set.solveCount,pressCounts:set.plates.map(plate=>plate.pressCount)})),
       lockDoors:state.lockDoors.map(door=>({id:door.id,roomId:door.roomId,open:door.targetOpen,progress:+door.progress.toFixed(3),generatedMechanismId:door.generatedMechanismId||null,reusesGeneratedDoor:!!door.generatedMechanismId})),
       canopies:state.canopies.map(canopy=>({id:canopy.id,roomId:canopy.roomId,roofY:+canopy.roofY.toFixed(3),width:+canopy.width.toFixed(3),depth:+canopy.depth.toFixed(3),occludesTarget:canopy.occludesTarget})),
       ceilingGlyphs:state.ceilingGlyphs.map(glyph=>({id:glyph.id,roomId:glyph.roomId,active:glyph.active,hitCount:glyph.hitCount,ceilingMountGap:+glyph.visual.attachmentGap(glyph.ceilingY).toFixed(3),mountConnected:glyph.visual.attachmentGap(glyph.ceilingY)<=0})),
@@ -2515,14 +2497,98 @@
     return true;
   }
 
+  function registerExternalRopeChain(spec){
+    // Layered ruin rooms use the *same* ride, pump, release-flight, mid-air
+    // catch and checkpoint machinery as the V50 abyss hallway. No second
+    // player-motion implementation or teleports are introduced here.
+    const active=window.DevRandomRuin?.getRuntimeContext?.(); // Prevent old sessions from claiming ropes during a fast generation reroll.
+    if(!state||!inRuin()||state.root!==active?.root||!spec?.id
+      ||!Array.isArray(spec.anchors)||spec.anchors.length<3||!spec.bounds
+      ||!spec.entry||!spec.exit)return null;
+    const id=String(spec.id);
+    if(state.ropeChains.some(c=>c.id===id))return null;
+    const ropes=[]; // Native rider ropes owned by this external floor; removed when the wing is destroyed.
+    const room={id:'layer_'+id};
+    const length=Math.max(ROPE_MIN_LENGTH,Number(spec.length)||2.43);
+    const maxLength=Math.max(length,Number(spec.maxLength)||length);
+    try{
+      for(let i=0;i<spec.anchors.length;i++){
+        const anchor=spec.anchors[i];
+        if(![anchor.x,anchor.y,anchor.z].every(Number.isFinite))throw new Error('Invalid rope anchor');
+        const bank=i===0?spec.entry:i===spec.anchors.length-1?spec.exit:null;
+        const rope=createRopeObject({
+          room,idSuffix:String(i),anchor,yaw:Number(spec.yaw)||0,
+          length,maxLength,minBobY:Number(spec.floorY)+.12,
+          angle:i===0?-.12:i===spec.anchors.length-1?.12:0,
+          grabPoint:bank?{...bank,y:Number(spec.floorY)+.92}:null,
+        });
+        rope.ropeChainHallId=id; // Enables both-way aerial catching through the canonical V50 release-flight loop.
+        rope.externalRopeChain=true;
+        rope.lastSafeBob=clonePoint(updateRopeVisual(rope));
+        // Upper-story rope visuals disappear along with their owning story's
+        // room meshes, instead of hanging visibly above the camera.
+        for(const object of [rope.mesh,rope.marker,rope.mount])spec.parent?.add?.(object);
+        state.ropes.push(rope);ropes.push(rope);
+      }
+      const chain={id,external:true,scopeRoot:state.root,ropes,doorIds:new Set(),
+        axis:spec.bounds.axis||'x',
+        bounds:{minX:spec.bounds.minX,maxX:spec.bounds.maxX,minZ:spec.bounds.minZ,maxZ:spec.bounds.maxZ},
+        entry:{...spec.entry},exit:{...spec.exit},floorY:Number(spec.floorY),
+        checkpointIds:{start:'rope-chain-'+id+'-start',end:'rope-chain-'+id+'-end'}};
+      state.ropeChains.push(chain);
+      recordModulePlacement('layerRopeChainAbyss','layer',id,{
+        ropeCount:ropes.length,instantDeath:true,checkpointIds:chain.checkpointIds});
+      return chain;
+    }catch(error){
+      for(const rope of ropes){
+        const index=state.ropes.indexOf(rope);
+        if(index>=0)state.ropes.splice(index,1);
+        disposeRopeObject(rope);
+      }
+      console.warn('[Random Test Ruin] external rope chain creation failed:',id,error);
+      return null;
+    }
+  }
+
+  function removeExternalRopeChain(chain){
+    if(!chain?.external||!state||state.root!==chain.scopeRoot)return false;
+    const index=state.ropeChains.indexOf(chain);
+    if(index<0)return false;
+    state.ropeChains.splice(index,1);
+    for(const rope of chain.ropes){
+      if(rope.attached)releaseRope(rope);
+      const n=state.ropes.indexOf(rope);
+      if(n>=0)state.ropes.splice(n,1);
+      disposeRopeObject(rope);
+    }
+    return true;
+  }
+
+  function registerExternalProjectileTarget(target){
+    // Layered shaft chambers are composed before this V50 puzzle state is
+    // initialized; they retry registration after entering the map. Reuse
+    // exactly the same swept-projectile interception as native rail targets.
+    const runtime=window.DevRandomRuin?.getRuntimeContext?.(); // A fast reroll may leave the previous map's composer state alive for one frame.
+    if(!state||!inRuin()||state.root!==runtime?.root||!target?.object||typeof target.onHit!=='function')return null;
+    if(state.projectileTargets.includes(target))return ()=>{};
+    const records=state.projectileTargets; // Closure stays scoped to the owning build across rerolls.
+    records.push(target);
+    return ()=>{
+      const index=records.indexOf(target);
+      if(index>=0)records.splice(index,1);
+    };
+  }
+
   window.DevRandomRuinSimplePuzzles=Object.freeze({
     getInteractionControls,
-    addFurnitureRope,removeFurnitureRope,
+    addFurnitureRope,removeFurnitureRope,registerExternalProjectileTarget,
+    registerExternalRopeChain,removeExternalRopeChain,
+    hasActiveRuinState:()=>!!state&&inRuin()&&state.root===window.DevRandomRuin?.getRuntimeContext?.()?.root, // External fire/ranged challenges must not bind to an old generation.
     isNoClimbSurface:id=>!!state?.noClimbSurfaceIds?.has(String(id)),
     ownsPlayerMotion:()=>!!(state?.activeRope||state?.flight),
     releaseActiveRope:()=>state?.activeRope?releaseRope(state.activeRope):false, // Called by the canonical Dodge context action so every input device shares one release path.
     respawnAtCheckpoint,
-    isInstantDeathPit:(x,z)=>!!ropeChainPitAt(Number(x),Number(z)), // Consumed by the canonical ruin floor reconciliation before its ordinary footing-fall path.
+    isInstantDeathPit:(x,z)=>!!ropeChainPitAt(Number(x),Number(z),playerWorld()?.y), // Consumed by the canonical ruin floor reconciliation before its ordinary footing-fall path.
     instantRopeChainDeath,
     // Every unsolved projectile target this runtime owns (ceiling glyphs and
     // composer targets), for the proximity hum; [] outside the ruin.

@@ -9,6 +9,7 @@
   function normalized(value) {
     const obj=value&&typeof value==='object'?value:{};
     const anchor=obj.billboardAnchor||{},pos=anchor.position||{},rot=anchor.rotation||{};
+    const back=obj.backCarry||{}; // Default: held transform rotated 180 degrees around the portrait's vertical axis.
     const hand=obj.handTargets||{},hitbox=obj.hitbox||{};
     const vector=(v,fallback)=>Object.fromEntries(['x','y','z']
       .map(key=>[key,Number.isFinite(Number(v?.[key]))?Number(v[key]):fallback[key]]));
@@ -21,6 +22,13 @@
         rotation:vector(rot,{x:0,y:0,z:0}),
         posteriorOffset:vector(anchor.posteriorOffset,{x:0,y:0,z:0}),
         size:Math.max(.1,Number(anchor.size)||1)
+      },
+      backCarry:{
+        position:vector(back.position,vector(pos,{x:0,y:.53,z:0})),
+        rotation:vector(back.rotation,{x:Number(rot.x)||0,y:(Number(rot.y)||0)+180,z:Number(rot.z)||0}),
+        posteriorOffset:vector(back.posteriorOffset,vector(anchor.posteriorOffset,{x:0,y:0,z:0})),
+        size:Math.max(.1,Number(back.size)||Number(anchor.size)||1),
+        portraitAnchor:vector(back.portraitAnchor,{x:0,y:0,z:0}) // Portrait-local attachment point; the default is its center.
       },
       hitbox:{enabled:hitbox.enabled!==false,
         center:vector(hitbox.center,{x:0.025,y:.25,z:0}),
@@ -48,8 +56,8 @@
     '<h2>Carryable world objects</h2>',
     '<p class="muted">The orange square marks the furniture-local grip frame aligned with the avatar’s posterior plus the offset below. Purple marks the real posterior on the avatar; cyan marks the attachment point. Rotate the actual hand sockets with the gizmo or degree fields. Only the avatar and guides are editor-only.</p>',
     '<label class="row"><input type="checkbox" id="carryEnabled"> Enable carrying for this furniture</label>',
-    '<div class="g2"><button type="button" id="carrySelectAnchor">▣ Billboard anchor</button><button type="button" id="carrySelectLeft">◉ Left hand grip</button></div>',
-    '<button type="button" id="carrySelectRight">◉ Right hand grip</button>',
+    '<div class="g2"><button type="button" id="carrySelectAnchor">▣ Held anchor</button><button type="button" id="carrySelectBack">▣ Back-carry anchor</button></div>',
+    '<div class="g2"><button type="button" id="carrySelectLeft">◉ Left hand grip</button><button type="button" id="carrySelectRight">◉ Right hand grip</button></div>',
     '<div class="section"><h2>Projectile / impact hitbox</h2>',
     '<label class="row"><input id="carryHitboxEnabled" type="checkbox" checked> Use authored hitbox</label>',
     '<button type="button" id="carrySelectHitbox">▧ Edit hitbox in viewport</button>',
@@ -73,12 +81,18 @@
     '<label>Roll<input id="carryRZ" type="number" step="1"></label>',
     '</div><label id="carrySizeRow">Billboard size <input id="carrySize" type="number" min="0.1" max="10" step="0.05"></label>',
     '</div>',
-    '<p class="muted">Attachment offset FROM avatar posterior (character X/Y/Z). These move the held object relative to the body, independently of where the item was placed in the world.</p>',
+    '<p class="muted">Held: offset from avatar posterior. Back-stowed: use Portrait X/Y/Z instead; the old hip offsets do not affect its live portrait mount.</p>',
     '<div class="g3">',
     '<label>From hip X<input id="carryPosteriorX" type="number" step="0.01"></label>',
     '<label>From hip Y<input id="carryPosteriorY" type="number" step="0.01"></label>',
     '<label>From hip Z<input id="carryPosteriorZ" type="number" step="0.01"></label>',
     '</div>',
+    '<div id="carryPortraitAnchorRow"><p class="muted">Back-stowed attachment coordinate on the portrait plane (X/Y/Z). Defaults to the center (0, 0, 0), and follows portrait rotation.</p>',
+    '<div class="g3">',
+    '<label>Portrait X<input id="carryPortraitX" type="number" step="0.01"></label>',
+    '<label>Portrait Y<input id="carryPortraitY" type="number" step="0.01"></label>',
+    '<label>Portrait Z<input id="carryPortraitZ" type="number" step="0.01"></label>',
+    '</div></div>',
     '<div class="section"><h2>Held avatar preview</h2>',
     '<label class="row"><input type="checkbox" id="carryShowAvatar" checked> Show Mao’ao avatar holding this object</label>',
     '<button type="button" id="carryFrameHoldingPose">Frame holding pose</button>',
@@ -112,7 +126,8 @@
   function syncHoldingPreview(){
     heldPreview.visible=previewActive()&&!!previewActor;
     if(!heldPreview.visible)return;
-    const a=state.carryable.billboardAnchor,p=a.position,r=a.rotation;
+    const isBack=state.selectedType==='carry'&&state.selectedId==='back';
+    const a=isBack?state.carryable.backCarry:state.carryable.billboardAnchor,p=a.position,r=a.rotation;
     const scale=Math.max(.1,Number(a.size)||1);
     // The preview holds the furniture at its authored transform and solves
     // for the avatar's posterior, exactly inverting the in-game mount solve.
@@ -120,24 +135,28 @@
     previewActor.scale.setScalar(scale);
     previewActor.quaternion.copy(tempRotation);
     const offset=a.posteriorOffset||{};
-    tempOffset.copy(previewPosterior).add(new THREE.Vector3(
-      Number(offset.x)||0,Number(offset.y)||0,Number(offset.z)||0))
-      .multiplyScalar(scale).applyQuaternion(tempRotation);
+    const portraitPoint=a.portraitAnchor||{}; // Preview location of the authored back attachment on the portrait.
+    const mountPoint=isBack?new THREE.Vector3(Number(portraitPoint.x)||0,Number(portraitPoint.y)||0,Number(portraitPoint.z)||0):previewPosterior;
+    tempOffset.copy(mountPoint);
+    if(!isBack)tempOffset.add(new THREE.Vector3(Number(offset.x)||0,Number(offset.y)||0,Number(offset.z)||0));
+    tempOffset.multiplyScalar(scale).applyQuaternion(tempRotation);
     previewActor.position.set(p.x,p.y,p.z).sub(tempOffset);
-    if(posteriorMarker)posteriorMarker.position.copy(previewPosterior);
+    if(posteriorMarker)posteriorMarker.position.copy(mountPoint);
     if(attachmentMarker){
-      attachmentMarker.position.copy(previewPosterior).add(new THREE.Vector3(
+      attachmentMarker.position.copy(mountPoint);
+      if(!isBack)attachmentMarker.position.add(new THREE.Vector3(
         Number(offset.x)||0,Number(offset.y)||0,Number(offset.z)||0));
-      attachmentLine?.geometry?.setFromPoints?.([previewPosterior,attachmentMarker.position]);
+      attachmentLine?.geometry?.setFromPoints?.([mountPoint,attachmentMarker.position]);
     }
     previewActor.updateWorldMatrix(true,true);
     if(previewHands){
+      for(const side of ['left','right'])previewHands.setSideVisible?.(side,!isBack); // Hide hand GLBs entirely in back-carry preview.
       root.updateWorldMatrix(true,false);
       // Hand sockets share the game's authored-world position/rotation path:
       // local grip + canonical side frame + local XYZ grip rotation, and the
       // same model-specific handFromTool correction used by combat.
       const calibration=window.ProceduralHandAttachments?.modelCalibrationForSpecies?.('mao-ao','male',modelH);
-      for(const side of ['left','right']){
+      for(const side of (isBack?[]:['left','right'])){
         const h=state.carryable.handTargets[side],world=new THREE.Vector3(h.x,h.y,h.z);
         root.localToWorld(world);
         const rr=h.rotation||{};
@@ -146,7 +165,7 @@
         previewHands.placeHandWorld?.(side,world,q,calibration);
       }
     }
-    status('Posterior-based held pose · cyan socket at posterior + offset · scale '+scale.toFixed(2));
+    status((isBack?'Back-mounted pose':'Posterior-based held pose')+' · cyan socket at posterior + offset · scale '+scale.toFixed(2));
   }
   function frameHoldingPreview(){
     const bounds=new THREE.Box3().setFromObject(root);
@@ -221,37 +240,41 @@
 
   function positionGuide(id) {
     const c=state.carryable;
-    return id==='anchor'?c.billboardAnchor.position:id==='hitbox'?c.hitbox.center:c.handTargets[id];
+    return id==='anchor'?c.billboardAnchor.position:id==='back'?c.backCarry.position:id==='hitbox'?c.hitbox.center:c.handTargets[id];
   }
   function renderControls() {
     const c=state.carryable,id=state.selectedType==='carry'?state.selectedId:'anchor';
     const pos=positionGuide(id)||c.billboardAnchor.position;
     el('carryEnabled').checked=!!c.enabled;
-    el('carryGuideLabel').textContent=id==='anchor'?'Billboard anchor':id==='left'?'Left hand grip':id==='right'?'Right hand grip':'Impact hitbox center';
+    el('carryGuideLabel').textContent=id==='anchor'?'Held anchor':id==='back'?'Back-carry anchor':id==='left'?'Left hand grip':id==='right'?'Right hand grip':'Impact hitbox center';
     for(const axis of ['X','Y','Z']) {
       const input=el('carry'+axis);
       if(document.activeElement!==input)input.value=Number(pos[axis.toLowerCase()]||0).toFixed(3);
     }
-    const r=id==='anchor'?c.billboardAnchor.rotation:c.handTargets[id]?.rotation||{};
-    el('carryRotationLabel').textContent=id==='anchor'?'Anchor orientation (degrees)':'Hand socket rotation relative to its calibrated GLB (degrees)';
+    const r=id==='anchor'?c.billboardAnchor.rotation:id==='back'?c.backCarry.rotation:c.handTargets[id]?.rotation||{};
+    el('carryRotationLabel').textContent=id==='anchor'||id==='back'?'Mount orientation (degrees)':'Hand socket rotation relative to its calibrated GLB (degrees)';
     el('carryAnchorRotation').hidden=id==='hitbox';
     el('carryHitboxEnabled').checked=c.hitbox.enabled;
     for(const axis of ['X','Y','Z']) {
       const field=el('carryHitboxS'+axis);
       if(document.activeElement!==field)field.value=Number(c.hitbox.size[axis.toLowerCase()]).toFixed(3);
     }
-    el('carrySizeRow').hidden=id!=='anchor';
+    el('carrySizeRow').hidden=id!=='anchor'&&id!=='back';
+    el('carryPortraitAnchorRow').hidden=id!=='back';
+    for(const axis of ['X','Y','Z'])el('carryPosterior'+axis).disabled=id==='back'; // Hip offsets apply only to held items; back stow uses portrait coordinates.
     for(const axis of ['X','Y','Z']){
       const input=el('carryR'+axis);
       if(document.activeElement!==input)input.value=Number(r[axis.toLowerCase()]||0).toFixed(2);
+      const portraitInput=el('carryPortrait'+axis);
+      if(document.activeElement!==portraitInput)portraitInput.value=Number(c.backCarry.portraitAnchor[axis.toLowerCase()]||0).toFixed(3);
       const offsetInput=el('carryPosterior'+axis);
-      if(document.activeElement!==offsetInput)offsetInput.value=Number(c.billboardAnchor.posteriorOffset?.[axis.toLowerCase()]||0).toFixed(3);
+      if(document.activeElement!==offsetInput)offsetInput.value=Number((id==='back'?c.backCarry:c.billboardAnchor).posteriorOffset?.[axis.toLowerCase()]||0).toFixed(3);
     }
-    if(document.activeElement!==el('carrySize'))el('carrySize').value=c.billboardAnchor.size;
+    if(document.activeElement!==el('carrySize'))el('carrySize').value=(id==='back'?c.backCarry:c.billboardAnchor).size;
     el('carrySummary').textContent=c.enabled
-      ?'Authoring enabled: billboard anchor and both hand positions will be exported.'
+      ?'Authoring enabled: held/back anchors and both hand positions will be exported.'
       :'Carrying disabled: configure the anchors here and enable when ready.';
-    for(const key of ['anchor','left','right','hitbox']){
+    for(const key of ['anchor','back','left','right','hitbox']){
       const idKey='carrySelect'+key[0].toUpperCase()+key.slice(1);
       el(idKey)?.classList.toggle('active',id===key);
     }
@@ -261,7 +284,7 @@
       guideRoot.remove(item);
       item.traverse(o=>{o.geometry?.dispose?.();o.material?.dispose?.();});
     }
-    for(const id of ['anchor','left','right','hitbox']){
+    for(const id of ['anchor','back','left','right','hitbox']){
       const marker=new THREE.Group();
       marker.name='carry_author_'+id;
       marker.userData.carryGuide=id;
@@ -272,7 +295,7 @@
         hitWire.name='carry_hitbox_wireframe';
         hitWire.renderOrder=97;
         marker.add(hitWire);
-      }else if(id==='anchor'){
+      }else if(id==='anchor'||id==='back'){
         const plane=new THREE.Mesh(new THREE.PlaneGeometry(1,1),
           new THREE.MeshBasicMaterial({color:0xffb75d,transparent:true,opacity:.16,side:THREE.DoubleSide,depthWrite:false,depthTest:false}));
         marker.add(plane);
@@ -296,7 +319,7 @@
   }
   function refreshGuides() {
     const c=state.carryable;
-    for(const id of ['anchor','left','right']){
+    for(const id of ['anchor','back','left','right','hitbox']){
       const marker=guides[id],pos=positionGuide(id);
       if(!marker||!pos)continue;
       marker.position.set(pos.x,pos.y,pos.z);
@@ -305,10 +328,10 @@
         // Outer marker scale is authoritative so TransformControls scale-gizmo
         // edits can resize the hitbox, not only its numeric inputs.
         marker.scale.set(c.hitbox.size.x,c.hitbox.size.y,c.hitbox.size.z);
-      }else if(id==='anchor'){
-        const r=c.billboardAnchor.rotation;
+      }else if(id==='anchor'||id==='back'){
+        const a=id==='back'?c.backCarry:c.billboardAnchor,r=a.rotation;
         marker.rotation.set(r.x*DEG,r.y*DEG,r.z*DEG,'XYZ');
-        for(const child of marker.children)child.scale.setScalar(c.billboardAnchor.size);
+        for(const child of marker.children)child.scale.setScalar(a.size);
       }else{
         const r=c.handTargets[id]?.rotation||{};
         handLocalEuler.set((Number(r.x)||0)*DEG,(Number(r.y)||0)*DEG,(Number(r.z)||0)*DEG,'XYZ');
@@ -327,6 +350,7 @@
     if((transform.getMode?.()||'translate')==='scale')setTransformMode('translate');
     transform.attach(guides[id]);
     renderControls();
+    syncHoldingPreview();
   }
   function fromInputs() {
     const id=state.selectedType==='carry'?state.selectedId:'anchor';
@@ -336,7 +360,7 @@
       const n=Number(el('carry'+axis).value);
       if(Number.isFinite(n))point[axis.toLowerCase()]=n;
     }
-    const rotations=id==='anchor'?state.carryable.billboardAnchor.rotation:state.carryable.handTargets[id]?.rotation;
+    const rotations=id==='anchor'?state.carryable.billboardAnchor.rotation:id==='back'?state.carryable.backCarry.rotation:state.carryable.handTargets[id]?.rotation;
     if(rotations)for(const axis of ['X','Y','Z']){
       const n=Number(el('carryR'+axis).value);
       if(Number.isFinite(n))rotations[axis.toLowerCase()]=n;
@@ -345,10 +369,14 @@
       const n=Number(el('carryHitboxS'+axis).value);
       if(Number.isFinite(n))state.carryable.hitbox.size[axis.toLowerCase()]=Math.max(.01,Math.abs(n));
     }
-    if(id==='anchor')state.carryable.billboardAnchor.size=Math.max(.1,Math.min(10,Number(el('carrySize').value)||1));
+    if(id==='anchor'||id==='back')(id==='back'?state.carryable.backCarry:state.carryable.billboardAnchor).size=Math.max(.1,Math.min(10,Number(el('carrySize').value)||1));
     for(const axis of ['X','Y','Z']){
       const n=Number(el('carryPosterior'+axis).value);
-      if(Number.isFinite(n))state.carryable.billboardAnchor.posteriorOffset[axis.toLowerCase()]=n;
+      if(Number.isFinite(n))(id==='back'?state.carryable.backCarry:state.carryable.billboardAnchor).posteriorOffset[axis.toLowerCase()]=n;
+    }
+    for(const axis of ['X','Y','Z']){
+      const n=Number(el('carryPortrait'+axis).value);
+      if(id==='back'&&Number.isFinite(n))state.carryable.backCarry.portraitAnchor[axis.toLowerCase()]=n;
     }
     refreshGuides();
     syncHoldingPreview();
@@ -363,9 +391,9 @@
     if(id==='hitbox'){
       for(const axis of ['x','y','z'])
         state.carryable.hitbox.size[axis]=Math.max(.01,Number(Math.abs(marker.scale[axis]).toFixed(4)));
-    }else if(id==='anchor'){
+    }else if(id==='anchor'||id==='back'){
       for(const axis of ['x','y','z'])
-        state.carryable.billboardAnchor.rotation[axis]=Number((marker.rotation[axis]*180/Math.PI).toFixed(3));
+        (id==='back'?state.carryable.backCarry:state.carryable.billboardAnchor).rotation[axis]=Number((marker.rotation[axis]*180/Math.PI).toFixed(3));
     }else if(id==='left'||id==='right'){
       // A hand's gizmo rotates in canonical side-hand space, so recover the
       // authored local correction instead of baking the ±90° wrist basis.
@@ -379,6 +407,7 @@
     syncHoldingPreview();
   }
   el('carrySelectAnchor').onclick=()=>select('anchor');
+  el('carrySelectBack').onclick=()=>select('back');
   el('carrySelectLeft').onclick=()=>select('left');
   el('carrySelectRight').onclick=()=>select('right');
   el('carrySelectHitbox').onclick=()=>select('hitbox');
@@ -391,7 +420,7 @@
     queueUndoHistory('carryable toggle');
     renderControls();
   };
-  for(const id of ['carryX','carryY','carryZ','carryRX','carryRY','carryRZ','carrySize','carryPosteriorX','carryPosteriorY','carryPosteriorZ','carryHitboxSX','carryHitboxSY','carryHitboxSZ'])
+  for(const id of ['carryX','carryY','carryZ','carryRX','carryRY','carryRZ','carrySize','carryPosteriorX','carryPosteriorY','carryPosteriorZ','carryPortraitX','carryPortraitY','carryPortraitZ','carryHitboxSX','carryHitboxSY','carryHitboxSZ'])
     el(id).addEventListener('change',fromInputs);
   transform.addEventListener?.('objectChange',fromGizmo);
 
@@ -435,6 +464,6 @@
   renderControls();
   window.HobunjiCarryableFurnitureAuthor={
     normalize:normalized,
-    snapshot:()=>({carryable:cloneJson(state.carryable),selected:state.selectedType==='carry'?state.selectedId:null,preview:{visible:heldPreview.visible,ready:!!previewActor,hands:!!previewHands}})
+    snapshot:()=>({carryable:cloneJson(state.carryable),selected:state.selectedType==='carry'?state.selectedId:null,backPreview:state.selectedId==='back',preview:{visible:heldPreview.visible,ready:!!previewActor,hands:!!previewHands}})
   };
 })();

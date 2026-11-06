@@ -68,6 +68,17 @@ function box(){const geo=new Geometry();geo.setAttribute('position',new Attribut
 const pattern={slot:'carpet',mode:'cloth',selector:'top',patternId:'rune-a',palette:['#b7a185','#315b67'],scale:1}; // Used on real fixture triangles and restored overrides.
 (async()=>{
   assert.equal(api.normalize({scale:NaN}).scale,1);
+  const primaryPlacementSource={motifDataUrl:'data:primary',motifScale:.6,usageScaleMultiplier:2}; // Frozen library motifs must not be mutated by rug placement changes.
+  const overpassPlacementSource={motifDataUrl:'data:overpass',motifScale:1.2,usageOffsetX:7};
+  const placed=api.placedPatterns({scale:1,patterns:[primaryPlacementSource,overpassPlacementSource],
+    layerTransforms:[{motifScale:2,scale:3,rotationDeg:10,offsetX:.5},{motifScale:.5,scale:4,offsetY:.25}]},null,[256,256,1]);
+  assert.equal(placed[0].motifScale,1.2,'rug primary motif zoom applies independently');
+  assert.equal(placed[1].motifScale,.6,'rug overpass motif zoom applies independently');
+  assert.equal(placed[0].usageScaleMultiplier,6,'existing per-surface pattern-scale multiplier remains intact');
+  assert.equal(placed[1].usageOffsetY,64,'existing per-surface tile translation remains intact');
+  assert.equal(primaryPlacementSource.motifScale,.6,'primary source motif remains unchanged');
+  assert.equal(overpassPlacementSource.motifScale,1.2,'overpass source motif remains unchanged');
+
   assert.equal(api.normalize({mode:"engraving",opacity:0}).engravingCoreOpacity,0,"zero opacity must still hide the entire carving");
   assert.equal(api.normalize({scale:-3}).scale,.05);
   assert.equal(api.normalize({opacity:Infinity}).opacity,1);
@@ -132,6 +143,10 @@ const pattern={slot:'carpet',mode:'cloth',selector:'top',patternId:'rune-a',pale
   api.setGlowState(glowSource,{intensity:1.2,pulseSpeed:8,pulseDepth:.9,color:'#ff9a28'});
   assert.equal(glowSource.userData.furniturePatternGlowState.intensity,1.2,'fuse runtime can raise glyph glow intensity');
   assert.equal(glowSource.userData.furniturePatternGlowState.pulseSpeed,8,'fuse runtime can accelerate glyph pulses');
+  const glowShader={fragmentShader:'#include <map_fragment>'}; // Exercise the real material hook without a WebGL context.
+  glowOverlay.userData.engravingGlowMesh.material.onBeforeCompile(glowShader);
+  assert.match(glowShader.fragmentShader,/diffuseColor\.a \*= texture2D\(map, vUv\)\.a/);
+  assert(!glowShader.fragmentShader.includes('#include <map_fragment>'),'the glow must not multiply orange by the dark carving RGB');
   const oldGlow=glowOverlay.userData.engravingGlowMesh;
   glowOverlay.material.dispose();
   assert.equal(oldGlow.material.disposed,true,'disposing the engraving also disposes its additive glow material');
@@ -237,12 +252,15 @@ const pattern={slot:'carpet',mode:'cloth',selector:'top',patternId:'rune-a',pale
   placement.refresh(pattern);
   assert(fields.get('dye-base').children.some(option=>option.value==='dye:CLOTH:silver'),'full game dye catalog is available');
   fields.get('dye-base').value='dye:CLOTH:cream';fields.get('dye-base').onchange();assert.equal(baseInput.value,'#FFF0CC');
-  fields.get('overpass').value='rune-b';fields.get('repeat-1').checked=false;fields.get('zoom-1').value='2';fields.get('rotation-1').value='90';fields.get('x-1').value='.5';fields.get('y-1').value='-.25';
+  fields.get('overpass').value='rune-b';fields.get('repeat-1').checked=false;fields.get('zoom-1').value='2';fields.get('motif-1').value='1.75';fields.get('rotation-1').value='90';fields.get('x-1').value='.5';fields.get('y-1').value='-.25';
   const instance=placement.read(pattern),saved=JSON.parse(JSON.stringify(instance));
   assert.equal(saved.patterns.length,2);assert.equal(saved.overpassPatternId,'rune-b');assert.equal(saved.patterns[1].motifDataUrl,'data:b');
+  assert.equal(saved.layerTransforms[1].motifScale,1.75,'overpass motif zoom survives furniture placement save');
   placement.refresh(saved);assert.equal(fields.get('repeat-1').checked,false);assert.equal(fields.get('x-1').value,.5);
+  assert.equal(Number(fields.get('motif-1').value),1.75,'furniture editor reloads overpass motif zoom');
   const stack=api.placedPatterns(api.normalize(saved),null,[512,512,.5]);
   assert.equal(stack[1].tiling,false);assert.equal(stack[1].usageRotationDeg,90);assert.equal(stack[1].usageScaleMultiplier,2);assert.equal(stack[1].usageOffsetX,64);assert.equal(stack[1].usageOffsetY,-32);
+  assert.equal(stack[1].motifScale,1.75,'rug compositor receives persisted second-slot motif zoom');
   await api.renderTile(saved,null,[512,512,.5]);assert.equal(stacks.at(-1)[1].tiling,false);assert.equal(stacks.at(-1)[1].usageOffsetX,64,'actual compositor receives the instance offset');
   assert.equal(definitions[1].pattern.usageOffsetX,undefined,'instance placement never mutates a library motif');
   assert.equal(api.placedPatterns(api.normalize(pattern),null,[256,256])[0].usageOffsetX,undefined,'other instances retain their original placement');

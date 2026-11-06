@@ -135,7 +135,7 @@ const game=source('docs/js/dev-random-ruin-interior-map.js');
 const bootstrap=source('docs/js/dev-random-ruin-bootstrap.js');
 const simple=source('docs/js/dev-random-ruin-simple-puzzles.js');
 const sanctum=source('docs/js/dev-random-ruin-sanctum.js');
-assert(game.includes("requestedRuinType==='hachutu' ? window.DevHachutuRuin?.reserve"),'wing projection wired');
+assert(game.includes("requestedRuinType==='hachutu'?window.DevHachutuRuin?.reserve?.(cols,rows)"),'Hachutu wing projection must retain its exclusive authored reservation');
 assert(game.includes("opts.site===true || !devModeEnabled()"),'the experimental generator is dev-only');
 assert(game.includes("hachutu:ruin?.hachutu===true"),'reroll preserves ruin type');
 assert(game.includes("window.DevHachutuRuin?.isDeadlyPit"),'abyss invokes fatal-fall handler');

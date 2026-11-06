@@ -983,7 +983,7 @@
     const lines = [];
     lines.push('Pixel Probe report');
     const interiorLightingDebug = window.CloudForestFog?.getDebugState?.(); // Copies darkness and light-profile changes into the existing mobile report.
-    if (interiorLightingDebug) lines.push(`Interior lighting: darkness=${interiorLightingDebug.undergroundDarknessOverlayAlpha} lastMask=${interiorLightingDebug.lastInteriorDarknessDraw?.alpha ?? 'none'} activeFarmhouse=${interiorLightingDebug.lastInteriorDarknessDraw?.farmhouseSceneActive === true} radius=x${interiorLightingDebug.interiorLightRadiusMultiplier} falloff=${interiorLightingDebug.interiorLightFalloff} windows=${interiorLightingDebug.daylightWindowMasks?.sources || 0} daylight=${(interiorLightingDebug.daylightWindowMasks?.daylight ?? 0).toFixed(2)} stained-glass auras=${interiorLightingDebug.daylightWindowMasks?.colorAuras || 0}; ${interiorLightingDebug.latestChange}`); // Existing copyable mobile report now confirms colored daylight actually reached the shared compositor.
+    if (interiorLightingDebug) lines.push(`Interior lighting: darkness=${interiorLightingDebug.undergroundDarknessOverlayAlpha} lastMask=${interiorLightingDebug.lastInteriorDarknessDraw?.alpha ?? 'none'} activeFarmhouse=${interiorLightingDebug.lastInteriorDarknessDraw?.farmhouseSceneActive === true} radius=x${interiorLightingDebug.interiorLightRadiusMultiplier} falloff=${interiorLightingDebug.interiorLightFalloff} windows=${interiorLightingDebug.daylightWindowMasks?.sources || 0} daylight=${(interiorLightingDebug.daylightWindowMasks?.daylight ?? 0).toFixed(2)} stained-glass auras=${interiorLightingDebug.daylightWindowMasks?.colorAuras || 0}; outdoor lights=${interiorLightingDebug.outdoorLightVisibility?.drawn ?? 0}/${interiorLightingDebug.outdoorLightVisibility?.considered ?? 0} culled=${interiorLightingDebug.outdoorLightVisibility?.culled ?? 0} fading=${interiorLightingDebug.outdoorLightVisibility?.fading ?? 0}; ${interiorLightingDebug.latestChange}`); // Existing mobile Pixel Probe now reports real outdoor distance culling alongside interior mask diagnostics.
     const portraitSpeciesDebug = window.portraitSpeciesLoadSnapshot?.(); // Identifies incomplete data loads directly in copied mobile reports.
     if (portraitSpeciesDebug) lines.push('Portrait species loading: ' + JSON.stringify(portraitSpeciesDebug));
     const playerAppearanceDebug = window.__playerAvatarRefreshDebug?.(); // Shows saved versus rendered identity and the latest rebuild failure.
@@ -1179,6 +1179,17 @@
     const climbSafety = window.ClimbSystem?.debug; // Used to diagnose mounted-climb rejection without desktop developer tools.
     if (climbSafety) {
       lines.push(`Climb safety: active=${climbSafety.playerClimbing} mount=${climbSafety.mountRideState} lastBlock=${climbSafety.lastBlockReason || 'none'}${climbSafety.lastBlockReason ? `/${climbSafety.lastBlockRideState}` : ''}${Number.isFinite(climbSafety.lastWallFacingAngle) ? ` wallFacing=${climbSafety.lastWallFacingSource || 'unknown'}:${(climbSafety.lastWallFacingAngle * 180 / Math.PI).toFixed(1)}°/${climbSafety.lastWallFacingCardinal || '?'}` : ''}`);
+    }
+    const crawl = window.CliffCrawlPresentation?.getDebug?.(); // Report live grip contact and hidden held-object count without desktop devtools.
+    if (crawl?.active || crawl?.error) lines.push(`Cliff crawl: route=${crawl.routeId ?? '-'} moving=${!!crawl.moving} handIK=${!!crawl.handRigOwned} footIK=${!!crawl.feetPosed} hiddenHeld=${crawl.hiddenHeldVisuals ?? 0} hook=${!!crawl.hookInstalled}${crawl.error ? ' error=' + crawl.error : ''}`);
+    const cliffRegistry = window.CliffElevatedSurfaces?.debugSnapshot?.(); // Scoped CellGrid3D + DynamicSurfaces status for mobile, no console required.
+    const cliffGraph = window.CliffRouteNetwork?.debugSnapshot?.(); // Surfaces and route proof must agree after terrain regeneration.
+    if (cliffRegistry?.areas?.length || cliffGraph?.areas?.length) {
+      const support = cliffRegistry?.areas?.[cliffRegistry.areas.length - 1];
+      const route = cliffGraph?.areas?.find?.(item => item.area === support?.area)
+        || cliffGraph?.areas?.[cliffGraph.areas.length - 1];
+      lines.push(`Cliff navigation: area=${support?.area || route?.area || '-'} handholds=${route?.routes ?? '?'} raised=${support?.balconies ?? route?.balconies ?? '?'} supports=${support?.supportRectangles ?? '?'} unreachablePlateaus=${route?.unreachablePlateaus ?? '?'} unreachableBalconies=${route?.unreachableBalconies ?? '?'} invalidHops=${route?.invalidHops ?? '?'} rejectedRoutes=${route?.rejectedRoutes ?? '?'} error=${cliffRegistry?.lastError || 'none'}`);
+      if (climbSafety?.balcony) lines.push(`Cliff player: shelf=${climbSafety.balcony} route=${climbSafety.handholdRoute ?? '-'} node=${climbSafety.handholdNode ?? '-'}`);
     }
     const creatureDeathDebug = window.CreatureDeath?.getDebug?.(); // Used to make interrupted lethal-hit recovery visible in copyable mobile probe reports.
     if (creatureDeathDebug?.lastRecovery) {

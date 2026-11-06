@@ -509,7 +509,7 @@
         // side (inventory[key] to the bag ceiling) after already removing the full
         // qty from bin used to vanish the overflow: it left the box, but the
         // pack stack was already at/near its cap, so it never arrived there.
-        const room = Math.max(0, window.InventoryStacks.MAX_TOTAL - (deps.inventory[key] || 0)); // Past 99 the pack shows another stack (js/inventory-stacks.js).
+        const room = Math.max(0, window.InventoryStacks.MAX_TOTAL - (deps.inventory[key] || 0)); // Past 999 the pack shows another stack (js/inventory-stacks.js).
         const moved = Math.max(0, Math.min(qty, bin[key] || 0, room));
         if (moved < 1) return 0;
         const originalCount = bin[key]; // The Shipping Box owns the source counts until the return succeeds.

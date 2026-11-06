@@ -82,7 +82,7 @@ h2.secTitle:first-child{margin-top:0}
 #log{flex-shrink:0;border-top:1px solid var(--line);background:#000;color:#7fd88a;
   font:11px/1.4 ui-monospace,Menlo,Consolas,monospace;padding:4px 10px;max-height:70px;overflow-y:auto;white-space:pre-wrap}
 </style>
-<script src="../../js/panel-ui.js?v=20261103furpaint3"></script>
+<script src="../../js/panel-ui.js?v=20261106hlantern7"></script>
 </head>
 <body>
 <div id="app">
@@ -268,13 +268,105 @@ function renderPoolDetail() {
     <h2 class="secTitle">Pool</h2>
     <div class="entryRow">
       <div class="field wide"><label>Label</label><input id="poolLabelInput" value="${esc(pool.label||'')}"></div>
+      <div class="field"><label>Pool type</label><select id="poolKindInput">
+        <option value="independent">Independent item entries</option>
+        <option value="mixed">Mixed source pools</option>
+      </select></div>
       <button class="danger small" id="deletePoolBtn">Delete Pool</button>
     </div>
-    <h2 class="secTitle">Entries</h2>
-    <div id="poolEntries"></div>
-    <button class="secondary small" id="addEntryBtn">+ Add Entry</button>
+    <div id="mixedPoolEditor"></div>
+    <div id="independentPoolEditor">
+      <h2 class="secTitle">Entries</h2>
+      <div id="poolEntries"></div>
+      <button class="secondary small" id="addEntryBtn">+ Add Entry</button>
+    </div>
   `;
   $('poolLabelInput').addEventListener('input', e => { pool.label = e.target.value; renderPoolList(); });
+  const kindSelect = $('poolKindInput'); // One native mobile-accessible selector per pool; legacy entry tables remain default.
+  kindSelect.value = pool.kind === 'mixed' ? 'mixed' : 'independent';
+  kindSelect.addEventListener('change', e => {
+    if (e.target.value === 'mixed') {
+      pool.kind = 'mixed';
+      pool.rolls ??= 1;
+      pool.sourcePools ??= [];
+    } else {
+      delete pool.kind;
+      delete pool.rolls;
+      delete pool.sourcePools;
+    }
+    renderPoolDetail();
+  });
+  const mixedEditor = $('mixedPoolEditor'); // Source weights live in the same JSON and survive editor download / local overrides.
+  const independentEditor = $('independentPoolEditor');
+  independentEditor.hidden = pool.kind === 'mixed';
+  if (pool.kind === 'mixed') {
+    const title = document.createElement('h2');
+    title.className = 'secTitle';
+    title.textContent = 'Mixed loot sources';
+    mixedEditor.appendChild(title);
+    const explanation = document.createElement('p');
+    explanation.className = 'iMuted';
+    explanation.textContent = 'Each draw selects one populated source by its relative weight. Empty placeholder pools are skipped until authored; cycles are rejected by the runtime.';
+    mixedEditor.appendChild(explanation);
+    const rollLabel = document.createElement('label');
+    rollLabel.textContent = 'Draws per mixed roll (1–10)';
+    const rolls = document.createElement('input');
+    rolls.type = 'number'; rolls.min = '1'; rolls.max = '10'; rolls.step = '1';
+    rolls.value = String(pool.rolls ?? 1);
+    rolls.addEventListener('change', () => {
+      pool.rolls = Math.max(1, Math.min(10, Number.parseInt(rolls.value, 10) || 1));
+      rolls.value = String(pool.rolls);
+    });
+    rollLabel.appendChild(rolls);
+    mixedEditor.appendChild(rollLabel);
+    pool.sourcePools ??= [];
+    pool.sourcePools.forEach((source, index) => {
+      const row = document.createElement('div');
+      row.className = 'entryRow';
+      const sourceLabel = document.createElement('label');
+      sourceLabel.textContent = 'Source pool';
+      const choice = document.createElement('select');
+      const sourceIds = [...new Set([...Object.keys(lootData.pools || {}), String(source.poolId || '')])].filter(Boolean);
+      for (const id of sourceIds) {
+        const option = new Option(id + (id === state.selectedPoolId ? ' (self; rejected)' : ''), id);
+        choice.add(option);
+      }
+      choice.value = source.poolId || '';
+      choice.addEventListener('change', () => { source.poolId = choice.value; });
+      sourceLabel.appendChild(choice);
+      row.appendChild(sourceLabel);
+      const weightLabel = document.createElement('label');
+      weightLabel.textContent = 'Weight';
+      const weight = document.createElement('input');
+      weight.type = 'number'; weight.min = '0'; weight.max = '100'; weight.step = '0.25';
+      weight.value = String(source.weight ?? 1);
+      weight.addEventListener('change', () => {
+        source.weight = Math.max(0, Math.min(100, Number(weight.value) || 0));
+        weight.value = String(source.weight);
+      });
+      weightLabel.appendChild(weight);
+      row.appendChild(weightLabel);
+      const remove = document.createElement('button');
+      remove.type = 'button'; remove.className = 'danger small'; remove.textContent = 'Remove';
+      remove.addEventListener('click', () => { pool.sourcePools.splice(index, 1); renderPoolDetail(); });
+      row.appendChild(remove);
+      mixedEditor.appendChild(row);
+    });
+    const addSource = document.createElement('button');
+    addSource.type = 'button'; addSource.className = 'secondary small'; addSource.textContent = '+ Add source';
+    addSource.addEventListener('click', () => {
+      const candidate = Object.keys(lootData.pools || {}).find(id => id !== state.selectedPoolId && !pool.sourcePools.some(source => source.poolId === id));
+      if (!candidate) { log('No remaining pool available as a source.'); return; }
+      pool.sourcePools.push({ poolId: candidate, weight: 1 }); renderPoolDetail();
+    });
+    mixedEditor.appendChild(addSource);
+    const status = document.createElement('p');
+    status.className = 'iMuted';
+    const live = pool.sourcePools.filter(s => lootData.pools?.[s.poolId]?.entries?.length && Number(s.weight) > 0);
+    status.textContent = live.length + ' populated independent sources available; ' +
+      (pool.sourcePools.length - live.length) + ' empty, nested, or disabled source(s).';
+    mixedEditor.appendChild(status);
+  }
   $('deletePoolBtn').addEventListener('click', () => {
     if (!confirm('Delete pool "' + state.selectedPoolId + '"?')) return;
     delete lootData.pools[state.selectedPoolId];
