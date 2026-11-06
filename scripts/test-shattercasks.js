@@ -670,22 +670,25 @@ async function arenaScenario() {
   assert.equal(cancelledThrows,1,'incoming hit also cancels the shared held throw pose');
   assert.equal(game.Shattercasks.debugSnapshot().throwAim,null,'detonation clears aim');
   assert.equal(rebuilt.material[1].visible,true,'detonation restores the rear portrait');
-  const spare=game.Shattercasks.activeBurdenRecords().find(vase=>!vase.exploded&&!vase.carried);
-  assert(spare,'a second real Burden is available for back impact validation');
+  const spareTile=await game.Shattercasks.spawnRandomInDevArena();
+  const spare=game.Shattercasks.getBurden(spareTile.id,currentArea);
+  assert(spare,'a fresh real Burden is available for back impact validation after chain reactions');
   player.x=(spare.col+.5)*64;player.y=(spare.row+.5)*64;
   body.position.set(player.x/64,0,player.y/64); // The physical body root follows the actor between item pickups.
   assert(game.Shattercasks.pickUp(spare),'pickup of a spare charge succeeds');
   assert(game.Shattercasks.stowOnBack(),'spare charge is stowed on the back');
   assert.equal(game.Shattercasks.debugSnapshot().backCarried?.id,spare.id);
+  const carrierX=player.x/64,carrierZ=player.y/64;
+  const backBlastIndex=blasts.length;
   player.lastAttackReceivedAt+=500; // ResourceSystem's direct-hit timestamp advances for a real impact.
   game.Combat.update(.016);
   assert.equal(game.Shattercasks.debugSnapshot().backCarried,null,'taking a hit detonates the back charge');
   assert.equal(game.Shattercasks.getBurden(spare.id,currentArea),null,'the real charge is consumed exactly once');
-  assert.equal(blasts.at(-1)?.x,player.x/64,'back explosion uses the carrier exact world X');
-  assert.equal(blasts.at(-1)?.z,player.y/64,'back explosion uses the carrier exact world Z');
+  assert.equal(blasts[backBlastIndex]?.x,carrierX,'back explosion uses the carrier exact world X');
+  assert.equal(blasts[backBlastIndex]?.z,carrierZ,'back explosion uses the carrier exact world Z');
   for(let r=1;r<8;r++)for(let c=1;c<8;c++)tiles[r][c]={type:'rock'};
   await assert.rejects(game.Shattercasks.spawnRandomInDevArena(),/No unoccupied walkable tile/);
-  assert.equal(modelBuilds,4,'no art created for rejected requests');
+  assert.equal(modelBuilds,5,'no art created for rejected requests');
 }
 (async()=>{
   await arenaScenario();

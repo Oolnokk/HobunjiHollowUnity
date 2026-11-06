@@ -254,6 +254,37 @@
     return true;
   }
 
+  // The reaching-obelisk bands are two tiles wide and change face once
+  // every three vertical cells. Their adjacent 1-cell-height rectangles are
+  // physically continuous, but the ordinary wall-climb session would stop
+  // at each rectangle top. Transfer only between this authored style's
+  // touching rectangles; don't change behavior for cliffs, furniture or vines.
+  function continueObeliskClimb(session, output, direction) {
+    if(session.surface?.style!=='obelisk-stone')return false;
+    let best=null,bestScore=Infinity;
+    for(const candidate of surfaces.values()){
+      if(candidate===session.surface||candidate.style!=='obelisk-stone'||candidate.scope!==session.surface.scope||!candidate.enabled)continue;
+      if(direction>0&&(candidate.y0>output.y+.12||candidate.y1<=output.y+.03))continue;
+      if(direction<0&&(candidate.y1<output.y-.12||candidate.y0>=output.y-.03))continue;
+      if(direction===0&&(candidate.y0>output.y+.1||candidate.y1<output.y-.1))continue;
+      const u=clamp(candidate.axis==='x'?output.x:output.z,
+        candidate.u0+DEFAULTS.edgeMargin,candidate.u1-DEFAULTS.edgeMargin);
+      const wx=wallX(candidate,u)+candidate.normal.x*session.standOff;
+      const wz=wallZ(candidate,u)+candidate.normal.z*session.standOff;
+      const d=Math.hypot(wx-output.x,wz-output.z);
+      if(d>1.48||d>=bestScore)continue; // Adjacent tile/corner only; never leap across an entire pillar.
+      bestScore=d;best={surface:candidate,u};
+    }
+    if(!best)return false;
+    const next=attach(best.surface,{x:wallX(best.surface,best.u),z:wallZ(best.surface,best.u),
+      y:output.y+(direction>0?.02:direction<0?-.02:0)},
+      {standOff:session.standOff});
+    const p=deps.player;
+    p.onClimbSurface=next;p.wallClimbY=next.v;
+    applyPose(next);
+    return true;
+  }
+
   // Per-frame, called from the movement loop while player.onClimbSurface is set.
   function updatePlayer(dt) {
     const p = deps.player, session = p.onClimbSurface;
@@ -268,15 +299,17 @@
         release();
         if (window.DevRandomRuin?.setPlayerWorldPoint) window.DevRandomRuin.setPlayerWorldPoint({ x: exit.x, y: exit.y, z: exit.z }, { grounded: true });
         else { p.x = exit.x * deps.TILE; p.y = exit.z * deps.TILE; }
-      }
-    } else if (out.event === 'bottom') release();
+      } else continueObeliskClimb(session,out,1);
+    } else if (out.event === 'bottom') {
+      if(!continueObeliskClimb(session,out,-1))release();
+    }
     else if (out.event === 'edge') {
       const exit = sideExitPoint(session.surface, out.edge, session.v, (x, z, y) => deps.canStandAt?.(x, z, y));
       if (exit) { // A platform level with the climber just past the wall's end: step off onto it. Nothing there: stay on the wall.
         release();
         if (window.DevRandomRuin?.setPlayerWorldPoint) window.DevRandomRuin.setPlayerWorldPoint({ x: exit.x, y: exit.y, z: exit.z }, { grounded: true });
         else { p.x = exit.x * deps.TILE; p.y = exit.z * deps.TILE; }
-      }
+      } else continueObeliskClimb(session,out,0);
     }
   }
 

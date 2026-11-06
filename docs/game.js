@@ -403,11 +403,6 @@
 
         if (window.DialogueContent?.hasQueuedConversationTree?.(rec?.id)) { window.DialogueContent.beginNpcConversation(rec); return; }
 
-        if (rec?.id === 'spearhead_unumanuk' && window.CombatTutorial?.active()) {
-          window.DialogueContent?.beginNpcConversation(rec); // Automatic coaching must not be displaced by procedural requests.
-          return;
-        }
-
         // Task turn-in — checked before everything else (including a fresh
         // request/favor ask): if this NPC posted/asked a quest that's now
         // sitting ready in the player's log, offer to hand it over right
@@ -415,16 +410,22 @@
         // one.
         const _turnInTask = rec?.id ? window.ProceduralTasks.getTurnInReadyTaskForNpc(rec.id) : null;
         if (_turnInTask) {
-          const _turnInLabel = _turnInTask.items.map(it => `${ITEM_DEFS[it.itemKey]?.label || it.itemKey} ×${it.qty}`).join(', ');
+          const _commissionPrompt = _turnInTask.commission ? window.NpcCraftingCommissionDelivery?.turnInPrompt?.(_turnInTask) : null; // Crafting jobs carry a real garment/furniture deliverable, not fetch items.
+          const _turnInLabel = (_turnInTask.items || []).map(it => `${ITEM_DEFS[it.itemKey]?.label || it.itemKey} ×${it.qty}`).join(', '); // Ordinary request/favor items still use their existing labels.
           window.DialogueContent?.beginSyntheticChoice(rec);
           window.DialogueContent?.renderDlgNode({
             type: 'choice',
-            text: `Ah — did you bring what I asked for?`,
+            text: _commissionPrompt?.text || 'Ah — did you bring what I asked for?',
             choices: [
-              { label: `Here's your ${_turnInLabel}.`, actions: [{ type: 'turnInTask', taskId: _turnInTask.id }] },
+              { label: _commissionPrompt?.label || (_turnInLabel ? `Here's your ${_turnInLabel}.` : 'Here is what you asked for.'), actions: [{ type: 'turnInTask', taskId: _turnInTask.id }] },
               { label: 'Not yet.', actions: [] },
             ],
           });
+          return;
+        }
+
+        if (rec?.id === 'spearhead_unumanuk' && window.CombatTutorial?.active()) {
+          window.DialogueContent?.beginNpcConversation(rec); // Resume active coaching unless a finished task was just handed in; never replace training with a new request/favor.
           return;
         }
 
@@ -30105,7 +30106,7 @@
         normalizeStationLabel,
         canAccessContent,
         setQuestStatus,
-        turnInTask: window.ProceduralTasks.turnInTask,
+        turnInTask: taskId => window.ProceduralTasks.turnInTask(taskId), // Resolve the latest commission adapter at click time rather than capturing a pre-patch fetch-only handler.
         showToast,
         openMenu,
         closeNpcDialogue,
