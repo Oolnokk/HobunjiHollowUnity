@@ -415,13 +415,14 @@
         // one.
         const _turnInTask = rec?.id ? window.ProceduralTasks.getTurnInReadyTaskForNpc(rec.id) : null;
         if (_turnInTask) {
-          const _turnInLabel = _turnInTask.items.map(it => `${ITEM_DEFS[it.itemKey]?.label || it.itemKey} ×${it.qty}`).join(', ');
+          const _commissionPrompt = _turnInTask.commission ? window.NpcCraftingCommissionDelivery?.turnInPrompt?.(_turnInTask) : null; // Crafting jobs carry a real garment/furniture deliverable, not fetch items.
+          const _turnInLabel = (_turnInTask.items || []).map(it => `${ITEM_DEFS[it.itemKey]?.label || it.itemKey} ×${it.qty}`).join(', '); // Ordinary request/favor items still use their existing labels.
           window.DialogueContent?.beginSyntheticChoice(rec);
           window.DialogueContent?.renderDlgNode({
             type: 'choice',
-            text: `Ah — did you bring what I asked for?`,
+            text: _commissionPrompt?.text || 'Ah — did you bring what I asked for?',
             choices: [
-              { label: `Here's your ${_turnInLabel}.`, actions: [{ type: 'turnInTask', taskId: _turnInTask.id }] },
+              { label: _commissionPrompt?.label || (_turnInLabel ? `Here's your ${_turnInLabel}.` : 'Here is what you asked for.'), actions: [{ type: 'turnInTask', taskId: _turnInTask.id }] },
               { label: 'Not yet.', actions: [] },
             ],
           });
@@ -30094,7 +30095,7 @@
         normalizeStationLabel,
         canAccessContent,
         setQuestStatus,
-        turnInTask: window.ProceduralTasks.turnInTask,
+        turnInTask: taskId => window.ProceduralTasks.turnInTask(taskId), // Resolve the latest commission adapter at click time rather than capturing a pre-patch fetch-only handler.
         showToast,
         openMenu,
         closeNpcDialogue,
