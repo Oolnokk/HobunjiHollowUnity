@@ -1866,12 +1866,12 @@
     const source=context.meta?.rooms?.[0],selection=context.singleRoomTrial; // Frozen generator choice, including across solvability retries.
     if(context.meta?.rooms?.length!==1||!source||!selection?.kind)throw new Error('Puzzle Lab requires exactly one V50 room.');
     const Challenge=window.RuinLayerChallenges; // Reuses the multi-floor game's actual puzzle implementation.
-    if(!Challenge?.TYPES?.includes(selection.kind))throw new Error('Missing playable puzzle type '+selection.kind);
     const nativeKind=window.DevRuinSingleRoomTrial?.NATIVE_VARIANTS?.[selection.kind]||null; // Native V50 trial fixtures keep their own authoritative controls and mechanism state.
+    if(!nativeKind&&!Challenge?.TYPES?.includes(selection.kind))throw new Error('Missing playable puzzle type '+selection.kind);
     if(nativeKind){
       const fixture=context.meta?.singleRoomNative,mechanism=window.DevRandomRuin?.mechanismInfo?.(fixture?.mechanismId);
       if(fixture?.kind!==nativeKind||!mechanism?.root||!mechanism.gated)
-        throw new Error('Selected native V50 puzzle was not mounted: '+selection.kind);
+        throw new Error('Selected native V50 puzzle was not mounted: '+selection.kind+' · fixture '+(fixture?.kind||'missing')+' · mechanism '+(mechanism?'ungated':'missing')); // Mobile diagnostics distinguish wrong family, ungated mechanism and missing V50 fixture.
       const owner=state; // Native selection and completion belong to this one reroll's context.
       const trial={id:fixture.mechanismId,kind:selection.kind,ready:true,linked:true,solved:false,disposed:false,
         nativeFixture:fixture,
