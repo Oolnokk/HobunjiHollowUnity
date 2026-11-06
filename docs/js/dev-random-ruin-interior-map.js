@@ -1473,9 +1473,72 @@
     // Rooms with stacked floors (shaft hubs, js/shaft-hub.js) sample relative to where the player stands: the highest surface in a fixed band would be the balcony overhead, so the floor under it could never be walked. Ordinary ruins keep the fixed band.
     const relative=Number.isFinite(refY)?DS.sampleSupport(x,z,{minY:refY-8,maxY:refY+MAX_STEP_HEIGHT+.02,pad:.02}):null;
     return{x,z,pit:DS.pointInPit(x,z,PLAYER_RADIUS*.25),support:relative||DS.sampleSupport(x,z,{minY:-4,maxY:5,pad:.02})};} // Horizontal collision is already resolved by the ordinary registered interior grid; this helper owns only ruin-specific vertical support/pit state.
+  function reconcileObeliskPlayer(now,x,z){
+    const obelisks=ruin.shaftObeliskRuntime; // The selected traversal owns falling between pillars; the generic 650ms fall would bypass its midair grabs.
+    if(!obelisks||(!obelisks.isVoidAt(x,z)&&!ruin.obeliskFall))return false;
+    const currentY=Number(ruin.supportY)||0;
+    const pitFloor=obelisks.pitY;
+    const currentPillar=[...obelisks.columns.values()].find(p=>
+      ruin.supportId==='shaft-obelisks-'+p.id); // Scoped moving-platform ID is stable across support updates.
+    if(currentPillar && !ruin.obeliskFall){
+      const prior=Number(ruin.obeliskAttachedY);
+      if(Number.isFinite(prior)){
+        ruin.supportY+=currentPillar.y-prior; // Carry the player exactly with the top's world Y; never apply a fake climb hop.
+        syncRuinPresentationHeight(ruin.supportY);
+      }
+      ruin.obeliskAttachedY=currentPillar.y;
+    }else ruin.obeliskAttachedY=null;
+    if(!ruin.obeliskFall){
+      const levelY=Number(ruin.supportY)||0;
+      // A horizontal approach cannot phase through the solid side of a raised
+      // column. A successful climb/mantle is processed earlier in reconcilePlayer.
+      const inside=[...obelisks.columns.values()].find(p=>
+        Math.abs(x-p.x)<p.width/2-.05&&Math.abs(z-p.z)<p.width/2-.05
+        &&levelY<p.y-.25&&levelY>=p.baseY);
+      if(inside){
+        deps.player.x=ruin.lastAcceptedPx.x;deps.player.y=ruin.lastAcceptedPx.y;
+        syncRuinPresentationHeight(levelY);
+        return true;
+      }
+      const near=DS.sampleSupport(x,z,{minY:levelY-.3,maxY:levelY+MAX_STEP_HEIGHT+.02,pad:.015});
+      if(near){
+        ruin.supportId=near.id;ruin.supportY=near.y;
+        ruin.lastAcceptedPx={x:deps.player.x,y:deps.player.y};
+        ruin.lastSafePx={...ruin.lastAcceptedPx};
+        syncRuinPresentationHeight(near.y);
+        return true;
+      }
+      ruin.obeliskFall={y:levelY,v:0,lastMs:now,startedY:levelY}; // Gravity takes over instead of the instantaneous downward support sampler.
+      ruin.supportId=null;ruin.obeliskAttachedY=null;
+    }
+    const fall=ruin.obeliskFall;
+    const dt=clamp((now-fall.lastMs)/1000,0,.05);
+    fall.lastMs=now;
+    const previous=fall.y;
+    const next=previous+fall.v*dt-.5*obelisks.plan.physics.gravity*dt*dt;
+    fall.v-=obelisks.plan.physics.gravity*dt;
+    const surface=DS.sampleSupport(x,z,{minY:pitFloor-2,maxY:previous+.05,pad:.015});
+    if(surface&&next<=surface.y+.02&&previous>=surface.y-.05){
+      ruin.obeliskFall=null;ruin.supportId=surface.id;ruin.supportY=surface.y;
+      ruin.lastAcceptedPx={x:deps.player.x,y:deps.player.y};
+      ruin.lastSafePx={...ruin.lastAcceptedPx};
+      syncRuinPresentationHeight(surface.y);return true;
+    }
+    fall.y=next;ruin.supportY=next;
+    ruin.lastAcceptedPx={x:deps.player.x,y:deps.player.y};
+    syncRuinPresentationHeight(next);
+    if(next<=pitFloor+.12){
+      ruin.obeliskFall=null;ruin.supportId=null;
+      if(window.PlayerDowned?.dieImmediately?.('reaching-obelisks-'+obelisks.tradition)!==true)
+        window.DevRandomRuinSimplePuzzles?.respawnAtCheckpoint?.('reaching-obelisks-'+obelisks.tradition);
+    }
+    return true;
+  }
+
   function reconcilePlayer(now){
     if(window.DevRandomRuinSimplePuzzles?.ownsPlayerMotion?.())return;
     if(deps.player?.climbing||deps.player?.onClimbSurface){ // Scripted climbs and ClimbSurfaces wall grabs both drive the accepted height themselves.
+      ruin.obeliskFall=null; // A midair grab transitions completely into the existing shared climb session.
       const climbY=Number(deps.player.onClimbSurface?deps.player.wallClimbY:deps.player.climbSurfaceY); // Used to advance the ruin's accepted-height baseline during the shared ladder animation so landing is not rejected as an oversized step.
       if(Number.isFinite(climbY)){
         ruin.supportY=climbY;
@@ -1501,6 +1564,7 @@
       return;
     }
     const x=deps.player.x/deps.TILE,z=deps.player.y/deps.TILE; // World position proposed by ordinary ground movement.
+    if(reconcileObeliskPlayer(now,x,z))return;
     const grid=shaftAt(x,z,ruin.supportY);
     // CellGrid3D intentionally models implicit bedrock at level 0; a hole
     // carved into an elevated independent 2D layer is not represented by
@@ -1633,7 +1697,7 @@
     }
     if(ruin.occupancy?.refresh())updateBadge();
   }
-  DS.addBeforeRenderClient(()=>{if(!ruin)return;if(deps.getCurrentArea?.()!==MAP_ID)return;const now=performance.now(),dt=clamp((now-frameLastMs)/1000,0,.05);frameLastMs=now;updateTransitDoors(dt);updateMechanisms(dt);reconcilePlayer(now);ruin.shaftLayerRuntime?.tick?.(dt);ruin.nativeV50Runtime?.tick?.(dt);ruin.shaftStyleTick?.();});
+  DS.addBeforeRenderClient(()=>{if(!ruin)return;if(deps.getCurrentArea?.()!==MAP_ID)return;const now=performance.now(),dt=clamp((now-frameLastMs)/1000,0,.05);frameLastMs=now;updateTransitDoors(dt);updateMechanisms(dt);ruin.shaftObeliskRuntime?.tick?.(dt);reconcilePlayer(now);ruin.shaftLayerRuntime?.tick?.(dt);ruin.nativeV50Runtime?.tick?.(dt);ruin.shaftStyleTick?.();});
 
   const BADGE_PART_ORDER=['base','hooks','motion','simple','hachutu','lich','coverage','shaft'];
   function setDebugBadgePart(part,text){
@@ -1693,7 +1757,8 @@
       (layers.pendingRuntimeLinks?.length?' · HOOK? '+layers.pendingRuntimeLinks.slice(0,4).map(link=>link.kind+'@'+link.wingId).join(','):''))
       :ruin.shaftConnection?(' · shaft '+ruin.shaftConnection.floorCount+' floors · physical hall '+ruin.shaftConnection.length+' cells')
       :ruin.shaftGrids?.size?' · shaft: elevation-aware walls/climbs':''; // Mobile diagnostic without opening a devtools console.
-    setDebugBadgePart('shaft',layerBadge);
+    const ob=ruin.shaftObeliskRuntime?.getState?.(); // Visible in mobile mode, including live switch count and gravity/fall telemetry.
+    setDebugBadgePart('shaft',layerBadge+(ob?' · '+ob.method+' · '+ob.pit+' abyss · switches '+ob.activated+'/'+ob.targets+' · rotations '+ob.rotated+' · moving '+ob.moving+(ruin.obeliskFall?' · FALL '+ruin.obeliskFall.y.toFixed(1):''):''));
     setDebugBadgePart('solo',ruin.singleRoomTrial?(' · LAB '+ruin.singleRoomTrial.kind+' · '+ruin.singleRoomTrial.mode+' · NO LOOT'):''); // Mobile-visible proof of the current isolated challenge.
     setDebugBadgePart('base',MAP_ID+' · seed '+ruin.seed+' · '+(ruin.meta.rooms?.length||0)+' rooms · '+solvabilityLabel+' · puzzles '+maxRoomPuzzles+'/'+capLabel+' max-room · tiles R'+(occupancy?.blocked.length||0)+' G'+(occupancy?.causes.length||0)+' B'+(occupancy?.effects.length||0)+' · cliff '+(ruin.denMaterialMeshCount||0)+' · oldstone '+(ruin.legacyStoneMaterialCount||0)+' · unlit +'+(ruin.unlitConvertedMaterialCount||0)+'/lit '+(ruin.remainingLitMaterialCount||0)+' · combat '+(ruin.wallStyle==='cavern'?'✓':'?')+' · '+ruin.theme+' · dark '+darknessLabel+' · rev '+(occupancy?.revision||0));
     b.style.display='';
@@ -1751,7 +1816,8 @@
 
   window.DevRandomRuin=Object.freeze({getVestibuleRoots:()=>ruin?{stone:ruin.vestibuleStone||null,props:ruin.stoneAgeStats?.props||0,bindings:ruin.rootGrowthBindings?.length||0,rooted:!!ruin.rootedMechanisms,ms:ruin.vestibuleRootMs||0,error:ruin.vestibuleRootError||null}:null,generate,generateStoryVault,reroll:()=>ruin?.shaftTest?generateShaftTest():generate(randomSeed(),ruin?.singleRoomTrial?{singleRoomTrial:true,puzzleType:ruin.singleRoomTrial.mode==='weighted'?'weighted':ruin.singleRoomTrial.kind}:{hachutu:ruin?.hachutu===true,rootMechanisms:ruin?.rootedMechanisms===true,stoneAge:ruin?.stoneAgeRequested===true,composedTrial:ruin?.composedTrialForced===true?true:undefined}),clear:()=>{if(deps?.getCurrentArea?.()===MAP_ID)leaveRuin();else clearRuntime(true);},leave:leaveRuin,exitTo,getInteractionControls:()=>ruin?ruin.controls.filter(control=>control.kind!=='story-vault-pedestal'||window.DelversGuild?.vaultPhase?.()==='search').map(control=>({...control,range:Number.isFinite(Number(control.range))?Number(control.range):CONTROL_RANGE})):[],getNativeV50TestRuntime:()=>devModeEnabled()?ruin?.nativeV50Runtime||null:null, // Developer-mode-only diagnostic handle for Playwright to exercise the actual generated puzzle controls and stage gates; not a gameplay solver.
     getRuntimeContext:()=>ruin?{scene:ruin.scene,grid:ruin.grid,root:ruin.localeRoot,meta:ruin.meta,floorSet:ruin.floorSet,ceilingY:ruin.ceilingY,spawn:{...ruin.spawn},cols:ruin.cols,rows:ruin.rows,sanctumMapSize:ruin.sanctumMapSize,sanctumPlan:ruin.sanctumPlan||null,
-    shaftEntrance:ruin.compactVestibule?window.RuinShaftConnector?.entranceOutside?.(ruin.meta,{x:entryPadX,z:entryPadZ},RUIN_TILE_SCALE)||null:null,seed:ruin.seed,theme:ruin.theme,specialBoss:ruin.specialBoss,ruinName:ruin.ruinName,hachutu:!!ruin.hachutu,stoneAge:!!ruin.stoneAge,stoneAgeStats:ruin.stoneAgeStats||null,shaftHub:!!ruin.shaftHub,singleRoomTrial:ruin.singleRoomTrial||null,noLoot:ruin.noLoot===true,puzzleOptions:{...ruin.puzzleOptions}}:null,getPuzzleGenerationOptions:()=>readPuzzleGenerationOptions(),setPuzzleGenerationOptions:options=>savePuzzleGenerationOptions(options),getOccupancySnapshot:()=>ruin?.occupancy?.snapshot?.()||null,getLastSolvabilityAudit:()=>lastGenerationAudit?JSON.parse(JSON.stringify(lastGenerationAudit)):null,getShaftNetworkState:()=>ruin?.shaftLayerRuntime?.getState?.()||null,
+    shaftEntrance:ruin.compactVestibule?window.RuinShaftConnector?.entranceOutside?.(ruin.meta,{x:entryPadX,z:entryPadZ},RUIN_TILE_SCALE)||null:null,seed:ruin.seed,theme:ruin.theme,specialBoss:ruin.specialBoss,ruinName:ruin.ruinName,hachutu:!!ruin.hachutu,stoneAge:!!ruin.stoneAge,stoneAgeStats:ruin.stoneAgeStats||null,shaftHub:!!ruin.shaftHub,singleRoomTrial:ruin.singleRoomTrial||null,noLoot:ruin.noLoot===true,puzzleOptions:{...ruin.puzzleOptions}}:null,getPuzzleGenerationOptions:()=>readPuzzleGenerationOptions(),setPuzzleGenerationOptions:options=>savePuzzleGenerationOptions(options),getOccupancySnapshot:()=>ruin?.occupancy?.snapshot?.()||null,getLastSolvabilityAudit:()=>lastGenerationAudit?JSON.parse(JSON.stringify(lastGenerationAudit)):null,getShaftNetworkState:()=>ruin?{...ruin.shaftLayerRuntime?.getState?.(),obelisk:ruin.shaftObeliskRuntime?.getState?.()||null,
+      airborne:ruin.obeliskFall?{height:ruin.obeliskFall.y,verticalSpeed:ruin.obeliskFall.v}:null}:null,
     getShaftCollisionMap:(requestedFloor=0)=>{
       if(!ruin?.shaftGrids?.size)return null;
       const count=ruin.shaftHubPlan?.floorCount||1;
