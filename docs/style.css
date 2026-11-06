@@ -665,8 +665,17 @@
       backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
       overflow: hidden;
     }
-    #devRuinLabPanel select { width: 100%; min-height: 36px; font: inherit; }
-    #devRuinLabPanel .fed-action-btn { min-height: 36px; }
+    #devRuinLabPanel { width: min(340px, 92vw); }
+    #devRuinLabPanel select {
+      width: 100%; min-height: 44px; padding: 6px 8px;
+      color: var(--text); background: var(--glass-2);
+      border: 1px solid var(--border-bright); border-radius: 8px; font: inherit;
+    }
+    #devRuinLabPanel .fed-action-btn, #devRuinLabClose { min-height: 44px; }
+    .dev-ruin-lab-summary { padding: 8px; border: 1px solid var(--border); border-radius: 8px; }
+    #devRuinLabHint { margin: 0 0 4px; line-height: 1.4; }
+    #devRuinLabFeedback[data-phase="error"] { color: #ffc1ae; }
+    #devRuinLabFeedback[data-phase="solved"] { color: #9de9b8; }
     /* Farmwork uses the same readable modal shell and controller highlight as Furniture Placement. */
     #farmworkPanel { color: var(--text); width: clamp(275px, 30vw, 360px); z-index: 60; }
     #farmworkContents { display: block; }

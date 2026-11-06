@@ -149,6 +149,12 @@ function runtimeChooseMechanismActivatorType(rng,forcedType=null,linkedCubeDoor=
       ['flat puzzle lab floor', 'plateauData=generateInteriorPlateauPlan(network,rng,density)', 'plateauData=window.__devRuinSingleRoomLab?{levelByCell:Object.fromEntries([...network.floorSet].map(key=>[key,0])),regions:[],focuses:[],stepHeight:INTERIOR_PLATEAU_STEP_HEIGHT,coreTreasureFocusId:null,singleCoreTreasure:false}:generateInteriorPlateauPlan(network,rng,density)'],
       ['one-room native V50 puzzle fixture', nativeLabNeedle, nativeLabReplacement],
       ['single-room native V50 diagnostics metadata', nativeMetaNeedle, nativeMetaReplacement],
+      ['one-room spatial model without phantom pillars',
+        'pillarSlots=interiorSupportPillarSlots(room,network,plateauData,bridgeCorridors,true),pillarClear=',
+        'pillarSlots=window.__devRuinSingleRoomLab?[]:interiorSupportPillarSlots(room,network,plateauData,bridgeCorridors,true),pillarClear='],
+      ['isolated torch route without prerequisite obelisk',
+        'const gate=addTorchRoutePrerequisiteGate(room,route,nestedId);',
+        'const gate=window.__devRuinSingleRoomLab?null:addTorchRoutePrerequisiteGate(room,route,nestedId);'],
       ['clear solo chamber support pillars', 'if(tallAsset){\n    for(const room of network.rooms){', 'if(tallAsset&&!window.__devRuinSingleRoomLab){\n    for(const room of network.rooms){'], // The chosen standalone puzzle owns the chamber's usable floor; ordinary V50 rooms retain their full support network. // Only explicit dev labs skip V50 core-treasure scenery; ordinary ruins are byte-for-byte unchanged.
       ['repository-tree binding', treeNeedle, treeReplacement],
       ['raw-asset URL helper', rawNeedle, rawReplacement],

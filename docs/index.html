@@ -166,7 +166,7 @@
   <script src="js/metal-armor-system.js?v=20261104hPatternQuick1435a"></script>
   <script src="config/colors/config.js?v=20261026h7f369c3"></script>
   <script src="config/attachment-rig-profiles.js?v=20261026homgurkulower03"></script>
-  <link rel="stylesheet" href="style.css?v=20261105puzzleHud2">
+  <link rel="stylesheet" href="style.css?v=20261106puzzleHud3">
   <link rel="stylesheet" href="cooking-ui.css?v=20261009mobiletarget3">
   <link rel="stylesheet" href="ui-element-editor.css?v=20260814a">
   <!-- Shared gameplay presentation: mirrors the outlined text + light translucent containers used by character/save select. -->
@@ -600,7 +600,7 @@
   <script src="js/ruin-wall-faces.js?v=20261106walls1"></script> <!-- Merged stretch-to-fit wall faces; shaft-hub.js builds its stone from them. -->
   <script src="js/shaft-hub.js?v=20261106hcbcd73f"></script>
   <script src="js/ruin-layer-plan.js?v=20261104directVestibule1"></script>
-  <script src="js/dev-ruin-single-room-trial.js?v=20261106h729a2dc"></script> <!-- Samples actual ruin-room puzzle selection odds for the one-room developer lab. -->
+  <script src="js/dev-ruin-single-room-trial.js?v=20261106ha29fde6"></script> <!-- Samples actual ruin-room puzzle selection odds for the one-room developer lab. -->
   <script src="js/ruin-shaft-corridor.js?v=20261104directVestibule1"></script>
   <script src="js/ruin-layer-defense.js?v=20261104soloNoLoot1"></script>
   <script src="js/ruin-layer-challenges.js?v=20261105soloAudit5"></script>
@@ -1117,18 +1117,23 @@
 
   <!-- Runtime-side half of the live Map Editor workflow. Authoring stays in
        tools/map-editor; this panel identifies the active runtime map/layout. -->
-  <div id="devRuinLabPanel" aria-label="Puzzle Lab" hidden>
+  <div id="devRuinLabPanel" aria-label="Puzzle Lab" data-ctrl-panel hidden>
     <div class="fed-header">
       <span>🧩 Puzzle Lab</span>
-      <button class="fed-close" id="devRuinLabClose" type="button" aria-label="Close Puzzle Lab">✕</button>
+      <button class="fed-close" id="devRuinLabClose" type="button" aria-label="Close Puzzle Lab" data-ctrl-cancel>✕</button>
     </div>
-    <div class="fed-scroll">
-      <p id="devRuinLabStatus" class="map-edit-detail" role="status"></p>
+    <div class="fed-scroll" data-ctrl-scroll>
+      <div class="fed-section dev-ruin-lab-summary">
+        <div class="fed-label">Current fixture</div>
+        <strong id="devRuinLabStatus"></strong>
+        <div id="devRuinLabFeedback" class="map-edit-detail" role="status"></div>
+      </div>
       <div class="fed-section map-edit-actions">
         <label for="devRuinLabChoice">Puzzle or mechanism</label>
-        <select id="devRuinLabChoice"></select>
+        <select id="devRuinLabChoice" aria-describedby="devRuinLabHint" data-ctrl-default></select>
+        <p id="devRuinLabHint" class="map-edit-detail"></p>
         <button class="fed-action-btn" id="devRuinLabLoad" type="button">Load selected fixture</button>
-        <button class="fed-action-btn" id="devRuinLabReset" type="button">Reset current fixture</button>
+        <button class="fed-action-btn" id="devRuinLabReset" type="button">Reset same seed</button>
       </div>
     </div>
   </div>
@@ -2910,7 +2915,7 @@
   <!-- Camera-safe utility spyglass: capture Fishing/ActionArcUI init before game.js boots; action-arch prompt and lens are created at DOM ready. -->
   <script src="js/utility-spyglass.js?v=20261103spyglassControls3"></script>
   <!-- Dev-only Random Test Ruin runtime; injects nothing unless Dev Mode is on. -->
-  <script src="js/dev-random-ruin-bootstrap.js?v=20261106hb6b4ed8"></script>
+  <script src="js/dev-random-ruin-bootstrap.js?v=20261106h11725b5"></script>
   <!-- Dev Testing Switchbox: dev-only performance kill switches (audio,
        NPC/creature AI, water sim, low-poly foliage). Must load after
        audio-system.js/water-system.js/foliage-generator.js (wraps their

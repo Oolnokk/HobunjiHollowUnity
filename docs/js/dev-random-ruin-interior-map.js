@@ -1052,13 +1052,18 @@
           size:cfg('generation.size','medium'),density:cfg('generation.density',62),
           roomMin:singleVestibule?1:cfg('generation.roomMin',3),
           roomMax:singleVestibule?1:cfg('generation.roomMax',6),singleRoom:singleVestibule,singleRoomLab:singleRoomTrial, // Avoid a default core moat or raised treasure display conflicting with the one selected challenge.
-          ...(soloChoice?.mode==='mechanism'?{roomPreset:'veryLarge'}:singleRoomTrial&&(['statueDefense','ropeChain'].includes(soloChoice.kind)||nativeSoloType)?{roomPreset:['statueDefense','nativePushBlock'].includes(soloChoice.kind)?'veryLarge':nativeSoloType==='glyphObelisk'?'medium':'large'}:{}), // Standalone mechanisms need clearance from the chamber walls.
+          ...(soloChoice?.mode==='mechanism'||nativeSoloType==='brazier'?{roomPreset:'veryLarge'}:singleRoomTrial&&(['statueDefense','ropeChain'].includes(soloChoice.kind)||nativeSoloType)?{roomPreset:['statueDefense','nativePushBlock'].includes(soloChoice.kind)?'veryLarge':nativeSoloType==='glyphObelisk'?'medium':'large'}:{}), // The torch run and standalone mechanisms need a clear chamber.
           puzzles:singleVestibule?{
              ...Object.fromEntries(Object.keys(puzzleOptions).map(key=>[key,false])),
              ...(nativeSoloType?{[nativeSoloType]:true,maxPerRoom:1,...(nativeSoloType==='brazier'?{stackedObelisk:true}:{})}:{})
            }:puzzleOptions,
            nativePuzzle:nativeSoloType, // The embedded V50 generator authors its real stone gate and matching activator inside the lab.
-          ...(stoneAgeRequested?{pieceSet:'stoneAge',floorProps:'pillarsOnly'}:{})}); // V50 retains the configured multi-room/hallway topology; the quarter-scale stone skin uses its exact walkable/elevation cells.
+          ...(stoneAgeRequested?{pieceSet:'stoneAge',floorProps:'pillarsOnly'}:{})}).catch(error=>{
+            if(!nativeSoloType||!String(error?.message).includes('V50 one-room '+nativeSoloType+' fixture was not authored:'))throw error;
+            lastGenerationAudit.attempts.push({seed:candidateSeed,ok:false,failures:[error.message]});
+            return null; // Try the next deterministic seed when V50 cannot fit the requested fixture.
+          });
+        if(!generated)continue;
         generationMark('projecting-v50-layout-'+(attempt+1));
         const meta=generated.locale?.meta?.interiorShell; if(!meta) throw new Error('V50 generated no interiorShell metadata.');
         if(singleVestibule&&meta.rooms?.length!==1)throw new Error('V50 failed to generate exactly one vestibule room.');
@@ -1791,18 +1796,31 @@
   let puzzleLabMenu; // Holds the in-arena HUD controls for entry, reroll and exit.
   function closePuzzleLabMenu(){
     if(!puzzleLabMenu)return;
+    puzzleLabMenu.lock?.release?.();
+    puzzleLabMenu.lock=null;
     puzzleLabMenu.panel.hidden=true;
     puzzleLabMenu.button.setAttribute('aria-expanded','false');
   }
+  function setPuzzleLabStatus(phase,error){
+    const feedback=puzzleLabMenu?.feedback; // Announces runtime state changes to the visible panel and assistive tech.
+    if(!feedback||!ruin?.singleRoomTrial)return;
+    const message=phase==='error'?'Fixture failed: '+error
+      :phase==='solved'?'Complete'
+      :phase==='loading'?'Preparing the fixture…':'Ready to test';
+    if(feedback.dataset.phase!==phase)feedback.dataset.phase=phase;
+    if(feedback.textContent!==message)feedback.textContent=message;
+  }
   function refreshPuzzleLabMenu(){
     if(!puzzleLabMenu)return;
-    const {button,choice,status,labels}=puzzleLabMenu;
+    const {button,choice,status,labels,updateHint}=puzzleLabMenu;
     const trial=ruin?.singleRoomTrial; // Only a developer's active one-room lab may expose the tab.
     const visible=!!trial&&devModeEnabled()&&deps?.getCurrentArea?.()===MAP_ID;
     button.hidden=!visible;
     if(!visible){closePuzzleLabMenu();return;}
     choice.value=trial.kind;
     status.textContent=(labels.get(trial.kind)||trial.kind)+' · Seed '+ruin.seed+' · No loot';
+    updateHint();
+    setPuzzleLabStatus('loading');
   }
   function bindPuzzleLabMenu(){
     if(puzzleLabMenu)return;
@@ -1814,7 +1832,12 @@
     const load=document.getElementById('devRuinLabLoad');
     const reset=document.getElementById('devRuinLabReset');
     const status=document.getElementById('devRuinLabStatus');
-    const labels=new Map([...catalog.TYPES,...catalog.MECHANISMS]); // Translates the active fixture id for the HUD.
+    const feedback=document.getElementById('devRuinLabFeedback');
+    const hint=document.getElementById('devRuinLabHint');
+    const entries=[...catalog.TYPES,...catalog.MECHANISMS]; // The catalog owns names and instructions for both puzzle groups.
+    const labels=new Map(entries);
+    const hints=new Map(entries.map(([key,,instruction])=>[key,instruction]));
+    const updateHint=()=>{hint.textContent=hints.get(choice.value)||'Roll a complete puzzle using the normal ruin odds.';};
     choice.add(new Option('Random puzzle (ruin odds)','weighted'));
     for(const [label,entries] of [['Complete puzzles',catalog.TYPES],['Individual mechanisms',catalog.MECHANISMS]]){
       const group=document.createElement('optgroup'); // Separates the normal puzzle roll from direct component testing.
@@ -1822,12 +1845,18 @@
       for(const [key,name] of entries)group.append(new Option(name,key));
       choice.append(group);
     }
-    puzzleLabMenu={button,panel,choice,status,labels};
+    puzzleLabMenu={button,panel,choice,status,feedback,labels,updateHint,lock:null};
+    choice.addEventListener('change',updateHint);
     button.addEventListener('click',()=>{
       if(button.hidden)return;
-      panel.hidden=!panel.hidden;
-      button.setAttribute('aria-expanded',String(!panel.hidden));
-      if(!panel.hidden)choice.focus();
+      if(!panel.hidden){closePuzzleLabMenu();return;}
+      panel.hidden=false;
+      button.setAttribute('aria-expanded','true');
+      puzzleLabMenu.lock=window.CharacterActionLocks?.acquire?.({
+        owner:'dev-ruin-puzzle-lab',reason:'Choosing a test fixture',
+        participants:[{id:'player',channels:['movement','tools','actions']}],
+      });
+      choice.focus();
     });
     const close=()=>{closePuzzleLabMenu();if(!button.hidden)button.focus();}; // Returns keyboard focus to the tab.
     document.getElementById('devRuinLabClose')?.addEventListener('click',close);
@@ -1837,6 +1866,7 @@
       const {seed,theme,singleRoomTrial}=ruin; // Preserve the actual generated seed and tradition for a reset.
       const puzzleType=replay?singleRoomTrial.kind:choice.value;
       load.disabled=reset.disabled=true;
+      deps.showToast?.(replay?'Resetting this fixture…':'Loading '+(labels.get(puzzleType)||'a random puzzle')+'…',true);
       try{await generate(replay?seed:randomSeed(),{singleRoomTrial:true,puzzleType,theme});}
       finally{load.disabled=reset.disabled=false;}
     };
@@ -1896,7 +1926,8 @@
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',installSettingsButton,{once:true});else installSettingsButton();
 
   window.DevRandomRuin=Object.freeze({getVestibuleRoots:()=>ruin?{stone:ruin.vestibuleStone||null,props:ruin.stoneAgeStats?.props||0,bindings:ruin.rootGrowthBindings?.length||0,rooted:!!ruin.rootedMechanisms,ms:ruin.vestibuleRootMs||0,error:ruin.vestibuleRootError||null}:null,generate,generateStoryVault,reroll:()=>ruin?.shaftTest?generateShaftTest():generate(randomSeed(),ruin?.singleRoomTrial?{singleRoomTrial:true,puzzleType:ruin.singleRoomTrial.mode==='weighted'?'weighted':ruin.singleRoomTrial.kind}:{hachutu:ruin?.hachutu===true,rootMechanisms:ruin?.rootedMechanisms===true,stoneAge:ruin?.stoneAgeRequested===true,composedTrial:ruin?.composedTrialForced===true?true:undefined}),clear:()=>{if(deps?.getCurrentArea?.()===MAP_ID)leaveRuin();else clearRuntime(true);},leave:leaveRuin,exitTo,getInteractionControls:()=>ruin?ruin.controls.filter(control=>control.kind!=='story-vault-pedestal'||window.DelversGuild?.vaultPhase?.()==='search').map(control=>({...control,range:Number.isFinite(Number(control.range))?Number(control.range):CONTROL_RANGE})):[],getNativeV50TestRuntime:()=>devModeEnabled()?ruin?.nativeV50Runtime||null:null, // Developer-mode-only diagnostic handle for Playwright to exercise the actual generated puzzle controls and stage gates; not a gameplay solver.
-    getRuntimeContext:()=>ruin?{scene:ruin.scene,grid:ruin.grid,root:ruin.localeRoot,meta:ruin.meta,floorSet:ruin.floorSet,ceilingY:ruin.ceilingY,spawn:{...ruin.spawn},cols:ruin.cols,rows:ruin.rows,sanctumMapSize:ruin.sanctumMapSize,sanctumPlan:ruin.sanctumPlan||null,
+    setPuzzleLabStatus,
+    getRuntimeContext:()=>ruin?{scene:ruin.scene,grid:ruin.grid,root:ruin.localeRoot,meta:ruin.meta,floorSet:ruin.floorSet,floorScope:SCOPE,ceilingY:ruin.ceilingY,spawn:{...ruin.spawn},cols:ruin.cols,rows:ruin.rows,sanctumMapSize:ruin.sanctumMapSize,sanctumPlan:ruin.sanctumPlan||null,
     shaftEntrance:ruin.compactVestibule?window.RuinShaftConnector?.entranceOutside?.(ruin.meta,{x:entryPadX,z:entryPadZ},RUIN_TILE_SCALE)||null:null,seed:ruin.seed,theme:ruin.theme,specialBoss:ruin.specialBoss,ruinName:ruin.ruinName,hachutu:!!ruin.hachutu,stoneAge:!!ruin.stoneAge,stoneAgeStats:ruin.stoneAgeStats||null,shaftHub:!!ruin.shaftHub,singleRoomTrial:ruin.singleRoomTrial||null,labFurniture:ruin.labFurniture,noLoot:ruin.noLoot===true,puzzleOptions:{...ruin.puzzleOptions}}:null,getPuzzleGenerationOptions:()=>readPuzzleGenerationOptions(),setPuzzleGenerationOptions:options=>savePuzzleGenerationOptions(options),getOccupancySnapshot:()=>ruin?.occupancy?.snapshot?.()||null,getLastSolvabilityAudit:()=>lastGenerationAudit?JSON.parse(JSON.stringify(lastGenerationAudit)):null,getShaftNetworkState:()=>ruin?.shaftLayerRuntime?.getState?.()||null,
     getShaftCollisionMap:(requestedFloor=0)=>{
       if(!ruin?.shaftGrids?.size)return null;

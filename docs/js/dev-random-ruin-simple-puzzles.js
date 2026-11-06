@@ -1987,7 +1987,7 @@
       for(const [col,row] of context.meta.floorCells||[]){
         const x=PAD+(Number(col)+.5)*cs,z=PAD+(Number(row)+.5)*cs;
         if(x<=pit.minX+.01||x>=pit.maxX-.01||z<=pit.minZ+.01||z>=pit.maxZ-.01)continue;
-        const support=DS.sampleSupport?.(x,z,{scope:SCOPE,minY:-6,maxY:10,pad:0});
+        const support=DS.sampleSupport?.(x,z,{scope:context.floorScope,minY:-6,maxY:10,pad:0});
         if(support?.id==='devruin-floor-'+col+','+row&&support.record){
           DS.registerSurface({...support.record,enabled:false});
           state.ropeChainDisabledSurfaces.push(support.record);count++;
@@ -2459,6 +2459,8 @@
       const error=state.singleRoomError||state.singleRoomChallenge?.error||null; // Async statue asset/encounter failures must appear in the mobile debug badge.
       const phase=error?'ERR '+error:state.singleRoomSolved?'SOLVED':state.singleRoomChallenge?.ready===false?'loading':'active';
       window.DevRandomRuin?.setDebugBadgePart?.('challenge',' · '+choice.kind+' '+phase+' · drops OFF');
+      window.DevRandomRuin?.setPuzzleLabStatus?.(error?'error':state.singleRoomSolved?'solved'
+        :state.singleRoomChallenge?.ready===false?'loading':'ready',error);
     }else window.DevRandomRuin?.setDebugBadgePart?.('challenge','');
     updateBadge();
   }

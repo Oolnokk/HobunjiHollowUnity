@@ -44,6 +44,9 @@ async function main(){
     await page.waitForFunction(()=>window.GridTileAccessors?.getCurrentArea?.()==='interior',null,{timeout:120000});
     await page.evaluate(()=>window.HobunjiTitleScreen?.start?.());
     await page.waitForFunction(()=>!window.HobunjiTitleScreen?.isActive?.(),null,{timeout:20000});
+    // The injected player profile starts the game without going through the
+    // independent save/creator UI. Hide that unrelated overlay in this harness.
+    await page.addStyleTag({content:'#ob-overlay{display:none!important}'});
 
     const expected=()=>[...window.DevRuinSingleRoomTrial.TYPES,...window.DevRuinSingleRoomTrial.MECHANISMS].map(([key])=>key);
     const kinds=await page.evaluate(expected);
@@ -61,11 +64,16 @@ async function main(){
         if(kind==='stoneDoor'){
           await labTab.click();
           await page.selectOption('#devRuinLabChoice',kind);
+          assert.match(await page.locator('#devRuinLabHint').textContent(),/raise or lower/);
           await page.click('#devRuinLabLoad');
           await page.waitForFunction(()=>window.DevRandomRuin?.getState?.()?.singleRoomTrial?.kind==='stoneDoor'
             &&window.DevRandomRuin?.getGenerationProgress?.()?.phase==='entered',null,{timeout:60000});
           if(!await labTab.isVisible())throw new Error('Puzzle Lab tab disappeared after switching fixtures');
           if(await page.locator('#devRuinLabPanel').isVisible())throw new Error('Puzzle Lab panel stayed open after switching fixtures');
+          await labTab.click();
+          await page.waitForFunction(()=>document.getElementById('devRuinLabFeedback')?.dataset.phase==='ready');
+          await page.keyboard.press('Escape');
+          assert.equal(await page.locator('#devRuinLabPanel').isVisible(),false,'Escape closes the panel after switching fixtures');
           row.generated=true;
         }else{
         row.generated=await page.evaluate(async ({kind,seed})=>window.DevRandomRuin.generate(seed,{
