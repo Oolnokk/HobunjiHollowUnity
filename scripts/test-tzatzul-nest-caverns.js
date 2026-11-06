@@ -10,6 +10,8 @@ for(const area of areaNames)for(let slot=0;slot<2;slot++){
  assert(indexIds.has(mapId),'discoverable through the existing locale cavern index');
  assert.equal(locale.cavern.mapId,mapId);
  assert.equal(locale.category,'cave_interior');
+ assert.equal(locale.schema,'hobunji_locale.v1','matches the actual locale editor/runtime schema');
+ assert(Object.values(locale.tiles).every(t=>t.type==='grass'),'canonical source tiles keep the cave floor material override in control');
  assert.equal(locale.cavern.surfaceMaterial,'farm-cliff');
  assert(locale.cavern.generation.sizeY>=6,'boss requires a tall roof, not the default low cave');
  assert(locale.cavern.generation.vaultCeiling,'proper enclosed cavern');

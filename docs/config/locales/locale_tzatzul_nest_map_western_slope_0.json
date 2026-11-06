@@ -1,5 +1,5 @@
 {
-  "schema": "hobunji-locale/v1",
+  "schema": "hobunji_locale.v1",
   "id": "locale_tzatzul_nest_map_western_slope_0",
   "name": "Tzatzul Nest 1 — Western Slope",
   "category": "cave_interior",
@@ -16,1096 +16,1096 @@
   "rows": 27,
   "tiles": {
     "11,2": {
-      "type": "stone"
+      "type": "grass"
     },
     "12,2": {
-      "type": "stone"
+      "type": "grass"
     },
     "13,2": {
-      "type": "stone"
+      "type": "grass"
     },
     "9,3": {
-      "type": "stone"
+      "type": "grass"
     },
     "10,3": {
-      "type": "stone"
+      "type": "grass"
     },
     "11,3": {
-      "type": "stone"
+      "type": "grass"
     },
     "12,3": {
-      "type": "stone"
+      "type": "grass"
     },
     "13,3": {
-      "type": "stone"
+      "type": "grass"
     },
     "14,3": {
-      "type": "stone"
+      "type": "grass"
     },
     "15,3": {
-      "type": "stone"
+      "type": "grass"
     },
     "16,3": {
-      "type": "stone"
+      "type": "grass"
     },
     "8,4": {
-      "type": "stone"
+      "type": "grass"
     },
     "9,4": {
-      "type": "stone"
+      "type": "grass"
     },
     "10,4": {
-      "type": "stone"
+      "type": "grass"
     },
     "11,4": {
-      "type": "stone"
+      "type": "grass"
     },
     "12,4": {
-      "type": "stone"
+      "type": "grass"
     },
     "13,4": {
-      "type": "stone"
+      "type": "grass"
     },
     "14,4": {
-      "type": "stone"
+      "type": "grass"
     },
     "15,4": {
-      "type": "stone"
+      "type": "grass"
     },
     "16,4": {
-      "type": "stone"
+      "type": "grass"
     },
     "17,4": {
-      "type": "stone"
+      "type": "grass"
     },
     "18,4": {
-      "type": "stone"
+      "type": "grass"
     },
     "7,5": {
-      "type": "stone"
+      "type": "grass"
     },
     "8,5": {
-      "type": "stone"
+      "type": "grass"
     },
     "9,5": {
-      "type": "stone"
+      "type": "grass"
     },
     "10,5": {
-      "type": "stone"
+      "type": "grass"
     },
     "11,5": {
-      "type": "stone"
+      "type": "grass"
     },
     "12,5": {
-      "type": "stone"
+      "type": "grass"
     },
     "13,5": {
-      "type": "stone"
+      "type": "grass"
     },
     "14,5": {
-      "type": "stone"
+      "type": "grass"
     },
     "15,5": {
-      "type": "stone"
+      "type": "grass"
     },
     "16,5": {
-      "type": "stone"
+      "type": "grass"
     },
     "17,5": {
-      "type": "stone"
+      "type": "grass"
     },
     "18,5": {
-      "type": "stone"
+      "type": "grass"
     },
     "19,5": {
-      "type": "stone"
+      "type": "grass"
     },
     "6,6": {
-      "type": "stone"
+      "type": "grass"
     },
     "7,6": {
-      "type": "stone"
+      "type": "grass"
     },
     "8,6": {
-      "type": "stone"
+      "type": "grass"
     },
     "9,6": {
-      "type": "stone"
+      "type": "grass"
     },
     "10,6": {
-      "type": "stone"
+      "type": "grass"
     },
     "11,6": {
-      "type": "stone"
+      "type": "grass"
     },
     "12,6": {
-      "type": "stone"
+      "type": "grass"
     },
     "13,6": {
-      "type": "stone"
+      "type": "grass"
     },
     "14,6": {
-      "type": "stone"
+      "type": "grass"
     },
     "15,6": {
-      "type": "stone"
+      "type": "grass"
     },
     "16,6": {
-      "type": "stone"
+      "type": "grass"
     },
     "17,6": {
-      "type": "stone"
+      "type": "grass"
     },
     "18,6": {
-      "type": "stone"
+      "type": "grass"
     },
     "19,6": {
-      "type": "stone"
+      "type": "grass"
     },
     "20,6": {
-      "type": "stone"
+      "type": "grass"
     },
     "21,6": {
-      "type": "stone"
+      "type": "grass"
     },
     "5,7": {
-      "type": "stone"
+      "type": "grass"
     },
     "6,7": {
-      "type": "stone"
+      "type": "grass"
     },
     "7,7": {
-      "type": "stone"
+      "type": "grass"
     },
     "8,7": {
-      "type": "stone"
+      "type": "grass"
     },
     "9,7": {
-      "type": "stone"
+      "type": "grass"
     },
     "10,7": {
-      "type": "stone"
+      "type": "grass"
     },
     "11,7": {
-      "type": "stone"
+      "type": "grass"
     },
     "12,7": {
-      "type": "stone"
+      "type": "grass"
     },
     "13,7": {
-      "type": "stone"
+      "type": "grass"
     },
     "14,7": {
-      "type": "stone"
+      "type": "grass"
     },
     "15,7": {
-      "type": "stone"
+      "type": "grass"
     },
     "16,7": {
-      "type": "stone"
+      "type": "grass"
     },
     "17,7": {
-      "type": "stone"
+      "type": "grass"
     },
     "18,7": {
-      "type": "stone"
+      "type": "grass"
     },
     "19,7": {
-      "type": "stone"
+      "type": "grass"
     },
     "20,7": {
-      "type": "stone"
+      "type": "grass"
     },
     "21,7": {
-      "type": "stone"
+      "type": "grass"
     },
     "5,8": {
-      "type": "stone"
+      "type": "grass"
     },
     "6,8": {
-      "type": "stone"
+      "type": "grass"
     },
     "7,8": {
-      "type": "stone"
+      "type": "grass"
     },
     "8,8": {
-      "type": "stone"
+      "type": "grass"
     },
     "9,8": {
-      "type": "stone"
+      "type": "grass"
     },
     "10,8": {
-      "type": "stone"
+      "type": "grass"
     },
     "11,8": {
-      "type": "stone"
+      "type": "grass"
     },
     "12,8": {
-      "type": "stone"
+      "type": "grass"
     },
     "13,8": {
-      "type": "stone"
+      "type": "grass"
     },
     "14,8": {
-      "type": "stone"
+      "type": "grass"
     },
     "15,8": {
-      "type": "stone"
+      "type": "grass"
     },
     "16,8": {
-      "type": "stone"
+      "type": "grass"
     },
     "17,8": {
-      "type": "stone"
+      "type": "grass"
     },
     "18,8": {
-      "type": "stone"
+      "type": "grass"
     },
     "19,8": {
-      "type": "stone"
+      "type": "grass"
     },
     "20,8": {
-      "type": "stone"
+      "type": "grass"
     },
     "21,8": {
-      "type": "stone"
+      "type": "grass"
     },
     "22,8": {
-      "type": "stone"
+      "type": "grass"
     },
     "4,9": {
-      "type": "stone"
+      "type": "grass"
     },
     "5,9": {
-      "type": "stone"
+      "type": "grass"
     },
     "6,9": {
-      "type": "stone"
+      "type": "grass"
     },
     "7,9": {
-      "type": "stone"
+      "type": "grass"
     },
     "8,9": {
-      "type": "stone"
+      "type": "grass"
     },
     "9,9": {
-      "type": "stone"
+      "type": "grass"
     },
     "10,9": {
-      "type": "stone"
+      "type": "grass"
     },
     "11,9": {
-      "type": "stone"
+      "type": "grass"
     },
     "12,9": {
-      "type": "stone"
+      "type": "grass"
     },
     "13,9": {
-      "type": "stone"
+      "type": "grass"
     },
     "14,9": {
-      "type": "stone"
+      "type": "grass"
     },
     "15,9": {
-      "type": "stone"
+      "type": "grass"
     },
     "16,9": {
-      "type": "stone"
+      "type": "grass"
     },
     "17,9": {
-      "type": "stone"
+      "type": "grass"
     },
     "18,9": {
-      "type": "stone"
+      "type": "grass"
     },
     "19,9": {
-      "type": "stone"
+      "type": "grass"
     },
     "20,9": {
-      "type": "stone"
+      "type": "grass"
     },
     "21,9": {
-      "type": "stone"
+      "type": "grass"
     },
     "22,9": {
-      "type": "stone"
+      "type": "grass"
     },
     "3,10": {
-      "type": "stone"
+      "type": "grass"
     },
     "4,10": {
-      "type": "stone"
+      "type": "grass"
     },
     "5,10": {
-      "type": "stone"
+      "type": "grass"
     },
     "6,10": {
-      "type": "stone"
+      "type": "grass"
     },
     "7,10": {
-      "type": "stone"
+      "type": "grass"
     },
     "8,10": {
-      "type": "stone"
+      "type": "grass"
     },
     "9,10": {
-      "type": "stone"
+      "type": "grass"
     },
     "10,10": {
-      "type": "stone"
+      "type": "grass"
     },
     "11,10": {
-      "type": "stone"
+      "type": "grass"
     },
     "12,10": {
-      "type": "stone"
+      "type": "grass"
     },
     "13,10": {
-      "type": "stone"
+      "type": "grass"
     },
     "14,10": {
-      "type": "stone"
+      "type": "grass"
     },
     "15,10": {
-      "type": "stone"
+      "type": "grass"
     },
     "16,10": {
-      "type": "stone"
+      "type": "grass"
     },
     "17,10": {
-      "type": "stone"
+      "type": "grass"
     },
     "18,10": {
-      "type": "stone"
+      "type": "grass"
     },
     "19,10": {
-      "type": "stone"
+      "type": "grass"
     },
     "20,10": {
-      "type": "stone"
+      "type": "grass"
     },
     "21,10": {
-      "type": "stone"
+      "type": "grass"
     },
     "22,10": {
-      "type": "stone"
+      "type": "grass"
     },
     "23,10": {
-      "type": "stone"
+      "type": "grass"
     },
     "3,11": {
-      "type": "stone"
+      "type": "grass"
     },
     "4,11": {
-      "type": "stone"
+      "type": "grass"
     },
     "5,11": {
-      "type": "stone"
+      "type": "grass"
     },
     "6,11": {
-      "type": "stone"
+      "type": "grass"
     },
     "7,11": {
-      "type": "stone"
+      "type": "grass"
     },
     "8,11": {
-      "type": "stone"
+      "type": "grass"
     },
     "9,11": {
-      "type": "stone"
+      "type": "grass"
     },
     "10,11": {
-      "type": "stone"
+      "type": "grass"
     },
     "11,11": {
-      "type": "stone"
+      "type": "grass"
     },
     "12,11": {
-      "type": "stone"
+      "type": "grass"
     },
     "13,11": {
-      "type": "stone"
+      "type": "grass"
     },
     "14,11": {
-      "type": "stone"
+      "type": "grass"
     },
     "15,11": {
-      "type": "stone"
+      "type": "grass"
     },
     "16,11": {
-      "type": "stone"
+      "type": "grass"
     },
     "17,11": {
-      "type": "stone"
+      "type": "grass"
     },
     "18,11": {
-      "type": "stone"
+      "type": "grass"
     },
     "19,11": {
-      "type": "stone"
+      "type": "grass"
     },
     "20,11": {
-      "type": "stone"
+      "type": "grass"
     },
     "21,11": {
-      "type": "stone"
+      "type": "grass"
     },
     "22,11": {
-      "type": "stone"
+      "type": "grass"
     },
     "23,11": {
-      "type": "stone"
+      "type": "grass"
     },
     "3,12": {
-      "type": "stone"
+      "type": "grass"
     },
     "4,12": {
-      "type": "stone"
+      "type": "grass"
     },
     "5,12": {
-      "type": "stone"
+      "type": "grass"
     },
     "6,12": {
-      "type": "stone"
+      "type": "grass"
     },
     "7,12": {
-      "type": "stone"
+      "type": "grass"
     },
     "8,12": {
-      "type": "stone"
+      "type": "grass"
     },
     "9,12": {
-      "type": "stone"
+      "type": "grass"
     },
     "10,12": {
-      "type": "stone"
+      "type": "grass"
     },
     "11,12": {
-      "type": "stone"
+      "type": "grass"
     },
     "12,12": {
-      "type": "stone"
+      "type": "grass"
     },
     "13,12": {
-      "type": "stone"
+      "type": "grass"
     },
     "14,12": {
-      "type": "stone"
+      "type": "grass"
     },
     "15,12": {
-      "type": "stone"
+      "type": "grass"
     },
     "16,12": {
-      "type": "stone"
+      "type": "grass"
     },
     "17,12": {
-      "type": "stone"
+      "type": "grass"
     },
     "18,12": {
-      "type": "stone"
+      "type": "grass"
     },
     "19,12": {
-      "type": "stone"
+      "type": "grass"
     },
     "20,12": {
-      "type": "stone"
+      "type": "grass"
     },
     "21,12": {
-      "type": "stone"
+      "type": "grass"
     },
     "22,12": {
-      "type": "stone"
+      "type": "grass"
     },
     "23,12": {
-      "type": "stone"
+      "type": "grass"
     },
     "2,13": {
-      "type": "stone"
+      "type": "grass"
     },
     "3,13": {
-      "type": "stone"
+      "type": "grass"
     },
     "4,13": {
-      "type": "stone"
+      "type": "grass"
     },
     "5,13": {
-      "type": "stone"
+      "type": "grass"
     },
     "6,13": {
-      "type": "stone"
+      "type": "grass"
     },
     "7,13": {
-      "type": "stone"
+      "type": "grass"
     },
     "8,13": {
-      "type": "stone"
+      "type": "grass"
     },
     "9,13": {
-      "type": "stone"
+      "type": "grass"
     },
     "10,13": {
-      "type": "stone"
+      "type": "grass"
     },
     "11,13": {
-      "type": "stone"
+      "type": "grass"
     },
     "12,13": {
-      "type": "stone"
+      "type": "grass"
     },
     "13,13": {
-      "type": "stone"
+      "type": "grass"
     },
     "14,13": {
-      "type": "stone"
+      "type": "grass"
     },
     "15,13": {
-      "type": "stone"
+      "type": "grass"
     },
     "16,13": {
-      "type": "stone"
+      "type": "grass"
     },
     "17,13": {
-      "type": "stone"
+      "type": "grass"
     },
     "18,13": {
-      "type": "stone"
+      "type": "grass"
     },
     "19,13": {
-      "type": "stone"
+      "type": "grass"
     },
     "20,13": {
-      "type": "stone"
+      "type": "grass"
     },
     "21,13": {
-      "type": "stone"
+      "type": "grass"
     },
     "22,13": {
-      "type": "stone"
+      "type": "grass"
     },
     "23,13": {
-      "type": "stone"
+      "type": "grass"
     },
     "2,14": {
-      "type": "stone"
+      "type": "grass"
     },
     "3,14": {
-      "type": "stone"
+      "type": "grass"
     },
     "4,14": {
-      "type": "stone"
+      "type": "grass"
     },
     "5,14": {
-      "type": "stone"
+      "type": "grass"
     },
     "6,14": {
-      "type": "stone"
+      "type": "grass"
     },
     "7,14": {
-      "type": "stone"
+      "type": "grass"
     },
     "8,14": {
-      "type": "stone"
+      "type": "grass"
     },
     "9,14": {
-      "type": "stone"
+      "type": "grass"
     },
     "10,14": {
-      "type": "stone"
+      "type": "grass"
     },
     "11,14": {
-      "type": "stone"
+      "type": "grass"
     },
     "12,14": {
-      "type": "stone"
+      "type": "grass"
     },
     "13,14": {
-      "type": "stone"
+      "type": "grass"
     },
     "14,14": {
-      "type": "stone"
+      "type": "grass"
     },
     "15,14": {
-      "type": "stone"
+      "type": "grass"
     },
     "16,14": {
-      "type": "stone"
+      "type": "grass"
     },
     "17,14": {
-      "type": "stone"
+      "type": "grass"
     },
     "18,14": {
-      "type": "stone"
+      "type": "grass"
     },
     "19,14": {
-      "type": "stone"
+      "type": "grass"
     },
     "20,14": {
-      "type": "stone"
+      "type": "grass"
     },
     "21,14": {
-      "type": "stone"
+      "type": "grass"
     },
     "22,14": {
-      "type": "stone"
+      "type": "grass"
     },
     "23,14": {
-      "type": "stone"
+      "type": "grass"
     },
     "3,15": {
-      "type": "stone"
+      "type": "grass"
     },
     "4,15": {
-      "type": "stone"
+      "type": "grass"
     },
     "5,15": {
-      "type": "stone"
+      "type": "grass"
     },
     "6,15": {
-      "type": "stone"
+      "type": "grass"
     },
     "7,15": {
-      "type": "stone"
+      "type": "grass"
     },
     "8,15": {
-      "type": "stone"
+      "type": "grass"
     },
     "9,15": {
-      "type": "stone"
+      "type": "grass"
     },
     "10,15": {
-      "type": "stone"
+      "type": "grass"
     },
     "11,15": {
-      "type": "stone"
+      "type": "grass"
     },
     "12,15": {
-      "type": "stone"
+      "type": "grass"
     },
     "13,15": {
-      "type": "stone"
+      "type": "grass"
     },
     "14,15": {
-      "type": "stone"
+      "type": "grass"
     },
     "15,15": {
-      "type": "stone"
+      "type": "grass"
     },
     "16,15": {
-      "type": "stone"
+      "type": "grass"
     },
     "17,15": {
-      "type": "stone"
+      "type": "grass"
     },
     "18,15": {
-      "type": "stone"
+      "type": "grass"
     },
     "19,15": {
-      "type": "stone"
+      "type": "grass"
     },
     "20,15": {
-      "type": "stone"
+      "type": "grass"
     },
     "21,15": {
-      "type": "stone"
+      "type": "grass"
     },
     "22,15": {
-      "type": "stone"
+      "type": "grass"
     },
     "23,15": {
-      "type": "stone"
+      "type": "grass"
     },
     "3,16": {
-      "type": "stone"
+      "type": "grass"
     },
     "4,16": {
-      "type": "stone"
+      "type": "grass"
     },
     "5,16": {
-      "type": "stone"
+      "type": "grass"
     },
     "6,16": {
-      "type": "stone"
+      "type": "grass"
     },
     "7,16": {
-      "type": "stone"
+      "type": "grass"
     },
     "8,16": {
-      "type": "stone"
+      "type": "grass"
     },
     "9,16": {
-      "type": "stone"
+      "type": "grass"
     },
     "10,16": {
-      "type": "stone"
+      "type": "grass"
     },
     "11,16": {
-      "type": "stone"
+      "type": "grass"
     },
     "12,16": {
-      "type": "stone"
+      "type": "grass"
     },
     "13,16": {
-      "type": "stone"
+      "type": "grass"
     },
     "14,16": {
-      "type": "stone"
+      "type": "grass"
     },
     "15,16": {
-      "type": "stone"
+      "type": "grass"
     },
     "16,16": {
-      "type": "stone"
+      "type": "grass"
     },
     "17,16": {
-      "type": "stone"
+      "type": "grass"
     },
     "18,16": {
-      "type": "stone"
+      "type": "grass"
     },
     "19,16": {
-      "type": "stone"
+      "type": "grass"
     },
     "20,16": {
-      "type": "stone"
+      "type": "grass"
     },
     "21,16": {
-      "type": "stone"
+      "type": "grass"
     },
     "22,16": {
-      "type": "stone"
+      "type": "grass"
     },
     "23,16": {
-      "type": "stone"
+      "type": "grass"
     },
     "3,17": {
-      "type": "stone"
+      "type": "grass"
     },
     "4,17": {
-      "type": "stone"
+      "type": "grass"
     },
     "5,17": {
-      "type": "stone"
+      "type": "grass"
     },
     "6,17": {
-      "type": "stone"
+      "type": "grass"
     },
     "7,17": {
-      "type": "stone"
+      "type": "grass"
     },
     "8,17": {
-      "type": "stone"
+      "type": "grass"
     },
     "9,17": {
-      "type": "stone"
+      "type": "grass"
     },
     "10,17": {
-      "type": "stone"
+      "type": "grass"
     },
     "11,17": {
-      "type": "stone"
+      "type": "grass"
     },
     "12,17": {
-      "type": "stone"
+      "type": "grass"
     },
     "13,17": {
-      "type": "stone"
+      "type": "grass"
     },
     "14,17": {
-      "type": "stone"
+      "type": "grass"
     },
     "15,17": {
-      "type": "stone"
+      "type": "grass"
     },
     "16,17": {
-      "type": "stone"
+      "type": "grass"
     },
     "17,17": {
-      "type": "stone"
+      "type": "grass"
     },
     "18,17": {
-      "type": "stone"
+      "type": "grass"
     },
     "19,17": {
-      "type": "stone"
+      "type": "grass"
     },
     "20,17": {
-      "type": "stone"
+      "type": "grass"
     },
     "21,17": {
-      "type": "stone"
+      "type": "grass"
     },
     "22,17": {
-      "type": "stone"
+      "type": "grass"
     },
     "23,17": {
-      "type": "stone"
+      "type": "grass"
     },
     "4,18": {
-      "type": "stone"
+      "type": "grass"
     },
     "5,18": {
-      "type": "stone"
+      "type": "grass"
     },
     "6,18": {
-      "type": "stone"
+      "type": "grass"
     },
     "7,18": {
-      "type": "stone"
+      "type": "grass"
     },
     "8,18": {
-      "type": "stone"
+      "type": "grass"
     },
     "9,18": {
-      "type": "stone"
+      "type": "grass"
     },
     "10,18": {
-      "type": "stone"
+      "type": "grass"
     },
     "11,18": {
-      "type": "stone"
+      "type": "grass"
     },
     "12,18": {
-      "type": "stone"
+      "type": "grass"
     },
     "13,18": {
-      "type": "stone"
+      "type": "grass"
     },
     "14,18": {
-      "type": "stone"
+      "type": "grass"
     },
     "15,18": {
-      "type": "stone"
+      "type": "grass"
     },
     "16,18": {
-      "type": "stone"
+      "type": "grass"
     },
     "17,18": {
-      "type": "stone"
+      "type": "grass"
     },
     "18,18": {
-      "type": "stone"
+      "type": "grass"
     },
     "19,18": {
-      "type": "stone"
+      "type": "grass"
     },
     "20,18": {
-      "type": "stone"
+      "type": "grass"
     },
     "21,18": {
-      "type": "stone"
+      "type": "grass"
     },
     "22,18": {
-      "type": "stone"
+      "type": "grass"
     },
     "23,18": {
-      "type": "stone"
+      "type": "grass"
     },
     "5,19": {
-      "type": "stone"
+      "type": "grass"
     },
     "6,19": {
-      "type": "stone"
+      "type": "grass"
     },
     "7,19": {
-      "type": "stone"
+      "type": "grass"
     },
     "8,19": {
-      "type": "stone"
+      "type": "grass"
     },
     "9,19": {
-      "type": "stone"
+      "type": "grass"
     },
     "10,19": {
-      "type": "stone"
+      "type": "grass"
     },
     "11,19": {
-      "type": "stone"
+      "type": "grass"
     },
     "12,19": {
-      "type": "stone"
+      "type": "grass"
     },
     "13,19": {
-      "type": "stone"
+      "type": "grass"
     },
     "14,19": {
-      "type": "stone"
+      "type": "grass"
     },
     "15,19": {
-      "type": "stone"
+      "type": "grass"
     },
     "16,19": {
-      "type": "stone"
+      "type": "grass"
     },
     "17,19": {
-      "type": "stone"
+      "type": "grass"
     },
     "18,19": {
-      "type": "stone"
+      "type": "grass"
     },
     "19,19": {
-      "type": "stone"
+      "type": "grass"
     },
     "20,19": {
-      "type": "stone"
+      "type": "grass"
     },
     "21,19": {
-      "type": "stone"
+      "type": "grass"
     },
     "22,19": {
-      "type": "stone"
+      "type": "grass"
     },
     "5,20": {
-      "type": "stone"
+      "type": "grass"
     },
     "6,20": {
-      "type": "stone"
+      "type": "grass"
     },
     "7,20": {
-      "type": "stone"
+      "type": "grass"
     },
     "8,20": {
-      "type": "stone"
+      "type": "grass"
     },
     "9,20": {
-      "type": "stone"
+      "type": "grass"
     },
     "10,20": {
-      "type": "stone"
+      "type": "grass"
     },
     "11,20": {
-      "type": "stone"
+      "type": "grass"
     },
     "12,20": {
-      "type": "stone"
+      "type": "grass"
     },
     "13,20": {
-      "type": "stone"
+      "type": "grass"
     },
     "14,20": {
-      "type": "stone"
+      "type": "grass"
     },
     "15,20": {
-      "type": "stone"
+      "type": "grass"
     },
     "16,20": {
-      "type": "stone"
+      "type": "grass"
     },
     "17,20": {
-      "type": "stone"
+      "type": "grass"
     },
     "18,20": {
-      "type": "stone"
+      "type": "grass"
     },
     "19,20": {
-      "type": "stone"
+      "type": "grass"
     },
     "20,20": {
-      "type": "stone"
+      "type": "grass"
     },
     "21,20": {
-      "type": "stone"
+      "type": "grass"
     },
     "6,21": {
-      "type": "stone"
+      "type": "grass"
     },
     "7,21": {
-      "type": "stone"
+      "type": "grass"
     },
     "8,21": {
-      "type": "stone"
+      "type": "grass"
     },
     "9,21": {
-      "type": "stone"
+      "type": "grass"
     },
     "10,21": {
-      "type": "stone"
+      "type": "grass"
     },
     "11,21": {
-      "type": "stone"
+      "type": "grass"
     },
     "12,21": {
-      "type": "stone"
+      "type": "grass"
     },
     "13,21": {
-      "type": "stone"
+      "type": "grass"
     },
     "14,21": {
-      "type": "stone"
+      "type": "grass"
     },
     "15,21": {
-      "type": "stone"
+      "type": "grass"
     },
     "16,21": {
-      "type": "stone"
+      "type": "grass"
     },
     "17,21": {
-      "type": "stone"
+      "type": "grass"
     },
     "18,21": {
-      "type": "stone"
+      "type": "grass"
     },
     "19,21": {
-      "type": "stone"
+      "type": "grass"
     },
     "20,21": {
-      "type": "stone"
+      "type": "grass"
     },
     "7,22": {
-      "type": "stone"
+      "type": "grass"
     },
     "8,22": {
-      "type": "stone"
+      "type": "grass"
     },
     "9,22": {
-      "type": "stone"
+      "type": "grass"
     },
     "10,22": {
-      "type": "stone"
+      "type": "grass"
     },
     "11,22": {
-      "type": "stone"
+      "type": "grass"
     },
     "12,22": {
-      "type": "stone"
+      "type": "grass"
     },
     "13,22": {
-      "type": "stone"
+      "type": "grass"
     },
     "14,22": {
-      "type": "stone"
+      "type": "grass"
     },
     "15,22": {
-      "type": "stone"
+      "type": "grass"
     },
     "16,22": {
-      "type": "stone"
+      "type": "grass"
     },
     "17,22": {
-      "type": "stone"
+      "type": "grass"
     },
     "18,22": {
-      "type": "stone"
+      "type": "grass"
     },
     "9,23": {
-      "type": "stone"
+      "type": "grass"
     },
     "10,23": {
-      "type": "stone"
+      "type": "grass"
     },
     "11,23": {
-      "type": "stone"
+      "type": "grass"
     },
     "12,23": {
-      "type": "stone"
+      "type": "grass"
     },
     "13,23": {
-      "type": "stone"
+      "type": "grass"
     },
     "14,23": {
-      "type": "stone"
+      "type": "grass"
     },
     "13,24": {
-      "type": "stone"
+      "type": "grass"
     }
   },
   "objects": [],
