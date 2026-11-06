@@ -49,8 +49,8 @@
     }
 
     const originalOffer = api.offerClothing.bind(api); // NPC wardrobe should judge/render the authored garment, not the unique player inventory id.
-    api.offerClothing = function clothingWeavingOfferClothing(npcId, instance) {
-      return originalOffer(npcId, npcSafeInstance(instance));
+    api.offerClothing = function clothingWeavingOfferClothing(npcId, instance, ...rest) {
+      return originalOffer(npcId, npcSafeInstance(instance), ...rest); // Preserve commission delivery context while adapting the woven cosmetic ID.
     };
 
     if (typeof api.takeFromWardrobe === 'function') {
