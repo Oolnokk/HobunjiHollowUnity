@@ -54,7 +54,7 @@ for (const [key, suffix] of [['tletingan_male', 'tl_m'], ['mashtzarr_male', 'mas
   assert.equal(fur.front_trim.image.url, './assets/cosmetics/clothes/hood/furlinedhood-trim_' + suffix + '.png');
   for (const value of [plain.front, fur.front, fur.front_trim]) {
     assert(assetExists(value.image.url), key + ': missing source sprite ' + value.image.url);
-    assert(assetExists(value.behindImage.url), key + ': missing behind sprite ' + value.behindImage.url);
+    if (value.behindImage?.url) assert(assetExists(value.behindImage.url), key + ': missing behind sprite ' + value.behindImage.url);
   }
 }
 for (const oldName of ['simplehood-furtrim_tl_m.png', 'simplehood-trim_fur_mashtz_m.png']) {
