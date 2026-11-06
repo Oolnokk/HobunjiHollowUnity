@@ -745,7 +745,8 @@
       });
       if(state.puzzleSolved){
         challenge.solved=true;challenge.doorRise=1;
-        challenge.door.position.y+=3.6; // A previously solved gate remains lifted after loading the cavern again.
+        challenge.door.position.y+=puzzle.kind==='fireSconces'?3.5:3.6; // Match the authored type's own lift distance on first render, without a one-frame jump.
+        for(const sconce of challenge.sconces||[]){sconce.lit=true;sconce.flame.visible=true;} // Solved fire gates keep their lit torches after re-entry.
         grantPuzzleCaveReward(profile,plan,state); // Retry a pending payout when definitions or saves are repaired.
       }
       puzzleChallengesByMapId.set(key,{scene,challenge}); // Scene ownership ensures no duplicates after interior regeneration.
