@@ -115,7 +115,7 @@ assert.equal(layoutTransition.target,'puzzle_cave_locked','unsolved cave entranc
 assert.equal(copiedTransition.target,'puzzle_cave_locked','cached scene cannot bypass a locked cave');
 assert.equal(layoutTransition.col,gate.entry.c);
 assert.equal(blockers.size,1,'a real physical slab blocker is registered');
-assert.equal(entranceRing.visible,true,'the cached scene marker starts visible before the gate locks');
+assert.equal(entranceRing.visible,false,'a locked gate hides its relocated cached entrance marker');
 const blocker=[...blockers.values()][0];
 assert(blocker.enabled(),'unsolved cliff-door collision blocks movement');
 activeArea=mapId;
