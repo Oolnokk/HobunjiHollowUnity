@@ -696,20 +696,30 @@
     const defs=window.TrinketSystem?.DEFINITIONS||{}; // Source of truth from the benefit/drawback trinket PR.
     const entries=window.LootRolling?.getLootPools?.()?.puzzleCave?.entries||[];
     const tier=Number(state.puzzleRewardTier)||1;
-    if(!entries.some(entry=>Number(entry.tier)===tier && defs[String(entry.itemKey||'').replace(/^trinket_/,'')])) {
-      state.puzzleRewardPending=true; // Never spend a solved cave's reward when its prerequisite trinket branch is absent.
-      persistState(true);
-      window.__farmLog?.('[puzzle-cave] reward waiting for registered trinket definitions, tier '+tier,'warn');
-      return false;
+    const available=entries.some(entry=>Number(entry.tier)===tier && defs[String(entry.itemKey||'').replace(/^trinket_/,'')]);
+    if(!available||typeof window.TrinketSystem?.claimLoot!=='function'){
+      if(!state.puzzleRewardPending){
+        state.puzzleRewardPending=true; // Never spend a solved cave's reward before the actual benefit/drawback trinkets can be granted.
+        persistState(true);
+        wildlifeDeps?.showToast?.('Puzzle Cave treasure is sealed until its trinkets are available.',false);
+        window.__farmLog?.('[puzzle-cave] reward pending registered trinket tier '+tier,'warn');
+      }
+      return false; // Reentering a cave must not endlessly rewrite saves or spam diagnostics while the parent PR is absent.
     }
-    const gained=window.LootRolling?.rollLootPool?.('puzzleCave',{rewardTier:tier,zoneId:profile.zoneId})||{};
-    if(!Object.keys(gained).length)return false;
-    const parts=window.TrinketSystem?.claimLoot?.(gained,'puzzleCave')||[];
-    if(!parts.length)return false; // Retry after inventory support becomes available; do not consume reward.
-    state.puzzleRewardClaimed=true;state.puzzleRewardPending=false;
-    persistState();
-    wildlifeDeps?.showToast?.('Puzzle Cave treasure: '+parts.join(', '),true);
-    return true;
+    try{
+      const gained=window.LootRolling?.rollLootPool?.('puzzleCave',{rewardTier:tier,zoneId:profile.zoneId})||{};
+      if(!Object.keys(gained).length)return false;
+      const parts=window.TrinketSystem.claimLoot(gained,'puzzleCave')||[];
+      if(!parts.length)return false; // Retry after inventory support becomes available; do not consume reward.
+      state.puzzleRewardClaimed=true;state.puzzleRewardPending=false;
+      persistState();
+      wildlifeDeps?.showToast?.('Puzzle Cave treasure: '+parts.join(', '),true);
+      return true;
+    }catch(error){
+      if(!state.puzzleRewardPending){state.puzzleRewardPending=true;persistState(true);}
+      window.__farmLog?.('[puzzle-cave] treasure delivery failed; saved as pending: '+String(error?.message||error),'warn');
+      return false; // A failed gear/save integration never consumes the cave's earned reward.
+    }
   }
 
   function buildPuzzleCaveChallenge(mapId,mapData,scene) {
@@ -1438,6 +1448,12 @@
     const profile = plan && sitesByMapId.get(mapId);
     if (!profile) { lastCaveArea = null; return; }
     const state = stateFor(profile);
+    if(state.puzzleRewardPending&&!state.puzzleRewardClaimed &&
+      window.TrinketSystem?.claimLoot && window.LootRolling?.getLootPools?.()?.puzzleCave?.entries?.some(
+        item=>Number(item.tier)===(Number(state.puzzleRewardTier)||1) &&
+        window.TrinketSystem.DEFINITIONS?.[String(item.itemKey||'').replace(/^trinket_/,'')])) {
+      grantPuzzleCaveReward(profile,plan,state); // Deliver a sealed prize when its definitions become available, even without leaving this cave.
+    }
     markDiscovered(profile, state);
     ensureOccupants(profile, plan, state);
     triggerTraps(profile, plan, state);
@@ -1592,6 +1608,7 @@
       rollProfile,
       forceAnimalProfile,
       addPuzzleCaveLayer,
+      grantPuzzleCaveReward, // Testable exactly-once reward escrow, also called by completed cave challenges.
       puzzleChallengesByMapId,
       findMineableSeparator,
       thickenSeparator,
