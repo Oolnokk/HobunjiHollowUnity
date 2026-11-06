@@ -15,7 +15,8 @@ for(let length=11;length<=18;length++){
   const span=pit.maxX-pit.minX,count=Math.max(3,Math.min(8,Math.ceil((span-1)/2.25)+1));
   assert.ok((span-1)/(count-1)<=2.25,'normal rope catch distances must be physically achievable');
 }
-assert.equal(valid.size,6);
+assert.equal(valid.size,10);
+assert.deepEqual(Object.values(solo.NATIVE_VARIANTS),['brazier','glyphObelisk','stackedObelisk','linkedCubePillars']);
 for(const kind of valid){const selected=solo.pick(19,kind,planner);assert.equal(selected.kind,kind);assert.equal(selected.mode,'forced');}
 assert.throws(()=>solo.pick(10,'unknown',planner),/Unknown single-room puzzle/);
 assert.throws(()=>solo.pick(10,'pressurePlate',planner),/Unknown single-room puzzle/);
@@ -30,7 +31,7 @@ for(let seed=1;seed<=200;seed++){
   assert.deepEqual(solo.pick(seed,'weighted',planner),selected);
   counts.set(selected.kind,(counts.get(selected.kind)||0)+1);
 }
-assert.equal(counts.size,valid.size);
+assert.equal(counts.size,6,'weighted mode samples only normal layered challenge rooms');
 assert.equal(counts.has('pressurePlate'),false,'retired pressure plate must never enter the random lab');
 const interior=read('docs/js/dev-random-ruin-interior-map.js');
 const simple=read('docs/js/dev-random-ruin-simple-puzzles.js');
@@ -51,5 +52,10 @@ assert.ok(read('docs/tools/debris-ifier/debrisifier-v50-api.js').includes('windo
 assert.ok(read('docs/tools/debris-ifier/debrisifier-01.js').includes("['flat puzzle lab floor',"));
 assert.ok(read('docs/tools/debris-ifier/debrisifier-01.js').includes("['clear solo chamber support pillars',")); // A normal V50 support column cannot overlap the selected challenge center.
 assert.ok(read('docs/index.html').includes('dev-ruin-single-room-trial.js'));
+assert.ok(interior.includes('nativePuzzle:nativeSoloType'));
+assert.ok(simple.includes('if(nativeKind){'));
+assert.ok(read('docs/tools/debris-ifier/debrisifier-01.js').includes('single_room_native_v50_goal'));
+assert.ok(read('docs/tools/debris-ifier/debrisifier-v50-api.js').includes('__devRuinSingleRoomNativeCreated=null'));
+
 assert.match(read('docs/js/dev-random-ruin-bootstrap.js'), /dev-random-ruin-simple-puzzles\.js\?v=[A-Za-z0-9_-]+/);
-console.log('Single-room puzzle lab: 200 planner seeds, six forced choices, isolation and no-loot contracts passed.');
+console.log('Single-room puzzle lab: 200 planner seeds, ten forced choices, isolation and no-loot contracts passed.');
