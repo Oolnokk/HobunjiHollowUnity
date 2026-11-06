@@ -336,7 +336,10 @@ function authoredGroup() {
   const group=new Node(),mesh=new Mesh({attributes:{position:{count:3}},authoredMock:true},new Material({visible:true}));
   mesh.renderOrder=0; // Match THREE.Mesh's default order so post-carry restoration is asserted precisely.
   group.add(mesh);
-  group.userData.meshById=new Map([['silhouette',mesh]]);
+  const decal=new Mesh({attributes:{position:{count:3}}},new Material({visible:true,transparent:true,depthTest:true,depthWrite:false})); // Real furniture decals are nested noncolliding Meshes.
+  decal.renderOrder=0;decal.userData.furnitureDecal=true;mesh.add(decal);
+  group.userData.meshById=new Map([['silhouette',mesh]]); // Deliberately excludes the decal, mirroring authored collision registration.
+  group.userData.authoredDecalMeshes=[decal];
   return group;
 }
 const THREE = {Group:Node,Mesh,SkinnedMesh,InstancedMesh,Object3D,Vector3,Euler,Quaternion,Raycaster,RingGeometry,
@@ -553,10 +556,14 @@ async function arenaScenario() {
   assert.equal(stowed.group.parent,rebuilt,'stowed charge is parented directly to the rebuilt portrait plane');
   assert.equal(game.Shattercasks.debugSnapshot().backCarryMount.portraitAttached,true);
   const stowedMesh=stowed.group.userData.meshById.values().next().value; // Real authored furniture part must draw between back and front PNGs.
+  const stowedDecal=stowed.group.userData.authoredDecalMeshes[0]; // The noncolliding visual child must use the same face ordering as the modeled part.
+  assert(!stowed.meshColliders.includes(stowedDecal),'decals are not borrowed into the hit-detection colliders');
   const stowedRear=body.children.find(node=>node.userData?.shattercaskRearOverlay);
   assert.equal(stowedRear?.renderOrder,2.05,'stowed rear skinned pass precedes furniture');
   assert.equal(stowedRear?.material[1].depthWrite,false,'rear skinned depth cannot mask the back-carried furniture');
   assert.equal(stowedMesh.renderOrder,2.15,'back-stowed geometry follows rear PNG order');
+  assert.equal(stowedDecal.renderOrder,2.15,'back-stowed noncolliding decals remain visible through the rear PNG');
+  assert.equal(stowedDecal.material.depthWrite,false,'decal keeps its original no-depth-write rule');
   assert.equal(stowedMesh.material.transparent,true,'opaque furniture switches into the PNG transparent queue while stowed');
   assert.equal(stowedMesh.material.depthTest,true,'back furniture remains hidden by closer walls and terrain');
   assert.equal(stowedMesh.material.depthWrite,false,'back furniture cannot cover the front PNG through depth writes');
@@ -579,6 +586,7 @@ async function arenaScenario() {
   assert.equal(rebuilt.renderOrder,2,'taking the Burden back into the hands restores native front PNG order');
   assert.equal(stowedRear.material[1].depthWrite,true,'held Burdens retain the original rear-pass depth rules');
   assert.equal(stowedMesh.renderOrder,1.4,'retrieved furniture returns to the standard held layer');
+  assert.equal(stowedDecal.renderOrder,0,'a hand-held decal returns to its pre-stowed draw order');
   assert.equal(stowedMesh.material.transparent,undefined,'retrieval restores the authored material transparency');
   deps.getPlayerInteractionRay=()=>({origin:{x:player.x/64-2,y:1,z:player.y/64},direction:{x:1,y:-.5,z:0}});
   assert(game.WorldActionInputClaims.dispatch('action1','press',{source:'desktop-mouse'}),
@@ -621,6 +629,7 @@ async function arenaScenario() {
   assert.equal(rebuilt.material[1].visible,true,'drop restores real skinned back PNG rendering');
   assert.equal(rebuilt.renderOrder,2,'drop restores the original front PNG render order');
   assert.equal(stowedMesh.renderOrder,0,'drop restores the furniture normal render order');
+  assert.equal(stowedDecal.renderOrder,0,'drop restores the furniture decal native draw order');
   assert.equal(stowedMesh.material.depthWrite,undefined,'drop restores the furniture original depth-write configuration');
   assert.equal(rearHeadwear.renderOrder,2,'drop restores the native rear head render order');
   assert.equal(rearHeadwear.material.depthWrite,false,'drop restores the native headwear depth semantics');
