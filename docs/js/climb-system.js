@@ -868,7 +868,7 @@
     const raw = deps.getMovementInput?.() || { x: 0, y: 0 };
     const length = Math.hypot(raw.x, raw.y);
     if (length > 0.22) {
-      const distance = Math.min(1, length) * 2.1 * Math.max(0, dt);
+      const distance = Math.min(1, length) * 2.1 * Math.max(0, dt); // Travel in tiles for both the destination and the blocker sweep.
       const x = player.x / deps.TILE + raw.x / length * distance;
       const z = player.y / deps.TILE + raw.y / length * distance;
       const supported = window.CliffElevatedSurfaces?.canStandOn
@@ -876,7 +876,6 @@
         : window.CliffRouteNetwork.shelfContains(shelf, x, z, -0.12);
       const DS=window.DynamicSurfaces; // Shared generic world blocker registry; used by authored cliff doors without introducing a second pathing system.
       const fromX=player.x/deps.TILE,fromZ=player.y/deps.TILE;
-      const distance=Math.hypot(x-fromX,z-fromZ);
       const probes=Math.max(1,Math.min(6,Math.ceil(distance/.12))); // Sweep across the thin raised slab on mobile frames, not only at the destination endpoint.
       let blocked=false;
       for(let step=1;step<=probes;step++){

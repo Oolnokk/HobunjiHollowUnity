@@ -65,12 +65,42 @@ assert(elevated.clear(network.area),'unload clears only its own supports');
 assert.equal(DS.sampleSupport(4.5,3.5,{scope:first.scope}),null,'no leaked balcony support');
 assert.equal(DS.sampleSupport(4.5,3.5,{scope:'shaft-hub'})?.y,12,'dungeon support survives unload');
 
+const climbWindow = {
+  DynamicSurfaces: DS,
+  CliffRouteNetwork: { ...route, forGrid: () => network },
+};
+vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../docs/js/climb-system.js'), 'utf8'), { window: climbWindow });
+const player = { x: 4 * 64, y: 3.5 * 64, onCliffBalcony: lower.id }; // Starts on the near side of the gate.
+climbWindow.ClimbSystem.init({
+  player, TILE: 64,
+  _isZoneArea: () => true,
+  getCurrentArea: () => network.area,
+  getMovementInput: () => ({ x: 1, y: 0 }),
+});
+DS.registerBlocker({
+  id: 'cliff-gate',
+  scope: 'puzzle-cave-cliff-door:' + network.area,
+  bounds: { minX: 4.3, maxX: 4.35, minZ: 3, maxZ: 4 },
+});
+assert(climbWindow.ClimbSystem.updateBalcony(0.3));
+assert.equal(player.x, 4 * 64, 'the movement sweep catches a locked gate between the start and destination');
+DS.remove('cliff-gate');
+assert(climbWindow.ClimbSystem.updateBalcony(0.3));
+assert.equal(player.x, (4 + 2.1 * 0.3) * 64, 'the same step crosses after the gate opens');
+
 const game=fs.readFileSync(path.join(__dirname,'../docs/game.js'),'utf8');
 const html=fs.readFileSync(path.join(__dirname,'../docs/index.html'),'utf8');
 const mesa=fs.readFileSync(path.join(__dirname,'../docs/js/zone-plateau-mesa.js'),'utf8');
 assert(html.indexOf('cell-grid-3d.js')<html.indexOf('cliff-elevated-surfaces.js'),'module load order');
 assert(html.includes('dynamic-surfaces.js?v='),'the main game must load DynamicSurfaces, not just the isolated test harness');
 assert(html.indexOf('dynamic-surfaces.js?v=')<html.indexOf('cliff-elevated-surfaces.js'),'the dynamic surface registry exists before any wilderness balcony mount');
+const ruinScripts = []; // Capture the scripts the production ruin bootstrap would insert at parse time.
+vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../docs/js/dev-random-ruin-bootstrap.js'), 'utf8'), {
+  window: climbWindow,
+  document: { readyState: 'loading', write: script => ruinScripts.push(script) },
+});
+assert(ruinScripts.length > 0);
+assert(!ruinScripts.some(script => script.includes('dynamic-surfaces.js')), 'ruin startup preserves the registry already connected to the renderer');
 assert(mesa.includes('CliffElevatedSurfaces?.mount?.(network'),'register on mesa rebuild');
 assert(mesa.includes('tileY: t => deps.tileSurfaceYInArea(t, mapId)'),
   'outdoor route nodes use the same ground height as player and wildlife');

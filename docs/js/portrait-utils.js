@@ -195,7 +195,7 @@ function blinkUrlFor(headOverlayUrl) {
   // Omgurku's fighter folder has authored head + horn overlays with the
   // variant suffix after "blink", unlike the older generic ur-head_blink.png.
   // The fixed horns should never request nonexistent per-blink substitutes.
-  if (/\/ur-horns-(?:back|front)_omgurku_m\.png$/i.test(headOverlayUrl)) return null;
+  if (/\/ur-(?:horns-(?:back|front)_omgurku_m|head_tusks)\.png$/i.test(headOverlayUrl)) return null; // Fixed horns and tusks stay visible through a blink.
   if (/\/ur-head_omgurku_m\.png$/i.test(headOverlayUrl)) {
     return headOverlayUrl.replace(/ur-head_omgurku_m\.png$/i, 'ur-head_blink_omgurku_m.png');
   }
@@ -1319,6 +1319,7 @@ function _getMouthSpriteUrl(expression, speciesId, gender) {
   const suffix = mapping.gendered
     ? '_' + (String(gender || '').toLowerCase() === 'female' ? 'f' : 'm')
     : '';
+  if (mapping.sprite === 'mashtz' && suffix === '_f') return null; // Female Mashtzarr and Mammakhbuur use the mouth drawn on their head sprite.
   return `portraitsprites/expressions/mouth/${expr}_${mapping.sprite}${suffix}.png`;
 }
 
@@ -3251,7 +3252,8 @@ async function preloadAllPortraitSprites(cosmeticsData) {
     for (const layer of fighter.urLayers || []) {
       if (layer.url) {
         relPaths.add(layer.url);
-        relPaths.add(layer.url.replace(/\.png$/i, '_blink.png'));
+        const blinkUrl = blinkUrlFor(layer.url); // Warm the same overlays the portrait renderer requests.
+        if (blinkUrl) relPaths.add(blinkUrl);
       }
     }
     // Mouth expression sprites are dynamically computed, not in optionCache
