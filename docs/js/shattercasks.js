@@ -301,10 +301,14 @@
     vase.emitters=null;
   }
   const backXray=new Map(),heldRenderOrders=new Map();
+  const frontXray=new Map(); // Restores the rigid front PNG draw order when the back slot is emptied.
   const skinnedRearOverlays=new Map(); // One back-only skinned draw per currently held player's neck-rigged portrait.
   const rearHeadwearXray=new Map(); // Separate skinned rear HEAD and its headwear pass were missing from the vessel x-ray.
   const CARRIED_VESSEL_RENDER_ORDER=1.4; // Used by held parts; 1.5 is reserved for weapon/tool PNG overlay classification.
-  const CARRIED_REAR_RENDER_ORDER=2.4; // After carried vessel parts, before existing hat x-ray (2.5).
+  const CARRIED_REAR_RENDER_ORDER=2.4; // Held-only rear PNG remains above the hand-carried Burden.
+  const STOWED_REAR_RENDER_ORDER=2.05; // Behind a back-stowed Burden while still above ordinary opaque world meshes.
+  const STOWED_BURDEN_RENDER_ORDER=2.15; // The actual stowed furniture draws between the two portrait PNG faces.
+  const STOWED_FRONT_RENDER_ORDER=2.25; // Front PNG occludes the stowed Burden; headwear x-ray keeps its later 2.5 layer.
   const CARRIED_REAR_HEAD_RENDER_ORDER=2.6; // Head's back-only hat/hair pass over the held vessel and hat-front pass.
   function restoreRearHeadwear() {
     for(const [mesh,stored] of rearHeadwearXray){
@@ -326,14 +330,15 @@
     // material array without having an old overlay overwrite new state.
     if(source.material?.[1]===record.backMaterial)
       record.backMaterial.visible=record.wasVisible;
+    source.renderOrder=record.order; // Restore the original front pass when the back Burden leaves or the avatar rebuilds.
     skinnedRearOverlays.delete(source);
   }
-  function syncCarrierRearPortrait(body) {
+  function syncCarrierRearPortrait(body,stowed=false) {
     // PNGPlaneAvatar has TWO layouts: rigid front/back Mesh planes, or ONE
     // SkinnedMesh with separate front/back material groups. The latter has no
     // npc_avatar_back_plane at all, so a rigid-only x-ray silently did nothing
     // on the normal player neck rig.
-    const rigidSeen=new Set(),skinnedSeen=new Set(),headwearSeen=new Set();
+    const rigidSeen=new Set(),frontSeen=new Set(),skinnedSeen=new Set(),headwearSeen=new Set();
     body?.traverse?.(mesh=>{
       if(!mesh?.isMesh||mesh.userData?.shattercaskRearOverlay)return;
       // Skinned rear headwear is an independent surface. A skinned torso-only
@@ -350,34 +355,48 @@
           if(material){material.depthTest=true;material.depthWrite=true;}
         return;
       }
-      if(mesh.name==='npc_avatar_back_plane') {
+      if(mesh.name==='npc_avatar_front_plane'||mesh.name==='player_avatar_front_plane'){
+        frontSeen.add(mesh);
+        if(stowed&&!frontXray.has(mesh))frontXray.set(mesh,mesh.renderOrder);
+        if(stowed)mesh.renderOrder=STOWED_FRONT_RENDER_ORDER;
+        return;
+      }
+      if(mesh.name==='npc_avatar_back_plane'||mesh.name==='player_avatar_back_plane') {
         rigidSeen.add(mesh);
         const material=Array.isArray(mesh.material)?mesh.material[0]:mesh.material;
         if(!material)return;
         if(!backXray.has(mesh))backXray.set(mesh,{
           material,depthTest:material.depthTest,depthWrite:material.depthWrite,order:mesh.renderOrder});
-        mesh.renderOrder=CARRIED_REAR_RENDER_ORDER;
-        // Depth test stays ON: only the held vessel is transparent to the
-        // rear portrait, not the walls/terrain between the camera and player.
+        mesh.renderOrder=stowed?STOWED_REAR_RENDER_ORDER:CARRIED_REAR_RENDER_ORDER;
+        // Keep world depth tests, but never let the rear PNG write depth over
+        // a stowed Burden that must render in front of it.
         material.depthTest=true;
+        material.depthWrite=stowed?false:backXray.get(mesh).depthWrite;
         return;
       }
       if(!mesh.isSkinnedMesh||!Array.isArray(mesh.material)
         ||mesh.material[1]?.name!=='npc_avatar_skinned_back_material'||!mesh.parent)return;
       skinnedSeen.add(mesh);
-      if(skinnedRearOverlays.has(mesh))return;
+      if(skinnedRearOverlays.has(mesh)){
+        const record=skinnedRearOverlays.get(mesh);
+        record.overlay.renderOrder=stowed?STOWED_REAR_RENDER_ORDER:CARRIED_REAR_RENDER_ORDER;
+        record.overlay.material[1].depthWrite=!stowed;
+        record.overlay.material[1].needsUpdate=true;
+        mesh.renderOrder=stowed?STOWED_FRONT_RENDER_ORDER:record.order;
+        return;
+      }
       const backMaterial=mesh.material[1];
       const hiddenFront=new THREE.MeshBasicMaterial({visible:false}); // Back-only overlay: never re-render the opposite face.
       const rearMaterial=backMaterial.clone(); // Same PNG, alpha test, and skinning; independent depth/layer state.
       rearMaterial.visible=true;
       rearMaterial.depthTest=true;
-      rearMaterial.depthWrite=true; // Preserve world occlusion and subsequent portrait depth behavior.
+      rearMaterial.depthWrite=!stowed; // Stowed Burdens require the rear pass not to mask their pixels; held keeps its original depth.
       rearMaterial.needsUpdate=true;
       const overlay=new THREE.SkinnedMesh(mesh.geometry,[hiddenFront,rearMaterial]);
       overlay.name='shattercask_carrier_rear_only_xray';
       overlay.userData.shattercaskRearOverlay=true;
       overlay.frustumCulled=false;
-      overlay.renderOrder=CARRIED_REAR_RENDER_ORDER;
+      overlay.renderOrder=stowed?STOWED_REAR_RENDER_ORDER:CARRIED_REAR_RENDER_ORDER;
       overlay.bindMode=mesh.bindMode;
       overlay.bind(mesh.skeleton,mesh.bindMatrix); // Share animated bones: no new skinning rig or geometry.
       overlay.matrixAutoUpdate=false;
@@ -386,7 +405,8 @@
         overlay.matrixWorld.copy(mesh.matrixWorld); // Follow live body/neck motion, not a frozen pickup pose.
       };
       mesh.parent.add(overlay);
-      skinnedRearOverlays.set(mesh,{overlay,backMaterial,wasVisible:backMaterial.visible});
+      skinnedRearOverlays.set(mesh,{overlay,backMaterial,wasVisible:backMaterial.visible,order:mesh.renderOrder});
+      mesh.renderOrder=stowed?STOWED_FRONT_RENDER_ORDER:mesh.renderOrder;
       backMaterial.visible=false; // Original rear pass must not double-blend under the overlaid rear.
     });
     // The player can rebuild its portrait asynchronously while carrying.
@@ -402,6 +422,11 @@
     }
     for(const source of [...skinnedRearOverlays.keys()])
       if(!skinnedSeen.has(source))removeSkinnedRearOverlay(source);
+    for(const [mesh,order] of [...frontXray])
+      if(!stowed||!frontSeen.has(mesh)){
+        mesh.renderOrder=order;
+        frontXray.delete(mesh);
+      }
     // The avatar can also replace its head plane independently of the torso.
     for(const [mesh,original] of [...rearHeadwearXray])
       if(!headwearSeen.has(mesh)){
@@ -412,6 +437,15 @@
         }
         rearHeadwearXray.delete(mesh);
       }
+  }
+  function restoreCarriedMesh(mesh,snapshot){
+    mesh.renderOrder=snapshot.order;
+    for(const [material,original] of snapshot.materials){
+      material.depthWrite=original.depthWrite;
+      material.depthTest=original.depthTest;
+      material.transparent=original.transparent;
+      material.needsUpdate=true;
+    }
   }
   function setHeldRearXray(cask) {
     if(!cask) {
@@ -424,37 +458,48 @@
         }
       }
       backXray.clear();
+      for(const [mesh,order] of frontXray)mesh.renderOrder=order;
+      frontXray.clear();
       for(const source of [...skinnedRearOverlays.keys()])removeSkinnedRearOverlay(source);
       restoreRearHeadwear();
-      for(const [mesh,snap] of heldRenderOrders) {
-        mesh.renderOrder=snap.order;
-        for(const [material,depthWrite] of snap.materials){
-          material.depthWrite=depthWrite;
-          material.needsUpdate=true;
-        }
-      }
+      for(const [mesh,snap] of heldRenderOrders)restoreCarriedMesh(mesh,snap);
       heldRenderOrders.clear();
       return;
     }
-    // The held furniture is still fully visible and depth-tested against the
-    // world; it simply stops writing depth over the character's rear PNG.
-    for(const mesh of cask.meshColliders||[]) {
+    // The hands and back can each hold a different real Burden. Reconcile both
+    // every time, including after transitions, rather than leaving stale x-ray
+    // state on whichever object was last selected.
+    const activeMeshes=new Map(); // Associates each currently carried geometry with its held/back rendering rule.
+    for(const [burden,mode] of [[held,'held'],[backCarried,'stowed']])
+      for(const mesh of burden?.meshColliders||[])activeMeshes.set(mesh,mode);
+    for(const [mesh,snapshot] of [...heldRenderOrders])
+      if(!activeMeshes.has(mesh)){
+        restoreCarriedMesh(mesh,snapshot);
+        heldRenderOrders.delete(mesh);
+      }
+    for(const [mesh,mode] of activeMeshes){
       if(!heldRenderOrders.has(mesh))heldRenderOrders.set(mesh,{
         order:mesh.renderOrder,
-        materials:(Array.isArray(mesh.material)?mesh.material:[mesh.material])
-          .filter(Boolean).map(material=>[material,material.depthWrite])
+        materials:(Array.isArray(mesh.material)?mesh.material:[mesh.material]).filter(Boolean)
+          .map(material=>[material,{depthWrite:material.depthWrite,depthTest:material.depthTest,transparent:material.transparent}])
       });
-      // Keep physical furniture in the normal colour pass. The held-object
-      // renderer treats 1.5 as a legacy PNG marker and would replay this
-      // vessel over the rear portrait, regardless of its depthWrite setting.
-      mesh.renderOrder=CARRIED_VESSEL_RENDER_ORDER;
-      for(const material of (Array.isArray(mesh.material)?mesh.material:[mesh.material]))
-        if(material&&material.depthWrite!==false){
+      const snapshot=heldRenderOrders.get(mesh);
+      // 1.5 is reserved for the weapon replay. A stowed Burden instead enters
+      // the PNG transparent draw queue so renderOrder can place it between the
+      // owner's rear and front faces, even when the furniture is normally opaque.
+      mesh.renderOrder=mode==='stowed'?STOWED_BURDEN_RENDER_ORDER:CARRIED_VESSEL_RENDER_ORDER;
+      for(const [material,original] of snapshot.materials){
+        const transparent=mode==='stowed'?true:original.transparent;
+        const depthTest=mode==='stowed'?true:original.depthTest;
+        if(material.depthWrite!==false||material.transparent!==transparent||material.depthTest!==depthTest){
           material.depthWrite=false;
+          material.transparent=transparent;
+          material.depthTest=depthTest;
           material.needsUpdate=true;
         }
+      }
     }
-    syncCarrierRearPortrait(backCarried===cask?backCarryRoot():carryDeps()?.playerMesh);
+    syncCarrierRearPortrait(backCarried?backCarryRoot():carryDeps()?.playerMesh,!!backCarried);
   }
   function carryDeps() { return window.ProceduralHandAttachments?.gameDeps || deps() || {}; }
   // Stowed Burdens mount directly to the current player portrait plane, never a head/hand socket.
@@ -2461,9 +2506,10 @@
       savedLooseFruit:[...(looseFruitHistory.get(area())?.keys()||[])],
       rubble:[...(records.get(area())?.piles.values()||[])].map(p=>({id:p.id,col:p.col,row:p.row})),
       effects:burstEffects.length,loadedWorld:storeIdentity,devArenaSpawnPending,
-      rearPortraitXray:{rigidPlanes:backXray.size,skinnedBackOnlyPasses:skinnedRearOverlays.size,
+      rearPortraitXray:{rigidPlanes:backXray.size,frontOverlays:frontXray.size,skinnedBackOnlyPasses:skinnedRearOverlays.size,
         rearHeadwearOverlays:rearHeadwearXray.size,
         heldPartsWithoutDepthWrite:heldRenderOrders.size,
+        stowedParts:[...heldRenderOrders.keys()].filter(mesh=>mesh.renderOrder===STOWED_BURDEN_RENDER_ORDER).length,
         heldPartsInWeaponReplay:[...heldRenderOrders.keys()].filter(mesh=>mesh.userData?.hobunjiHeldObjectPlane===true).length,
         skinnedNames:[...skinnedRearOverlays.keys()].map(mesh=>mesh.name)},
       performance:{ruinSnapshotReads,textureBatchesCreated,
