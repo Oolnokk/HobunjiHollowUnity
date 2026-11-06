@@ -79,7 +79,25 @@
   function concealDenFacade(area,denId){
     const scene=deps?.zoneScenes?.get?.(area)?.scene||areas.get(area)?.scene;
     const group=scene?.getObjectByName?.('animalDenEntrances');
-    for(const mesh of group?.children||[])if(String(mesh.userData?.denId)===String(denId))mesh.visible=false;
+    let hidden=false;
+    for(const mesh of group?.children||[])if(String(mesh.userData?.denId)===String(denId)){
+      mesh.visible=false;hidden=true; // The old den's whole authored doorway/furniture must never cover the cliff portal.
+    }
+    return hidden;
+  }
+  function syncTransitionRing(portal,allowed){
+    const scene=deps?.zoneScenes?.get?.(portal.area)?.scene;
+    if(!scene)return;
+    if(!portal.ring){
+      portal.ring=(scene.children||[]).find(mesh=>mesh.userData?.mapEditorRef?.kind==='spot' &&
+        mesh.userData.mapEditorRef.id==='den_'+portal.denId+'_enter')||null;
+    }
+    if(!portal.ring)return;
+    if(!portal.ringRelocated){
+      portal.ring.position.set(portal.entry.c+.5,portal.shelf.y+.02,portal.entry.r+.5);
+      portal.ringRelocated=true; // The old ground-level den's marker follows the elevated route exactly once.
+    }
+    portal.ring.visible=allowed; // A locked gate cannot display a misleading golden "enter" ring.
   }
   function hasPortal(area,denId){
     return !!areas.get(safeArea(area))?.portals?.some(r=>String(r.denId)===String(denId));
@@ -205,7 +223,11 @@
   function clear(area){
     const key=safeArea(area),state=areas.get(key);
     if(!state)return;
-    for(const portal of state.portals){restoreTransitions(key,portal);destroyPortal(portal);}
+    for(const portal of state.portals){
+      restoreTransitions(key,portal);
+      if(portal.ring){portal.ring.visible=true;portal.ringRelocated=false;} // Scene owner will reposition on its next terrain rebuild.
+      destroyPortal(portal);
+    }
     areas.delete(key);
   }
   function mount(area,network,scene,sites=null){
@@ -231,6 +253,7 @@
       portal.shelf.puzzleCavePortal=portal.mapId; // Reserve this cap before the shared reward renderer instantiates its ore/chest.
       addPhysicalGate(portal);
       createPresentation(portal,scene);
+      portal.facadeHidden=concealDenFacade(key,portal.denId); // Async default cave façade may be loaded before/after the portal.
       applyTransitions(key,portal,false); // Default closed until player reaches the actual elevated entry tile.
       concealDenFacade(key,portal.denId);
     }
@@ -265,7 +288,8 @@
       const nearDoor=onShelf&&Math.hypot(px-(portal.entry.c+.5),pz-(portal.entry.r+.5))<.73;
       const enabled=portal.solved&&portal.rise>=.98&&portal.openWait<=0&&nearDoor&&(!portal.requiresSong||!down);
       applyTransitions(area,portal,enabled); // World-transition owner sees a real locked target until the slab has physically risen.
-      concealDenFacade(area,portal.denId); // Async den facade setup cannot cover an already mounted cliff entrance.
+      syncTransitionRing(portal,enabled);
+      if(!portal.facadeHidden)portal.facadeHidden=concealDenFacade(area,portal.denId); // Stop searching scene meshes once the legacy façade is hidden.
     }
   }
   function forgetCave(mapId){
