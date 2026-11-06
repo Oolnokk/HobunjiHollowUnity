@@ -311,7 +311,7 @@
   <script src="js/farm-world-settings.js?v=20261013h4299425"></script>
   <script src="onboarding.js?v=20261104weaponfamily1"></script>
   <!-- Combat system modules (windup/strike pipeline, loadout, abilities) -->
-  <script src="js/combat/resource-system.js?v=20261104scent1439c"></script>
+  <script src="js/combat/resource-system.js?v=20261106trinkets20"></script>
   <script src="js/sacred-ground.js?v=20261026sacred1"></script> <!-- Global sacred-ground provider registry for totems, temple and future blessings. -->
   <script src="js/combat/knockback-collision-impact.js?v=20261105aerialAudit2"></script>
   <!-- Burning Health presentation: reuses the authored campfire fire emitter on afflicted player/enemy avatar roots. -->
@@ -351,12 +351,12 @@
   <script src="js/combat/combat-input.js?v=20261024hc6ea2cd"></script>
   <!-- Attack pose templates shared with the attack-animation editor; before every ability module. -->
   <script src="js/combat/attack-pose-templates.js?v=20261017a"></script>
-  <script src="js/combat/combat-combo.js?v=20261104specialfinisher2"></script>
-  <script src="js/combat/combat-quickattacks.js?v=20261104knockdown1"></script>
-  <script src="js/combat/combat-counter-shield.js?v=20261031aoeWidth1"></script>
+  <script src="js/combat/combat-combo.js?v=20261106trinkets20"></script>
+  <script src="js/combat/combat-quickattacks.js?v=20261106trinkets20"></script>
+  <script src="js/combat/combat-counter-shield.js?v=20261106trinkets20"></script>
   <script src="js/combat/combat-blink-dodge.js?v=20261026hmaskalpha10"></script>
-  <script src="js/combat/combat-charged-breaker.js?v=20261031aoeWidth1"></script>
-  <script src="js/combat/combat-flurry.js?v=20261031aoeWidth1"></script>
+  <script src="js/combat/combat-charged-breaker.js?v=20261106trinkets20"></script>
+  <script src="js/combat/combat-flurry.js?v=20261106trinkets20"></script>
   <script src="js/combat/combat-loadout-ui.js?v=20261104weaponfamily2"></script>
   <!-- Weapon Enchantments + Immundanity (Base/Flourish, planar cancellation, Sicced/Fury/...). -->
   <script src="js/combat/combat-enchantments.js?v=20261027shapeaudit1"></script>
@@ -372,7 +372,7 @@
   <script src="js/area-footprint-blockers.js?v=20260929shotfloor1"></script>
   <!-- Sub-stepped sliding move extracted out of game.js; must load before game.js. -->
   <script src="js/swept-move.js?v=20260927footprints1"></script>
-  <script src="js/combat/ranged-weapons.js?v=20261104crossheightAudit2"></script>
+  <script src="js/combat/ranged-weapons.js?v=20261106trinkets20"></script>
   <script src="js/combat/ranged-hud-reticle.js?v=20261020hitcolor2"></script>
   <script src="js/combat/melee-hud-reticle.js?v=20261105koma1"></script>
   <!-- Bandit gang combat AI + weapon visuals (window.BanditCombat) — must
@@ -408,7 +408,7 @@
   <script src="js/bounty-board.js?v=20261008h416634c"></script>
   <!-- Loads docs/config/combat/attack-values.json and overrides every
        combat-*.js module's hardcoded defaults with it. -->
-  <script src="js/combat/combat-config-loader.js?v=20261106h7be18af"></script>
+  <script src="js/combat/combat-config-loader.js?v=20261106h3891d59"></script>
   <!-- Shared timed-effect HUD, skill progression, food processing rules, and
        hearth cooking. These modules own their state/UI and expose narrow
        adapters to game.js. -->
@@ -416,7 +416,10 @@
   <script src="js/skill-system.js?v=20261015h31a0bda"></script>
   <script src="js/perk-system.js?v=20261031aoeWidth1"></script>
   <!-- Trinkets + shared 8-point Attunement budget; registers stat/perk/companion providers. -->
-  <script src="js/trinket-system.js?v=20261018trinketgear1"></script>
+  <script src="js/trinket-system.js?v=20261106trinkets20"></script>
+  <!-- Wearer-only trinket hooks: imported from PR #1421 and child #1426, before Combat.init in game.js. -->
+  <script src="js/combat/specialized-combat-trinket-hooks.js?v=20261106trinkets20"></script>
+  <script src="js/combat/double-edged-combat-trinkets.js?v=20261106trinkets20"></script>
   <script src="js/cooking-data.js?v=20261021hb2f8016"></script>
   <script src="js/food-processing.js?v=20261015hc6ddbcf"></script>
   <script src="js/cooking-system.js?v=20261102-food24h2"></script>
@@ -426,11 +429,11 @@
        init(), so load order relative to the other systems above doesn't
        matter; must load before game.js, which calls
        window.AlchemySystem.init(...) during its own setup. -->
-  <script src="js/alchemy-system.js?v=20261028repeatbrew1"></script>
+  <script src="js/alchemy-system.js?v=20261106trinkets20"></script>
   <!-- Banubu's Tea Grinder delegates trait legality/targeting to AlchemySystem
        but outputs cooking Tea Blends, so it must load after both systems. -->
   <script src="js/tea-grinder.js?v=20261019h0edeaef"></script>
-  <script src="js/alchemy-flasks.js?v=20261021sharedthrowflight1"></script>
+  <script src="js/alchemy-flasks.js?v=20261106trinkets20"></script>
   <!-- Dye catalog/ownership (window.DyeSystem) — character creation, the
        redye panel, General Store clothing stock, and treasure loot all
        draw from it. Self-contained aside from deps injected via init(), so
@@ -906,7 +909,7 @@
        dependencies; must load before shattercasks.js, which feeds them. See docs/architecture/ruin-capabilities.md. -->
   <script src="js/world-events.js?v=1"></script>
   <script src="js/targetables.js?v=1"></script>
-  <script src="js/shattercasks.js?v=20261105backface4"></script>
+  <script src="js/shattercasks.js?v=20261106trinkets20"></script>
   <script src="js/crate-piles.js?v=20261105hf6df591"></script>
   <script src="js/hronal-witch-bombs.js?v=20261104h83c7695"></script>
   <!-- Hanging ropes: the shared rope swing arithmetic (pure) and the rope component burdens hang from. Needs Shattercasks at

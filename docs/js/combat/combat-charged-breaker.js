@@ -146,11 +146,13 @@
   function register() {
     let startedAt = -1;
     let paidChargeCost = 0; // Tracks the cumulative effective Stamina cost already paid so releasing never charges the same progress twice.
+    let paidChargeBaseline = 0; // Under Bloodrush/Lead Knuckles, tracks authored charge slices rather than taxed spend so each slice receives the full trade-off once.
     let furiousRawProgressBonus = 0; // Added to the renderer's raw windup clock; grows only from segments actually funded by Furious Stamina.
 
     function onHoldStart() {
       startedAt = now();
       paidChargeCost = 0;
+      paidChargeBaseline = 0;
       furiousRawProgressBonus = 0;
       window.Combat.setWindupProgressTransform?.(FURIOUS_PROGRESS_OWNER, raw => raw + furiousRawProgressBonus);
       resetChargeGlowMilestones();
@@ -170,13 +172,13 @@
 
       setGlow(0);
       deps.showToast('Charged Breaker charging — release to strike.', true);
-      deps.triggerWeaponHoldVisual((MAX_CHARGE_S + STRIKE_S) / shapeStats.speed, {
+      deps.triggerWeaponHoldVisual((MAX_CHARGE_S + STRIKE_S) / (shapeStats.speed * (window.DoubleEdgedCombatTrinkets?.attackSpeed?.() || 1)), {
         anim: 'sweep',
         pose: window.AttackPoseTemplates?.poseFor('hatchet_swing', POWER), // The editor's Charged Breaker pose, POWER already applied.
         windupFrac: MAX_CHARGE_S / (MAX_CHARGE_S + STRIKE_S),
         strikeFrac: 1,
         power: 1,
-        holdS: HOLD_S / shapeStats.speed,
+        holdS: HOLD_S / (shapeStats.speed * (window.DoubleEdgedCombatTrinkets?.attackSpeed?.() || 1)),
         windupSlowdown: WINDUP_SLOWDOWN,
         afflictionIds: Object.keys(effects.afflictions),
         afflictions: effects.afflictions,
@@ -213,7 +215,8 @@
         || { afflictions: {}, stats: {} };
       if (!forced) {
         const targetPaid = (chargeCostForPose(poseCharge, 1 + (effects.stats.staminaCostMul || 0)) / shapeStats.efficiency); // Interruptible total cost at the exact released pose.
-        const remainder = Math.max(0, targetPaid - paidChargeCost);
+        const trinketChargeTax = (window.ResourceSystem?.statModifier?.(deps.player, 'attackStaminaCost') || 1) * (window.ResourceSystem?.statModifier?.(deps.player, 'heavyAttackStaminaCost') || 1); // Stamina tax must apply to each base slice, not shrink away during charge reconciliation.
+        const remainder = Math.max(0, targetPaid - (trinketChargeTax !== 1 ? paidChargeBaseline : paidChargeCost));
         if (remainder > 0) {
           const payment = window.ResourceSystem?.spendStamina(
             deps.player,
@@ -221,6 +224,7 @@
             'Charged Breaker',
             { actionKind: 'offensiveHeldCharge', abilityId: 'chargedBreaker' },
           );
+          paidChargeBaseline += remainder; // Advances the pre-tax budget regardless of perk discounts or the Stamina channel that paid.
           paidChargeCost += Math.max(0, Number(payment?.enhancedPaid || 0) + Number(payment?.spent || 0) + Number(payment?.excess || 0));
         }
       }
@@ -275,7 +279,7 @@
         LUNGE_DIRECT_FLIGHT_MAX,
         poseCharge,
       );
-      const timeScale = 1 / ((window.ResourceSystem?.getExhaustionSpeed(deps.player) ?? 1) * shapeStats.speed);
+      const timeScale = 1 / ((window.ResourceSystem?.getExhaustionSpeed(deps.player) ?? 1) * (shapeStats.speed * (window.DoubleEdgedCombatTrinkets?.attackSpeed?.() || 1)));
       const strikeS = STRIKE_S * timeScale;
 
       deps.setCombatSwingCone(rangePx, halfConeRad, deps.player.angle);
@@ -383,7 +387,8 @@
       const effects = window.CombatProgression?.getEffects(deps.currentWeaponKey(), 'chargedBreaker')
         || { afflictions: {}, stats: {} };
       const targetPaid = (chargeCostForPose(poseCharge, 1 + (effects.stats.staminaCostMul || 0)) / shapeStats.efficiency); // One interruptible total cost: each newly reached slice is paid exactly once.
-      const segmentCost = Math.max(0, targetPaid - paidChargeCost);
+      const trinketChargeTax = (window.ResourceSystem?.statModifier?.(deps.player, 'attackStaminaCost') || 1) * (window.ResourceSystem?.statModifier?.(deps.player, 'heavyAttackStaminaCost') || 1); // Continuous hold and final release must reconcile against the same authored charge curve.
+      const segmentCost = Math.max(0, targetPaid - (trinketChargeTax !== 1 ? paidChargeBaseline : paidChargeCost));
       if (segmentCost > 0) {
         const payment = window.ResourceSystem?.spendStamina(
           deps.player,
@@ -391,10 +396,11 @@
           'Charged Breaker (charging)',
           { actionKind: 'offensiveHeldCharge', abilityId: 'chargedBreaker' },
         ) || { tempoMultiplier: 1 };
+        paidChargeBaseline += segmentCost; // Counts this authored charge increment exactly once even when the real spend carries the doubled-edged tax.
         paidChargeCost += Math.max(0, Number(payment.enhancedPaid || 0) + Number(payment.spent || 0) + Number(payment.excess || 0));
         const tempo = Math.max(1, Number(payment.tempoMultiplier) || 1);
         if (tempo > 1 && MAX_CHARGE_S > 0) {
-          furiousRawProgressBonus += Math.max(0, Number(dt) || 0) * (tempo - 1) * shapeStats.speed / MAX_CHARGE_S; // Furious-funded time advances the SAME renderer windup clock; when funding ends this bonus stops growing immediately.
+          furiousRawProgressBonus += Math.max(0, Number(dt) || 0) * (tempo - 1) * (shapeStats.speed * (window.DoubleEdgedCombatTrinkets?.attackSpeed?.() || 1)) / MAX_CHARGE_S; // Furious-funded time advances the SAME renderer windup clock; when funding ends this bonus stops growing immediately.
         }
       }
       const hasEnhancedStamina = (window.ResourceSystem?.getEnhancedResources?.(deps.player, 'stamina', { actionKind: 'offensiveHeldCharge' }) || []).length > 0;
