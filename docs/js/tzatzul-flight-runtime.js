@@ -13,10 +13,11 @@
   const BODY_WIDTH_FRACTION = .30; // Damaging torso/core is narrower than the full articulated wing-span portrait.
   const BODY_HEIGHT_FRACTION = .34; // Half-height of the headfirst body box, based on the existing creature hitbox.
   const NOSE_LEAD_FRACTION = .33; // Moves the body toward the head/beak along its actual 3D flight direction.
+  const captured = new Map(); // Live non-player victims being carried, keyed by the original actor.
   const spawnedThisDay = new Set(); // Prevents post-death immediate respawning.
   const actors = new Set(); // Only Tzatzul, not all hostile creatures, are animated each tick.
   const stats = { spawned: 0, flights: 0, swoops: 0, hits: 0, misses: 0,
-    retreats: 0, last: null, lastBodyContact: null }; // Mobile-readable diagnostics, no live object references.
+    retreats: 0, captures: 0, releases: 0, lastCapture: null, last: null, lastBodyContact: null }; // Mobile-readable diagnostics, no live object references.
   let deps = null; // WildlifeSpawn injected authoritative gameplay world contract.
   let flightSerial = 0; // Unique ephemeral line-perch IDs for traveling birds.
 
@@ -40,6 +41,7 @@
   function init(injected) {
     deps = injected; // No second creature factory, map store, camera loop, or independent timers.
     lastArea = null;
+    for (const prey of [...captured.keys()]) releaseCaptive(prey, 'reset');
     actors.clear();
     spawnedThisDay.clear();
     return !!deps?.makeCreatureEntity;
@@ -69,7 +71,7 @@
       bird.tzatzulFlightPose = 'perched'; // Reuses TzatzulLiveVisuals; no duplicate renderer.
       bird._tzFlight = { identity, roostId: roost.id, roost: roost.support,
         phase: 'perched', elapsed: 0, rest: REST_SECONDS + slot, target: null,
-        segment: null, struck: false }; // Independent phase per animal.
+        segment: null, struck: false, captive: null }; // Independent phase per animal.
       deps.hostileObjects.add(bird);
       actors.add(bird);
       spawnedThisDay.add(roost.id);
@@ -81,7 +83,7 @@
   function viable(bird, other) {
     return other && other !== bird && other.health > 0 && other.areaId === bird.areaId
       && other.creatureKey !== 'tzatzul' && other.creatureKey !== 'tzatzul-hatchling'
-      && !other.onBranch && !other.onPerch && !other._denHidden
+      && !other.onBranch && !other.onPerch && !other.tzatzulCapturedBy && !other._denHidden
       && other.state !== 'dying';
   }
   function choosePrey(bird) {
@@ -156,6 +158,50 @@
     }
     return entry <= 1 && exit >= 0 ? entry : null;
   }
+  function releaseCaptive(prey, reason) {
+    const record = captured.get(prey);
+    if (!record) return false;
+    captured.delete(prey);
+    const bird = record.bird;
+    if (bird?._tzFlight?.captive === prey) bird._tzFlight.captive = null;
+    if (bird) bird.tzatzulCarrying = false;
+    window.PerchSupport?.forget?.(prey); // Restore native ground movement, never leave a dangling synthetic branch.
+    prey.onBranch = null; prey.branchT = 0; prey.branchSurfaceY = 0;
+    prey.tzatzulCapturedBy = null; prey.state = record.state;
+    if (reason === 'returned to roost' && record.areaId === deps?.getCurrentArea?.()) {
+      prey.x = n(bird?._tzFlight?.roost?.x, prey.x) + tile() * 2;
+      prey.y = n(bird?._tzFlight?.roost?.y, prey.y) + tile() * 2;
+    } // Until the nest cave is playable, return living prey to ground instead of invisibly killing them.
+    stats.releases++;
+    stats.lastCapture = { event: 'released', reason, prey: prey.creatureKey || prey.name || 'npc' };
+    return true;
+  }
+  function carryCaptive(bird) {
+    const prey = bird?._tzFlight?.captive;
+    if (!prey) return false;
+    if (!(bird.health > 0) || !(prey.health > 0) || prey.areaId !== bird.areaId
+      || !deps.hostileObjects.has(bird) || captured.get(prey)?.bird !== bird) {
+      releaseCaptive(prey, 'owner or prey unavailable'); return false;
+    }
+    if (!bird.onPerch || !window.PerchSupport?.attach?.(prey, bird.onPerch, bird.branchT)) {
+      releaseCaptive(prey, 'flight support lost'); return false;
+    }
+    prey.tzatzulCapturedBy = bird._tzFlight.identity.id;
+    prey.state = 'tzatzul-carried';
+    return true;
+  }
+  function capture(bird, prey) {
+    if (!prey || prey === deps.player || prey.isPlayer || !(prey.health > 0)
+      || prey.tzatzulCapturedBy || captured.has(prey) || !bird?._tzFlight
+      || !bird.onPerch || !window.PerchSupport?.attach?.(prey, bird.onPerch, bird.branchT)) return false;
+    captured.set(prey, { bird, state: prey.state, areaId: prey.areaId }); // Original creature, clothing and loot survive transport.
+    bird._tzFlight.captive = prey; bird.tzatzulCarrying = true; // Switch the authored flying body to its gripping sprite.
+    prey.tzatzulCapturedBy = bird._tzFlight.identity.id; prey.state = 'tzatzul-carried';
+    stats.captures++;
+    stats.lastCapture = { event: 'captured', prey: prey.creatureKey || prey.name || 'npc' };
+    mark(bird, 'captured visible prey');
+    return true;
+  }
   function startLeg(bird, endpoint, phase, target = null) {
     const state = bird._tzFlight, perch = window.PerchSupport;
     if (!state || !perch) return false;
@@ -219,7 +265,8 @@
     stats.lastBodyContact = { at: Date.now(), id: state.identity.id,
       target: target === deps.player ? 'player' : target.creatureKey || 'creature',
       sweptFraction: +entry.toFixed(3), phase: state.phase, collider: 'body' };
-    if (applied) { stats.hits++; mark(bird, 'headfirst body dive hit'); }
+    if (applied) { stats.hits++; mark(bird, 'headfirst body dive hit');
+      if (target !== deps.player && target.health > 0) capture(bird, target); }
     else { stats.misses++; mark(bird, 'body contact (damage unavailable)'); }
     return applied;
   }
@@ -230,6 +277,7 @@
     const t = Math.max(0, Math.min(1, state.elapsed / state.segment.duration));
     bird.branchT = t;
     window.PerchSupport?.constrain?.(bird); // Reuses native onBranch and branchSurfaceY movement/portrait height.
+    carryCaptive(bird); // Prey uses the same elevated support as the flying body.
     bird.tzatzulFlightPose = t < .15 || t > .85 ? 'flap' : 'glide';
     if (state.phase === 'swoop') {
       const previous = state.segment.lastBody;
@@ -244,6 +292,7 @@
     state.segment = null;
     if (state.phase === 'swoop') { returnHome(bird); return; }
     if (state.phase === 'return' && window.PerchSupport?.attach?.(bird, state.roost)) {
+      if (state.captive) releaseCaptive(state.captive, 'returned to roost');
       state.phase = 'perched'; state.elapsed = 0; state.rest = REST_SECONDS;
       state.target = null; bird.tzatzulFlightPose = 'perched'; bird.tzatzulDivePitchRad = 0;
     }
@@ -259,9 +308,13 @@
     }
     for (const bird of actors) {
       if (!deps.hostileObjects.has(bird) || !(bird.health > 0)) {
+        if (bird._tzFlight?.captive) releaseCaptive(bird._tzFlight.captive, 'bird died or unloaded');
         actors.delete(bird); window.TzatzulLiveVisuals?.release?.(bird, 'dead or unloaded'); continue;
       }
-      if (bird.areaId !== area) continue; // No physics or path scanning on inactive maps.
+      if (bird.areaId !== area) {
+        if (bird._tzFlight?.captive) releaseCaptive(bird._tzFlight.captive, 'area transition');
+        continue; // No physics or path scanning on inactive maps.
+      }
       const state = bird._tzFlight;
       if (!state) continue;
       if (state.phase !== 'perched') { advance(bird, step); continue; }
@@ -284,11 +337,12 @@
       roosts: (window.TzatzulCliffSites?.snapshot?.().areas || []).map(({ area, count }) => ({ area, count })), // The mobile panel counts real spires, not abandoned reachable-balcony entries.
       birds: [...actors].map(c => ({ id: c._tzFlight?.identity?.id, area: c.areaId,
         phase: c._tzFlight?.phase, pose: c.tzatzulFlightPose,
-        target: c._tzFlight?.target === deps.player ? 'player' : c._tzFlight?.target?.creatureKey || null })) };
+        target: c._tzFlight?.target === deps.player ? 'player' : c._tzFlight?.target?.creatureKey || null,
+        captive: c._tzFlight?.captive?.creatureKey || null })) };
   }
   window.TzatzulFlightRuntime = Object.freeze({
     init, ensureZone, update, onDayAdvance, debugSnapshot,
     owns: bird => actors.has(bird) && !!bird._tzFlight && bird.health > 0, // Existing hostile renderer skips ground movement for these flight-owned predators.
-    __test: Object.freeze({ roosts, choosePrey, swoop, returnHome }),
+    __test: Object.freeze({ roosts, choosePrey, swoop, returnHome, capture, carryCaptive, releaseCaptive }),
   });
 })();
