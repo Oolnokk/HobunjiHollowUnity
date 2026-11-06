@@ -241,6 +241,12 @@ function testRuntime() {
   window.Shattercasks.tick(.02);
   assert.equal(firstAvatar.parent,bodyRoot,'old portrait remains attached during asynchronous rebuild');
   assert.equal(charge.group.parent,nextPortrait,'stowed burden follows the canonical live portrait, not the stale cached plane');
+  window.Shattercasks.tick(.2); // Let the rear-only pass prune the previous avatar while its source hierarchy is still attached.
+  assert.equal(firstAvatar.children.filter(node=>node.userData?.shattercaskRearOverlay).length,0,
+    'previous avatar loses its rear overlay even while its original portrait still exists in the body');
+  assert.equal(portrait.material[1].visible,true,'old avatar back material is restored after a canonical avatar swap');
+  assert.equal(nextAvatar.children.filter(node=>node.userData?.shattercaskRearOverlay).length,1,
+    'only the canonical new avatar owns an x-ray overlay');
   assert.equal(window.Shattercasks.debugSnapshot().backCarryMount.portraitAttached,true);
   const newRigPlane=new SkinnedMesh(null,[
     new MeshBasicMaterial({name:'npc_avatar_skinned_front_material'}),
@@ -250,6 +256,11 @@ function testRuntime() {
   window.Shattercasks.tick(.02);
   assert.equal(nextPortrait.parent,nextAvatar,'previous skinned plane is still in the active avatar hierarchy');
   assert.equal(charge.group.parent,newRigPlane,'live rig metadata overrides the cached portrait mesh during in-place rebuild');
+  window.Shattercasks.tick(.2); // Same-root skinned replacement should also clean up stale material and overlay state.
+  assert.equal(nextAvatar.children.filter(node=>node.userData?.shattercaskRearOverlay).length,1,
+    'same-avatar skinned rebuild does not create a duplicate rear pass');
+  assert.equal(nextPortrait.material[1].visible,true,
+    'replaced skinned plane restores its native rear material while it remains in the active avatar group');
   currentBodyRoot=new Group();currentBodyRoot.name='player_rebuilt_body_root';
   activeAvatar=new Group();activeAvatar.name='loading_player_avatar';currentBodyRoot.add(activeAvatar);
   window.Shattercasks.tick(.02);
