@@ -42,6 +42,12 @@ assert.match(deliverySource, /mastery\.saveState\(masteryBefore\)/, 'failed lite
 assert.match(adapterSource, /getTurnInReadyTaskForNpc = function npcCraftingCommissionTurnInReady/, 'commission readiness overrides the empty-items false positive');
 assert.match(gameSource, /turnInTask: taskId => window\.ProceduralTasks\.turnInTask\(taskId\)/, 'dialogue resolves live commission handler instead of capturing the generic fetch-only function');
 assert.match(gameSource, /NpcCraftingCommissionDelivery\?\.turnInPrompt\?\./, 'NPC hand-in label uses the commission type even when there are no fetch items');
+const turnInScreenPosition = gameSource.indexOf('const _turnInTask = rec?.id ? window.ProceduralTasks.getTurnInReadyTaskForNpc(rec.id)');
+assert(turnInScreenPosition > 0, 'main NPC dialogue uses the shared ready-commission lookup');
+for (const specialMenu of ["if (isGeneralStoreNpcOnDuty(walker))", "if (isCarpenterNpcOnDuty(walker))", "if (rec?.id === 'jubmir')"]) {
+  assert(gameSource.indexOf(specialMenu, turnInScreenPosition) > turnInScreenPosition, 'ready crafting hand-in precedes special first-dialogue menu: ' + specialMenu);
+}
+
 assert.match(adapterSource, /__craftCommissionDebug/, 'mobile-friendly commission diagnostics exist');
 assert.match(dyesSource, /colorTraitsForHsv/, 'dye labels reuse the gifting color classifier');
 assert.match(dyesSource, /dye-trait-readout/, 'swatch menus have a visible mobile classification readout');
