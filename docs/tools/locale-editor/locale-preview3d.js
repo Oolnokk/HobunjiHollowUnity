@@ -934,7 +934,7 @@
     return promise;
   }
 
-  async function addAuthoredFurnitureObject(group, object, merged, token, ghost) {
+  async function addAuthoredFurnitureObject(group, object, merged, token, ghost, wall = null) {
     if (!window.AuthoredFurniture?.buildGroup) return false;
     const data = await loadAuthoredFurnitureData(object.key);
     if (!data || token !== generationToken) return false;
@@ -944,8 +944,19 @@
     const h = Math.max(.1, Number(object.h) || Number(data.footprint?.d) || 1);
     const x = Number(object.x) + w / 2, z = Number(object.y) + h / 2;
     const groundY = surfaceY(merged, x, z);
-    model.position.set(x, groundY, z);
-    model.rotation.y = THREE.MathUtils.degToRad(Number(object.rot) || 0);
+    if(wall){
+      const wx=Number(wall.x)+Math.max(1,Number(wall.w)||1)/2;
+      const wz=Number(wall.y)+Math.max(1,Number(wall.h)||1)/2;
+      const amount=Number(object.visual?.mountHeightFraction); // Omitted height defaults to the middle of the authoring plane.
+      const fraction=Math.max(0,Math.min(1,Number.isFinite(amount)?amount:.5));
+      const faceY=surfaceY(merged,wx,wz)+Math.max(.6,Number(wall.visual?.height)||2.6)*fraction;
+      model.position.set(wx,faceY+(Number(object.visual?.mountOffsetY)||0),wz);
+      model.rotation.y=THREE.MathUtils.degToRad((Number(wall.rot)||0)+(Number(object.rot)||0));
+      model.userData.localeWallMountPreview=wall.id;
+    }else{
+      model.position.set(x, groundY, z);
+      model.rotation.y = THREE.MathUtils.degToRad(Number(object.rot) || 0);
+    }
     tintGhost(model, ghost);
     group.add(model);
     return true;
@@ -1056,7 +1067,8 @@
       }
       let loaded = false;
       if (['furniture','decor','bench','processor','prop'].includes(object.kind)) {
-        loaded = await addAuthoredFurnitureObject(group, object, merged, token, ghost);
+        const wall=(instance.objects||[]).find(item=>item.id===object.wallMountId && (item.key==='unknownCliffFace'||item.visual?.renderer==='unknown_wall_plane'))||null;
+        loaded = await addAuthoredFurnitureObject(group, object, merged, token, ghost, wall); // Editor references the selected placeholder; game substitutes the real cliff surface.
       }
       if (!loaded) loaded = await addGlbObject(group, object, merged, token, ghost);
       if (!loaded && token === generationToken) addFallbackObject(group, object, merged, ghost);
