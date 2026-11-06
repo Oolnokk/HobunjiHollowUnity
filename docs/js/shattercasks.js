@@ -1576,7 +1576,7 @@
     }
     const active=records.get(c.mapId)?.scene||scene();
     if(!active)return false;
-    if(c.kind==='shattercask')c._flaskmasterSource={power:flaskmasterFactor('shatterPower'),radius:flaskmasterFactor('shatterRadius'),rootId:c.id,origin:'player-throw'}; // Capture launch-time bonus before the equipment can change in flight.
+    if(c.kind==='shattercask') c._flaskmasterSource = {power:flaskmasterFactor('shatterPower'),radius:flaskmasterFactor('shatterRadius'),rootId:c.id,origin:'player-throw'}; // Capture launch-time bonus before the equipment can change in flight.
     setHeldRearXray(null);
     active.add(c.group);c.group.position.copy(origin);
     c.group.quaternion.copy(quat);c.group.scale.copy(scale);
