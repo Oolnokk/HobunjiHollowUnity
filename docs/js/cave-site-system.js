@@ -1434,13 +1434,18 @@
       .finally(() => ruinTransitionMaps.delete(profile.mapId));
   }
 
+  function tickPuzzleRuntime(dt = 0) {
+    const elapsed=Math.max(0,Number(dt)||0);
+    const mapId=String(wildlifeDeps?.getCurrentArea?.() || ''); // Every music input and active cave scene is scoped to this map.
+    window.PuzzleCaveEntrances?.update?.(elapsed,mapId); // Music/door transitions must keep moving even when the dev switch freezes NPC AI.
+    const activePuzzle=puzzleChallengesByMapId.get(mapId)?.challenge;
+    if(activePuzzle){activePuzzle.tick(elapsed);activePuzzle.animate?.(elapsed);} // 100 BPM sixteenth-note windows need the unthrottled gameplay clock.
+  }
   function updateCurrentCaveRuntime(dt = 0) {
     const elapsed=Math.max(0,Number(dt)||0);
     caveClock += elapsed;
-    const mapId = String(wildlifeDeps?.getCurrentArea?.() || '');
-    window.PuzzleCaveEntrances?.update?.(elapsed,mapId); // Mini-cliff door admission uses the same per-frame input clock as interior notes. // One area read, shared by the fast score clock and slow cave interactions.
-    const activePuzzle=puzzleChallengesByMapId.get(mapId)?.challenge;
-    if(activePuzzle){activePuzzle.tick(elapsed);activePuzzle.animate?.(elapsed);} // 16th notes last only 150 ms at 100 BPM: a throttled cave tick would skip glyph windows.
+    tickPuzzleRuntime(elapsed); // Legacy wildlife wrapper owns cave ecology; the puzzle clock can also run independently when AI is disabled.
+    const mapId=String(wildlifeDeps?.getCurrentArea?.() || '');
     caveRuntimeTimer -= elapsed;
     if (caveRuntimeTimer > 0) return;
     caveRuntimeTimer = CAVE_RUNTIME_INTERVAL_S;
@@ -1593,6 +1598,7 @@
     decorateCavernMapData,
     syncTransitionLabels,
     updateCurrentCaveRuntime,
+    tickPuzzleRuntime, // Independent authoring/puzzle clock for Dev Testing Switchbox NPC-free mode.
     installIntegrations,
     debugSnapshot,
     buildInteriorProps,
