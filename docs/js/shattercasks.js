@@ -27,7 +27,7 @@
   // 'kind' chooses the impact payload, not a different input or animation system.
   class Burden {
     constructor(props) { Object.assign(this, props); this.kind = props.kind || 'shattercask'; }
-    get displayName() { return this.displayNameOverride || (this.kind === 'soursap' ? 'Soursap Fruit' : this.kind === 'shattercask' ? 'Shattercask' : String(this.kind).replace(/[-_]/g,' ').replace(/\b\w/g,letter=>letter.toUpperCase())); }
+    get displayName() { return this.displayNameOverride || (this.kind === 'soursap' ? 'Soursap Fruit' : this.kind === 'shattercask' ? 'Shattercask' : this.kind === 'flameShattercask' ? 'Flame Shattercask' : String(this.kind).replace(/[-_]/g,' ').replace(/\b\w/g,letter=>letter.toUpperCase())); }
   }
   const fallingFruits = new Map(); // Active airborne tree fruit; separate from the player's one thrown burden.
   const downwardFalls = new Map(); // Ceiling-mechanism releases use a true vertical flight path and the same Burden impact resolver as throws.
@@ -861,7 +861,7 @@
         &&typeof window.AuthoredFurniture?.buildGroup==='function'){
       data=await window.AuthoredFurniture.load(options.furnitureKey);
       if(data)built=window.AuthoredFurniture.buildGroup(data);
-    }else if(kind==='shattercask'&&typeof window.AuthoredFurniture?.load==='function'
+    }else if((kind==='shattercask'||kind==='flameShattercask')&&typeof window.AuthoredFurniture?.load==='function'
         &&typeof window.AuthoredFurniture?.buildGroup==='function'){
       data=await window.AuthoredFurniture.load('shattercaskBlasting');
       if(data)built=window.AuthoredFurniture.buildGroup(data);
@@ -1190,7 +1190,7 @@
   function impactBackOnCarrierHit(cause='carrier-hit'){
     const burden=backCarried;
     if(!burden||burden.exploded)return false;
-    const explosive=burden.kind==='shattercask'||burden.kind==='soursap'
+    const explosive=burden.kind==='shattercask'||burden.kind==='flameShattercask'||burden.kind==='soursap'
       ||burden.explodeOnCarrierHit===true||burden.data?.carryable?.explodeOnHit===true;
     if(!explosive)return false; // A witch-bomb's fuse continues, but an ordinary hit does not trigger it.
     return detonate(burden,cause);
@@ -1219,7 +1219,7 @@
     // Shattercasks are normally regenerated from their stable area-local IDs.
     // Mark the ORIGINAL placement consumed on first departure, without
     // destroying the item in the player's possession.
-    if(burden.kind==='shattercask'&&!burden._backOriginalSpawnRetired){
+    if((burden.kind==='shattercask'||burden.kind==='flameShattercask')&&!burden._backOriginalSpawnRetired){
       burden._backOriginalSpawnRetired=true;
       saveConsumed(oldMapId+':'+oldId);
       // Reserve a separate ID BEFORE the destination's async authored
