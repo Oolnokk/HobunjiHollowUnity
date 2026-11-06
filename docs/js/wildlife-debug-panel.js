@@ -104,6 +104,8 @@
     if (!flight) return '';
     const spires = window.TzatzulCliffSites?.snapshot?.(); // Real cave-spire geometry and generation errors for mobile.
     const wings = window.TzatzulLiveVisuals?.snapshot?.(); // Actual wing mesh load/pose state, not an assumed successful render.
+    const nest = window.TzatzulNestEncounter?.debugSnapshot?.(); // Real miniboss counters, available without DevTools.
+    const arena = window.TzatzulNestInterior?.debugSnapshot?.(); // Displays actual wall and spike geometry counts.
     const area = deps?.getCurrentArea?.();
     const inhabitants = (flight.birds || []).filter(bird => bird.area === area);
     const fmt = value => deps.esc(String(value ?? 'none'));
@@ -116,6 +118,16 @@
       + ' · swoops: ' + flight.swoops + ' · hits/misses: ' + flight.hits + '/' + flight.misses + '</div>'
       + '<div>Live wing rigs: ' + (wings?.liveRigs ?? 0) + ' · failed loads: ' + (wings?.loadFailures ?? 0) + '</div>'
       + '<div>Inaccessible nest spires: ' + (flight.roosts?.find(record => record.area === area)?.count || 0) + '</div>'
+      + '<div>Nest arenas: ' + (arena?.arenas?.length || 0) + ' · rock perches: ' + (arena?.rockMeshes || 0)
+      + ' · stone spike layers: ' + (arena?.spikeMeshes || 0) + '</div>'
+      + '<div>Nest dives: ' + (nest?.dives || 0) + ' · wall hits: ' + (nest?.wallHits || 0)
+      + ' · sharp spike hits: ' + (nest?.spikeHits || 0) + '</div>'
+      + (nest?.lastImpact ? '<div>Last collision: ' + fmt(nest.lastImpact.kind)
+        + ' · unused dive: ' + fmt((nest.lastImpact.deficitTiles || 0).toFixed(2)) + ' tiles</div>' : '')
+      + (nest?.encounters || []).filter(encounter => encounter.mapId === area)
+        .map(encounter => '<div>Mother HP: ' + fmt(encounter.motherHealth)
+          + ' · hatchlings: ' + fmt(encounter.hatchlingsAlive)
+          + ' · ' + fmt(encounter.phase) + '</div>').join('')
       + (spires?.lastError ? '<div style="color:#f3b98c">Spire: ' + fmt(spires.lastError) + '</div>' : '')
       + (live || '<div style="opacity:.72">No adult Tzatzul encountered here yet.</div>')
       + (wings?.lastError ? '<div style="color:#f3b98c">Rig: ' + fmt(wings.lastError) + '</div>' : '')

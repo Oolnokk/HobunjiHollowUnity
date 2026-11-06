@@ -158,7 +158,9 @@
   }
   window.TzatzulNestInterior = Object.freeze({
     install, isNestMap: validId, decorateData, draw, ensurePerches, supportsFor,
-    releaseInactive, getArena: id => records.get(String(id))?.plan || null, debugSnapshot,
+    releaseInactive, getArena: id => records.get(String(id))?.plan || null,
+    getFloorY: id => finite(records.get(String(id))?.floorY), // Return the real carved elevation for rock and sharp-stone collision.
+    debugSnapshot,
   });
   install(); // Both shared builders are already loaded by index.html, before game.js.
 })();

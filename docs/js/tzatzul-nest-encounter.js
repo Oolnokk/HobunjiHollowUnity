@@ -60,6 +60,7 @@
       hatchlings.push(hatchling);
     }
     const session = { mapId, plan, mother, hatchlings, supports: support,
+      floorY: finite(interior.getFloorY?.(mapId)), // Cave wall and stone spike collisions use the renderer's own carved floor elevation.
       perchIndex: 0, completed: false, lastPhase: 'perched', lastEvent: 'mother roosted' };
     rooms.set(mapId, session);
     stats.spawned++;
