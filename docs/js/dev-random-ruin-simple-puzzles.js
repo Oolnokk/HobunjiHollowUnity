@@ -1881,7 +1881,7 @@
       for(const [col,row] of context.meta.floorCells||[]){
         const x=PAD+(Number(col)+.5)*cs,z=PAD+(Number(row)+.5)*cs;
         if(x<=pit.minX+.01||x>=pit.maxX-.01||z<=pit.minZ+.01||z>=pit.maxZ-.01)continue;
-        const support=DS.sampleSupport?.(x,z,{scope:SCOPE,minY:-6,maxY:10,pad:0});
+        const support=DS.sampleSupport?.(x,z,{minY:-6,maxY:10,pad:0}); // No scope filter: the V50 floor surfaces belong to the interior map's scope, not this module's, so SCOPE matched none of them and the abyss never found a floor to remove. The exact devruin-floor id check below is what picks them out.
         if(support?.id==='devruin-floor-'+col+','+row&&support.record){
           DS.registerSurface({...support.record,enabled:false});
           state.ropeChainDisabledSurfaces.push(support.record);count++;
