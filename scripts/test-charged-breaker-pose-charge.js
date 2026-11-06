@@ -98,6 +98,10 @@ assert.match(banditSource, /const power = \(c\._banditSwingPower \|\| 1\) \* pos
   'bandit renderer applies sampled pose charge without corrupting heavy-attack identity consumers');
 assert.doesNotMatch(breakerSource, /heldSeconds\s*\/\s*MAX_CHARGE_S/,
   'gameplay charge must never be reconstructed from elapsed hold time');
+assert.doesNotMatch(breakerSource, /CHARGE_DRAIN_PER_S/,
+  'Charged Breaker must never spend Stamina according to time held');
+assert.match(breakerSource, /target - paidChargeBaseline/,
+  'all paid pose progress is reconciled in unmodified cumulative units, independent of perks and trinkets');
 assert.match(breakerSource, /if \(poseCharge < MIN_READY_POSE\)/,
   'minimum strike readiness must be checked against visible pose charge');
 assert.doesNotMatch(breakerSource, /player-heavy-attack-fire-telegraph|PointsMaterial|PLAYER_HEAVY_FIRE/,
@@ -111,6 +115,9 @@ assert.equal(config.chargedBreaker.MAX_CHARGE_S, 4.0,
   'full Windup / 100% pose charge takes substantially longer than the old short charge');
 assert.equal(config.chargedBreaker.WINDUP_SLOWDOWN, 25,
   'authored windup uses a strong decelerating tail');
+assert.equal(config.chargedBreaker.COST_MIN, 24, 'the first releasable pose must cost 24 base Stamina');
+assert.equal(config.chargedBreaker.COST_MAX, 54, 'full Windup must cost exactly 54 base Stamina');
+assert.equal('CHARGE_DRAIN_PER_S' in config.chargedBreaker, false, 'obsolete time-based charging knob is removed');
 assert(config.chargedBreaker.RANGE_MUL_MAX < 1.4,
   'Charged Breaker cone length is shorter than the old minimum reach multiplier');
 assert(config.chargedBreaker.LUNGE_TILE_MUL_MAX > config.chargedBreaker.LUNGE_TILE_MUL_MIN,
@@ -133,6 +140,11 @@ let releaseArgs = null; // Captures the pose percentage sent back to the weapon 
 let lungeCall = null; // Captures charge-scaled lunge geometry and resistance.
 let stagedCall = null; // Captures the generated strike to ensure release completed.
 let glowCall = null; // Captures the shared weapon-glow request for mobile-visible verification.
+let staminaSpendLog = []; // Captures pre-ResourceSystem cumulative payment deltas in focused charge regressions.
+let regenBlockLog = []; // Captures composable regeneration lock transitions from held starts, releases and cancellations.
+let spendMultiplier = 1; // Test-only stand-in for global trinket, Alchemy and perk modifications after authored charge payment.
+let efficiency = 1; // Test-only weapon-shape efficiency used to validate the newer profile integration.
+let masteryCostMul = 0; // Test-only progression modifier used to validate the authored pre-tax target.
 
 const player = { stamina: 100, angle: 0 }; // Minimal player state used by the ability.
 const context = {
@@ -142,12 +154,20 @@ const context = {
   performance: { now: () => nowMs },
   window: {
     ResourceSystem: {
-      spendStamina(entity, amount) { entity.stamina -= Number(amount) || 0; },
+      spendStamina(entity, amount) {
+        const cost = Math.max(0, Number(amount) || 0); // Captures pre-global-cost spending while applying the chosen effective modifier.
+        const spent = cost * spendMultiplier;
+        entity.stamina -= spent;
+        staminaSpendLog.push({ cost, spent });
+        return { spent, enhancedPaid: 0, excess: 0, tempoMultiplier: 1 };
+      },
+      setStaminaRegenBlocked(entity, source, blocked) { regenBlockLog.push({ entity, source, blocked: !!blocked }); },
       getExhaustionSpeed: () => 1,
     },
     CombatProgression: {
-      getEffects: () => ({ afflictions: {}, stats: {} }),
+      getEffects: () => ({ afflictions: {}, stats: { staminaCostMul: masteryCostMul } }),
     },
+    WeaponShapeStats: { current: () => ({ efficiency }) }, // Mirrors live weapon-shape Stamina efficiency without introducing a second cost owner.
     Combat: {
       poses: {
         SWEEP_POSE: {
@@ -198,6 +218,96 @@ const context = {
 
 vm.runInNewContext(breakerSource, context, { filename: 'combat-charged-breaker.js' });
 assert(registeredAbility, 'Charged Breaker registers in the focused runtime fixture');
+
+const fullCost = context.window.Combat.chargedBreakerData.chargeCostForPose; // Exported pose-cost authority consumed by thrown holds.
+const costAt = pose => 24 + 30 * (pose - 0.48) / 0.52; // Releasable cumulative target, ignoring weapon/progression/global modifiers.
+const closeTo = (actual, expected, label) => assert(Math.abs(actual - expected) < 1e-9, label); // Guards float interpolation without rounding off meaningful costs.
+assert.strictEqual(fullCost(0), 0);
+assert.strictEqual(fullCost(0.47), 0);
+assert.strictEqual(fullCost(0.48), 24);
+assert.strictEqual(fullCost(1), 54);
+
+// The regen lock starts before the first releasable frame, but no Stamina is spent before readiness.
+livePoseCharge = 0.47;
+staminaSpendLog = [];
+regenBlockLog = [];
+player.stamina = 100;
+registeredAbility.onHoldStart();
+assert.deepStrictEqual(regenBlockLog.at(-1), { entity: player, source: 'charged-breaker-hold', blocked: true });
+registeredAbility.onHoldUpdate(null, 5);
+assert.strictEqual(player.stamina, 100);
+assert.strictEqual(staminaSpendLog.length, 0);
+registeredAbility.onHoldEnd();
+assert.strictEqual(player.stamina, 100, 'fizzling before readiness never pays Stamina');
+assert.strictEqual(regenBlockLog.at(-1).blocked, false, 'early fizzle unlocks regeneration');
+
+// Charge readiness is an instantaneous cost commitment; longer time at the same pose does not cost again.
+livePoseCharge = 0.48;
+staminaSpendLog = [];
+player.stamina = 100;
+registeredAbility.onHoldStart();
+registeredAbility.onHoldUpdate(null, 0.01);
+closeTo(100 - player.stamina, 24, 'first releasable pose costs exactly 24');
+nowMs += 5000;
+registeredAbility.onHoldUpdate(null, 5);
+assert.strictEqual(staminaSpendLog.length, 1, 'fixed-pose holding adds no second charge');
+livePoseCharge = 0.74;
+registeredAbility.onHoldUpdate(null, 0.01);
+closeTo(100 - player.stamina, costAt(0.74), 'only the difference to the new pose is spent');
+assert.strictEqual(staminaSpendLog.length, 2);
+const heldCost = player.stamina; // Captures remaining Stamina just before an already-paid partial release.
+registeredAbility.onHoldEnd();
+assert.strictEqual(player.stamina, heldCost, 'release adds no surcharge or duplicate payment');
+assert.strictEqual(regenBlockLog.at(-1).blocked, false, 'normal release unlocks regeneration');
+closeTo(context.window.Combat.chargedBreakerDebug.snapshot().staminaCostCommitted, costAt(0.74), 'Pixel Probe receives committed pre-tax charge');
+
+// Full charge is bounded and never drains more over time.
+player.stamina = 100;
+livePoseCharge = 1;
+staminaSpendLog = [];
+registeredAbility.onHoldStart();
+registeredAbility.onHoldUpdate(null, 0.01);
+closeTo(100 - player.stamina, 54, 'full charge costs exactly 54');
+nowMs += 20000;
+registeredAbility.onHoldUpdate(null, 20);
+assert.strictEqual(staminaSpendLog.length, 1, 'the full charge can be held indefinitely for no added cost');
+registeredAbility.onHoldEnd();
+closeTo(100 - player.stamina, 54, 'full charge release does not double-charge');
+
+// Cost reductions and weapon efficiency must not cause a previously paid slice to be charged repeatedly.
+spendMultiplier = 0.5;
+efficiency = 2;
+masteryCostMul = 0.25;
+player.stamina = 100;
+livePoseCharge = 0.74;
+staminaSpendLog = [];
+registeredAbility.onHoldStart();
+registeredAbility.onHoldUpdate(null, 0.01);
+const discountedBase = costAt(0.74) * 1.25 / 2; // Authored charge, mastery and weapon shape before the simulated 50% global discount.
+closeTo(100 - player.stamina, discountedBase * 0.5, 'global discount applies once after mastery and weapon efficiency');
+registeredAbility.onHoldUpdate(null, 20);
+assert.strictEqual(staminaSpendLog.length, 1, 'reduced ResourceSystem payments never trigger repeat charges');
+livePoseCharge = 1;
+registeredAbility.onHoldUpdate(null, 0.01);
+closeTo(staminaSpendLog[1].cost, 54 * 1.25 / 2 - discountedBase, 'advancing with discounts still pays only newly reached base progress');
+registeredAbility.onHoldEnd();
+assert.strictEqual(staminaSpendLog.length, 2);
+spendMultiplier = 1.5; // Simulates doubled-edged trinket Stamina taxes after the authored cost.
+efficiency = 1;
+masteryCostMul = 0;
+player.stamina = 100;
+livePoseCharge = 0.74;
+staminaSpendLog = [];
+registeredAbility.onHoldStart();
+registeredAbility.onHoldUpdate(null, 0.01);
+registeredAbility.onHoldUpdate(null, 10);
+assert.strictEqual(staminaSpendLog.length, 1, 'trinket-taxed spending does not repeat at a fixed pose');
+registeredAbility.onHoldCancel();
+assert.strictEqual(regenBlockLog.at(-1).blocked, false, 'cancellation clears only Charged Breaker regeneration lock');
+spendMultiplier = 1;
+livePoseCharge = 0.73;
+player.stamina = 100;
+nowMs = 1000;
 
 registeredAbility.onHoldStart();
 nowMs = 3000; // Two seconds have elapsed, but visible pose remains explicitly authored at 73%.
