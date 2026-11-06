@@ -1723,7 +1723,7 @@
     composedButton.addEventListener('click',()=>generate(randomSeed(),{composedTrial:true,theme:'hronal'}));row.appendChild(composedButton);
     const soloSelector=document.createElement('select'); // Chooses the exact puzzle or a sampled normal-plan challenge for the one-room dev lab.
     soloSelector.id='devRandomRuinSinglePuzzleType';soloSelector.setAttribute('aria-label','Single-room puzzle type');
-    soloSelector.innerHTML='<option value="weighted">Random (actual dungeon odds)</option>'+((window.DevRuinSingleRoomTrial?.TYPES||[]).map(([key,label])=>'<option value="'+key+'">'+label+'</option>').join(''));
+    soloSelector.innerHTML='<option value="weighted">Random (layered-wing odds, no plate)</option>'+((window.DevRuinSingleRoomTrial?.TYPES||[]).map(([key,label])=>'<option value="'+key+'">'+label+'</option>').join(''));
     try{const saved=localStorage.getItem(SINGLE_ROOM_PUZZLE_KEY);if([...soloSelector.options].some(opt=>opt.value===saved))soloSelector.value=saved;}catch(_){}
     soloSelector.addEventListener('change',()=>{try{localStorage.setItem(SINGLE_ROOM_PUZZLE_KEY,soloSelector.value);}catch(_){}});
     const soloLabel=document.createElement('label'); // Keeps the selector touch-friendly in the existing Settings row on mobile.
