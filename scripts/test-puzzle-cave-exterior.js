@@ -106,6 +106,9 @@ assert.equal(layoutTransition.col,gate.entry.c);
 assert.equal(blockers.size,1,'a real physical slab blocker is registered');
 const blocker=[...blockers.values()][0];
 assert(blocker.enabled(),'unsolved cliff-door collision blocks movement');
+activeArea=mapId;
+assert(!blocker.enabled(),'a locked cliff gate cannot block movement in a different map');
+activeArea=area;
 assert(!blocker.blocksAt(0,0,1,null,0,{y:gate.door.y-4}),
   'lower ground under the raised balcony is never blocked by a gate above it');
 player.onCliffBalcony=gate.shelf.id;
@@ -137,6 +140,7 @@ Exterior.update(.01,area);
 assert.equal(player.onCliffBalcony,gate.shelf.id,'returning from the cavern restores the correct balcony elevation');
 assert.equal(player.climbSurfaceY,gate.shelf.y);
 Exterior.clear(area);
+assert.equal(gate.shelf.puzzleCavePortal,undefined,'a retired cave portal releases its mini-cliff reservation');
 assert.equal(layoutTransition.target,'building','scene retirement restores original transition type');
 assert.equal(layoutTransition.col,4,'scene retirement restores original cave entrance tile');
 assert.equal(den.mouthAnchor.x,4,'scene retirement restores the original den mouth');
