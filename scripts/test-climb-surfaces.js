@@ -142,4 +142,64 @@ player.x = 5.4 * TILE; player.y = 7 * TILE; CS.worldClimbProvider().start();
 input = { x: 1, y: 0 }; CS.updatePlayer(0.1);
 assert.equal(player.onClimbSurface, null, 'bottom event releases the player');
 
+// --- stepping off the side of a wall ------------------------------------------------
+// Walking along the wall past its end steps onto a platform level with the climber, if one is there.
+{
+  const side = CS.attach(wall, { x: 5.4, z: 7, y: 6 }); // u runs 6.3 .. 7.7 (0.3 edge margin on a 6..8 wall).
+  let o = CS.step(side, { x: 0, z: 1 }, 0.1);
+  assert.equal(o.event, null, 'sliding along the wall short of its end is not an exit');
+  for (let i = 0; i < 20; i++) CS.step(side, { x: 0, z: 1 }, 0.5);
+  near(side.u, 7.7, 'reaches the far end');
+  o = CS.step(side, { x: 0, z: 1 }, 0.1);
+  assert.equal(o.event, 'edge'); assert.equal(o.edge, 1, 'still pushing past the far end');
+  o = CS.step(side, { x: 0, z: 0 }, 0.1);
+  assert.equal(o.event, null, 'releasing the stick at the end does nothing');
+  o = CS.step(side, { x: 0, z: 0.4 }, 0.1);
+  assert.equal(o.event, null, 'a gentle push (under the threshold) at the end does not exit');
+  for (let i = 0; i < 40; i++) CS.step(side, { x: 0, z: -1 }, 0.5);
+  near(side.u, 6.3, 'reaches the near end');
+  o = CS.step(side, { x: 0, z: -1 }, 0.1);
+  assert.equal(o.event, 'edge'); assert.equal(o.edge, -1, 'and the near end exits the other way');
+  // Top and bottom still win: at the top, pushing up and along mantles.
+  const top = CS.attach(wall, { x: 5.4, z: 7, y: 12 }); top.u = 7.7; top.v = 12;
+  o = CS.step(top, { x: -Math.SQRT1_2, z: Math.SQRT1_2 }, 0.1);
+  assert.equal(o.event, 'top', 'a mantle outranks a side exit');
+  assert.equal(o.edge, 0, 'edge is only reported with an edge event');
+
+  // Where it lands: the first standable spot past the end, level with the feet, out from the wall plane.
+  const stand = fn => (x, z, y) => fn(x, z, y);
+  let p = CS.sideExitPoint(wall, 1, 6, stand(() => true));
+  near(p.x, 5.34); near(p.z, 8.3); near(p.y, 6); // Just past the far end (u1 = 8), at the usual stand-off.
+  p = CS.sideExitPoint(wall, -1, 6, stand(() => true));
+  near(p.z, 5.7, 'the near end lands before u0 = 6');
+  p = CS.sideExitPoint(wall, 1, 6, stand((x, z) => z > 8.5));
+  near(p.z, 8.55, 'a platform that starts a little further out is still reached');
+  p = CS.sideExitPoint(wall, 1, 6, stand(x => x > 5.6));
+  near(p.x, 5.7, 'a platform set back from the wall is reached');
+  assert.equal(CS.sideExitPoint(wall, 1, 6, stand(() => false)), null, 'no platform: nowhere to go');
+  assert.equal(CS.sideExitPoint(wall, 1, 6, null), null, 'no standability check: never exits blind');
+  assert.equal(CS.sideExitPoint(wall, 0, 6, stand(() => true)), null, 'no edge, no exit');
+  let askedY = null; CS.sideExitPoint(wall, 1, 7.25, stand((x, z, y) => { askedY = y; return false; }));
+  near(askedY, 7.25, 'the platform is tested at the climber\'s own height');
+  CS.register({ id:'zwall', scope:'z', axis:'x', normal:{ x:0, z:1 }, plane:10, u0:0, u1:4, y0:0, y1:6 });
+  const zWall = CS.list().find(item => item.id === 'zwall');
+  p = CS.sideExitPoint(zWall, 1, 3, stand(() => true));
+  near(p.x, 4.3); near(p.z, 10.34, 'a wall running along x exits along x, out along its own normal');
+  CS.clearScope('z');
+
+  // Through the player loop: stepping off onto a platform releases the climber and puts them on it.
+  global.window = global.window || {};
+  const rider = { x: 5.4 * TILE, y: 7 * TILE, angle: WEST, vx: 0, vy: 0 };
+  let standable = true, rideInput = { x: 0, y: 0 };
+  CS.init({ player: rider, TILE, getFeetY: () => 6, getMovementInput: () => rideInput, setFacingAngle() {}, canStandAt: () => standable });
+  CS.worldClimbProvider().start();
+  assert(rider.onClimbSurface);
+  standable = false; rideInput = { x: 0, y: 1 }; CS.updatePlayer(10);
+  assert(rider.onClimbSurface, 'no platform past the end: the climber stays on the wall, never falls');
+  standable = true; CS.updatePlayer(0.1);
+  assert.equal(rider.onClimbSurface, null, 'a platform past the end: the climber steps off');
+  near(rider.x / TILE, 5.34); near(rider.y / TILE, 8.3, 'and lands on it');
+  delete global.window;
+}
+
 console.log('climb-surfaces: ok');

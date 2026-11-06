@@ -108,6 +108,24 @@
         }});
       blockerIds.push(id);
     };
+    // Static props and closed door panels as exact oriented footprints, the way floor zero gets them from
+    // DevRandomRuinTileOccupancy. Without them the DS blockers above are advisory (push runtime, landings) and the
+    // player's own movement, which reads area footprints and the flat grid, walks through pillars and shut doors.
+    const Solids=host.DevRandomRuinSolidFootprints,Providers=host.AreaFootprintBlockers;
+    let solids=null,solidsId=null,solidsLive=true;
+    const storyY=Number(options.floorY)||0;
+    const onStory=()=>{const y=Number(getPlayerY?.());return Number.isFinite(y)&&y>=storyY-1.6&&y<storyY+2.6;}; // Stories share X/Z with other floors; only the player's own story collides.
+    if(Solids?.createSet&&Providers?.register){
+      solids=Solids.createSet({
+        floorY:(x,z)=>{const y=Number(heightAt?.(x,z));return Number.isFinite(y)?y:storyY;},
+        playerBox:()=>{const p=getPlayerPosition?.();return p?{x:p.x,z:p.z,half:.2}:null;},
+      });
+      for(const child of nativeRoot.children||[])solids.scan(child,'native-static'); // Not the root itself: its own name, v50_native_floor_N, trips the scanner's floor-slab exclusion and would drop every prop beneath it.
+      solidsId=scope+'-solids';
+      Providers.register(solidsId,{area:'map_i_dev_random_ruin',
+        enabled:()=>solidsLive&&onStory(),
+        blocksBox:(x,z,half,worldY)=>!!solids.blocksBox(x,z,half,worldY)});
+    }
     for(const [id,object] of inventory.mechanisms){
       const motion=object.userData.previewMotion.type;
       const linked=inventory.activators.filter(activator=>String(inheritedData(activator,'linkedMechanismId',nativeRoot))===id);
@@ -117,6 +135,7 @@
       if(motion==='stoneDoor'){
         const panel=(object.children||[]).find(child=>child.isMesh&&child.geometry)||object;
         trackBlocker(scope+'-stone-door-'+id,panel,()=>state.progress<.88);
+        solids?.scan(panel,'door',{force:true,enabled:()=>state.progress<.88}); // The same threshold, as an exact footprint the player's movement reads.
       }else if(motion==='bridge'||motion==='bridgeSequence'){
         const bridgeExtended=()=>{
           const range=object.userData.previewRange||object.userData.previewMotion?.previewRange;
@@ -256,6 +275,7 @@
       const state={door,panel,open:0,target:0,closed,height,openingSide:0,
         crossingAxis:Math.abs(Math.sin(Number(door.rotation.y)||0))>.707?'x':'z'}; // A V50 hallway exit door closes behind the player only once they actually cross its plane.
       trackBlocker(scope+'-transit-door-'+door.id,panel,()=>state.open<.88);
+      solids?.scan(panel,'door',{force:true,enabled:()=>state.open<.88});
       control({kind:'v50NativeTransitDoor',object:door,promptRoot:door,range:1.9,
         priority:21,touchIcon:'✋',label:()=>state.target?'Close Stone Door':'Open Stone Door',
         onPress:()=>{
@@ -353,6 +373,7 @@
     }
     function dispose(){
       if(disposed)return;disposed=true;unreg();releaseCubes();
+      solidsLive=false;if(solidsId)Providers?.remove?.(solidsId);
       for(const record of controls)removeControl?.(record);
       for(const id of [...surfaceIds,...blockerIds])DS.remove?.(id);
     }
