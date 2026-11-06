@@ -11,20 +11,22 @@
     {side:'N',dx:0,dz:-1},{side:'E',dx:1,dz:0},
     {side:'S',dx:0,dz:1},{side:'W',dx:-1,dz:0},
   ]);
+  const TRAVERSAL_METHODS=Object.freeze(['reachingObelisks']); // Expand this list as distinct complete shaft methods are authored.
   const PLAYABLE_PUZZLES=Object.freeze(['pressurePlate','glyphObelisk','ceilingRailTargets','melodyEcho','dungeonFire','ropeChain','statueDefense']); // Shared by composer and acceptance proof.
   const RANGED_PUZZLES=Object.freeze(['glyphObelisk','ceilingRailTargets']); // Every wing includes at least one actual ranged stage.
   const DEFAULTS=Object.freeze({
     spacing:64, // World cells between invisible multi-floor anchor slots; normal rooms fit between them.
-    shaftSize:33, // Interior octagon width; actual masonry spans shaftSize + 2*shaftWall.
+    shaftSize:45, // Giant obelisk chamber; shell spans 45 + 2*shaftWall cells.
     shaftWall:8, // Matches ShaftHub's real shell thickness; door ends must be outside this wall.
     portalOffset:8, // Side-wall wing doors sit away from the climbing buttresses.
-    floorHeight:4, // Vertical separation between ordinary 2D layers at shaft access galleries.
+    floorHeight:16, // Dramatically taller continuous drops between independent puzzle floors.
     minFloors:3,maxFloors:5,minWings:1,maxWings:4,
     minChallenges:2,maxChallenges:4,
     corridorWidth:3,
     seed:1,
     nativeV50:false, // When enabled, upper stories reserve one EAST shaft portal for an independently generated V50 room graph.
     groundEntranceSide:null, // The one-room V50 vestibule claims this shaft wall; no puzzle wing may occupy the same portal.
+    shaftTraversal:null, // Seed-selected from TRAVERSAL_METHODS unless explicitly supplied for testing.
   });
   function random(seed){
     let a=(Number(seed)>>>0)||1;
@@ -66,6 +68,9 @@
     o.groundEntranceSide=['N','E','S','W'].includes(o.groundEntranceSide)?o.groundEntranceSide:null;
     o.shaftWall=Math.max(5,Math.min(12,Math.round(Number(o.shaftWall)||8)));
     o.portalOffset=Math.max(1,Math.min(8,Math.round(Number(o.portalOffset)||8)));
+    o.floorHeight=Math.max(12,Math.min(32,Math.round(Number(o.floorHeight)||DEFAULTS.floorHeight)));
+    if(o.shaftTraversal!=='buttress'&&!TRAVERSAL_METHODS.includes(o.shaftTraversal))
+      o.shaftTraversal=TRAVERSAL_METHODS[Math.floor(random((o.seed^0x85bd7ca1)>>>0)()*TRAVERSAL_METHODS.length)]; // Does not perturb wing layout RNG.
     const rng=random(o.seed);
     const floorCount=integer(rng,o.minFloors,o.maxFloors); // Used to bound both the shared shaft and independent 2D floor maps.
     // A shaft reserves the same snapped invisible-grid slot on ALL floor layers.
@@ -212,5 +217,5 @@
     add('braziersMatchWings',plan.totalBraziers===plan.totalWings);
     return checks;
   }
-  return Object.freeze({DEFAULTS,compose,verify,snap,intersects});
+  return Object.freeze({DEFAULTS,TRAVERSAL_METHODS,compose,verify,snap,intersects});
 });

@@ -189,7 +189,7 @@ try{
   });
   assert.equal(native.getState().floors,2);
   assert(native.getState().perFloor.every(f=>f.reservationVerified));
-  assert.equal(native.records[0].challenges[0].floorY,4.42,'native puzzle height comes from V50 surface metadata');
+  assert.equal(native.records[0].challenges[0].floorY,plan.floors[1].y+.42,'native puzzle height comes from V50 surface metadata');
   assert.equal(native.getState().rooms,8);
   assert.equal(native.records[0].challenges[0].kind,'v50Authored','a V50-authored signal is the chamber gate authority when one exists');
   assert.equal(native.getState().perFloor[0].nativeAuthoredStages,1);
