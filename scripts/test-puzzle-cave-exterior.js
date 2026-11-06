@@ -67,6 +67,32 @@ assert(Math.hypot(selected.entry.c+.5-selected.plate.x,selected.entry.r+.5-selec
 assert.equal(Exterior.plan({...network,balconies:[]},[profile]).length,0,
   'no fictitious entrance is generated without a reachable mini-cliff');
 
+let sampledPortals=0; // Multi-seed cliff outlines catch irregular mini-cliffs that would strand the exterior pressure plate.
+for(let seed=0;seed<12;seed++){
+  const edgeCol=5+(seed%5);
+  const variedGrid=Array.from({length:48},()=>Array.from({length:36},(_,col)=>({
+    type:col===edgeCol?'rock':'grass',incline:col===edgeCol,elevTier:col<edgeCol?0:1,
+  })));
+  const varied=context.CliffRouteNetwork.build(variedGrid,{
+    area:'map_ledge_test_'+seed,tileY:tile=>(tile.elevTier||0)*(7+seed%6),
+    blocked:tile=>!tile||tile.incline||tile.type==='rock',
+  });
+  const requests=Array.from({length:8},(_,index)=>({
+    contents:'puzzle_cave',mapId:'map_ledge_cave_'+seed+'_'+index,denId:'den'+index,
+    signature:'ledge-'+seed+'-'+index,mouthAnchor:{x:1+(index%3),y:2+5*index},
+  }));
+  for(const p of Exterior.plan(varied,requests)){
+    sampledPortals++;
+    assert(context.CliffRouteNetwork.shelfContains(p.shelf,p.plate.x,p.plate.z,-.13),
+      'the music plate must stay inside the actual irregular balcony polygon');
+    assert(p.shelf.footprint.some(cell=>cell.c===Math.floor(p.plate.x)&&cell.r===Math.floor(p.plate.z)),
+      'the music plate must stand above a real registered balcony tile');
+    assert(Math.hypot(p.plate.x-p.entry.c-.5,p.plate.z-p.entry.r-.5)>.65,
+      'the music plate cannot overlap the world transition activation tile');
+  }
+}
+assert(sampledPortals>=12,'multiple generated balcony shapes and heights were exercised');
+
 const scene=new Group();scene.name='zone-scene';
 const denFacades=new Group();denFacades.name='animalDenEntrances'; // Scene's existing animal-den entrance meshes must reappear when the mini-cliff portal is retired.
 const originalFacade=new Mesh(new Geometry(),new Material({color:0x888888}));
