@@ -174,7 +174,9 @@
         }
         const growth=ice.build(THREE,source,{kind:'iceStalagmites',seed:base.seed+dx*131+dz*17,
           count:Math.min(64,source.children.length),density:1,iceCluster:3,radius:.28,
-          iceHeightMin:.65,iceHeightMax:2.2,iceRoughness:.27,iceOpacity:.92,color:'#c2e8fb'});
+          iceHeightMin:.65,iceHeightMax:2.2,iceRoughness:.27,iceOpacity:.92,color:'#c2e8fb',
+          iceEngulf:.45,iceFootprintPadding:.06,iceFacets:5,iceTipSharpness:.84,iceLean:.14,
+          target:'all'});
         growth.position.set(baseX+dx,pitY+.04,baseZ+dz);group.add(growth);
         growth.traverse(node=>{if(node.isMesh)owned.push(node);});
         for(const cube of source.children)cube.geometry.dispose();
