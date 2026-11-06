@@ -1,0 +1,284 @@
+// Generated mini-cliff Puzzle Cave entrances, using the same plateau route,
+// authored furniture, music bridge, world transitions and dynamic collision
+// contracts as the rest of Hobunji Hollow.
+(function(root,factory){
+  const api=factory(root);
+  if(typeof module==='object'&&module.exports)module.exports=api;
+  else root.PuzzleCaveEntrances=api;
+})(typeof globalThis!=='undefined'?globalThis:this,function(root){
+  'use strict';
+  const areas=new Map(); // Area -> mounted portal records; used for scene cleanup and per-frame transition admission.
+  let deps=null; // WildlifeSpawn's existing game adapter, used for authoritative player, layouts and scene transitions.
+  const portalTag='puzzle-cave-cliff-door'; // Consistent debugging and collider identity for each generated entrance.
+  const hash=value=>{let h=2166136261>>>0;for(const c of String(value)){h^=c.charCodeAt(0);h=Math.imul(h,16777619)>>>0;}return h>>>0;};
+  const clamp=(n,lo,hi)=>Math.max(lo,Math.min(hi,n));
+  const distance=(a,b)=>Math.hypot(Number(a?.x)-Number(b?.x),Number(a?.z)-Number(b?.z));
+  const safeArea=area=>String(area||'');
+  const sceneGroupName=area=>portalTag+'-'+area;
+
+  function init(injectedDeps={}){deps=injectedDeps;} // Reuses the game-injected player and tile size instead of a second set of globals.
+  function eligibleShelf(shelf){
+    return !!shelf?.base?.footprint?.length && Array.isArray(shelf.footprint) && shelf.footprint.length>=2 &&
+      Number.isFinite(shelf.y) && shelf.y>0 && Number(shelf.width)>=1.7 &&
+      Number(shelf.depth)>=1 && shelf.tangent && shelf.normal;
+  }
+  function plan(network,sites=[]){
+    const shelves=(network?.balconies||[]).filter(eligibleShelf); // Only genuine walkable elevated mini-cliffs; never synthetic ground-level doors.
+    const taken=new Set(),out=[];
+    const available=(sites||[]).filter(p=>p?.contents==='puzzle_cave').slice()
+      .sort((a,b)=>String(a.mapId).localeCompare(String(b.mapId)));
+    for(const site of available){
+      const anchor=site.mouthAnchor||{x:0,y:0};
+      const source={x:Number(anchor.x)+.5,z:Number(anchor.y)+.5};
+      const candidates=shelves.filter(s=>!taken.has(s.id)).sort((a,b)=>{
+        const d=distance(source,a)-distance(source,b);
+        return d || String(a.id).localeCompare(String(b.id));
+      });
+      if(!candidates.length)continue; // Never relocate a cave onto an unsupported cliff.
+      const shelf=candidates[0];taken.add(shelf.id);
+      const normal=shelf.normal,tangent=shelf.tangent;
+      const nearBack={x:shelf.x-normal.x*(shelf.depth*.5-.18),z:shelf.z-normal.z*(shelf.depth*.5-.18)};
+      const entryTiles=shelf.footprint
+        .filter(t=>root.CliffRouteNetwork?.shelfContains?.(shelf,t.c+.5,t.r+.5,-.08)!==false)
+        .sort((a,b)=>distance(nearBack,{x:a.c+.5,z:a.r+.5})-distance(nearBack,{x:b.c+.5,z:b.r+.5}));
+      if(!entryTiles.length){taken.delete(shelf.id);continue;}
+      const entry=entryTiles[0]; // The actual raised tile is authoritative for the game transition, never the low terrain below it.
+      const door={x:nearBack.x,z:nearBack.z,y:shelf.y};
+      const plate={x:shelf.x+normal.x*.17,z:shelf.z+normal.z*.17,y:shelf.y};
+      const melody=hash(site.signature+':outdoor-song')%2===0; // Not every entrance has an outside challenge; some have only their interior.
+      out.push({mapId:site.mapId,denId:site.denId,site,shelf,door,plate,entry,
+        tangent,normal,requiresSong:melody,difficulty:1+(hash(site.signature+':outdoor-difficulty')%5)});
+    }
+    return out;
+  }
+  function stateFor(portal){
+    return root.CaveSiteSystem?.exteriorPuzzleState?.(portal.mapId)||{solved:false,tier:1};
+  }
+  function transitionPool(area){
+    const layout=deps?.zoneLayouts?.get?.(area),scene=deps?.zoneScenes?.get?.(area);
+    return [...new Set([...(layout?.transitions||[]),...(scene?.transitions||[])])]; // Cached scene can own a DIFFERENT transition object from its layout.
+  }
+  function applyTransitions(area,portal,enabled){
+    for(const t of transitionPool(area)){
+      if(t?.targetMapId!==portal.mapId && t?.id!=='den_'+portal.denId+'_enter')continue;
+      if(!t.__puzzleCaveOriginal)t.__puzzleCaveOriginal={col:t.col,row:t.row,target:t.target}; // Original position restored when cliff geometry regenerates without a suitable balcony.
+      t.col=portal.entry.c;t.row=portal.entry.r;
+      t.target=enabled?'building':'puzzle_cave_locked'; // The existing checkTransitionSpots only accepts recognized target types.
+      t.puzzleCaveCliffY=portal.shelf.y;
+      t.puzzleCaveCliffId=portal.shelf.id;
+    }
+  }
+  function restoreTransitions(area,portal){
+    for(const t of transitionPool(area)){
+      if(t?.targetMapId!==portal.mapId && t?.id!=='den_'+portal.denId+'_enter')continue;
+      const o=t.__puzzleCaveOriginal;
+      if(o){t.col=o.col;t.row=o.row;t.target=o.target;delete t.__puzzleCaveOriginal;}
+      delete t.puzzleCaveCliffY;delete t.puzzleCaveCliffId;
+    }
+  }
+  function concealDenFacade(area,denId){
+    const scene=deps?.zoneScenes?.get?.(area)?.scene||areas.get(area)?.scene;
+    const group=scene?.getObjectByName?.('animalDenEntrances');
+    for(const mesh of group?.children||[])if(String(mesh.userData?.denId)===String(denId))mesh.visible=false;
+  }
+  function hasPortal(area,denId){
+    return !!areas.get(safeArea(area))?.portals?.some(r=>String(r.denId)===String(denId));
+  }
+  function isGateLocked(portal){return portal.requiresSong&&!portal.solved;}
+  function frameToShelf(model,portal){
+    model.position.set(portal.door.x,portal.door.y,portal.door.z);
+    model.rotation.y=Math.atan2(portal.normal.x,portal.normal.z);
+    const scale=Math.min(2.2,Math.max(1.4,Number(portal.shelf.width)*.72)); // An authored one-tile door scaled only to fit the actual mini-cliff face.
+    model.scale.setScalar(scale);
+    model.userData.puzzleCaveCliffDoor=true;
+  }
+  function makeGlyphs(portal,rootGroup){
+    const THREE=root.THREE;
+    if(!portal.song||!THREE?.TextureLoader)return;
+    const columns=Math.min(6,portal.song.notes.length);
+    const count=portal.song.notes.length;
+    const board=new THREE.Group();
+    board.name='puzzle-cave-exterior-score';
+    board.position.set(portal.door.x,portal.door.y+1.35,portal.door.z);
+    board.rotation.y=Math.atan2(portal.normal.x,portal.normal.z);
+    board.translateZ?.(.055);
+    for(let index=0;index<count;index++){
+      const note=portal.song.notes[index],glyphNumber=note.index+1;
+      const texture=new THREE.TextureLoader().load('assets/hud/scratchbone'+glyphNumber+'.png');
+      if(THREE.SRGBColorSpace)texture.colorSpace=THREE.SRGBColorSpace;
+      const material=new THREE.MeshBasicMaterial({map:texture,color:0xc6baab,transparent:true,depthWrite:false,side:THREE.DoubleSide});
+      const mesh=new THREE.Mesh(new THREE.PlaneGeometry(.20,.24),material);
+      mesh.name='puzzle-cave-outdoor-glyph-'+index;
+      mesh.position.set((index%columns-(columns-1)/2)*.23,.21-Math.floor(index/columns)*.27,0);
+      board.add(mesh);portal.glyphs.push(mesh);
+    }
+    rootGroup.add(board);portal.scoreBoard=board;
+  }
+  function createPresentation(portal,scene){
+    const THREE=root.THREE;
+    if(!THREE?.Group||!scene?.add)return;
+    const group=new THREE.Group();
+    group.name=portalTag+'-'+portal.denId;
+    scene.add(group);portal.visualRoot=group;
+    // The plate belongs on the registered cap, not at terrain height underneath.
+    if(portal.requiresSong){
+      const plate=new THREE.Mesh(new THREE.CylinderGeometry(.68,.68,.09,24),
+        new THREE.MeshBasicMaterial({color:0x6f6152}));
+      plate.name='puzzle-cave-exterior-plate';
+      plate.position.set(portal.plate.x,portal.plate.y+.035,portal.plate.z);
+      group.add(plate);portal.plateMesh=plate;
+    }
+    const furniture=root.AuthoredFurniture;
+    Promise.resolve(furniture?.load?.('cliffDoor')).then(data=>{
+      if(!data||portal.disposed||portal.visualRoot!==group||!furniture?.buildGroup)return;
+      const model=furniture.buildGroup({...data,puzzle:null}); // Locked doors cannot be toggled by ordinary furniture interactions.
+      frameToShelf(model,portal);
+      group.add(model);portal.doorModel=model;
+      portal.slab=model.userData?.meshById?.get?.('cliff_door_slab')||null;
+      portal.slabMotion=data.puzzle?.motion?.parts?.cliff_door_slab||null;
+      makeGlyphs(portal,group);
+      moveSlab(portal);
+    }).catch(e=>root.__farmLog?.('[puzzle-cave] cliff door failed: '+e.message,'warn'));
+  }
+  function moveSlab(portal){
+    if(portal.slab&&portal.slabMotion){
+      const t=clamp(portal.rise,0,1),ease=t*t*(3-2*t);
+      const off=portal.slabMotion.off,on=portal.slabMotion.on;
+      portal.slab.position.y=off.y+(on.y-off.y)*ease;
+      portal.slab.scale.z=off.sz+(on.sz-off.sz)*ease;
+    }
+    if(portal.scoreBoard){portal.scoreBoard.position.y=portal.door.y+1.35+portal.rise*1.2;portal.scoreBoard.visible=portal.rise<.95;}
+  }
+  function attachMusic(portal){
+    if(!portal.requiresSong||!root.PuzzleCaveMelody?.generate||!root.PuzzleCaveMelody?.createSession)return;
+    const song=root.PuzzleCaveMelody.generate(portal.site.signature+':outdoor',{difficulty:portal.difficulty});
+    portal.song=song;
+    portal.session=root.PuzzleCaveMelody.createSession(song,{
+      onSolved:()=>{
+        portal.solved=true;portal.justSolved=true;portal.openWait=.95;
+        root.CaveSiteSystem?.markExteriorPuzzleSolved?.(portal.mapId,song.rewardTier);
+        if(portal.plateMesh?.material?.color)portal.plateMesh.material.color.setHex(0xa6bf73);
+      },
+      onChanged:snap=>{
+        portal.progress=snap;
+        for(let i=0;i<portal.glyphs.length;i++)
+          portal.glyphs[i].material?.color?.setHex?.(i===snap.activeIndex?0xffd76b:0xc6baab);
+      }
+    });
+    portal.noteHandler=e=>{
+      if(portal.disposed||portal.solved||deps?.getCurrentArea?.()!==portal.area
+        ||e?.detail?.area!==portal.area)return;
+      portal.session.note(e.detail.noteIndex);
+    };
+    root.addEventListener?.('hobunji-kurraya-puzzle-note',portal.noteHandler);
+  }
+  function addPhysicalGate(portal){
+    const DS=root.DynamicSurfaces;
+    if(!DS?.registerBlocker)return;
+    const x=portal.door.x,z=portal.door.z,t=portal.tangent;
+    const half=Math.min(.59,Number(portal.shelf.width)*.31); // Narrow vertical slab across the actual cliff opening.
+    const x1=x-t.x*half,x2=x+t.x*half,z1=z-t.z*half,z2=z+t.z*half;
+    portal.blockerId=portalTag+':'+portal.area+':'+portal.denId;
+    DS.registerBlocker({
+      id:portal.blockerId,scope:portalTag+':'+portal.area,
+      bounds:{minX:Math.min(x1,x2)-.08,maxX:Math.max(x1,x2)+.08,
+        minZ:Math.min(z1,z2)-.08,maxZ:Math.max(z1,z2)+.08},
+      enabled:()=>!portal.disposed&&portal.rise<.98,
+      blocksAt:(_x,_z,_height,_record,_radius,opts)=>{
+        const y=Number(opts?.worldY??opts?.floorY??opts?.y);
+        return !Number.isFinite(y)||Math.abs(y-portal.door.y)<1.1; // Stacked elevations keep lower ground free when the movement query supplies Y.
+      },
+    });
+  }
+  function destroyPortal(portal){
+    portal.disposed=true;
+    if(portal.noteHandler)root.removeEventListener?.('hobunji-kurraya-puzzle-note',portal.noteHandler);
+    if(portal.musicOpened)root.MusicMinigame?.close?.();
+    if(portal.blockerId)root.DynamicSurfaces?.remove?.(portal.blockerId);
+    portal.visualRoot?.parent?.remove?.(portal.visualRoot);
+    portal.visualRoot?.traverse?.(child=>{
+      if(!child.isMesh)return;
+      child.geometry?.dispose?.();
+      for(const mat of Array.isArray(child.material)?child.material:[child.material])mat?.dispose?.();
+    });
+  }
+  function clear(area){
+    const key=safeArea(area),state=areas.get(key);
+    if(!state)return;
+    for(const portal of state.portals){restoreTransitions(key,portal);destroyPortal(portal);}
+    areas.delete(key);
+  }
+  function mount(area,network,scene,sites=null){
+    const key=safeArea(area);
+    if(!key||!network||!scene)return [];
+    const old=areas.get(key);
+    if(old?.network===network&&old.scene===scene)return old.portals;
+    if(old)clear(key);
+    const profiles=sites||root.CaveSiteSystem?.sitesForZone?.(key)||[];
+    const portals=plan(network,profiles).map(p=>({
+      ...p,area:key,disposed:false,solved:!p.requiresSong,justSolved:false,
+      musicOpened:false,lastDown:false,openWait:0,
+      rise:p.requiresSong?0:1,progress:null,glyphs:[],visualRoot:null,
+      blockerId:null,
+    }));
+    const state={area:key,network,scene,portals};
+    areas.set(key,state);
+    for(const portal of portals){
+      if(portal.requiresSong){
+        const saved=stateFor(portal);portal.solved=!!saved.solved;portal.rise=portal.solved?1:0;
+        attachMusic(portal);
+      }
+      portal.shelf.puzzleCavePortal=portal.mapId; // Reserve this cap before the shared reward renderer instantiates its ore/chest.
+      addPhysicalGate(portal);
+      createPresentation(portal,scene);
+      applyTransitions(key,portal,false); // Default closed until player reaches the actual elevated entry tile.
+      concealDenFacade(key,portal.denId);
+    }
+    return portals;
+  }
+  function update(dt,activeArea=null){
+    const area=safeArea(activeArea||deps?.getCurrentArea?.());
+    const state=areas.get(area);
+    if(!state)return;
+    const player=deps?.player,tile=Number(deps?.TILE)||64;
+    const px=Number(player?.x)/tile,pz=Number(player?.y)/tile;
+    for(const portal of state.portals){
+      if(portal.disposed)continue;
+      const onShelf=player?.onCliffBalcony===portal.shelf.id && !player?.climbing;
+      const down=onShelf&&Math.hypot(px-portal.plate.x,pz-portal.plate.z)<.68;
+      if(portal.session){
+        portal.session.step(dt,down);
+        if(down&&!portal.lastDown&&!portal.solved){
+          portal.musicOpened=!!root.MusicMinigame?.beginPlayerSession?.();
+          if(!portal.musicOpened)deps?.showToast?.('Equip an instrument to play this stone song.',false);
+        }
+        if(!down&&portal.lastDown&&portal.musicOpened&&!portal.solved){
+          root.MusicMinigame?.close?.();portal.musicOpened=false;
+        }
+        if(portal.justSolved&&portal.musicOpened&&portal.openWait<=0){
+          root.MusicMinigame?.close?.();portal.musicOpened=false;portal.justSolved=false;
+        }
+        portal.lastDown=down;
+      }
+      if(portal.solved&&portal.rise<1){portal.rise=Math.min(1,portal.rise+Math.max(0,Number(dt)||0)/.95);moveSlab(portal);}
+      portal.openWait=Math.max(0,portal.openWait-Math.max(0,Number(dt)||0));
+      const nearDoor=onShelf&&Math.hypot(px-(portal.entry.c+.5),pz-(portal.entry.r+.5))<.73;
+      const enabled=portal.solved&&portal.rise>=.98&&portal.openWait<=0&&nearDoor&&(!portal.requiresSong||!down);
+      applyTransitions(area,portal,enabled); // World-transition owner sees a real locked target until the slab has physically risen.
+      concealDenFacade(area,portal.denId); // Async den facade setup cannot cover an already mounted cliff entrance.
+    }
+  }
+  function forgetCave(mapId){
+    for(const [area,state] of areas){
+      if(!state.portals.some(p=>p.mapId===mapId))continue;
+      clear(area); // Relocation requires rebuilding from a new network/anchor, never keeping a stale portal.
+    }
+  }
+  function debugSnapshot(){
+    return {areas:[...areas.values()].map(state=>({area:state.area,count:state.portals.length,
+      portals:state.portals.map(p=>({mapId:p.mapId,shelfId:p.shelf.id,door:p.door,
+        plate:p.plate,entry:p.entry,locked:isGateLocked(p),solved:p.solved,
+        progress:p.progress,rewardTier:p.song?.rewardTier||null,modelReady:!!p.doorModel}))}))};
+  }
+  return Object.freeze({init,plan,mount,update,clear,forgetCave,hasPortal,debugSnapshot});
+});
