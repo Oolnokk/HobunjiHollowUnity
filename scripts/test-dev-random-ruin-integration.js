@@ -219,8 +219,10 @@ assert(interior.includes('getDarknessSettings'), 'Random Test Ruin must expose i
 assert(cloudFog.includes("window.DevRandomRuin?.getDarknessSettings?.()"), 'shared enclosed lighting must consult the Random Test Ruin override');
 assert(cloudFog.includes("return testSettings?.enabled === true ? base * severity : base;") && cloudFog.includes("tradition === 'kanthic' ? 1") && cloudFog.includes("tradition === 'hronal' ? .91"), 'the ruin uses its active lich darkness by default, with an optional severity override instead of the deprecated bright-mode default');
 assert(cloudFog.includes('refreshLightingOverlay'), 'test lighting controls must be able to redraw the existing lighting overlay immediately');
-assert(interior.includes('puzzles:singleVestibule?Object.fromEntries(Object.keys(puzzleOptions).map(key=>[key,false])):puzzleOptions') && interior.includes('const puzzleOptions=readPuzzleGenerationOptions()'),
-  'V50 single-room entry must remain puzzle-free, while themed/rooted native rooms retain captured per-generation puzzle options');
+assert(interior.includes('puzzles:singleVestibule?{') && interior.includes('...Object.fromEntries(Object.keys(puzzleOptions).map(key=>[key,false]))')
+  && interior.includes('...(nativeSoloType?{[nativeSoloType]:true')
+  && interior.includes('}:puzzleOptions,') && interior.includes('const puzzleOptions=readPuzzleGenerationOptions()'),
+  'Normal V50 single-room entries remain puzzle-free; only a chosen dev-lab fixture enables a native V50 puzzle, while multi-room ruins keep their saved options');
 assert(!interior.includes('devruin-wall-${object.id}'), 'wall meshes must not register object-wide blockers');
 assert(!interior.includes('devruin-solid-${o.id}'), 'solid furniture must not register object-wide blockers');
 assert(interior.includes("d.activatorType === 'stackedObelisk' || d.activatorType === 'linkedCubePillars'"), 'rotating cube towers must join the authoritative solid-object occupancy set');
