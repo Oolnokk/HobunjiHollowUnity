@@ -307,6 +307,7 @@
   const CARRIED_VESSEL_RENDER_ORDER=1.4; // Used by held parts; 1.5 is reserved for weapon/tool PNG overlay classification.
   const CARRIED_REAR_RENDER_ORDER=2.4; // Held-only rear PNG remains above the hand-carried Burden.
   const STOWED_REAR_RENDER_ORDER=2.05; // Behind a back-stowed Burden while still above ordinary opaque world meshes.
+  const STOWED_REAR_HAT_RENDER_ORDER=2.08; // Headwear belongs to the same back-PNG occlusion side while stowed.
   const STOWED_BURDEN_RENDER_ORDER=2.15; // The actual stowed furniture draws between the two portrait PNG faces.
   const STOWED_FRONT_RENDER_ORDER=2.25; // Front PNG occludes the stowed Burden; headwear x-ray keeps its later 2.5 layer.
   const CARRIED_REAR_HEAD_RENDER_ORDER=2.6; // Head's back-only hat/hair pass over the held vessel and hat-front pass.
@@ -350,9 +351,12 @@
           rearHeadwearXray.set(mesh,{order:mesh.renderOrder,materials:materials.map(material=>
             [material,{depthTest:material.depthTest,depthWrite:material.depthWrite}])});
         }
-        mesh.renderOrder=CARRIED_REAR_HEAD_RENDER_ORDER;
+        mesh.renderOrder=stowed?STOWED_REAR_HAT_RENDER_ORDER:CARRIED_REAR_HEAD_RENDER_ORDER;
         for(const material of (Array.isArray(mesh.material)?mesh.material:[mesh.material]))
-          if(material){material.depthTest=true;material.depthWrite=true;}
+          if(material){
+            material.depthTest=true;
+            material.depthWrite=!stowed; // Back headwear cannot obscure a Burden shown through the back portrait.
+          }
         return;
       }
       if(mesh.name==='npc_avatar_front_plane'||mesh.name==='player_avatar_front_plane'){
