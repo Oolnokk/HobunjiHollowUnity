@@ -23,9 +23,12 @@ assert.equal(lined.slot, 'hood');
 
 const fine = json('docs/config/cosmetics/fine_hood.json'); // Fine Hood is the source of truth for each wearer's rear silhouette.
 const configSource = read('docs/config/scratchbones-config.js'); // The real rear-view replacement registry resolves Fine Hood's back assets.
-const configContext = { window: {} }; // Isolates configuration evaluation from the test process's globals.
-vm.runInNewContext(configSource, configContext, { filename: 'scratchbones-config.js', timeout: 5000 });
-const backRules = configContext.window.SCRATCHBONES_CONFIG.game.assets.pngPlaneAvatar.behindView.layerReplacements; // Used to compare each new hood to Fine Hood's existing renderer mapping.
+const portraitContext = vm.createContext({ window: {}, console }); // Runs the same cosmetic parser and rear-view resolver used by portraits and avatars.
+vm.runInContext(configSource, portraitContext, { filename: 'scratchbones-config.js', timeout: 5000 });
+vm.runInContext(read('docs/js/portrait-utils.js'), portraitContext, { filename: 'portrait-utils.js', timeout: 5000 });
+const backRules = portraitContext.window.SCRATCHBONES_CONFIG.game.assets.pngPlaneAvatar.behindView.layerReplacements; // Used to compare each new hood to Fine Hood's existing renderer mapping.
+const liveSimple = portraitContext.portraitOptionFromJson({ id: 'simple_hood' }, simple); // Exercises real Simple Hood layer extraction.
+const liveLined = portraitContext.portraitOptionFromJson({ id: 'fur_lined_hood' }, lined); // Exercises real Fur-lined Hood trim hiding.
 const hiddenFurTrim = backRules.find(rule => rule.idIncludes?.includes('fur-lined-hood') && rule.urlIncludes?.includes('furlinedhood-trim'));
 assert.equal(hiddenFurTrim?.hide, true, 'fur-lined front trim must not appear over the shared Fine Hood rear sprite');
 for (const [key, variant] of Object.entries(fine.speciesVariants)) {
@@ -40,6 +43,15 @@ for (const [key, variant] of Object.entries(fine.speciesVariants)) {
     assert(assetExists(expectedBackUrl), key + ': missing shared Fine Hood rear PNG ' + expectedBackUrl);
   }
   assert.equal(lined.speciesVariants[key].parts.head.layers.front_trim.behindImage, undefined, key + ': fur trim must not override the rear sprite');
+  const gender = key.split('_').at(-1); // Selects the same male/female rear-view resolver option as the portrait renderer.
+  const expectedRuntimeBack = expectedBackUrl.replace(/^\.\/assets\//, ''); // The runtime stores asset paths relative to docs/assets.
+  const simpleLayers = liveSimple.variantLayers[key]; // Shared Fine Hood back art must be selected through the live renderer, not just JSON.
+  const linedLayers = liveLined.variantLayers[key]; // The live renderer must discard only the fur trim when facing away.
+  assert.equal(simpleLayers?.length, 1, key + ': Simple Hood must have one layer');
+  assert.equal(linedLayers?.length, 2, key + ': Fur-lined Hood must retain base and trim for its front view');
+  assert.equal(portraitContext._getBehindLayerUrl(simpleLayers[0], liveSimple, gender), expectedRuntimeBack, key + ': Simple Hood resolver did not select Fine Hood art');
+  assert.equal(portraitContext._getBehindLayerUrl(linedLayers[0], liveLined, gender), expectedRuntimeBack, key + ': Fur-lined Hood resolver did not select Fine Hood art');
+  assert.equal(portraitContext._getBehindLayerUrl(linedLayers[1], liveLined, gender), null, key + ': fur trim must disappear on the rear plane');
 }
 
 for (const [key, suffix] of [['tletingan_male', 'tl_m'], ['mashtzarr_male', 'mashtz_m']]) {
