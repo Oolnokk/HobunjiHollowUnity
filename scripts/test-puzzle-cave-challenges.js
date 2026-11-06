@@ -34,16 +34,26 @@ function eventBus(){
 const room={x:3,z:5,w:9,d:9};
 const area='puzzle_cave_test';
 const parent=new Group();
+let activeArea=area; // Scoped collider test switches maps without unloading the cached cave scene.
+const blockers=new Map(); // Minimal DynamicSurfaces adapter records and releases the ONE authoritative cave gate blocker.
+const dynamicSurfaces={registerBlocker:record=>{assert(!blockers.has(record.id),'duplicate cave collider ID');blockers.set(record.id,record);},
+  remove:id=>blockers.delete(id)};
 
 let lit=0,completed=0;
 const hot=new Set(); // Fire patches with the same area-scoped positions that PersistentGroundFire.intersects receives.
 const fire=compose({THREE,parent,room,id:'fire-test',kind:'fireSconces',y:0,area,
-  isActive:()=>true,onSolved:()=>{completed++;},
+  isActive:()=>activeArea===area,onSolved:()=>{completed++;},DynamicSurfaces:dynamicSurfaces,
   groundFire:{intersects:(scope,x,z)=>scope===area&&hot.has(x+','+z)},
   onSconceLit:()=>{lit++;},
   getPlayerPosition:()=>({x:0,z:0}),getPlayerY:()=>0,
 });
 assert.equal(fire.sconces.length,2);
+assert.equal(blockers.size,1,'fire cave registers exactly one authoritative stone gate');
+const fireCollider=[...blockers.values()][0];
+assert(fireCollider.enabled(),'an unsolved fire cave gate blocks movement in its map');
+activeArea='other_map';
+assert(!fireCollider.enabled(),'cached cave collision never leaks into another map');
+activeArea=area;
 fire.tick(.016);
 assert.equal(completed,0,'unlit sconces cannot raise the stone gate');
 hot.add(fire.sconces[0].x+','+fire.sconces[0].z);
@@ -59,9 +69,11 @@ assert.equal(completed,1,'second torch unlocks the gate exactly once');
 assert(fire.solved,'the shared challenge records the solve');
 fire.animate(1);
 assert(fire.door.position.y>1.75,'opening raises the physical stone slab visual');
+assert(!fireCollider.enabled(),'the collider opens only after the animated gate clears the threshold');
 fire.tick(.016);
 assert.equal(completed,1,'a solved fire cave cannot award its treasure again');
 fire.dispose();
+assert.equal(blockers.size,0,'retiring the scene unregisters its physical collision');
 assert.equal(parent.children.length,0,'cave teardown removes mechanism meshes');
 
 const events=eventBus(); // The existing music bridge emits these exact instrument-input events.
@@ -69,10 +81,13 @@ let playing=0,closed=0,awarded=0;
 const music={beginPlayerSession(){playing++;return true;},close(){closed++;}};
 let player={x:room.x+room.w/2,z:room.z+room.d/2-1.6};
 const timed=compose({THREE,parent,room,id:'music-test',kind:'timedMelody',y:0,area,
-  isActive:()=>true,onSolved:()=>awarded++,getPlayerPosition:()=>player,getPlayerY:()=>0,
-  music,events,puzzleCaveMelody:Song,songOptions:{difficulty:5},
+  isActive:()=>activeArea===area,onSolved:()=>awarded++,getPlayerPosition:()=>player,getPlayerY:()=>0,
+  music,events,puzzleCaveMelody:Song,songOptions:{difficulty:5},DynamicSurfaces:dynamicSurfaces,
 });
 assert.equal(timed.song.measures,2);
+assert.equal(blockers.size,1,'music cave reuses the same single-owner gate lifecycle');
+const timedCollider=[...blockers.values()][0];
+assert(timedCollider.enabled(),'the music gate starts physically locked');
 assert.equal(events.count('hobunji-kurraya-puzzle-note'),1,'only real instrument notes reach the score');
 timed.tick(0);
 assert.equal(playing,1,'stepping onto the pressure plate opens the existing instrument session');
@@ -106,6 +121,7 @@ assert(timed.solved,'the authored gate is unlocked');
 timed.animate(.52);
 assert.equal(closed,2,'the normal instrument overlay closes after the final note');
 timed.dispose();
+assert.equal(blockers.size,0,'music cave disposes the registered collider');
 assert.equal(events.count('hobunji-kurraya-puzzle-note'),0,'cave teardown unregisters live music events');
 assert.equal(parent.children.length,0,'cave teardown has no permanent authored scene nodes');
 console.log('Puzzle Cave chambers: real timed instrument bridge, plate gating, dual fire sconces, gate rising, one-shot solve and disposal PASS.');
