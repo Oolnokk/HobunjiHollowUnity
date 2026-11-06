@@ -393,6 +393,7 @@ function sanitizeLoaded(raw) {
   }
   for (const o of (raw.objects || [])) {
     const obj = { id: o.id || uid('obj'), kind: o.kind || 'decor', key: o.key || 'bench', label: o.label || '', col: o.col|0, row: o.row|0, w: Math.max(1, o.w|0 || 1), h: Math.max(1, o.h|0 || 1), rot: o.rot || 0 };
+    if (o.wallMountId) obj.wallMountId = String(o.wallMountId); // Explicit editor-selected unknown cliff surface survives import/export and placement.
     if (o.itemKey) obj.itemKey = String(o.itemKey); // Interior cave fixtures may route through ordinary building-furniture item keys.
     if (o.visual && typeof o.visual === 'object') obj.visual = JSON.parse(JSON.stringify(o.visual)); // Preserve authored renderer/scale/facing metadata such as cave_small visual overrides.
     if (o.collision && typeof o.collision === 'object') obj.collision = JSON.parse(JSON.stringify(o.collision)); // Explicit locale-object collider; absent preserves the object's legacy runtime behavior.
@@ -924,6 +925,20 @@ function renderInspector() {
       <div><label>Height</label><input id="insH" type="number" min="1" value="${o.h}"></div></div>
       <div style="margin-top:6px"><label>Rotation Y°</label><div class="row" style="flex-wrap:nowrap"><button class="sec" id="insRotLeft" type="button">↺ 45°</button><input id="insRot" type="number" step="15" value="${Number(o.rot)||0}"><button class="sec" id="insRotRight" type="button">↻ 45°</button></div></div>
       <p class="muted" style="margin-top:4px">Drag the object directly on the canvas to translate it.</p>
+      ${o.key==='unknownCliffFace' ? `
+        <div style="margin-top:8px"><label>Placeholder wall height (preview)</label>
+        <input id="insWallHeight" type="number" min="0.6" step="0.2" value="${Number(o.visual?.height)||2.6}">
+        <p class="muted">This plane defines an authored mounting surface. The game replaces it with the actual generated cliff face.</p></div>` :
+        ['furniture','decor','processor','prop'].includes(o.kind) ? `
+        <div style="margin-top:8px"><label>Mount on unknown cliff wall</label>
+        <select id="insWallSurface"><option value="">Ordinary ground placement</option>
+          ${m.objects.filter(other=>other.id!==o.id&&other.key==='unknownCliffFace').map(w=>
+            `<option value="${escapeAttr(w.id)}" ${o.wallMountId===w.id?'selected':''}>${escapeAttr(w.label||'Cliff surface')} (${w.col},${w.row})</option>`).join('')}
+        </select>
+        <div class="g2" style="margin-top:4px"><div><label>Height on cliff (0–1)</label>
+        <input id="insMountHeight" type="number" min="0" max="1" step=".05" value="${Number.isFinite(Number(o.visual?.mountHeightFraction))?Number(o.visual.mountHeightFraction):.5}"></div>
+        <div><label>Vertical offset</label><input id="insMountOffsetY" type="number" step=".05" value="${Number(o.visual?.mountOffsetY)||0}"></div></div>
+        <p class="muted">Selected furniture will align to the generated cliff normal, with no floor collider.</p></div>` : ''}
       ${(o.key === 'cave_small' || o.visual?.renderer === 'cave_small') ? `
       <div style="margin-top:8px;padding-top:6px;border-top:1px solid rgba(255,255,255,.1)">
         <strong>Cave GLB transform</strong>
@@ -967,6 +982,19 @@ function renderInspector() {
       o.w = Math.max(1, Math.round(Number($('insW').value)) || 1);
       o.h = Math.max(1, Math.round(Number($('insH').value)) || 1);
       o.rot = ((Number($('insRot').value) || 0) % 360 + 360) % 360;
+      if(o.key==='unknownCliffFace'){
+        o.visual={...(o.visual||{}),renderer:'unknown_wall_plane',wallMount:true,
+          height:Math.max(.6,Number($('insWallHeight')?.value)||2.6)};
+        o.collision={mode:'none'}; // Authoring-only mount plane never becomes a solid world block.
+      }
+      if($('insWallSurface')){
+        const parentId=$('insWallSurface').value;
+        if(parentId&&m.objects.some(v=>v.id===parentId&&v.key==='unknownCliffFace')){
+          o.wallMountId=parentId;
+          o.visual={...(o.visual||{}),mountHeightFraction:Math.max(0,Math.min(1,Number($('insMountHeight').value)||0)),
+            mountOffsetY:Number($('insMountOffsetY').value)||0};
+        }else{delete o.wallMountId;}
+      }
       o.collision = {
         mode: $('insCollisionMode').value,
         colOffset: Number($('insCollisionCol').value) || 0,
@@ -977,6 +1005,7 @@ function renderInspector() {
       if (o.collision.mode === 'auto') o.collision = { mode:'auto' };
       if (o.collision.mode === 'none') o.collision = { mode:'none' };
       if (o.collision.mode === 'footprint') o.collision = { mode:'footprint' };
+      if(o.wallMountId||o.key==='unknownCliffFace')o.collision={mode:'none'}; // A wall-mounted prop must not block the ground at its authored X/Z.
       if (o.key === 'cave_small' || o.visual?.renderer === 'cave_small') {
         o.visual = {
           ...(o.visual || {}), renderer:'cave_small',
