@@ -44,6 +44,9 @@ assert.match(gameSource, /turnInTask: taskId => window\.ProceduralTasks\.turnInT
 assert.match(gameSource, /NpcCraftingCommissionDelivery\?\.turnInPrompt\?\./, 'NPC hand-in label uses the commission type even when there are no fetch items');
 const turnInScreenPosition = gameSource.indexOf('const _turnInTask = rec?.id ? window.ProceduralTasks.getTurnInReadyTaskForNpc(rec.id)');
 assert(turnInScreenPosition > 0, 'main NPC dialogue uses the shared ready-commission lookup');
+const tutorialPosition = gameSource.indexOf("if (rec?.id === 'spearhead_unumanuk' && window.CombatTutorial?.active())");
+assert(tutorialPosition > turnInScreenPosition, 'finished crafting commissions can be handed to Spearhead even during his active training, while ordinary coaching is still protected');
+
 for (const specialMenu of ["if (isGeneralStoreNpcOnDuty(walker))", "if (isCarpenterNpcOnDuty(walker))", "if (rec?.id === 'jubmir')"]) {
   assert(gameSource.indexOf(specialMenu, turnInScreenPosition) > turnInScreenPosition, 'ready crafting hand-in precedes special first-dialogue menu: ' + specialMenu);
 }
@@ -246,6 +249,27 @@ assert.equal(commissionOption?.commission, true, 'commission-specific wardrobe c
 assert.equal(commissionedPack.length, 0, 'the actual matching garment leaves the player pack');
 assert.equal(commissionProgress[clothingTaskId].status, 'completed', 'special-NPC commission becomes completed exactly once');
 assert.equal(commissionContext.ProceduralTasks.getTurnInReadyTaskForNpc('spearhead_unumanuk'), null, 'completed commission is no longer offered');
+
+// Jubmir is a second *requester*, not the recipient in this case. His shop
+// menu must not intercept a furniture commission that he himself assigned.
+const jubmirTaskId = 'jubmir-requester-commission'; // Verifies task ownership routes to the actual quest giver, not a wearable recipient.
+commissionInventory.chairFurniture = 1;
+taskDeps.setQuestStatus(jubmirTaskId, 'available', {
+  kind: 'favor', npcId: 'jubmir', npcName: 'Jubmir', domain: 'crafting', items: [],
+  rewardGold: 180, rewardFriendship: 8, rewardMotes: 2, tier: 1,
+  commission: {
+    type: 'furniture', furnitureKey: 'chairFurniture', furnitureLabel: 'Wooden Chair',
+    blueprintKey: 'chairBlueprint', startingOwned: 0, rewardMotes: 2, rewardGold: 180,
+  },
+});
+const jubmirReady = commissionContext.ProceduralTasks.getTurnInReadyTaskForNpc('jubmir'); // Shared turn-in lookup called before Jubmir's shop options.
+assert.equal(jubmirReady?.id, jubmirTaskId, 'Jubmir is recognized as the commission requester, independent of his See Wares menu');
+assert.match(commissionContext.NpcCraftingCommissionDelivery.turnInPrompt(jubmirReady).label, /Wooden Chair/, 'Jubmir receives a proper furniture turn-in prompt');
+assert.equal(commissionContext.ProceduralTasks.turnInTask(jubmirTaskId).ok, true, 'Jubmir can receive his commissioned furniture and pay the reward');
+assert.equal(commissionInventory.chairFurniture, 0, 'Jubmir receives the newly crafted furniture');
+assert.equal(commissionProgress[jubmirTaskId].status, 'completed', 'Jubmir’s commission completes without using his shop dialogue');
+assert.equal(commissionContext.ProceduralTasks.getTurnInReadyTaskForNpc('jubmir'), null, 'Jubmir’s finished commission is removed from subsequent conversations');
+
 
 
 
