@@ -68,6 +68,21 @@ assert.equal(game.CropVarieties.details(grandchild.seedKey).color, grandchild.co
 assert.equal(game.CropVarieties.colorOf('cv_needlegrain_222222'), east.color, 'older six-gene imported seeds retain their original coloring');
 assert.equal(game.CropVarieties.blendedColor(east.id, 'heftroot'), null, 'incompatible crop species cannot get a preview color');
 assert.equal(game.CropVarieties.blendedColor(offspring.id, east.id), grandchild.color, 'seed-maker preview exactly matches actual breeding result');
+
+const reloadedWindow = { HobunjiCookingData: game.HobunjiCookingData, CookingSystem: { registerIngredientItems() {} } }; // Brand-new browser world with no cached hybrid registry.
+vm.runInNewContext(fs.readFileSync('docs/js/crop-varieties.js', 'utf8'), { window: reloadedWindow });
+const reloadedCrops = { needlegrain: { ...cropData.needlegrain }, heftroot: { ...cropData.heftroot }, redberries: { ...cropData.redberries } }; // Existing native crop definitions only.
+const reloadedItemDefs = Object.fromEntries(Object.entries(itemDefs).filter(([key]) => !key.startsWith('cv_'))); // No hybrid definitions survive memory reset.
+reloadedWindow.CropVarieties.attach({ cropData: reloadedCrops, ITEM_DEFS: reloadedItemDefs,
+  inventory: { [grandchild.seedKey]: 1 }, inventoryItems: [], loadStorage: () => ({}) });
+assert.equal(reloadedWindow.CropVarieties.colorOf(grandchild.seedKey), grandchild.color, 'fresh runtime restores second-generation pigment solely from saved seed ID');
+assert.equal(reloadedCrops[grandchild.id].varietyColor, grandchild.color, 'restored farm crop mesh uses exactly the saved hybrid color');
+const storageOnlyWindow = { HobunjiCookingData: game.HobunjiCookingData, CookingSystem: { registerIngredientItems() {} } }; // Separate restored farm stores the seed outside the bag.
+vm.runInNewContext(fs.readFileSync('docs/js/crop-varieties.js', 'utf8'), { window: storageOnlyWindow });
+storageOnlyWindow.CropVarieties.attach({ cropData: { needlegrain: { ...cropData.needlegrain }, heftroot: { ...cropData.heftroot }, redberries: { ...cropData.redberries } },
+  ITEM_DEFS: { ...reloadedItemDefs }, inventory: {}, inventoryItems: [], loadStorage: () => ({ [grandchild.seedKey]: 1 }) });
+assert.ok(storageOnlyWindow.CropVarieties.registered({ ownedOnly: true }).some(v => v.id === grandchild.id), 'farm-storage-only hybrids are selectable after loading');
+
 assert.equal(game.CropVarieties.breed(east.id, 'heftroot', () => .6), null);
 assert.equal(game.CropVarieties.breed('needlegrain', 'needlegrain', () => .6).seedKey, 'needlegrainSeeds');
 assert.equal(game.CropVarieties.offers(() => .5).length, 3); // One import offering per available family in this fixture.
