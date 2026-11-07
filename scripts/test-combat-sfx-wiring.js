@@ -66,7 +66,8 @@ class FakeAudio {
   }
   load() { FakeAudio.loads++; FakeAudio.loadsByUrl.set(this.src, (FakeAudio.loadsByUrl.get(this.src) || 0) + 1); }
   pause() { this.paused = true; }
-  addEventListener() {}
+  addEventListener(name, listener) { (this.listeners ||= {})[name] = listener; } // Enables real ended-event sequencing tests for the two native finisher clips.
+  finish() { this.ended = true; this.paused = true; this.listeners?.ended?.(); } // Simulates a full clip without a timer or browser media device.
   play() { FakeAudio.plays++; FakeAudio.lastPlayed = this; this.paused = false; return Promise.resolve(); }
 }
 
@@ -75,6 +76,7 @@ const combatSfx = {
   weaponSwing1: { url: 'swing1.mp3', volume: 1, preload: true },
   weaponSwing2: { url: 'swing2.mp3', volume: 1, preload: true },
   weaponSwing3: { url: 'swing3.mp3', volume: 1, preload: true },
+  quickAttackBonusSlash: { url: 'anime-slash.wav', volume: 0.9, preload: true }, // Shared source for unchanged Quick Attack and double finisher variants.
   weaponHitSharpHuge: { url: 'sharp-huge.mp3', volume: 1, preload: true },
   counterShieldBlock: { url: 'block.mp3', volume: 1, preload: true },
   rangedImpact: { url: 'arrow-hit.mp3', volume: 1, preload: true },
@@ -133,6 +135,30 @@ assert.equal(context.window.AudioSystem.combatSfxDebugSnapshot().last.detail.pit
 assert(Math.abs(FakeAudio.lastPlayed.playbackRate - 2) < 0.1, 'blowgun dart impacts must actually play at roughly 2x pitch');
 assert.equal(debug.maxStartDelayMs, 140, 'stale mobile combat play requests need a strict deadline');
 assert.equal(FakeAudio.plays, 6, 'named bandage loop plus swing, melee impact, block, and two arrow impacts should each render exactly once');
+
+// In headless/mobile native fallback, the first lowered-pitch slash must finish before the second begins.
+const beforeSlash = FakeAudio.plays; // Keeps existing ordinary weapon/arrow SFX counts independent of the new finisher.
+context.window.AudioSystem.playComboFinisherBonusSfx(0, 0, 'farm');
+const firstSlash = FakeAudio.lastPlayed; // The first finisher recording starts immediately on contact.
+assert.equal(FakeAudio.plays, beforeSlash + 1, 'the second slash must not overlap the first');
+assert.equal(firstSlash.src, 'anime-slash.wav');
+assert(Math.abs(firstSlash.volume - 0.9 * 0.8) < 1e-9, 'both finisher clips are 80% of the authored slash volume');
+assert(Math.abs(firstSlash.playbackRate - 3 * 2 ** (-5 / 12)) < 1e-9, 'native fallback keeps the -5 semitone transposition');
+firstSlash.finish();
+const secondSlash = FakeAudio.lastPlayed; // Fired by the real ended handler, not a guessed timer.
+assert.equal(FakeAudio.plays, beforeSlash + 2);
+assert(Math.abs(secondSlash.volume - 0.9 * 0.8) < 1e-9);
+assert(Math.abs(secondSlash.playbackRate - 3 * 2 ** (-6 / 12)) < 1e-9, 'native fallback keeps the -6 semitone transposition');
+const finisherDebug = context.window.AudioSystem.combatSfxDebugSnapshot().last; // Copyable without mobile devtools.
+assert.equal(finisherDebug.key, 'comboFinisherDoubleSlash');
+assert.equal(finisherDebug.detail.backend, 'native-coupled-fallback');
+assert.equal(finisherDebug.detail.tempo, 3);
+assert.equal(finisherDebug.detail.volumeScale, 0.8);
+assert.deepStrictEqual([...finisherDebug.detail.semitones], [-5, -6]);
+assert.match(audio, /startAt \+ clips\[0\]\.durationS/, 'decoded Web Audio must schedule the second slash exactly at the first clip end');
+assert.match(audio, /tempo: COMBO_FINISHER_SLASH_TEMPO, pitchSemitones/, 'independent DSP must receive triple tempo and each requested lowered pitch');
+assert.match(combo, /playComboFinisherBonusSfx/, 'only combo specials call the new semantic cue');
+assert.match(quick, /playQuickAttackBonusSfx/, 'ordinary Quick Attack cue remains unchanged');
 
 // Exercise the actual shared cue router independently of world/projectile rendering.
 const sfxStart = ranged.indexOf('  function playRangedActionSfx('); // First byte of the unchanged gameplay SFX routine.
