@@ -383,11 +383,13 @@
     const mode = entry.modeOverride || state.settings.assignments[entry.kind];
     if (!state.deps || !entry.root || (mode !== 'floatPlus' && mode !== 'centeredFiveRow')) return null;
     const cfg = state.settings[mode];
+    const scene = entry.scene || state.deps.getActiveScene?.(); // Resolved scene owner is retained so zone cleanup sees default-scene rewards.
+    if (!scene?.add) return null;
     const planeCfg = mode === 'centeredFiveRow'
       ? { ...cfg, worldHeight: cfg.worldHeight * CENTERED_LIST_SCALE }
       : cfg;
     const parts = makePlane(entry.text, entry.kind, planeCfg);
-    const event = { ...entry, ...parts, mode, sequence: state.sequence++, startedAt: performance.now(), lifetimeMs: cfg.lifetimeMs, listSlot: -1, offsetX: 0, offsetY: 0 };
+    const event = { ...entry, scene, ...parts, mode, sequence: state.sequence++, startedAt: performance.now(), lifetimeMs: cfg.lifetimeMs, listSlot: -1, offsetX: 0, offsetY: 0 };
     if (mode === 'centeredFiveRow') {
       const list = listFor(entry.root);
       if (list.length >= cfg.maxRows) {
@@ -403,7 +405,7 @@
       event.offsetX = offset.x;
       event.offsetY = offset.y;
     }
-    (entry.scene || state.deps.getActiveScene()).add(event.plane);
+    scene.add(event.plane);
     state.active.push(event);
     return event.sequence;
   }
