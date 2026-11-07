@@ -4,7 +4,11 @@
 (() => {
   'use strict';
   if (typeof state === 'undefined' || typeof helperRoot === 'undefined'
-    || typeof THREE === 'undefined' || typeof setEditorMode !== 'function') return;
+    || typeof THREE === 'undefined' || typeof setEditorMode !== 'function') {
+    const status=document.getElementById('carryAuthorLoadStatus'); // Mobile-visible reason for a tab whose editor dependencies were unavailable.
+    if(status)status.textContent='Carryable editor dependencies are missing. Check the on-screen debug log.';
+    return;
+  }
 
   function normalized(value) {
     const obj=value&&typeof value==='object'?value:{};
@@ -43,14 +47,14 @@
   state.carryable=normalized(state.carryable);
 
   const tabs=document.querySelector('.tabs');
-  const button=document.createElement('button');
+  const button=document.getElementById('carryModeTab')||document.createElement('button'); // Reuse the permanent tab; avoid duplicates on older editor pages.
   button.type='button';
   button.textContent='Carryable';
   button.dataset.leftTab='carry';
-  tabs.appendChild(button);
-  const pane=document.createElement('div');
+  if(!button.isConnected)tabs.appendChild(button);
+  const pane=document.getElementById('tab-carry')||document.createElement('div'); // Replace the permanent diagnostic placeholder with live controls.
   pane.id='tab-carry';
-  pane.className='hidden';
+  pane.classList.add('hidden');
   pane.innerHTML=[
     '<section class="fed-section">',
     '<h2>Carryable world objects</h2>',
@@ -102,7 +106,7 @@
     '<div id="carrySummary" class="pill"></div>',
     '</section>'
   ].join('');
-  document.querySelector('#tab-effects').insertAdjacentElement('afterend',pane);
+  if(!pane.isConnected)document.querySelector('#tab-effects').insertAdjacentElement('afterend',pane);
   const el=id=>document.getElementById(id);
   const guideRoot=new THREE.Group();
   guideRoot.name='CarryableAuthoringGuides';
@@ -459,7 +463,7 @@
     if(mode==='carry')frameHoldingPreview();
     return result;
   };
-  button.addEventListener('click',()=>setEditorMode('carry'));
+  if(!button.onclick)button.addEventListener('click',()=>setEditorMode('carry')); // Only legacy pages without a core tab binding need a second listener.
   createGuides();
   renderControls();
   window.HobunjiCarryableFurnitureAuthor={
