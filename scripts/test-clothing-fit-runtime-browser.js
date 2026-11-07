@@ -102,7 +102,8 @@ const server=http.createServer((request,response)=>{
       'Mobile diagnostics must confirm the two views display the same portrait raster');
     assert(result.stageOpaquePixels>100,'The synchronized 2D portrait must have visible pixels');
     assert(result.threeCanvasCount>0,'Three.js must create an actual WebGL preview canvas');
-    assert.match(result.sources,/2 authored source layers/, 'Both Fine Hood materials are loaded');
+    assert.match(result.debug,/head\.layers\.front \[front\]/, 'The fitted Fine Hood base material is present');
+    assert.match(result.debug,/head\.layers\.front_trim \[front\]/, 'The separately authored trim material is present');
     console.log('PASS: real Chromium Tletingan Fine Hood 3D rig, canonical game renderer, headwear layers, and matched 2D pixels');
   }catch(error){
     console.error('Browser errors:',statusErrors.slice(-15).join('\n'));
