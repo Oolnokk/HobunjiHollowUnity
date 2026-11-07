@@ -9,6 +9,9 @@
   'use strict';
   const areas=new Map(); // Area -> mounted portal records; used for scene cleanup and per-frame transition admission.
   const glyphTextures=new Map(); // Shared immutable Scratchbone textures reused by every exterior music score; portal teardown disposes materials, not their shared maps.
+  let pillarTexture=null; // Shared carved-smooth texture for a supported pillar when an actual wall has no usable vertical face.
+  const SCORE_STEP_X=.23,SCORE_STEP_Y=.27; // Scratchbone layout spacing, reused for wall plaques and narrower standing pillars.
+  const SCORE_WALL_COLUMNS=6,SCORE_PILLAR_COLUMNS=2; // A free-standing pillar is deliberately narrower than a genuine wall.
   let deps=null; // WildlifeSpawn's existing game adapter, used for authoritative player, layouts and scene transitions.
   let lastArea=null; // Tracks the immediately previous area so returning from a cave can restore its actual elevated balcony support.
   const portalTag='puzzle-cave-cliff-door'; // Consistent debugging and collider identity for each generated entrance.
@@ -142,16 +145,115 @@
     model.scale.setScalar(1); // Authored cliffDoor already matches woodenDoor's 1x1 tile dimensions; wilderness tiles must not be scaled a second time.
     model.userData.puzzleCaveCliffDoor=true;
   }
+  function scoreSurfaceKind(mesh,face){
+    if(!mesh?.isMesh)return null;
+    const type=mesh.userData?.melodyScoreSurface; // Authored vertical fixtures opt in explicitly; never infer a wall from a snowy floor's mesh name.
+    if(type==='wall'||type==='cliffWall'||type==='pillar')return type;
+    if(face?.materialIndex!==1)return null; // Generated terrain meshes have grass/snow caps in slot 0 and exposed ROCK faces in slot 1.
+    if(mesh.userData?.cliffGenerated===true)return 'cliffWall';
+    if(mesh.userData?.hobunjiGroundSurface===true&&
+      (/_plateau_mesa_/.test(String(mesh.name||''))||mesh.userData.plateauMesaRenderBatchMapId))
+      return 'cliffWall';
+    return null;
+  }
+  function scoreLayout(count,columns){
+    const cols=Math.min(columns,count),rows=Math.ceil(count/cols);
+    return {columns:cols,rows,width:cols*SCORE_STEP_X+.12,height:rows*SCORE_STEP_Y+.16};
+  }
+  function findVerticalScoreFace(portal,scene,layout){
+    const THREE=root.THREE;
+    if(!THREE?.Raycaster||!THREE?.Vector3||!scene?.traverse)return null;
+    const surfaces=[]; // Whitelisted actual wall, cliff-rock and pillar meshes; snow, terrain tops, doors and arbitrary furniture are never included.
+    scene.traverse(mesh=>{
+      if(!mesh?.isMesh||!mesh.geometry||!mesh.visible)return;
+      for(let parent=mesh.parent;parent;parent=parent.parent)if(!parent.visible)return;
+      if(scoreSurfaceKind(mesh,{materialIndex:1})||scoreSurfaceKind(mesh,{materialIndex:0}))surfaces.push(mesh);
+    });
+    if(!surfaces.length)return null;
+    scene.updateWorldMatrix?.(true,true);
+    const from=new THREE.Vector3(portal.plate.x,portal.plate.y+1.4,portal.plate.z); // Player-eye rays guarantee the notes can be read from the active plate.
+    const ray=new THREE.Raycaster(); // Built once during scene creation, not in the per-frame music clock.
+    ray.far=6;
+    const verticalFace=hit=>{
+      if(!scoreSurfaceKind(hit?.object,hit?.face)||!hit.face?.normal)return null;
+      const n=hit.face.normal.clone().transformDirection(hit.object.matrixWorld);
+      if(Math.abs(n.y)>.25)return null; // A steep rocky wall is fine; a horizontal snowy cap or slanted roof is not.
+      const size=Math.hypot(n.x,n.z);
+      if(size<.9)return null;
+      n.x/=size;n.z/=size;n.y=0;
+      if(n.x*(from.x-hit.point.x)+n.z*(from.z-hit.point.z)<.15)return null;
+      return n;
+    };
+    for(let i=0;i<16;i++){
+      const angle=(i+1)*Math.PI/8; // Search every compass sector for an actual player-facing vertical rock face.
+      ray.set(from,new THREE.Vector3(Math.sin(angle),0,Math.cos(angle)));
+      ray.far=6;
+      for(const hit of ray.intersectObjects(surfaces,false)){
+        const normal=verticalFace(hit);
+        if(!normal||Math.hypot(hit.point.x-portal.door.x,hit.point.z-portal.door.z)<.72)continue; // Do not paint over the active cliff door.
+        const yaw=Math.atan2(normal.x,normal.z);
+        let fits=true;
+        for(const horizontal of [-layout.width/2,layout.width/2])for(const vertical of [-layout.height/2,layout.height/2]){
+          const edge=new THREE.Vector3(hit.point.x+Math.cos(yaw)*horizontal,hit.point.y+vertical,
+            hit.point.z-Math.sin(yaw)*horizontal);
+          const direction=edge.clone().sub(from);
+          const length=direction.length();
+          if(length<.01){fits=false;break;}
+          ray.set(from,direction.normalize());
+          ray.far=length+.20;
+          const edgeHit=ray.intersectObjects(surfaces,false).find(candidate=>
+            candidate.object===hit.object && verticalFace(candidate) &&
+            candidate.point.distanceTo(edge)<.16); // All four corners must actually meet the same wall, never air or snow.
+          if(!edgeHit){fits=false;break;}
+        }
+        if(fits)return {kind:scoreSurfaceKind(hit.object,hit.face),x:hit.point.x+normal.x*.045,
+          y:hit.point.y,z:hit.point.z+normal.z*.045,yaw,surface:hit.object.name||'authored-wall'};
+      }
+    }
+    return null;
+  }
+  function supportedScorePillar(portal,layout){
+    const shelf=portal.shelf,t=portal.tangent,n=portal.normal;
+    const supports=(x,z)=>root.CliffRouteNetwork?.shelfContains?.(shelf,x,z,-.035)!==false;
+    const candidates=[]; // Prefer either side of the door; the rearward cap stays clear for the plate and entrance.
+    for(const side of [1,-1])for(const offset of [.56,.46,.34])for(const forward of [.13,.30,.46]){
+      candidates.push({x:portal.door.x+t.x*side*offset+n.x*forward,
+        z:portal.door.z+t.z*side*offset+n.z*forward});
+    }
+    candidates.push({x:shelf.x,z:shelf.z}); // Last supported option; never fall back to hovering above unspecified terrain.
+    const half=layout.width/2+.04;
+    const safe=candidates.find(p=>supports(p.x,p.z)&&
+      supports(p.x+t.x*half,p.z+t.z*half)&&supports(p.x-t.x*half,p.z-t.z*half)&&
+      (Math.hypot(p.x-portal.door.x,p.z-portal.door.z)>.43||p===candidates[candidates.length-1]));
+    if(!safe)return null;
+    return {kind:'pillar',x:safe.x,y:shelf.y+(layout.height+.14)/2+.015,z:safe.z,
+      yaw:Math.atan2(portal.plate.x-safe.x,portal.plate.z-safe.z),surface:'supported-cliff-balcony'};
+  }
   function makeGlyphs(portal,rootGroup){
     const THREE=root.THREE;
     if(!portal.song||!THREE?.TextureLoader)return;
-    const columns=Math.min(6,portal.song.notes.length);
     const count=portal.song.notes.length;
+    const wallLayout=scoreLayout(count,SCORE_WALL_COLUMNS);
+    const wall=findVerticalScoreFace(portal,rootGroup.parent,wallLayout);
+    const layout=wall?wallLayout:scoreLayout(count,SCORE_PILLAR_COLUMNS);
+    const mount=wall||supportedScorePillar(portal,layout);
+    if(!mount){root.__farmLog?.('[puzzle-cave] no supported score surface for '+portal.mapId,'warn');return;}
     const board=new THREE.Group();
     board.name='puzzle-cave-exterior-score';
-    board.position.set(portal.door.x,portal.door.y+1.35,portal.door.z);
-    board.rotation.y=Math.atan2(portal.normal.x,portal.normal.z);
-    board.translateZ?.(.055);
+    board.position.set(mount.x,mount.y,mount.z);
+    board.rotation.y=mount.yaw; // All inscriptions remain upright and face their owning pressure plate.
+    board.userData.scoreSurfaceKind=mount.kind;
+    if(mount.kind==='pillar'){
+      if(!pillarTexture){
+        pillarTexture=new THREE.TextureLoader().load('assets/textures/carved_smooth.png');
+        if(THREE.SRGBColorSpace)pillarTexture.colorSpace=THREE.SRGBColorSpace;
+      }
+      const stone=new THREE.Mesh(new THREE.BoxGeometry(layout.width+.06,layout.height+.14,.24),
+        new THREE.MeshBasicMaterial({map:pillarTexture,color:0x918b80}));
+      stone.name='puzzle-cave-score-pillar';
+      stone.position.z=-.105; // Glyphs sit just above the existing carved face, not inside the stone.
+      board.add(stone);
+    }
     for(let index=0;index<count;index++){
       const note=portal.song.notes[index],glyphNumber=note.index+1;
       let texture=glyphTextures.get(glyphNumber); // One loader per Scratchbone note instead of one GPU texture per generated cave.
@@ -160,13 +262,25 @@
         if(THREE.SRGBColorSpace)texture.colorSpace=THREE.SRGBColorSpace;
         glyphTextures.set(glyphNumber,texture);
       }
-      const material=new THREE.MeshBasicMaterial({map:texture,color:0xffb35e,transparent:true,depthWrite:false,side:THREE.DoubleSide});
+      const column=index%layout.columns,row=Math.floor(index/layout.columns);
+      const x=(column-(layout.columns-1)/2)*SCORE_STEP_X;
+      const y=(layout.rows-1)/2*SCORE_STEP_Y-row*SCORE_STEP_Y;
+      const glow=new THREE.Mesh(new THREE.PlaneGeometry(.32,.37),
+        new THREE.MeshBasicMaterial({map:texture,color:0xffac37,transparent:true,opacity:.35,
+          blending:THREE.AdditiveBlending,depthWrite:false,side:THREE.DoubleSide}));
+      glow.name='puzzle-cave-outdoor-glyph-glow-'+index;
+      glow.position.set(x,y,.07);
+      board.add(glow);portal.glyphGlows.push(glow); // Only shown with the score group while the pressure plate is pressed.
+      const material=new THREE.MeshBasicMaterial({map:texture,color:0xffdf86,transparent:true,depthWrite:false,side:THREE.DoubleSide});
       const mesh=new THREE.Mesh(new THREE.PlaneGeometry(.20,.24),material);
       mesh.name='puzzle-cave-outdoor-glyph-'+index;
-      mesh.position.set((index%columns-(columns-1)/2)*.23,.21-Math.floor(index/columns)*.27,0);
+      mesh.position.set(x,y,.085);
       board.add(mesh);portal.glyphs.push(mesh);
     }
-    rootGroup.add(board);portal.scoreBoard=board;board.visible=false; // Only the raised plate reveals the Scratchbone score.
+    rootGroup.add(board);
+    portal.scoreBoard=board;
+    portal.scoreSurface=mount; // Mobile diagnostics identify whether real rock or an anchored pillar received the score.
+    board.visible=false; // Nothing glows or appears until the player stands on the raised pressure plate.
   }
   function createPresentation(portal,scene){
     const THREE=root.THREE;
@@ -205,7 +319,7 @@
       portal.slab.position.y=off.y+(on.y-off.y)*ease;
       portal.slab.scale.z=off.sz+(on.sz-off.sz)*ease;
     }
-    if(portal.scoreBoard){portal.scoreBoard.position.y=portal.door.y+1.35+portal.rise*1.2;portal.scoreBoard.visible=!!portal.lastDown&&!portal.solved&&portal.rise<.95;}
+    if(portal.scoreBoard)portal.scoreBoard.visible=!!portal.lastDown&&!portal.solved&&portal.rise<.95; // A surface-bound inscription never travels with the door slab.
   }
   function attachMusic(portal){
     if(!portal.requiresSong||!root.PuzzleCaveMelody?.generate||!root.PuzzleCaveMelody?.createSession)return;
@@ -219,8 +333,13 @@
       },
       onChanged:snap=>{
         portal.progress=snap;
-        for(let i=0;i<portal.glyphs.length;i++)
-          portal.glyphs[i].material?.color?.setHex?.(i===snap.activeIndex?0xffee89:0xffb35e);
+        for(let i=0;i<portal.glyphs.length;i++){
+          const active=i===snap.activeIndex;
+          portal.glyphs[i].material?.color?.setHex?.(active?0xffffb4:0xffdf86);
+          const halo=portal.glyphGlows[i]?.material;
+          halo?.color?.setHex?.(active?0xffe795:0xffac37);
+          if(halo)halo.opacity=active?.65:.35; // The current note has a stronger additive glow while the plate is held.
+        }
       }
     });
     portal.noteHandler=e=>{
@@ -292,7 +411,7 @@
     const portals=plan(network,profiles).map(p=>({
       ...p,area:key,disposed:false,solved:!p.requiresSong,justSolved:false,
       lastDown:false,openWait:0,
-      rise:p.requiresSong?0:1,progress:null,glyphs:[],visualRoot:null,
+      rise:p.requiresSong?0:1,progress:null,glyphs:[],glyphGlows:[],scoreSurface:null,visualRoot:null,
       blockerId:null,ownedTransitions:[],hiddenDenMeshes:new Map(),facadeCheckElapsed:0, // Captured visibility and slow recheck for asynchronously added den entrance meshes.
     }));
     const state={area:key,network,scene,portals};
@@ -371,7 +490,9 @@
     return {areas:[...areas.values()].map(state=>({area:state.area,count:state.portals.length,
       portals:state.portals.map(p=>({mapId:p.mapId,shelfId:p.shelf.id,door:p.door,
         plate:p.plate,entry:p.entry,locked:isGateLocked(p),solved:p.solved,
-        progress:p.progress,rewardTier:p.song?.rewardTier||null,modelReady:!!p.doorModel}))}))};
+        progress:p.progress,rewardTier:p.song?.rewardTier||null,modelReady:!!p.doorModel,
+        scoreSurface:p.scoreSurface?.kind||null,scoreVisible:!!p.scoreBoard?.visible,
+        scorePosition:p.scoreSurface&&{x:p.scoreSurface.x,y:p.scoreSurface.y,z:p.scoreSurface.z}}))}))};
   }
-  return Object.freeze({init,plan,mount,update,clear,forgetCave,hasPortal,senseTargets,debugSnapshot});
+  return Object.freeze({init,plan,mount,update,clear,forgetCave,hasPortal,senseTargets,debugSnapshot,scoreSurfaceKind});
 });
