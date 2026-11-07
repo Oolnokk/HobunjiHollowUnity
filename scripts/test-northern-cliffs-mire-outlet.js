@@ -4,6 +4,7 @@
 // Regression coverage for the Northern Cliffs' geographic drainage into the Eastern Mire.
 const assert = require('node:assert/strict');
 const generator = require('../docs/js/wilderness-map-generator.js');
+const terrainPreview = require('../docs/js/terrain-preview.js'); // Uses the same final tile-merging path as the actual wilderness scene.
 const fs = require('node:fs'); // Reads the shipped Lab schema to guard against exact-biome preview settings being discarded.
 const path = require('node:path'); // Resolves the wilderness Lab page regardless of the test process working directory.
 
@@ -58,6 +59,10 @@ for (const seed of ['mire-outlet-one', 'mire-outlet-two', 'mire-outlet-three', '
   }
   const edgeTile = root.tiles?.[`${outlet.x},${outlet.y}`]; // Physical water needs to survive export where the boundary cliff was cut.
   assert(edgeTile && waterTypes.has(edgeTile.type), `${seed}: the southeast border has visible river water`);
+  const merged = terrainPreview.buildMergedZoneGrid(workspace, root.id); // Runtime map merging can change exported tile types and cannot close the scenic river mouth.
+  const liveGrid = terrainPreview.buildZGrid(merged.cols, merged.rows, merged.tiles); // Final gameplay grid consumed by BorderTerrain.buildZoneBorderTerrain.
+  assert(['river', 'waterfall'].includes(liveGrid[outlet.y]?.[outlet.x]?.type),
+    `${seed}: southeast exit remains visible water after the actual runtime terrain merge`);
 }
 
 const ordinary = generator.generateWorkspace('ordinary-cliff-rivers', { ...compact, riverOutlet: 'none' }); // Control case keeps the original multi-border river rules.
