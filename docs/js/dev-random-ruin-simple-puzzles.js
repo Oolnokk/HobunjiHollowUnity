@@ -588,6 +588,7 @@
         label:'Reveal Safe Path',
         onPress:() => {
           grid.revealUntil = performance.now() + GRID_REVEAL_MS;
+          window.RuinInteractionAudio?.activator?.(button); // The stone reveal switch clicks only when deliberately pressed.
           if (grid.entryMechanismId) {
             if (window.DevRandomRuin?.mechanismInfo?.(grid.entryMechanismId)?.locked) window.DevRandomRuin.unlockMechanism?.(grid.entryMechanismId, true);
             else window.DevRandomRuin?.setMechanismTarget?.(grid.entryMechanismId, 1);
@@ -2190,6 +2191,7 @@
         if(on&&cell.safe)cell.proven=true;
         if(Math.abs(player.x-cell.x)<=1.2&&Math.abs(player.z-cell.z)<=1.2)near=true;
         if(cell.renderDown!==on){
+          window.RuinInteractionAudio?.watchPlate?.(cell,on,{size:.65}); // Each individual safe-path stone plate clicks only when physically pressed or released.
           plateInstanceDummy.position.set(cell.x,cell.y+.028-(on?.032:0),cell.z);
           plateInstanceDummy.rotation.set(0,0,0);
           plateInstanceDummy.scale.set(1,1,1);
@@ -2238,6 +2240,7 @@
       const topY=elevator.topTopY+(elevator.bottomTopY-elevator.topTopY)*elevator.progress;
       elevator.currentTopY=topY;
       elevator.mesh.position.y=topY-elevator.height*.5;
+      if(elevator.active)window.RuinInteractionAudio?.watchMovement?.(elevator.mesh,elevator.progress); // Continuous stone lift sounds once per ascent/descent, not every frame.
       if(wasRiding&&Math.abs(topY-previousTopY)>.0001){
         window.DevRandomRuin?.syncPlayerPresentationHeight?.(topY); // Vertical-only rider transfer stays in the canonical ruin elevation authority while X/Z remain ordinary player movement.
       }
@@ -2357,6 +2360,7 @@
         }
         if (!set.solved && !down) plate.material.color.setHex(CHORD_PLATE_IDLE_COLOR);
         plate.down=down;
+        window.RuinInteractionAudio?.watchPlate?.(plate.mesh,down); // The real chord plate press/release drives the shared stone activator sound.
         set.inscription?.setVisible?.(down);
       }
     }

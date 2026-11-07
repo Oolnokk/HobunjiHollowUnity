@@ -239,6 +239,9 @@
         onHit:()=>{
           if(!state.hittable())return false;
           state.active=!state.active;controls.desiredY=state.active?controls.highY:controls.lowY;
+          // Play once when a projectile switch commands a physical column to start moving.
+          if(Math.abs(controls.desiredY-controls.y)>.001)
+            root.RuinInteractionAudio?.mechanism?.(controls.holder,{size:Math.max(SIZE,controls.y-controls.baseY)});
           rune.material=state.active?green:red;
           deps.onStateChange?.();return true;
         },
@@ -260,6 +263,9 @@
     const turnPillar=plate=>{
       const record=plate.pillar;
       record.rotation=(record.rotation+1)%4;record.rotationTarget=record.rotation;
+      // The pressure plate clicks and the rotating stone column rumbles once, never per animation frame.
+      root.RuinInteractionAudio?.activator?.(plate.node,{size:2});
+      root.RuinInteractionAudio?.mechanism?.(record.holder,{size:Math.max(SIZE,record.y-record.baseY)});
       refreshFaces(record);record.updateShape();
       plate.node.material=green;plate.triggered=true;deps.onStateChange?.();
     };

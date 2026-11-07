@@ -65,8 +65,8 @@ async function main(){
       const assertAuthoredGate=async(challenge,kind)=>{
         await waitFor(()=>challenge.authoredGate || challenge.disposed,kind+' authored cliffGate model');
         if(!challenge.authoredGate)throw Error(kind+' authored gate was disposed before it loaded');
-        const darkness=challenge.authoredGate.userData?.meshById?.get?.('cliff_gate_darkness');
-        if(!darkness || darkness.visible)throw Error(kind+' authored cliff_gate_darkness was not hidden');
+        if(challenge.authoredGate.userData?.meshById?.has?.('cliff_gate_darkness'))
+          throw Error(kind+' authored gate still contains black backing geometry');
         if(challenge.door.visible)throw Error(kind+' authored gate did not replace the placeholder slab');
       };
       try{
@@ -90,8 +90,8 @@ async function main(){
           throw Error('Carved rock wall did not inherit the exact surrounding cave-shell material');
         if(fire.rockSurround.userData.naturalSurfaceUvOwner==='legacy-continuous-rock-uv')
           throw Error('Cave wall was mislabeled as a legacy ore texture, overriding natural surface metadata');
-        if(fire.backdrop.visible)throw Error('Unwanted black fire-door plane still covers the cave interior');
-        await assertAuthoredGate(fire,'fire'); // Verify the actual asynchronously built black plane, not only its hidden placeholder.
+        if(fire.backdrop!==null)throw Error('Fire gate should not construct any fake black passage');
+        await assertAuthoredGate(fire,'fire'); // Verify the async authored asset contains no black backing geometry.
         fire.dispose();fire=null;
         if(collision.providerIds().length!==countBefore)throw Error('Fire cave leaked collision provider on disposal');
 
@@ -109,7 +109,7 @@ async function main(){
         if(!collision.blocksBox(area,gateX,gateZ,.18))throw Error('Closed melody slab is not collidable');
         music.tick(0);
         if(opened!==0||closed!==0)throw Error('Stepping on a song plate must never open or close the player instrument');
-        if(music.backdrop.visible)throw Error('Unwanted black melody-door plane still covers the carved alcove');
+        if(music.backdrop!==null)throw Error('Melody gate should not construct any fake black passage');
         if(music.plate.userData.puzzleCavePlateTexture!=='carved_smooth.png'||
           music.plate.userData.puzzleCaveTankanText!=="hao'uun")
           throw Error('Melody plate is missing authored carved_smooth material or Tankan hao\'uun inscription');

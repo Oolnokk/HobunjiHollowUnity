@@ -612,7 +612,10 @@
       for (const e of object.userData.rotatingSegments||[]) if (e?.segment) {
         e.segment.userData.interactive3D = true; // Each marked cube is its own semantic prompt anchor even though the pair shares one puzzle root.
         e.segment.userData.devRuinInteractionType = 'linkedCubeControl';
-        ruin.controls.push({kind:'linkedCube',object:e.segment,promptRoot:e.segment,range:2.05,touchIcon:'↻',label:'Rotate Cube '+(labels[e.controlIndex]||e.controlIndex+1),onPress:()=>ruin.api.rotateLinkedCube(object,e.controlIndex,1)});
+        ruin.controls.push({kind:'linkedCube',object:e.segment,promptRoot:e.segment,range:2.05,touchIcon:'↻',label:'Rotate Cube '+(labels[e.controlIndex]||e.controlIndex+1),onPress:()=>{
+          ruin.api.rotateLinkedCube(object,e.controlIndex,1);
+          window.RuinInteractionAudio?.mechanism?.(e.segment); // Linked stone control visibly rotates on each accepted interaction.
+        }});
       }
     });
     for (const a of ruin.activators) {
@@ -720,6 +723,7 @@
       }
     }
     ruin.blockSlide={block,x:block.position.x,z:block.position.z,dx:face.sx*localStep,dz:face.sz*localStep,elapsed:0};
+    window.RuinInteractionAudio?.activator?.(block); // A successful physical push sounds once, never while bracing against blocked stone.
     ruin.blockBrace=null;
     return true;
   }
@@ -1844,6 +1848,7 @@
     const player=deps?.player&&deps?.TILE?{x:deps.player.x/deps.TILE,z:deps.player.y/deps.TILE}:null;
     for(const state of ruin.transitDoorStates||[]){
       state.open+=clamp(state.target-state.open,-dt*2.4,dt*2.4);
+      window.RuinInteractionAudio?.watchMovement?.(state.panel,state.open); // Audible when the physical stone door starts or reverses its travel.
       if(Math.abs(state.open-state.target)<.001)state.open=state.target;
       const eased=state.open*state.open*(3-2*state.open);
       if(state.door.rootGrowthBinding)state.door.rootGrowthBinding.setProgress(state.open);
@@ -1871,7 +1876,10 @@
   function updateMechanisms(dt){
     updateBlockPushing(dt); // Plate overlap sees the same interpolated pose that collision and rendering use.
     mechanismSignalRoots();
-    for(const plate of ruin.pressurePlateRoots)ruin.api.syncPressurePlates(plate);
+    for(const plate of ruin.pressurePlateRoots){
+      ruin.api.syncPressurePlates(plate);
+      window.RuinInteractionAudio?.watchPlate?.(plate,Number(plate.userData?.weightProgress)>.5); // Only weight crossing the physical plate's press threshold clicks.
+    }
     ruin.api.tickRuntime(dt);
     for(const m of ruin.mechanisms.values()){
       const linkedPlate=m.root.userData?.linkedPressurePlateRoot;
@@ -1896,6 +1904,12 @@
         else if(linkedPlate)linkedPlate.userData.weightProgress=m.progress;
       }
     }
+    for(const m of ruin.mechanisms.values()){
+      const soundSource=m.type==='stoneDoor'
+        ?(m.root.children||[]).find(child=>child.isMesh&&child.geometry)||m.root
+        :m.root; // Share the physical door-panel identity with the native V50 controller to avoid two simultaneous recordings.
+      window.RuinInteractionAudio?.watchMovement?.(soundSource,m.progress);
+    } // Emit one stone rumble per physical motion, never during the once-a-second reapply pass.
     // applyProgress re-traverses each mechanism; it is a pure function of its
     // progress and the plate/glyph signals, so it only runs when those change.
     let signals='';for(const root of ruin.mechanismSignalRoots)signals+=(root.userData.weightProgress??'')+','+(root.userData.solveProgress??'')+';';

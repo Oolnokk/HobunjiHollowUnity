@@ -183,6 +183,7 @@
         // can have a perfectly open room at the same X/Z. Only this wing's
         // height-specific voxel grid owns the door's collision.
       }
+      if(record.gate.object.visible!==blocked)root.RuinInteractionAudio?.mechanism?.(record.gate.object,{size:4}); // The story-wing gate changes collision and sound exactly once, not every tick.
       record.gate.object.visible=blocked;
 
     }
