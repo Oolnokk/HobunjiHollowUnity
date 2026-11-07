@@ -119,7 +119,7 @@
           z:cz+dir.dz*outerRadius+lateral.dz*o.portalOffset};
         let previous={...portal}; // Far wall of the last room, initially the shaft portal threshold.
         for(let stage=1;stage<=challengeCount+1;stage++){ // One or two authored puzzles per shaft exit, followed by one required brazier.
-          const defence=stage>=3&&stage<=challengeCount&&rng()<.24; // Only later wing stages may reserve a full authored statue-defense arena.
+          const defence=wi>0&&stage===1&&challengeCount===1&&rng()<.24; // Short solo wings can still host the full 18×18 statue-defense arena; keep this puzzle family in weighted rolls.
           const rw=defence?18:(dir.dx?integer(rng,11,19):integer(rng,9,15));
           const rd=defence?18:(dir.dz?integer(rng,11,19):integer(rng,9,15));
           const gap=integer(rng,3,6); // Short walk between consecutive puzzle rooms; no empty approach needs the old 7–15 cells.
