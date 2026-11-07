@@ -262,6 +262,19 @@ assert.equal(neutralFree.roll,52,'Neutral must use the Windup wrist roll');
 assert.equal(strikeFree.y,0.5,'Strike alone raises the free right hand to the authored Y');
 const otherPose={neutral:{secondaryGrip:{enabled:true}},windup:{secondaryGrip:{enabled:true}},strike:{secondaryGrip:{enabled:true}}};
 assert.equal(gripsApi.animationGripAt(0,kurrayaPlayNote,otherPose,'attack','hatchet').influence,0,'normal weapon Neutral still defaults to 1H');
+const freshKurraya = JSON.parse(JSON.stringify(kurrayaPlayNote)); // Simulates downloading an action after another weapon had been selected.
+gripsApi.loadEditorAnimationGrip({actionId:'kurraya_play_note',toolKey:'kurraya',style:'thrust',sequence:'attack',poses:freshKurraya.poses});
+freshKurraya.poses.neutral.secondaryGrip.enabled=false; // The saved pose object can lag the editor panel's live state.
+freshKurraya.poses.windup.secondaryGrip.enabled=false;
+const decorated = gripsApi.decorateEditorAnimationGrip(freshKurraya);
+assert.equal(decorated.poses.neutral.secondaryGrip.enabled,true,'export must use live Neutral 2H checkbox');
+assert.equal(decorated.poses.windup.secondaryGrip.enabled,true,'export must use live Windup 2H checkbox');
+assert.equal(decorated.poses.neutral.rightHand.y,0.47,'grip export must not replace the authored neutral free hand');
+assert.equal(decorated.poses.strike.rightHand.y,0.5,'grip export must not replace the authored strike free hand');
+const otherAction = {actionId:'light_weapon_idle',poses:{neutral:{secondaryGrip:{enabled:true}},windup:{secondaryGrip:{enabled:true}},strike:{secondaryGrip:{enabled:true}}}};
+gripsApi.loadEditorAnimationGrip({actionId:'light_weapon_idle',toolKey:'hatchet',style:'sweep',sequence:'attack',poses:otherAction.poses});
+assert.equal(gripsApi.decorateEditorAnimationGrip(otherAction).poses.neutral.secondaryGrip.enabled,false,'normal weapon Neutral 2H must remain disabled on export');
+
 assert(grips.includes("function editorKurrayaNeutralAllowed(dataObj = null)"),'editor must resolve the Kurraya by its action, not a stale preview sprite');
 assert(grips.includes("editorKurrayaNeutralAllowed(parsed)"),'Kurraya Neutral enabled flag must survive exporting when a previous sprite was selected');
 assert(grips.includes("editorKurrayaNeutralAllowed(dataObj)"),'loading new Kurraya animation must not disable Neutral 2H');
@@ -359,6 +372,10 @@ syncPair(slider,numeric,null,-2,2,true);
 assert.equal(slider.value,'0','blank elbow is shown at zero without keyframing it');
 assert.equal(numeric.value,'','blank elbow remains explicitly unset');
 assert(editor.includes('id="${elbowSliderId(side, axis)}"'),'each elbow coordinate must have a slider');
+assert(editor.includes('anim.poses[phase].rightHand = rightHand;'),'JSON import and Undo must restore independent right-hand transforms');
+assert(editor.includes('anim.poses[phase].offhandIdle = { ...raw.offhandIdle'),'JSON import must preserve optional idle offhand data');
+assert(editor.includes('window.HobunjiHandToolGrips?.decorateEditorAnimationGrip?.(exported)'),'download/clipboard/Undo must serialize live per-pose grip checkbox state');
+assert(editor.includes('if (gripMode) exported.gripMode = gripMode'),'download/clipboard/Undo must preserve the selected palm grip mode');
 assert(editor.includes('id="poseFreeRightHand_${axis}_slider"'),'each free hand channel must have a slider');
 assert(editor.includes('slider?.addEventListener(\'input\', () => applyFreeChannel(slider.value, true))'),'touch slider drives free hand state');
 assert(editor.includes('slider?.addEventListener(\'input\', () => {\n        numberInput.value'),'touch slider drives elbow state');
