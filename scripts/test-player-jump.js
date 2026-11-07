@@ -142,29 +142,34 @@ function harness({ rock = null, furniture = null, wall = null, pit = null, start
 {
   const h = harness();
   assert.equal(h.window.PlayerJump.start(), true, 'empty ground must be jumpable');
+  const { launchSpeed, gravity } = h.window.PlayerJump.config; // Validate the configured half-height apex independent of frame stepping.
+  const priorApex = 6.25 ** 2 / (2 * 11.8); // Previously shipped base height, used only as a regression reference.
+  assert(Math.abs(launchSpeed ** 2 / (2 * gravity) - priorApex / 2) < 0.001,
+    'base jump must reach half of its former apex without changing gravity');
+  assert.equal(gravity, 11.8, 'halving takeoff height must not alter gravity or falling behavior');
   assert.equal(!!h.player.climbing, false, 'free jump must not lock the wall-climb action state');
   let apex = 0;
   for (let i = 0; i < 85; i++) {
     h.advance(1 / 60);
     apex = Math.max(apex, h.player.heightAboveGround || 0);
   }
-  assert(apex > 1.4 && apex < 1.8, 'free jump must have physical vertical travel');
+  assert(apex > 0.72 && apex < 0.86, 'base jump apex is now approximately 0.83 world units');
   assert.equal(h.player.climbing, false, 'land on flat terrain frees ordinary movement');
   assert.equal(h.player._freeJump, null, 'flat landing clears transient state');
   assert.equal(h.window.DevRandomRuin.groundLandings, 1, 'a confirmed ground landing is reported exactly once');
 }
 
 {
-  const h = harness({ rock: { col: 4, row: 3, top: 1.1 } });
+  const h = harness({ rock: { col: 4, row: 3, top: 0.6 } });
   h.input.x = 1;
   assert(h.window.PlayerJump.start());
   h.advance(1.4);
-  assert(h.player.x / TILE > 5, 'an airborne player can jump over finite-height rock cover');
+  assert(h.player.x / TILE > 4.5, 'an airborne player can jump over low finite-height rock cover');
   assert.equal(h.player.climbing, false, 'clearing the rock ends in an ordinary floor landing');
 }
 
 {
-  const h = harness({ rock: { col: 4, row: 3, top: 1.1 }, start: { x: 3.45, z: 3.5 } });
+  const h = harness({ rock: { col: 4, row: 3, top: 0.65 }, start: { x: 3.45, z: 3.5 } });
   h.input.x = 1;
   assert(h.window.PlayerJump.start());
   for (let i = 0; i < 90; i++) {
@@ -172,16 +177,16 @@ function harness({ rock = null, furniture = null, wall = null, pit = null, start
     h.advance(1 / 60);
   }
   assert.equal(h.player._freeJump?.phase, 'supported', 'land on top of a rock instead of passing through it');
-  assert(Math.abs(h.player.physicalFeetY - 1.1) < .01);
-  assert(h.player.heightAboveGround > 1, 'height includes elevation gained from standing on cover');
+  assert(Math.abs(h.player.physicalFeetY - 0.65) < .01);
+  assert(h.player.heightAboveGround > 0.6, 'height includes elevation gained from standing on cover');
   assert(h.window.PlayerJump.start(), 'a second press jumps again from the elevated support');
   h.advance(.15);
-  assert(h.player.physicalFeetY > 1.1);
+  assert(h.player.physicalFeetY > 0.65);
 }
 
 {
-  const h = harness({ furniture: { x: 4.5, z: 3.5, top: 1.3, radius: .48 }, start: { x: 3.45, z: 3.5 } });
-  assert.equal(h.window.NearbyVolumeCollision.movementCoverNear(4.5, 3.5, .2)[0].topY, 1.3,
+  const h = harness({ furniture: { x: 4.5, z: 3.5, top: 0.65, radius: .48 }, start: { x: 3.45, z: 3.5 } });
+  assert.equal(h.window.NearbyVolumeCollision.movementCoverNear(4.5, 3.5, .2)[0].topY, 0.65,
     'jump uses combat cover geometry even with projectile cover switched off');
   h.input.x = 1;
   assert(h.window.PlayerJump.start());
@@ -190,7 +195,15 @@ function harness({ rock = null, furniture = null, wall = null, pit = null, start
     h.advance(1 / 60);
   }
   assert.equal(h.player._freeJump?.phase, 'supported', 'furniture is an elevated landing target');
-  assert(Math.abs(h.player.physicalFeetY - 1.3) < .01);
+  assert(Math.abs(h.player.physicalFeetY - 0.65) < .01);
+}
+
+{
+  const h = harness({ rock: { col: 4, row: 3, top: 1.1 }, start: { x: 3.45, z: 3.5 } });
+  h.input.x = 1;
+  assert(h.window.PlayerJump.start());
+  h.advance(1.2);
+  assert(h.player.x / TILE < 3.84, 'previously reachable 1.1-unit cover is now too high for a base jump');
 }
 
 {
@@ -336,7 +349,7 @@ function harness({ rock = null, furniture = null, wall = null, pit = null, start
 }
 {
   const h = harness({ start: { x: 3.45, z: 3.5 } });
-  h.grid[3][4] = { type: 'floor', surfaceY: 1.1 }; // Plateau top in the adjacent tile.
+  h.grid[3][4] = { type: 'floor', surfaceY: 0.65 }; // Plateau top in the adjacent tile.
   h.input.x = 1;
   assert(h.window.PlayerJump.start());
   for (let i = 0; i < 85; i++) {
@@ -347,7 +360,7 @@ function harness({ rock = null, furniture = null, wall = null, pit = null, start
   assert.equal(h.player._freeJump, null, 'plateau landing returns to ordinary grounded movement');
 }
 {
-  const h = harness({ start: { x: 3.45, z: 3.5 }, deepSupportY: 1.1 });
+  const h = harness({ start: { x: 3.45, z: 3.5 }, deepSupportY: 0.65 });
   h.input.x = 1;
   assert(h.window.PlayerJump.start());
   for (let i = 0; i < 85; i++) {
@@ -355,10 +368,10 @@ function harness({ rock = null, furniture = null, wall = null, pit = null, start
     h.advance(1 / 60);
   }
   assert.equal(h.player._freeJump?.phase, 'supported', 'adjacent dynamic minicliff/platform is reachable when feet cross its elevation');
-  assert(Math.abs(h.player.physicalFeetY - 1.1) < 0.01);
+  assert(Math.abs(h.player.physicalFeetY - 0.65) < 0.01);
 }
 {
-  const h = harness({ start: { x: 3.45, z: 3.5 }, rock: { col: 4, row: 3, top: 1.1 } });
+  const h = harness({ start: { x: 3.45, z: 3.5 }, rock: { col: 4, row: 3, top: 0.65 } });
   h.input.x = 1;
   assert(h.window.PlayerJump.start());
   h.advance(0.5);
@@ -369,7 +382,7 @@ function harness({ rock = null, furniture = null, wall = null, pit = null, start
   assert.equal(h.player.x, before);
 }
 {
-  const h = harness({ start: { x: 3.45, z: 3.5 }, rock: { col: 4, row: 3, top: 1.1 }, heightBlocked: x => x > 4.05 });
+  const h = harness({ start: { x: 3.45, z: 3.5 }, rock: { col: 4, row: 3, top: 0.65 }, heightBlocked: x => x > 4.05 });
   h.input.x = 1;
   assert(h.window.PlayerJump.start());
   h.advance(0.9);

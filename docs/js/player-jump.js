@@ -6,11 +6,11 @@
   'use strict';
 
   const CONFIG = Object.freeze({
-    launchSpeed: 6.25, gravity: 11.8, airTilesPerSecond: 3.15,
+    launchSpeed: 6.25 / Math.SQRT2, gravity: 11.8, airTilesPerSecond: 3.15,
     groundTilesPerSecond: 2.6, radius: 0.17, stepSeconds: 1 / 60,
     maxFrameSeconds: 0.22, maxStepUp: 0.25, landingTolerance: 0.045,
     assistReach: 1, assistSeconds: 0.16, // Short, collision-checked forward lerp after clearing an obstacle.
-  }); // Tuning for an approximately 1.65-world-unit apex and one-second jump.
+  }); // Halve the original 1.65-world-unit apex (~0.83) via launch speed; retain fall gravity.
   let deps = null; // Injected from ClimbSystem.init; contains the same live player and terrain readers.
   const debug = { starts: 0, landings: 0, blockedMoves: 0, lastEvent: 'not started', lastObstacle: null, grabs: 0, slides: 0, assists: 0 }; // Mobile diagnostics in ClimbSystem.debug.
 
