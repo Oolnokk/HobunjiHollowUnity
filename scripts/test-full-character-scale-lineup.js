@@ -50,6 +50,8 @@ vm.runInContext(source.replace('  install();\n})();', '  window.testLineup = { r
     assert.equal(ap.speciesId, species);
   }
   db.npcs = originalNpcs;
+  assert.match(source, /id="maaFullScaleChoose"/, 'Every species/gender must be selectable from a mobile dropdown');
+  assert.match(source, /chooser\.replaceChildren\(\)/, 'The dropdown options must come from actual built lineup entries');
   assert.match(source, /id="maaLongoranTuning"/, 'Full Character Scale must expose Longoran editing');
   for (const axis of ['Hunch','Kyphosis','Lurch','Cadence','Stance','DragLift']) {
     assert(source.includes(`tuningRow('${axis}'`), `missing Longoran authoring control ${axis}`);
