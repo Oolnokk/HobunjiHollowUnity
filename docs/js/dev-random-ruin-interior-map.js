@@ -1051,7 +1051,25 @@
     owner.rootedMechanisms=true;owner.occupancy?.refresh();
   }
 
-  async function generate(seed=randomSeed(),opts={}) {
+  // Only one ruin build may be in flight. A second Enter press (or the Generate button, a site entry and the
+  // Puzzle Lab racing) used to start a parallel build whose clearRuntime() tore down the first one's scene mid-way,
+  // leaving two occupancy models/blockers and phantom collisions that snapped the player back to spawn.
+  let ruinBuildInFlight=null;
+  function singleFlight(impl){
+    return function(...args){
+      if(ruinBuildInFlight){
+        console.warn('[Random Test Ruin] build already in progress; ignoring duplicate enter request.');
+        return ruinBuildInFlight.then(()=>false,()=>false);
+      }
+      const run=Promise.resolve(impl(...args));
+      const tracked=run.finally(()=>{if(ruinBuildInFlight===tracked)ruinBuildInFlight=null;});
+      ruinBuildInFlight=tracked;
+      return run;
+    };
+  }
+  const generate=singleFlight(generateImpl), generateStoryVault=singleFlight(generateStoryVaultImpl), generateShaftTest=singleFlight(generateShaftTestImpl);
+
+  async function generateImpl(seed=randomSeed(),opts={}) {
     if ((!devModeEnabled()&&!opts.site) || !deps || !buildingScenes) return false;
     const singleRoomTrial=opts.singleRoomTrial===true; // Keeps isolated dev generation out of wilderness sites and the authored Hachutu temple.
     if(singleRoomTrial&&(opts.site===true||opts.hachutu===true||!devModeEnabled()))return false;
@@ -1231,7 +1249,7 @@
   // Fixed story ruin: intentionally bypass V50 generation and all puzzle/boss composers.
   // It still uses this module's normal _buildingScenes, scene transition, floor support,
   // player-mesh ownership and exit lifecycle, so it is a real playable interior.
-  async function generateStoryVault(options = {}) {
+  async function generateStoryVaultImpl(options = {}) {
     if (!deps || !buildingScenes || !window.DelversGuild?.hasTalisman?.()) return false;
     if (!['search','report'].includes(window.DelversGuild?.vaultPhase?.())) return false;
     try {
@@ -1403,7 +1421,7 @@
     }
   }
 
-  async function generateShaftTest(){
+  async function generateShaftTestImpl(){
     if(!devModeEnabled()||!deps||!buildingScenes||!window.ShaftHub)return false;
     const hub=window.ShaftHub.compose({seed:randomSeed(),landings:true}); // Standalone scene keeps the V50 floor and walls out of the shaft.
     if(!hub.ok){deps.showToast?.('Shaft layout failed its reachability check.',false);return false;}
