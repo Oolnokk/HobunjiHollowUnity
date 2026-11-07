@@ -12,7 +12,7 @@
   let deps = null; // WildlifeSpawn's existing creature factory, player, and hostile collections.
   let lastArea = null; // Only area changes trigger global-perch registry maintenance.
   const stats = { spawned: 0, completed: 0, dives: 0, wallHits: 0, spikeHits: 0,
-    deposited: 0, lastImpact: null, lastError: null }; // Serialized mobile diagnostics, no retained mesh snapshots.
+    deposited: 0, overflowMeals: 0, lastImpact: null, lastError: null }; // Serialized mobile diagnostics, no retained mesh snapshots.
   const finite = (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
   const tile = () => Math.max(1, finite(deps?.TILE, 64));
   const healthy = actor => !!actor && actor.health > 0;
@@ -42,25 +42,29 @@
     if (!rendered || !window.TzatzulNestInterior?.isNestMap?.(mapId)
       || !healthy(prey) || prey === deps?.player || !prey.avatarRef?.group
       || (!deps.hostileObjects.has(prey) && !deps.companionObjects?.has(prey))) return false;
-    const state = stateFor(mapId); // Unseen prey and a full hoard are safely released alive by the flight owner.
-    if (state.victims.length >= 8) return false;
-    const index = state.victims.length; // Stable in-session and saved corpse identity, independent of random actor IDs.
-    state.victims.push({ creatureKey: prey.creatureKey, name: prey.name || '',
-      genotype: prey.genotype || null, roster: prey.rosterRecord || null,
-      bandit: !!prey.isBandit, looted: false });
-    const stored = victims.get(mapId) || new Map();
-    stored.set(index, prey); victims.set(mapId, stored);
+    const state = stateFor(mapId); // Persist no more than eight retrievable corpses per cave.
+    const keepRemains = state.victims.length < 8; // Further visible deliveries feed the clutch without growing an unbounded hoard.
+    if (keepRemains) {
+      const index = state.victims.length; // Stable in-session and saved corpse identity, independent of random actor IDs.
+      state.victims.push({ creatureKey: prey.creatureKey, name: prey.name || '',
+        genotype: prey.genotype || null, roster: prey.rosterRecord || null,
+        bandit: !!prey.isBandit, looted: false });
+      const stored = victims.get(mapId) || new Map(); // Keep the existing original rendered actor for later corpse inspection.
+      stored.set(index, prey); victims.set(mapId, stored);
+    }
     deps.hostileObjects.delete(prey); deps.companionObjects?.delete(prey);
     window.PerchSupport?.forget?.(prey);
     prey.onBranch = null; prey.health = 0; prey.state = 'corpse';
-    prey.tzatzulNestVictim = mapId; prey.keepCorpseAfterLoot = true;
-    prey.def = { ...prey.def, lootPool: 'mixedCrateTreasurePuzzle' }; // Never modify the original species' shared loot definition.
+    prey.tzatzulNestVictim = keepRemains ? mapId : null;
+    prey.keepCorpseAfterLoot = keepRemains;
+    if (keepRemains) prey.def = { ...prey.def, lootPool: 'mixedCrateTreasurePuzzle' }; // Persistent remains retain the existing mixed loot pool.
     prey.avatarRef.group.parent?.remove(prey.avatarRef.group);
     prey.groundShadow?.parent?.remove(prey.groundShadow);
     for (const key of ['_banditToolHolder','_banditRangedToolHolder','_banditFlaskToolHolder','_banditTrailMesh']) {
       if (prey[key]) prey[key].visible = false;
     }
-    stats.deposited++;
+    if (keepRemains) stats.deposited++;
+    else stats.overflowMeals++; // Only the extra meal disappears; existing searchable remains remain untouched.
     deps.save?.();
     return true;
   }

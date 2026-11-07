@@ -196,6 +196,13 @@ for(const map of puzzleCaves){
     for(let col=puzzle.room.col;col<puzzle.room.col+9;col++)
       assert(floorKeys.has(col+','+row), 'the whole challenge room remains walkable after cavern collision carving');
   assert.equal(map.creatureSpawns.length,0,'Puzzle Cave contains no inherited Den-Mother spawns');
+  const treasure=map.cavePuzzleTreasure; // The earned loot has a tangible authored chest even when it is initially concealed.
+  assert(treasure&&floorKeys.has(treasure.col+','+treasure.row),'puzzle chest is on an actual carved floor tile');
+  const gateZ=puzzle.room.row+9-2.8; // Same chamber gate depth used by the live puzzle compositor.
+  assert(treasure.row+.5-gateZ>1.05,"the treasure is beyond the player\'s front-of-door interaction reach");
+  assert(treasure.row+.5-gateZ<2,'the opened passage leads to a nearby, walkable reward alcove');
+  assert(map.caveProps.some(prop=>prop.id===treasure.id&&prop.key==='ruinDungeonChestT2'),
+    'both puzzle types build the ordinary authored bronze treasure chest');
   if(puzzle.kind==='fireSconces'){
     const charges=map.caveShattercasks.filter(charge=>charge.kind==='flameShattercask'&&charge.guaranteed);
     assert.equal(charges.length,2,'two usable flame charges prevent a one-use fire-sconce softlock');
@@ -445,6 +452,38 @@ assert.equal(census.denCount, expectedAnimalDens, 'wildlife diagnostics retain t
   deps.getCurrentArea = () => 'map_test_wilds';
 }
 
+// Puzzle treasure remains visibly claimable after solving rather than being silently auto-granted.
+{
+  const rewardMap=puzzleCaves.find(map=>map.cavePuzzleTreasure); // A generated chamber supplies both its chest and canonical save identity.
+  const tile=rewardMap.cavePuzzleTreasure;
+  const rewardProfile=Cave.profileForMapId(rewardMap.id);
+  assert(rewardProfile,'the puzzle treasure fixture has an independent cave profile');
+  const saved={discovered:true,puzzleSolved:true,puzzleRewardTier:2,puzzleRewardClaimed:false};
+  Cave.__test.runtimeStateBySignature.set(rewardProfile.signature,saved); // Simulate the persisted just-solved cave without side-stepping the real interaction.
+  deps.getCurrentArea=()=>rewardMap.id;
+  deps.player.x=(tile.col+.5)*deps.TILE;
+  deps.player.y=(rewardMap.cavePuzzle.room.row+9-2.8-.2)*deps.TILE;
+  assert.equal(Cave.objectAt(rewardMap.id,tile.col,tile.row),null,
+    'the chest cannot be claimed through the closed stone wall from its front side, even on a saved solved map');
+  deps.player.y=(tile.row+.5)*deps.TILE;
+  const chest=Cave.objectAt(rewardMap.id,tile.col,tile.row);
+  assert.equal(chest?.getButtons()?.[0]?.action,'obj_claim_puzzle_treasure','the visible puzzle chest has a standard aimed action');
+  assert.equal(chest.onAction('obj_claim_puzzle_treasure').ok,false,'missing trinket definitions do not consume earned treasure');
+  assert.equal(saved.puzzleRewardPending,true,'unavailable reward is persisted as pending');
+  const oldTrinkets=context.TrinketSystem,oldLoot=context.LootRolling;
+  let claimed=0; // Ensures pressing a cached chest button twice cannot duplicate its single reward.
+  context.TrinketSystem={DEFINITIONS:{cave_test:{}},claimLoot(gained){claimed++;return ['Cave Test Trinket'];}};
+  context.LootRolling={getLootPools:()=>({puzzleCave:{entries:[{tier:2,itemKey:'trinket_cave_test'}]}}),
+    rollLootPool:()=>({trinket_cave_test:1})};
+  assert.equal(chest.onAction('obj_claim_puzzle_treasure').ok,true,'the earned chest can be claimed once definitions are available');
+  assert.equal(saved.puzzleRewardClaimed,true,'claim persists the one-shot reward state');
+  assert.equal(Cave.objectAt(rewardMap.id,tile.col,tile.row),null,'claimed chest cannot be reopened');
+  assert.equal(chest.onAction('obj_claim_puzzle_treasure').ok,false,'stale button cannot award another trinket');
+  assert.equal(claimed,1,'loot was granted exactly once');
+  context.TrinketSystem=oldTrinkets;context.LootRolling=oldLoot;
+  deps.getCurrentArea=()=> 'map_test_wilds';
+}
+
 // Cave Duskcaps now use ordinary aimed getButtons/onAction picking, never proximity harvest.
 {
   const granted = []; // Captures the isolated legacy loot adapter when no game-owned lightweight grant is injected.
@@ -498,13 +537,31 @@ console.log(`PASS cave-site-system: ${workspace.animalDens.length} anchors -> ${
 {
   const oreSource = fs.readFileSync(path.join(root, 'docs/js/cavern-ore-rocks.js'), 'utf8');
   class Obj {
-    constructor() { this.position = { set() {} }; this.children = []; this.userData = {}; this.parent = null; }
+    constructor(geometry=null,material=null) {
+      this.position = { set() {} };this.scale={set() {}};this.rotation={y:0};
+      this.geometry=geometry;this.material=material;this.children = []; this.userData = {}; this.parent = null;
+    }
     add(c) { this.children.push(c); c.parent = this; }
     remove(c) { this.children = this.children.filter(node => node !== c); c.parent = null; }
     traverse(fn) { fn(this); for (const child of this.children) child.traverse(fn); }
   }
   let fittedFaces = 0; // Verifies both random-cave builds reach the shared ore-rock face fitting helper.
-  const oreCtx = { THREE: { Mesh: Obj, Group: Obj, MeshStandardMaterial: class {} }, TerrainGeometry: { buildRockTileGeo: () => ({ stoneGeo: {} }) }, OreRockTextures: { materialFor: (_three, key) => ({ key, userData: { sharedOreRockMaterial: true } }), fitRockMesh: () => { fittedFaces++; } } };
+  class RockGeometry {
+    constructor(){this.disposed=false;this.attributes={};this.positions=Array.from({length:12},(_,i)=>[i/12-.5,(i%3)/4-.25,(i%5)/6-.35]);}
+    getAttribute(key){if(key!=='position')return null;return {count:this.positions.length,
+      getX:i=>this.positions[i][0],getY:i=>this.positions[i][1],getZ:i=>this.positions[i][2],
+      setXYZ:(i,x,y,z)=>{this.positions[i]=[x,y,z];}};}
+    setAttribute(name,attribute){this.attributes[name]=attribute;}
+    computeVertexNormals(){}
+    dispose(){this.disposed=true;}
+  }
+  class RockMaterial {constructor(){this.userData={};}dispose(){}}
+  const oreCtx = { THREE: { Mesh: Obj, Group: Obj, MeshStandardMaterial: RockMaterial,
+      MeshBasicMaterial:RockMaterial,IcosahedronGeometry:RockGeometry,BufferGeometry:RockGeometry,
+      Float32BufferAttribute:class{constructor(array,itemSize){this.array=array;this.itemSize=itemSize;}},DoubleSide:2 },
+    TerrainGeometry: { buildRockTileGeo: () => ({ stoneGeo: new RockGeometry() }) },
+    OreRockTextures: { materialFor: (_three, key) => ({ key, userData: { sharedOreRockMaterial: true } }),
+      fitRockMesh: () => { fittedFaces++; } } };
   oreCtx.window = oreCtx;
   vm.createContext(oreCtx);
   vm.runInContext(oreSource, oreCtx, { filename: 'cavern-ore-rocks.js' });
@@ -526,8 +583,97 @@ console.log(`PASS cave-site-system: ${workspace.animalDens.length} anchors -> ${
   for (const kind of Object.keys(oreCtx.CavernOreRocks.CAVERN_ORE_TINTS)) assert(kind === 'stone' || ORE_DEFS[kind], `cavern tint ${kind} is a real ore`);
   const newGrid = [[{}, {}, {}]];
   oreCtx.CavernOreRocks.build('map_i_new_ores', { oreRocks: [{ col: 0, row: 0, oreKind: 'tinCopper' }, { col: 1, row: 0, oreKind: 'mushistonite' }, { col: 2, row: 0, oreKind: 'tin' }] }, new Obj(), newGrid);
-  assert.equal(fittedFaces, 5, 'Every cave resource rock invokes the compatible UV-preserving helper, including stone-only rocks');
+  assert.equal(fittedFaces, 5, 'Ordinary cave resource rock mounds keep the UV-preserving fitting helper');
   assert.deepEqual(newGrid[0].map(cell => cell.oreKey), ['tinCopper', 'mushistonite', 'tin'], 'Wild-cave rocks preserve all three new ore identities and drops');
+  const separatorScene=new Obj(),separatorGrid=[[{},{}]],separatorMap='map_i_cave_rock_wall';
+  const separatorGroups=oreCtx.CavernOreRocks.build(separatorMap,{oreRocks:[
+    {col:0,row:0,oreKind:'stone',caveSeparator:true,caveSeparatorLayer:1},
+    {col:1,row:0,oreKind:'stone',caveSeparator:true,caveSeparatorLayer:2},
+  ]},separatorScene,separatorGrid); // Adjacent layers share a logical cave wall but each tile is a standalone diggable rock.
+  const rock0=separatorGroups.get('0,0'),rock1=separatorGroups.get('1,0');
+
+  const assertSealedStone=mesh=>{
+    const vertices=mesh.geometry.attributes.position.array;
+    const edges=new Map(); // Every triangulated cut must have both matching sides; an unmatched edge would reveal a literal hole.
+    for(let i=0;i<vertices.length;i+=9){
+      const corners=[0,3,6].map(offset=>[0,1,2].map(j=>Math.round(vertices[i+offset+j]*1e5)).join(','));
+      for(let j=0;j<3;j++){
+        const edge=[corners[j],corners[(j+1)%3]].sort().join('|');
+        edges.set(edge,(edges.get(edge)||0)+1);
+      }
+    }
+    assert([...edges.values()].every(count=>count===2),'fused stone is a sealed manifold with no open intersection or cut edges');
+  };
+  const fused=()=>separatorScene.children.filter(child=>child.userData?.caveSeparatorFused);
+  assert.equal(fused().length,1,'touching rocks fuse into exactly one rendered rock wall, without overlapping clipped lobes');
+  const oldMesh=fused()[0],oldGeo=oldMesh.geometry;
+  assert.equal(oldMesh.userData.caveSeparatorLiveTiles,2,'shared wall tracks both independently mineable tiles');
+  assert(oldGeo.userData.caveFusedRockTriangles>0,'the wall is an actual triangulated solid');
+  assertSealedStone(oldMesh);
+  assert.equal(oldGeo.attributes.position.array.length,oldGeo.attributes.uv.array.length/2*3,'each fused stone vertex receives continuous stone UVs');
+  assert(oreCtx.CavernOreRocks.probeRock(separatorMap,1,1,.5)<0,'the shared seam inside neighboring tiles is filled with uninterrupted rock');
+  assert(oreCtx.CavernOreRocks.probeRock(separatorMap,.55,1,.5)<0,'the left mineable tile is initially solid');
+  assert(oreCtx.CavernOreRocks.debugSnapshot(separatorMap)[0].height>=8,'the wall penetrates the highest ordinary cave ceiling rather than stopping as a mound');
+  assert.equal(rock0.children.length,0,'a mineable tile is a collision/loot handle, not a second clipping visual');
+  assert.equal(rock1.children.length,0,'neighboring tiles do not contribute their own overlapping visible surface');
+  assert.equal(separatorGrid[0][0].rockKind,'diggableRockOre','rocky barrier uses the existing pickaxe mining tile contract');
+  assert.equal(separatorGrid[0][1].caveSeparator,true,'adjacent barrier layers preserve the existing Shattercask blast contract');
+  assert.equal(separatorGrid[0][0].projectileCoverHeightTiles,8,'the sculpted ceiling-high wall blocks projectiles above an ordinary ore mound');
+  assert.equal(separatorGroups.delete('0,0'),true,'ordinary indexed pickaxe removal heals an exposed stone cut');
+  assert.equal(separatorGrid[0][0].projectileCoverHeightTiles,undefined,'a mined wall tile loses its old tall projectile cover');
+  assert.equal(separatorGroups.has('0,0'),false,'the mined tile is no longer registered as solid scene rock');
+  assert.equal(separatorGroups.has('1,0'),true,'the neighbouring mineable wall rock remains intact');
+  assert.equal(oldGeo.disposed,true,'old triangulations are disposed after remeshing, avoiding a mobile GPU leak');
+  assert.equal(fused().length,1,'rebuilding replaces the wall mesh instead of leaving overlaid versions');
+  assert.equal(fused()[0].userData.caveSeparatorLiveTiles,1,'only unbroken tiles contribute to the unified visible wall');
+  assert(oreCtx.CavernOreRocks.probeRock(separatorMap,.55,1,.5)>0,'the mined gap is genuinely open, not an invisible overlapping mesh');
+  assert(oreCtx.CavernOreRocks.probeRock(separatorMap,1.5,1,.5)<0,'remaining rock has a freshly sealed exposed rock face');
+  assert.equal(oreCtx.CavernOreRocks.removeVisual(separatorMap,1,0),true,'Shattercask blasts can retire the next rock independently');
+  assert.equal(fused().length,0,'a completely mined barrier leaves no empty rock mesh');
+
+  const doorScene=new Obj(),doorMap='map_i_fused_secret_door',doorGrid=[[{},{},{},{}]];
+  oreCtx.CavernOreRocks.build(doorMap,{oreRocks:[
+    {col:1,row:0,oreKind:'stone',caveSeparator:true},
+    {col:2,row:0,oreKind:'stone',caveSeparator:true},
+  ],caveSitePlan:{puzzleDoor:{col:3,row:0}}},doorScene,doorGrid);
+  const doorMesh=doorScene.children.find(child=>child.userData?.caveSeparatorFused);
+  assert.equal(doorMesh.userData.caveSeparatorDoorOpening,true,'the hidden puzzle door is carved as a real opening in the fused stone');
+  assert(oreCtx.CavernOreRocks.probeRock(doorMap,3.5,1,.5)>0,'the door center is air, not an overlaid rock plane');
+  assert(oreCtx.CavernOreRocks.probeRock(doorMap,3.5,1,1.03)<0,'cutting the door heals the exposed stone jamb');
+  assert(oreCtx.CavernOreRocks.probeRock(doorMap,3.5,2.6,.5)<0,'the carved passage has a solid stone lintel above the doorway');
+  assert(doorMesh.geometry.userData.caveFusedRockTriangles>0,'the healed doorway is triangulated into the rock rather than a texture mask');
+  assertSealedStone(doorMesh); // The rough stone donut must have a complete closed inner surface around its hole.
+  assert.equal(oreCtx.CavernOreRocks.debugSnapshot(doorMap)[0].doorOpening,true,'the mobile diagnostics identify a carved door');
+  const stagedScene=new Obj(),stagedMap='map_i_batch_wall',stagedGrid=[[{},{},{}]];
+  oreCtx.CavernOreRocks.build(stagedMap,{oreRocks:[0,1,2].map(col=>({
+    col,row:0,oreKind:'stone',caveSeparator:true,
+  }))},stagedScene,stagedGrid);
+  const stagedInitial=stagedScene.children.find(child=>child.userData?.caveSeparatorFused);
+  oreCtx.CavernOreRocks.withBatchedCuts(()=>{
+    oreCtx.CavernOreRocks.removeVisual(stagedMap,0,0);
+    oreCtx.CavernOreRocks.withBatchedCuts(()=>oreCtx.CavernOreRocks.removeVisual(stagedMap,1,0));
+    assert.equal(stagedInitial.geometry.disposed,false,'nested blast/restore cuts do not remesh before the final tile changes');
+    assert.equal(stagedScene.children.find(child=>child.userData?.caveSeparatorFused),stagedInitial,
+      'one continuous blast footprint retains its scene mesh until the batch ends');
+  });
+  assert.equal(stagedInitial.geometry.disposed,true,'the batched removals dispose the previous visual exactly once');
+  assert.equal(stagedScene.children.filter(child=>child.userData?.caveSeparatorFused).length,1,
+    'one final rock wall remains after clearing two adjacent tiles with a Shattercask');
+  assert.equal(oreCtx.CavernOreRocks.debugSnapshot(stagedMap)[0].liveTiles,1,
+    'multiple blasted cuts heal into a single surviving column');
+
+  const gateScene=new Obj();
+  const stoneGate=oreCtx.CavernOreRocks.carveStoneGate(gateScene,{
+    x:5,y:0,z:7,openingWidth:4.78,openingHeight:3.55,sideThickness:1.24,roofHeight:9,
+  });
+  assert(stoneGate?.geometry?.userData?.caveFusedRockTriangles>0,
+    'puzzle-locked fire and melody doors receive an actual sculpted, roof-height stone opening');
+  assert.equal(stoneGate.userData.caveCarvedDoorOpening,true,
+    'the gate geometry advertises its carved door for mobile visual diagnostics');
+  assert.equal(stoneGate.userData.caveSeparatorHeight,9,'the stone gate rises through the cavern ceiling');
+  assert.equal(gateScene.children.length,1,'one fused rock wall replaces a cluster of intersecting doorframe boulders');
+  assertSealedStone(stoneGate);
+
   const mineKinds = new Set();
   for (let i = 0; i < 40; i++) {
     for (const rock of decorate(profile(`map_i_test_ores_${i}`, 'ore_mine')).oreRocks) mineKinds.add(rock.oreKind);

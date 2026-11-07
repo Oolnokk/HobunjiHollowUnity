@@ -12,6 +12,7 @@
   let deps=null; // WildlifeSpawn's existing game adapter, used for authoritative player, layouts and scene transitions.
   let lastArea=null; // Tracks the immediately previous area so returning from a cave can restore its actual elevated balcony support.
   const portalTag='puzzle-cave-cliff-door'; // Consistent debugging and collider identity for each generated entrance.
+  const DOOR_WALL_CLEARANCE=.22; // The normal-size authored door sits slightly in front of mini-cliff rock, never buried in its surface.
   const hash=value=>{let h=2166136261>>>0;for(const c of String(value)){h^=c.charCodeAt(0);h=Math.imul(h,16777619)>>>0;}return h>>>0;};
   const clamp=(n,lo,hi)=>Math.max(lo,Math.min(hi,n));
   const distance=(a,b)=>Math.hypot(Number(a?.x)-Number(b?.x),Number(a?.z)-Number(b?.z));
@@ -45,7 +46,7 @@
           .sort((a,b)=>distance(nearBack,{x:a.c+.5,z:a.r+.5})-distance(nearBack,{x:b.c+.5,z:b.r+.5}));
         if(!entryTiles.length)continue; // A transition tile must actually lie inside the walkable cap outline.
         const entry=entryTiles[0]; // The actual raised tile is authoritative for the world transition, never lower ground.
-        const door={x:nearBack.x,z:nearBack.z,y:shelf.y};
+        const door={x:nearBack.x+normal.x*DOOR_WALL_CLEARANCE,z:nearBack.z+normal.z*DOOR_WALL_CLEARANCE,y:shelf.y}; // Offset toward the open balcony, preserving the same support and collider coordinates.
         const preferred={x:shelf.x+normal.x*Math.min(.68,shelf.depth*.36),
           z:shelf.z+normal.z*Math.min(.68,shelf.depth*.36)};
         const samples=[]; // Valid footfall points: intersection of supported footprint cells and the irregular mini-cliff cap.
@@ -138,8 +139,7 @@
   function frameToShelf(model,portal){
     model.position.set(portal.door.x,portal.door.y,portal.door.z);
     model.rotation.y=Math.atan2(portal.normal.x,portal.normal.z);
-    const scale=Math.min(2.2,Math.max(1.4,Number(portal.shelf.width)*.72)); // An authored one-tile door scaled only to fit the actual mini-cliff face.
-    model.scale.setScalar(scale);
+    model.scale.setScalar(1); // Authored cliffDoor already matches woodenDoor's 1x1 tile dimensions; wilderness tiles must not be scaled a second time.
     model.userData.puzzleCaveCliffDoor=true;
   }
   function makeGlyphs(portal,rootGroup){
@@ -230,7 +230,7 @@
     const DS=root.DynamicSurfaces;
     if(!DS?.registerBlocker)return;
     const x=portal.door.x,z=portal.door.z,t=portal.tangent;
-    const half=Math.min(.59,Number(portal.shelf.width)*.31); // Narrow vertical slab across the actual cliff opening.
+    const half=.34; // Half of the authored wooden/cliff door's ~0.62-tile slab, plus a small movement margin; no ledge-wide invisible wall.
     const x1=x-t.x*half,x2=x+t.x*half,z1=z-t.z*half,z2=z+t.z*half;
     portal.blockerId=portalTag+':'+portal.area+':'+portal.denId;
     DS.registerBlocker({

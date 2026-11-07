@@ -44,6 +44,7 @@
       ||typeof isActive!=='function'||typeof onSolved!=='function')
       throw new Error('Invalid layered ruin challenge '+id+' ('+kind+').');
     const cx=room.x+room.w/2,cz=room.z+room.d/2;
+    const caveGateZ=room.z+room.d-2.8; // Leave a genuinely reachable treasure alcove behind the slab; the whole door remains inside the carved nine-tile room.
     const owned=[],materials=[],targets=[],authoredVisuals=[]; // Each challenge owns its geometry, authored fixture instances and their per-room materials.
     const rec={id,kind,solved:false,elapsed:0,targetCount:0,hits:0,targets,plate:null,linked:false,disposed:false};
     const group=new THREE.Group(); // Visible mechanism geometry follows the wing floor's presentation culling.
@@ -248,20 +249,24 @@
       // Stone sconces must both be lit with real lingering world fire, not a
       // generic projectile hit. A fire flask or a Flame Shattercask will work.
       const gate=body('puzzle-cave-fire-door-'+id,
-        new THREE.BoxGeometry(4.7,3.4,.32),stone,cx,y+1.75,room.z+room.d-1.05);
+        new THREE.BoxGeometry(4.7,3.4,.32),stone,cx,y+1.75,caveGateZ);
       const dark=body('puzzle-cave-fire-darkness-'+id,
-        new THREE.BoxGeometry(5.05,3.65,.025),basic(0x050404),cx,y+1.82,room.z+room.d-.84);
+        new THREE.BoxGeometry(5.05,3.65,.025),basic(0x050404),cx,y+1.82,caveGateZ+.21);
       dark.userData.puzzleCaveBackdrop=true;
       gate.userData.puzzleCaveDoor=true;
-      rec.door=gate;rec.sconces=[];rec.doorRise=0;
+      rec.door=gate;rec.backdrop=dark;rec.sconces=[];rec.doorRise=0;
       const gateY=gate.position.y; // Slab-only rise leaves the black cave entrance fixed and both sconces attached to the wall.
       for(const [index,direction] of [-1,1].entries()){
-        const px=cx+direction*2.55,pz=room.z+room.d-1.20;
+        const px=cx+direction*2.55,pz=caveGateZ-.15; // Lit sconce vessels sit just in front of the shifted door and remain reachable by ground fire.
         const bracket=body('stone-sconce-'+id+'-'+index,
           new THREE.CylinderGeometry(.27,.32,.32,10),stone,px,y+1.20,pz);
-        const flame=body('sconce-flame-'+id+'-'+index,
-          new THREE.ConeGeometry(.15,.48,8),basic(0xffa332),px,y+1.54,pz);
+        const flame=new THREE.Group(); // Real campfire particles replace the former opaque triangle/cone torch flame.
+        flame.name='sconce-flame-'+id+'-'+index;
+        flame.position.set(px,y+1.42,pz);
         flame.visible=false;
+        group.add(flame);
+        const visual=(options.puzzleFireVisuals||root.PersistentGroundFire)?.attachCampfireFlame?.(flame,{scale:.8,rateScale:.65}); // Shared campfire emitter palette, lifetime and rise speed.
+        if(visual)flameVisuals.push(visual); // The cave's existing lifecycle ticks and disposes each torch's authored particles.
         bracket.userData.puzzleCaveSconce=true;
         rec.sconces.push({x:px,z:pz,flame,lit:false});
       }
@@ -269,6 +274,7 @@
         if(!rec.solved||rec.disposed)return;
         rec.doorRise=Math.min(1,rec.doorRise+Math.max(0,Number(dt)||0)/.95);
         gate.position.y=gateY+3.5*rec.doorRise;
+        dark.visible=rec.doorRise<.96; // Once the door opens, the opaque black wall must not hide the revealed reward chest.
       };
     }else if(kind==='timedMelody'){
       // Cliff-door score: visible Scratchbone notation on a stone gate, no audible example.
@@ -280,11 +286,11 @@
         new THREE.CylinderGeometry(1.18,1.18,.15,32),plateMat,cx,y+.08,cz-1.6);
       rec.plate=plate;rec.song=song;rec.attempts=0;rec.lastDown=false;rec.musicOpened=false;rec.musicClosing=0;
       const gate=body('puzzle-cave-stone-door-'+id,
-        new THREE.BoxGeometry(4.7,3.4,.32),stone,cx,y+1.75,room.z+room.d-1.05);
+        new THREE.BoxGeometry(4.7,3.4,.32),stone,cx,y+1.75,caveGateZ);
       const backdrop=body('puzzle-cave-door-darkness-'+id,
-        new THREE.BoxGeometry(5.05,3.65,.025),basic(0x050404),cx,y+1.82,room.z+room.d-.84);
+        new THREE.BoxGeometry(5.05,3.65,.025),basic(0x050404),cx,y+1.82,caveGateZ+.21);
       gate.userData.puzzleCaveDoor=true;backdrop.userData.puzzleCaveBackdrop=true;
-      rec.door=gate;rec.glyphs=[];
+      rec.door=gate;rec.backdrop=backdrop;rec.glyphs=[];
       const columns=Math.min(8,song.notes.length),rows=Math.ceil(song.notes.length/columns);
       for(let i=0;i<song.notes.length;i++){
         const note=song.notes[i],number=note.index+1;
@@ -310,6 +316,7 @@
         if(!rec.solved)return;
         rec.doorRise=Math.min(1,(rec.doorRise||0)+Math.max(0,Number(dt)||0)/.85);
         gate.position.y=baseY+3.6*rec.doorRise;
+        backdrop.visible=rec.doorRise<.96; // The solved cavern shows the chest, not a permanently black entrance card.
         if(rec.musicClosing>0){
           rec.musicClosing=Math.max(0,rec.musicClosing-Math.max(0,Number(dt)||0));
           if(rec.musicClosing===0&&rec.musicOpened){music?.close?.();rec.musicOpened=false;}
@@ -402,6 +409,16 @@
         t.phase=i*Math.PI;t.speed=1.2+i*.35;
       }
     }
+    if(options.authoredCliffDoor&&(kind==='timedMelody'||kind==='fireSconces')){
+      // The playable cave gate occupies a genuine rough-hewn hole in a single
+      // roof-height rock wall. The slab rises independently; after opening the
+      // exposed jambs/lintel remain stone, not clipped boulders or a black card.
+      const surround=root.CavernOreRocks?.carveStoneGate?.(group,{
+        x:cx,y,z:caveGateZ+.42,openingWidth:4.78,openingHeight:3.55,
+        sideThickness:Math.max(.6,room.w-4.78),roofHeight:9,wallDepth:.30, // The stone flanks seal the ENTIRE chamber width, not merely the doorframe.
+      }); // Slightly behind the slab so sconces and score glyphs remain visible in front.
+      if(surround){owned.push(surround);rec.rockSurround=surround;}
+    }
     if(options.authoredCliffDoor && (kind==='timedMelody'||kind==='fireSconces')){
       // Use the real authored, lightly rockified cliff gate (frame, darkness,
       // stone slab and 0.95-second slab motion). No interactive puzzle metadata
@@ -413,7 +430,7 @@
         const slab=model.userData?.meshById?.get?.('cliff_gate_slab');
         const motion=data.puzzle?.motion?.parts?.cliff_gate_slab;
         if(!slab||!motion)return;
-        const gateZ=room.z+room.d-1.05;
+        const gateZ=caveGateZ; // Authored gate and all wall-mounted puzzle fixtures share one offset.
         model.position.set(cx,y,gateZ);
         model.scale.setScalar(3); // The wide authored gate becomes a legible multi-glyph puzzle-door rather than a tiny prop.
         group.add(model);
@@ -435,12 +452,14 @@
           group.add(board);
         }
         const off=motion.off,on=motion.on;
+        const authoredDark=model.userData?.meshById?.get?.('cliff_gate_darkness')||null; // The original authored black plane is not an actual passage once the reward is revealed.
         const baseBoardY=y+1.67;
         const updateAuthoredDoor=()=>{
           const progress=Math.max(0,Math.min(1,Number(rec.doorRise)||0));
           const ease=progress*progress*(3-2*progress);
           slab.position.y=off.y+(on.y-off.y)*ease;
           slab.scale.z=off.sz+(on.sz-off.sz)*ease;
+          if(authoredDark)authoredDark.visible=progress<.96; // Let the carved chamber and the newly revealed chest be visible once unlocked.
           if(board){board.position.y=baseBoardY+(on.y-off.y)*3*ease;board.visible=progress<.94;}
         };
         const priorAnimation=rec.animate;
@@ -451,17 +470,41 @@
     if((kind==='timedMelody'||kind==='fireSconces')&&options.area){
       const DS=options.DynamicSurfaces||root.DynamicSurfaces;
       const footprint=options.AreaFootprintBlockers||root.AreaFootprintBlockers; // game.js player movement and NPC pathing actually query this registry.
-      const gateZ=room.z+room.d-1.05; // Same real slab position as the 9x9 cave chamber's authored door.
+      const gateZ=caveGateZ; // Collider follows the shifted visual exactly; no invisible wall where the old slab stood.
       const bounds={minX:cx-2.35,maxX:cx+2.35,minZ:gateZ-.18,maxZ:gateZ+.18}; // One shared physical footprint for both collision APIs.
       const gateClosed=()=>!rec.disposed&&isActive()&&(!rec.solved||(Number(rec.doorRise)||0)<.98); // Both registries open together only after the animated slab rises.
       rec.colliderId='puzzle-cave-interior-gate:'+options.area+':'+id;
+      if(options.authoredCliffDoor){
+        const stoneWidth=room.w; // Physical, unbreakable rock shoulders match the carved surface spanning the nine-tile chamber.
+        const passageHalfWidth=2.39; // Half the 4.78-tile sculpted opening; only this central opening may ever become walkable.
+        const stoneBounds={minX:cx-stoneWidth/2,maxX:cx+stoneWidth/2,
+          minZ:gateZ-.32,maxZ:gateZ+.75}; // Cover the sculpted wall at z=gateZ+.42, including its front/back rock faces.
+        const flankAt=(px,pz,half,elevation)=>{
+          if(Number.isFinite(elevation)&&(elevation<y-.5||elevation>y+9))return false;
+          if(px+half<stoneBounds.minX||px-half>stoneBounds.maxX
+            ||pz+half<stoneBounds.minZ||pz-half>stoneBounds.maxZ)return false;
+          return px-half<cx-passageHalfWidth||px+half>cx+passageHalfWidth;
+        }; // The stone remains solid after the slab rises; the player cannot walk around the door.
+        rec.stoneColliderId=rec.colliderId+':permanent-rock';
+        if(DS?.registerBlocker)DS.registerBlocker({
+          id:rec.stoneColliderId,scope:'puzzle-cave-stone:'+options.area,
+          bounds:stoneBounds,enabled:()=>!rec.disposed&&isActive(),
+          blocksAt:(px,pz,_h,_record,radius,query)=>flankAt(px,pz,Math.max(0,Number(radius)||0),
+            Number(query?.y??query?.floorY??query?.worldY)),
+        });
+        if(footprint?.register)rec.removeStoneFlanks=footprint.register(rec.stoneColliderId,{
+          area:options.area,enabled:()=>!rec.disposed&&isActive(),
+          blocksBox:flankAt,
+        });
+      }
+
       if(DS?.registerBlocker){
         DS.registerBlocker({
           id:rec.colliderId,scope:'puzzle-cave-interior:'+options.area,
           bounds,enabled:gateClosed,
           blocksAt:(_x,_z,_h,_r,_radius,query)=>{
             const elevation=Number(query?.y??query?.floorY??query?.worldY);
-            return !Number.isFinite(elevation)||Math.abs(elevation-y)<1.4; // Other elevations do not inherit a ground-level slab.
+            return !Number.isFinite(elevation)||(elevation>=y-.4&&elevation<=y+3.55); // The locked 3.4-tile slab blocks airborne movement below its actual top, not just the first 1.4 tiles.
           },
         });
       }
@@ -469,7 +512,7 @@
         rec.removeFootprintGate=footprint.register(rec.colliderId,{
           area:options.area,enabled:gateClosed,
           blocksBox:(x,z,half,worldY)=>{
-            if(Number.isFinite(worldY)&&Math.abs(worldY-y)>1.4)return false; // Shots above the door can clear it.
+            if(Number.isFinite(worldY)&&(worldY<y-.4||worldY>y+3.55))return false; // Airborne shots clear the slab only above its actual stone top.
             return x+half>=bounds.minX&&x-half<=bounds.maxX
               &&z+half>=bounds.minZ&&z-half<=bounds.maxZ; // The game queries square actor footprints, not point-only dynamic hits.
           },
@@ -583,6 +626,8 @@
       for(const remove of linkDisposers)remove();
       if(fireTargetId)fire?.unregisterTarget?.(fireTargetId);
       if(fireControl)options.removeControl?.(fireControl);
+      rec.removeStoneFlanks?.(); // Unregister permanent stone flanks along with their carved scene mesh.
+      if(rec.stoneColliderId)(options.DynamicSurfaces||root.DynamicSurfaces)?.remove?.(rec.stoneColliderId);
       rec.removeFootprintGate?.(); // Release the real player/NPC occupancy blocker before this scene is reused.
       if(rec.colliderId)(options.DynamicSurfaces||root.DynamicSurfaces)?.remove?.(rec.colliderId); // One owner for both collision removal and room teardown.
       if(ropeChain)bus?.removeExternalRopeChain?.(ropeChain);

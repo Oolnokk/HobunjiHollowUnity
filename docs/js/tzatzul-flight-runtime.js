@@ -5,8 +5,11 @@
   if (window.TzatzulFlightRuntime) return;
 
   const ALLOWED_AREAS = new Set(['map_northern_cliffs', 'map_western_slope']); // Real cliff environments.
-  const HUNT_RANGE_TILES = 12; // Target query only occurs once per resting cycle.
-  const REST_SECONDS = 5; // Birds visibly perch instead of permanently orbiting.
+  const HUNT_RANGE_TILES = 12; // A scouting hunter must approach this close before a body-first swoop.
+  const TERRITORY_TILES = 40; // Prey search stays within the home spire's territory.
+  const SCOUT_RADIUS_TILES = 20; // Empty hunts sweep broad circuits instead of waiting on a perch.
+  const NEST_STAY_HOURS = .5; // Successful deliveries keep the parent in its cave for thirty in-game minutes.
+  const REST_SECONDS = 5; // Initial roost warm-up and a fallback for dev worlds without a clock.
   const SPEED_TILES_PER_SECOND = 7; // Flight travel across world tiles.
   const BODY_WIDTH_FRACTION = .30; // Damaging torso/core is narrower than the full articulated wing-span portrait.
   const BODY_HEIGHT_FRACTION = .34; // Half-height of the headfirst body box, based on the existing creature hitbox.
@@ -15,7 +18,7 @@
   const spawnedThisDay = new Set(); // Prevents post-death immediate respawning.
   const actors = new Set(); // Only Tzatzul, not all hostile creatures, are animated each tick.
   const stats = { spawned: 0, flights: 0, swoops: 0, hits: 0, misses: 0,
-    retreats: 0, captures: 0, releases: 0, nestEntries: 0, failedNestEntries: 0, lastCapture: null, last: null, lastBodyContact: null }; // Mobile-readable diagnostics, no live object references.
+    retreats: 0, captures: 0, releases: 0, scouts: 0, nestStays: 0, fleeDrops: 0, nestEntries: 0, failedNestEntries: 0, lastCapture: null, last: null, lastBodyContact: null }; // Mobile-readable diagnostics, no live object references.
   let deps = null; // WildlifeSpawn injected authoritative gameplay world contract.
   let flightSerial = 0; // Unique ephemeral line-perch IDs for traveling birds.
 
@@ -23,6 +26,32 @@
   const tile = () => Math.max(1, n(deps?.TILE, 64));
   const surface = (x, y) => n(deps?.worldSurfaceY?.(x, y));
   const distance = (a, b) => Math.hypot(n(a.x) - n(b.x), n(a.y) - n(b.y));
+  function clockHours() {
+    const clock = deps?.calendar; // The authoritative saved calendar survives area changes and skipped time.
+    return Number.isFinite(Number(clock?.day)) && Number.isFinite(Number(clock?.time01))
+      ? (Number(clock.day) - 1 + Number(clock.time01)) * 24 : null;
+  }
+  function enterNest(bird) {
+    const state = bird?._tzFlight; // A single exterior parent shelters in its existing authored cave.
+    if (!state) return;
+    state.phase = 'in-nest'; state.segment = null; state.target = null; state.elapsed = 0;
+    const now = clockHours(); // The deadline uses in-game time, not real seconds.
+    state.nestUntil = now === null ? null : now + NEST_STAY_HOURS;
+    state.nestFallbackS = REST_SECONDS; // Standalone test worlds without a clock can still progress.
+    bird.tzatzulInNest = true; bird._denHidden = true; bird.tzatzulFlightPose = 'perched';
+    if (bird.avatarRef?.group) bird.avatarRef.group.visible = false;
+    if (bird.groundShadow) bird.groundShadow.visible = false;
+    stats.nestStays++; mark(bird, 'entered cave for 30 game minutes');
+  }
+  function leaveNest(bird) {
+    const state = bird._tzFlight;
+    bird.tzatzulInNest = false; bird._denHidden = false;
+    if (bird.avatarRef?.group) bird.avatarRef.group.visible = !bird._wildlifeVisualLodHidden;
+    if (bird.groundShadow) bird.groundShadow.visible = !bird._wildlifeVisualLodHidden;
+    state.phase = 'perched'; state.elapsed = 0; state.rest = 0; state.nestUntil = null;
+    bird.tzatzulFlightPose = 'perched';
+    mark(bird, 'left nest to provision hatchlings');
+  }
   function mark(bird, event) {
     stats.last = { time: Date.now(), event, bird: bird?._tzFlight?.identity?.id || null,
       area: bird?.areaId || null };
@@ -78,7 +107,8 @@
       bird.tzatzulFlightPose = 'perched'; // Reuses TzatzulLiveVisuals; no duplicate renderer.
       bird._tzFlight = { identity, roostId: roost.id, roost: roost.support,
         phase: 'perched', elapsed: 0, rest: REST_SECONDS + slot, target: null,
-        segment: null, struck: false, captive: null }; // Independent phase per animal.
+        segment: null, struck: false, captive: null, scoutIndex: slot * 3,
+        delivered: false, nestUntil: null, retreating: false }; // Persistent hunt/cave phases per parent. // Independent phase per animal.
       deps.hostileObjects.add(bird);
       actors.add(bird);
       spawnedThisDay.add(roost.id);
@@ -89,25 +119,24 @@
   }
   function viable(bird, other) {
     return other && other !== bird && other.health > 0 && other.areaId === bird.areaId
-      && other.creatureKey !== 'tzatzul' && other.creatureKey !== 'tzatzul-hatchling'
+      && (other.isBandit === true || other.isTribeHunter === true || other.isPorakanekiHunter === true)
       && !other.onBranch && !other.onPerch && !other.tzatzulCapturedBy && !other._denHidden
-      && !other._downed && other.state !== 'dying';
+      && !other._downed && other.state !== 'dying' && canCarry(other);
   }
-  function choosePrey(bird) {
-    let target = null, best = tile() * HUNT_RANGE_TILES;
-    const player = deps.player; // Player can be attacked, but cannot be abducted before a nest cavern exists.
-    if (player?.health > 0 && deps.getCurrentArea() === bird.areaId) {
+  function choosePrey(bird, rangeTiles = HUNT_RANGE_TILES) {
+    let target = null, best = tile() * rangeTiles;
+    const roost = bird?._tzFlight?.roost || bird; // Do not chase indefinitely into neighboring territories.
+    const player = deps.player;
+    if (canAbductPlayer(bird) && player?.health > 0 && !player.tzatzulCapturedBy
+      && deps.getCurrentArea?.() === bird.areaId && distance(player, roost) <= TERRITORY_TILES * tile()) {
       const d = distance(player, bird);
       if (d < best) { best = d; target = player; }
     }
-    // Each bird scans at most once per REST_SECONDS, never once per frame.
-    for (const collection of [deps.hostileObjects, deps.companionObjects || []]) {
-      for (const other of collection) {
-        if (!viable(bird, other)) continue;
-        const d = distance(other, bird);
-        if (d < best) { best = d; target = other; }
-      }
-    } // Wild animals, enemy bandits and both sides' animal companions can be swoop targets.
+    for (const other of deps.hostileObjects || []) {
+      if (!viable(bird, other) || distance(other, roost) > TERRITORY_TILES * tile()) continue;
+      const d = distance(other, bird);
+      if (d < best) { best = d; target = other; }
+    } // Only the player, bandits and barbarian/tribal hunters count as food for the cave.
     return target;
   }
   function hitboxSize(bird) {
@@ -192,8 +221,13 @@
       if (hook.mesh.onAfterRender === hook.after) hook.mesh.onAfterRender = hook.previous;
     } // Restore only this capture's hooks, preserving other rendering owners.
     const bird = record.bird;
+    if (bird?._tzFlight) bird._tzFlight.delivered = false; // Completion is set only by the actual cave transition or victim store.
     if (bird?._tzFlight?.captive === prey) bird._tzFlight.captive = null;
     if (bird) bird.tzatzulCarrying = false;
+    const fellFromTalons = reason === 'fled carrying prey' || reason === 'carrier knocked from perch'
+      || reason === 'carrier died'; // A killed carrier drops its actual prey; unloaded scenes still use the safe pickup.
+    window.TzatzulLiveVisuals?.restoreCaptive?.(prey); // Revert the talon-payload rotation before ground/prone animation owns this actor again.
+    if (fellFromTalons) window.PerchSupport?.release?.(prey, 'dropped by Tzatzul'); // Existing elevated-perch fall injury and footing, exactly once.
     window.PerchSupport?.forget?.(prey); // Restore native ground movement, never leave a dangling synthetic branch.
     prey.onBranch = null; prey.branchT = 0; prey.branchSurfaceY = 0;
     prey.tzatzulCapturedBy = null;
@@ -207,6 +241,7 @@
         try {
           deps.enterBuilding(record.nestMapId, undefined, undefined, 'tzatzul_delivery'); // The game's native async loader owns scene and safe exit.
           stats.nestEntries++;
+          if (bird?._tzFlight) bird._tzFlight.delivered = true;
           stats.lastCapture = { event: 'nest-entered', reason, mapId: record.nestMapId, prey: 'player' };
         } catch (error) {
           prey.x = n(record.pickupX); prey.y = n(record.pickupY);
@@ -214,15 +249,16 @@
           stats.lastCapture = { event: 'entry-failed', reason, prey: 'player', error: String(error) };
           window.__farmLog?.('[tzatzul] Nest entry failed: ' + String(error), 'warn', 'wildlife');
         }
-      } else {
-        prey.x = n(record.pickupX, prey.x); prey.y = n(record.pickupY, prey.y); // Dead carrier releases player at known ground.
+      } else if (!fellFromTalons) {
+        prey.x = n(record.pickupX, prey.x); prey.y = n(record.pickupY, prey.y); // Missing carrier/scene uses the known safe pickup location.
       }
     } else if (prey.health > 0 && reason === 'returned to roost' && record.areaId === deps?.getCurrentArea?.()) {
       prey.x = n(record.pickupX, prey.x); prey.y = n(record.pickupY, prey.y);
-      window.TzatzulNestEncounter?.storeVictim?.(prey, bird, record.rendered === true);
-    } else if (!record.player && prey.health > 0) {
+      const stored = window.TzatzulNestEncounter?.storeVictim?.(prey, bird, record.rendered === true);
+      if (bird?._tzFlight) bird._tzFlight.delivered = stored === true; // Never claim unseen or rejected prey reached hatchlings.
+    } else if (!record.player && prey.health > 0 && !fellFromTalons) {
       prey.x = n(record.pickupX, prey.x); prey.y = n(record.pickupY, prey.y);
-    } // Unseen prey and interrupted carries return alive to their known original ground.
+    } // A genuine aerial drop uses its live position; all other interrupted carries use the known safe ground.
     stats.releases++;
     if (!record.player) stats.lastCapture = { event: 'released', reason, prey: prey.creatureKey || prey.name || 'npc' };
     return true;
@@ -233,7 +269,7 @@
     if (!(bird.health > 0) || !(prey.health > 0)
       || (prey === deps.player ? deps.getCurrentArea?.() !== bird.areaId : prey.areaId !== bird.areaId)
       || !deps.hostileObjects.has(bird) || captured.get(prey)?.bird !== bird) {
-      releaseCaptive(prey, 'owner or prey unavailable'); return false;
+      releaseCaptive(prey, !(bird.health > 0) ? 'carrier died' : 'owner or prey unavailable'); return false;
     }
     if (!bird.onPerch || !window.PerchSupport?.attach?.(prey, bird.onPerch, bird.branchT)) {
       releaseCaptive(prey, 'flight support lost'); return false;
@@ -275,6 +311,7 @@
       || bird._tzFlight.captive || !bird.onPerch) return false;
     const pickupX = n(prey.x), pickupY = n(prey.y); // Capture the original ground position BEFORE native perch attachment moves the prey.
     if (!window.PerchSupport?.attach?.(prey, bird.onPerch, bird.branchT)) return false;
+    window.TzatzulLiveVisuals?.rememberCaptive?.(prey); // Snapshot the real player/NPC/animal rotation before the first talon alignment.
     captured.set(prey, { bird, player: isPlayer, nestMapId: bird.tzatzulNestMapId,
       pickupX, pickupY, state: prey.state,
       areaId: isPlayer ? bird.areaId : prey.areaId }); // Preserve original actor identity, clothing and safe exterior return position.
@@ -289,6 +326,41 @@
     stats.lastCapture = { event: 'captured', prey: prey.creatureKey || prey.name || 'npc' };
     mark(bird, 'captured visible prey');
     return true;
+  }
+  function scoutPosition(area, x, y) {
+    const network = window.CliffRouteNetwork?.forArea?.(area); // Use the active area's authored grid dimensions; never scout beyond the map boundary.
+    const edge = (coordinate, cells) => Number.isFinite(Number(cells)) && Number(cells) > 4
+      ? Math.max(2 * tile(), Math.min((Number(cells) - 2) * tile(), coordinate))
+      : Math.max(2 * tile(), coordinate); // Dev/preview worlds without a cliff graph retain their safe lower bound.
+    return { x: edge(x, network?.cols), y: edge(y, network?.rows) };
+  }
+  function seekFood(bird) {
+    const state = bird?._tzFlight;
+    if (!state || state.captive || state.phase === 'in-nest') return false;
+    const nearby = choosePrey(bird);
+    if (nearby && swoop(bird, nearby)) return true;
+    const distant = choosePrey(bird, TERRITORY_TILES);
+    if (distant) {
+      const dx = distant.x - bird.x, dy = distant.y - bird.y;
+      const length = Math.max(1, Math.hypot(dx, dy));
+      const approach = Math.max(0, length - 7 * tile()); // Fly to a staging point above prey, then dive.
+      const position = scoutPosition(bird.areaId,
+        bird.x + dx / length * approach, bird.y + dy / length * approach); // Map boundaries constrain pursuit waypoints, too.
+      if (startLeg(bird, { ...position, worldY: Math.max(n(state.roost?.worldY), surface(position.x, position.y) + 5) }, 'search', distant)) {
+        stats.scouts++; return true;
+      }
+    }
+    const index = state.scoutIndex++; // Stable golden-angle circuits sample new hunting ground after each empty leg.
+    const angle = index * 2.399963229728653; // Separates successive scouting spokes.
+    const radius = SCOUT_RADIUS_TILES * (.65 + index % 3 * .2);
+    const position = scoutPosition(bird.areaId,
+      n(state.roost.x) + Math.cos(angle) * radius * tile(),
+      n(state.roost.y) + Math.sin(angle) * radius * tile());
+    if (startLeg(bird, { ...position,
+      worldY: Math.max(n(state.roost.worldY), surface(position.x, position.y) + 5) }, 'search')) {
+      stats.scouts++; return true;
+    }
+    return false;
   }
   function startLeg(bird, endpoint, phase, target = null) {
     const state = bird._tzFlight, perch = window.PerchSupport;
@@ -402,15 +474,19 @@
       state.struck = true; stats.misses++; mark(bird, 'body missed committed dive');
     }
     state.segment = null;
-    if (state.phase === 'swoop') { returnHome(bird); return; }
+    if (state.phase === 'swoop') { if (state.captive) returnHome(bird); else seekFood(bird); return; }
+    if (state.phase === 'search') { seekFood(bird); return; }
     if (state.phase === 'return') {
       const arrived = !!window.PerchSupport?.attach?.(bird, state.roost);
       if (state.captive) releaseCaptive(state.captive, arrived ? 'returned to roost' : 'roost lost');
-      state.phase = arrived ? 'perched' : 'await-roost'; // No segment-less return loop holding the same prey forever.
-      state.elapsed = 0; state.rest = REST_SECONDS; state.target = null;
+      state.phase = arrived ? 'perched' : 'await-roost';
+      state.elapsed = 0; state.rest = 0; state.target = null;
       bird.tzatzulFlightPose = arrived ? 'perched' : 'glide';
-      if (arrived) bird.tzatzulDivePitchRad = 0;
-      else mark(bird, 'lost roost; released prey and awaiting replacement');
+      if (arrived) {
+        bird.tzatzulDivePitchRad = 0;
+        if (state.delivered || state.retreating) { state.delivered = false; enterNest(bird); }
+        else seekFood(bird); // An unseen/rejected victim doesn't feed the hatchlings.
+      } else mark(bird, 'lost roost; released prey and awaiting replacement');
     }
   }
   let lastArea = null; // Changed-zone detection disposes only old spire scene roots.
@@ -424,7 +500,8 @@
     }
     for (const bird of actors) {
       if (!deps.hostileObjects.has(bird) || !(bird.health > 0)) {
-        if (bird._tzFlight?.captive) releaseCaptive(bird._tzFlight.captive, 'bird died or unloaded');
+        if (bird._tzFlight?.captive) releaseCaptive(bird._tzFlight.captive,
+          !(bird.health > 0) ? 'carrier died' : 'owner or prey unavailable');
         actors.delete(bird); window.TzatzulLiveVisuals?.release?.(bird, 'dead or unloaded'); continue;
       }
       if (bird.areaId !== area) {
@@ -433,21 +510,29 @@
       }
       const state = bird._tzFlight;
       if (!state) continue;
-      if (!bird.onPerch || bird.prone || bird.knockbackT > 0) {
+      if (state.phase === 'in-nest') {
+        const now = clockHours(); // Thirty in-game minutes still elapse during a cave visit or clock skip.
+        if (state.nestUntil === null ? (state.nestFallbackS -= step) > 0 : now === null || now < state.nestUntil) continue;
+        leaveNest(bird);
+      }
+      const wounded = bird.health <= n(bird.maxHealth, 1) * .3;
+      if (wounded && !state.retreating) {
+        state.retreating = true; stats.retreats++;
+        if (state.captive) { releaseCaptive(state.captive, 'fled carrying prey'); stats.fleeDrops++; }
+        if (bird.onPerch && state.phase !== 'perched') returnHome(bird); // Retreat begins at the same health threshold as the old bird AI.
+      }
+      if (!bird.onPerch || bird.prone || (bird.knockbackT > 0 && !state.captive)) {
         if (state.captive) releaseCaptive(state.captive, 'carrier knocked from perch');
         state.phase = 'await-roost';
         continue;
       }
-      if (state.phase === 'await-roost') continue; // Only ensureZone can restore a missing physical perch.
+      if (state.phase === 'await-roost') continue;
       if (state.phase !== 'perched') { advance(bird, step); continue; }
       state.elapsed += step;
       if (state.elapsed < state.rest) continue;
-      if (bird.health <= n(bird.maxHealth, 1) * .3) {
-        stats.retreats++; state.elapsed = 0; state.rest = REST_SECONDS * 3;
-        continue; // A wounded bird shelters at its real roost; it cannot retreat into a nonexistent cave.
-      }
-      const prey = choosePrey(bird);
-      if (!prey || !swoop(bird, prey)) { state.elapsed = 0; state.rest = REST_SECONDS; }
+      if (wounded) { enterNest(bird); continue; } // Flee to shelter instead of renewing the attack.
+      state.retreating = false;
+      if (!seekFood(bird)) { state.elapsed = 0; state.rest = REST_SECONDS; }
     }
   }
   function onDayAdvance() {
@@ -455,20 +540,24 @@
     for (const key of spawnedThisDay) if (!living.has(key)) spawnedThisDay.delete(key);
   }
   function debugSnapshot() {
+    const now = clockHours(); // Mobile diagnostics show the real remaining cave time, not a frame-count estimate.
     return { ...stats, active: actors.size, populationKeys: spawnedThisDay.size,
       roosts: (window.TzatzulCliffSites?.snapshot?.().areas || []).map(({ area, count }) => ({ area, count })), // The mobile panel counts real spires, not abandoned reachable-balcony entries.
       birds: [...actors].map(c => ({ id: c._tzFlight?.identity?.id, area: c.areaId,
         phase: c._tzFlight?.phase, pose: c.tzatzulFlightPose,
+        nestMinutesLeft: c._tzFlight?.phase === 'in-nest' && now !== null
+          && Number.isFinite(c._tzFlight.nestUntil) ? Math.max(0, Math.ceil((c._tzFlight.nestUntil - now) * 60)) : null,
         target: c._tzFlight?.target === deps.player ? 'player' : c._tzFlight?.target?.creatureKey || null,
         captive: c._tzFlight?.captive?.creatureKey || null })) };
   }
   window.TzatzulFlightRuntime = Object.freeze({
     init, ensureZone, update, onDayAdvance, debugSnapshot,
-    owns: bird => !!(actors.has(bird) || window.TzatzulNestEncounter?.owns?.(bird)) && !!bird._tzFlight && bird.health > 0 && !!bird.onPerch && !bird.prone && !(bird.knockbackT > 0), // Indoor mothers share the canonical flight/body owner; no competing ground movement.
+    owns: bird => !!(actors.has(bird) || window.TzatzulNestEncounter?.owns?.(bird)) && !!bird._tzFlight && bird.health > 0 && !!bird.onPerch && !bird.prone && (!(bird.knockbackT > 0) || (bird._tzFlight.captive && bird.health > n(bird.maxHealth, 1) * .3)), // Indoor mothers share the canonical flight/body owner; no competing ground movement.
+    resistsCarryKnockback: bird => !!bird?._tzFlight?.captive && bird.health > n(bird.maxHealth, 1) * .3 && !bird.prone, // Small hits do not drop a carried victim until the bird flees.
     sweptBodyHit, // Nest obstacles use the exact same continuous body sweep as prey contact.
     returnToRoost: returnHome, // Recovery uses the normal flight path after a genuine perch knock-off.
     beginNestDive: (bird,target) => bird?._tzNestMother === true && swoop(bird,target),
     advanceNestFlight: (bird,dt) => bird?._tzNestMother === true && advance(bird,Math.max(0,Math.min(.1,n(dt)))),
-    __test: Object.freeze({ roosts, choosePrey, swoop, returnHome, capture, carryCaptive, releaseCaptive }),
+    __test: Object.freeze({ roosts, choosePrey, seekFood, swoop, returnHome, capture, carryCaptive, releaseCaptive }),
   });
 })();

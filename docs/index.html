@@ -349,12 +349,12 @@
   <script src="js/combat/combat-attack-events.js?v=20261027shape2"></script>
   <!-- Shared companion offensive-stat aggregation (Engraved Whistle × Sicced). -->
   <script src="js/combat/companion-offense.js?v=20261104scent1439c"></script>
-  <script src="js/companion-combat-response.js?v=20261031responsive3"></script>
+  <script src="js/companion-combat-response.js?v=20261107compgroundreview2"></script>
   <script src="js/combat/animal-scent-targeting.js?v=20261104scent1439c"></script> <!-- Scent target priority for wild/enemy animals. --> <!-- Modular companion target priority, commitment and mobile debug; read by game.js. -->
   <script src="js/combat/combat-input.js?v=20261024hc6ea2cd"></script>
   <!-- Attack pose templates shared with the attack-animation editor; before every ability module. -->
   <script src="js/combat/attack-pose-templates.js?v=20261017a"></script>
-  <script src="js/combat/combat-combo.js?v=20261106trinkets20"></script>
+  <script src="js/combat/combat-combo.js?v=20261107combo1501a"></script>
   <script src="js/combat/combat-quickattacks.js?v=20261106trinkets20"></script>
   <script src="js/combat/combat-counter-shield.js?v=20261106trinkets20"></script>
   <script src="js/combat/combat-blink-dodge.js?v=20261026hmaskalpha10"></script>
@@ -436,7 +436,7 @@
   <!-- Banubu's Tea Grinder delegates trait legality/targeting to AlchemySystem
        but outputs cooking Tea Blends, so it must load after both systems. -->
   <script src="js/tea-grinder.js?v=20261019h0edeaef"></script>
-  <script src="js/persistent-ground-fire.js?v=20261106caveFinish1"></script><!-- Area-scoped fire patches shared by flasks, Shattercasks and stone sconces. -->
+  <script src="js/persistent-ground-fire.js?v=20261107puzzleFire1"></script><!-- Area-scoped fire patches shared by flasks, Shattercasks and stone sconces. -->
   <script src="js/alchemy-flasks.js?v=20261106hbd5b51f"></script>
   <!-- Dye catalog/ownership (window.DyeSystem) — character creation, the
        redye panel, General Store clothing stock, and treasure loot all
@@ -602,7 +602,7 @@
   <script src="js/cliff-route-network.js?v=20261107miniherbs2"></script> <!-- Shared graph for selected exterior handholds, balcony terrain and wildlife routes. -->
   <script src="js/fall-system.js?v=20261107fall1"></script>
   <script src="js/player-jump.js?v=20261107hdfdd111"></script> <!-- Free jumping and real cover-elevation traversal, initialized by ClimbSystem. -->
-  <script src="js/climb-system.js?v=20261107hbfb14c4"></script>
+  <script src="js/climb-system.js?v=20261107tzknock1"></script>
   <script src="js/cliff-crawl-presentation.js?v=20261107cliffParallel1"></script> <!-- Surface-relative limb crawl and temporary hiding of hand-held equipment; ruins/trees stay on their existing animations. -->
   <script src="js/creature-cliff-climb.js?v=20261104cliffAudit1"></script>
   <!-- Cubic 3D cell grid (window.CellGrid3D): the tile grid plus a level axis.
@@ -623,7 +623,7 @@
   <script src="js/ruin-shaft-corridor.js?v=20261104directVestibule1"></script>
   <script src="js/ruin-layer-defense.js?v=20261104soloNoLoot1"></script>
   <script src="js/puzzle-cave-melody.js?v=20261105puzzleCaves1"></script><!-- Reusable rhythm grid and timed plate-gated cave songs. -->
-  <script src="js/ruin-layer-challenges.js?v=20261106h014c5af"></script>
+  <script src="js/ruin-layer-challenges.js?v=20261107puzzleWallAudit2"></script>
   <script src="js/ruin-layer-playable.js?v=20261106ha9f48ae"></script>
   <script src="js/ruin-v50-native-mechanisms.js?v=20261105hc10ba02"></script>
   <script src="js/ruin-v50-native-floors.js?v=20261105hd86bc92"></script>
@@ -644,12 +644,12 @@
        window.PerpRotation.init(...) during its own setup. -->
   <script src="js/perp-rotation.js?v=20261026h7f6f691"></script>
   <script src="js/animal-shoulder-spline.js?v=20261105tzFlight1"></script> <!-- Required by the actual seven-point flying rig perch deformation. -->
-  <script src="js/flying-animal-rig.js?v=20261105tzatzul1"></script> <!-- Canonical authored two-bone bird wing/body assembly. -->
-  <script src="js/tzatzul-registration.js?v=20261107h0a205cd"></script> <!-- Tzatzul dev species, hatchling peck, stable individual tint and flying-rig JSON. -->
-  <script src="js/tzatzul-live-visuals.js?v=20261107h21f981f"></script>
+  <script src="js/flying-animal-rig.js?v=20261107eye1"></script> <!-- Canonical authored two-bone bird wing/body assembly. -->
+  <script src="js/tzatzul-registration.js?v=20261107eye1"></script> <!-- Tzatzul dev species, hatchling peck, stable individual tint and flying-rig JSON. -->
+  <script src="js/tzatzul-live-visuals.js?v=20261107provision1"></script>
   <script src="js/tzatzul-cliff-sites.js?v=20261107h4239d09"></script> <!-- Separate rock-textured, non-climbable Tzatzul spires. -->
-  <script src="js/tzatzul-flight-runtime.js?v=20261107h6a50f9d"></script> <!-- Shared swept-body dive for exterior and nest mothers. -->
-  <script src="js/tzatzul-nest-encounter.js?v=20261107h7f36c3b"></script> <!-- Authoritative indoor mother and hatchling combat in the existing wildlife tick. -->
+  <script src="js/tzatzul-flight-runtime.js?v=20261107scoutbound3"></script> <!-- Shared swept-body dive for exterior and nest mothers. -->
+  <script src="js/tzatzul-nest-encounter.js?v=20261107foodcap1"></script> <!-- Authoritative indoor mother and hatchling combat in the existing wildlife tick. -->
   <!-- Funji & Son's General Store (window.GeneralStore) — self-contained
        aside from deps injected via init(), and reads window.DyeSystem/
        window.ConditionRegistry at render time (already global by then), so
@@ -821,7 +821,7 @@
   <script src="js/tasks-panel.js?v=20261029hguild2"></script>
   <script src="js/supply-page.js?v=20261029seedblocks2"></script>
   <script src="js/whistle-equip.js?v=20261016hb4b3fe1"></script>
-  <script src="js/wildlife-debug-panel.js?v=20261107h043d585"></script>
+  <script src="js/wildlife-debug-panel.js?v=20261107tzcensus1"></script>
   <script src="js/wildlife-behavior-map.js?v=20261010hb5092df"></script>
   <!-- Shipping tab (player bag <-> shipping-box transfer UI, window.
        ShippingPanel) — pure DOM/state, no other window.* system reads;
@@ -891,7 +891,7 @@
   <script src="js/cavern-generator.js?v=20261026cavewalls1"></script>
   <script src="js/tzatzul-nest-interior.js?v=20261107h10e155e"></script> <!-- Author four high-vault boss rooms using the existing cavern mesh and stone stalagmite generator. -->
   <script src="js/ore-rock-textures.js?v=20261102authorAssetBase1"></script> <!-- Shared metal-bodied ore and verdigris materials: mine, wilderness, caves. -->
-  <script src="js/cavern-ore-rocks.js?v=20261027sense1"></script>
+  <script src="js/cavern-ore-rocks.js?v=20261107puzzleWallAudit2"></script>
   <script src="js/town-mine.js?v=20261026ghouls1"></script>
   <script src="js/town-mine-descent.js?v=20261023mdesc2"></script>
   <!-- A wilderness zone's in-bounds elevated plateau/mesa terrain
@@ -924,15 +924,15 @@
   <script src="js/locale-cave-runtime.js?v=20261010h40fea5e"></script>
   <!-- Promotes wilderness den anchors into generic cave sites; wraps WildlifeSpawn/CavernGenerator/DevSpawner, all loaded above. -->
   <script src="js/locale-cliff-wall-mounts.js?v=20261105cliffPortal1"></script><!-- Mount editor-authored furniture on the resolved procedural wall normal and elevation. -->
-  <script src="js/puzzle-cave-entrances.js?v=20261106independentPuzzle2"></script><!-- Real mini-cliff cliffDoor placement, exterior timed plate, and authoritative gated transition. -->
-  <script src="js/cave-site-system.js?v=20261106independentPuzzle2"></script>
+  <script src="js/puzzle-cave-entrances.js?v=20261107puzzleFire1"></script><!-- Real mini-cliff cliffDoor placement, exterior timed plate, and authoritative gated transition. -->
+  <script src="js/cave-site-system.js?v=20261107puzzleWallAudit2"></script>
   <!-- Two-necked Shattercask runtime. Loaded after Combat/DevSpawner/CaveSiteSystem so their
        hooks bind before game.js initializes the subsystems; also handles touch prompts. -->
   <!-- Capability/event substrate (window.WorldEvents, window.Targetables): pure registries with no
        dependencies; must load before shattercasks.js, which feeds them. See docs/architecture/ruin-capabilities.md. -->
   <script src="js/world-events.js?v=1"></script>
   <script src="js/targetables.js?v=1"></script>
-  <script src="js/shattercasks.js?v=20261106h97ffb1d"></script>
+  <script src="js/shattercasks.js?v=20261107fusedWall1"></script>
   <script src="js/crate-piles.js?v=20261105hf6df591"></script>
   <script src="js/hronal-witch-bombs.js?v=20261106ha49d50c"></script>
   <!-- Hanging ropes: the shared rope swing arithmetic (pure) and the rope component burdens hang from. Needs Shattercasks at
@@ -2792,7 +2792,7 @@
   <script src="js/companion-movement-speed.js?v=20261102ownerpace1"></script> <!-- Companion move/chase speeds follow each owner's live effective pace. -->
   <!-- Footstep/one-shot SFX (window.AudioSystem) — must load before game.js,
        which calls window.AudioSystem.init(...) during its own setup. -->
-  <script src="js/audio-system.js?v=20261102farmvoice2"></script>
+  <script src="js/audio-system.js?v=20261107combo1501a"></script>
   <script src="js/honeyfuzzle-audio.js?v=20261026hivebuzz2"></script> <!-- Shared 24-tile hive + swarm ambience, one decoded seam-crossfaded loop per nearby source, live aggression and Doppler. -->
   <!-- Semantic animal-call scheduler. Gameplay systems emit vocal intents;
        AudioSystem above remains the replaceable low-level renderer. -->

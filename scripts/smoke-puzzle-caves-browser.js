@@ -46,7 +46,7 @@ async function main(){
       const group=new THREE.Group(); // Detached 3D test scene never interferes with the saved player's world.
       const area='puzzle_cave_browser_test';
       const room={x:3,z:5,w:9,d:9};
-      const gateX=room.x+room.w/2,gateZ=room.z+room.d-1.05;
+      const gateX=room.x+room.w/2,gateZ=room.z+room.d-2.8; // The center opening connects the chamber to an actual walkable treasure alcove.
       const collision=window.AreaFootprintBlockers;
       const countBefore=collision.providerIds().length; // Ensure the test frees only its own colliders, not cached game systems.
       const state={phase:'fire',solved:0,lit:0};
@@ -54,24 +54,28 @@ async function main(){
       let fire=null,music=null;
       try{
         fire=window.RuinLayerChallenges.compose({
-          THREE,parent:group,room,id:'browser-fire-test',kind:'fireSconces',area,y:0,
+          THREE,parent:group,room,id:'browser-fire-test',kind:'fireSconces',area,y:0,authoredCliffDoor:true,
           isActive:()=>state.phase==='fire',onSolved:()=>state.solved++,
           groundFire:{intersects:(map,x,z)=>map===area&&hot.has(x+','+z)},
           onSconceLit:()=>state.lit++,getPlayerY:()=>0,getPlayerPosition:()=>({x:0,z:0}),
         });
         if(!collision.blocksBox(area,gateX,gateZ,.18))throw Error('Closed fire slab is not physically collidable');
         if(collision.blocksBox('other-map',gateX,gateZ,.18))throw Error('Interior slab leaked into another area');
+        if(!collision.blocksBox(area,room.x+.65,gateZ,.18)||!collision.blocksBox(area,room.x+room.w-.65,gateZ,.18))
+          throw Error('Rock flanks do not seal the full cave room width');
         for(const sconce of fire.sconces){hot.add(sconce.x+','+sconce.z);fire.tick(.016);hot.clear();}
         if(!fire.solved||state.solved!==1||state.lit!==2)throw Error('Two real sconces did not unlock the stone door');
         fire.animate(1);
         if(collision.blocksBox(area,gateX,gateZ,.18))throw Error('Raised fire gate still blocks player');
+        if(!collision.blocksBox(area,room.x+.65,gateZ,.18))throw Error('Player can bypass opened door through unbreakable rock');
+        if(!fire.rockSurround?.geometry?.getAttribute?.('position'))throw Error('Sculpted permanent cave wall is missing from the real Three scene');
         fire.dispose();fire=null;
         if(collision.providerIds().length!==countBefore)throw Error('Fire cave leaked collision provider on disposal');
 
         state.phase='music';
         let opened=0,closed=0,player={x:room.x+room.w/2,z:room.z+room.d/2-1.6};
         music=window.RuinLayerChallenges.compose({
-          THREE,parent:group,room,id:'browser-music-test',kind:'timedMelody',area,y:0,
+          THREE,parent:group,room,id:'browser-music-test',kind:'timedMelody',area,y:0,authoredCliffDoor:true,
           isActive:()=>state.phase==='music',onSolved:()=>state.solved++,
           music:{beginPlayerSession:()=>{opened++;return true;},close:()=>{closed++;}},
           puzzleCaveMelody:window.PuzzleCaveMelody,songOptions:{difficulty:5},
@@ -94,6 +98,7 @@ async function main(){
         if(!music.solved||state.solved!==2)throw Error('Written melody did not unlock the real stone door');
         music.animate(1);
         if(collision.blocksBox(area,gateX,gateZ,.18))throw Error('Raised melody slab still blocks player');
+        if(!collision.blocksBox(area,room.x+room.w-.65,gateZ,.18))throw Error('Right rock flank bypasses melody puzzle');
         music.dispose();music=null;
         if(collision.providerIds().length!==countBefore||group.children.length!==0)
           throw Error('Composed cave mechanisms leaked scene geometry or collision providers');

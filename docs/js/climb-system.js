@@ -640,6 +640,11 @@
   const BRANCH_KNOCKBACK_DUR_S = 0.18; // Mirrors game.js's own KNOCKBACK_DUR_S so a shove off a branch covers the same distance a ground knockback would.
   function resolveBranchKnockback(entity, fromX, fromY, speedPxS) {
     const branch = entity.onBranch;
+    if (branch && window.TzatzulFlightRuntime?.resistsCarryKnockback?.(entity)) {
+      // Companion strikes still damage the Tzatzul; only fleeing, a true knockdown or death ends a carry.
+      entity.knockbackT = 0; entity.knockbackVX = 0; entity.knockbackVY = 0;
+      return { fell: false };
+    }
     if (branch && Math.abs(Number(speedPxS) || 0) > 0 && window.PerchSupport?.release) {
       return window.PerchSupport.release(entity, 'knocked from Shadewood perch', { deferLegacyKnockback: true });
     }

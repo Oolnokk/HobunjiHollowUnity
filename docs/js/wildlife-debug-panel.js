@@ -112,17 +112,21 @@
     const fmt = value => deps.esc(String(value ?? 'none'));
     const live = inhabitants.map(bird =>
       '<div>' + fmt(bird.id) + ' · ' + fmt(bird.phase) + ' · ' + fmt(bird.pose)
-      + (bird.target ? ' · target ' + fmt(bird.target) : '') + '</div>').join('');
+      + (bird.target ? ' · target ' + fmt(bird.target) : '')
+      + (bird.nestMinutesLeft != null ? ' · emerges in ' + fmt(bird.nestMinutesLeft) + ' game min' : '') + '</div>').join('');
     return '<div style="padding:8px 10px;margin-bottom:8px;border:1px solid rgba(145,179,222,.3);border-radius:6px;font-size:12px">'
       + '<div style="font-weight:600">Tzatzul flight / cliff roosts</div>'
       + '<div>Living: <b>' + flight.active + '</b> · launched: ' + flight.flights
       + ' · swoops: ' + flight.swoops + ' · hits/misses: ' + flight.hits + '/' + flight.misses + '</div>'
+      + '<div>Scout legs: ' + (flight.scouts || 0) + ' · nest stays: ' + (flight.nestStays || 0)
+      + ' · flee drops: ' + (flight.fleeDrops || 0) + '</div>'
       + '<div>Live wing rigs: ' + (wings?.liveRigs ?? 0) + ' · failed loads: ' + (wings?.loadFailures ?? 0) + '</div>'
       + '<div>Inaccessible nest spires: ' + (flight.roosts?.find(record => record.area === area)?.count || 0) + '</div>'
       + '<div>Nest arenas: ' + (arena?.arenas?.length || 0) + ' · rock perches: ' + (arena?.rockMeshes || 0)
       + ' · stone spike layers: ' + (arena?.spikeMeshes || 0) + '</div>'
       + '<div>Nest dives: ' + (nest?.dives || 0) + ' · wall hits: ' + (nest?.wallHits || 0)
-      + ' · sharp spike hits: ' + (nest?.spikeHits || 0) + ' · delivered victims: ' + (nest?.deposited || 0) + '</div>'
+      + ' · sharp spike hits: ' + (nest?.spikeHits || 0) + ' · stored remains: ' + (nest?.deposited || 0)
+      + ' · overflow meals: ' + (nest?.overflowMeals || 0) + '</div>'
       + (nest?.lastImpact ? '<div>Last collision: ' + fmt(nest.lastImpact.kind)
         + ' · unused dive: ' + fmt((nest.lastImpact.deficitTiles || 0).toFixed(2)) + ' tiles</div>' : '')
       + (nest?.encounters || []).filter(encounter => encounter.mapId === area)

@@ -151,11 +151,11 @@
   async function loadRig() {
     if (!rigPromise) rigPromise = Promise.all([
       fetch(RIG_URL).then(r => { if (!r.ok) throw new Error('Tzatzul rig HTTP ' + r.status); return r.json(); }),
-      ...[SPRITES.flying, SPRITES.perched, SPRITES.wings].map(image),
-    ]).then(([settings, flying, perched, wings]) => {
+      ...[SPRITES.flying, SPRITES.perched, SPRITES.wings, SPRITES.eyes, SPRITES.blink].map(image),
+    ]).then(([settings, flying, perched, wings, eyes, blink]) => {
       const authored = window.FlyingAnimalRig.normalize(settings); // Validate the serialized talon/socket and seven-point perch spline.
       last.rigLoaded = true;
-      return { settings: authored, images: { flying, perched, wings } };
+      return { settings: authored, images: { flying, perched, wings, eyes, blink } };
     }).catch(error => { rigPromise = null; last.error = String(error); throw error; }); // Failed image fetches are retryable.
     return rigPromise;
   }
@@ -163,9 +163,24 @@
     const { settings, images } = await loadRig();
     const instance = window.FlyingAnimalRig.create(settings, images);
     instance.talonCarry = settings.talonCarry; // Live actors use the same authored socket and payload poses as the editor.
-    if (identity?.tintHex && window.THREE) instance.root.traverse(node => {
-      if (node.isMesh && node.material?.color) node.material.color.set(identity.tintHex);
-    }); // Per-instance materials preserve every other map bird's independently identifiable color.
+    if (identity?.tintHex && window.THREE) {
+      const tintHex = identity.tintHex; // The assigned mother's individual coat color survives damage and visual refreshes.
+      const tintMaterials = new Set(); // Color only the body and wings, never the separately authored eyes.
+      instance.root.traverse(node => {
+        if (node.isMesh && !node.userData?.flyingAnimalEyeOverlay && node.material?.color) tintMaterials.add(node.material);
+      });
+      instance.restoreTint = () => {
+        let changed = false;
+        for (const material of tintMaterials) {
+          const current = typeof material.color.getHexString === 'function' ? material.color.getHexString() : null;
+          if (current?.toLowerCase() === tintHex.replace(/^#/, '').toLowerCase()) continue;
+          material.color.set(tintHex);
+          changed = true;
+        }
+        return changed;
+      };
+      instance.restoreTint(); // Other material owners may reset white on hit; the live tick repairs this after the hit flash.
+    }
     return instance;
   }
   function debugSnapshot() { return { ...last, hatchlingScale: { ...HATCHLING_SCALE },
