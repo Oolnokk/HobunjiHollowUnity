@@ -72,8 +72,16 @@
       const high = Math.max(start.y + dy * a, start.y + dy * b);
       const support = sample(x, z, { minY:low-radius-0.01, maxY:high+radius+0.01, pad:radius });
       const height = Number(support?.y);
-      // Normal landing ground is not cover; a *raised* support floor is.
-      if (!support || !Number.isFinite(height) || height <= terrainY(x, z, opts) + 0.08) continue;
+      // A walkable elevated floor can be the *destination's ground*, even
+      // though the underlying terrain is far below. Do not shorten a valid
+      // throw merely because its final arc descends onto that floor.
+      // Conversely, an overhead floor hit from below is still blocking cover.
+      const expectedGround = Number(opts?.groundAt?.(x, z)); // Same elevation used to place the ground reticle.
+      const isLandingSupport = Number.isFinite(expectedGround)
+        && Math.abs(height - expectedGround) <= 0.08
+        && start.y > height + radius + 0.01;
+      if (!support || !Number.isFinite(height)
+        || height <= terrainY(x, z, opts) + 0.08 || isLandingSupport) continue;
       if (low > height + radius + 0.01 || high < height - radius - 0.01) continue;
       const t = Math.abs(dy) < 1e-9 ? a : a + (b - a) * Math.max(0, Math.min(1, (height - (start.y + dy * a)) / (dy * (b - a))));
       return t;
