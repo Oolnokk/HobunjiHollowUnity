@@ -209,6 +209,11 @@
         rangedSecondaryGripSpan: { enabled: false, startZ: 0, endZ: 0 },
         rangedGripMode: null,
       },
+      kurraya: {
+        customGripAxis: { enabled: false, start: { x: 0, y: 0, z: 0 }, end: { x: 0, y: 0, z: 0.5 } }, // Artist places nut and bridge; no guessed Kurraya measurements are activated by default.
+        primaryGripSpan: { enabled: false, startZ: 0, endZ: 0.5 },
+        secondaryGripSpan: { enabled: false, startZ: 0, endZ: 0.5 },
+      },
       flute: {
         toolScale: 0.6, // Base flute size, independent of the animation's neutral pose scale.
         heightMultiplier: 0.5,
@@ -354,6 +359,29 @@
     };
   }
 
+  function normalizeCustomGripAxis(raw) {
+    const finitePoint = (point, fallback) => ({ // Stored item-local endpoints: invalid inputs never make a grip jump to NaN.
+      x: clamp(point?.x ?? fallback.x, -5, 5),
+      y: clamp(point?.y ?? fallback.y, -5, 5),
+      z: clamp(point?.z ?? fallback.z, -5, 5),
+    });
+    const start = finitePoint(raw?.start, { x: 0, y: 0, z: 0 });
+    const end = finitePoint(raw?.end, { x: 0, y: 0, z: 0.5 });
+    const length = Math.hypot(end.x - start.x, end.y - start.y, end.z - start.z);
+    return { enabled: raw?.enabled === true && length > 0.00001, start, end };
+  }
+
+  // For custom hafts, the old startZ/endZ fields mean distance along the artist's nut→bridge line,
+  // in item-local units. Existing tools still map Z directly as they did before this option.
+  function gripPointOnAxis(axis, distance) {
+    if (!axis?.enabled) return { x: 0, y: 0, z: numberOrZero(distance) };
+    const dx = axis.end.x - axis.start.x, dy = axis.end.y - axis.start.y, dz = axis.end.z - axis.start.z;
+    const length = Math.hypot(dx, dy, dz);
+    if (length < 0.00001) return { x: 0, y: 0, z: numberOrZero(distance) };
+    const t = numberOrZero(distance) / length; // 0 = nut; length = bridge; negative/longer ranges extrapolate along the same physical axis.
+    return { x: axis.start.x + dx*t, y: axis.start.y + dy*t, z: axis.start.z + dz*t };
+  }
+
   function normalizeData(raw) {
     const next = clone(raw || DEFAULT_DATA);
     const previousPrimaryRotationPreset = next.primaryRotationPreset; // Missing/older marker means saved grip rotations need the new authoritative weapon table once.
@@ -385,6 +413,8 @@
         ? (fallbackEntry.heightMultiplier ?? DEFAULT_HEIGHT_MULTIPLIER)
         : normalizeHeightMultiplier(entry.heightMultiplier, fallbackEntry.heightMultiplier ?? DEFAULT_HEIGHT_MULTIPLIER);
       entry.primaryGrip = normalizeTransform(entry.primaryGrip);
+    entry.customGripAxis = normalizeCustomGripAxis(entry.customGripAxis ?? fallbackEntry.customGripAxis); // Materialize the default for editor picks and imported legacy profiles.
+      entry.customGripAxis = normalizeCustomGripAxis(entry.customGripAxis ?? fallbackEntry.customGripAxis); // One optional 3D axis per tool, independent of 1H and ranged grip anchors.
       if (previousPrimaryRotationPreset !== PRIMARY_ROTATION_PRESET) {
         entry.primaryGrip.position.x = HATCHET_PRIMARY_GRIP_EXAMPLE.x; // Hatchet's authored X belongs to the shared hand-on-item frame.
         entry.primaryGrip.position.y = HATCHET_PRIMARY_GRIP_EXAMPLE.y; // Hatchet's authored Y belongs to the shared hand-on-item frame.
@@ -636,7 +666,9 @@
     const span = primaryGripSpanForTool(value, context); // Authored main-hand travel, independent from the offhand range.
     if (state && span) {
       const sampledZ = span.startZ + (span.endZ - span.startZ) * clamp01(state.primaryPercent / 100); // Main-hand position within its own range.
-      authored.position.z += (sampledZ - authored.position.z) * clamp01(state.influence);
+      const point = gripPointOnAxis(ensureTool(value)?.customGripAxis, sampledZ); // Custom 3D haft guides X/Y/Z together; legacy still travels Z only.
+      const blend = clamp01(state.influence);
+      for (const axis of ['x', 'y', 'z']) authored.position[axis] += (point[axis] - authored.position[axis]) * blend;
     }
     const target = itemPointToHolder(value, authored.position, context, identity); // Height scaling pivots on this grip, so this equals base * grip for every body.
     return {
@@ -932,12 +964,13 @@
     if (!state) return null;
     const percent01 = clamp01(state.percent / 100);
     const itemZ = span.startZ + (span.endZ - span.startZ) * percent01;
+    const point = gripPointOnAxis(ensureTool(value)?.customGripAxis, itemZ); // Use the same user-defined nut→bridge line for both hands.
     return {
       enabled: true,
       influence: clamp01(state.influence),
       percent: state.percent,
       itemZ,
-      position: itemPointToHolder(value, { x: 0, y: 0, z: itemZ }, context, identity), // Same grip-anchored mapping as the visible item.
+      position: itemPointToHolder(value, point, context, identity), // The axis is item-local; the existing scale/height mapping moves both hands together.
       rotationDeg: { ...authoredPrimaryGripForTool(value, context).rotationDeg }, // Left-hand GLB geometry is already mirrored, so sharing the primary tool-space frame produces the natural mirrored grip direction.
     };
   }
@@ -1252,6 +1285,8 @@
     return { range, number, set };
   }
 
+  function customGripAxisForTool(value) { return normalizeCustomGripAxis(ensureTool(value)?.customGripAxis); } // Public read-only copy for editor gizmos, previews and diagnostics.
+
   let editorUi = null;
 
   function syncEditorSpanUi() {
@@ -1268,6 +1303,13 @@
     for (const pair of [editorUi.mainStartPair, editorUi.mainEndPair, editorUi.startPair, editorUi.endPair]) {
       pair.range.disabled = !melee; pair.number.disabled = !melee;
     }
+    const axis = customGripAxisForTool(editorCurrentToolKey());
+    editorUi.axisEnabled.checked = axis.enabled;
+    editorUi.axisFields.style.display = axis.enabled ? '' : 'none';
+    for (const end of ['start', 'end']) for (const coord of ['x', 'y', 'z']) editorUi.axisPairs[end][coord].set(axis[end][coord]);
+    editorUi.axisStatus.textContent = axis.enabled
+      ? `Custom axis length ${Math.hypot(axis.end.x-axis.start.x,axis.end.y-axis.start.y,axis.end.z-axis.start.z).toFixed(3)} units · Z ranges now measure distance from Nut along the Nut→Bridge direction.`
+      : 'Standard tool-local Z axis. Enable custom axis to align the nut and bridge without rotating the sprite.';
     editorUi.scalePair.set(normalizeToolScale(entry?.toolScale));
     editorUi.heightPair.set(normalizeHeightMultiplier(entry?.heightMultiplier));
     editorUi.spanEnabled.checked = span.enabled === true;
@@ -1342,6 +1384,15 @@
     panel.id = 'handSecondaryGripSpanPanel';
     panel.innerHTML = `
       <div class="poseGroupHead"><span class="dot" style="background:#fb7185"></span>Two-hand grip ranges</div>
+      <label class="fieldRow" style="cursor:pointer"><input id="handCustomGripAxisEnabled" type="checkbox" style="width:auto;margin-right:6px">Custom 3D haft axis (Nut → Bridge)</label>
+      <div id="handCustomGripAxisFields">
+        <div class="help">Specify two points in the <b>instrument's local XYZ frame</b>. This becomes a virtual Z axis only for grip ranges. StartZ/EndZ are distances in item units along the line: 0 at Nut, full line length at Bridge. Use the buttons to position each point directly with the 3D Move gizmo.</div>
+        <div class="poseGroupHead">Nut (axis origin)</div><div id="handCustomGripAxisStart"></div>
+        <button type="button" class="secondary" id="handCustomGripAxisPickStart">⊹ Move Nut in 3D</button>
+        <div class="poseGroupHead" style="margin-top:8px">Bridge (axis end)</div><div id="handCustomGripAxisEnd"></div>
+        <button type="button" class="secondary" id="handCustomGripAxisPickEnd">⊹ Move Bridge in 3D</button>
+      </div>
+      <div class="help" id="handCustomGripAxisStatus"></div>
       <div class="help" style="margin-bottom:6px">Define separate <b>main-hand (right)</b> and <b>offhand (left)</b> ranges on the weapon's local Z axis. The fixed primary grip is still used for 1H, idle, and ranged poses. Enabling 2H on Windup or Strike samples both ranges without moving the weapon.</div>
       <div class="field"><label class="fieldRow" style="cursor:pointer"><input type="checkbox" id="handPrimarySpanEnabled" style="width:auto;margin-right:6px">Weapon has a main-hand 2H range</label></div>
       <div id="handPrimarySpanFields"></div>
@@ -1354,6 +1405,27 @@
       <div class="help" id="handSecondarySpanStatus" style="padding:7px;border:1px solid rgba(245,158,11,.24);border-radius:8px;margin:6px 0"></div>`;
     host.insertBefore(panel, status);
     const spanFields = panel.querySelector('#handSecondarySpanFields'), animationFields = panel.querySelector('#handSecondaryAnimationFields'), spanEnabled = panel.querySelector('#handSecondarySpanEnabled');
+    const axisEnabled = panel.querySelector('#handCustomGripAxisEnabled'); // Switches from ordinary Z to an artist-specified local 3D grip line.
+    const axisFields = panel.querySelector('#handCustomGripAxisFields'); // Shown only when the artist opts into the custom axis.
+    const axisStatus = panel.querySelector('#handCustomGripAxisStatus'); // Mobile-visible measurement and invalid-axis guidance.
+    const axisPairs = { start: {}, end: {} }; // Numeric endpoints mirror 3D gizmo edits for both Nut and Bridge.
+    for (const end of ['start', 'end']) {
+      const parent = panel.querySelector(end === 'start' ? '#handCustomGripAxisStart' : '#handCustomGripAxisEnd');
+      for (const coord of ['x', 'y', 'z']) {
+        axisPairs[end][coord] = editorFieldPair(parent, `handAxis_${end}_${coord}`, `${end === 'start' ? 'Nut' : 'Bridge'} ${coord.toUpperCase()}`, end === 'end' && coord === 'z' ? 0.5 : 0, -2, 2, 0.001, value => {
+          mutate(() => { ensureTool(editorCurrentToolKey()).customGripAxis[end][coord] = value; });
+          global.HobunjiAttackEditorGripAxis?.refresh?.(); // Numeric and gizmo authoring are the same underlying authored points.
+        });
+      }
+      panel.querySelector(end === 'start' ? '#handCustomGripAxisPickStart' : '#handCustomGripAxisPickEnd').addEventListener('click', () => {
+        global.HobunjiAttackEditorGripAxis?.select?.(end); // Uses the editor's existing TransformControls; no second gizmo implementation.
+      });
+    }
+    axisEnabled.addEventListener('change', () => {
+      const next = axisEnabled.checked;
+      mutate(() => { ensureTool(editorCurrentToolKey()).customGripAxis.enabled = next; });
+      global.HobunjiAttackEditorGripAxis?.refresh?.();
+    });
     const mainEnabled = panel.querySelector('#handPrimarySpanEnabled'); // Toggles main-hand range availability for 2H poses.
     const mainFields = panel.querySelector('#handPrimarySpanFields'); // Hosts the independent main-hand start/end controls.
     const mainStartPair = editorFieldPair(mainFields, 'handPrimarySpanStartZ', 'Main-hand range start · tool Z', 0, -1.5, 1.5, 0.0001, value => mutate(() => { ensureTool(editorCurrentToolKey()).primaryGripSpan.startZ = value; }));
@@ -1412,7 +1484,7 @@
       pose[phase] = { enabled, dual, percent, primaryPercent, offhandEnabled, offhandCustom, offhandFields, offhandPairs };
     }
     spanEnabled.addEventListener('change', () => mutate(() => { currentSpan().enabled = spanEnabled.checked; }));
-    editorUi = { scalePanel, scalePair, heightPair, panel, mainEnabled, mainStartPair, mainEndPair, spanEnabled, startPair, endPair, pose, status: panel.querySelector('#handSecondarySpanStatus') };
+    editorUi = { scalePanel, scalePair, heightPair, panel, axisEnabled, axisFields, axisStatus, axisPairs, mainEnabled, mainStartPair, mainEndPair, spanEnabled, startPair, endPair, pose, status: panel.querySelector('#handSecondarySpanStatus') };
 
     document.getElementById('toolSpriteSelect')?.addEventListener('change', () => setTimeout(syncEditorSpanUi, 0));
     document.getElementById('handGripContextSelect')?.addEventListener('change', () => {
@@ -1497,7 +1569,7 @@
     clone: cleanClone,
     toolKeyFor, isDualWieldWeapon, weaponHandModeForTool, setEditorIdlePreview, setEditorSingleHandPreview, getEditorIdlePreview: () => editorHandPreview === 'pair', editorToolChanged, ensureTool, toolScaleForTool, apertureForTool, apertureHolderPointForTool, primaryGripHolderPointForTool, heightMultiplierForTool, characterHeightRatio, characterHeightReady, heightFactorForTool, effectiveToolScaleForTool,
     heldItemPlacementForTool, itemPointToHolder, holderPointToItem, applyHeldItemPlacement, DEFAULT_HEIGHT_MULTIPLIER, normalizeGripContext, currentGripContext,
-    authoredPrimaryGripForTool, primaryGripForTool, offhandPrimaryGripForTool, dualWieldOffhandGripOffsetForTool, spinPivotOffsetForTool, primaryGripSpanForTool, secondaryGripSpanForTool, secondaryGripForTool, dualWieldStateForTool, offhandIdleStateForTool, usesLegacyOffhandIdle,
+    authoredPrimaryGripForTool, customGripAxisForTool, gripPointOnAxis, primaryGripForTool, offhandPrimaryGripForTool, dualWieldOffhandGripOffsetForTool, spinPivotOffsetForTool, primaryGripSpanForTool, secondaryGripSpanForTool, secondaryGripForTool, dualWieldStateForTool, offhandIdleStateForTool, usesLegacyOffhandIdle,
     currentSecondaryGripAnimationState, currentDualWieldAnimationState, animationGripAt, gripModeForTool, setGripMode, replace, mutate, saveLocal, loadLocal, clearLocal, applyPrimaryGripVisuals, debugForTool,
     editorSecondaryGripStateSnapshot, restoreEditorSecondaryGripState, loadEditorAnimationGrip,
     getDebug() {
