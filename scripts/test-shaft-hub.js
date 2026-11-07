@@ -268,7 +268,8 @@ for(const start of [{x:20,z:1},{x:1,z:25},{x:100,z:30},{x:32,z:100}]){
 // Real connector wiring using lightweight Three/occupancy doubles.
 // No real browser is required to prove the returned floor tiles meet both ends.
 class Group {
-  constructor(){this.children=[];this.parent=null;this.userData={}}
+  constructor(){this.children=[];this.parent=null;this.userData={};
+    this.position={x:0,y:0,z:0,set(x,y,z){this.x=x;this.y=y;this.z=z;}}} // Groups are positioned by the dungeon-fire flame root.
   add(node){this.children.push(node);node.parent=this}
   remove(node){this.children=this.children.filter(n=>n!==node);node.parent=null}
   traverse(fn){fn(this);for(const n of this.children)n.traverse?n.traverse(fn):fn(n)}

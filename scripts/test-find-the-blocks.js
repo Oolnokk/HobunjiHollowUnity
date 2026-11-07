@@ -41,6 +41,8 @@ function test(seed){
   let melody=null,solved=0;
   const env={
     THREE,
+    IceStalagmiteCoverage:{buildCeiling(){return {layer:{}};},setGrowth(){}}, // Furniture Editor ice generator double.
+    DungeonRopeArt:{createNetFrustum(){return new Object3D();}}, // Stands in for the shared rope_long atlas net.
     DevRandomRuin:{
       registerLabPushBlock(mesh){registeredBlocks.push(mesh);return true;},
       isSlidingPushBlock(){return false;}
