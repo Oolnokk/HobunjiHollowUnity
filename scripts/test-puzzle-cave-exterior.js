@@ -153,7 +153,8 @@ assert(!blocker.blocksAt(0,0,1,null,0,{y:gate.door.y-4}),
 player.onCliffBalcony=gate.shelf.id;
 player.x=gate.plate.x*64;player.y=gate.plate.z*64;
 Exterior.update(.01,area);
-assert.equal(opened,1,'stepping onto the plate enters the existing live instrument mode');
+assert.equal(opened,0,'stepping onto the plate must not auto-equip or open an instrument');
+assert(gate.scoreBoard?.visible,'exterior Scratchbone glyphs appear while standing on the plate');
 const song=gate.song;
 let elapsed=0; // Musical clock advanced through the actual exterior controller's per-frame path.
 for(const note of song.notes){
@@ -166,10 +167,13 @@ for(const note of song.notes){
     handler({detail:{area,noteIndex:note.index}});
 }
 assert(gate.solved,'the procedural one/two-measure outdoor score opens the gate');
+assert.equal(opened,0,'the entire outdoor song must be played with an instrument the player opened themselves');
+assert.equal(closed,0,'solving an outdoor melody must not dismiss a manually opened instrument');
 assert(saved.get(mapId).tier>=1,'the outside difficulty tier persists with the cave signature');
 player.x=(gate.entry.c+.5)*64;player.y=(gate.entry.r+.5)*64;
 for(let i=0;i<30;i++)Exterior.update(.05,area);
 assert(gate.rise>=.98,'the authored stone slab has completely risen');
+assert(!gate.scoreBoard?.visible,'the solved exterior score retires with the lifted slab');
 assert.equal(layoutTransition.target,'building','the normal world transition is enabled at the raised doorway');
 assert.equal(copiedTransition.target,'building','cached scene transition follows the same gate state');
 assert(!blocker.enabled(),'physical collision opens along with the recorded transition');
