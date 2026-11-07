@@ -34,6 +34,14 @@ assert.equal(kurrayaPlayNote.poses.neutral.shoulderAim.grip,true);
 assert.equal(JSON.stringify(kurrayaPlayNote.poses.neutral.elbows.right),JSON.stringify({x:-0.08,y:-0.2,z:0.085}));
 assert.equal(kurrayaPlayNote.poses.neutral.offhandIdle.enabled,false);
 assert.equal(kurrayaPlayNote.gripMode,'palm-parallel');
+const kurrayaAnchorChannels = ['x','y','z','pitch','yaw','roll','bodyYaw']; // Every note phase keeps the same instrument transform, independently of the plucking arm.
+for (const phase of ['windup','strike']) {
+  for (const channel of kurrayaAnchorChannels) {
+    assert.equal(kurrayaPlayNote.poses[phase][channel],kurrayaPlayNote.poses.neutral[channel],
+      'Kurraya '+phase+' must not shift or rotate the instrument on '+channel);
+  }
+}
+
 
 const clock = { ms: 0 }; // Deterministic sounded-note frame clock for the sampled game animation.
 const window = { HeldActionAnimations: {flutePlayNote,kurrayaPlayNote} }; // Runtime receives exactly the authored values.
@@ -41,6 +49,13 @@ vm.runInNewContext(instrumentSource, { window, document: {}, performance: {now: 
 const api = window.KurrayaInstrument;
 assert(api?.notePoseAt && api?.playFluteNote, 'game exposes separate note sampling and flute trigger');
 assert.equal(api.notePoseAt(flutePlayNote, flutePlayNote.strikeFrac).bodySink, 10, 'flute strike sinks the body by ten percent');
+for (const t of [0,0.08,kurrayaPlayNote.windupFrac,kurrayaPlayNote.strikeFrac,kurrayaPlayNote.holdFrac,0.92,1]) {
+  const pose = api.notePoseAt(kurrayaPlayNote,t);
+  for (const channel of kurrayaAnchorChannels) {
+    assert(Math.abs(pose[channel] - kurrayaPlayNote.poses.neutral[channel]) < 1e-9,
+      'runtime Kurraya transform must remain at Neutral at t='+t+' on '+channel);
+  }
+}
 
 const twitch = api.newTwitchState(); // Single live Kurraya note animation state.
 const group = {
@@ -51,9 +66,10 @@ const group = {
 api.triggerTwitch(twitch, group);
 clock.ms = kurrayaPlayNote.durationS * 1000 * kurrayaPlayNote.strikeFrac;
 api.updateTwitch(twitch, group);
-assert(Math.abs(group.position.x - (0.1 + kurrayaPlayNote.poses.strike.x - kurrayaPlayNote.poses.neutral.x)) < 1e-9,
-  'Kurraya note samples the newly authored Neutral→Strike delta, rather than the old uncalibrated rest');
-assert(group.rotation.z > -1.25, 'authored Kurraya roll affects its held assembly');
+assert.equal(group.position.x,0.1,'Kurraya body never shifts X while a note sounds');
+assert.equal(group.position.y,0.2,'Kurraya body never shifts Y while a note sounds');
+assert.equal(group.position.z,0.3,'Kurraya body never shifts Z while a note sounds');
+assert.equal(group.rotation.z,-1.25,'Kurraya body never rotates while a note sounds');
 api.triggerTwitch(twitch, group);
 assert.equal(group.position.x, 0.1, 'rapid retriggers restore its held position before starting a new note');
 assert.equal(group.rotation.z, -1.25, 'rapid retriggers do not accumulate rotation');
@@ -285,6 +301,27 @@ assert(editor.includes("setGizmoMode('rotate', 'rightHand')"),'free hand can be 
 assert(editor.includes('function enableFreeRightHandForPhase(phase)'), 'gizmo and checkbox must both initialize from the actual grip');
 assert(editor.includes('const holderQ = toolHolder.getWorldQuaternion(new THREE.Quaternion())'), 'capturing free hand must keep its wrist orientation as well as position');
 assert(editor.includes('syncGripAxisMarkers(); // Keep Nut/Bridge markers visible'), 'nut and bridge preview markers must update during ordinary playback');
+
+// The slider and number fields must share one live value, including gizmo-authored points beyond initial range bounds.
+const syncStart=editor.indexOf('function syncPoseCoordinatePair(');
+const syncEnd=editor.indexOf('function readElbowInputs(',syncStart);
+assert(syncStart>=0&&syncEnd>syncStart,'pose pair synchronizer must exist');
+const syncPair=vm.runInNewContext(editor.slice(syncStart,syncEnd)+'\nsyncPoseCoordinatePair',{document:{activeElement:null}});
+const slider={min:'-2',max:'2',value:'0'};
+const numeric={value:'0'};
+syncPair(slider,numeric,2.75,-2,2);
+assert.equal(Number(slider.max),3,'sliders must extend their upper bound for previously authored positions');
+assert.equal(Number(slider.value),2.75,'slider must mirror the numeric/gizmo pose');
+assert.equal(numeric.value,'2.75','number must mirror the slider/gizmo pose');
+syncPair(slider,numeric,-2.75,-2,2);
+assert.equal(Number(slider.min),-3,'sliders must extend their lower bound for previously authored positions');
+syncPair(slider,numeric,null,-2,2,true);
+assert.equal(slider.value,'0','blank elbow is shown at zero without keyframing it');
+assert.equal(numeric.value,'','blank elbow remains explicitly unset');
+assert(editor.includes('id="${elbowSliderId(side, axis)}"'),'each elbow coordinate must have a slider');
+assert(editor.includes('id="poseFreeRightHand_${axis}_slider"'),'each free hand channel must have a slider');
+assert(editor.includes('slider?.addEventListener(\'input\', () => applyFreeChannel(slider.value, true))'),'touch slider drives free hand state');
+assert(editor.includes('slider?.addEventListener(\'input\', () => {\n        numberInput.value'),'touch slider drives elbow state');
 assert(music.includes('playPlayerKurrayaNote?.()'),'game relays sounded notes to the free hand');
 assert(handDriver.includes('freeRightHandFor(record, toolKey)'),'live procedural hand driver consumes independent hand poses');
 
