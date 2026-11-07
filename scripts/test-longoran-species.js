@@ -116,6 +116,7 @@ const compensatedWindow = {
 };
 vm.runInNewContext(read('docs/js/character-rig-scale.js'), {
   window: compensatedWindow,
+  location: { pathname: '/game/' }, // The shared scale module checks the tool route before installing Animation Author handlers.
   setInterval: () => 1,
   clearInterval: () => {},
   console,
