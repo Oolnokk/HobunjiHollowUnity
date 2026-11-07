@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
+const zlib = require('node:zlib'); // Decodes the authored PNG overlay alpha without a browser or screenshot/OCR.
 
 const ROOT = process.env.HOBUNJI_TEST_ROOT || process.cwd(); // Allows tests to run against an arbitrary staged repo checkout.
 const read = file => fs.readFileSync(path.join(ROOT, file), 'utf8'); // Used to validate the files actually committed to Git.
@@ -14,6 +15,41 @@ for (const name of expected) {
   assert.equal(bytes.readUInt32BE(16), 1617, `${name} must retain the base frame's width`);
   assert.equal(bytes.readUInt32BE(20), 1000, `${name} must retain the base frame's height`);
 }
+
+function pngVisibleCoverage(relativePath) {
+  const file = fs.readFileSync(path.join(ROOT, relativePath)); // Sample the actual authored overlay rather than a synthetic sprite.
+  const width = file.readUInt32BE(16), height = file.readUInt32BE(20);
+  assert.equal(file[24], 8); assert.equal(file[25], 6); assert.equal(file[28], 0, 'Only RGBA8 non-interlaced sprites are supported');
+  const chunks = []; // Accumulates IDAT data for zlib.inflateSync.
+  for (let at = 8; at < file.length;) {
+    const length = file.readUInt32BE(at), kind = file.toString('ascii', at + 4, at + 8);
+    if (kind === 'IDAT') chunks.push(file.subarray(at + 8, at + 8 + length));
+    at += 12 + length;
+  }
+  const decoded = zlib.inflateSync(Buffer.concat(chunks)); // Raw filter-coded PNG scanlines.
+  const stride = width * 4;
+  let visible = 0, offset = 0, above = Buffer.alloc(stride);
+  for (let y = 0; y < height; y++) {
+    const filter = decoded[offset++], row = Buffer.alloc(stride); // Each scanline must reconstruct its own alpha.
+    for (let x = 0; x < stride; x++) {
+      const left = x >= 4 ? row[x - 4] : 0, up = above[x], corner = x >= 4 ? above[x - 4] : 0;
+      const p = left + up - corner, pa = Math.abs(p - left), pb = Math.abs(p - up), pc = Math.abs(p - corner);
+      const predicted = filter === 1 ? left : filter === 2 ? up : filter === 3 ? (left + up) >>> 1
+        : filter === 4 ? (pa <= pb && pa <= pc ? left : pb <= pc ? up : corner) : 0;
+      assert(filter >= 0 && filter <= 4);
+      row[x] = (decoded[offset++] + predicted) & 255;
+    }
+    for (let x = 3; x < stride; x += 4) if (row[x] > 8) visible++;
+    above = row;
+  }
+  assert.equal(offset, decoded.length, 'PNG decoding must consume every scanline');
+  return visible / (width * height);
+}
+const eyeCoverage = pngVisibleCoverage(basePath + 'moot_eyes.png'); // Detects overlays that would hide most of the animal.
+const blinkCoverage = pngVisibleCoverage(basePath + 'moot_blink.png'); // The blink sheet must not paint a full opaque card.
+console.log('Moot overlay visible coverage:', { eyes: eyeCoverage.toFixed(5), blink: blinkCoverage.toFixed(5) });
+assert(eyeCoverage < 0.25, 'Moot open-eye overlay must be sparse, not a full-card mask');
+assert(blinkCoverage < 0.25, 'Moot blinking must not flash an opaque rectangle over the sprite');
 
 const config = {
   game: {
@@ -78,6 +114,9 @@ assert.deepEqual(JSON.parse(JSON.stringify(creatureDb.moot.sprites)), {
 assert.equal(windowStub.CreatureGeneticsRender.SPECIES.moot.eyes.open, api.SPRITES.eyes);
 assert.equal(windowStub.CreatureGeneticsRender.SPECIES.moot.eyes.blink, api.SPRITES.blink);
 assert.equal(windowStub.CreatureGeneticsRender.SPECIES.moot.patterns.length, 0);
+assert.equal(windowStub.CreatureGeneticsRender.SPECIES.moot.fullBaseRecolor, false, 'Moot must not tint claws, teeth, hooves or outlines');
+assert.equal(windowStub.CreatureGeneticsRender.SPECIES.moot.baseRecolorKeyHex, '#9CBD9E', 'Moot coat tint uses only its mint-green authored pigment family');
+
 assert.deepEqual(JSON.parse(JSON.stringify(zone.roamingHerdSpecies)), ['voorg-ass']);
 assert.deepEqual(JSON.parse(JSON.stringify(zone.roamingForagerSpecies)), ['nazgraku', 'moot']);
 assert.equal(zone.roamingForagerCount, 2, 'Each grazing/foraging species gets its own stable exterior slot');
@@ -109,5 +148,12 @@ assert(read('docs/js/cooking-data.js').includes('"mootMeat": {'), 'Moot meat mus
 assert(read('docs/js/wildlife-spawn.js').includes('window.MootRegistration?.register?.(injectedDeps)'), 'WildlifeSpawn must call the registration before spawning');
 assert(read('docs/index.html').includes('js/moot-registration.js'), 'The registration must load before game.js');
 assert(!read('docs/js/farm-production.js').includes('Kept safely as an item until Moot animals are available'), 'Old placeholder must not be restored');
+const farmSource = read('docs/js/farm-animals.js'); // Regression for assigning a real Moot from the legacy baby item.
+assert.match(farmSource, /function makeMootAnimal\(col, row, livestockId, genotype\)/, 'Moot must have a world-visible barn factory');
+assert.match(farmSource, /moot:\s*makeMootAnimal/, 'Barn placement and world-load restoration must dispatch the Moot factory');
+const authorSource = read('docs/js/animal-chathead-frame.js'); // Authoring tool must support all five Moot assets and editable initial rig values.
+assert.match(authorSource, /REQUIRED_KINDS[^\n]*'moot'/, 'Moot is part of the author picker parity list');
+assert.match(authorSource, /SEED_SOURCES[^\n]*moot: 'uumkaoii'/, 'Moot rig values are editable as a borrowed first-pass seed');
+
 
 console.log('PASS Moot Northern Cliffs wildlife, five sprites, farm baby, inherited coat, drops and mobile diagnostics');
