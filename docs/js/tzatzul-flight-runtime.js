@@ -327,6 +327,13 @@
     mark(bird, 'captured visible prey');
     return true;
   }
+  function scoutPosition(area, x, y) {
+    const network = window.CliffRouteNetwork?.forArea?.(area); // Use the active area's authored grid dimensions; never scout beyond the map boundary.
+    const edge = (coordinate, cells) => Number.isFinite(Number(cells)) && Number(cells) > 4
+      ? Math.max(2 * tile(), Math.min((Number(cells) - 2) * tile(), coordinate))
+      : Math.max(2 * tile(), coordinate); // Dev/preview worlds without a cliff graph retain their safe lower bound.
+    return { x: edge(x, network?.cols), y: edge(y, network?.rows) };
+  }
   function seekFood(bird) {
     const state = bird?._tzFlight;
     if (!state || state.captive || state.phase === 'in-nest') return false;
@@ -337,17 +344,20 @@
       const dx = distant.x - bird.x, dy = distant.y - bird.y;
       const length = Math.max(1, Math.hypot(dx, dy));
       const approach = Math.max(0, length - 7 * tile()); // Fly to a staging point above prey, then dive.
-      const x = bird.x + dx / length * approach, y = bird.y + dy / length * approach;
-      if (startLeg(bird, { x, y, worldY: Math.max(n(state.roost?.worldY), surface(x, y) + 5) }, 'search', distant)) {
+      const position = scoutPosition(bird.areaId,
+        bird.x + dx / length * approach, bird.y + dy / length * approach); // Map boundaries constrain pursuit waypoints, too.
+      if (startLeg(bird, { ...position, worldY: Math.max(n(state.roost?.worldY), surface(position.x, position.y) + 5) }, 'search', distant)) {
         stats.scouts++; return true;
       }
     }
     const index = state.scoutIndex++; // Stable golden-angle circuits sample new hunting ground after each empty leg.
     const angle = index * 2.399963229728653; // Separates successive scouting spokes.
     const radius = SCOUT_RADIUS_TILES * (.65 + index % 3 * .2);
-    const x = Math.max(2 * tile(), n(state.roost.x) + Math.cos(angle) * radius * tile());
-    const y = Math.max(2 * tile(), n(state.roost.y) + Math.sin(angle) * radius * tile());
-    if (startLeg(bird, { x, y, worldY: Math.max(n(state.roost.worldY), surface(x, y) + 5) }, 'search')) {
+    const position = scoutPosition(bird.areaId,
+      n(state.roost.x) + Math.cos(angle) * radius * tile(),
+      n(state.roost.y) + Math.sin(angle) * radius * tile());
+    if (startLeg(bird, { ...position,
+      worldY: Math.max(n(state.roost.worldY), surface(position.x, position.y) + 5) }, 'search')) {
       stats.scouts++; return true;
     }
     return false;
