@@ -57,6 +57,14 @@ assert(gameSource.includes('return canOccupyAt(wx, wy, radius, footprintY + radi
   world.FurnitureTableSystem.blocksBox = () => false;
   world.AreaFootprintBlockers.blocksBox = () => true;
   assert.equal(probe(3.5 * 64, 3.5 * 64, 1.1), false, 'an independent full-footprint obstacle still blocks');
+  world.AreaFootprintBlockers.blocksBox = () => false;
+  const thinBarrier = (_area, _x, _z, half, worldY) => half >= radius - 1e-6 && worldY < 1.17;
+  world.AreaFootprintBlockers.blocksBox = thinBarrier;
+  assert.equal(probe(3.5 * 64, 3.5 * 64, 1.1), false, 'thin height-limited footprint blocks the body even between corner samples');
+  world.AreaFootprintBlockers.blocksBox = () => false;
+  world.FurnitureTableSystem.blocksBox = thinBarrier;
+  assert.equal(probe(3.5 * 64, 3.5 * 64, 1.1), false, 'thin height-limited furniture blocks the full player footprint');
+  world.FurnitureTableSystem.blocksBox = () => false;
 }
 
 assert(ruinSource.includes('const freeJump=deps.player?._freeJump;'), 'native ruin floor reconciliation must honor airborne jump state');

@@ -19262,7 +19262,11 @@
           if (grid[Math.floor(z)]?.[Math.floor(x)]?._banditTentCollisionId) return false;
           if (furnitureBlocksMovementAt(currentArea, x, z, feetY + 0.05)) return false;
         }
-        const footprintY = feetY + 0.05; // Height used by authored 3D furniture/footprints, at the player's true feet.
+        const footprintY = feetY + 0.05; // Native footprint providers sample the actual foot height, not the projectile's radius-offset value.
+        // A narrow blocker can touch the middle of the player footprint while
+        // missing all four sampled corners. Test the FULL box at real feet Y.
+        // canOccupyAt checks tile cover separately with a projectile underside
+        // offset and must not be the sole authority for narrow 3D furniture.
         if (window.AreaFootprintBlockers?.blocksBox(currentArea, wx / TILE, wy / TILE, radius / TILE, footprintY)) return false;
         if (window.FurnitureTableSystem?.blocksBox(currentArea, wx / TILE, wy / TILE, radius / TILE, footprintY)) return false;
         // canOccupyAt subtracts its collision radius from worldY to form a
