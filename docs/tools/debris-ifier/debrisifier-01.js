@@ -65,13 +65,17 @@
     const previewLoopNeedle = 'renderPreview();';
     const previewLoopReplacement = 'if(!window.__debrisEmbeddedRuntime)renderPreview();'; // Direct tool preview remains unchanged; the hidden generator never starts an iframe RAF/render loop.
 
-    // The original preview's 3–4 half-cell hallways were authored for orbit-view
-    // inspection, not the game's collision radius. Runtime-only V50 generation
-    // uses 5–6 cells, which become 5–6 world units after the game's 2× X/Z scale.
+    // The preview's narrow hallways cannot fit the player. Keep runtime widths at
+    // 5–6 cells. Reserved native V50 floors preserve their proven mechanism footprint;
+    // unreserved floors compact only the hallways not needed by traversal puzzles.
+    const hallSignatureNeedle = 'function pickInteriorHallRect(rng,axis,cols,rows){';
+    const hallSignatureReplacement = 'function pickInteriorHallRect(rng,axis,cols,rows,hallIndex){';
+    const hallCallNeedle = 'pickInteriorHallRect(rng,axis,128,128)';
+    const hallCallReplacement = 'pickInteriorHallRect(rng,axis,128,128,hallIndex)';
     const hallNeedle = 'const width=randomIntInclusive(rng,3,4),length=randomIntInclusive(rng,5,8);';
-    const hallReplacement = 'const width=randomIntInclusive(rng,5,6),length=randomIntInclusive(rng,5,8);';
+    const hallReplacement = 'const width=randomIntInclusive(rng,5,6),puzzleSlots=window.__devRuinPuzzleOptions?.safePath===false?2:3,keepLong=!!window.__devRuinLayoutReservation||hallIndex<=puzzleSlots,length=keepLong?randomIntInclusive(rng,5,8):randomIntInclusive(rng,2,4);'; // puzzleSlots counts long hallways available to the safe-path composer and two other hallway modules.
     const escapeHallNeedle = 'hallWidth=randomIntInclusive(rng,3,4),hallLen=10+rooms.length*3;';
-    const escapeHallReplacement = 'hallWidth=randomIntInclusive(rng,5,6),hallLen=10+rooms.length*3;';
+    const escapeHallReplacement = 'hallWidth=randomIntInclusive(rng,5,6),hallLen=window.__devRuinLayoutReservation?10+rooms.length*3:6;'; // Native V50 reserved puzzles retain their authored topology; standalone fallbacks start compact.
     const focusDoorNeedle = 'footprintWidth:cs*3,footprintDepth:cs,doorwayId:`${chosen.door.from}->${chosen.door.to}`,side:chosen.side';
     const focusDoorReplacement = 'footprintWidth:cs*Math.max(3,Number(chosen.door.widthCells)||3),footprintDepth:cs,doorwayId:`${chosen.door.from}->${chosen.door.to}`,side:chosen.side';
     const hallDoorNeedle = 'footprintWidth:network.cellSize*3,footprintDepth:network.cellSize,doorwayId:`${door.from}->${door.to}`';
@@ -163,7 +167,9 @@ function runtimeChooseMechanismActivatorType(rng,forcedType=null,linkedCubeDoor=
       ['headless embedded renderer', rendererNeedle, rendererReplacement],
       ['disable embedded preview RAF', previewLoopNeedle, previewLoopReplacement],
       ['skip standalone editor startup in embedded gameplay runtime', selfTestNeedle, selfTestReplacement],
-      ['hallway width', hallNeedle, hallReplacement],
+      ['hallway length helper argument', hallSignatureNeedle, hallSignatureReplacement],
+      ['hallway length attachment index', hallCallNeedle, hallCallReplacement],
+      ['hallway width and compact length', hallNeedle, hallReplacement],
       ['escape hallway width', escapeHallNeedle, escapeHallReplacement],
       ['focus doorway width', focusDoorNeedle, focusDoorReplacement],
       ['hallway doorway width', hallDoorNeedle, hallDoorReplacement],
@@ -200,6 +206,9 @@ function runtimeChooseMechanismActivatorType(rng,forcedType=null,linkedCubeDoor=
       expectedFurniturePaths: EMBEDDED_FURNITURE_COUNT,
       patchedBindings: patches.length,
       runtimeHallwayWidthCells: [5, 6],
+      runtimeCompactHallwayLengthCells: [2, 4], // Mobile diagnostics: ordinary V50 links are shorter; the first puzzle slots retain [5, 6].
+      runtimePuzzleHallwayLengthCells: [5, 8],
+      runtimeNativeHallwayLengthCells: [5, 8], // Reserved native floors retain their existing solver-tested layouts.
       runtimeDoorwayUsesAuthoredWidth: true,
       runtimePuzzleGenerationOptions: true,
       headlessEmbeddedPreview: true,

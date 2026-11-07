@@ -20,8 +20,8 @@
     shaftWall:8, // Matches ShaftHub's real shell thickness; door ends must be outside this wall.
     portalOffset:8, // Side-wall wing doors sit away from the climbing buttresses.
     floorHeight:16, // Dramatically taller continuous drops between independent puzzle floors.
-    minFloors:3,maxFloors:5,minWings:1,maxWings:4,
-    minChallenges:2,maxChallenges:4,
+    minFloors:3,maxFloors:5,minWings:4,maxWings:4, // Fill every free shaft wall exit; the entrance and native V50 keep their own portals.
+    minChallenges:1,maxChallenges:2, // Divide the same puzzle load into shorter independent branches, each with its own fire.
     corridorWidth:3,
     seed:1,
     nativeV50:false, // When enabled, upper stories reserve one EAST shaft portal for an independently generated V50 room graph.
@@ -61,7 +61,7 @@
     o.maxFloors=Math.max(o.minFloors,Math.min(5,o.maxFloors|0));
     o.minWings=Math.max(1,Math.min(4,o.minWings|0));
     o.maxWings=Math.max(o.minWings,Math.min(4,o.maxWings|0));
-    o.minChallenges=Math.max(2,Math.min(4,o.minChallenges|0));
+    o.minChallenges=Math.max(1,Math.min(4,o.minChallenges|0));
     o.maxChallenges=Math.max(o.minChallenges,Math.min(4,o.maxChallenges|0));
     o.corridorWidth=3;
     o.nativeV50=o.nativeV50===true; // Non-native story vaults and existing standalone floor tests preserve their original layout.
@@ -104,34 +104,34 @@
         .filter(d=>(!nativePort||d.side!==nativePort.side)&&(floor!==0||d.side!==o.groundEntranceSide));
       const maxCustomWings=Math.min(shuffled.length,nativePort?Math.min(3,o.maxWings-1):o.maxWings);
       const minCustomWings=Math.min(maxCustomWings,nativePort?Math.max(0,o.minWings-1):o.minWings);
-      const wingCount=integer(rng,minCustomWings,maxCustomWings), wings=[],rooms=[],hallways=[],doorways=[],braziers=[];
+      const wingCount=integer(rng,minCustomWings,maxCustomWings), wings=[],rooms=[],hallways=[],doorways=[],braziers=[]; // Each free exit is a separate fire objective, not another room added to a long corridor.
       rooms.push({id:`shaft-f${floor}`,kind:'shaft',...shaft,y,anchor:shaft.anchor,shared:true}); // Same x/z on every layer; unique floor-local room.
       for(let wi=0;wi<wingCount;wi++){
-        const dir=shuffled[wi],challengeCount=integer(rng,o.minChallenges,o.maxChallenges);
+        const dir=shuffled[wi],challengeCount=Math.min(o.maxChallenges,Math.max(o.minChallenges,wi===0?2:integer(rng,o.minChallenges,o.maxChallenges))); // First wing keeps the classic plate→ranged progression; the other exits get 1–2-room branches.
         const wingId=`floor${floor}-${dir.side}`, nodes=[], corridors=[];
         const lateral=dir.dx!==0?{dx:0,dz:1}:{dx:1,dz:0};
         // Only the multi-floor shaft snaps to the invisible anchor grid.
-        // Ordinary chambers are freely laid out, separated by short variable
-        // hallways; packing them between major anchors avoids 300-cell-long
-        // empty passages when a wing has four sequential puzzles.
+        // Rather than putting four puzzles in series, branch their rooms across
+        // the same story's other shaft exits. Every branch ends at another brazier;
+        // ordinary 3–6-tile connectors remain physically walkable.
         const outerRadius=Math.floor((o.shaftSize+o.shaftWall*2)/2);
         const portal={x:cx+dir.dx*outerRadius+lateral.dx*o.portalOffset,
           z:cz+dir.dz*outerRadius+lateral.dz*o.portalOffset};
         let previous={...portal}; // Far wall of the last room, initially the shaft portal threshold.
-        for(let stage=1;stage<=challengeCount+1;stage++){ // Always at least two actual puzzle rooms BEFORE the goal brazier.
-          const defence=stage>=3&&stage<=challengeCount&&rng()<.24; // Only later wing stages may reserve a full authored statue-defense arena.
+        for(let stage=1;stage<=challengeCount+1;stage++){ // One or two authored puzzles per shaft exit, followed by one required brazier.
+          const defence=wi>0&&stage===1&&challengeCount===1&&rng()<.24; // Short solo wings can still host the full 18×18 statue-defense arena; keep this puzzle family in weighted rolls.
           const rw=defence?18:(dir.dx?integer(rng,11,19):integer(rng,9,15));
           const rd=defence?18:(dir.dz?integer(rng,11,19):integer(rng,9,15));
-          const gap=integer(rng,7,15); // Variable-length hall, not a snapped room-grid separation.
-          const offset=integer(rng,-5,5),depth=Math.floor((dir.dx?rw:rd)/2);
+          const gap=integer(rng,3,6); // Short walk between consecutive puzzle rooms; no empty approach needs the old 7–15 cells.
+          const offset=integer(rng,-2,2),depth=Math.floor((dir.dx?rw:rd)/2); // Small lateral bends retain variety without stretching the empty corridor.
           const rx=previous.x+dir.dx*(gap+depth+1)+lateral.dx*offset;
           const rz=previous.z+dir.dz*(gap+depth+1)+lateral.dz*offset;
           const isGoal=stage===challengeCount+1;
           const id=`${wingId}-room${stage}`;
-          const challenge=isGoal?null:defence?'statueDefense':stage===1?'pressurePlate'
+          const challenge=isGoal?null:defence?'statueDefense'
+            :stage===1&&challengeCount>1?'pressurePlate'
             :stage===2?rangedPuzzles[integer(rng,0,rangedPuzzles.length-1)]
-            :stage===3&&rng()<.58?'ropeChain'
-            :rng()<.5?'melodyEcho':puzzles[integer(rng,0,puzzles.length-1)]; // Roll the original room even when replacing it to keep subsequent rolls stable.
+            :puzzles[integer(rng,0,puzzles.length-1)]; // Solo branches retain all implemented puzzle families; the lead wing guarantees plate + ranged.
           const plinthTrial=id===trialRoomId;
           const area=plinthTrial?rect(rx+dir.dx*(9-depth),rz+dir.dz*(9-depth),18,18):rect(rx,rz,rw,rd); // Keep the planned approach gap while reserving room for the authored spawners.
           const room={id,kind:isGoal?'brazier-chamber':'challenge-room',...area,y,wingId,
@@ -195,11 +195,12 @@
           &&wing.corridors.every(hall=>hall.rects.every(rect=>!intersects(rect,area)))));
       }
       for(const wing of floor.wings){
-        add(wing.id+'-challenges',wing.rooms.length>=3&&wing.rooms.length<=5);
+        add(wing.id+'-challenges',wing.rooms.length>=2&&wing.rooms.length<=5);
         add(wing.id+'-playableMechanisms',wing.rooms.slice(0,-1).every(
           r=>PLAYABLE_PUZZLES.includes(r.challenge)
-            &&(r.challenge!=='statueDefense'||r.w>=18&&r.d>=18))&&(wing.rooms[0].id===plan.trialRoomId||wing.rooms[0].challenge==='pressurePlate')
-          &&(wing.rooms[1].id===plan.trialRoomId||RANGED_PUZZLES.includes(wing.rooms[1].challenge)));
+            &&(r.challenge!=='statueDefense'||r.w>=18&&r.d>=18))
+          &&(wing.rooms.length===2||wing.rooms[0].id===plan.trialRoomId||wing.rooms[0].challenge==='pressurePlate')
+          &&(wing.rooms.length===2||wing.rooms[1].id===plan.trialRoomId||RANGED_PUZZLES.includes(wing.rooms[1].challenge)));
         add(wing.id+'-portalConnected', wing.corridors[0]?.start.x===wing.entry.x&&wing.corridors[0]?.start.z===wing.entry.z);
         const shellRadius=Math.floor((plan.options.shaftSize+plan.options.shaftWall*2)/2);
         add(wing.id+'-clearShaft', wing.rooms.every(room=>!
