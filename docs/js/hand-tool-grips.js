@@ -1372,9 +1372,15 @@
     editorUi.axisEnabled.checked = axis.enabled;
     editorUi.axisFields.style.display = axis.enabled ? '' : 'none';
     for (const end of ['start', 'end']) for (const coord of ['x', 'y', 'z']) editorUi.axisPairs[end][coord].set(axis[end][coord]);
-    editorUi.axisStatus.textContent = axis.enabled
-      ? `Custom axis length ${Math.hypot(axis.end.x-axis.start.x,axis.end.y-axis.start.y,axis.end.z-axis.start.z).toFixed(3)} units · Z ranges now measure distance from Nut along the Nut→Bridge direction.`
-      : 'Standard tool-local Z axis. Enable custom axis to align the nut and bridge without rotating the sprite.';
+    const previewAxis = global.HobunjiAttackEditorGripAxis?.debug?.(); // Console-free diagnosis: distinguish missing authored data from a hidden preview guide.
+    const previewMatches = previewAxis?.toolKey === editorCurrentToolKey();
+    const previewLabel = previewMatches ? (previewAxis.visible ? '3D guide visible' : '3D guide hidden') : '3D guide awaiting sprite';
+    const coordinates = point => `(${point.x.toFixed(3)}, ${point.y.toFixed(3)}, ${point.z.toFixed(3)})`;
+    const axisStatusText = axis.enabled
+      ? `Nut ${coordinates(axis.start)} → Bridge ${coordinates(axis.end)} · length ${Math.hypot(axis.end.x-axis.start.x,axis.end.y-axis.start.y,axis.end.z-axis.start.z).toFixed(3)} · ${previewLabel}. Grip ranges measure distance from Nut.`
+      : `Standard Z grip axis · ${previewLabel}. Enable the custom axis to show Nut → Bridge.`;
+    if (editorUi.axisStatus.textContent !== axisStatusText) editorUi.axisStatus.textContent = axisStatusText;
+    editorUi.axisRestore.style.display = editorCurrentToolKey() === 'kurraya' ? '' : 'none'; // A focused one-tap recovery is easier on mobile than resetting every tool's grip profile.
     editorUi.scalePair.set(normalizeToolScale(entry?.toolScale));
     editorUi.heightPair.set(normalizeHeightMultiplier(entry?.heightMultiplier));
     editorUi.spanEnabled.checked = span.enabled === true;
@@ -1450,6 +1456,7 @@
     panel.innerHTML = `
       <div class="poseGroupHead"><span class="dot" style="background:#fb7185"></span>Two-hand grip ranges</div>
       <label class="fieldRow" style="cursor:pointer"><input id="handCustomGripAxisEnabled" type="checkbox" style="width:auto;margin-right:6px">Custom 3D haft axis (Nut → Bridge)</label>
+      <button type="button" class="secondary" id="handRestoreKurrayaAxis">Restore exported Kurraya Nut → Bridge</button>
       <div id="handCustomGripAxisFields">
         <div class="help">Specify two points in the <b>instrument's local XYZ frame</b>. This becomes a virtual Z axis only for grip ranges. StartZ/EndZ are distances in item units along the line: 0 at Nut, full line length at Bridge. Use the buttons to position each point directly with the 3D Move gizmo.</div>
         <div class="poseGroupHead">Nut (axis origin)</div><div id="handCustomGripAxisStart"></div>
@@ -1471,6 +1478,17 @@
     host.insertBefore(panel, status);
     const spanFields = panel.querySelector('#handSecondarySpanFields'), animationFields = panel.querySelector('#handSecondaryAnimationFields'), spanEnabled = panel.querySelector('#handSecondarySpanEnabled');
     const axisEnabled = panel.querySelector('#handCustomGripAxisEnabled'); // Switches from ordinary Z to an artist-specified local 3D grip line.
+    const axisRestore = panel.querySelector('#handRestoreKurrayaAxis'); // Allows a one-tap Kurraya-only recovery without clearing unrelated saved tool calibrations.
+    axisRestore.addEventListener('click', () => {
+      if (editorCurrentToolKey() !== 'kurraya') return; // An asynchronous sprite swap cannot apply Kurraya geometry to a different instrument.
+      mutate(() => {
+        const entry = ensureTool('kurraya'); // The bundled export is the authored source of truth for this recovery action.
+        entry.customGripAxis = clone(DEFAULT_DATA.tools.kurraya.customGripAxis);
+        entry.primaryGripSpan = clone(DEFAULT_DATA.tools.kurraya.primaryGripSpan);
+        entry.secondaryGripSpan = clone(DEFAULT_DATA.tools.kurraya.secondaryGripSpan);
+      });
+      global.HobunjiAttackEditorGripAxis?.refresh?.();
+    });
     const axisFields = panel.querySelector('#handCustomGripAxisFields'); // Shown only when the artist opts into the custom axis.
     const axisStatus = panel.querySelector('#handCustomGripAxisStatus'); // Mobile-visible measurement and invalid-axis guidance.
     const axisPairs = { start: {}, end: {} }; // Numeric endpoints mirror 3D gizmo edits for both Nut and Bridge.
@@ -1549,7 +1567,7 @@
       pose[phase] = { enabled, dual, percent, primaryPercent, offhandEnabled, offhandCustom, offhandFields, offhandPairs };
     }
     spanEnabled.addEventListener('change', () => mutate(() => { currentSpan().enabled = spanEnabled.checked; }));
-    editorUi = { scalePanel, scalePair, heightPair, panel, axisEnabled, axisFields, axisStatus, axisPairs, mainEnabled, mainStartPair, mainEndPair, spanEnabled, startPair, endPair, pose, status: panel.querySelector('#handSecondarySpanStatus') };
+    editorUi = { scalePanel, scalePair, heightPair, panel, axisEnabled, axisRestore, axisFields, axisStatus, axisPairs, mainEnabled, mainStartPair, mainEndPair, spanEnabled, startPair, endPair, pose, status: panel.querySelector('#handSecondarySpanStatus') };
 
     document.getElementById('toolSpriteSelect')?.addEventListener('change', () => setTimeout(syncEditorSpanUi, 0));
     document.getElementById('handGripContextSelect')?.addEventListener('change', () => {
