@@ -14,6 +14,7 @@
   const now = () => (Number(deps?.calendar.day) || 1) + (Number(deps?.calendar.time01) || 0); // World time, including sleeping/time-passage transitions.
   function init(injectedDeps) {
     deps = injectedDeps;
+    window.CropVarieties?.attach?.({ cropData: deps.cropData, ITEM_DEFS: deps.ITEM_DEFS, inventory: deps.inventory }); // Existing registries own produce, seeds and cooking effects.
     for (const definition of Object.values(catalog)) deps.ITEM_DEFS[definition.planItem] = { label: definition.label + ' Plan', icon: '📜', cat: 'building', sellPrice: Math.round(definition.price * 0.4), desc: 'Place from the Farm map. Persistent queue; slower processing with enhanced yield.' };
     deps.ITEM_DEFS.mootBaby = { label: 'Baby Moot', icon: '🐾', cat: 'material', sellPrice: 0, desc: 'A baby Moot. Kept safely as an item until Moot animals are available.' };
     deps.ITEM_DEFS.voorgAssBaby = { label: 'Baby Voorg-ass', icon: '🫏', cat: 'livestock', sellPrice: 80, tags: ['Livestock', 'Baby'], desc: 'A baby Voorg-ass for the farm Nursery.' };
@@ -58,7 +59,7 @@
       onAction: action => { if (action !== 'obj_farmproduction_' + entry.id) return { ok: false, message: 'Unknown action.' }; open(entry.id); return { ok: true, message: 'Opened building.' }; } };
     for (let row = entry.row; row < entry.row + size.h; row++) for (let col = entry.col; col < entry.col + size.w; col++) deps.worldObjects.set(col + ',' + row, entry.object);
     window.HoneyfuzzleHouse?.syncVisual(entry, size); // Hovering swarm over an occupied Honeyfuzzle House.
-    window.AuthoredFurniture.load(entry.key).then(data => {
+    window.AuthoredFurniture.load(definition.base || entry.key).then(data => { // Seed maker starts with the existing 2×1 compost-box exterior rather than a missing model.
       if (generation !== entry.visualGeneration || !buildings.includes(entry)) return;
       if (!data) { lastError = 'Missing authored building: ' + entry.key; deps.debugLog(lastError, 'warn'); return; }
       entry.mesh = window.AuthoredFurniture.buildGroup(tintData(data), 0x8b6540);
@@ -86,7 +87,10 @@
       buildings.push(entry); spawn(entry);
     }
     loaded = true;
-    for (const entry of buildings) for (const result of entry.ready) window.ItemProcessing.ensureProcessedItemDef(result); // Saved finished goods remain registered even when their input queue is empty.
+    for (const entry of buildings) for (const result of entry.ready) {
+      if (catalog[entry.key]?.family === 'seedMaker') window.CropVarieties?.ensure?.(result.key);
+      else window.ItemProcessing.ensureProcessedItemDef(result); // Restored seeds and processed foods retain their distinct item authorities.
+    }
     ensureStarters(); tick();
   }
   function findStarterLocation(width, height, excludeId = null) {
@@ -212,7 +216,8 @@
         const batch = entry.queue[0]; // Only the front batch runs; subsequent batches start automatically.
         const completed = Math.min(batch.count, 1 + Math.floor((now() - entry.nextAt) / definition.daysPerInput)); // Aggregates time-passage catch-up without one loop per item.
         for (const output of batch.outputs) {
-          window.ItemProcessing.ensureProcessedItemDef(output);
+          if (definition.family === 'seedMaker') window.CropVarieties?.ensure?.(output.key);
+          else window.ItemProcessing.ensureProcessedItemDef(output);
           const previous = entry.ready.find(result => result.key === output.key && result.stars === batch.stars); // Output quality remains tied to its actual input quality.
           if (previous) previous.count += completed * definition.yield;
           else entry.ready.push({ ...copy(output), stars: batch.stars, count: completed * definition.yield });
@@ -235,7 +240,7 @@
     for (const result of entry.ready) {
       const amount = Math.min(result.count, Math.max(0, window.InventoryStacks.MAX_TOTAL - (Number(deps.inventory[result.key]) || 0))); // Per-item bag capacity.
       deps.inventory[result.key] = (Number(deps.inventory[result.key]) || 0) + amount;
-      window.CookingSystem?.recordItemQuality?.(result.key, result.stars, amount);
+      if (catalog[entry.key]?.family !== 'seedMaker') window.CookingSystem?.recordItemQuality?.(result.key, result.stars, amount); // Seeds have no cooked-food quality bucket.
       result.count -= amount; collected += amount;
     }
     entry.ready = entry.ready.filter(result => result.count > 0);
@@ -248,7 +253,8 @@
     const entry = buildings.find(candidate => candidate.id === id); // Modal reads actual persisted queue and output buffer.
     if (!entry) return;
     const definition = catalog[entry.key]; // Label/tier and silo capacity for this building.
-    if (definition.family === 'honeyfuzzleHouse') { window.HoneyfuzzleHouse?.open(entry); return; } // One-slot egg/swarm house with its own panel (js/honeyfuzzle-house.js).
+    if (definition.family === 'honeyfuzzleHouse') { window.HoneyfuzzleHouse?.open(entry); return; }
+    if (definition.family === 'seedMaker') { openSeedMaker(entry); return; } // Seed and crossbreeding controls have two parent selectors. // One-slot egg/swarm house with its own panel (js/honeyfuzzle-house.js).
     document.getElementById('farmProductionModal')?.remove();
     const modal = document.createElement('div'); // Touch-friendly in-file management and diagnostics.
     modal.id = 'farmProductionModal'; modal.style.cssText = 'position:fixed;inset:0;background:#000b;z-index:11000;display:grid;place-items:center;padding:12px';
@@ -355,6 +361,96 @@
     deps.saveMemberWorldData(); deps.saveFarmLayout();
     return { ok: used > 0, message: used ? 'Fertilized ' + used + ' crops for this harvest.' : 'Withdraw compost fertilizer and plant unfertilized crops first.' };
   }
+  // Seed-making takes exactly one harvested crop; optionally a second of the same species.
+  // Both parent stacks are checked before either is removed, including two from the same source.
+  function enqueueSeeds(id, first, second = null) {
+    if (!deps?.hasFarmPermission?.('storage')) return { ok: false, message: 'Storage permission required.' };
+    const entry = buildings.find(building => building.id === id && catalog[building.key]?.family === 'seedMaker');
+    if (!entry) return { ok: false, message: 'Seed maker not found.' };
+    const crops = window.CropVarieties; // The same genotype authority used by the trader, farming and cooking systems.
+    const family = crops?.produceFamily?.(first?.itemKey);
+    if (!family || (second && crops.produceFamily(second.itemKey) !== family))
+      return { ok: false, message: 'Choose harvested crops of the same kind. Different crop species cannot cross.' };
+    const storage = deps.loadStorage(); // One working storage snapshot prevents a double-spend on two parents.
+    const choices = [first, ...(second ? [second] : [])];
+    const needed = new Map(); // Source/key counters validate duplicates atomically before moving any item.
+    for (const choice of choices) {
+      if (!['bag', 'storage'].includes(choice.source)) return { ok: false, message: 'Invalid seed source.' };
+      const id = choice.source + ':' + choice.itemKey;
+      needed.set(id, { source: choice.source, key: choice.itemKey, count: (needed.get(id)?.count || 0) + 1 });
+    }
+    for (const value of needed.values()) {
+      const stock = value.source === 'bag' ? deps.inventory : storage;
+      if ((Number(stock[value.key]) || 0) < value.count) return { ok: false, message: 'Not enough harvested crops for this batch.' };
+    }
+    const rng = () => window.GameRandom?.random?.() ?? Math.random(); // Uses the same game RNG as harvests when available.
+    const offspring = second ? crops.breed(first.itemKey, second.itemKey, rng)
+      : crops.ensure(first.itemKey) || { seedKey: deps.cropData[family]?.seedKey, label: deps.cropData[family]?.label };
+    if (!offspring?.seedKey) return { ok: false, message: 'No compatible seeds were produced.' };
+    const quality = []; // Bag-grown input quality is consumed normally; storage crops use a neutral 3★.
+    for (const choice of choices) {
+      if (choice.source === 'bag') quality.push(Number(deps.consumeInput(choice.itemKey)) || 3);
+      else { storage[choice.itemKey]--; quality.push(3); }
+    }
+    if (choices.some(choice => choice.source === 'storage')) deps.saveStorage(storage);
+    entry.queue.push({ itemKey: first.itemKey, count: 1, stars: Math.min(...quality),
+      outputs: [{ key: offspring.seedKey, label: offspring.label + ' Seeds' }] }); // Queue snapshots preserve the generated seed key across saves.
+    if (entry.nextAt == null) entry.nextAt = now() + catalog[entry.key].daysPerInput;
+    deps.saveMemberWorldData(); deps.saveFarmLayout();
+    return { ok: true, message: second ? 'Crossbreeding ' + offspring.label + ' seeds.' : 'Extracting ' + offspring.label + ' seeds.' };
+  }
+
+  function openSeedMaker(entry) {
+    document.getElementById('farmProductionModal')?.remove();
+    const modal = document.createElement('div'); // Reuses the production modal's ID so only one building can be managed at a time.
+    modal.id = 'farmProductionModal';
+    modal.setAttribute('role', 'dialog'); modal.setAttribute('aria-modal', 'true'); modal.setAttribute('data-ctrl-panel', '');
+    modal.style.cssText = 'position:fixed;inset:0;background:#000b;z-index:11000;display:grid;place-items:center;padding:12px';
+    const panel = document.createElement('div'); // Scrollable and touch-sized for mobile planting/breeding.
+    panel.style.cssText = 'background:#27231e;color:#eee;padding:18px;border:1px solid #89785d;border-radius:12px;max-height:85vh;overflow:auto;width:min(520px,90vw)';
+    const heading = document.createElement('h3'); heading.textContent = '🌱 Seed Maker'; panel.append(heading);
+    const status = document.createElement('p'); // Queue and ready totals persist with the farm layout.
+    status.textContent = 'One harvest → 2 seeds in 2 game days. Two compatible harvests → 2 crossbred seeds. ' +
+      entry.queue.reduce((n, batch) => n + batch.count, 0) + ' queued; ' +
+      entry.ready.reduce((n, batch) => n + batch.count, 0) + ' seeds ready.';
+    panel.append(status);
+    const available = []; // Harvested crop inventory in bag and Farm Storage; seeds and cooked goods never appear.
+    const storage = deps.loadStorage();
+    for (const [source, stock] of [['bag', deps.inventory], ['storage', storage]]) {
+      for (const [itemKey, count] of Object.entries(stock || {})) {
+        if (!(count > 0) || !window.CropVarieties?.produceFamily?.(itemKey)) continue;
+        window.CropVarieties?.ensure?.(itemKey);
+        available.push({ source, itemKey, count, label: deps.ITEM_DEFS[itemKey]?.label || itemKey });
+      }
+    }
+    function selector(label, empty) {
+      const title = document.createElement('label'); title.textContent = label; title.style.display = 'block'; panel.append(title);
+      const select = document.createElement('select'); select.style.cssText = 'width:100%;margin:8px 0'; select.setAttribute('aria-label', label);
+      if (empty) { const option = document.createElement('option'); option.value = ''; option.textContent = 'No second parent — extract seeds'; select.append(option); }
+      for (const item of available) {
+        const option = document.createElement('option'); option.value = JSON.stringify({ source: item.source, itemKey: item.itemKey });
+        option.textContent = item.label + ' ×' + item.count + ' · ' + (item.source === 'bag' ? 'Bag' : 'Farm storage'); select.append(option);
+      }
+      title.append(select); return select;
+    }
+    const first = selector('First harvested crop', false); // Input one is always required.
+    const second = selector('Second harvested crop (optional)', true); // Crossing is opt-in, not accidental.
+    const button = (label, action) => { const el = document.createElement('button'); el.className = 'settings-small-btn'; el.textContent = label; el.onclick = action; panel.append(el); return el; };
+    button('Queue seeds', () => {
+      if (!first.value) return;
+      const outcome = enqueueSeeds(entry.id, JSON.parse(first.value), second.value ? JSON.parse(second.value) : null);
+      deps.showToast(outcome.message, outcome.ok); open(entry.id);
+    }).disabled = !available.length;
+    button('Collect finished seeds', () => { const outcome = collect(entry.id); deps.showToast(outcome.message, outcome.ok); open(entry.id); });
+    button('Close', () => modal.remove()).setAttribute('data-ctrl-cancel', '');
+    const diagnostics = document.createElement('details'); // Mobile-readable genotype and queue diagnostics.
+    const summary = document.createElement('summary'); summary.textContent = 'Seed maker diagnostics'; diagnostics.append(summary);
+    const pre = document.createElement('pre'); pre.style.cssText = 'white-space:pre-wrap;overflow-wrap:anywhere';
+    pre.textContent = JSON.stringify({ mostRecentChange: window.CropVarieties?.lastChange, worldTime: now(),
+      lastError, queue: entry.queue, ready: entry.ready }, null, 2);
+    diagnostics.append(pre); panel.append(diagnostics); modal.append(panel); document.body.append(modal);
+  }
+
   function renderRows(list, customization = list) {
     if (!deps || !list) return;
     const button = (row, label, action) => { const element = document.createElement('button'); element.className = 'settings-small-btn'; element.textContent = label; element.onclick = action; row.append(element); }; // Farm menu row actions reuse existing small button styling.
@@ -389,6 +485,6 @@
     }
   }
   function refreshColors() { for (const entry of buildings) { removeVisual(entry); spawn(entry); } }
-  window.FarmProduction = { init, serialize, load, clear, arm, placeAt, move, rotate, footprint: entry => footprint(entry.key, entry.rot), enqueue, collect, tick, open, renderRows, renderShop, refreshColors,
+  window.FarmProduction = { init, serialize, load, clear, arm, placeAt, move, rotate, footprint: entry => footprint(entry.key, entry.rot), enqueue, enqueueSeeds, collect, tick, open, renderRows, renderShop, refreshColors,
     hasPlacement: () => !!placement, cancelPlacement: () => { placement = null; }, outputsFor, canPlace, irrigate, connectedCrops, fertilize, entries: () => buildings, now };
 })();
