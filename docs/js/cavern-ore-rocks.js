@@ -63,18 +63,26 @@
       const column=Math.max(side,-y-.3,y-wall.height);
       body=smoothUnion(body,column,.16);
     }
-    // Deterministic low-frequency stone undulation runs continuously across
-    // tile boundaries. It also appears on fresh mining cuts, never an empty/black plane.
-    if(Number.isFinite(body))body+=.055*Math.sin(x*3.7+y*1.8+Math.sin(z*2.4))
-      *Math.cos(z*3.3-y*1.45)+.03*Math.sin(x*6.1+z*4.5+y*2.8);
-
     if(wall.door){
       const door=wall.door,dx=x-door.x,dz=z-door.z;
       const across=-door.nz*dx+door.nx*dz,depth=door.nx*dx+door.nz*dz;
-      const doorwayRock=roundedBox(across,y-1.47,depth,.66,1.50,.29,.14);
-      body=smoothUnion(body,doorwayRock,.12); // Stone piers and lintel join the same fused surface where they touch.
-      const opening=roundedBox(across,y-.90,depth,.37,1.03,.65,.07);
-      body=Math.max(body,-opening); // Subtract a through-hole, exposing closed, sculpted stone jambs and soffit.
+      const base=door.baseY||0,outerHeight=door.outerHeight||3.0;
+      const doorwayRock=roundedBox(across,y-(base+outerHeight/2-.12),depth,
+        door.outerHalfWidth||.66,outerHeight/2,door.outerDepth||.29,.14);
+      body=smoothUnion(body,doorwayRock,.12); // Door piers and lintel fuse to adjacent rocks with no overlapping meshes.
+    }
+    // Stable surface variation belongs to the whole final union, including
+    // jambs and freshly exposed mining faces, so carved cuts never look synthetic.
+    if(Number.isFinite(body))body+=.055*Math.sin(x*3.7+y*1.8+Math.sin(z*2.4))
+      *Math.cos(z*3.3-y*1.45)+.03*Math.sin(x*6.1+z*4.5+y*2.8);
+    if(wall.door){
+      const door=wall.door,dx=x-door.x,dz=z-door.z;
+      const across=-door.nz*dx+door.nx*dz,depth=door.nx*dx+door.nz*dz;
+      const base=door.baseY||0,openingHeight=door.openingHeight||2.0;
+      const irregularCut=.032*Math.sin(y*4.2+across*3.5)+.027*Math.sin(y*6.3-across*4.9);
+      const opening=roundedBox(across,y-(base+openingHeight/2-.10),depth,
+        door.openingHalfWidth||.37,openingHeight/2,door.openingDepth||.65,.07)+irregularCut;
+      body=Math.max(body,-opening); // Carve through rock: the subtraction creates complete inside surfaces around the hole.
     }
     return body;
   }
@@ -174,6 +182,38 @@
     wall.mesh=next;
     wall.scene.add(next);
     deps.markOutline(next);
+  }
+
+  function carveStoneGate(parent,options={}) {
+    const THREE=window.THREE;
+    if(!parent?.add||!Number.isFinite(options.x)||!Number.isFinite(options.z))return null;
+    const baseY=Number(options.y)||0;
+    const width=Math.max(.7,Number(options.openingWidth)||4.8); // Puzzle doorway's clear width, not the cosmetic frame width.
+    const height=Math.max(1.5,Number(options.openingHeight)||3.5); // Stone opening has a physical lintel above the rising slab.
+    const frameWidth=width+Math.max(.45,Number(options.sideThickness)||.95);
+    const frameHeight=Math.max(height+.75,Number(options.roofHeight)||9);
+    const depth=Math.max(.16,Number(options.wallDepth)||.31);
+    const wall={
+      tiles:new Map(),height:baseY+frameHeight,
+      bounds:{minX:options.x-frameWidth/2-.9,maxX:options.x+frameWidth/2+.9,
+        minZ:options.z-depth-.9,maxZ:options.z+depth+.9},
+      door:{x:options.x,z:options.z,nx:0,nz:1,baseY,outerHalfWidth:frameWidth/2,
+        outerHeight:frameHeight,outerDepth:depth,openingHalfWidth:width/2,
+        openingHeight:height,openingDepth:depth+.4},
+    }; // The same sculpting field works for a locked puzzle gate and for a mined wall.
+    const geometry=fusedRockGeometry(THREE,wall);
+    if(!geometry)return null; // Headless puzzle labs keep their existing authored gate fallback.
+    const material=window.OreRockTextures?.materialFor?.(THREE,'stone',{}) || new THREE.MeshStandardMaterial({color:0x777267,roughness:.94});
+    const mesh=new THREE.Mesh(geometry,material);
+    mesh.name='puzzle-cave-carved-roof-height-stone-gate';
+    mesh.castShadow=mesh.receiveShadow=true;
+    mesh.userData.caveSeparatorFused=true;
+    mesh.userData.caveCarvedDoorOpening=true;
+    mesh.userData.caveSeparatorHeight=wall.height;
+    mesh.userData.devRuinFootprintIgnore=true; // Existing gate blocker remains the sole authority for movement and pathfinding.
+    window.OreRockTextures?.fitRockMesh?.(mesh);
+    parent.add(mesh);
+    return mesh;
   }
 
   function senseTargets(scene) {
@@ -292,5 +332,5 @@
     const wall=separatorWalls.get(String(mapId)); // Scalar probe allows mobile debugging of mined holes without browser developer tools.
     return wall ? rockField(wall,Number(x),Number(y),Number(z)) : null;
   }
-  window.CavernOreRocks = { init, build, senseTargets, removeVisual, withBatchedCuts, debugSnapshot, probeRock, CAVERN_ORE_TINTS };
+  window.CavernOreRocks = { init, build, senseTargets, removeVisual, withBatchedCuts, carveStoneGate, debugSnapshot, probeRock, CAVERN_ORE_TINTS };
 })();
