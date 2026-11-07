@@ -149,7 +149,7 @@ assert(fluteStart>=0&&fluteEnd>fluteStart,'missing flute grip default');
 const grip=vm.runInNewContext('({' + grips.slice(fluteStart,fluteEnd+8) + '})').flute;
 assert.equal(grip.toolScale,0.6);
 assert.equal(grip.heightMultiplier,0.5);
-assert.equal(JSON.stringify(grip.primaryGrip),JSON.stringify({position:{x:0,y:0,z:0},rotationDeg:{pitch:0,yaw:0,roll:0}}));
+assert.equal(JSON.stringify(grip.primaryGrip),JSON.stringify({position:{x:0,y:0,z:0},rotationDeg:{pitch:90,yaw:-90,roll:0}}));
 assert.equal(JSON.stringify(grip.rangedPrimaryGrip),JSON.stringify({position:{x:-0.05,y:0.04,z:-0.1913},rotationDeg:{pitch:0,yaw:-90,roll:0}}));
 for(const key of ['primaryGripSpan','secondaryGripSpan','rangedSecondaryGripSpan'])assert.equal(grip[key].enabled,false);
 assert(grips.includes('if (resetFluteGrip) next.tools.flute = clone(DEFAULT_DATA.tools.flute)'),'saved grip migration must affect flute only');
@@ -283,6 +283,42 @@ assert(editor.includes("actionId: currentActionId, toolKey: preset.toolKey"),'ac
 assert(editor.includes("actionId: currentActionId, toolKey: currentAction().toolKey"),'undo/restore must pass authoritative Kurraya identity to grip loader');
 
 assert.equal(gripsApi.defaultData.tools.kurraya.customGripAxis.enabled,false,'Kurraya axis is opt-in until Nut and Bridge have been measured');
+const authoredRotations = [ // Only these three hand rotations differ from shipped defaults in the supplied full export.
+  ['kurraya','primaryGrip',{pitch:-135,yaw:3,roll:0}],
+  ['flute','primaryGrip',{pitch:90,yaw:-90,roll:0}],
+  ['bshuakauitl','rangedPrimaryGrip',{pitch:-90,yaw:90,roll:0}],
+];
+for (const [toolKey, field, expected] of authoredRotations) {
+  assert.equal(JSON.stringify(gripsApi.defaultData.tools[toolKey][field].rotationDeg),JSON.stringify(expected),
+    toolKey+' '+field+' must use the exact authored rotation');
+}
+assert.equal(JSON.stringify(gripsApi.defaultData.tools.kurraya.rangedPrimaryGrip.rotationDeg),
+  JSON.stringify({pitch:90,yaw:-90,roll:0}),'Kurraya independent ranged hand retains the supplied yaw and pitch');
+const savedGripDraft=JSON.parse(JSON.stringify(gripsApi.defaultData)); // Simulates a pre-rotation-update user's locally stored profile.
+delete savedGripDraft.authoredHandRotationsPreset; // New one-time migration should change only rotations, not replace the whole tool.
+savedGripDraft.tools.kurraya.primaryGrip.position={x:0.91,y:-0.17,z:0.22};
+savedGripDraft.tools.kurraya.customGripAxis={enabled:true,start:{x:0.42,y:0.13,z:-0.01},end:{x:-0.29,y:-0.09,z:0.06}};
+savedGripDraft.tools.kurraya.primaryGripSpan={enabled:true,startZ:0.9719,endZ:0.3333};
+savedGripDraft.tools.kurraya.secondaryGripSpan={enabled:true,startZ:0.6456,endZ:-0.5429};
+savedGripDraft.tools.kurraya.toolScale=1.23;
+savedGripDraft.tools.flute.primaryGrip.position={x:0.03,y:-0.05,z:0.07};
+savedGripDraft.tools.bshuakauitl.rangedPrimaryGrip.position={x:0.19,y:0.02,z:0.34};
+for (const [toolKey,field] of [['kurraya','primaryGrip'],['flute','primaryGrip'],['bshuakauitl','rangedPrimaryGrip']])
+  savedGripDraft.tools[toolKey][field].rotationDeg={pitch:0,yaw:0,roll:0};
+const untouchedDraftEntries=JSON.parse(JSON.stringify(savedGripDraft.tools)); // Compare every other calibration field after migration.
+gripsApi.replace(savedGripDraft);
+const migrated=gripsApi.data;
+for (const [toolKey,field,expected] of authoredRotations) {
+  assert.equal(JSON.stringify(migrated.tools[toolKey][field].rotationDeg),JSON.stringify(expected),
+    'old profile should adopt only '+toolKey+' '+field+' rotation');
+  untouchedDraftEntries[toolKey][field].rotationDeg={...expected}; // The only allowed delta between the user profile and the migrated one.
+}
+assert.equal(JSON.stringify(migrated.tools),JSON.stringify(untouchedDraftEntries),
+  'saved-grip migration must not touch XYZ, 3D axis, spans, scales or any unrelated tool');
+gripsApi.mutate(draft=>{draft.tools.kurraya.primaryGrip.rotationDeg.pitch=-120;}); // Later user tuning must survive normalizations.
+assert.equal(gripsApi.data.tools.kurraya.primaryGrip.rotationDeg.pitch,-120,'one-time migration must not reapply after artist edits');
+gripsApi.replace(gripsApi.defaultData); // Restore canonical fixture for the remaining hand-axis runtime tests.
+
 const length=Math.sqrt(0.32); // Distance from (0.1,0.2,0) Nut to (0.5,0.6,0) Bridge in tool units.
 gripsApi.mutate(data=>{
   const k=data.tools.kurraya; // This is the actual game-editor shared grip profile, not a second fixture.
