@@ -263,7 +263,13 @@ assert.equal(handBridge.currentToolKey(local),'hatchet','closing Kurraya restore
 // Integration tests for the optional custom 3D virtual Z and the detachable plucking hand.
 // Instantiate the real grip module with a no-op frame scheduler (there is no browser DOM here).
 const gripWindow = { RuntimeFrameScheduler: {register:()=>{}}, location:{pathname:'/game'} };
-vm.runInNewContext(grips,{window:gripWindow,document:{getElementById:()=>null}});
+const savedGripStorage = new Map(); // Simulates the browser's saved hand-tool-grips draft and verifies an actual reload.
+const gripLocalStorage = {
+  getItem:key=>savedGripStorage.get(key) ?? null,
+  setItem:(key,value)=>savedGripStorage.set(key,value),
+  removeItem:key=>savedGripStorage.delete(key),
+};
+vm.runInNewContext(grips,{window:gripWindow,document:{getElementById:()=>null},localStorage:gripLocalStorage});
 const gripsApi=gripWindow.HobunjiHandToolGrips;
 assert(gripsApi?.customGripAxisForTool && gripsApi?.sampleFreeRightHand,'real runtime must export both custom-axis and independent-hand samplers');
 const neutralGrip=gripsApi.animationGripAt(0,kurrayaPlayNote,kurrayaPlayNote.poses,'attack','kurraya'); // Kurraya's Neutral is a proper two-handed resting instrument pose.
@@ -319,7 +325,8 @@ oldKurrayaDraft.tools.kurraya.primaryGripSpan={enabled:false,startZ:0,endZ:0.5};
 oldKurrayaDraft.tools.kurraya.secondaryGripSpan={enabled:false,startZ:0,endZ:0.5};
 oldKurrayaDraft.tools.kurraya.primaryGrip.position={x:0.17,y:-0.08,z:0.02}; // Non-axis hand authoring must survive upgrading the saved draft.
 oldKurrayaDraft.tools.hatchet.toolScale=1.43;
-gripsApi.replace(oldKurrayaDraft);
+gripLocalStorage.setItem('hobunji.handToolGrips.v1',JSON.stringify(oldKurrayaDraft));
+assert.equal(gripsApi.loadLocal(),true,'the editor must upgrade real localStorage drafts on reload');
 assert.equal(JSON.stringify(gripsApi.data.tools.kurraya.customGripAxis),JSON.stringify(exportedKurrayaAxis),
   'old disabled Kurraya axis should migrate to the exported geometry');
 assert.equal(JSON.stringify(gripsApi.data.tools.kurraya.primaryGripSpan),JSON.stringify(exportedMainSpan));
@@ -327,6 +334,8 @@ assert.equal(JSON.stringify(gripsApi.data.tools.kurraya.secondaryGripSpan),JSON.
 assert.equal(gripsApi.data.tools.kurraya.primaryGrip.position.x,0.17,'hand target XYZ remains authored');
 assert.equal(gripsApi.data.tools.hatchet.toolScale,1.43,'unrelated weapon calibration is never reset');
 gripsApi.mutate(draft=>{draft.tools.kurraya.customGripAxis.enabled=false;});
+gripsApi.saveLocal(); // Editing and reloading after the one-time upgrade must not silently reactivate a deliberately disabled custom axis.
+assert.equal(gripsApi.loadLocal(),true);
 assert.equal(gripsApi.customGripAxisForTool('kurraya').enabled,false,
   'an artist can still switch the migrated axis off later without it being automatically reenabled');
 const preexistingCustom = JSON.parse(JSON.stringify(gripsApi.defaultData));
