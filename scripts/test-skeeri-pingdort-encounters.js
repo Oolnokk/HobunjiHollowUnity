@@ -105,7 +105,7 @@ async function check(){
   const ruin=w.SkeeriRuins.mount({rec:{scene,mapData:{id:area}},plan,seed:11,
     getPlayerY:()=>0,difficulty:5});
   assert.equal(ruin.hatches.length,5);assert.equal(ruin.bombers.length,3);
-  assert.deepEqual(ruin.hatches.map(h=>h.floor),[0,1,2,3,4],'hatch difficulty follows floor index, not world elevation');
+  assert.equal(ruin.hatches.map(h=>h.floor).join(','),'0,1,2,3,4','hatch difficulty follows floor index, not world elevation');
   const hatch=ruin.hatches.find(h=>h.size==='small')||ruin.hatches[0];
   const before=ruin.actors.size;assert(w.SkeeriRuins.activateCompartment(hatch.id));
   for(let i=0;i<10;i++)w.SkeeriRuins.update(.1);
