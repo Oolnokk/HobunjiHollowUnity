@@ -92,8 +92,71 @@
     function pickCell(outerBias){const rim=BV>>2;for(let attempt=0;attempt<300;attempt++){let ci,cj;if(rng()<outerBias){const side=Math.floor(rng()*4);if(side===0){ci=Math.floor(rng()*CW);cj=Math.floor(rng()*rim);}else if(side===1){ci=Math.floor(rng()*CW);cj=(CH-1-Math.floor(rng()*rim))|0;}else if(side===2){ci=Math.floor(rng()*rim);cj=Math.floor(rng()*CH);}else{ci=(CW-1-Math.floor(rng()*rim))|0;cj=Math.floor(rng()*CH);}}else{ci=Math.floor(rng()*CW);cj=Math.floor(rng()*CH);}if(!isPlayable(ci,cj))return[ci,cj];}return[0,0];}
     for(let p=0;p<55;p++){const[ci,cj]=pickCell(0.12);raiseGroup(pickGroup(ci,cj,4+Math.floor(rng()*18)),0.05+rng()*0.32);}for(let p=0;p<32;p++){const[ci,cj]=pickCell(0.88);raiseGroup(pickGroup(ci,cj,10+Math.floor(rng()*38)),0.9+rng()*3.2);}
     const RIM_V=20,RIM_MIN=BASE+3.0;for(let gj=0;gj<GH;gj++)for(let gi=0;gi<GW;gi++){if(gj>=RIM_V&&gj<=GH-1-RIM_V&&gi>=RIM_V&&gi<=GW-1-RIM_V)continue;const k=gj*GW+gi;if(Y[k]<RIM_MIN)Y[k]=RIM_MIN;}
+
+    // The playable Northern Cliffs river now leaves through the southeast edge.
+    // Extend that watercourse across the otherwise solid decorative scenery rim,
+    // not the world boundary: collision/traversal still end at the playable grid.
+    let southeastMireMouth = null; // Actual rendered edge-water span, used by the exterior bank cut and decorative water sheet.
+    if (mapId === 'map_northern_cliffs' && zGrid && zcols > 2 && zrows > 2) {
+      const expectedRow = Math.round(zrows * 0.8); // Mirrors the generator's southeast Mire outlet latitude after tile-density scaling.
+      const firstRow = Math.floor(zrows * 0.65); // Avoids recognizing unrelated northern or central edge waterways.
+      const lastRow = Math.min(zrows - 1, Math.ceil(zrows * 0.9));
+      const isRiver = row => ['river', 'waterfall'].includes(zGrid[row]?.[zcols - 1]?.type); // Only broad river-mouth tiles, not incidental stream/pond water, open this rim.
+      let closestRow = -1; // Nearest east-edge water row to the authored outlet latitude.
+      for (let row = firstRow; row <= lastRow; row++) {
+        if (!isRiver(row)) continue;
+        if (closestRow < 0 || Math.abs(row - expectedRow) < Math.abs(closestRow - expectedRow)) closestRow = row;
+      }
+      if (closestRow >= 0) {
+        let minRow = closestRow, maxRow = closestRow; // Contiguous river width to continue without widening unrelated scenery cuts.
+        while (minRow > 0 && isRiver(minRow - 1)) minRow--;
+        while (maxRow + 1 < zrows && isRiver(maxRow + 1)) maxRow++;
+        const center = (minRow + maxRow + 1) * 0.5; // World-Z center shared by the bank cut and external water ribbon.
+        const halfWidth = Math.max(0.5, (maxRow - minRow + 1) * 0.5); // Exact east-edge river width, not an arbitrary new channel.
+        const mouthTier = Number(zGrid[closestRow][zcols - 1].elevTier) || 0; // Aligns the exterior water surface with the final exported river tier.
+        const floorY = deps.NORMAL_TOP + mouthTier * deps.PLATEAU_UNIT - 0.8; // Sits beneath the river surface, so the decorative ground cannot bury the water.
+        const waterY = deps.NORMAL_TOP + mouthTier * deps.PLATEAU_UNIT - 0.55 + 0.015; // Mirrors the shared deep-water surface offset at the playable edge.
+        const bankShoulder = 1.25; // Soft rocky bank between the water ribbon and the raised outer cliffs.
+        southeastMireMouth = { center, halfWidth, waterY }; // Used below to render the water continuation across the lowered rim.
+        for (let gj = BV; gj <= BV + PVH; gj++) {
+          const worldZ = (gj - BV) * 0.5; // Z coordinate of this border terrain vertex.
+          const outsideBank = Math.abs(worldZ - center) - halfWidth; // Negative inside the water channel, positive on its shoulders.
+          if (outsideBank >= bankShoulder) continue;
+          const weight = outsideBank <= 0 ? 1 : 1 - outsideBank / bankShoulder; // Keeps the bank lip natural rather than a vertical slot.
+          for (let gi = BV + PVW; gi < GW; gi++) {
+            const vertexIndex = gj * GW + gi; // Exterior heightfield vertex to lower before its geometry is built.
+            Y[vertexIndex] += (floorY - Y[vertexIndex]) * weight;
+          }
+        }
+      }
+    }
+
     const pos=new Float32Array(GW*GH*3),uv=new Float32Array(GW*GH*2);for(let gj=0;gj<GH;gj++)for(let gi=0;gi<GW;gi++){const k=gj*GW+gi,wx=(gi-BV)*0.5,wz=(gj-BV)*0.5;pos[k*3]=wx;pos[k*3+1]=Y[k];pos[k*3+2]=wz;uv[k*2]=wx;uv[k*2+1]=wz;}
     const idx=[];for(let cj=0;cj<CH;cj++)for(let ci=0;ci<CW;ci++){if(isPlayable(ci,cj))continue;const[v00,v10,v01,v11]=cv4(ci,cj);idx.push(v00,v01,v11,v00,v11,v10);}const geo=new THREE.BufferGeometry();geo.setAttribute('position',new THREE.BufferAttribute(pos,3));geo.setAttribute('uv',new THREE.BufferAttribute(uv,2));geo.setIndex(new THREE.BufferAttribute(idx.length>65535?new Uint32Array(idx):new Uint16Array(idx),1));geo.computeVertexNormals();const mesh=new THREE.Mesh(geo,deps.resolveTileMat(mapId,deps.TileType.GRASS));mesh.receiveShadow=true;mesh.userData.hobunjiGroundSurface=true;mesh.userData.terrainRenderChunkEligible=true;zScene.add(mesh); // Ground tag: held weapons x-ray border terrain like the playable floor; chunk opt-in lets TerrainRenderChunks frustum-cull this ~120k-triangle ring.
+    if (southeastMireMouth) {
+      const { center, halfWidth, waterY } = southeastMireMouth; // Same channel extents carved into the surrounding terrain.
+      const verts = [], uvs = [], faces = []; // Simple decorative water ribbon extending out past the world boundary.
+      for (let step = 0; step <= BORDER_W; step++) {
+        const x = zcols + step; // Scenic world-X coordinate from the map's east edge to its outer border.
+        const vertex = step * 2; // Pair of left/right vertices for one lengthwise ribbon segment.
+        verts.push(x, waterY, center - halfWidth, x, waterY, center + halfWidth);
+        uvs.push(step, 0, step, halfWidth * 2);
+        if (step) faces.push(vertex - 2, vertex, vertex + 1, vertex - 2, vertex + 1, vertex - 1);
+      }
+      const waterGeometry = new THREE.BufferGeometry(); // A single draw call for the southeast scenic water continuation.
+      waterGeometry.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
+      waterGeometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+      waterGeometry.setIndex(faces);
+      waterGeometry.computeVertexNormals();
+      const waterMaterial = new THREE.MeshStandardMaterial({ color: 0x4f9fbd, transparent: true, opacity: 0.78, roughness: 0.28, metalness: 0, side: THREE.DoubleSide, depthWrite: false }); // Matches the existing town scenery-water fallback.
+      const waterMesh = new THREE.Mesh(waterGeometry, waterMaterial); // Non-interactive river surface outside the playable map.
+      waterMesh.name = `${mapId}_southeast_mire_water_continuation`;
+      waterMesh.userData.waterSurfaceRole = 'scenery';
+      waterMesh.userData.nonTraversableRiverOutlet = true;
+      waterMesh.renderOrder = 2;
+      zScene.add(waterMesh);
+    }
+
     const cliffMat=deps.resolveCliffMat(mapId);function elevStoneSkin(gjMin,gjMax,giMin,giMax){const skinPos=[],skinUv=[],idxArr=[];let vi=0;for(let gj=gjMin;gj<gjMax;gj++)for(let gi=giMin;gi<giMax;gi++){const y00=Y[gj*GW+gi],y10=Y[gj*GW+gi+1],y01=Y[(gj+1)*GW+gi],y11=Y[(gj+1)*GW+gi+1],cnx=-0.5*((y10+y11)-(y00+y01)),cnz=0.5*((y10-y01)-(y11-y00));if(cnx*cnx+cnz*cnz<=0.194)continue;const x0=(gi-BV)*0.5,x1=x0+0.5,z0=(gj-BV)*0.5,z1=z0+0.5;skinPos.push(x0,y00,z0,x1,y10,z0,x0,y01,z1,x1,y11,z1);skinUv.push(x0,z0,x1,z0,x0,z1,x1,z1);idxArr.push(vi,vi+2,vi+3,vi,vi+3,vi+1);vi+=4;}if(!skinPos.length)return;const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(skinPos,3));g.setAttribute('uv',new THREE.Float32BufferAttribute(skinUv,2));g.setIndex(new THREE.BufferAttribute(idxArr.length>65535?new Uint32Array(idxArr):new Uint16Array(idxArr),1));g.computeVertexNormals();zScene.add(cliffSkinMesh(g,cliffMat));}
     elevStoneSkin(0,BV,0,GW-1);elevStoneSkin(GH-1-BV,GH-1,0,GW-1);elevStoneSkin(BV,GH-1-BV,0,BV);elevStoneSkin(BV,GH-1-BV,GW-1-BV,GW-1);
 
