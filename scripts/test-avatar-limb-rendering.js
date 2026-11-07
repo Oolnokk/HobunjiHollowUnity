@@ -152,6 +152,11 @@ root.children.splice(0, 1, finalFoot);
 assert(feet.window.HobunjiFeetOutlineParity.refreshRig(root));
 assert(feet.registered.has(finalFoot), 'late final GLB receives water registration');
 assert(finalFoot.layers.mask & (1 << 1), 'late replacement GLB receives shell outline layer');
+const intentionalNoShell = mesh('right_foot'); // Existing author noOutline flag must retain priority over forced fallback shell registration.
+intentionalNoShell.userData.noOutline = true;
+root.children.push(intentionalNoShell);
+assert(feet.window.HobunjiFeetOutlineParity.refreshRig(root), 'right-foot opt-out is rescanned');
+assert.equal(intentionalNoShell.layers.mask & (1 << 1), 0, 'explicit noOutline is never overridden by the climb fix');
 finalFoot.matrixWorld.elements[12] = 7;
 draw(finalFoot, {}, camera, { colorWrite: true })();
 finalFoot.matrixWorld.elements[12] = 100;
