@@ -509,7 +509,8 @@
         continue;
       }
 
-        const data   = deps.cropData[tile.crop];
+        const data   = deps.cropData[tile.crop] || (window.CropVarieties?.ensure?.(tile.crop) && deps.cropData[tile.crop]);
+        if (!data) continue;
         const growth = Math.min(tile.cropAge / data.growDays, 1.0);
         const surfY  = deps.tileSurfaceY(tile.type) + tile.water * deps.WATER_UNIT;
 
@@ -544,7 +545,8 @@
 
         } else {
           // ── Simple colored cube (all other crops) ────────────────
-          const colors = CROP_COLORS[tile.crop] || CROP_COLORS.garlink;
+          const variety = data.varietyColor; // Genetic ripe color is used by the existing simple crop-mesh path.
+          const colors = variety == null ? (CROP_COLORS[tile.crop] || CROP_COLORS.garlink) : { body: variety, ripe: variety, sprout: 0x6c9751 };
           const size   = CROP_MIN_SCALE + (CROP_MAX_SCALE - CROP_MIN_SCALE) * growth;
           const color  = tile.cropReady ? colors.ripe
                        : growth < 0.15  ? colors.sprout
@@ -794,7 +796,8 @@
       group.scale.setScalar(size);
       return { mesh: group, lift: 0.01 };
     }
-    const colors = CROP_COLORS[crop] || CROP_COLORS.garlink;
+    const variety = window.CropVarieties?.ensure?.(crop)?.color; // NPC-held cultivar colors match farm plots.
+    const colors = variety == null ? (CROP_COLORS[crop] || CROP_COLORS.garlink) : { body: variety, ripe: variety, sprout: 0x6c9751 };
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshLambertMaterial({ color: ready ? colors.ripe : g < 0.15 ? colors.sprout : colors.body }));
     mesh.scale.setScalar(size);
     return { mesh, lift: size / 2 + 0.02 };
