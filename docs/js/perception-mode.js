@@ -116,7 +116,8 @@
   }
 
   function sourceMap(material) {
-    return material?.map || material?.uniforms?.map?.value || material?.uniforms?.tMap?.value || material?.uniforms?.uMap?.value || null;
+    return material?.map || material?.uniforms?.map?.value || material?.uniforms?.tMap?.value || material?.uniforms?.uMap?.value
+      || material?.uniforms?.uGrassTex?.value || null; // ReagentPlants' leaf silhouettes are custom grass shaders; preserve their texture alpha in the glow.
   }
 
   function maskMaterialFor(source, category, skinned) {
