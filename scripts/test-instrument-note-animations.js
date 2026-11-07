@@ -168,7 +168,7 @@ const leg={
   getStanceDrop:()=>sinkUnits,
 };
 const musician={
-  HeldActionAnimations:{flutePlayNote},KurrayaInstrument:api,
+  HeldActionAnimations:{flutePlayNote,kurrayaPlayNote},KurrayaInstrument:api,
   SCRATCHBONES_CONFIG:{game:{assets:{pngPlaneAvatar:{proceduralFeet:{stanceDrop:{enabled:true}}}}}},
   PlayerBodyTransformComposer:{
     setChannel:(key,v)=>composed.set(key,v),clearChannel:key=>composed.delete(key),
@@ -197,6 +197,20 @@ musician.WeaponStanceDropRuntime.endInstrumentNote();
 sinkCall();
 assert.equal(sinkUnits,0,'closing flute mode must release leg sink');
 assert.equal(composed.has('weapon-stance-drop'),false,'closing flute mode must clear body translation');
+assert.equal(musician.WeaponStanceDropRuntime.beginInstrumentNote('invalid'),false,'non-instrument actions cannot request note body sink');
+assert.equal(musician.WeaponStanceDropRuntime.beginInstrumentNote('kurraya'),true,'Kurraya sound must use the shared instrument sink system');
+clock.ms += kurrayaPlayNote.durationS*1000*kurrayaPlayNote.strikeFrac;
+sinkCall();
+assert(Math.abs(sinkUnits-0.03)<1e-9,'Kurraya Strike bends legs by exactly 3% of model height');
+assert(Math.abs(composed.get('weapon-stance-drop').translation.y+0.03)<1e-9,
+  'Kurraya Strike must lower the same live player body as the Flute');
+assert.equal(musician.WeaponStanceDropRuntime.getDebug().instrumentNoteKey,'kurraya','mobile diagnostics must identify the active instrument');
+clock.ms += kurrayaPlayNote.durationS*1000+1;
+sinkCall();
+assert.equal(sinkUnits,0,'finished Kurraya note must stop applying its authored body bend');
+musician.WeaponStanceDropRuntime.endInstrumentNote();
+assert.equal(musician.WeaponStanceDropRuntime.getDebug().instrumentNoteActive,false,'ending Kurraya mode clears stale body sink');
+
 
 
 // The runtime must use the actual mouth-mounted flute and its Ranged grip rather than the last equipped weapon.
@@ -368,8 +382,10 @@ api.beginPlayerKurraya();
 assert.equal(api.playerKurrayaHandTarget().holder,neutralHolder,'Neutral must find the already-held instrument without requiring a first sounded note');
 api.endPlayerKurraya();
 delete window.PlayerBodyTransformComposer;
+window.WeaponStanceDropRuntime = musician.WeaponStanceDropRuntime; // Proves the actual player-note path calls the physical body-sink system.
 api.beginPlayerKurraya();
 assert.equal(api.playPlayerKurrayaNote(),true,'sounded player note starts the free-hand clock');
+assert.equal(musician.WeaponStanceDropRuntime.getDebug().instrumentNoteKey,'kurraya','player pluck must start a Kurraya leg/body animation');
 const noteParent={visible:true}; // The real group's immediate held holder is returned as the grip frame.
 const playerAssembly={userData:{kurrayaAssembly:true},position:{x:0,y:0,z:0},rotation:{x:0,y:0,z:0},parent:noteParent};
 api.triggerTwitch(api.newTwitchState(),playerAssembly);
@@ -381,6 +397,7 @@ clock.ms += 30;
 assert(api.playerRightHandPose().influence>0,'a genuine note must interpolate the free hand');
 kurrayaPlayNote.poses=savedFreePhases;
 api.endPlayerKurraya();
+assert.equal(musician.WeaponStanceDropRuntime.getDebug().instrumentNoteKey,null,'closing music clears the Kurraya body-sink channel');
 assert.equal(api.playerRightHandPose(),null,'closing player music releases the free hand');
 assert.equal(api.playerKurrayaHandTarget(),null,'closing player music releases the captured holder');
 assert.equal(api.playPlayerKurrayaNote(),false,'no player hand notes outside a session');
