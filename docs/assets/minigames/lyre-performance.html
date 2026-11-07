@@ -2650,6 +2650,24 @@
     return true;
   }
 
+  function nextAutomaticSubdivisionAt(referenceAt = nowMs()) {
+    const interval = pluckIntervalMs(state.pluckInputMode); // Uses the same quarter-BPM subdivision grid as scheduled automatic plucks.
+    if (!(interval > 0)) return referenceAt;
+    const sampledAt = nowMs(); // Projects the shared harmony transport onto the input timestamp rather than restarting its phase.
+    const elapsedAtReference = sharedTransportData(sampledAt).performanceElapsedMs + (referenceAt - sampledAt);
+    const remainder = ((elapsedAtReference % interval) + interval) % interval;
+    return referenceAt + (remainder < 2 ? interval : interval - remainder);
+  }
+
+  function armAutomaticPulseAt(targetAt, generation = state.pluckGeneration) {
+    clearTimeout(state.pluckTimer);
+    state.pluckNextPulseAt = targetAt;
+    state.pluckTimer = setTimeout(() => {
+      state.pluckTimer = null;
+      void playFrettedPluckPulse(generation);
+    }, automaticPulseTimerDelay(targetAt)); // The same precision path handles both a missing tail timer and a legato re-entry.
+  }
+
   function beginAutoReleaseTail(fret,sourceId) {
     if (!fret || !state.pluckInputMode) return false;
     const releasedAt = nowMs();
@@ -2657,10 +2675,9 @@
     const stopAt = Math.max(initialBeatStopAt,nextSharedBeatAt(releasedAt)); // A tap always gets its original beat fill; a longer hold finishes the beat in which it was released.
     state.autoReleaseTail = {fret,sourceId,releasedAt,stopAt};
     if (!state.pluckTimer || state.pluckNextPulseAt >= stopAt - 2) {
-      clearTimeout(state.pluckTimer);
-      state.pluckNextPulseAt = stopAt;
-      const generation = state.pluckGeneration;
-      state.pluckTimer = setTimeout(() => { state.pluckTimer = null; void playFrettedPluckPulse(generation); },Math.max(0,stopAt - nowMs()));
+      const nextSubdivisionAt = nextAutomaticSubdivisionAt(releasedAt); // A temporarily missing timer must not turn the whole remaining beat into silence.
+      const nextTarget = Math.min(nextSubdivisionAt,stopAt);
+      armAutomaticPulseAt(nextTarget);
     }
     refs.transportStatus.innerHTML = `<strong>${automaticPluckLabel()} beat fill:</strong> ${midiName(noteMidi(fret.noteIndex,fret.modeOffset))} will play every remaining subdivision before the next shared beat.`;
     log('Auto-pick beat fill armed',`${midiName(noteMidi(fret.noteIndex,fret.modeOffset))} · ${Math.round(stopAt - releasedAt)} ms remaining`);
@@ -4023,12 +4040,20 @@
     if (!state.pluckInputMode || !pendingPulse) return false;
     const resumedTail = Boolean(state.autoReleaseTail); // Converts a pending silent beat-boundary cleanup back into a sounding pulse.
     state.autoReleaseTail = null;
+    if (resumedTail && state.pluckTimer) {
+      const interval = pluckIntervalMs(state.pluckInputMode); // Detects a stranded silent cleanup timer rather than creating another roll.
+      const nextSubdivisionAt = nextAutomaticSubdivisionAt();
+      if (interval > 0 && state.pluckNextPulseAt - nextSubdivisionAt > 2) {
+        armAutomaticPulseAt(nextSubdivisionAt); // Rejoin the transport at its next subdivision while retaining the existing step index.
+      }
+    }
     state.pluckLegatoHandoffs += 1;
     log('Auto-pick legato handoff',`${reason} · step ${state.pluckStep} · ${resumedTail ? 'release tail resumed' : 'roll continues'}`);
     return true;
   }
 
-  function restartActiveFrettedPluck() {    if (!state.pluckInputMode) return;
+  function restartActiveFrettedPluck() {
+    if (!state.pluckInputMode) return;
     const mode = state.pluckInputMode;
     stopFrettedPluck(false);
     state.pluckInputMode = mode;
