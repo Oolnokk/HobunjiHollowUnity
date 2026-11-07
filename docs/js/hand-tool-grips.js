@@ -867,10 +867,11 @@
     const hf = Math.max(sf, clamp01(timing.holdFrac ?? timing.hf ?? 0.68));
     const handMode = weaponHandModeForTool(toolKey); // The weapon chooses one of the independently authored flags.
     const neutralDualWield = dualWieldEnabled(poseSet.neutral?.dualWield, defaultTwoHand);
+    const kurrayaNeutralTwoHand = toolKeyFor(toolKey) === 'kurraya'; // A stationary lute may explicitly grip both sides before a note begins; ordinary weapon neutral rules are unchanged.
     const neutral = normalizeAnimationGrip(
-      { ...poseSet.neutral?.secondaryGrip, enabled: false },
+      { ...poseSet.neutral?.secondaryGrip, enabled: kurrayaNeutralTwoHand && poseSet.neutral?.secondaryGrip?.enabled === true },
       { defaultEnabled: false, dualWield: neutralDualWield, dualWieldIdle: neutralDualWield, handMode, offhandIdle: poseSet.neutral?.offhandIdle },
-    ); // Neutral can explicitly own Dual Wield; 2H itself remains attack-only.
+    ); // Kurraya honors the authored Neutral 2H flag; all combat weapons still start 1H.
     const windup = normalizeAnimationGrip(poseSet.windup?.secondaryGrip, {
       defaultEnabled: defaultTwoHand,
       dualWield: dualWieldEnabled(poseSet.windup?.dualWield, defaultTwoHand), handMode, offhandIdle: poseSet.windup?.offhandIdle,
@@ -1252,7 +1253,7 @@
       if (!parsed.poses[phase] || typeof parsed.poses[phase] !== 'object') parsed.poses[phase] = {};
       const dualWield = editorSecondaryPoses[phase].dualWield === true; // Preserve authored flags independently of the preview weapon.
       parsed.poses[phase].secondaryGrip = {
-        enabled: phase !== 'neutral' && editorSecondaryPoses[phase].enabled === true,
+        enabled: (phase !== 'neutral' || editorCurrentToolKey() === 'kurraya') && editorSecondaryPoses[phase].enabled === true, // Preserve the authored Kurraya Neutral offhand when exporting.
         percent: clamp(editorSecondaryPoses[phase].percent, 0, 100),
         primaryPercent: clamp(editorSecondaryPoses[phase].primaryPercent, 0, 100),
       };
@@ -1286,7 +1287,7 @@
         enabled: offhandRaw?.enabled !== false,
         pose: offhandRaw?.pose && typeof offhandRaw.pose === 'object' ? Object.fromEntries(OFFHAND_POSE_CHANNELS.map(channel => [channel, Number(offhandRaw.pose[channel]) || 0])) : null,
       };
-      editorSecondaryPoses[phase].enabled = phase !== 'neutral' && (explicitTwoHand ? raw.enabled === true : defaultTwoHand);
+      editorSecondaryPoses[phase].enabled = (phase !== 'neutral' || editorCurrentToolKey() === 'kurraya') && (explicitTwoHand ? raw.enabled === true : phase !== 'neutral' && defaultTwoHand); // Only Kurraya may explicitly hold a 2H Neutral pose.
       editorSecondaryPoses[phase].percent = clamp(raw?.percent ?? 50, 0, 100);
       editorSecondaryPoses[phase].primaryPercent = clamp(raw?.primaryPercent ?? 50, 0, 100);
       if (pose && typeof pose === 'object') {
@@ -1350,11 +1351,11 @@
       controls.dual.checked = editorSecondaryPoses[phase].dualWield === true;
       controls.percent.set(clamp(editorSecondaryPoses[phase].percent, 0, 100));
       controls.primaryPercent.set(clamp(editorSecondaryPoses[phase].primaryPercent, 0, 100));
-      const canGrip = melee && mainSpan.enabled === true && span.enabled === true && phase !== 'neutral'; // Neutral remains 1H even if an older export enabled it.
+      const canGrip = melee && mainSpan.enabled === true && span.enabled === true && (phase !== 'neutral' || editorCurrentToolKey() === 'kurraya'); // Explicit Kurraya Neutral 2H is permitted; other weapons remain 1H.
       const canDual = melee;
       const editingTwoHand = canGrip && !inherentDual && editorSecondaryPoses[phase].enabled === true;
       controls.primaryPercent.range.disabled = !editingTwoHand; controls.primaryPercent.number.disabled = !editingTwoHand;
-      controls.enabled.disabled = !melee || phase === 'neutral'; controls.dual.disabled = !canDual;
+      controls.enabled.disabled = !melee || (phase === 'neutral' && editorCurrentToolKey() !== 'kurraya'); controls.dual.disabled = !canDual;
       controls.percent.range.disabled = !editingTwoHand; controls.percent.number.disabled = !editingTwoHand;
       const offhand = editorSecondaryPoses[phase].offhandIdle || { enabled: true, pose: null };
       controls.offhandEnabled.checked = offhand.enabled !== false;
@@ -1581,7 +1582,7 @@
       const raw = snapshot?.[phase] || {};
       const dualWield = raw.dualWield === true;
       editorSecondaryPoses[phase].dualWield = dualWield;
-      editorSecondaryPoses[phase].enabled = phase !== 'neutral' && (raw.enabled === undefined ? true : raw.enabled === true);
+      editorSecondaryPoses[phase].enabled = (phase !== 'neutral' || editorCurrentToolKey() === 'kurraya') && (raw.enabled === undefined ? phase !== 'neutral' : raw.enabled === true); // Undo/Redo must restore explicit Kurraya Neutral 2H.
       editorSecondaryPoses[phase].percent = clamp(raw.percent ?? 50, 0, 100);
       editorSecondaryPoses[phase].primaryPercent = clamp(raw.primaryPercent ?? 50, 0, 100);
     }
