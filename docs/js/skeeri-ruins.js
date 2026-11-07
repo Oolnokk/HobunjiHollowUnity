@@ -271,7 +271,7 @@
     }
     nestVisual(session);
     const difficulty=clamp(options.difficulty??plan.floorCount,1,9); // One to three bombers as ruin difficulty increases.
-    const bomberCount=difficulty<4?1:difficulty<7?2:3;
+    const bomberCount=difficulty<=3?1:difficulty===4?2:3; // Three-, four- and five-story shafts have one, two and three bombers respectively.
     for(let i=0;i<bomberCount;i++){
       const x=session.nest.x+(i-(bomberCount-1)/2)*1.8,z=session.nest.z+.1;
       const state=newActor(session,'large',x,z,session.nest.y+1.5,Math.floor(difficulty/2),'b'+i);
