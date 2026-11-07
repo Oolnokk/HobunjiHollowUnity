@@ -131,6 +131,26 @@
     };
   }
 
+  function sweepFlight(origin, target, fromProgress = 0, toProgress = 1, opts = {}) {
+    if (!origin || !target) return null;
+    const start = Math.max(0, Math.min(1, finite(fromProgress)));
+    const end = Math.max(start, Math.min(1, finite(toProgress, 1)));
+    if (end <= start) return null;
+    const distance = Math.hypot(target.x - origin.x, target.z - origin.z);
+    const flightPosition = opts.flightPosition || fallbackFlight;
+    const steps = Math.max(1, Math.ceil(distance * (end - start) / AIM_STEP_TILES));
+    let previous = flightPosition(origin, target, start, distance);
+    for (let i = 1; i <= steps; i++) {
+      const a = start + (end - start) * (i - 1) / steps;
+      const b = start + (end - start) * i / steps;
+      const next = flightPosition(origin, target, b, distance);
+      const impact = sweep(previous, next, { ...opts, progressStart:a, progressEnd:b });
+      if (impact) return impact;
+      previous = next;
+    }
+    return null;
+  }
+
   function resolve(origin, requested, opts = {}) {
     if (!origin || !requested || ![origin.x, origin.y, origin.z, requested.x, requested.z].every(Number.isFinite)) {
       return { target: requested, blocked: false, kind: null };
@@ -147,16 +167,7 @@
     // again. Each pass only brings the target closer to the thrower.
     for (let attempt = 0; attempt < 4; attempt++) {
       const distance = Math.hypot(target.x - origin.x, target.z - origin.z);
-      const count = Math.max(1, Math.ceil(distance / AIM_STEP_TILES));
-      let previous = flightPosition(origin, target, 0, distance);
-      let impact = null;
-      for (let i = 1; i <= count; i++) {
-        const progress = i / count;
-        const next = flightPosition(origin, target, progress, distance);
-        impact = sweep(previous, next, { ...opts, progressStart: (i - 1) / count, progressEnd: progress });
-        if (impact) break;
-        previous = next;
-      }
+      const impact = sweepFlight(origin, target, 0, 1, { ...opts, flightPosition }); // Preview and live flights trace the identical curved trajectory.
       if (!impact) break;
       blocked = true;
       kind = impact.kind;
@@ -198,5 +209,5 @@
     outline.geometry.computeBoundingSphere?.();
   }
 
-  window.ThrowCoverTrajectory = { resolve, sweep, attachOutline, projectOutline };
+  window.ThrowCoverTrajectory = { resolve, sweep, sweepFlight, attachOutline, projectOutline };
 })();
