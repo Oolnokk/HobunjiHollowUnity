@@ -17,10 +17,22 @@
   let rows = null; // Five-row list within the HUD container.
   let waitingLabel = null; // Header counter showing rewards still waiting to be read.
   let listeningForVisibility = false; // Avoids installing duplicate visibility listeners.
+  let awaitingBody = false; // A pre-DOM reward schedules exactly one retry on page readiness.
 
   function ensureDom() {
-    if (typeof document === 'undefined' || !document.body) return false;
-    if (root && root.isConnected) return true;
+    if (typeof document === 'undefined') return false;
+    if (!document.body) {
+      if (!awaitingBody && typeof document.addEventListener === 'function') {
+        awaitingBody = true;
+        document.addEventListener('DOMContentLoaded', () => { awaitingBody = false; drain(); }, { once: true });
+      }
+      return false;
+    }
+    if (root?.isConnected) return true;
+    if (root) {
+      document.body.appendChild(root); // Restore the same five readable rows if the game rebuilds its HUD.
+      return true;
+    }
     root = document.createElement('aside');
     root.id = ROOT_ID;
     root.hidden = true;
