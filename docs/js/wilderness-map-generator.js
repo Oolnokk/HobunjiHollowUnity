@@ -174,6 +174,7 @@
       plateauPonds: 8,
       plateauStreams: 10,
       rivers: 2,
+      riverOutlet: null, // Optional named boundary destination used by the late river painter; other biomes keep random river exits.
       pathAnchors: 4,
       // See findPath's randomBias term — multiplier on how strongly the A*
       // path search prefers meandering over a straight line to its target.
@@ -6502,7 +6503,8 @@
         seed: hashSeed(`${map.seed}_${river.id || index}`),
         paintTiles: false,
         widthTilesAverage: river.widthTilesAverage || river.widthTiles || 3,
-        flowDirection: river.flowDirection || 'higher-to-lower'
+        flowDirection: river.flowDirection || 'higher-to-lower',
+        ...(river.outletZoneId ? { outletZoneId: river.outletZoneId, outletSide: river.toBorder } : {}) // Retains non-traversable downstream geography in exported river metadata.
       };
     }).filter(river => river.nodes.length >= 2);
   }
@@ -6907,7 +6909,7 @@
   // combination each zone renders with; everything else is the tool's own
   // default (see defaultSettings).
   const ZONE_CONFIG = {
-    map_northern_cliffs: { entrySide: 'south', preset: 'cliffs', boundaryMode: 'followMapHeight', boundaryCliffBoost: 5, plateauSteepness: 1.75 },
+    map_northern_cliffs: { entrySide: 'south', preset: 'cliffs', boundaryMode: 'followMapHeight', boundaryCliffBoost: 5, plateauSteepness: 1.75, riverOutlet: 'southeastToMire' }, // Water leaves via the southeast rim toward the Eastern Mire, not the southern entry canyon.
     // trees/bushes well above the shared default (130/75) — this zone is
     // meant to read as an actual dense rainforest, not a scattering of
     // copses, now that FoliageGenerator gives it real full-size trees (with
@@ -7239,6 +7241,7 @@
 
     map.entry = scaleEntryPoint(map.entry, scale, originalWidth, originalHeight);
     if (map.tradeExit) map.tradeExit = scaleEntryPoint(map.tradeExit, scale, originalWidth, originalHeight);
+    if (map.waterwayOutlet) map.waterwayOutlet = { ...map.waterwayOutlet, x: newWidth - 1, y: map.waterwayOutlet.y * scale }; // Carries the geographic river mouth to the doubled exported map edge.
     map.objects = (map.objects || []).map(object => scaleGeneratedObject(object, scale));
     rebuildObjectCache();
     for (const tile of allTiles()) tile.occupiedBy = null;
@@ -8038,10 +8041,17 @@
       return { rivers: 0, tiles: 0 };
     }
 
+    const hasMireOutlet = settings.riverOutlet === 'southeastToMire'; // Only Northern Cliffs redirects its waterways; other dramatic biomes retain random borders.
+    const outletRow = hasMireOutlet ? clamp(Math.round(settings.height * 0.8), 2, settings.height - 3) : null; // South-eastern latitude of the future Mire drainage connection.
+    const outletEnd = hasMireOutlet ? { x: settings.width + 1, y: outletRow, side: 'east' } : null; // Shared off-map mouth; no player transition is authored.
+    const confluence = hasMireOutlet ? { x: clamp(Math.round(settings.width * 0.76), 2, settings.width - 4), y: outletRow } : null; // Brings separate waterways together before their common exit.
+
     let paintedTiles = 0;
     for (let i = 0; i < settings.rivers; i++) {
-      const start = borderPoint('random', 1);
-      const end = borderPoint(oppositeOrDifferentSide(start.side), 1);
+      const start = hasMireOutlet
+        ? (i % 2 === 0 ? borderPoint('north', 1) : { x: -2, y: randInt(2, Math.max(3, Math.floor(settings.height * 0.48))), side: 'west' })
+        : borderPoint('random', 1); // Northern and northwestern headwaters cannot discharge through the southern entry canyon.
+      const end = outletEnd || borderPoint(oppositeOrDifferentSide(start.side), 1); // Shared southeast outlet or the original per-river random border.
       const baseWidth = choosePaintedRiverBaseWidth();
       const changeEvery = randInt(8, 15);
       const widthSalt = randInt(1, 999999);
@@ -8051,13 +8061,15 @@
       let y = start.y;
       const maxSteps = (settings.width + settings.height) * 5;
       let wobble = randFloat(-0.85, 0.85);
+      let approachingConfluence = hasMireOutlet; // The river heads for a common junction before turning east through the outlet.
 
       for (let step = 0; step < maxSteps; step++) {
         const currentWidth = riverWidthForStep(baseWidth, step, changeEvery, widthSalt);
         points.push({ x: Number(x.toFixed(2)), y: Number(y.toFixed(2)), widthTiles: currentWidth });
         widthSamples.push(currentWidth);
-        const dx = end.x - x;
-        const dy = end.y - y;
+        const target = approachingConfluence ? confluence : end; // Active waypoint used by the existing meandering river stepper.
+        const dx = target.x - x;
+        const dy = target.y - y;
         const dist = Math.max(0.001, Math.hypot(dx, dy));
         const nx = dx / dist;
         const ny = dy / dist;
@@ -8072,7 +8084,13 @@
         if (inBounds(tx, ty)) {
           paintedTiles += markWater(tx, ty, 'river', currentWidth, { carveRiverBed: false }) || 0;
         }
-        if (dist < 1.35 && !inBounds(tx, ty)) break;
+        if (approachingConfluence && dist < 1.35) {
+          x = confluence.x;
+          y = confluence.y;
+          approachingConfluence = false; // After the junction, the same river continues to the east edge.
+          paintedTiles += markWater(x, y, 'river', currentWidth, { carveRiverBed: false }) || 0;
+        }
+        if (!approachingConfluence && dist < 1.35 && !inBounds(tx, ty)) break;
         if (step > 8 && !inBounds(tx, ty)) {
           const leftNorth = tx < -2 || ty < -2;
           const leftSouthEast = tx > settings.width + 1 || ty > settings.height + 1;
@@ -8093,12 +8111,40 @@
         maximumWidthTiles: widthMax,
         widthSamples,
         points,
+        ...(hasMireOutlet ? { outletZoneId: 'map_eastern_mire' } : {}), // Geographic receiver only; does not create a world exit or traversal trigger.
         paintedLate: true,
         carving: true,
         flowDirection: 'higher-to-lower'
       });
       logDebug(`late painted river ${i + 1}: ${start.side} border to ${end.side} border, widths ${widthMin}-${widthMax}, avg ${widthAverage.toFixed(2)}, bed graded after terrain shaping`);
     }
+
+    if (hasMireOutlet) {
+      // Finish a shared channel all the way through the eastern boundary escarpment.
+      // This is a river mouth, not a second road gate or a playable world transition.
+      const channelWidth = 5; // Width of the common eastbound drainage reach, matching the normal dramatic river brush.
+      const mouthStartX = Math.max(confluence.x, settings.width - borderEscarpmentMaxDepth() - 3); // Inland edge of the boundary cut that keeps the water visibly connected to the map edge.
+      for (let x = confluence.x; x < settings.width; x += 0.75) {
+        paintedTiles += markWater(x, outletRow, 'river', channelWidth, { carveRiverBed: false }) || 0;
+      }
+      let clearedEscarpment = 0; // Number of high boundary tiles removed from the visible watercourse, reported for mobile debugging.
+      for (let y = Math.max(0, outletRow - channelWidth); y <= Math.min(settings.height - 1, outletRow + channelWidth); y++) {
+        for (let x = mouthStartX; x < settings.width; x++) {
+          const tile = tileAt(x, y); // Only existing river-water tiles are permitted through the rim; adjacent cliff banks remain intact.
+          if (!tile || !tile.water || tile.terrain !== 'river') continue;
+          if (clearBorderEscarpmentTile(tile, null, 'riverOutlet')) clearedEscarpment++;
+          tile.elevation = 0;
+          tile.height = 0;
+          tile.generatedPlateauBlobId = null;
+          tile.plateauGroupId = null;
+          tile.plateauRing = false;
+          tile.plateauInterior = false;
+        }
+      }
+      map.waterwayOutlet = { id: 'northern_cliffs_southeast_mire', side: 'east', x: settings.width - 1, y: outletRow, destinationZoneId: 'map_eastern_mire', traversable: false }; // Exported geographic marker for future zone continuity, not a player exit.
+      logDebug(`southeast Mire water outlet: east rim at ${map.waterwayOutlet.x},${outletRow}; ${settings.rivers} feeder rivers; ${clearedEscarpment} boundary cliffs opened; no traversal`);
+    }
+
     logDebug(`late painted rivers: ${settings.rivers} rivers painted over finished tiers, ${paintedTiles} new river tiles; waterfalls are assigned by cliff-skirt height breaks`);
     return { rivers: settings.rivers, tiles: paintedTiles };
   }
@@ -8753,6 +8799,7 @@
     workspace.warnings = map.warnings.slice();
     workspace.plateauSteepnessReport = map.plateauSteepnessReport || null; // Small optional debug record, readable in downloaded wilderness lab exports.
     workspace.hydrologyReport = map.hydrologyReport || null; // Mobile-friendly regression summary for final river/pond grading.
+    workspace.waterwayOutlet = map.waterwayOutlet ? clonePlain(map.waterwayOutlet) : null; // Inspectable southeast drainage marker; no transition is registered.
     // Stumps/logs are generated in the normal object pass but rendered at
     // runtime from authored furniture definitions. Export their exact final
     // placements directly so the game never has to infer them from generic
