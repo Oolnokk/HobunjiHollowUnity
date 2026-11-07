@@ -176,7 +176,9 @@
             touchIcon:'↻',priority:26,floorY:levelAt(object),
             label:'Rotate Cube '+(d.labels?.[index]||index+1),
             onPress:()=>{if(!nearFloor(object))return;
-              api.rotateLinkedCube?.(object,index,1);onStateChange?.();}});
+              api.rotateLinkedCube?.(object,index,1);
+              host.RuinInteractionAudio?.mechanism?.(segment); // Each accepted linked-cube rotation moves real stone.
+              onStateChange?.();}});
         }
       }else if(d.activatorType==='stackedObelisk'&&Array.isArray(d.rotatingSegments)){
         const rotations=d.rotatingSegments;
@@ -190,6 +192,7 @@
               if(!nearFloor(object))return;
               const old=Math.round(segment.rotation.y/(Math.PI*.5));
               segment.rotation.y=((old+1)%4)*(Math.PI*.5);
+              host.RuinInteractionAudio?.mechanism?.(segment); // Rotating obelisk rings use size-scaled stone motion too.
               const solved=rotations.every(item=>Math.abs(Math.round(item.segment.rotation.y/(Math.PI*.5))%4)===0);
               d.solveProgress=solved?1:0;
               if(solved){
