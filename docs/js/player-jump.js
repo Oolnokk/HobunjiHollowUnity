@@ -168,7 +168,9 @@
     const state = {
       ...flight, area: deps.getCurrentArea(), phase: 'air', feetY,
       launchGround: feetY, vy: Number(flight.vy), vx: number(flight.vx, 0), vz: number(flight.vz, 0),
-      elapsed: 0, lastX: x, lastZ: z, safeX: x, safeZ: z,
+      elapsed: 0, lastX: x, lastZ: z,
+      safeX: Number.isFinite(flight.safeX) ? flight.safeX : x,
+      safeZ: Number.isFinite(flight.safeZ) ? flight.safeZ : z, // Native falls can retain the last grounded point before leaving a ledge.
       external: options.external === true, source: options.source || 'rope swing',
       ropeId: options.ropeId ?? flight.ropeId ?? null, deliberate: options.deliberate !== false,
     }; // Native free-fall and ruin rope release use the same elevation/state contract.
