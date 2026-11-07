@@ -160,8 +160,9 @@ const bridgeEnd=handDriver.indexOf('  // Bag items',bridgeStart);
 assert(bridgeStart>=0&&bridgeEnd>bridgeStart,'live flute hand bridge absent');
 const avatarRoot={}; // Only the local player should route to the mouth-mounted flute.
 const liveHolder={parent:{},visible:true}; // Same scene object consumed by the hand driver, not an editor-only proxy.
+let fluteActive=true; // Simulates the same instrument closing without replacing the player's hand driver.
 const fakeWindow={
-  KurrayaInstrument:{fluteHandTarget:()=>({holder:liveHolder,toolKey:'flute',gripContext:'ranged'}),fluteDiagnostics:()=>({active:true})},
+  KurrayaInstrument:{fluteHandTarget:()=>fluteActive?{holder:liveHolder,toolKey:'flute',gripContext:'ranged'}:null,fluteDiagnostics:()=>({active:fluteActive})},
   WeaponToolStances:{getRuntimeState:()=>({itemKey:'hatchet',activeSlot:'weapon'})},
 };
 const handBridge=vm.runInNewContext(
@@ -178,5 +179,8 @@ assert.equal(handBridge.currentGripContext(local),'ranged','flute hands must use
 assert.equal(handBridge.currentToolHolder(local),liveHolder,'hand rig must read the actual mouth-mounted flute transform');
 const hostile={rig:{parent:{}},avatarRoot:{userData:{}}};
 assert.equal(handBridge.currentToolKey(hostile),'hatchet','player flute must not leak into NPC hand selection');
+fluteActive=false; // Closing the music session returns the hands to the standard weapon path.
+assert.equal(handBridge.currentToolKey(local),'hatchet','normal weapon grip must return after the flute session closes');
+assert.equal(handBridge.currentGripContext(local),'melee','ordinary grip context must return after the flute session closes');
 
 console.log('Flute and Kurraya note animations: authored flute grip/pose, strike-only body sink and regression checks passed');
