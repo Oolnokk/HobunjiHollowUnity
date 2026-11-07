@@ -519,9 +519,8 @@
       const before = Math.min(1, projectile.t / projectile.durationS); // Previous arc progress for dynamic-cover sweep.
       projectile.t += Math.max(0, dt);
       const ratio = Math.min(1, projectile.t / projectile.durationS); // Authoritative destination progress.
-      const previous = flightPosition(projectile.origin, projectile.target, before, projectile.distanceTiles);
       const next = flightPosition(projectile.origin, projectile.target, ratio, projectile.distanceTiles);
-      const coverHit = window.ThrowCoverTrajectory?.sweep?.(previous, next, { deps, groundAt, progressStart:before, progressEnd:ratio });
+      const coverHit = window.ThrowCoverTrajectory?.sweepFlight?.(projectile.origin, projectile.target, before, ratio, { deps, groundAt, flightPosition }); // Follow the true curved path even across a dropped frame.
       if (coverHit) {
         projectile.target = { x:coverHit.x, y:groundAt(coverHit.x, coverHit.z), z:coverHit.z }; // Splash at the first cover contact, not through it.
         projectile.mesh?.position?.set?.(coverHit.x, coverHit.y, coverHit.z);
