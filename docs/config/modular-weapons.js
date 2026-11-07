@@ -3290,36 +3290,7 @@ window.MODULAR_WEAPON_CONFIG = {
         "dagger-sword": {
           "x": 5,
           "y": 30,
-          "layerOrder": "haft-over-head",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 170.5,
-                  "y0": 762.5,
-                  "x1": 227,
-                  "y1": 873
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 60.00000000000006,
-                  "y0": 592.5000000000002,
-                  "x1": 367.99999999999994,
-                  "y1": 1655.4999999999998
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "layerOrder": "haft-over-head"
         },
         "dagger": {
           "scaleX": 0.7,
@@ -3327,36 +3298,7 @@ window.MODULAR_WEAPON_CONFIG = {
           "x": 35,
           "y": -15,
           "rotation": -90,
-          "layerOrder": "haft-over-head",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 170.5,
-                  "y0": 762.5,
-                  "x1": 227,
-                  "y1": 873
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 60.00000000000006,
-                  "y0": 592.5000000000002,
-                  "x1": 367.99999999999994,
-                  "y1": 1655.4999999999998
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "layerOrder": "haft-over-head"
         },
         "fishing-mace": {
           "x": 5,
@@ -3368,36 +3310,7 @@ window.MODULAR_WEAPON_CONFIG = {
           "scaleX": 1.25,
           "x": 5,
           "y": 30,
-          "layerOrder": "haft-over-head",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 170.5,
-                  "y0": 762.5,
-                  "x1": 227,
-                  "y1": 873
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 60.00000000000006,
-                  "y0": 592.5000000000002,
-                  "x1": 367.99999999999994,
-                  "y1": 1655.4999999999998
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "layerOrder": "haft-over-head"
         },
         "harlyao-broadsword": {
           "scaleX": 1.05,
@@ -3405,36 +3318,7 @@ window.MODULAR_WEAPON_CONFIG = {
           "x": 35,
           "y": -40,
           "rotation": -90,
-          "layerOrder": "haft-over-head",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 170.5,
-                  "y0": 762.5,
-                  "x1": 227,
-                  "y1": 873
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 60.00000000000006,
-                  "y0": 592.5000000000002,
-                  "x1": 367.99999999999994,
-                  "y1": 1655.4999999999998
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "layerOrder": "haft-over-head"
         },
         "harlyao-longsword": {
           "scaleX": 1.05,
@@ -3442,36 +3326,7 @@ window.MODULAR_WEAPON_CONFIG = {
           "x": 40,
           "y": -35,
           "rotation": -90,
-          "layerOrder": "haft-over-head",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 170.5,
-                  "y0": 762.5,
-                  "x1": 227,
-                  "y1": 873
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 60.00000000000006,
-                  "y0": 592.5000000000002,
-                  "x1": 367.99999999999994,
-                  "y1": 1655.4999999999998
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "layerOrder": "haft-over-head"
         },
         "hatchet": {
           "x": 5,
@@ -3494,70 +3349,12 @@ window.MODULAR_WEAPON_CONFIG = {
           "x": 35,
           "y": -25,
           "rotation": -90,
-          "layerOrder": "head-over-haft",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 170.5,
-                  "y0": 762.5,
-                  "x1": 227,
-                  "y1": 873
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 60.00000000000006,
-                  "y0": 592.5000000000002,
-                  "x1": 367.99999999999994,
-                  "y1": 1655.4999999999998
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "layerOrder": "head-over-haft"
         },
         "pickshovel-scoop": {
           "x": 5,
           "y": 30,
-          "layerOrder": "haft-over-head",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 170.5,
-                  "y0": 762.5,
-                  "x1": 227,
-                  "y1": 873
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 60.00000000000006,
-                  "y0": 592.5000000000002,
-                  "x1": 367.99999999999994,
-                  "y1": 1655.4999999999998
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "layerOrder": "haft-over-head"
         },
         "plains-blade": {
           "scaleX": 1.1,
@@ -3565,36 +3362,7 @@ window.MODULAR_WEAPON_CONFIG = {
           "x": -65,
           "y": -30,
           "rotation": -90,
-          "layerOrder": "haft-over-head",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 170.5,
-                  "y0": 762.5,
-                  "x1": 227,
-                  "y1": 873
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 60.00000000000006,
-                  "y0": 592.5000000000002,
-                  "x1": 367.99999999999994,
-                  "y1": 1655.4999999999998
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "layerOrder": "haft-over-head"
         },
         "porakaneki-greatclub": {
           "scaleY": 0.85,
@@ -3605,36 +3373,7 @@ window.MODULAR_WEAPON_CONFIG = {
         "war-cleaver": {
           "x": 5,
           "y": 30,
-          "layerOrder": "haft-over-head",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 170.5,
-                  "y0": 762.5,
-                  "x1": 227,
-                  "y1": 873
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 60.00000000000006,
-                  "y0": 592.5000000000002,
-                  "x1": 367.99999999999994,
-                  "y1": 1655.4999999999998
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "layerOrder": "haft-over-head"
         },
         "warhammer": {
           "x": 5,
@@ -9405,36 +9144,7 @@ window.MODULAR_WEAPON_CONFIG = {
         "dagger-sword": {
           "x": 12,
           "y": 5,
-          "layerOrder": "haft-over-head",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 183.5,
-                  "y0": 908.5,
-                  "x1": 240,
-                  "y1": 1019
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 73.00000000000006,
-                  "y0": 738.5000000000002,
-                  "x1": 380.99999999999994,
-                  "y1": 1801.4999999999998
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "layerOrder": "haft-over-head"
         },
         "dagger": {
           "scaleX": 0.9,
@@ -9442,36 +9152,7 @@ window.MODULAR_WEAPON_CONFIG = {
           "x": 40,
           "y": -90,
           "rotation": -90,
-          "layerOrder": "haft-over-head",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 183.5,
-                  "y0": 908.5,
-                  "x1": 240,
-                  "y1": 1019
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 73.00000000000006,
-                  "y0": 738.5000000000002,
-                  "x1": 380.99999999999994,
-                  "y1": 1801.4999999999998
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "layerOrder": "haft-over-head"
         },
         "fishing-mace": {
           "scaleX": 1.1,
@@ -9484,36 +9165,7 @@ window.MODULAR_WEAPON_CONFIG = {
           "x": -40,
           "y": -90,
           "rotation": -90,
-          "layerOrder": "haft-over-head",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 183.5,
-                  "y0": 908.5,
-                  "x1": 240,
-                  "y1": 1019
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 73.00000000000006,
-                  "y0": 738.5000000000002,
-                  "x1": 380.99999999999994,
-                  "y1": 1801.4999999999998
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "layerOrder": "haft-over-head"
         },
         "harlyao-broadsword": {
           "scaleX": 1.35,
@@ -9521,70 +9173,12 @@ window.MODULAR_WEAPON_CONFIG = {
           "x": 25,
           "y": -100,
           "rotation": -90,
-          "layerOrder": "haft-over-head",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 183.5,
-                  "y0": 908.5,
-                  "x1": 240,
-                  "y1": 1019
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 73.00000000000006,
-                  "y0": 738.5000000000002,
-                  "x1": 380.99999999999994,
-                  "y1": 1801.4999999999998
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "layerOrder": "haft-over-head"
         },
         "harlyao-longsword": {
           "scaleX": 1.65,
           "x": 5,
-          "layerOrder": "haft-over-head",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 183.5,
-                  "y0": 908.5,
-                  "x1": 240,
-                  "y1": 1019
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 73.00000000000006,
-                  "y0": 738.5000000000002,
-                  "x1": 380.99999999999994,
-                  "y1": 1801.4999999999998
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "layerOrder": "haft-over-head"
         },
         "hatchet": {
           "scaleX": 1.2,
@@ -9610,104 +9204,17 @@ window.MODULAR_WEAPON_CONFIG = {
           "x": 40,
           "y": -75,
           "rotation": -90,
-          "layerOrder": "head-over-haft",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 183.5,
-                  "y0": 908.5,
-                  "x1": 240,
-                  "y1": 1019
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 73.00000000000006,
-                  "y0": 738.5000000000002,
-                  "x1": 380.99999999999994,
-                  "y1": 1801.4999999999998
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "layerOrder": "head-over-haft"
         },
         "pickshovel-scoop": {
           "x": 5,
-          "layerOrder": "haft-over-head",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 183.5,
-                  "y0": 908.5,
-                  "x1": 240,
-                  "y1": 1019
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 73.00000000000006,
-                  "y0": 738.5000000000002,
-                  "x1": 380.99999999999994,
-                  "y1": 1801.4999999999998
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "layerOrder": "haft-over-head"
         },
         "plains-blade": {
           "scaleX": 1.2,
           "scaleY": 0.75,
           "x": 5,
-          "layerOrder": "haft-over-head",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 183.5,
-                  "y0": 908.5,
-                  "x1": 240,
-                  "y1": 1019
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 73.00000000000006,
-                  "y0": 738.5000000000002,
-                  "x1": 380.99999999999994,
-                  "y1": 1801.4999999999998
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "layerOrder": "haft-over-head"
         },
         "porakaneki-greatclub": {
           "scaleX": 1.5,
@@ -9718,36 +9225,7 @@ window.MODULAR_WEAPON_CONFIG = {
         "war-cleaver": {
           "scaleX": 1.3,
           "x": 5,
-          "layerOrder": "haft-over-head",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 183.5,
-                  "y0": 908.5,
-                  "x1": 240,
-                  "y1": 1019
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 73.00000000000006,
-                  "y0": 738.5000000000002,
-                  "x1": 380.99999999999994,
-                  "y1": 1801.4999999999998
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "layerOrder": "haft-over-head"
         },
         "warhammer": {
           "scaleX": 1.65,
@@ -9800,167 +9278,22 @@ window.MODULAR_WEAPON_CONFIG = {
           "layerOrder": "head-over-haft"
         },
         "dagger": {
-          "layerOrder": "haft-over-head",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 202.5,
-                  "y0": 514.5,
-                  "x1": 259,
-                  "y1": 625
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 92.00000000000006,
-                  "y0": 344.5000000000001,
-                  "x1": 399.99999999999994,
-                  "y1": 1407.4999999999995
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "layerOrder": "haft-over-head"
         },
         "dagger-sword": {
-          "layerOrder": "haft-over-head",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 202.5,
-                  "y0": 514.5,
-                  "x1": 259,
-                  "y1": 625
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 92.00000000000006,
-                  "y0": 344.5000000000001,
-                  "x1": 399.99999999999994,
-                  "y1": 1407.4999999999995
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "layerOrder": "haft-over-head"
         },
         "fishing-mace": {
           "layerOrder": "head-over-haft"
         },
         "fishing-spear": {
-          "layerOrder": "haft-over-head",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 202.5,
-                  "y0": 514.5,
-                  "x1": 259,
-                  "y1": 625
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 92.00000000000006,
-                  "y0": 344.5000000000001,
-                  "x1": 399.99999999999994,
-                  "y1": 1407.4999999999995
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "layerOrder": "haft-over-head"
         },
         "harlyao-broadsword": {
-          "layerOrder": "haft-over-head",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 202.5,
-                  "y0": 514.5,
-                  "x1": 259,
-                  "y1": 625
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 92.00000000000006,
-                  "y0": 344.5000000000001,
-                  "x1": 399.99999999999994,
-                  "y1": 1407.4999999999995
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "layerOrder": "haft-over-head"
         },
         "harlyao-longsword": {
-          "layerOrder": "haft-over-head",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 202.5,
-                  "y0": 514.5,
-                  "x1": 259,
-                  "y1": 625
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 92.00000000000006,
-                  "y0": 344.5000000000001,
-                  "x1": 399.99999999999994,
-                  "y1": 1407.4999999999995
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "layerOrder": "haft-over-head"
         },
         "hatchet": {
           "layerOrder": "head-over-haft"
@@ -9972,135 +9305,19 @@ window.MODULAR_WEAPON_CONFIG = {
           "layerOrder": "head-over-haft"
         },
         "pick-shovel-pick": {
-          "layerOrder": "head-over-haft",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 202.5,
-                  "y0": 514.5,
-                  "x1": 259,
-                  "y1": 625
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 92.00000000000006,
-                  "y0": 344.5000000000001,
-                  "x1": 399.99999999999994,
-                  "y1": 1407.4999999999995
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "layerOrder": "head-over-haft"
         },
         "pickshovel-scoop": {
-          "layerOrder": "haft-over-head",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 202.5,
-                  "y0": 514.5,
-                  "x1": 259,
-                  "y1": 625
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 92.00000000000006,
-                  "y0": 344.5000000000001,
-                  "x1": 399.99999999999994,
-                  "y1": 1407.4999999999995
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "layerOrder": "haft-over-head"
         },
         "plains-blade": {
-          "layerOrder": "haft-over-head",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 202.5,
-                  "y0": 514.5,
-                  "x1": 259,
-                  "y1": 625
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 92.00000000000006,
-                  "y0": 344.5000000000001,
-                  "x1": 399.99999999999994,
-                  "y1": 1407.4999999999995
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "layerOrder": "haft-over-head"
         },
         "porakaneki-greatclub": {
           "layerOrder": "head-over-haft"
         },
         "war-cleaver": {
-          "layerOrder": "haft-over-head",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 202.5,
-                  "y0": 514.5,
-                  "x1": 259,
-                  "y1": 625
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 92.00000000000006,
-                  "y0": 344.5000000000001,
-                  "x1": 399.99999999999994,
-                  "y1": 1407.4999999999995
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "layerOrder": "haft-over-head"
         },
         "warhammer": {
           "layerOrder": "head-over-haft"
@@ -10149,167 +9366,22 @@ window.MODULAR_WEAPON_CONFIG = {
           "layerOrder": "head-over-haft"
         },
         "dagger": {
-          "layerOrder": "haft-over-head",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 183.5,
-                  "y0": 916.5,
-                  "x1": 240,
-                  "y1": 1027
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 73.00000000000006,
-                  "y0": 746.5000000000002,
-                  "x1": 380.99999999999994,
-                  "y1": 1809.4999999999998
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "layerOrder": "haft-over-head"
         },
         "dagger-sword": {
-          "layerOrder": "haft-over-head",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 183.5,
-                  "y0": 916.5,
-                  "x1": 240,
-                  "y1": 1027
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 73.00000000000006,
-                  "y0": 746.5000000000002,
-                  "x1": 380.99999999999994,
-                  "y1": 1809.4999999999998
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "layerOrder": "haft-over-head"
         },
         "fishing-mace": {
           "layerOrder": "head-over-haft"
         },
         "fishing-spear": {
-          "layerOrder": "haft-over-head",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 183.5,
-                  "y0": 916.5,
-                  "x1": 240,
-                  "y1": 1027
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 73.00000000000006,
-                  "y0": 746.5000000000002,
-                  "x1": 380.99999999999994,
-                  "y1": 1809.4999999999998
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "layerOrder": "haft-over-head"
         },
         "harlyao-broadsword": {
-          "layerOrder": "haft-over-head",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 183.5,
-                  "y0": 916.5,
-                  "x1": 240,
-                  "y1": 1027
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 73.00000000000006,
-                  "y0": 746.5000000000002,
-                  "x1": 380.99999999999994,
-                  "y1": 1809.4999999999998
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "layerOrder": "haft-over-head"
         },
         "harlyao-longsword": {
-          "layerOrder": "haft-over-head",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 183.5,
-                  "y0": 916.5,
-                  "x1": 240,
-                  "y1": 1027
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 73.00000000000006,
-                  "y0": 746.5000000000002,
-                  "x1": 380.99999999999994,
-                  "y1": 1809.4999999999998
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "layerOrder": "haft-over-head"
         },
         "hoe": {
           "layerOrder": "head-over-haft"
@@ -10318,135 +9390,19 @@ window.MODULAR_WEAPON_CONFIG = {
           "layerOrder": "head-over-haft"
         },
         "pick-shovel-pick": {
-          "layerOrder": "head-over-haft",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 183.5,
-                  "y0": 916.5,
-                  "x1": 240,
-                  "y1": 1027
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 73.00000000000006,
-                  "y0": 746.5000000000002,
-                  "x1": 380.99999999999994,
-                  "y1": 1809.4999999999998
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "layerOrder": "head-over-haft"
         },
         "pickshovel-scoop": {
-          "layerOrder": "haft-over-head",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 183.5,
-                  "y0": 916.5,
-                  "x1": 240,
-                  "y1": 1027
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 73.00000000000006,
-                  "y0": 746.5000000000002,
-                  "x1": 380.99999999999994,
-                  "y1": 1809.4999999999998
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "layerOrder": "haft-over-head"
         },
         "plains-blade": {
-          "layerOrder": "haft-over-head",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 183.5,
-                  "y0": 916.5,
-                  "x1": 240,
-                  "y1": 1027
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 73.00000000000006,
-                  "y0": 746.5000000000002,
-                  "x1": 380.99999999999994,
-                  "y1": 1809.4999999999998
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "layerOrder": "haft-over-head"
         },
         "porakaneki-greatclub": {
           "layerOrder": "head-over-haft"
         },
         "war-cleaver": {
-          "layerOrder": "haft-over-head",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 183.5,
-                  "y0": 916.5,
-                  "x1": 240,
-                  "y1": 1027
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 73.00000000000006,
-                  "y0": 746.5000000000002,
-                  "x1": 380.99999999999994,
-                  "y1": 1809.4999999999998
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "layerOrder": "haft-over-head"
         },
         "warhammer": {
           "layerOrder": "head-over-haft"
@@ -10495,167 +9451,22 @@ window.MODULAR_WEAPON_CONFIG = {
           "layerOrder": "head-over-haft"
         },
         "dagger": {
-          "layerOrder": "haft-over-head",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 164.5,
-                  "y0": 1082.5,
-                  "x1": 221,
-                  "y1": 1193
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 54.00000000000006,
-                  "y0": 912.5000000000002,
-                  "x1": 361.99999999999994,
-                  "y1": 1975.4999999999998
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "layerOrder": "haft-over-head"
         },
         "dagger-sword": {
-          "layerOrder": "haft-over-head",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 164.5,
-                  "y0": 1082.5,
-                  "x1": 221,
-                  "y1": 1193
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 54.00000000000006,
-                  "y0": 912.5000000000002,
-                  "x1": 361.99999999999994,
-                  "y1": 1975.4999999999998
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "layerOrder": "haft-over-head"
         },
         "fishing-mace": {
           "layerOrder": "head-over-haft"
         },
         "fishing-spear": {
-          "layerOrder": "haft-over-head",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 164.5,
-                  "y0": 1082.5,
-                  "x1": 221,
-                  "y1": 1193
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 54.00000000000006,
-                  "y0": 912.5000000000002,
-                  "x1": 361.99999999999994,
-                  "y1": 1975.4999999999998
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "layerOrder": "haft-over-head"
         },
         "harlyao-broadsword": {
-          "layerOrder": "haft-over-head",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 164.5,
-                  "y0": 1082.5,
-                  "x1": 221,
-                  "y1": 1193
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 54.00000000000006,
-                  "y0": 912.5000000000002,
-                  "x1": 361.99999999999994,
-                  "y1": 1975.4999999999998
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "layerOrder": "haft-over-head"
         },
         "harlyao-longsword": {
-          "layerOrder": "haft-over-head",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 164.5,
-                  "y0": 1082.5,
-                  "x1": 221,
-                  "y1": 1193
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 54.00000000000006,
-                  "y0": 912.5000000000002,
-                  "x1": 361.99999999999994,
-                  "y1": 1975.4999999999998
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "layerOrder": "haft-over-head"
         },
         "hatchet": {
           "layerOrder": "head-over-haft"
@@ -10664,135 +9475,19 @@ window.MODULAR_WEAPON_CONFIG = {
           "layerOrder": "head-over-haft"
         },
         "pick-shovel-pick": {
-          "layerOrder": "head-over-haft",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 164.5,
-                  "y0": 1082.5,
-                  "x1": 221,
-                  "y1": 1193
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 54.00000000000006,
-                  "y0": 912.5000000000002,
-                  "x1": 361.99999999999994,
-                  "y1": 1975.4999999999998
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "layerOrder": "head-over-haft"
         },
         "pickshovel-scoop": {
-          "layerOrder": "haft-over-head",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 164.5,
-                  "y0": 1082.5,
-                  "x1": 221,
-                  "y1": 1193
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 54.00000000000006,
-                  "y0": 912.5000000000002,
-                  "x1": 361.99999999999994,
-                  "y1": 1975.4999999999998
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "layerOrder": "haft-over-head"
         },
         "plains-blade": {
-          "layerOrder": "haft-over-head",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 164.5,
-                  "y0": 1082.5,
-                  "x1": 221,
-                  "y1": 1193
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 54.00000000000006,
-                  "y0": 912.5000000000002,
-                  "x1": 361.99999999999994,
-                  "y1": 1975.4999999999998
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "layerOrder": "haft-over-head"
         },
         "porakaneki-greatclub": {
           "layerOrder": "head-over-haft"
         },
         "war-cleaver": {
-          "layerOrder": "haft-over-head",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 164.5,
-                  "y0": 1082.5,
-                  "x1": 221,
-                  "y1": 1193
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 54.00000000000006,
-                  "y0": 912.5000000000002,
-                  "x1": 361.99999999999994,
-                  "y1": 1975.4999999999998
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "layerOrder": "haft-over-head"
         },
         "warhammer": {
           "layerOrder": "head-over-haft"
@@ -10841,168 +9536,23 @@ window.MODULAR_WEAPON_CONFIG = {
           "layerOrder": "head-over-haft"
         },
         "dagger": {
-          "layerOrder": "haft-over-head",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 338.7881062280972,
-                  "y0": 908.9415575926496,
-                  "x1": 398.33130614420867,
-                  "y1": 1025.3933025613278
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 222.33636125941896,
-                  "y0": 729.7850268716061,
-                  "x1": 546.9258404481329,
-                  "y1": 1850.0402748508363
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "layerOrder": "haft-over-head"
         },
         "dagger-sword": {
-          "layerOrder": "haft-over-head",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 338.7881062280972,
-                  "y0": 908.9415575926496,
-                  "x1": 398.33130614420867,
-                  "y1": 1025.3933025613278
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 222.33636125941896,
-                  "y0": 729.7850268716061,
-                  "x1": 546.9258404481329,
-                  "y1": 1850.0402748508363
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "layerOrder": "haft-over-head"
         },
         "fishing-mace": {
           "scaleX": 0.75,
           "layerOrder": "head-over-haft"
         },
         "fishing-spear": {
-          "layerOrder": "haft-over-head",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 338.7881062280972,
-                  "y0": 908.9415575926496,
-                  "x1": 398.33130614420867,
-                  "y1": 1025.3933025613278
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 222.33636125941896,
-                  "y0": 729.7850268716061,
-                  "x1": 546.9258404481329,
-                  "y1": 1850.0402748508363
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "layerOrder": "haft-over-head"
         },
         "harlyao-broadsword": {
-          "layerOrder": "head-over-haft",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 338.7881062280972,
-                  "y0": 908.9415575926496,
-                  "x1": 398.33130614420867,
-                  "y1": 1025.3933025613278
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 222.33636125941896,
-                  "y0": 729.7850268716061,
-                  "x1": 546.9258404481329,
-                  "y1": 1850.0402748508363
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "layerOrder": "head-over-haft"
         },
         "harlyao-longsword": {
-          "layerOrder": "head-over-haft",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 338.7881062280972,
-                  "y0": 908.9415575926496,
-                  "x1": 398.33130614420867,
-                  "y1": 1025.3933025613278
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 222.33636125941896,
-                  "y0": 729.7850268716061,
-                  "x1": 546.9258404481329,
-                  "y1": 1850.0402748508363
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "layerOrder": "head-over-haft"
         },
         "hatchet": {
           "layerOrder": "head-over-haft"
@@ -11011,135 +9561,19 @@ window.MODULAR_WEAPON_CONFIG = {
           "layerOrder": "head-over-haft"
         },
         "pick-shovel-pick": {
-          "layerOrder": "head-over-haft",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 338.7881062280972,
-                  "y0": 908.9415575926496,
-                  "x1": 398.33130614420867,
-                  "y1": 1025.3933025613278
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 222.33636125941896,
-                  "y0": 729.7850268716061,
-                  "x1": 546.9258404481329,
-                  "y1": 1850.0402748508363
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "layerOrder": "head-over-haft"
         },
         "pickshovel-scoop": {
-          "layerOrder": "haft-over-head",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 338.7881062280972,
-                  "y0": 908.9415575926496,
-                  "x1": 398.33130614420867,
-                  "y1": 1025.3933025613278
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 222.33636125941896,
-                  "y0": 729.7850268716061,
-                  "x1": 546.9258404481329,
-                  "y1": 1850.0402748508363
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "layerOrder": "haft-over-head"
         },
         "plains-blade": {
-          "layerOrder": "haft-over-head",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 338.7881062280972,
-                  "y0": 908.9415575926496,
-                  "x1": 398.33130614420867,
-                  "y1": 1025.3933025613278
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 222.33636125941896,
-                  "y0": 729.7850268716061,
-                  "x1": 546.9258404481329,
-                  "y1": 1850.0402748508363
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "layerOrder": "haft-over-head"
         },
         "porakaneki-greatclub": {
           "layerOrder": "head-over-haft"
         },
         "war-cleaver": {
-          "layerOrder": "haft-over-head",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 338.7881062280972,
-                  "y0": 908.9415575926496,
-                  "x1": 398.33130614420867,
-                  "y1": 1025.3933025613278
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 222.33636125941896,
-                  "y0": 729.7850268716061,
-                  "x1": 546.9258404481329,
-                  "y1": 1850.0402748508363
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "layerOrder": "haft-over-head"
         },
         "warhammer": {
           "layerOrder": "head-over-haft"
