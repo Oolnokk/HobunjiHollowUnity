@@ -29,7 +29,7 @@
     const cx=Math.floor(room.x+room.w*.5)+.5,cz=Math.floor(room.z+room.d*.5)+.5; // Grid-centered origin shared by the four stages and plates.
     const offset=Math.max(4,Math.min(5,Math.floor(Math.min(room.w,room.d)*.29))); // Leaves walkable perimeter around every source.
     const roof=Number(context.ceilingY); // The actual V50 ceiling, not a raised artificial anchor that could hide a hanging target above the stone.
-    const ceiling=Number.isFinite(roof)?roof:floorY+3.5;
+    const ceiling=context.ceilingY!=null&&Number.isFinite(roof)?roof:floorY+3.5;
     if(ceiling-floorY<2.65)throw new Error('Find the Blocks needs at least 2.65 units of ceiling clearance.');
     const stairRise=Math.min(STAIR_RISE,(ceiling-floorY-BLOCK_SIZE-.22)/7); // Seven actual walkable steps end below the ceiling with space for the block.
     const initialPillarHeight=Math.min(3.35,ceiling-floorY-BLOCK_SIZE-.22); // The pillar is as tall as the chamber permits without clipping its carried block.
