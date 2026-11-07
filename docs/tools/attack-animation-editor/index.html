@@ -789,6 +789,7 @@ toolBase.add(toolHolder);
 const transformControls = new TransformControls(camera, renderer.domElement);
 scene.add(transformControls);
 let gizmoMode = 'off'; // 'off' | 'translate' | 'rotate'
+let gizmoTargetMode = 'tool'; // Gizmo can edit the tool, a virtual Nut/Bridge endpoint, or the avatar-local right hand.
 let editPhase = 'windup'; // Single source of truth for pose tabs, sliders, and TransformControls.
 
 transformControls.addEventListener('dragging-changed', e => { controls.enabled = !e.value; });
@@ -800,6 +801,33 @@ transformControls.addEventListener('dragging-changed', e => { controls.enabled =
 // in the tool's own space. Each drag is converted back onto the holder, whose x/y/z/pitch/yaw/roll feed the pose panel.
 const gizmoProxy = new THREE.Object3D();
 toolBase.add(gizmoProxy);
+const freeHandGizmo = new THREE.Object3D(); // Tracks the selected keyframe's right-hand position independently of the instrument.
+freeHandGizmo.name = 'attack_editor_free_right_hand';
+const gripAxisMarkers = { // 3D handles follow the actual scaled tool holder, not an untransformed mockup.
+  start: new THREE.Mesh(new THREE.SphereGeometry(0.025, 12, 8), new THREE.MeshBasicMaterial({ color: 0x22d3ee, depthTest: false })),
+  end: new THREE.Mesh(new THREE.SphereGeometry(0.025, 12, 8), new THREE.MeshBasicMaterial({ color: 0xf59e0b, depthTest: false })),
+};
+const gripAxisLine = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0x8b5cf6, depthTest: false })); // The selected nut-to-bridge virtual Z line.
+toolHolder.add(gripAxisMarkers.start, gripAxisMarkers.end, gripAxisLine);
+function syncGripAxisMarkers() {
+  const grips = window.HobunjiHandToolGrips;
+  const axis = grips?.customGripAxisForTool?.(currentToolKey);
+  const visible = axis?.enabled === true;
+  for (const [key, node] of Object.entries(gripAxisMarkers)) {
+    node.visible = visible;
+    if (!visible) continue;
+    const p = grips.itemPointToHolder(currentToolKey, axis[key], grips.currentGripContext?.(), { speciesId: currentSpeciesId, gender: currentGender });
+    node.position.set(p.x, p.y, p.z);
+  }
+  gripAxisLine.visible = visible;
+  if (visible) gripAxisLine.geometry.setFromPoints([gripAxisMarkers.start.position, gripAxisMarkers.end.position]); // Visual marker for the line used by the sampling code.
+}
+function syncFreeHandGizmo() {
+  if (freeHandGizmo.parent !== avatarModel && avatarModel) avatarModel.add(freeHandGizmo); // Avatar-local XYZ travels with the character, never with the instrument.
+  const rightHand = anim.poses?.[editPhase]?.rightHand || {};
+  freeHandGizmo.position.set(Number(rightHand.x) || 0, Number(rightHand.y) || 0, Number(rightHand.z) || 0);
+  freeHandGizmo.rotation.set(THREE.MathUtils.degToRad(Number(rightHand.pitch) || 0), THREE.MathUtils.degToRad(Number(rightHand.yaw) || 0), THREE.MathUtils.degToRad(Number(rightHand.roll) || 0), 'YXZ');
+}
 transformControls.setSpace('local'); // The proxy supplies the orientation: rig frame to translate, tool frame to rotate.
 const proxyPivotOffset = new THREE.Vector3(); // Visible weapon's origin in the holder's own local frame (constant while the pose rotates).
 const proxyScratch = new THREE.Vector3();
@@ -826,14 +854,35 @@ function syncGizmoProxy() {
   gizmoProxy.position.copy(toolHolder.position).add(proxyPivotWorldOffset(toolHolder.quaternion));
   gizmoProxy.updateMatrixWorld(true);
 }
-const gizmoTarget = () => gizmoProxy;
+const gizmoTarget = () => gizmoTargetMode === 'rightHand' ? freeHandGizmo
+  : gripAxisMarkers[gizmoTargetMode] || gizmoProxy;
 function refreshGizmoTarget() {
+  syncGripAxisMarkers(); // Keep both points aligned after tool change, species scale, or numeric grip edits.
   if (gizmoMode === 'off') return;
-  syncGizmoProxy();
+  if (gizmoTargetMode === 'rightHand') syncFreeHandGizmo();
+  else if (!gripAxisMarkers[gizmoTargetMode]) syncGizmoProxy();
   transformControls.attach(gizmoTarget());
 }
 
 transformControls.addEventListener('objectChange', () => {
+  if (transformControls.object === freeHandGizmo) {
+    const right = anim.poses[editPhase].rightHand ||= { enabled: true };
+    right.enabled = true;
+    right.x = freeHandGizmo.position.x; right.y = freeHandGizmo.position.y; right.z = freeHandGizmo.position.z;
+    const e = new THREE.Euler().setFromQuaternion(freeHandGizmo.quaternion, 'YXZ');
+    right.pitch = THREE.MathUtils.radToDeg(e.x); right.yaw = THREE.MathUtils.radToDeg(e.y); right.roll = THREE.MathUtils.radToDeg(e.z);
+    syncPosePanelFromState(editPhase); refreshJsonView();
+    window.ProceduralHandFrameDriver?.syncNow?.();
+    return;
+  }
+  const axisKey = Object.keys(gripAxisMarkers).find(key => transformControls.object === gripAxisMarkers[key]);
+  if (axisKey) {
+    const grips = window.HobunjiHandToolGrips;
+    const point = grips.holderPointToItem(currentToolKey, gripAxisMarkers[axisKey].position, grips.currentGripContext?.(), { speciesId: currentSpeciesId, gender: currentGender });
+    grips.mutate(data => { data.tools[currentToolKey].customGripAxis[axisKey] = point; }); // Persist drag directly to the same grip profile as the numeric fields.
+    syncGripAxisMarkers(); refreshJsonView();
+    return;
+  }
   if (transformControls.object === gizmoProxy) {
     if (gizmoMode === 'rotate') toolHolder.quaternion.copy(gizmoProxy.quaternion); // Translation keeps the tool's own rotation.
     toolHolder.position.copy(gizmoProxy.position).sub(proxyPivotWorldOffset(toolHolder.quaternion));
@@ -871,8 +920,9 @@ transformControls.addEventListener('objectChange', () => {
   refreshJsonView();
 });
 
-function setGizmoMode(mode) {
+function setGizmoMode(mode, target = 'tool') {
   gizmoMode = mode;
+  gizmoTargetMode = target; // Existing toolbar returns to tool; Nut/Bridge and Free Hand buttons deliberately select a different target.
   if (mode === 'off') {
     transformControls.detach();
   } else {
@@ -887,6 +937,10 @@ function setGizmoMode(mode) {
 $('gizmoOffBtn').onclick = () => setGizmoMode('off');
 $('gizmoMoveBtn').onclick = () => setGizmoMode('translate');
 $('gizmoRotateBtn').onclick = () => setGizmoMode('rotate');
+window.HobunjiAttackEditorGripAxis = { // Hand-grip panel's mobile-friendly 3D point buttons reuse the normal TransformControls.
+  select(point) { if (!gripAxisMarkers[point]) return; setGizmoMode('translate', point); logDebug(`Move ${point === 'start' ? 'Nut' : 'Bridge'} marker to author the custom grip axis.`); },
+  refresh: syncGripAxisMarkers,
+};
 
 // ── Weapon mesh: a real PNG sprite plane, same convention as game.js's
 // makeToolPlaneMesh (TOOL_MODEL_WIDTH, flat-in-XZ rotation, sweep tools get an
@@ -1166,6 +1220,25 @@ function writeElbowPoseValue(phase, side, point) {
   return true;
 }
 
+const FREE_RIGHT_HAND_CHANNELS = ['x', 'y', 'z', 'pitch', 'yaw', 'roll']; // Avatar-local hand socket independent of tool motion.
+function captureFreeRightHandFromGrip(phase) {
+  const grips = window.HobunjiHandToolGrips;
+  if (!avatarModel || !grips) return false;
+  applyPoseToRig(anim.poses[phase]);
+  toolHolder.updateWorldMatrix(true, false);
+  avatarModel.updateWorldMatrix(true, false);
+  const grip = grips.primaryGripForTool(currentToolKey, grips.currentGripContext?.(), { speciesId: currentSpeciesId, gender: currentGender });
+  if (!grip?.position) return false;
+  const p = toolHolder.localToWorld(new THREE.Vector3(grip.position.x, grip.position.y, grip.position.z));
+  avatarModel.worldToLocal(p); // Capture the real current grip as avatar-local coordinates so detaching doesn't teleport the fingers.
+  const right = anim.poses[phase].rightHand ||= {};
+  Object.assign(right, { enabled: true, x: p.x, y: p.y, z: p.z });
+  refreshJsonView();
+  return true;
+}
+window.HobunjiAttackEditorRightHand = {
+  currentPose() { return window.HobunjiHandToolGrips?.sampleFreeRightHand?.(anim.poses, anim, previewT, anim.sequence) || null; },
+};
 function renderActivePosePanel() {
   const panel = $('activePosePanel');
   const fields = poseFieldDefs(editPhase);
@@ -1188,7 +1261,21 @@ function renderActivePosePanel() {
       <div class="help" style="margin-top:8px">Elbows are ordinary ${editPhase[0].toUpperCase() + editPhase.slice(1)} pose values. Blank means no elbow keyframe. The halfway buttons sample the current shoulder/hand once and write coordinates; gameplay never recalculates a midpoint.</div>
       <label class="fieldRow" style="cursor:pointer;margin:8px 0 2px"><input id="poseShowArmBones" type="checkbox" style="width:auto;margin-right:6px">Show arm bones</label>
       <div class="help">Draws shoulder <b style="color:#22c55e">● green</b> → elbow <b style="color:#f97316">● orange</b> → hand socket <b style="color:#22d3ee">● cyan</b> joined by bars. The orange sphere is the elbow as currently interpolated at the previewed time, so it matches the inputs above when the preview sits on this pose. The blue spheres are the hand anchor and weapon grip, not the arm.</div>
-      ${elbowRows}`;
+      ${elbowRows}
+      <div class="hr"></div>
+      <div class="poseGroupHead"><span class="dot" style="background:#e879f9"></span>Right hand · independent animation</div>
+      <label class="fieldRow" style="cursor:pointer"><input id="poseFreeRightHandEnabled" type="checkbox" style="width:auto;margin-right:6px">Free right hand (not attached to instrument)</label>
+      <div class="help">When enabled, right-hand XYZ and rotation are relative to the <b>character's body</b>, not the moving tool. Transitions blend between the normal grip and this independent pose. Useful for plucking/strumming while the left hand holds the instrument.</div>
+      <div id="poseFreeRightHandFields">
+        <div class="compactGrid">
+          ${FREE_RIGHT_HAND_CHANNELS.map(axis => `<div class="field"><label>Hand ${axis.toUpperCase()}${['pitch','yaw','roll'].includes(axis) ? ' (°)' : ''}</label><input type="number" step="${['pitch','yaw','roll'].includes(axis) ? '1' : '0.005'}" id="poseFreeRightHand_${axis}"></div>`).join('')}
+        </div>
+        <div class="row">
+          <button type="button" class="secondary" id="poseCaptureRightGrip">Use current grip</button>
+          <button type="button" class="secondary" id="poseMoveRightHand">⊹ Move hand in 3D</button>
+          <button type="button" class="secondary" id="poseRotateRightHand">↻ Rotate hand in 3D</button>
+        </div>
+      </div>`;
   for (const f of fields) {
     const el = $(`pose_${f.key}`);
     el.addEventListener('input', () => {
@@ -1224,6 +1311,41 @@ function renderActivePosePanel() {
       logDebug(`Authored ${editPhase} ${side} elbow halfway between the currently displayed shoulder and hand.`);
     });
   }
+  const freeSwitch = $('poseFreeRightHandEnabled');
+  freeSwitch.addEventListener('change', () => {
+    const right = anim.poses[editPhase].rightHand ||= {};
+    if (freeSwitch.checked && !right.enabled && !FREE_RIGHT_HAND_CHANNELS.some(key => Number(right[key]) !== 0)) {
+      captureFreeRightHandFromGrip(editPhase); // First enable starts where the right hand already touches the Kurraya.
+    }
+    right.enabled = freeSwitch.checked;
+    syncPosePanelFromState(editPhase); window.ProceduralHandFrameDriver?.syncNow?.(); refreshJsonView();
+  });
+  for (const channel of FREE_RIGHT_HAND_CHANNELS) {
+    $('poseFreeRightHand_' + channel).addEventListener('input', event => {
+      const value = Number(event.target.value);
+      if (!Number.isFinite(value)) return;
+      const right = anim.poses[editPhase].rightHand ||= {};
+      right[channel] = value;
+      focusPreviewOnPhase(editPhase);
+      window.ProceduralHandFrameDriver?.syncNow?.(); refreshJsonView();
+    });
+  }
+  $('poseCaptureRightGrip').onclick = () => {
+    focusPreviewOnPhase(editPhase);
+    if (captureFreeRightHandFromGrip(editPhase)) {
+      syncPosePanelFromState(editPhase); window.ProceduralHandFrameDriver?.syncNow?.();
+    }
+  };
+  $('poseMoveRightHand').onclick = () => {
+    anim.poses[editPhase].rightHand ||= { enabled: true };
+    anim.poses[editPhase].rightHand.enabled = true;
+    syncPosePanelFromState(editPhase); setGizmoMode('translate', 'rightHand');
+  };
+  $('poseRotateRightHand').onclick = () => {
+    anim.poses[editPhase].rightHand ||= { enabled: true };
+    anim.poses[editPhase].rightHand.enabled = true;
+    syncPosePanelFromState(editPhase); setGizmoMode('rotate', 'rightHand');
+  };
   const armBones = $('poseShowArmBones');
   if (armBones) {
     armBones.checked = window.HobunjiAttackEditorHandShoulderControls?.showPaperArmGuide === true;
@@ -1238,6 +1360,15 @@ function syncPosePanelFromState(phase = editPhase) {
     const v = f.key === 'bodySink' ? sinkPctForPhase(editPhase) : safeNum(anim.poses[editPhase][f.key], f.key === 'scale' ? 1 : 0); // An unauthored sink shows the value it inherits.
     $(`pose_${f.key}`).value = v;
     $(`pose_${f.key}_val`).textContent = f.angle ? `${v.toFixed(0)}°` : f.percent ? `${v.toFixed(1)}%` : v.toFixed(2);
+  }
+  const freeHand = anim.poses[editPhase].rightHand || {};
+  const enabled = $('poseFreeRightHandEnabled');
+  if (enabled) enabled.checked = freeHand.enabled === true;
+  const freeFields = $('poseFreeRightHandFields');
+  if (freeFields) freeFields.style.display = freeHand.enabled === true ? '' : 'none';
+  for (const channel of FREE_RIGHT_HAND_CHANNELS) {
+    const input = $('poseFreeRightHand_' + channel);
+    if (input && document.activeElement !== input) input.value = String(Number(freeHand[channel]) || 0);
   }
   for (const side of ELBOW_SIDES) {
     const point = elbowControlPoint(editPhase, side);
@@ -1776,6 +1907,7 @@ function clonePoseData(pose = {}) {
     secondaryGrip: pose.secondaryGrip ? { ...pose.secondaryGrip } : pose.secondaryGrip,
     dualWield: pose.dualWield && typeof pose.dualWield === 'object' ? { ...pose.dualWield } : pose.dualWield,
     elbows: pose.elbows ? Object.fromEntries(Object.entries(pose.elbows).map(([side, point]) => [side, point ? { ...point } : point])) : pose.elbows,
+    rightHand: pose.rightHand ? { ...pose.rightHand } : pose.rightHand, // Free-hand animation keyframes must not share mutable state between actions.
   };
 }
 function cloneAnimationTemplate(source = {}) {
