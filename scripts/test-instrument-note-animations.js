@@ -299,7 +299,49 @@ assert(grips.includes("phase === 'neutral' && !editorKurrayaNeutralAllowed()"),'
 assert(editor.includes("actionId: currentActionId, toolKey: preset.toolKey"),'action switching must pass authoritative Kurraya identity to grip loader');
 assert(editor.includes("actionId: currentActionId, toolKey: currentAction().toolKey"),'undo/restore must pass authoritative Kurraya identity to grip loader');
 
-assert.equal(gripsApi.defaultData.tools.kurraya.customGripAxis.enabled,false,'Kurraya axis is opt-in until Nut and Bridge have been measured');
+const exportedKurrayaAxis = { // Exact authored JSON, not inferred by the test or a guessed placeholder.
+  enabled:true,
+  start:{x:0.4229580686978533,y:0.13525912280456098,z:-0.015},
+  end:{x:-0.2939021690442711,y:-0.09932862507652179,z:0.06094914739001003},
+};
+const exportedMainSpan={enabled:true,startZ:0.9719,endZ:0.3333};
+const exportedOffhandSpan={enabled:true,startZ:0.6456,endZ:-0.5429};
+assert.equal(JSON.stringify(gripsApi.defaultData.tools.kurraya.customGripAxis),JSON.stringify(exportedKurrayaAxis),
+  'the shipped Nut→Bridge preview must start enabled at the exact exported coordinates');
+assert.equal(JSON.stringify(gripsApi.defaultData.tools.kurraya.primaryGripSpan),JSON.stringify(exportedMainSpan),
+  'Kurraya must sample the authored primary span');
+assert.equal(JSON.stringify(gripsApi.defaultData.tools.kurraya.secondaryGripSpan),JSON.stringify(exportedOffhandSpan),
+  'Kurraya must sample the authored secondary span');
+const oldKurrayaDraft = JSON.parse(JSON.stringify(gripsApi.defaultData)); // Simulates the prior localStorage draft that masked the axis with disabled dummy endpoints.
+delete oldKurrayaDraft.kurrayaNutBridgePreset;
+oldKurrayaDraft.tools.kurraya.customGripAxis={enabled:false,start:{x:0,y:0,z:0},end:{x:0,y:0,z:0.5}};
+oldKurrayaDraft.tools.kurraya.primaryGripSpan={enabled:false,startZ:0,endZ:0.5};
+oldKurrayaDraft.tools.kurraya.secondaryGripSpan={enabled:false,startZ:0,endZ:0.5};
+oldKurrayaDraft.tools.kurraya.primaryGrip.position={x:0.17,y:-0.08,z:0.02}; // Non-axis hand authoring must survive upgrading the saved draft.
+oldKurrayaDraft.tools.hatchet.toolScale=1.43;
+gripsApi.replace(oldKurrayaDraft);
+assert.equal(JSON.stringify(gripsApi.data.tools.kurraya.customGripAxis),JSON.stringify(exportedKurrayaAxis),
+  'old disabled Kurraya axis should migrate to the exported geometry');
+assert.equal(JSON.stringify(gripsApi.data.tools.kurraya.primaryGripSpan),JSON.stringify(exportedMainSpan));
+assert.equal(JSON.stringify(gripsApi.data.tools.kurraya.secondaryGripSpan),JSON.stringify(exportedOffhandSpan));
+assert.equal(gripsApi.data.tools.kurraya.primaryGrip.position.x,0.17,'hand target XYZ remains authored');
+assert.equal(gripsApi.data.tools.hatchet.toolScale,1.43,'unrelated weapon calibration is never reset');
+gripsApi.mutate(draft=>{draft.tools.kurraya.customGripAxis.enabled=false;});
+assert.equal(gripsApi.customGripAxisForTool('kurraya').enabled,false,
+  'an artist can still switch the migrated axis off later without it being automatically reenabled');
+const preexistingCustom = JSON.parse(JSON.stringify(gripsApi.defaultData));
+delete preexistingCustom.kurrayaNutBridgePreset;
+preexistingCustom.tools.kurraya.customGripAxis={enabled:true,start:{x:0.1,y:0.2,z:0},end:{x:0.2,y:0.5,z:0.1}};
+preexistingCustom.tools.kurraya.primaryGripSpan={enabled:true,startZ:0.06,endZ:0.17};
+preexistingCustom.tools.kurraya.secondaryGripSpan={enabled:true,startZ:0.15,endZ:-0.2};
+const keepCustom = JSON.parse(JSON.stringify(preexistingCustom.tools.kurraya));
+gripsApi.replace(preexistingCustom);
+assert.equal(JSON.stringify(gripsApi.data.tools.kurraya.customGripAxis),JSON.stringify(keepCustom.customGripAxis),
+  'a previously enabled user-authored axis is more authoritative than the shipped default');
+assert.equal(JSON.stringify(gripsApi.data.tools.kurraya.primaryGripSpan),JSON.stringify(keepCustom.primaryGripSpan),
+  'existing enabled grip ranges must not be reset');
+assert.equal(JSON.stringify(gripsApi.data.tools.kurraya.secondaryGripSpan),JSON.stringify(keepCustom.secondaryGripSpan));
+gripsApi.replace(gripsApi.defaultData); // Return to canonical values before testing independent rotation migrations.
 const authoredRotations = [ // Only these three hand rotations differ from shipped defaults in the supplied full export.
   ['kurraya','primaryGrip',{pitch:-135,yaw:3,roll:0}],
   ['flute','primaryGrip',{pitch:90,yaw:-90,roll:0}],
@@ -410,6 +452,15 @@ assert(editor.includes("setGizmoMode('rotate', 'rightHand')"),'free hand can be 
 assert(editor.includes('function enableFreeRightHandForPhase(phase)'), 'gizmo and checkbox must both initialize from the actual grip');
 assert(editor.includes('const holderQ = toolHolder.getWorldQuaternion(new THREE.Quaternion())'), 'capturing free hand must keep its wrist orientation as well as position');
 assert(editor.includes('syncGripAxisMarkers(); // Keep Nut/Bridge markers visible'), 'nut and bridge preview markers must update during ordinary playback');
+assert(editor.includes('syncGripAxisMarkers(); // An async tool-sprite replacement'), 'Nut/Bridge guide must refresh immediately after an asynchronous sprite selection');
+assert(editor.includes('for (const node of [...Object.values(gripAxisMarkers), gripAxisLine]) node.renderOrder = 10000'),
+  'the preview Nut/Bridge markers must render above the instrument sprites');
+assert(editor.includes('debug: () => ({ // Mobile-readable preview truth'), 'the live preview must expose its marker state without developer tools');
+assert(grips.includes("id=\"handRestoreKurrayaAxis\""), 'mobile users need a dedicated one-tap Kurraya Nut/Bridge restore control');
+assert(grips.includes("const previewAxis = global.HobunjiAttackEditorGripAxis?.debug?.()"),
+  'the visible editor status must distinguish stored axis data from hidden preview graphics');
+assert(grips.includes("if (inAttackEditor()) global.HobunjiAttackEditorGripAxis?.refresh?.()"),
+  'authoring a grip value must update the 3D markers immediately');
 
 // The slider and number fields must share one live value, including gizmo-authored points beyond initial range bounds.
 const syncStart=editor.indexOf('function syncPoseCoordinatePair(');
