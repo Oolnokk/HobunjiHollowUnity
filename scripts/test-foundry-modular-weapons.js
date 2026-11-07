@@ -21,7 +21,16 @@ assert.equal(torchShaft.sourceShape, 'hachutuTorchStaff');
 assert.equal(torchShaft.fireAssembly, 'hachutuTorchStaff', 'both live flames belong to the complete modular shaft');
 assert.equal(torchShaft.sprite, 'assets/toolsprites/hachutu_torch-staff.png');
 assert.equal(torchShaft.duplicateFrom, 'bshuakauitl');
-assert.deepEqual(plain(torchShaft.mounts), plain(blowgunShaft.mounts), 'all four B\'shuakauitl arrows copied without swapping ends');
+// Preserve the imported source lines while allowing the explicitly reauthored staff tang tips.
+assert.deepEqual(plain(torchShaft.mounts.map(m => ({ type: m.type, start: m.start }))),
+  plain(blowgunShaft.mounts.map(m => ({ type: m.type, start: m.start }))),
+  'Torch-Staff retains all donor mount types and starts');
+assert.deepEqual(plain(torchShaft.mounts.slice(0, 2)), plain(blowgunShaft.mounts.slice(0, 2)),
+  'Both inherited eye mounts retain their complete donor geometry');
+assert.deepEqual(plain(torchShaft.mounts.slice(2).map(m => m.end)), [
+  { x: 221.7599119115615, y: 941.6863824754939 },
+  { x: 158.12411992422858, y: 303.16373428761597 },
+], 'Independently calibrated Torch-Staff tang tips survive authored import');
 assert.notStrictEqual(torchShaft.mounts, blowgunShaft.mounts, 'duplicate mounts remain independent of their donor');
 assert.deepEqual(Object.keys(torchShaft.overrides).sort(), Object.keys(blowgunShaft.overrides).sort(),
   'all B\'shuakauitl pair fitting/exclusion rules are preserved');
