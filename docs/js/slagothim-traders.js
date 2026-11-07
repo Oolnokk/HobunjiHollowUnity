@@ -1169,6 +1169,7 @@
       const maxTotal = num(window.InventoryStacks?.MAX_TOTAL, 9999); // Shared bag cap (js/inventory-stacks.js).
       if (owned >= maxTotal) { deps.showToast?.('You cannot carry any more of that.', false); return { ok: false, reason: 'full' }; }
       deps.inventory[entry.key] = owned + 1;
+      if (entry.key.startsWith('cv_')) window.CropVarieties?.refreshBrushes?.(); // Imported seed becomes a farm-editor option immediately after buying.
     } else if (entry.kind === 'trinket') {
       if (!window.TrinketSystem?.grant?.(entry.trinketId, 'slagothim')) { deps.showToast?.('That trinket is not available.', false); return { ok: false, reason: 'trinket' }; }
     } else if (entry.kind === 'relic') {
