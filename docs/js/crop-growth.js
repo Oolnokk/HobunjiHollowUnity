@@ -18,7 +18,8 @@
   // Returns 0..1 growth rate based on how close tile.water is to crop ideal band.
   function cropGrowthMultiplier(tile, col, row) {
     if (!tile.crop) return 0;
-    const data = deps.cropData[tile.crop];
+    const data = deps.cropData[tile.crop] || (window.CropVarieties?.ensure?.(tile.crop) && deps.cropData[tile.crop]);
+    if (!data) return 0;
     const { idealMin, idealMax } = data;
     const w = tile.water / deps.MAX_WATER;
     let waterMul;
@@ -36,7 +37,8 @@
       for (let col = 0; col < deps.COLS; col++) {
         const tile = grid[row][col];
         if (!tile.crop) continue;
-        const data = deps.cropData[tile.crop];
+        const data = deps.cropData[tile.crop] || (window.CropVarieties?.ensure?.(tile.crop) && deps.cropData[tile.crop]);
+        if (!data) continue;
         const mul = cropGrowthMultiplier(tile, col, row);
         const ditchStress = data.needsAdjacentDitch && !hasAdjacentDitch(col, row) ? 'needs ditch' : '';
         const tooDry = tile.water / deps.MAX_WATER < data.idealMin; // Same 0..1 scale as idealMin (tile.water is 0..MAX_WATER).
