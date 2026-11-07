@@ -1750,6 +1750,9 @@ function applyPreset(preset) {
     $('toolSpriteSelect').value = preset.toolKey;
     setToolSprite(preset.toolKey).catch(e => logDebug('Tool sprite swap failed: ' + e.message));
   }
+  const gripModeEditor = window.HobunjiAttackEditorHandGripMode; // Keep the Kurraya's authored palm orientation when changing Action, after choosing its tool sprite.
+  if (preset.gripMode) gripModeEditor?.loadFromAnimationObject?.(preset);
+  else gripModeEditor?.syncForTool?.(); // Non-Kurraya actions must not inherit the previous instrument's manual grip mode.
   if (preset.still) {
     playing = false;
     // True idle is t=0 (poseAt's neutral pose), not a frozen mid-swing
@@ -2500,8 +2503,7 @@ $('loadFile').onchange = async () => {
   try {
     const data = JSON.parse(await file.text());
     loadAnimObject(data);
-    window.HobunjiAttackEditorHandGripMode?.loadFromAnimationObject?.(data);
-    logDebug(`Loaded ${file.name}`);
+    logDebug(`Loaded ${file.name}`); // The common load path restores free hand, elbow, grip and palm mode once.
   } catch (e) {
     logDebug(`Load failed: ${e.message}`);
   } finally {
@@ -2576,6 +2578,7 @@ function loadAnimObject(data) {
   // not only the file-input handler.
   window.HobunjiAttackEditorHandShoulderControls?.loadFromAnimationObject?.(data);
   window.HobunjiHandToolGrips?.loadEditorAnimationGrip?.({ actionId: currentActionId, toolKey: currentAction().toolKey, sequence: anim.sequence, style: anim.style, poses: anim.poses });
+  window.HobunjiAttackEditorHandGripMode?.loadFromAnimationObject?.(data); // Undo/Redo and programmatic import also restore the authored palm orientation.
   $('animName').value = action.label;
   $('animStyle').value = anim.style;
   $('playbackSequence').value = anim.sequence;
