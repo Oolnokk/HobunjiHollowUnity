@@ -25,6 +25,7 @@
     'needlegrain', 'heftroot', 'garlink', 'ongyums', 'redberries', 'blueberries',
     'yellowberries', 'whiteberries', 'blackberries', 'blackMustard', 'greenMustard',
   ]); // Existing farm crops remain the species boundary for uncomplicated crossbreeding.
+  const MUSHTARD_LABELS = Object.freeze({ blackMustard: 'Black Mushtard', greenMustard: 'Green Mushtard' }); // Player-facing names only; unchanged species IDs preserve existing saves and recipes.
   const NATIVE_COLORS = Object.freeze({
     needlegrain: 0xd4c526, heftroot: 0xf0d15a, garlink: 0xf2ead0, ongyums: 0xe09a4b,
     redberries: 0xff4f62, blueberries: 0x5f80ff, yellowberries: 0xffe86a,
@@ -141,6 +142,21 @@
     inventoryItems = deps.inventoryItems || inventoryItems;
     storageGetter = deps.loadStorage || storageGetter;
     if (!cropData) return;
+    for (const [family, label] of Object.entries(MUSHTARD_LABELS)) {
+      const base = cropData[family]; // Native crop definition provides farm brushes and inherited variety labels.
+      if (!base) continue;
+      base.label = label;
+      if (itemDefs?.[family]) itemDefs[family].label = label; // Harvested native produce shown in the pack.
+      const nativeSeedKey = base.seedKey; // Uses the original seed ID, singular or plural, without save migration.
+      if (nativeSeedKey && itemDefs?.[nativeSeedKey]) {
+        itemDefs[nativeSeedKey].label = String(itemDefs[nativeSeedKey].label || label + ' Seeds').replace(/Mustard/g, 'Mushtard');
+      }
+      for (const item of inventoryItems || []) {
+        if (item?.key === family || item?.key === nativeSeedKey) {
+          item.label = String(item.label || label).replace(/Mustard/g, 'Mushtard'); // Keep already-populated mobile pack choices consistent.
+        }
+      }
+    }
     for (const family of FAMILIES) if (cropData[family]) for (let region = 1; region < REGIONS.length; region++)
       register(family, String(region).repeat(6)); // Every seed offer has a definition before traders roll stock.
     hydrate(inventory);
