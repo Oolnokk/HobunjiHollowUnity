@@ -44,7 +44,7 @@
       ||typeof isActive!=='function'||typeof onSolved!=='function')
       throw new Error('Invalid layered ruin challenge '+id+' ('+kind+').');
     const cx=room.x+room.w/2,cz=room.z+room.d/2;
-    const caveGateZ=room.z+room.d-1.28; // Wall-mounted puzzle hardware stands .23 tile further into the playable cave, not buried in its rock face.
+    const caveGateZ=room.z+room.d-2.8; // Leave a genuinely reachable treasure alcove behind the slab; the whole door remains inside the carved nine-tile room.
     const owned=[],materials=[],targets=[],authoredVisuals=[]; // Each challenge owns its geometry, authored fixture instances and their per-room materials.
     const rec={id,kind,solved:false,elapsed:0,targetCount:0,hits:0,targets,plate:null,linked:false,disposed:false};
     const group=new THREE.Group(); // Visible mechanism geometry follows the wing floor's presentation culling.
@@ -415,7 +415,7 @@
       // exposed jambs/lintel remain stone, not clipped boulders or a black card.
       const surround=root.CavernOreRocks?.carveStoneGate?.(group,{
         x:cx,y,z:caveGateZ+.42,openingWidth:4.78,openingHeight:3.55,
-        sideThickness:1.24,roofHeight:9,wallDepth:.30,
+        sideThickness:Math.max(.6,room.w-4.78),roofHeight:9,wallDepth:.30, // The stone flanks seal the ENTIRE chamber width, not merely the doorframe.
       }); // Slightly behind the slab so sconces and score glyphs remain visible in front.
       if(surround){owned.push(surround);rec.rockSurround=surround;}
     }
@@ -474,6 +474,30 @@
       const bounds={minX:cx-2.35,maxX:cx+2.35,minZ:gateZ-.18,maxZ:gateZ+.18}; // One shared physical footprint for both collision APIs.
       const gateClosed=()=>!rec.disposed&&isActive()&&(!rec.solved||(Number(rec.doorRise)||0)<.98); // Both registries open together only after the animated slab rises.
       rec.colliderId='puzzle-cave-interior-gate:'+options.area+':'+id;
+      if(options.authoredCliffDoor){
+        const stoneWidth=room.w; // Physical, unbreakable rock shoulders match the carved surface spanning the nine-tile chamber.
+        const passageHalfWidth=2.39; // Half the 4.78-tile sculpted opening; only this central opening may ever become walkable.
+        const stoneBounds={minX:cx-stoneWidth/2,maxX:cx+stoneWidth/2,
+          minZ:gateZ-.32,maxZ:gateZ+.75}; // Cover the sculpted wall at z=gateZ+.42, including its front/back rock faces.
+        const flankAt=(px,pz,half,elevation)=>{
+          if(Number.isFinite(elevation)&&(elevation<y-.5||elevation>y+9))return false;
+          if(px+half<stoneBounds.minX||px-half>stoneBounds.maxX
+            ||pz+half<stoneBounds.minZ||pz-half>stoneBounds.maxZ)return false;
+          return px-half<cx-passageHalfWidth||px+half>cx+passageHalfWidth;
+        }; // The stone remains solid after the slab rises; the player cannot walk around the door.
+        rec.stoneColliderId=rec.colliderId+':permanent-rock';
+        if(DS?.registerBlocker)DS.registerBlocker({
+          id:rec.stoneColliderId,scope:'puzzle-cave-stone:'+options.area,
+          bounds:stoneBounds,enabled:()=>!rec.disposed&&isActive(),
+          blocksAt:(px,pz,_h,_record,radius,query)=>flankAt(px,pz,Math.max(0,Number(radius)||0),
+            Number(query?.y??query?.floorY??query?.worldY)),
+        });
+        if(footprint?.register)rec.removeStoneFlanks=footprint.register(rec.stoneColliderId,{
+          area:options.area,enabled:()=>!rec.disposed&&isActive(),
+          blocksBox:flankAt,
+        });
+      }
+
       if(DS?.registerBlocker){
         DS.registerBlocker({
           id:rec.colliderId,scope:'puzzle-cave-interior:'+options.area,
@@ -602,6 +626,8 @@
       for(const remove of linkDisposers)remove();
       if(fireTargetId)fire?.unregisterTarget?.(fireTargetId);
       if(fireControl)options.removeControl?.(fireControl);
+      rec.removeStoneFlanks?.(); // Unregister permanent stone flanks along with their carved scene mesh.
+      if(rec.stoneColliderId)(options.DynamicSurfaces||root.DynamicSurfaces)?.remove?.(rec.stoneColliderId);
       rec.removeFootprintGate?.(); // Release the real player/NPC occupancy blocker before this scene is reused.
       if(rec.colliderId)(options.DynamicSurfaces||root.DynamicSurfaces)?.remove?.(rec.colliderId); // One owner for both collision removal and room teardown.
       if(ropeChain)bus?.removeExternalRopeChain?.(ropeChain);
