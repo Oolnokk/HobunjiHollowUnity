@@ -190,7 +190,8 @@
       ray.far=6;
       for(const hit of ray.intersectObjects(surfaces,false)){
         const normal=verticalFace(hit);
-        if(!normal||Math.hypot(hit.point.x-portal.door.x,hit.point.z-portal.door.z)<.72)continue; // Do not paint over the active cliff door.
+        if(!normal||hit.point.y-layout.height/2<portal.shelf.y+.12||
+          Math.hypot(hit.point.x-portal.door.x,hit.point.z-portal.door.z)<.72)continue; // Keep the entire plaque above the walkable shelf and away from its active door.
         const yaw=Math.atan2(normal.x,normal.z);
         let fits=true;
         for(const horizontal of [-layout.width/2,layout.width/2])for(const vertical of [-layout.height/2,layout.height/2]){
