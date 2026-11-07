@@ -104,4 +104,38 @@ function world() {
   t.window.PlayerJump.reset();
   assert.equal(t.player._freeJump,null,'leaving a ruin clears the shared record');
 }
+// Ruin ledge falls use the same entry point when directional movement is held.
+{
+  const interior=read('docs/js/dev-random-ruin-interior-map.js'); // Native ruin ledge/floor owner.
+  new vm.Script(interior, {filename:'dev-random-ruin-interior-map.js'});
+  const start=interior.indexOf('  function beginSteerableRuinFall(x,z) {');
+  const end=interior.indexOf('\n  function reconcilePlayer(now){',start);
+  assert(start>=0&&end>start,'the ruin has a fall adapter beside native reconciliation');
+  assert(interior.split('if(beginSteerableRuinFall(x,z))return;').length===3,
+    'both lower-level landings and ordinary nonfatal pit falls use the adapter');
+  let move={x:1,y:0}; // Directional input controlling whether a scripted drop becomes a steerable fall.
+  let calls=0; // Counts actual shared-airborne starts, rather than relying solely on a source-text assertion.
+  const actor={x:3*TILE,y:4*TILE,inputX:0,inputY:0};
+  const ruin={supportY:2,lastSafePx:{x:2*TILE,y:4*TILE},falling:{},lastAcceptedPx:null};
+  const deps={player:actor,TILE,getMovementInput:()=>move};
+  const window={PlayerJump:{beginFlight(f,opts) {
+    calls++;
+    assert.equal(f.y,2);
+    assert.equal(f.safeX,2,'fall keeps the last safe ground X');
+    assert.equal(f.safeZ,4,'fall keeps the last safe ground Z');
+    assert.equal(opts.deliberate,false,'an unintentional step-off is not an intentional jump');
+    return {feetY:f.y};
+  }}};
+  let presentationY=null;
+  const sync=y=>{presentationY=y};
+  const helper=new Function('deps','ruin','window','syncRuinPresentationHeight',
+    interior.slice(start,end)+'\nreturn beginSteerableRuinFall;')(deps,ruin,window,sync);
+  assert.equal(helper(3,4),true);
+  assert.equal(calls,1);
+  assert.equal(ruin.falling,null,'new airborne physics replaces, rather than overlaps, the timed fall');
+  assert.equal(presentationY,2);
+  move={x:0,y:0};
+  assert.equal(helper(3,4),false,'idle step-offs retain their existing native scripted fall');
+  assert.equal(calls,1);
+}
 console.log('shared airborne rope ok');
