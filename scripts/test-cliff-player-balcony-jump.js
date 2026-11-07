@@ -96,7 +96,7 @@ player._freeJump = null;
 player.x = 6.45 * 64;
 player.y = shelf.z * 64;
 input = { x: 1, y: 0 };
-assert(ctx.window.ClimbSystem.updateBalcony(0.15));
+assert(ctx.window.ClimbSystem.updateBalcony(1/60)); // Real 60 fps frame: the foot is beyond the walkability inset but still inside the physical shelf.
 assert(airborne, 'outward movement transfers the balcony fall into the shared airborne system');
 assert.equal(player.climbing, false, 'a directional fall does not start a scripted climb');
 assert.equal(player.onCliffBalcony, null, 'the old balcony no longer owns airborne movement');
