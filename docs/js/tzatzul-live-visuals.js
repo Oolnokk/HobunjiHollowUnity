@@ -82,6 +82,7 @@
       node.visible = false; // Never let an untinted native replacement draw on top of this bird's individually colored rig.
     }
     if (state.rig.root?.parent === state.group) {
+      state.rig.root.visible = !actor.tzatzulInNest; // Parents inside their cave are absent from the exterior renderer.
       // On a few zone-load paths a creature mounts before an active Camera is
       // injected. Always choose one authored pose, or flying/perched/wing
       // sprites all overlap until the next camera transition.
