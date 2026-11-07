@@ -45,6 +45,17 @@ for(const file of ['ruin-layer-plan.js','ruin-shaft-corridor.js','ruin-shaft-con
       assert(wing.corridors.every(hall=>hall.length<=10),`overlong empty wing hallway on seed ${seed}: ${wing.id}`);
     }
     assert.equal(trial.totalBraziers,baseline.totalBraziers);
+    for(const floor of baseline.floors){
+      const blocks=floor.rooms.filter(room=>room.challenge==='findBlocks');
+      assert(blocks.length>=1,'Every generated dungeon story has at least one Find the Blocks chamber');
+      assert(blocks.length<=3,'Short wings should not repeat the same compound challenge excessively');
+      assert(blocks.every(room=>room.w>=18&&room.d>=18),'Block puzzles have genuine 18x18 push-space footprints');
+      for(const wing of floor.wings){
+        const kinds=wing.rooms.map(room=>room.challenge);
+        assert(!kinds.some((kind,i)=>kind==='findBlocks'&&kinds[i-1]==='findBlocks'),
+          'Block puzzles must not be consecutive in the same wing');
+      }
+    }
     const floor=trial.floors.find(f=>f.rooms.some(room=>room.id===trial.trialRoomId));
     const wing=floor.wings.find(w=>w.rooms.some(room=>room.id===trial.trialRoomId));
     const stage=wing.rooms.findIndex(room=>room.id===trial.trialRoomId);
