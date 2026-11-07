@@ -78,6 +78,7 @@ function test(seed){
   const state={controls:[]}; // The test ensures controls are removed rather than accumulating between lab rerolls.
   const kit={
     state,group:()=>soloGroup,
+    disposeObject:object=>object.parent?.remove(object), // Mimics the real SimplePuzzles mesh teardown after its GPU resources are disposed.
     registerSurface:surface=>surfaces.push(surface),
     registerProjectileTarget:target=>projectileTargets.push(target),
     playerWorld:()=>({x:0,y:0,z:0}),deps:{showToast(){}}
