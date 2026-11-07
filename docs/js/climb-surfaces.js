@@ -90,8 +90,40 @@
     }
     return n;
   }
-  function remove(id) { return surfaces.delete(id); }
-  function clearScope(scope) { let n = 0; for (const [id, s] of surfaces) if (s.scope === scope) { surfaces.delete(id); n++; } return n; }
+  function remove(id) {
+    const current = surfaces.get(id); // Unloading a world climb provider cannot leave the player gripping an orphaned surface.
+    if (current && deps?.player?.onClimbSurface?.surface === current) release();
+    return surfaces.delete(id);
+  }
+  function retarget(id, raw) {
+    const current = surfaces.get(id); // Preserve the live object referenced by any climber holding a rotating obelisk face.
+    if (!current) return register({ ...raw, id });
+    const next = normalize({ ...current, ...raw, id }); // New world-facing tangent/plane replaces geometry, not the active attachment identity.
+    if (!(next.u1 > next.u0) || !(next.y1 > next.y0) || !Number.isFinite(next.plane))
+      throw new Error('ClimbSurfaces: invalid retarget ' + id);
+    const session = deps?.player?.onClimbSurface; // A climbing player must move with the face instead of following an obsolete invisible grip.
+    if (session?.surface === current) {
+      const along = (session.u - current.u0) / (current.u1 - current.u0); // Preserve proportional handhold position across 90-degree turns.
+      session.u = clamp(next.u0 + clamp(along, 0, 1) * (next.u1 - next.u0),
+        next.u0 + DEFAULTS.edgeMargin, next.u1 - DEFAULTS.edgeMargin);
+      session.v = clamp(session.v + next.y0 - current.y0, next.y0, next.y1);
+      deps.player.wallClimbY = session.v;
+    }
+    Object.assign(current, next);
+    return current;
+  }
+  function shift(id, deltaY) {
+    const current = surfaces.get(id); // A moving pillar carries both its registered grip bounds and any attached climbing session.
+    if (!current || !Number.isFinite(deltaY)) return false;
+    current.y0 += deltaY; current.y1 += deltaY;
+    const session = deps?.player?.onClimbSurface;
+    if (session?.surface === current) {
+      session.v += deltaY;
+      deps.player.wallClimbY = session.v;
+    }
+    return true;
+  }
+  function clearScope(scope) { let n = 0; for (const [id, s] of surfaces) if (s.scope === scope) { remove(id); n++; } return n; }
   const list = () => [...surfaces.values()];
 
   // ---------------------------------------------------------------- pure math
@@ -326,7 +358,7 @@
   }
 
   return Object.freeze({
-    DEFAULTS, init, registerStyle, getStyle, listStyles, register, registerGrid, remove, clearScope, list,
+    DEFAULTS, init, registerStyle, getStyle, listStyles, register, registerGrid, remove, retarget, shift, clearScope, list,
     findGrabTarget, attach, step, topExitPoint, sideExitPoint, buildVisual,
     worldClimbProvider, tryAirGrab, grab, release, updatePlayer,
     isAttached: () => !!deps?.player?.onClimbSurface,
