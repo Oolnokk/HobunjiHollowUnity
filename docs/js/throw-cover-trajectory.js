@@ -41,6 +41,46 @@
     return null;
   }
 
+  function segmentHitboxInterval(start, end, hitbox, radius = 0) {
+    if (!hitbox?.box) return null;
+    let enter = 0, exit = 1;
+    for (const axis of ['x', 'y', 'z']) {
+      const delta = end[axis] - start[axis];
+      const min = hitbox.box.min[axis] - radius, max = hitbox.box.max[axis] + radius;
+      if (Math.abs(delta) < 1e-9) {
+        if (start[axis] < min || start[axis] > max) return null;
+        continue;
+      }
+      let a = (min - start[axis]) / delta, b = (max - start[axis]) / delta;
+      if (a > b) [a, b] = [b, a];
+      enter = Math.max(enter, a);
+      exit = Math.min(exit, b);
+      if (enter > exit) return null;
+    }
+    return exit >= 0 && enter <= 1 ? { enter:Math.max(0, enter), exit:Math.min(1, exit) } : null;
+  }
+
+  function elevatedSupportHit(start, end, radius, opts) {
+    const sample = window.DynamicSurfaces?.sampleSupport;
+    if (typeof sample !== 'function') return null;
+    const dx = end.x - start.x, dy = end.y - start.y, dz = end.z - start.z;
+    const steps = Math.max(1, Math.ceil(Math.hypot(dx, dy, dz) / 0.2));
+    for (let i = 1; i <= steps; i++) {
+      const a = (i - 1) / steps, b = i / steps, mid = (a + b) / 2;
+      const x = start.x + dx * mid, z = start.z + dz * mid;
+      const low = Math.min(start.y + dy * a, start.y + dy * b);
+      const high = Math.max(start.y + dy * a, start.y + dy * b);
+      const support = sample(x, z, { minY:low-radius-0.01, maxY:high+radius+0.01, pad:radius });
+      const height = Number(support?.y);
+      // Normal landing ground is not cover; a *raised* support floor is.
+      if (!support || !Number.isFinite(height) || height <= terrainY(x, z, opts) + 0.08) continue;
+      if (low > height + radius + 0.01 || high < height - radius - 0.01) continue;
+      const t = Math.abs(dy) < 1e-9 ? a : a + (b - a) * Math.max(0, Math.min(1, (height - (start.y + dy * a)) / (dy * (b - a))));
+      return t;
+    }
+    return null;
+  }
+
   function sweep(start, end, opts = {}) {
     if (!start || !end) return null;
     const dx = end.x - start.x, dy = end.y - start.y, dz = end.z - start.z;
@@ -52,6 +92,12 @@
     let first = semantic && Number.isFinite(semantic.t)
       ? { t: Math.max(0, Math.min(1, semantic.t)), kind: 'semantic-cover' }
       : null;
+    const shaft = window.DevRandomRuin?.shaftSegmentHit?.(start, end, radius, segmentHitboxInterval);
+    if (Number.isFinite(shaft) && shaft >= 0 && shaft <= 1 && (!first || shaft < first.t))
+      first = { t:shaft, kind:'shaft-cover' }; // Matches the ranged weapon's cross-story solid voxel blocker.
+    const support = elevatedSupportHit(start, end, radius, opts);
+    if (support != null && (!first || support < first.t))
+      first = { t:support, kind:'raised-floor-cover' }; // Elevated support planes are real cover, not bare floor decor.
     for (let i = 1; i <= count; i++) {
       const t = i / count;
       if (first && t > first.t) break;
