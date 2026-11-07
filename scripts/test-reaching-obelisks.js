@@ -119,7 +119,7 @@ try{
   assert.equal(projectileTargets.size,0,'no targets register after the rhythm activates');
   const nextBeat=()=>{
     const current=rt.getState().elevationChanges+rt.getState().rotations;
-    for(let i=0;i<20&&rt.getState().elevationChanges+rt.getState().rotations===current;i++)rt.tick(.05);
+    for(let i=0;i<45&&rt.getState().elevationChanges+rt.getState().rotations===current;i++)rt.tick(.05); // Default beat is 1.8 seconds; 45 simulation frames include float rounding room.
     assert.equal(rt.getState().elevationChanges+rt.getState().rotations,current+1,'each metronome beat fires exactly once');
   };
   const downbeatRotations=[a.rotation]; // All four orientations must appear once at the start of the four bars.
