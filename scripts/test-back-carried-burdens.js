@@ -102,6 +102,36 @@ function testEditorAuthoring() {
   assert.equal(customBack.portraitAnchor.y,.15);
 }
 
+function testCarryableTabBoot() {
+  const html=read('docs/tools/furniture-avatar-author/index.html'); // The static tab must remain visible even when the optional authoring script fails.
+  const author=read('docs/tools/furniture-avatar-author/carryable-objects.js'); // Reuses the built-in tab rather than appending another after boot.
+  assert.match(html,/id="carryModeTab"[^>]*data-left-tab="carry"/,'the Carryable tab is part of the HTML');
+  assert.match(html,/id="tab-carry"[^>]*class="hidden"/,'the Carryable fallback panel exists without JavaScript');
+  assert.match(html,/id="carryAuthorLoadStatus"/,'loading failures have visible mobile-safe diagnostics');
+  assert.match(html,/'avatar','carry','base','io'/,'base mode switches include the Carryable pane');
+  assert.match(html,/carryable-objects\.js\?v=20261107autoAvatarPreview4[^>]+onerror=/,'the separate authoring script exposes load errors');
+  assert.match(author,/getElementById\('carryModeTab'\)\|\|document\.createElement\('button'\)/,'authoring reuses the static tab');
+  assert.match(author,/getElementById\('tab-carry'\)\|\|document\.createElement\('div'\)/,'authoring reuses the static panel');
+}
+
+function testCarryableAutomaticAvatarPreview() {
+  const author=read('docs/tools/furniture-avatar-author/carryable-objects.js'); // Automatic preview must be visible even while cosmetics render asynchronously.
+  assert.match(author,/if\(previewActive\(\)\)startPreview\(\)/,'opening an active Carryable tab automatically requests its preview');
+  assert.match(author,/if\(mode==='carry'\)select\('anchor'\);[\s\S]{0,140}setHoldingVisibility\(\)/,'changing to Carryable mode activates avatar visibility');
+  const fallback=author.indexOf("installPreviewPortrait({front:placeholderAvatarCanvas('runtimePortrait'),back:null,profile:null},true)");
+  const asyncLoad=author.indexOf("const portrait=await renderSeatPortrait('mao-ao','male')");
+  assert(fallback>=0&&asyncLoad>fallback,'avatar placeholder is constructed synchronously before waiting on actual portrait assets');
+  assert.match(author,/previewActor\.add\(model\);previewPortraitModel=model/,'the automatic fallback is attached as a visible model');
+  assert.match(author,/previewActor\.remove\(previewPortraitModel\)/,'the real portrait replaces rather than duplicates the placeholder');
+  assert.match(author,/if\(previewActor\)\{[\s\S]{0,110}reference avatar shown \(portrait assets unavailable\)/,'a failed portrait load keeps the fallback visible');
+  assert.match(author,/if\(previewActive\(\)\)frameHoldingPreview\(\)/,'opening the tab frames the automatically shown avatar');
+  assert.match(author,/source:previewSource/,'mobile diagnostics distinguish placeholder and actual portrait');
+  assert.match(author,/const originalBuildAvatarFromCanvas=buildAvatarFromCanvas/,
+    'Carryable preview must remain selected even when the Avatar tab builds its portrait later');
+  assert.match(author,/if\(avatarGroup\)avatarGroup\.visible=!\(previewActive\(\)\&\&!!previewActor\)/,
+    'late main-avatar rebuild must not overlay a second avatar over the carry preview');
+}
+
 function testRuntime() {
   const scene=new Group(),player={x:4.5*64,y:3.5*64,health:100,angle:0,lastAttackReceivedAt:100};
   const grid=Array.from({length:10},()=>Array.from({length:10},()=>({type:'grass'})));
@@ -111,6 +141,8 @@ function testRuntime() {
   const deps={player,TILE:64,getCurrentArea:()=>currentArea,getActiveScene:()=>activeScene,
     worldSurfaceY:()=>0,refreshActionBar(){},showToast(){},hostileObjects:new Set(),npcWalkers:new Set()};
   const bodyRoot=new Group();bodyRoot.name='player_body_root'; // Canonical composer root for back attachment.
+  bodyRoot.userData={speciesId:'nuhongan',gender:'female',portraitModelHeight:.46}; // Short Nuhongan fixture reproduces the misplaced Mao'ao-height stow.
+  bodyRoot.scale.setScalar(.72); // A shorter whole-character rig scale must also apply to the shared posterior mount.
   const headJoint=new Group();headJoint.name='player_neck_joint'; // Held burden continues to use this preexisting dependency unchanged.
   bodyRoot.add(headJoint);
   headJoint.position.set(.25,.3,.15);
@@ -119,7 +151,7 @@ function testRuntime() {
     new MeshBasicMaterial({name:'npc_avatar_skinned_back_material'})]);
   portrait.name='player_avatar_skinned_plane_assembly'; // Active skinned portrait and its back-only x-ray clone.
   portrait.renderOrder=2; // The native PNG draw order must be restored after back carry or avatar rebuild.
-  portrait.position.set(.08,.2,-.12);portrait.scale.setScalar(1.2);
+  portrait.position.set(.08,.65,-.12);portrait.scale.setScalar(1.2); // A high-centered portrait makes accidental portrait-origin placement obvious.
   const firstAvatar=new Group();firstAvatar.name='original_player_avatar'; // Live avatar instance can be swapped without removing its predecessor immediately.
   firstAvatar.userData.neckRig={skinnedPlane:portrait};
   bodyRoot.add(firstAvatar);firstAvatar.add(portrait);
@@ -131,7 +163,7 @@ function testRuntime() {
     THREE:{Vector3,Group,Euler,Quaternion,MeshBasicMaterial,SkinnedMesh},Combat:{deps,update(){},init(){}},
     Targetables:{addSource:(key,fn)=>targetSources.set(key,fn),makeActor:entry=>({entry})},
     ProceduralHandAttachments:{gameDeps:deps},
-    PlayerBodyTransformComposer:{getPlayerMesh:()=>currentBodyRoot,getPosteriorY:()=>.42},
+    PlayerBodyTransformComposer:{getPlayerMesh:()=>currentBodyRoot,getPosteriorY:()=>.19},
     WorldPortraitLife:{getPlayerAvatar:()=>({group:activeAvatar})},
     GridTileAccessors:{getActiveScene:()=>activeScene,getCurrentArea:()=>currentArea,getActiveGrid:()=>grid},
     __farmLog(){},WorldEvents:{emit(){}},AudioSystem:{playObjectSfxKey(){}},
@@ -192,10 +224,13 @@ function testRuntime() {
   assert.equal(chargePart.material.transparent,true,'replacement material inherits the stowed render flags');
   assert.equal(chargePart.material.depthWrite,false,'replacement material cannot mask the front PNG');
   assert.equal(priorMaterial.depthWrite,true,'detached original material is restored on replacement');
-  const authoredBurdenPoint=new Vector3(.13,.22,-.16).multiply(charge.group.scale).applyQuaternion(charge.group.quaternion);
-  const actualAttachment=charge.group.position.clone().add(authoredBurdenPoint);
-  for(const [axis,expected] of Object.entries({x:.12,y:-.08,z:.04}))
-    assert(Math.abs(actualAttachment[axis]-expected)<1e-8,'back burden anchor follows portrait-local author coordinate on '+axis);
+  const authoredBurdenPoint=new Vector3(.13,.22,-.16); // Object-space contact point; the actual stow transform determines its world location.
+  const actualAttachment=charge.group.localToWorld(authoredBurdenPoint.clone());
+  const expectedAttachment=bodyRoot.localToWorld(new Vector3(.08+.12,.19-.08,.18+.04)); // Hip position plus both back-only offsets.
+  for(const axis of ['x','y','z'])
+    assert(Math.abs(actualAttachment[axis]-expectedAttachment[axis])<1e-8,'back uses the same species-adjusted posterior frame as holding on '+axis);
+  assert(Math.abs(actualAttachment.y-(portrait.position.y-.08))>.01,
+    'stow must not use the portrait-plane center as the species height origin');
   assert.equal(window.Shattercasks.debugSnapshot().backCarryMount.portraitAttached,true);
   assert.equal(window.Shattercasks.debugSnapshot().backCarryMount.collision,'carrier-hitbox');
   assert.equal(originalTarget.hitbox(),null,'stowing also invalidates hitboxes exposed by previously cached Targetables entries');
@@ -326,6 +361,29 @@ function testRuntime() {
   assert.equal(window.Shattercasks.backCarriedInfo(),null,'hit-triggered explosion clears the back slot');
   assert.equal(window.Shattercasks.getBurden(charge.id),null,'the original physical item is consumed');
 
+  // Exercise the ACTUAL wild-crate authoring, not just a synthetic back pose:
+  // a Nuhongan-height character should resolve the supplied 180-degree stow
+  // in the same body-posterior frame as its held crate.
+  const crateData=JSON.parse(read('docs/config/furniture-authored/looseCrate.json')); // Authored wild-crate runtime asset.
+  const crate=window.Shattercasks.registerBurden({mapId:currentArea,scene,group:new Group(),
+    id:'test-authored-loose-crate',kind:'looseCrate',hanging:false,data:crateData});
+  assert(window.Shattercasks.pickUp(crate),'real authored crate can be held after previous back Burden was consumed');
+  assert(window.Shattercasks.stowOnBack(),'real authored crate can be stowed');
+  assert.equal(crate.group.parent,rigidPortrait,'real crate stows on the currently active portrait');
+  const crateBack=crateData.carryable.backCarry; // Separate authored pose; the contact point must still meet the live species posterior.
+  const crateContact=crate.group.localToWorld(new Vector3(
+    crateBack.position.x,crateBack.position.y,crateBack.position.z));
+  const expectedCrateContact=currentBodyRoot.localToWorld(new Vector3(
+    crateBack.posteriorOffset.x,.19+crateBack.posteriorOffset.y,crateBack.posteriorOffset.z));
+  for(const axis of ['x','y','z'])
+    assert(Math.abs(crateContact[axis]-expectedCrateContact[axis])<1e-8,
+      'the actual crate back contact point uses the species posterior on '+axis);
+  const crateCenter=crate.group.getWorldPosition(new Vector3()); // Detects an incorrect 180-degree Z flip or Mao'ao-height offset.
+  assert(Math.abs(crateCenter.y-(.19-.02+.186))<1e-8,'authored -0.186 Y moves the stowed crate below its held height');
+  assert(Math.abs(crateCenter.z-(-.256))<1e-8,'the authored 180-degree stow moves the crate onto the character back');
+  assert(window.Shattercasks.takeFromBack(),'the actual crate returns to hands without losing its authoring');
+  assert(window.Shattercasks.discardBurden(crate),'the real crate fixture cleans up before movement tests');
+
   // A carried shattercask moving between rooms must never replace a static
   // shattercask with the same area-local ID, or respawn at its original source.
   const travel=window.Shattercasks.registerBurden({mapId:currentArea,scene,group:new Group(),
@@ -333,8 +391,10 @@ function testRuntime() {
   assert(window.Shattercasks.pickUp(travel));
   assert(window.Shattercasks.stowOnBack());
   assert.equal(travel.group.parent,rigidPortrait,'default back stow mounts to the available rigid portrait');
-  for(const axis of ['x','y','z'])assert(Math.abs(travel.group.position[axis])<1e-8,
-    'a burden without authored back coordinates defaults to the exact portrait center on '+axis);
+  const travelWorld=travel.group.getWorldPosition(new Vector3());
+  const defaultPosteriorWorld=currentBodyRoot.localToWorld(new Vector3(0,.19,0)); // Even unconfigured Burdens inherit the carrier's anatomical hip.
+  for(const axis of ['x','y','z'])assert(Math.abs(travelWorld[axis]-defaultPosteriorWorld[axis])<1e-8,
+    'a burden without authored back coordinates defaults to the species-adjusted posterior on '+axis);
   const secondScene=new Group(); // Mimics a destination ruin with a static object using the same local ID.
   currentArea='map_back_destination';
   activeScene=secondScene;
@@ -390,5 +450,7 @@ function testRuntime() {
 }
 
 testEditorAuthoring();
+testCarryableTabBoot();
+testCarryableAutomaticAvatarPreview();
 testRuntime();
 console.log('PASS back-carried burdens: live portrait selection, deadzone parenting, carrier collision, transitions, rebuilds, explosions, editor');
