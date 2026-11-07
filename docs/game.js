@@ -16701,6 +16701,9 @@
         const routeNet = window.CliffRouteNetwork?.forArea?.(currentArea); // Reuse rendered Y-layer state rather than the underlying single-height grid.
         const shelf = window.CliffRouteNetwork?.shelfAt?.(routeNet, player.onCliffBalcony);
         if (!shelf || !shelf.footprint.some(f => f.c === col && f.r === row)) return null;
+        // A clustered herb patch belongs to one walkable mini-cliff tile, even on long ledges.
+        if (shelf.reward === 'herbCluster' && shelf.herbTile &&
+          (shelf.herbTile.c !== col || shelf.herbTile.r !== row)) return null;
         const state = window.CliffRouteNetwork.getRewardState(currentArea, shelf.id);
         if (state.claimed) return null;
         const areaAtCreation = currentArea; // Asynchronous lockpicking validates the original area/ledge before paying.
