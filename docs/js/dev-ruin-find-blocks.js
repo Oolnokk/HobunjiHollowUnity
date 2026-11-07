@@ -371,7 +371,7 @@
         for(const stop of disposers)stop();
         for(const item of controls){const i=kit.state.controls.indexOf(item);if(i>=0)kit.state.controls.splice(i,1);}
         root.DevRandomRuinTileOccupancy?.clearSolids?.('find-the-blocks');
-        group.parent?.remove(group); // SimplePuzzles' shared group disposal releases meshes and materials on reroll.
+        kit.disposeObject(group); // Release the chamber meshes/materials now; removing the root alone would leak GPU resources on reroll.
       },
     };
     return result;
