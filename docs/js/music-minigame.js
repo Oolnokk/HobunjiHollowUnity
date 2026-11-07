@@ -32,7 +32,7 @@
   // browser that already cached an older lyre-performance.html under this
   // exact URL would keep serving it indefinitely after an update, since
   // nothing about the request ever changes.
-  const MUSIC_MINIGAME_SRC = 'assets/minigames/lyre-performance.html?v=20261107adaptiveArpeggios5';
+  const MUSIC_MINIGAME_SRC = 'assets/minigames/lyre-performance.html?v=20261107auditionClock6';
   const PUZZLE_MINIGAME_SRC = 'assets/minigames/kurraya-puzzle.html?v=20261104ocarina1'; // The default eight-note puzzle surface, independent of the performance engine.
   // The ONE songbook entry the ported app currently knows (see
   // lyre-performance.html's SONGBOOK) — surfaced to the compact song
