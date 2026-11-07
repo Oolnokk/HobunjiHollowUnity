@@ -573,6 +573,9 @@
             const geo  = new THREE.BoxGeometry(1, 1, 1);
             const mat  = new THREE.MeshLambertMaterial({ color });
             const mesh = new THREE.Mesh(geo, mat);
+            mesh.userData.hobunjiCropBaseKey = family; // Authored PNG bridge still identifies imported garlink/ongyums without guessing their new color.
+            mesh.userData.hobunjiCropRootKey = family; // Soil anchoring applies to imported crops just as it does to native ones.
+            mesh.userData.hobunjiCropVarietyColor = variety ?? null; // Preserves the precise hybrid pigment on the billboard children.
             mesh.castShadow = true;
             deps.scene.add(mesh);
             mesh.layers.enable(1);
@@ -816,9 +819,12 @@
       group.scale.setScalar(size);
       return { mesh: group, lift: 0.01 };
     }
-    const variety = window.CropVarieties?.ensure?.(crop)?.color; // NPC-held cultivar colors match farm plots.
-    const colors = variety == null ? (CROP_COLORS[crop] || CROP_COLORS.garlink) : { body: variety, ripe: variety, sprout: 0x6c9751 };
+    const pigment = variety?.color; // Reuse the resolved genotype; redeclaring "variety" here broke the whole renderer.
+    const colors = pigment == null ? (CROP_COLORS[crop] || CROP_COLORS.garlink) : { body: pigment, ripe: pigment, sprout: 0x6c9751 };
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshLambertMaterial({ color: ready ? colors.ripe : g < 0.15 ? colors.sprout : colors.body }));
+    mesh.userData.hobunjiCropBaseKey = family; // Saved NPC plots use the same authored crop-art bridge.
+    mesh.userData.hobunjiCropRootKey = family;
+    mesh.userData.hobunjiCropVarietyColor = pigment ?? null;
     mesh.scale.setScalar(size);
     return { mesh, lift: size / 2 + 0.02 };
   }
