@@ -186,21 +186,22 @@
     const group=new THREE.Group();
     group.name='tothal_dungeon_fire_burden_icicle_'+index;
     group.position.set(point.x,ceilingY-.08,point.z);
-    const iceMat=material(0xa8e9ff,{metalness:.12,roughness:.23,transparent:true,opacity:.66,emissive:0x2b8eab,emissiveIntensity:.22,depthWrite:false});
-    const frostMat=material(0xdff9ff,{roughness:.18,transparent:true,opacity:.48,depthWrite:false});
-    const main=new THREE.Mesh(new THREE.OctahedronGeometry(.52,1),iceMat);
-    main.position.y=-.82;main.scale.set(.66,1.3,.66);main.name='burden_encasing_ice';group.add(main);
-    const needle=new THREE.Mesh(new THREE.ConeGeometry(.29,.88,7),frostMat);
-    needle.position.y=-1.55;needle.name='icicle_tip';group.add(needle);
-    const crown=new THREE.Mesh(new THREE.ConeGeometry(.25,.55,7),iceMat);
-    crown.rotation.z=Math.PI;crown.position.y=-.28;group.add(crown);
+    const recipe=window.DungeonDoorIceCoverage?.scaledRecipe?.(1.75,
+      'burden-icicle:'+String(world?.context?.seed||'ruin')+':'+index,{
+        count:20,density:1,iceHeightMin:1.25,iceHeightMax:1.8,
+        radius:.28,iceFootprintPadding:.14,iceEngulf:.8,
+      }); // The boss-door's authored stalagmite recipe now also governs frozen hanging burdens.
+    const ice=window.IceStalagmiteCoverage?.buildCeiling?.(THREE,group,{
+      width:.92,depth:.92,height:1.7,recipe,
+    }); // Furniture Editor growth is authored upright, then turned over against the dungeon ceiling.
+    if(!ice){lastEvent='authored ceiling ice unavailable';return null;} // Never replace faceted ice with unrelated cones.
     const anchor=new THREE.Group();
     anchor.position.set(0,-.9,0);anchor.name='icicle_burden_attachment';group.add(anchor);
     const hitObject=new THREE.Mesh(new THREE.BoxGeometry(.82,1.55,.82),new THREE.MeshBasicMaterial({transparent:true,opacity:0,depthWrite:false,colorWrite:false}));
     hitObject.position.y=-.83;hitObject.name='dungeon_fire_icicle_contact';group.add(hitObject);
     const record=addMechanismRecord({
       id:'dungeon-fire-icicle-'+index,kind:'icicle',group,hitObject,anchor,burden:null,
-      payloadPending:false,releaseRequested:false,removed:false,phase:'encased',iceMat,frostMat,
+      payloadPending:false,releaseRequested:false,removed:false,phase:'encased',iceLayer:ice.layer,
     });
     world.group.add(group);
     registerFireTarget(record,icicle=>{
