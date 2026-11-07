@@ -10,13 +10,15 @@
     tap2:  '#FFD23F', // Gold: secondary tap / quick attack.
     hold1: '#FF4FD8', // Magenta: primary held attack.
     hold2: '#7CFF4F', // Lime: secondary held/defensive attack.
-    dodge: '#A78BFA', // Electric violet: dodge/climb input and its world prompt hint.
+    dodge: '#A78BFA', // Electric violet: dodge input and its world prompt hint.
+    jump: '#6EE7B7', // Mint: Jump/Climb input and its world prompt hint.
   });
 
   const INPUT_COLORS = Object.freeze({
     action1: SLOT_COLORS.tap1,
     action2: SLOT_COLORS.tap2,
     dodge: SLOT_COLORS.dodge,
+    jump: SLOT_COLORS.jump,
   }); // Used by floating interaction lists to match the arch's semantic input colors.
 
   // These filters begin by flattening the source to black, so the same tint
@@ -83,6 +85,7 @@
 
   function install() {
     document.documentElement.style.setProperty('--dodge-input-color', SLOT_COLORS.dodge);
+    document.documentElement.style.setProperty('--jump-input-color', SLOT_COLORS.jump);
     applySlotColors();
 
     // Both the game and the arch decorators rebuild/reorder buttons while the

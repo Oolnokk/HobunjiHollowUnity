@@ -1176,8 +1176,22 @@
     }
     button.abt#dodgeBtn:active { transform: translate(50%, 50%) scale(0.92); }
     #dodgeBtn .abt-icon { font-size: 1.3em; }
+    /* Jump / Climb: second button on the innermost ring, above Dodge. */
+    #jumpBtn {
+      position: absolute;
+      right:  calc(-1*cos(105deg)*var(--ar0));
+      bottom: calc(   sin(105deg)*var(--ar0));
+      transform: translate(50%, 50%);
+      width: clamp(46px, calc(1.05 * var(--col)), 62px); height: clamp(46px, calc(1.05 * var(--col)), 62px);
+      color: var(--jump-input-color, #6EE7B7);
+      border-color: color-mix(in srgb, var(--jump-input-color, #6EE7B7) 58%, transparent);
+      background: color-mix(in srgb, var(--jump-input-color, #6EE7B7) 12%, transparent);
+      display: flex;
+    }
+    button.abt#jumpBtn:active { transform: translate(50%, 50%) scale(0.92); }
+    #jumpBtn .abt-icon { font-size: 1.3em; }
     @media (pointer: fine) {
-      #dodgeBtn { display: none !important; }
+      #dodgeBtn, #jumpBtn { display: none !important; }
     }
     /* ── Arc Container: grid x:24 y:10 w:8 h:8 (32×18).
        Sized to exactly match the layout-spec bounding box.
