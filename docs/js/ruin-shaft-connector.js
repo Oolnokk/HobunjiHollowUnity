@@ -23,7 +23,7 @@
     // back inside, rather than being dropped at the spawn by an interaction.
     return {x:Math.floor(x+side.dx*.5),z:Math.floor(z+side.dz*.5),side:e.side};
   }
-  function sanctumDoorSite(hub,width=3.2){
+  function sanctumDoorSite(hub,width=4.5){ // Use the maximum supported Great Door width, including its frame clearance.
     // The Great Door is a teleporting endgame seal on the REAL shaft's inner
     // wall, not a spare fifth passage through a wall already used by four exits.
     const grid=hub?.grid,o=hub?.options;
