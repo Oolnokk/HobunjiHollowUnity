@@ -96,5 +96,20 @@ class Element {
   await field.attrs.onchange({ target: field });
   assert.equal(field.value, '30', 'failed numeric edits restore the last authoritative value');
 
+  context.run = async (name, args) => { sent.push({ name, args }); return { ok: true }; };
+  context.document.activeElement = null;
+  const appearance = { id: 'appearance-nearby', title: 'Appearance', actions: [
+    { id: 'color:A', label: 'A color', value: '#123456', input: { type: 'color' } },
+  ] }; // Color controls use the same authenticated game-side panel-action route.
+  context.state.game.panels = [clock, appearance];
+  context.renderPanels();
+  const colorField = host.children[1].find('input');
+  assert.equal(colorField.attrs.type, 'color', 'mobile-friendly native color picker rendered');
+  colorField.value = '#aabbcc';
+  await colorField.attrs.onchange({ target: colorField });
+  assert.deepEqual(JSON.parse(JSON.stringify(sent.at(-1).args)),
+    { panel: 'appearance-nearby', action: 'color:A', args: { value: '#aabbcc' } },
+    'selected hex color reaches the existing command dispatcher');
+
   console.log('test-dev-companion-panel-controls: ok');
 })().catch(error => { console.error(error); process.exit(1); });

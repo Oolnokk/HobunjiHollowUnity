@@ -24,6 +24,7 @@
        docs/tools/dev-companion window. Loaded before every config-fetching
        module so its fetch() wrapper can log each config/JSON access. -->
   <script src="js/dev-companion-bridge.js?v=20261019handoff1"></script>
+  <script src="js/dev-companion-appearance.js?v=20261107appearance-audit2"></script>
   <script src="https://unpkg.com/three@0.128.0/examples/js/controls/TransformControls.js"></script>
   <script src="js/GLTFLoader.js?v=20260712d"></script>
   <script src="js/WallBuilder.js?v=20261013hd467097"></script>
@@ -409,7 +410,7 @@
   <script src="js/bounty-board.js?v=20261008h416634c"></script>
   <!-- Loads docs/config/combat/attack-values.json and overrides every
        combat-*.js module's hardcoded defaults with it. -->
-  <script src="js/combat/combat-config-loader.js?v=20261107cultivarColor3"></script>
+  <script src="js/combat/combat-config-loader.js?v=20261107devcloth3"></script>
   <!-- Shared timed-effect HUD, skill progression, food processing rules, and
        hearth cooking. These modules own their state/UI and expose narrow
        adapters to game.js. -->
@@ -473,7 +474,7 @@
   <script src="js/honeyfuzzle-house.js?v=20261026honeyEggGenes3"></script> <!-- Honeyfuzzle House: 1x1 egg/swarm slot on a FarmProduction entry; hooked by farm-production.js, initialised by game.js. -->
   <script src="js/farm-layout-editor.js?v=20261016a"></script>
   <script src="js/world-meta-store.js?v=20261102h9d8381e"></script>
-  <script src="js/farm-animals.js?v=20261104livestockRay1"></script>
+  <script src="js/farm-animals.js?v=20261107devcoat1"></script>
   <!-- Farm buildings: barn placement/construction/demolition
        (window.FarmBuildings) — self-contained aside from deps injected
        via init(), and reads window.FarmAnimals at call time (already
@@ -845,7 +846,7 @@
        window.EquipmentPanel directly (including at top-level, in
        window.__climbDebug) and calls window.EquipmentPanel.init(...)
        during its own setup. -->
-  <script src="js/equipment-panel.js?v=20261105-stack999"></script>
+  <script src="js/equipment-panel.js?v=20261107devcloth3"></script>
   <!-- Per-map terrain tile texture overrides (window.TerrainTileMaterials:
        resolveTileMat/resolveCliffMat/loadTerrainTileTexture) — must load
        before game.js, which calls window.TerrainTileMaterials.init(...) near
@@ -920,8 +921,8 @@
   <script src="js/locale-cave-runtime.js?v=20261010h40fea5e"></script>
   <!-- Promotes wilderness den anchors into generic cave sites; wraps WildlifeSpawn/CavernGenerator/DevSpawner, all loaded above. -->
   <script src="js/locale-cliff-wall-mounts.js?v=20261105cliffPortal1"></script><!-- Mount editor-authored furniture on the resolved procedural wall normal and elevation. -->
-  <script src="js/puzzle-cave-entrances.js?v=20261106audit2"></script><!-- Real mini-cliff cliffDoor placement, exterior timed plate, and authoritative gated transition. -->
-  <script src="js/cave-site-system.js?v=20261106caveFinish1"></script>
+  <script src="js/puzzle-cave-entrances.js?v=20261106independentPuzzle2"></script><!-- Real mini-cliff cliffDoor placement, exterior timed plate, and authoritative gated transition. -->
+  <script src="js/cave-site-system.js?v=20261106independentPuzzle2"></script>
   <!-- Two-necked Shattercask runtime. Loaded after Combat/DevSpawner/CaveSiteSystem so their
        hooks bind before game.js initializes the subsystems; also handles touch prompts. -->
   <!-- Capability/event substrate (window.WorldEvents, window.Targetables): pure registries with no
@@ -2904,7 +2905,7 @@
   <!-- NPC walkability/beeline checks + area-graph pathfinding
        (window.NpcPathfinding) — must load before game.js, which calls
        window.NpcPathfinding.init(...) during its own setup. -->
-  <script src="js/npc-pathfinding.js?v=20261104cliffAudit1"></script>
+  <script src="js/npc-pathfinding.js?v=20261106independentPuzzle1"></script>
   <script src="js/npc-route-graph.js?v=20261009h41465f3"></script>
   <!-- Cutscene Director "Preview in game" one-shot handoff — must run
        BEFORE game.js so window.__hobunjiPlayerProfile is already set when

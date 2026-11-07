@@ -21,6 +21,7 @@
   const outfitOverrides = {}; // npcId -> { equippedCosmetics, appliedDyes, wornClothingBySlot } persisted after gifted/manual outfit changes.
   const pickedStorageLocks = Object.create(null); // Exact NPC/area/furniture lock victories, saved with each player's existing NPC wardrobe data.
   const wornClothingByNpc = {}; // npcId -> { slot: full clothing instance }; preserves weaving/colorC/player-origin metadata while an item is actually worn.
+  const devClothingOverrides = new Map(); // NPC id -> slot -> visual-only preview fields, never included in wardrobe serialization.
   const defaultTraitSets = {}; // npcId -> Set(trait ids) snapshotted once so later gifted clothes never redefine taste.
   let activeWardrobeContext = null; // Only a physically assigned spouse wardrobe can grant the spouse-only clothing override.
   let activeWardrobeRender = null; // Lets pack-to-wardrobe transfers refresh the currently open panel.
@@ -142,11 +143,38 @@
     };
   }
 
+  function devWornVisual(rec, raw) {
+    const override = devClothingOverrides.get(String(rec?.id || ''))?.[raw?.slot];
+    return override && raw && override.cosmeticId === raw.cosmeticId
+      ? { ...clone(raw), ...clone(override) } : raw; // Old previews cannot leak onto another garment equipped later.
+  }
+  function setDevClothingVisual(npcId, slot, visual) {
+    if (!npcId || !tintKeysForSlot(slot).length || !visual || typeof visual !== 'object') return false;
+    const id = String(npcId);
+    const prior = devClothingOverrides.get(id) || {};
+    devClothingOverrides.set(id, { ...prior, [slot]: {
+      cosmeticId: visual.cosmeticId || null, colorA: clone(visual.colorA), colorB: clone(visual.colorB), colorC: clone(visual.colorC),
+      weaving: clone(visual.weaving),
+    } }); // Renderer-only override, not wardrobe save state.
+    return true;
+  }
+  function getDevClothingVisual(npcId, slot) {
+    return clone(devClothingOverrides.get(String(npcId || ''))?.[slot] || null); // Used to roll back a failed inspector repaint without losing earlier changes.
+  }
+  function clearDevClothingVisual(npcId, slot = null) {
+    const id = String(npcId || '');
+    if (!slot) return devClothingOverrides.delete(id);
+    const current = devClothingOverrides.get(id);
+    if (!current || !Object.hasOwn(current, slot)) return false;
+    delete current[slot];
+    if (!Object.keys(current).length) devClothingOverrides.delete(id);
+    return true;
+  }
   function wornClothingItemsForRecord(rec, effective = false) {
     return (rec?.equippedCosmetics || []).map(cosmeticId => {
       const slot = rec?.cosmeticSlots?.[cosmeticId] || guessSlot(cosmeticId); // Honor authored hostile slots: Nanahi's facewrap is a hood, not a body overwrap.
       const raw = rawWornClothingItem(rec, cosmeticId, slot);
-      return effective ? effectiveWornClothingItem(rec, raw) : raw;
+      return effective ? devWornVisual(rec, effectiveWornClothingItem(rec, raw)) : raw; // Preview wins even when an authored forced overpass exists.
     }).filter(Boolean);
   }
 
@@ -445,9 +473,12 @@
     flushPendingVisuals();
     if (pendingVisual.size && !pendingTimer && typeof setInterval === 'function') pendingTimer = setInterval(flushPendingVisuals, 1000);
   }
-  async function refreshWalkerAppearance(walker) {
+  async function refreshWalkerAppearance(walker, { strict = false } = {}) {
     if (walker?.rec?.id) pendingVisual.delete(walker.rec.id); // Drawing now renders every edit made so far.
-    if (!walker?.avatarGroup?.userData?.frontTexture || !window.NpcAvatarPreview || !window.PNGPlaneAvatar) return;
+    if (!walker?.avatarGroup?.userData?.frontTexture || !window.NpcAvatarPreview || !window.PNGPlaneAvatar) {
+      if (strict) throw new Error('NPC avatar or portrait renderer is unavailable.');
+      return false;
+    }
     const rec = walker.rec;
     const guessedSpecies = String(rec?.species || '').toLowerCase().replace(/[^a-z]+/g, '-').replace(/^-|-$/g, ''); // Used only as the same legacy-record fallback as makeNpcWalker when appearance.speciesId is absent.
     const authoredAppearance = (rec?.appearance && typeof rec.appearance === 'object') ? rec.appearance : {}; // Canonical source for every authored appearance field; rendered walker profiles intentionally do not retain this source object.
@@ -467,17 +498,35 @@
       appliedDyes: rec?.appliedDyes || {},
     };
     const effectiveClothing = wornClothingItemsForRecord(rec, true); // Applies authored default patterns + forced NPC overpass only to this render copy.
+    const overrides = devClothingOverrides.get(String(rec?.id || '')); // Live inspector previews must beat ordinary NPC appliedDyes during profile construction.
+    if (overrides) for (const [slot, visual] of Object.entries(overrides)) {
+      const tintKeys = tintKeysForSlot(slot);
+      for (const [index, field] of ['colorA', 'colorB'].entries()) {
+        const key = tintKeys[index];
+        if (!key || visual[field] == null) continue;
+        const value = visual[field];
+        baseExport.appearance.bodyColors = { ...(baseExport.appearance.bodyColors || {}),
+          [key]: typeof value === 'string' ? { dyeId: value } : clone(value) };
+        baseExport.appliedDyes = { ...baseExport.appliedDyes };
+        delete baseExport.appliedDyes[key];
+      }
+    }
     const renderedExport = window.ClothingWeavingSystem?.decorateAvatarDataWithWovenItems
       ? window.ClothingWeavingSystem.decorateAvatarDataWithWovenItems(baseExport, effectiveClothing)
       : baseExport;
     const profile = window.NpcAvatarPreview.buildProfileFromNpcExport(decorateAppearance(renderedExport));
-    if (!profile) return;
+    if (!profile) { if (strict) throw new Error('NPC portrait profile could not be built.'); return false; }
     walker.profile = profile;
     try {
       await window.NpcAvatarPreview.renderProfileToCanvas(walker.avatarFrontCanvas, profile, { forceEyesOpen: true });
       if (walker.avatarBackCanvas) await window.NpcAvatarPreview.renderProfileToCanvas(walker.avatarBackCanvas, profile, { portraitView: 'behind', forceEyesOpen: true });
-      window.PNGPlaneAvatar.refreshSinglePlaneAvatarModel(walker.avatarGroup, walker.avatarFrontCanvas, { backCanvas: walker.avatarBackCanvas });
-    } catch (e) { /* Best-effort — the data change already applied regardless of whether the redraw succeeded. */ }
+      if (!window.PNGPlaneAvatar.refreshSinglePlaneAvatarModel(walker.avatarGroup, walker.avatarFrontCanvas, { backCanvas: walker.avatarBackCanvas }))
+        throw new Error('NPC portrait texture upload failed.');
+      return true;
+    } catch (e) {
+      if (strict) throw e; // Inspector needs a real error result instead of claiming a redraw succeeded.
+      return false; // Best-effort in normal gameplay: wardrobe data already applied.
+    }
   }
 
   // ── Container UI ─────────────────────────────────────────────────
@@ -637,6 +686,7 @@
     Object.keys(stored).forEach(k => delete stored[k]);
     Object.keys(pickedStorageLocks).forEach(k => delete pickedStorageLocks[k]); // A newly loaded character cannot inherit another player's picks.
     Object.keys(outfitOverrides).forEach(k => delete outfitOverrides[k]);
+    devClothingOverrides.clear(); // Save reload must not carry temporary dev visual edits into the next session.
     Object.keys(wornClothingByNpc).forEach(k => delete wornClothingByNpc[k]);
     if (!data || typeof data !== 'object') return;
     if (data.storageLocks && typeof data.storageLocks === 'object' && !Array.isArray(data.storageLocks)) {
@@ -683,6 +733,7 @@
     applyOutfitOverrideToRecord,
     syncWalkerOutfit,
     wornClothingItemsForRecord,
+    setDevClothingVisual, getDevClothingVisual, clearDevClothingVisual, // Unpersisted per-NPC garment preview used exclusively by Dev Companion.
     forcedPatternForRender,
     clothingColorsForSlot: clothingColorsFromWorn, // Lets the editor keep pattern-bearing garment colors synchronized with ordinary dye controls.
     serialize,
