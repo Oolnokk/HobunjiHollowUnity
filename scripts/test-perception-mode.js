@@ -169,6 +169,9 @@ const omgurkuCamp = entity({ x: 21, z: 0 });
 const cliffDoorAt12 = entity({ x: 12, z: 0 });
 const cliffDoorBeyond12 = entity({ x: 12.01, z: 0 });
 const herbAt12 = entity({ x: 0, z: 12 });
+const leafTexture = {}; // Custom grass shader's alpha texture used to shape herb silhouettes.
+herbAt12.children[0].material.uniforms = { uGrassTex: { value: leafTexture } };
+herbAt12.children[0].material.alphaTest = 0.5;
 const herbBeyond12 = entity({ x: 0, z: 12.01 });
 const staleHerb = entity({ x: 2, z: 0 }, otherScene);
 sandbox.window.BanditCamps = { senseTargets: () => [
@@ -228,6 +231,8 @@ const renderer = {
     if (mask) {
       assert.notStrictEqual(targetMesh.material, originalMaterial, 'mask pass draws with the category material');
       assert.strictEqual(cliffDoorAt12.children[0].material.args[0].color, PM.COLORS.landmark, 'landmarks render in bronze verdigris through the actual mask pipeline');
+      assert.strictEqual(herbAt12.children[0].material.args[0].map, leafTexture, 'herb highlight uses the custom grass blade silhouette rather than an opaque rectangle');
+      assert.strictEqual(herbAt12.children[0].material.args[0].alphaTest, 0.5, 'herb highlight clips to the existing grass alpha threshold');
       assert.strictEqual(this.autoClear, false);
       if (this.failMask) throw new Error('mask failure');
     }
