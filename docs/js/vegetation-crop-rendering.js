@@ -426,8 +426,8 @@
   }
 
   // ── Crop mesh system ──────────────────────────────────────────
-  // Needlegrain and heftroot use procedural foliage geometry.
-  // All other crops use a simple colored cube (unchanged).
+  // Needlegrain/heftroot have procedural geometry; mustard uses PNG leaf cards.
+  // Remaining crops keep their legacy colored placeholders.
   const CROP_COLORS = {
     needlegrain:   { body: 0x8bc34a, ripe: 0xd4c526, sprout: 0x5a9e30 },
     heftroot:      { body: 0xcaa64a, ripe: 0xf0d15a, sprout: 0x7fae45 },
@@ -462,7 +462,79 @@
         if (grid[row][col].crop) _cropTileIndices.push(row * deps.COLS + col);
   }
 
-  const FOLIAGE_CROPS = new Set(['needlegrain', 'heftroot']);
+
+  // Mustard grows as a basal rosette, not a cube or spherical shrub. All
+  // leaves start from the crown; outer leaves spread while new leaves stand.
+  const MUSTARD_LEAF_PNG = 'assets/leaves/mustard_leaf.png'; // Shared alpha-cutout for both mustard species.
+  const MUSTARD_LEAF_CARD = new THREE.PlaneGeometry(1, 1); // One shared plane with its bottom edge anchored at the crown.
+  MUSTARD_LEAF_CARD.translate(0, 0.5, 0);
+  const mustardMaterials = new Map(); // Cached native-foliage material per mustard family.
+  let mustardLeafTexture = null; // Loaded once for both mustard crops and standalone NPC farm plots.
+  let mustardTextureState = 'not-requested'; // Available through the public diagnostics getter.
+
+  function _getMustardMaterial(family) {
+    if (!mustardLeafTexture) {
+      mustardTextureState = 'loading';
+      mustardLeafTexture = new THREE.TextureLoader().load(MUSTARD_LEAF_PNG,
+        tex => {
+          if (THREE.sRGBEncoding !== undefined) tex.encoding = THREE.sRGBEncoding;
+          tex.magFilter = THREE.NearestFilter;
+          tex.minFilter = THREE.LinearFilter;
+          mustardTextureState = 'loaded';
+        }, undefined,
+        () => {
+          mustardTextureState = 'failed';
+          window.__farmLog?.(`[mustard] PNG failed to load: ${MUSTARD_LEAF_PNG}`, 'warn');
+        });
+    }
+    if (!mustardMaterials.has(family)) {
+      const color = family === 'blackMustard' ? 0x84ab67 : 0x8fc975; // Black mustard has black seeds, not black leaves.
+      mustardMaterials.set(family, new THREE.MeshLambertMaterial({
+        map: mustardLeafTexture,
+        color,
+        side: THREE.DoubleSide,
+        transparent: true,
+        alphaTest: 0.35,
+        depthWrite: true,
+      }));
+    }
+    return mustardMaterials.get(family);
+  }
+
+  function _buildMustardMesh(family, growth, col, row) {
+    const group = new THREE.Group(); // Root at soil level, compatible with the existing foliage-crop scaling.
+    const rand = _mbRng(Math.imul(col + 1, 92837111) ^ Math.imul(row + 1, 689287499) ^ 0x4d575354); // Deterministic per-tile leaf variation.
+    const material = _getMustardMaterial(family); // Reused by all leaf planes within the plant.
+    const stage = _growthBucket(growth); // Current growth bucket controls leaf number in addition to whole-plant scale.
+    const rings = [
+      { count: stage >= 3 ? 7 : stage === 2 ? 5 : stage === 1 ? 3 : 2, length: 0.55, width: 0.30, tilt: 1.12, offset: 0.0 },
+      { count: stage >= 3 ? 5 : stage === 2 ? 4 : stage === 1 ? 2 : 1, length: 0.47, width: 0.22, tilt: 0.75, offset: 0.29 },
+      { count: stage >= 3 ? 3 : stage === 2 ? 2 : 0, length: 0.38, width: 0.17, tilt: 0.34, offset: 0.57 },
+    ]; // Low broad outer ring, raised middle ring, and small upright heart.
+
+    for (let ringIndex = 0; ringIndex < rings.length; ringIndex++) {
+      const ring = rings[ringIndex]; // Relative leaf lengths, angles, and counts for this ring.
+      for (let i = 0; i < ring.count; i++) {
+        const leaf = new THREE.Mesh(MUSTARD_LEAF_CARD, material); // Textured two-sided leaf, not a camera-facing billboard.
+        const azimuth = (i + ring.offset) * Math.PI * 2 / ring.count + (rand() - 0.5) * 0.20;
+        const tilt = ring.tilt + (rand() - 0.5) * 0.19;
+        const length = ring.length * (0.88 + rand() * 0.19);
+        const width = ring.width * (0.88 + rand() * 0.22);
+        leaf.position.set((rand() - 0.5) * 0.035, 0.018 + ringIndex * 0.018, (rand() - 0.5) * 0.035);
+        leaf.rotation.set(tilt, azimuth, (rand() - 0.5) * 0.12, 'YXZ');
+        leaf.scale.set(width, length, 1);
+        leaf.castShadow = false;
+        leaf.receiveShadow = false;
+        leaf.userData.hobunjiMustardLeaf = true; // For inspecting individual leaf planes in the dev companion.
+        group.add(leaf);
+      }
+    }
+    group.userData.hobunjiCropRootKey = family;
+    group.userData.hobunjiMustardLeafCount = group.children.length; // Reports stage-specific foliage density to diagnostics.
+    return group;
+  }
+
+  const FOLIAGE_CROPS = new Set(['needlegrain', 'heftroot', 'blackMustard', 'greenMustard']);
 
   function _growthBucket(growth) {
     // Rebuild foliage at 4 thresholds to avoid per-frame rebuilds.
@@ -476,6 +548,7 @@
     const FG = window.FoliageGenerator;
     if (!FG) return null;
     if (crop === 'needlegrain') return FG.buildNeedlegrainMesh(growth, col, row);
+    if (crop === 'blackMustard' || crop === 'greenMustard') return _buildMustardMesh(crop, growth, col, row);
     if (crop === 'heftroot') {
       // Three plants in a triangle cluster, each with a unique seed offset
       const wrapper = new THREE.Group();
@@ -852,6 +925,7 @@
     vegFoliageMeshes,
     vegFoliageActive: _vegFoliageActive,
     get cropMeshes() { return cropMeshes; },
+    getMustardDebug: () => ({ texture: MUSTARD_LEAF_PNG, textureState: mustardTextureState, nativeMaterialCount: mustardMaterials.size, matureLeaves: 15 }), // Lightweight diagnostics available to mobile in-game debugging.
     getGrassBillboardMat: () => grassBillboardMat,
     getGrassLeafTex: () => _grassLeafTex,
     getFarmGrassBillMesh: () => farmGrassBillMesh,
