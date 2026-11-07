@@ -3858,6 +3858,15 @@
     }
   }
 
+  function primeAutomaticMediaChannels() {
+    if (!canUseCompatibilitySampler()) return;
+    for (let index = 0; index < AUTO_PICK_COMPAT_VOICES; index++) {
+      const channelKey = `touch-left-fretted-pluck-${index}`; // Prepared voice used by the next rotating compatibility-mode attack.
+      const channel = state.gestureMediaChannels.get(channelKey);
+      if (!channel || channel.sourceUrl !== state.sampleObjectUrl || channel.media.paused) primeGestureMediaChannel(channelKey); // Never rewind an already sounding channel while another melody key is pressed.
+    }
+  }
+
   function nextAutomaticMediaChannel() {
     const channelIndex = state.autoPickCompatChannelIndex++ % AUTO_PICK_COMPAT_VOICES; // Each attack advances independently of melody or pattern changes.
     return `touch-left-fretted-pluck-${channelIndex}`;
@@ -4003,7 +4012,7 @@
       state.lastInput = `${automaticPluckLabel(mode)} armed without melody from ${source}`;
       return;
     }
-    primeGestureMediaPool('touch-left-fretted-pluck',AUTO_PICK_COMPAT_VOICES); // A latched melody played with media fallback requires pre-authorized, independently ringing voices.
+    primeAutomaticMediaChannels(); // A latched melody played with media fallback requires pre-authorized, independently ringing voices.
     const scheduled = scheduleFrettedPluckContinuation(generation,fret);
     refs.transportStatus.innerHTML = `<strong>${automaticPluckLabel(mode)}${isLatchedAutoBankLayout() ? ' latched' : ' engaged'}.</strong> The immediate melody attack is followed by ${scheduled?.remainingBeforeBeat ?? 0} remaining subdivision${scheduled?.remainingBeforeBeat === 1 ? '' : 's'} before the next beat.`;
   }
@@ -4205,7 +4214,7 @@
       state.frettedSources.set(sourceId,fret);
       state.lastInput = `${isFrettedPluckLayout() ? 'fret' : 'auto-pick melody'} ${NOTE_GLYPHS[noteIndex]} ${midiName(noteMidi(noteIndex,modeOffsetSnapshot))} from ${sourceId}`;
       if (state.pluckInputMode) {
-        primeGestureMediaPool('touch-left-fretted-pluck',AUTO_PICK_COMPAT_VOICES); // The human note press authorizes the entire mobile polyphony pool.
+        primeAutomaticMediaChannels(); // The human note press authorizes the entire mobile polyphony pool.
         void playImmediateAutomaticMelody(fret,sourceId); // The real press is heard and scored now; only the continuation is quantized.
         if (!retainFrettedPluckPulse(`new melody ${NOTE_GLYPHS[noteIndex]} from ${sourceId}`)) restartActiveFrettedPluck();
       } else if (isLatchedAutoBankLayout()) void triggerNote(noteIndex, sourceId, modeOffsetSnapshot); // Centered stick preserves the ordinary one-shot five-bank behavior.
