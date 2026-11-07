@@ -45,7 +45,7 @@ for (const [shaftKey, shaft] of Object.entries(committed.shafts)) {
       assert.equal(eyes.length, 1);
       assert.equal(tangs.length, 1);
       assert.deepEqual(plain(eye.start), { x: 253.96693099224976, y: 955.1734838398783 }, 'Keep edited Kylie sleeve start exactly.');
-      assert.deepEqual(plain(eye.end), { x: 323.93113469337436, y: 953.3378664626867 }, 'Keep edited Kylie sleeve end exactly.');
+      assert.deepEqual(plain(eye.end), { x: 323.93113469337436, y: 952.9351361306217 }, 'Keep edited Kylie sleeve end exactly.');
       assert.deepEqual(plain(tangs[0].start), { x: 383.5215944260208, y: 957.4694550683187 }, 'Keep independently positioned Kylie tang.');
       assert.deepEqual(plain(tangs[0].end), { x: 333.6535957820315, y: 961.1002554267906 });
       continue; // Do not forcibly re-center a user's intentional post-generation calibration.
