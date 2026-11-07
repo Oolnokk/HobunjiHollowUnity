@@ -132,7 +132,10 @@ async function main(){
               &&s.fixture?.kind===expectedNative&&(s.counts[expectedNative]||0)>0))
             &&(kind!=='nativePushBlock'||((s.counts.pushable||0)>0&&(s.counts.routedPush||0)>0&&s.mechanism.signalLinked===true))
             &&(kind!=='nativeBrazier'||(s.counts.requiresCarriedTorch||0)>0)
-            &&(kind!=='statueDefense'||s.controls>=2);
+            &&(kind!=='statueDefense'||s.controls>=2)
+            &&(kind!=='findBlocks'||(s.trial.findBlocks?.blocks?.length===4
+              &&s.trial.findBlocks?.weighted===0&&s.trial.findBlocks?.blocks?.[2]?.available===true
+              &&s.trial.findBlocks?.fireReady===true&&s.trial.findBlocks?.witchBombReady===true));
           if(row.ok||(!row.ready&&row.error&&!/Rope controller declined/.test(row.error)))break;
           await page.waitForTimeout(350);
         }
