@@ -683,7 +683,8 @@
     const members = [];
     for (let i = 0; i < memberCount; i++) {
       const gender = 'male'; // Slagothim caravan merchants are exclusively male; other Slagothim remain unrestricted.
-      members.push({ index: i, gender, name: memberName(`${worldSeedLabel()}:${id}:${i}`, gender), roster: null });
+      const speciesId = window.HobunjiLongoranSpecies?.rollSubspecies?.(rng) || 'tletingan'; // Seeded, saved per member: 5% Longoran and Nuhongan/Tletingan at 1:5.
+      members.push({ index: i, gender, speciesId, name: memberName(`${worldSeedLabel()}:${id}:${i}`, gender), roster: null });
     }
     return {
       id, day, legs, destination, members,
@@ -823,7 +824,8 @@
 
   // ── Walkers ─────────────────────────────────────────────────────────
   function memberRecord(caravan, member) {
-    const roster = member.roster || { appearance: { speciesId: 'tletingan', gender: member.gender, cosmetics: {} }, equippedCosmetics: [], appliedDyes: {} };
+    const speciesId = member.roster?.appearance?.speciesId || member.speciesId || 'tletingan'; // Retains already-rolled species across save/restore and supports old caravans.
+    const roster = member.roster || { appearance: { speciesId, gender: member.gender, cosmetics: {} }, equippedCosmetics: [], appliedDyes: {} };
     const greeting = pick(Math.random, [
       'Goods from past the southern road, friend. Have a look.',
       'Hobunji Hollow is growing. Good — growing towns buy.',
@@ -833,7 +835,7 @@
     return {
       id: `slagothim_trader:${caravan.id}:${member.index}`,
       name: member.name,
-      species: 'Tletingan',
+      species: ({ tletingan: 'Tletingan', nuhongan: 'Nuhongan', longoran: 'Longoran' })[speciesId] || 'Tletingan',
       gender: member.gender,
       relationship: false,
       appearance: roster.appearance,
@@ -856,7 +858,7 @@
     try {
       const base = await window.BanditCombat?.loadGangConfig?.();
       const roster = base && window.BanditCombat?.rollRoster
-        ? await window.BanditCombat.rollRoster({ ...base, speciesWeights: { tletingan: 1 } }, 'grunt', member.name, 'male')
+        ? await window.BanditCombat.rollRoster({ ...base, speciesWeights: { [member.speciesId || 'tletingan']: 1 } }, 'grunt', member.name, 'male')
         : null;
       if (roster?.appearance) {
         if (roster.appearance.gender !== 'male') {
