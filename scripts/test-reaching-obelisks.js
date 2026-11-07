@@ -140,7 +140,7 @@ try{
   assert.deepEqual(downbeatRotations,[0,3,2,1],'four measures expose every possible quarter-turn orientation on beat one');
   assert.equal(a.rotation,0,'twelve quarter-turns return to the original orientation at the end of four measures');
   assert.equal(rt.getState().cycle,1,'a full 4/4 by four measures cycle has elapsed');
-  for(let i=0;i<90;i++)rt.tick(.05);
+  for(let i=0;i<110;i++)rt.tick(.05); // The next downbeat is 1.8 s away, then the 9.25-unit ascent needs another 2.9 s.
   assert(Math.abs(a.y-a.highY)<.001,'the high plateau is reached during a full elevation-up measure');
   assert.equal(surfaces.get('shaft-obelisks-'+a.id).topY(),a.y,'live collider follows the same moving top as its stone mesh');
   assert([...climbs.values()].some(s=>s.y1>a.lowY),'grip surfaces follow moving and rotating pillars');
