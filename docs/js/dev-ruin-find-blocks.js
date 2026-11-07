@@ -39,9 +39,18 @@
     let melody=null,iceLayer=null,iceMelt=0,bombTube=null,hitCount=0; // Driven by tick, never by artificial completion switches.
     const fire=root.DungeonFire,bombs=root.HronalWitchBombs;
     const alive=()=>!disposed&&isActive();
-    const mat=(color,emissive=0)=>new THREE.MeshStandardMaterial({
-      color,roughness:.82,metalness:.06,emissive,emissiveIntensity:emissive?.46:0
-    });
+    const mat=(color,emissive=0)=>{
+      const fill='#'+(Number(color)>>>0).toString(16).padStart(6,'0'); // Recolors the Furniture Editor's carved-smooth PNG for every stone block and puzzle fixture.
+      const authored=root.ProceduralFurniture?.makePartMaterial?.({
+        materialTexture:'carved_smooth.png',materialLighting:emissive?'lit':'unlit',
+        materialFillEnabled:true,materialFillColor:fill,materialFillMode:'always',color:fill,
+      }); // Keeps geometry/gameplay unchanged; the shared PNG cache owns the texture.
+      if(authored){
+        if(emissive&&authored.emissive){authored.emissive.setHex(emissive);authored.emissiveIntensity=.46;}
+        return authored;
+      }
+      return new THREE.MeshStandardMaterial({color,roughness:.82,metalness:.06,emissive,emissiveIntensity:emissive?.46:0});
+    };
     const newMesh=(name,geo,material,x,cy,z,parent=group)=>{
       const mesh=new THREE.Mesh(geo,material);
       mesh.name=name;mesh.position.set(x,cy,z);
