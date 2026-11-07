@@ -154,6 +154,6 @@ assert.equal(artApi.getDebug().patchedEntries, 4, 'all four selectable crop entr
 assert.equal(artApi.getDebug().clusterCount, 3, 'world crop cluster diagnostics report three members');
 assert.equal(artApi.getDebug().clusterPlantScale, 0.25, 'world crop cluster diagnostics report the requested reduced scale');
 assert.equal(artApi.getDebug().discoveryScanIntervalMs, 250, 'crop diagnostics report the time-based discovery interval');
-assert.equal(artApi.getDebug().discoveryScanCount, 3, 'crop diagnostics expose the actual number of throttled scene traversals');
+assert.equal(artApi.getDebug().discoveryScanCount, 4, 'crop diagnostics include the extra hybrid-cultivar scene scan');
 assert.match(artApi.getDebug().lastChange, /time-throttled per scene/, 'crop diagnostics summarize the latest performance correction');
 console.log('authored crop sprite art tests passed');
