@@ -107,6 +107,8 @@ const preview = {
   FRETTED_PLUCK_MODES:{'arp-forward-8':{kind:'arp',division:2},direct:{kind:'direct',division:1}},
   demoAutomaticPattern:event => ({melodyMidi:60 + event.noteIndex * 10,fret:{noteIndex:event.noteIndex},steps:[0,1,2,3].map(offset => ({type:'note',midi:60 + event.noteIndex * 10 + offset,velocity:1})),label:'roll'}),
   automaticPatternSteps:(midi,fret) => ({steps:[0,1,2,3].map(offset => ({type:'note',midi:midi + offset,velocity:1})),label:'roll'}),
+  nowMs: () => 0, // Deterministic wall-clock anchor for scheduled preview harmony.
+  sharedTransportData: () => ({}), // Previous legato test is concerned with roll phase, not chord details.
   gameTime: () => 0,
   setTimeout: (fn,delay) => {previewTimers.push({fn,delay});return previewTimers.length;},
   playAuditoryOnlyMidi: midi => {previewNotes.push(midi);},
