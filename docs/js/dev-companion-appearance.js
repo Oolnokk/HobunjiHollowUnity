@@ -277,18 +277,34 @@
     });
     return settings.get(entry.entity);
   }
+  function releaseFilteredMaterial(mesh, binding) {
+    if (mesh.material === binding.assigned) mesh.material = binding.original; // Never overwrite another system's newer material swap.
+    const originals = Array.isArray(binding.original) ? binding.original : [binding.original];
+    const copies = Array.isArray(binding.assigned) ? binding.assigned : [binding.assigned];
+    for (const material of copies) if (material && !originals.includes(material)) material.dispose?.();
+  }
   function applyFilters(entry) {
     const state = edit(entry);
+    const active = new Set(); // Tracks current sprite/mesh children so old avatar rebuilds cannot accumulate cloned materials.
     entry.root.traverse(mesh => {
       if (!mesh.material) return;
+      active.add(mesh);
+      const existing = state.materials.get(mesh);
+      if (existing && mesh.material !== existing.assigned) {
+        releaseFilteredMaterial(mesh, existing); // The renderer replaced this material; treat its new one as authoritative.
+        state.materials.delete(mesh);
+      }
       if (!state.materials.has(mesh)) {
-        const before = mesh.material;
-        const duplicate = material => material?.clone?.() || material;
-        mesh.material = Array.isArray(before) ? before.map(duplicate) : duplicate(before);
-        state.materials.set(mesh, before);
+        const original = mesh.material;
+        const originals = Array.isArray(original) ? original : [original];
+        if (originals.some(material => material && typeof material.clone !== 'function')) return; // Never mutate shared materials when they cannot be cloned.
+        const copies = originals.map(material => material?.clone?.() || material);
+        const assigned = Array.isArray(original) ? copies : copies[0];
+        mesh.material = assigned;
+        state.materials.set(mesh, { original, assigned });
       }
       const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-      const base = state.materials.get(mesh);
+      const base = state.materials.get(mesh)?.original;
       const originals = Array.isArray(base) ? base : [base]; // Preserve existing creature/body/material tint instead of whitening it.
       mats.forEach((mat, index) => {
         if (!mat) return;
@@ -303,15 +319,15 @@
         mat.needsUpdate = true;
       });
     });
+    for (const [mesh, binding] of state.materials) {
+      if (active.has(mesh)) continue;
+      releaseFilteredMaterial(mesh, binding);
+      state.materials.delete(mesh); // Rebuilds can replace whole portrait subtrees; no stale material references survive.
+    }
   }
   function restoreMaterials(entry) {
     const state = settings.get(entry.entity);
-    for (const [mesh, before] of state?.materials || []) {
-      const after = mesh.material;
-      mesh.material = before;
-      const beforeMats = Array.isArray(before) ? before : [before];
-      for (const mat of Array.isArray(after) ? after : [after]) if (!beforeMats.includes(mat)) mat?.dispose?.();
-    }
+    for (const [mesh, binding] of state?.materials || []) releaseFilteredMaterial(mesh, binding);
     state?.materials.clear();
   }
   async function rebuild(entry) {
