@@ -130,13 +130,8 @@
       const net=new THREE.Group();net.name='find-blocks-burnable-net';
       net.position.set(x,ceiling-.12,z);net.userData.devRuinFootprintIgnore=true;group.add(net);
       const skin=root.DungeonRopeArt?.createNetFrustum?.(.98,.98,1.0);
-      if(skin){skin.userData.devRuinFootprintIgnore=true;net.add(skin);}
-      else{
-        const rope=mat(COLOR.rope);
-        for(const dx of [-.45,.45])for(const dz of [-.45,.45])
-          newMesh('net-cord',new THREE.CylinderGeometry(.026,.026,1.08,5),rope,dx,-.56,dz,net);
-        cube('find-blocks-net-beam',0,0,-.12,1.1,.12,.12,COLOR.rope,0,net);
-      }
+      if(!skin)throw new Error('Find the Blocks net needs the shared rope_long PNG renderer.');
+      skin.userData.devRuinFootprintIgnore=true;net.add(skin); // The same one-piece rope_long atlas as regular burden nets.
       const hit=cube('find-blocks-net-fire-hit',x,z,ceiling-1.18,.95,1.12,.95,0x8c7551);
       hit.material.transparent=true;hit.material.opacity=0;hit.material.depthWrite=false;
       registerBurn('net',hit,()=>{net.visible=false;hit.visible=false;return startFall(block);});
