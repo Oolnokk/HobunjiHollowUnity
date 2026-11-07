@@ -540,10 +540,13 @@
     for (const key of spawnedThisDay) if (!living.has(key)) spawnedThisDay.delete(key);
   }
   function debugSnapshot() {
+    const now = clockHours(); // Mobile diagnostics show the real remaining cave time, not a frame-count estimate.
     return { ...stats, active: actors.size, populationKeys: spawnedThisDay.size,
       roosts: (window.TzatzulCliffSites?.snapshot?.().areas || []).map(({ area, count }) => ({ area, count })), // The mobile panel counts real spires, not abandoned reachable-balcony entries.
       birds: [...actors].map(c => ({ id: c._tzFlight?.identity?.id, area: c.areaId,
         phase: c._tzFlight?.phase, pose: c.tzatzulFlightPose,
+        nestMinutesLeft: c._tzFlight?.phase === 'in-nest' && now !== null
+          && Number.isFinite(c._tzFlight.nestUntil) ? Math.max(0, Math.ceil((c._tzFlight.nestUntil - now) * 60)) : null,
         target: c._tzFlight?.target === deps.player ? 'player' : c._tzFlight?.target?.creatureKey || null,
         captive: c._tzFlight?.captive?.creatureKey || null })) };
   }
