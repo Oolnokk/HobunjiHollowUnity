@@ -49,7 +49,7 @@ async function main(){
       options:[...document.querySelector('#devRandomRuinSinglePuzzleType')?.options||[]].map(o=>o.value),
     }));
     assert.equal(ui.button,true);
-    assert.deepEqual(ui.options,['weighted','glyphObelisk','ceilingRailTargets','melodyEcho','dungeonFire','ropeChain','statueDefense','nativeBrazier','nativeGlyphObelisk','nativeStackedObelisk','nativeLinkedCubePillars','nativePushBlock']);
+    assert.deepEqual(ui.options,['weighted','glyphObelisk','ceilingRailTargets','melodyEcho','dungeonFire','ropeChain','statueDefense','nativeBrazier','nativeGlyphObelisk','nativeStackedObelisk','nativeLinkedCubePillars','nativePushBlock','findBlocks']);
 
     // One specific puzzle, and the genuine projectile-target runtime must link.
     const forced=await page.evaluate(seed=>window.DevRandomRuin.generate(seed,{
