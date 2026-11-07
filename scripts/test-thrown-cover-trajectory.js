@@ -124,4 +124,76 @@ for (const [name,content] of [['flask',flaskSource],['burden',burdenSource]]) {
   assert.match(content,/ThrowCoverTrajectory\?\.attachOutline/,'both target rings receive black contours: '+name);
   assert.match(content,/ThrowCoverTrajectory\?\.projectOutline/,'both black contours follow live terrain: '+name);
 }
+
+// Exercise AlchemyFlasks' *real* aim/release entry points with the shared
+// resolver installed: the earlier geometry tests alone cannot detect a missed
+// integration call or a stale un-clipped ground reticle.
+class Vector3Lite {
+  constructor(x=0,y=0,z=0) { this.x=x; this.y=y; this.z=z; }
+  set(x,y,z) { this.x=x;this.y=y;this.z=z;return this; }
+  setScalar(value) { this.x=value;this.y=value;this.z=value;return this; }
+}
+class Object3DLite {
+  constructor() { this.position=new Vector3Lite();this.rotation=new Vector3Lite();this.scale=new Vector3Lite(1,1,1);this.parent=null;this.children=[];this.userData={}; }
+  add(child) {child.parent=this;this.children.push(child);}
+  remove(child) {this.children=this.children.filter(item=>item!==child);child.parent=null;}
+}
+class MeshLite extends Object3DLite {
+  constructor(geometry,material) {super();this.geometry=geometry;this.material=material;}
+}
+const flaskThree = {
+  Mesh:MeshLite, Group:class extends Object3DLite {},
+  RingGeometry:Geometry, SphereGeometry:Geometry,
+  MeshBasicMaterial:THREE.MeshBasicMaterial,
+  DoubleSide:THREE.DoubleSide, AdditiveBlending:2,
+};
+const flaskScene = new Object3DLite(); // Real aim ring and launched flight are mounted here.
+const flaskPlayer = {x:32,y:32,angle:0}; // Live gameplay pixels, matching the shared cover origin.
+const flaskInventory = {testThrow:2}; // Counted at release, not at preview.
+window.ThrowCoverTrajectory=resolver;
+window.AlchemySystem = {
+  POTION_ITEMS:{testThrow:{recipeId:'throwFixture',potencyTier:0}},
+  RECIPE_DEFS:{throwFixture:{id:'throwFixture',useMode:'throw',splashRadius:1}},
+  DEFAULT_SPLASH_RADIUS_TILES:1,
+  ensureRecipeItemDef:()=> 'testThrow',
+};
+const flaskContext = {
+  window,console,performance:{now:()=>1000},
+  document:{dispatchEvent(){}},
+  CustomEvent:class{constructor(type,options){this.type=type;this.detail=options.detail;}},
+  addEventListener(){},
+};
+vm.runInNewContext(fs.readFileSync('docs/js/alchemy-flasks.js','utf8'),flaskContext);
+window.AlchemyFlasks.init({
+  THREE:flaskThree,TILE:64,inventory:flaskInventory,
+  getPlayer:()=>flaskPlayer,getAimAngle:()=>0,
+  getCurrentArea:()=> 'test',getActiveScene:()=>flaskScene,
+  getSelectedItemKey:()=> 'testThrow',
+  getGroundYAtWorld:()=>0,worldSurfaceY:()=>0,
+  getHeldWorldPosition:()=>({x:.5,y:1.15,z:.5}),
+  canOccupyAt:opts.deps.canOccupyAt,
+  makeFlaskProjectile:()=>null,
+});
+state.coverTop=Infinity;
+assert(window.AlchemyFlasks.beginAim(),'the actual flask action enters aim while cover is present');
+assert(window.AlchemyFlasks.setTarget(8.5*64,.5*64),'the actual flask action accepts distant input');
+const actualAim = window.AlchemyFlasks.diagnostics(); // Preview source used by the live ring.
+const actualRing = flaskScene.children.find(item=>item.userData?.throwCoverOutline);
+assert(actualAim.coverBlocked,'the real flask aim reports cover rather than ignoring the resolver');
+assert(actualRing,'the actual flask ring carries its black outline');
+assert(Math.abs(actualRing.position.x-actualAim.target.x/64)<1e-6,
+  'the visible ground reticle is placed at the clipped aim point');
+assert(actualRing.position.x<2.9,'real aiming stops before high cover');
+assert(window.AlchemyFlasks.confirmThrow(),'the real flask can confirm the same clipped aim');
+window.AlchemyFlasks.update(.28);
+assert.equal(flaskInventory.testThrow,1,'release consumes exactly one flask');
+const launched = flaskScene.children.find(item=>item instanceof flaskThree.Group);
+assert(launched,'release creates a real projectile group');
+const travel=window.AlchemyFlasks.flightDuration(actualRing.position.x-.5);
+const ratio=Math.min(1,.28/travel);
+const expectedX=.5+(actualRing.position.x-.5)*ratio;
+assert(Math.abs(launched.position.x-expectedX)<0.03,
+  'the launched flask follows the reticle-clipped endpoint, not the original distant aim');
+state.coverTop=null;
+
 console.log('Shared thrown-cover clipping, flight sweep, and black-ring-outline regression passed.');
