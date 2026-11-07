@@ -36,7 +36,7 @@
   document.write('<script src="js/dev-random-ruin-cube-pillars.js?v=20261105cube2"></scr' + 'ipt>'); // Must precede the interior map: its material pass calls DevRandomRuinCubePillars.normalize.
   document.write('<script src="js/dev-random-ruin-interior-map.js?v=20261107shaftdoorAir1"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-wall-planes.js?v=20260927geometry1"></scr' + 'ipt>');
-  document.write('<script src="js/dev-random-ruin-wall-render-proxy.js?v=20260930plaquesources1"></scr' + 'ipt>');
+  document.write('<script src="js/dev-random-ruin-wall-render-proxy.js?v=20261107nativeglyphsource1"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-collision-precision.js?v=20260927geometry1"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-motion-runtime.js?v=20261106he3ce4c7"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-dungeon-chests.js?v=20261104chestlocks1"></scr' + 'ipt>');
