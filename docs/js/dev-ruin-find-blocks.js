@@ -23,8 +23,6 @@
     const occupancy=root.DevRandomRuinTileOccupancy,game=root.DevRandomRuin;
     if(!occupancy?.addSolidBox||!game?.registerLabPushBlock)
       throw new Error('The native sliding-block collision adapter is unavailable.');
-    const group=new THREE.Group(); // Owns the entire compound puzzle and all temporary meshes.
-    group.name='dev_ruin_find_the_blocks';kit.group().add(group);
     const id='find-blocks-'+String(context.seed)+'-'+String(room.id||room.x+'-'+room.z);
     const solidOwner='find-the-blocks:'+id; // Each generated chamber releases only its own live obstacle footprints.
     const cx=Math.floor(room.x+room.w*.5)+.5,cz=Math.floor(room.z+room.d*.5)+.5; // Grid-centered origin shared by the four stages and plates.
@@ -32,6 +30,8 @@
     const roof=Number(context.ceilingY); // The actual V50 ceiling, not a raised artificial anchor that could hide a hanging target above the stone.
     const ceiling=context.ceilingY!=null&&Number.isFinite(roof)?roof:floorY+3.5;
     if(ceiling-floorY<2.65)throw new Error('Find the Blocks needs at least 2.65 units of ceiling clearance.');
+    const group=new THREE.Group(); // Session-owned geometry is allocated only after validating the available room.
+    group.name='dev_ruin_find_the_blocks';kit.group().add(group);
     const stairRise=Math.min(STAIR_RISE,(ceiling-floorY-BLOCK_SIZE-.22)/7); // Seven actual walkable steps end below the ceiling with space for the block.
     const initialPillarHeight=Math.min(3.35,ceiling-floorY-BLOCK_SIZE-.22); // The pillar is as tall as the chamber permits without clipping its carried block.
     const roll=Number(context.seed)>>>0; // Stable per-chamber seed; different floors and wings receive independent mixes.
@@ -340,13 +340,34 @@
     const gate=options.showGate===false?null:cube('find-blocks-gate',gateX,gateZ,floorY,2.2,2.9,.3,COLOR.stone);
     const gateStart=gate?.position.y??0; // Layered wings already own a progression gate; never add a duplicate slab.
     if(gate)solid('gate',gateX,gateZ,1.1,.18,()=>alive()&&!solved);
-    createPlates();
-    ordinaryPillars();
-    fireSource();
-    netSource();
-    iceSource();
-    climbingSource();
-    pillarSource();
+
+    function teardown(){
+      if(disposed)return;
+      disposed=true;
+      melody?.dispose?.();
+      netChallenge?.dispose?.();
+      for(const burn of burnIds)fire?.unregisterTarget?.(burn);
+      for(const stop of disposers)stop();
+      for(const item of controls){
+        if(kit.removeControl)kit.removeControl(item);
+        else{const i=kit.state.controls.indexOf(item);if(i>=0)kit.state.controls.splice(i,1);}
+      }
+      for(const block of blocks)game.unregisterLabPushBlock?.(block.mesh); // Release native V50 block collision and interactions, including partially installed rooms.
+      occupancy?.clearSolids?.(solidOwner);
+      kit.disposeObject(group);
+    }
+    try{
+      createPlates();
+      ordinaryPillars();
+      fireSource();
+      netSource();
+      iceSource();
+      climbingSource();
+      pillarSource();
+    }catch(error){
+      try{teardown();}catch(cleanupError){root.console?.warn?.('[Find the Blocks] partial setup cleanup failed',cleanupError);}
+      throw error; // Never leave a half-generated chamber registered as a playable stage.
+    }
 
     const result={id,kind:'findBlocks',ready:true,linked:true,variant,netVariant,stairMirror,blocks,plates,
       get solved(){return solved;},
@@ -418,19 +439,7 @@
           y:b.mesh.position.y,available:b.mesh.userData.findBlocksAvailable})),
         targets:targets.map(t=>({id:t.id,hit:t.active})),pillarHeight,
         iceMelt,fireReady:!!fire,witchBombReady:!!bombs};},
-      dispose(){
-        if(disposed)return;disposed=true;
-        melody?.dispose?.();
-        netChallenge?.dispose?.();
-        for(const burn of burnIds)fire?.unregisterTarget?.(burn);
-        for(const stop of disposers)stop();
-        for(const item of controls){
-          if(kit.removeControl)kit.removeControl(item);
-          else{const i=kit.state.controls.indexOf(item);if(i>=0)kit.state.controls.splice(i,1);}
-        }
-        root.DevRandomRuinTileOccupancy?.clearSolids?.(solidOwner);
-        kit.disposeObject(group); // Release the chamber meshes/materials now; removing the root alone would leak GPU resources on reroll.
-      },
+      dispose:teardown, // Both normal teardown and failed initialization use identical scoped cleanup.
     };
     return result;
   }
