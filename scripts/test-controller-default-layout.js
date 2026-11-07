@@ -53,6 +53,7 @@ const expectedController = {
   musicScaleNext: 'Button15',
   socialWheel: 'Button15',
   itemSelect: 'Button4',
+  jump: null,
 }; // Exact approved controller JSON binding map; changing a shipped default must intentionally update this fixture.
 
 const context = {

@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 'use strict';
 
-// The upside-down mini-plateau's lower tile footprint is physically EMBEDDED
-// inside its higher parent plateau. It is authored visually, never walkable.
+// Original miniature plateaus grow inside a taller parent cliff from actual
+// ground level; the same grass cap is displaced 1-3 tiles into open space.
+// Only the displaced cap is a gameplay support; the rock body is visual.
 const assert=require('node:assert/strict');
 const routes=require('../docs/js/cliff-route-network.js');
 const elevated=require('../docs/js/cliff-elevated-surfaces.js');
@@ -23,54 +24,98 @@ const build=grid=>routes.build(grid,{
 const layouts=[build(buildGrid()),build(buildGrid(28,true))];
 const medium=routes.build(buildGrid(28,true),{area:'mini-cliff-medium-height',
   tileY:t=>(t?.elevTier||0)*4,blocked:tile=>!tile||tile.incline||tile.type==='rock'});
-assert(medium.balconies.length>0,'shelves survive on four-unit cliffs by moving their anchor higher');
-assert(medium.verification.ok,'raised medium-cliff anchors remain climbable');
-assert(layouts.every(net=>net.balconies.length>0),'test maps generate intermediate mini-plateaus');
+assert(medium.balconies.length>0,'intermediate ledges work on four-unit neighboring cliffs');
+assert(medium.verification.ok,'medium height routes and moved caps remain climbable');
+assert(layouts.every(net=>net.balconies.length>0),'both layouts grow embedded miniature plateaus');
+let exposedCaps=0; // Count newly exposed top cells, as opposed to simply overlapping the higher parent.
+const observedProjections=new Set(); // Ensure projection distance is authored as a real whole-tile displacement.
 for(const net of layouts) {
-  assert(net.verification.ok,'all route links and inset lower footprints must pass validation');
+  assert(net.verification.ok,'route links and the original plateau footprints must pass validation');
   assert.equal(net.verification.invalidEmbeddedBases.length,0);
   for(const shelf of net.balconies) {
-    const lower=shelf.base;
-    const route=net.routes[shelf.routeId];
-    assert(lower&&lower.footprint.length>0,'separate lower footprint exists');
-    assert(lower.y<shelf.y,'underside base elevation is below walkable top');
-    assert(shelf.y-lower.y>=2.70-0.001,'minimum internal height is doubled from 1.35 to 2.70');
-    assert.equal(shelf.overhangDepths.length,3,'overhang varies along three points on one cap');
-    assert.equal(new Set(shelf.overhangDepths).size,3,'each cap mixes three distinct depths');
-    assert(Math.abs(Math.max(...shelf.overhangDepths)-shelf.depth)<0.001,'max projection extends the previous cap by one tile');
-    assert(Math.abs(Math.min(...shelf.overhangDepths)-(shelf.depth-1))<0.001,'min projection keeps the previous reach');
-    // Every point in the rendered polygon must belong to the registered cap footprint.
-    // Narrow corner strips previously fell through gaps in 5x5 sampling.
-    const cells=new Set(shelf.footprint.map(tile=>tile.c+','+tile.r));
-    const step=0.055;
-    for(let x=Math.max(0,shelf.x-3);x<Math.min(net.cols,shelf.x+3);x+=step)
-      for(let z=Math.max(0,shelf.z-3);z<Math.min(net.rows,shelf.z+3);z+=step)
+    const base=shelf.base,route=net.routes[shelf.routeId];
+    assert(base?.footprint.length>0,'original base must overlap real higher-parent cells');
+    assert(base.y < shelf.y,'rocky body begins below the intermediate cap');
+    assert.equal(base.y,0,'the original miniature plateau is rooted at the true zone ground, not an embedded raised tile');
+    assert(shelf.y > base.neighborY+2.7-0.001 && shelf.y<tileY(net.grid[route.b.r][route.b.c]),
+      'mini-plateau elevation lies strictly between neighboring and parent plateau heights');
+    assert(Number.isInteger(shelf.projectionTiles) && shelf.projectionTiles>=1 && shelf.projectionTiles<=3,
+      'original plateau lid moves out by 1-3 whole tiles');
+    observedProjections.add(shelf.projectionTiles);
+    assert.equal(base.projectionTiles,shelf.projectionTiles,'body and cap agree on translation');
+    assert(base.parentCoverage>=0.54 && base.embeddedCoverage>=0.72,
+      'most of the original plateau is actually buried in parent rock geometry');
+    if(base.hasPaintedBoundary) assert(base.boundaryCells.length>0,'body overlaps the real painted stone band when present');
+    const requiredShared=Math.max(1,Math.ceil(shelf.width*0.30)); // Long contour strips must share several actual parent edge tiles.
+    assert(base.sharedBoundaryTiles.length>=requiredShared,'the original little plateau shares a meaningful portion of its parent cliff boundary');
+    for(const shared of base.sharedBoundaryTiles){
+      assert(base.footprint.some(cell=>cell.c===shared.c&&cell.r===shared.r),
+        'shared boundary cells belong to the original embedded plateau, not unrelated nearby rock');
+      assert.equal(routes.componentAt(net,shared.c,shared.r),base.parentComponent,
+        'the shared boundary is owned by the actual parent plateau');
+    }
+    for(const cell of base.footprint) {
+      assert.equal(routes.componentAt(net,cell.c,cell.r),route.bComp,
+        'the nested original plateau belongs to its owning higher plateau');
+      assert(cell.elevation<tileY(net.grid[cell.r][cell.c]),'ground-rooted body remains below the parent surface');
+    }
+    const cells=new Set(shelf.footprint.map(cell=>cell.c+','+cell.r));
+    for(let x=Math.max(0,shelf.x-shelf.width/2-2);x<Math.min(net.cols,shelf.x+shelf.width/2+2);x+=0.10)
+      for(let z=Math.max(0,shelf.z-shelf.width/2-2);z<Math.min(net.rows,shelf.z+shelf.width/2+2);z+=0.10)
         if(routes.shelfContains(shelf,x,z))
           assert(cells.has(Math.floor(x)+','+Math.floor(z)),
-            'no part of the actual irregular cap lies outside its registered tile footprint');
-    for(const u of [-0.9,0,0.9]){
-      const i=u<0?0:1,t=u<0?u+1:u;
-      const depth=shelf.overhangDepths[i]+(shelf.overhangDepths[i+1]-shelf.overhangDepths[i])*t;
-      const along=u*shelf.width/2,edge=-shelf.depth/2+depth;
-      const at=d=>({x:shelf.x+shelf.tangent.x*along+shelf.normal.x*d,z:shelf.z+shelf.tangent.z*along+shelf.normal.z*d});
-      const inside=at(edge-0.06),outside=at(edge+0.06);
-      assert(routes.shelfContains(shelf,inside.x,inside.z),'inside profile is supported');
-      assert(!routes.shelfContains(shelf,outside.x,outside.z),'outside profile has no phantom collision');
-    }
-    assert.notDeepEqual(lower.footprint.map(t=>[t.c,t.r]),shelf.footprint.map(t=>[t.c,t.r]),
-      'base is independently authored rather than recycling the top footprint');
-    for(const cell of lower.footprint) {
-      assert.equal(routes.componentAt(net,cell.c,cell.r),route.bComp,
-        'every lower footprint tile belongs to the higher parent plateau');
-      assert(cell.elevation < tileY(net.grid[cell.r][cell.c]),
-        'lower footprint sits below the real parent plateau surface');
-      assert(cell.elevation <= lower.y+0.001,'individual base tile elevation remains a first-class geometric value');
-    }
-    assert(lower.x>=Math.min(...lower.footprint.map(c=>c.c))&&
-      lower.x<=Math.max(...lower.footprint.map(c=>c.c+1)),
-      'lower profile centroid lies within parent-owned tiles');
+            'every curved cap fragment is inside its exact registered tile footprint');
+    if(shelf.footprint.some(cell=>routes.componentAt(net,cell.c,cell.r)!==route.bComp))
+      exposedCaps++;
+    const landing=route.nodes[shelf.nodeId],approach=route.nodes[landing.links[0]];
+    assert(!routes.shelfContains(shelf,approach.x,approach.z)&&routes.shelfContains(shelf,landing.x,landing.z),
+      'the climber transfers from the wall onto an exposed top');
+    assert.equal(approach.y,landing.y,'transfer occurs at the cap elevation');
   }
 }
+assert(exposedCaps>0,'translated grass caps expose previously unavailable ground tiles');
+assert(observedProjections.size>0,'mini-plateau generation recorded its displacement');
+
+// Multi-seed audit: irregular cliff contours, direct tier-jump boundaries,
+// nonzero ground elevations, and cap polygons wider than the old ±3-tile probe.
+let auditedCaps=0, wideCaps=0, nonUnitProjections=0; // Report the actually encountered geometry variants.
+for(let seed=0;seed<32;seed++){
+  const rows=32+(seed%9),cols=24+(seed%5); // Diverse parent-edge dimensions, not just the straight reference wall.
+  const faceAt=row=>7+(seed%4)+Math.round(Math.sin((row+seed*.7)/5)*(seed%3===0?2:1)); // A wavy parent plateau edge.
+  const grid=Array.from({length:rows},(_,row)=>Array.from({length:cols},(_,col)=>{
+    const face=faceAt(row),painted=seed%4!==0; // Every fourth fixture uses direct step cliffs, with no rock strip.
+    const wall=painted&&col===face;
+    return { type:wall?'rock':'grass',incline:wall,elevTier:col<face?0:1 };
+  }));
+  const floor=-3+(seed%6),rise=5+(seed%7); // Ground isn't necessarily zero; different adjacent plateau heights.
+  const varied=routes.build(grid,{area:'mini-cliff-contour-audit-'+seed,
+    tileY:tile=>floor+(tile?.elevTier||0)*rise,
+    blocked:tile=>!tile||tile.incline||tile.type==='rock'});
+  for(const shelf of varied.balconies){
+    auditedCaps++;
+    const base=shelf.base;
+    assert.equal(base.y,floor,'the rock body is rooted at the actual zone ground elevation');
+    assert.equal(base.parentComponent,varied.routes[shelf.routeId].bComp,'the original tiny plateau belongs to the parent');
+    assert(base.parentCoverage>=.54&&base.embeddedCoverage>=.72,'original plateau is mostly embedded');
+    assert(base.sharedBoundaryTiles.length>=Math.max(1,Math.ceil(shelf.width*.30)),
+      'width-dependent cliff contact survives curved and direct-step boundaries');
+    assert(shelf.projectionTiles>=1&&shelf.projectionTiles<=3,'the top translates 1-3 tiles');
+    if(shelf.width>4)wideCaps++;
+    if(shelf.projectionTiles>1)nonUnitProjections++;
+    const cellKeys=new Set(shelf.footprint.map(cell=>cell.c+','+cell.r)); // Cap's broad support footprint.
+    const dx=Math.abs(shelf.tangent.x)*shelf.width/2+Math.abs(shelf.normal.x)*3;
+    const dz=Math.abs(shelf.tangent.z)*shelf.width/2+Math.abs(shelf.normal.z)*3;
+    for(let x=Math.max(0,shelf.x-dx);x<Math.min(cols,shelf.x+dx);x+=.13)
+      for(let z=Math.max(0,shelf.z-dz);z<Math.min(rows,shelf.z+dz);z+=.13)
+        if(routes.shelfContains(shelf,x,z))
+          assert(cellKeys.has(Math.floor(x)+','+Math.floor(z)),
+            'even long curved cap corners must be registered as walkable support');
+  }
+}
+assert(auditedCaps>=8,'varied plateau contours must still generate meaningful miniature plateaus');
+assert(wideCaps>0,'the generator must actually produce some long contour-following mini-plateaus');
+assert(nonUnitProjections>0,'some embedded mini-plateaus must successfully translate their caps by two or three tiles');
+console.log('mini-plateau contour audit:',{auditedCaps,wideCaps,nonUnitProjections});
 
 // Tiny THREE stand-in records the exact final triangle positions. It does
 // not simulate rasterization, only the renderer's authored geometry contract.
@@ -116,48 +161,35 @@ assert.equal(meshes.filter(m=>m.userData?.cliffGenerated).length,1,'no per-mini-
 assert(rock.userData.hobunjiGroundSurface&&rock.userData.cameraObstacle,
   'the composite keeps top-surface camera and occlusion tags');
 const coordinates=rock.geometry.getAttribute('position').array;
-const TOP_FLOATS_PER_SHELF=8*3*3, ROCK_FLOATS_PER_SHELF=32*3*3; // One top fan + four triangles per perimeter edge.
+const TOP_FLOATS_PER_SHELF=8*3*3,ROCK_FLOATS_PER_SHELF=32*3*3; // One eight-triangle cap and four rock triangles per outline edge.
 assert.equal(coordinates.length,net.balconies.length*(TOP_FLOATS_PER_SHELF+ROCK_FLOATS_PER_SHELF),
-  'every mini-plateau is tessellated as one top and an embedded tapered underside');
-assert.equal(rock.material.length,2,'mini-cliff mesh has independently selectable top and rock materials');
-assert.equal(rock.material[0],grassTopMaterial,'top triangles use the resolved plateau surface material');
-assert.equal(rock.material[1],stoneSideMaterial,'rock underside keeps its cliff material');
-assert.equal(rock.geometry.groups.length,2,'one batch each for grass cap and rocky shell');
-assert.equal(rock.geometry.groups[0].count,net.balconies.length*TOP_FLOATS_PER_SHELF/3,
-  'grass material covers all upward-facing cap triangles');
-assert.equal(rock.geometry.groups[1].count,net.balconies.length*ROCK_FLOATS_PER_SHELF/3,
-  'rock material covers all vertical and sloping rock triangles');
-for(let i=0;i<net.balconies.length;i++) {
+  'batched plateau bodies use fixed-size top and ground-rooted sidewall rings');
+assert.equal(rock.material.length,2,'same plateau lid and cliffside material groups');
+assert.equal(rock.material[0],grassTopMaterial,'top is the resolved plateau grass material');
+assert.equal(rock.material[1],stoneSideMaterial,'the connected ground-rooted rock body uses cliff stone');
+assert.equal(rock.geometry.groups.length,2,'one batched grass draw and one batched rock draw');
+assert.equal(rock.geometry.groups[0].count,net.balconies.length*TOP_FLOATS_PER_SHELF/3);
+assert.equal(rock.geometry.groups[1].count,net.balconies.length*ROCK_FLOATS_PER_SHELF/3);
+for(let i=0;i<net.balconies.length;i++){
   const shelf=net.balconies[i],base=shelf.base;
   const topStart=i*TOP_FLOATS_PER_SHELF;
   const rockStart=net.balconies.length*TOP_FLOATS_PER_SHELF+i*ROCK_FLOATS_PER_SHELF;
-  const buf=[...coordinates.subarray(topStart,topStart+TOP_FLOATS_PER_SHELF),
-    ...coordinates.subarray(rockStart,rockStart+ROCK_FLOATS_PER_SHELF)];
-  const verts=[];
-  for(let j=0;j<buf.length;j+=3)verts.push({x:buf[j],y:buf[j+1],z:buf[j+2]});
-  const bottom=verts.filter(v=>Math.abs(v.y-base.y)<0.001);
-  const top=verts.filter(v=>Math.abs(v.y-shelf.y)<0.001);
-  assert(bottom.length>0&&top.length>0,'both elevations appear in the actual render geometry');
-  for (const axis of ['x', 'z']) {
-    const span = points => Math.max(...points.map(v => v[axis])) - Math.min(...points.map(v => v[axis]));
-    assert(span(top) > span(bottom), 'the rock shell tapers inward on both axes');
-  }
-  const route = net.routes[shelf.routeId];
-  const landing = route.nodes[shelf.nodeId], approach = route.nodes[landing.links[0]];
-  assert(!routes.shelfContains(shelf, approach.x, approach.z) && routes.shelfContains(shelf, landing.x, landing.z),
-    'the climb joins the cap from the side');
-  assert.equal(approach.y, landing.y, 'the transfer reaches across at cap height');
-
-  assert(verts.every(v=>v.y<=shelf.y+0.001&&v.y>=base.y-0.001),'taper lies between top and embedded base');
   const capVerts=coordinates.subarray(topStart,topStart+TOP_FLOATS_PER_SHELF);
-  for(let k=0;k<capVerts.length;k+=9){
+  const rockVerts=coordinates.subarray(rockStart,rockStart+ROCK_FLOATS_PER_SHELF);
+  for(let j=0;j<8;j++){
+    const k=j*9;
+    const top={x:capVerts[k+6],y:capVerts[k+7],z:capVerts[k+8]}; // i-th ring vertex from the fan's third corner.
+    const bottomAt=(j*4+3)*9+6; // Last sidewall triangle's third corner is the original root ring vertex.
+    const bottom={x:rockVerts[bottomAt],y:rockVerts[bottomAt+1],z:rockVerts[bottomAt+2]};
+    assert(Math.abs(bottom.y-base.y)<0.001,'each rocky wall actually reaches ground level');
+    assert(Math.abs(top.y-shelf.y)<0.001,'all translated lid triangles share the intermediate elevation');
+    assert(Math.abs(top.x-bottom.x-shelf.normal.x*shelf.projectionTiles)<0.001 &&
+      Math.abs(top.z-bottom.z-shelf.normal.z*shelf.projectionTiles)<0.001,
+      'the walkable top is a pure 1-3 tile translation of its original footprint');
     const ax=capVerts[k],az=capVerts[k+2],bx=capVerts[k+3],bz=capVerts[k+5],cx=capVerts[k+6],cz=capVerts[k+8];
     assert((bz-az)*(cx-ax)-(bx-ax)*(cz-az)>0.001,
-      'all plateau-surface cap triangles face upward, including the variable-depth corners');
+      'grass top triangles retain correct upward winding on curved noodles');
   }
-  for(const v of bottom)assert(base.footprint.some(t=>
-    v.x>=t.c-0.001&&v.x<=t.c+1.001&&v.z>=t.r-0.001&&v.z<=t.r+1.001),
-    'ALL underside base vertices remain inside the parent plateau footprint');
 }
 const registeredRectangles=net.balconies.reduce((sum,shelf)=>
   sum+elevated.groupedRectangles(shelf.footprint).length,0);
@@ -177,7 +209,8 @@ for(const shelf of net.balconies){
   assert(elevated.canStandOn(net,shelf.id,shelf.x,shelf.z,0),'registered top is walkable at its center');
   for(const u of [-0.9,0,0.9]){
     const i=u<0?0:1,t=u<0?u+1:u,along=u*shelf.width/2;
-    const front=-shelf.depth/2+shelf.overhangDepths[i]+(shelf.overhangDepths[i+1]-shelf.overhangDepths[i])*t;
+    const shift=shelf.contourOffsets[i]+(shelf.contourOffsets[i+1]-shelf.contourOffsets[i])*t; // Follow the noodle's bent front edge, not the old flat rectangle.
+    const front=-shelf.depth/2+shift+shelf.overhangDepths[i]+(shelf.overhangDepths[i+1]-shelf.overhangDepths[i])*t;
     const x=shelf.x+shelf.tangent.x*along+shelf.normal.x*(front+0.06);
     const z=shelf.z+shelf.tangent.z*along+shelf.normal.z*(front+0.06);
     assert(!elevated.canStandOn(net,shelf.id,x,z,0),'support registry rejects the missing part of a varied overhang');
@@ -189,4 +222,4 @@ assert(registered.every(r=>r.shelfId&&r.topY===net.balconies.find(s=>s.id===r.sh
   'all registered surfaces are authored TOP elevations, never underside base elevations');
 assert(elevated.clear(net.area),'cleanup releases only registered top surfaces');
 assert.equal(registered.length,0,'no lower surface registration survives unloading');
-console.log('PASS visual-only inverted mini-plateaus: separate top/base tiles, parent embedding, tapered mesh and top-only collision');
+console.log('PASS ground-rooted mini-plateaus: embedded boundary, 1-3 tile translated caps, batched rock sides and top-only collision');
