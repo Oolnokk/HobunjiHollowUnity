@@ -135,6 +135,16 @@
     return global.KurrayaInstrument?.fluteHandTarget?.() || null; // Match the actual mouth-mounted flute rather than a stale weapon-slot holder.
   }
 
+  function playerKurrayaActive(record) {
+    return !inAttackEditor() && !!gameDeps?.playerMesh
+      && record?.rig?.parent === gameDeps.playerMesh
+      && global.KurrayaInstrument?.kurrayaHandDiagnostics?.().active === true; // Never allow player music to retarget an NPC's hands.
+  }
+  function freeRightHandFor(record, toolKey) {
+    if (inAttackEditor()) return global.HobunjiAttackEditorRightHand?.currentPose?.() || null;
+    return toolKey === 'kurraya' && playerKurrayaActive(record)
+      ? global.KurrayaInstrument?.playerRightHandPose?.() || null : null; // Live sounded-note clock is player-only.
+  }
   function currentToolKey(record = null) {
     const ownedKey = record?.avatarRoot?.userData?.proceduralHandToolKey; // Hostile/NPC avatar roots can name their own held item without leaking through the player-singleton stance state.
     if (ownedKey) return toolGrips.toolKeyFor(ownedKey);
@@ -143,6 +153,7 @@
     }
     const flute = playerFluteTarget(record); // Live instrument playback owns the player's hand grip while a note is sounding.
     if (flute) return toolGrips.toolKeyFor(flute.toolKey);
+    if (playerKurrayaActive(record)) return 'kurraya'; // The plucking hand no longer inherits the last equipped weapon's shape.
     const snapshot = global.WeaponToolStances?.getRuntimeState?.() || global.WeaponToolStances?.debugSnapshot?.() || null;
     return toolGrips.toolKeyFor(snapshot?.itemKey || snapshot?.shape || '');
   }
@@ -152,6 +163,7 @@
     if (ownedContext === 'ranged' || ownedContext === 'melee') return ownedContext;
     const flute = playerFluteTarget(record); // The supplied flute hand calibration is the Ranged grip, not Melee.
     if (flute) return flute.gripContext;
+    if (playerKurrayaActive(record)) return 'melee'; // Virtual nut-to-bridge axes use the melee 2H grip family during performance.
     if (typeof toolGrips.currentGripContext === 'function') return toolGrips.currentGripContext();
     if (inAttackEditor()) return document.getElementById('handGripContextSelect')?.value === 'ranged' ? 'ranged' : 'melee';
     const snapshot = global.WeaponToolStances?.getRuntimeState?.() || global.WeaponToolStances?.debugSnapshot?.() || null;
@@ -642,6 +654,17 @@
       const primarySocket = toolSocketWorld(record, toolHolder, primaryGrip); // Raw fixed 1H target remains the canonical weapon-grip reference before optional Dual Wield remapping.
       record.rig.placePaperHandGuideWorld?.(primarySocket.position, primarySocket.quaternion);
       let primary = handSocketAfterGripMode(record, primarySocket); // Preserve the ordinary raw-socket contract for 1H/2H and diagnostics.
+      const freeHand = freeRightHandFor(record, toolKey); // A free note keyframe is avatar-local instead of attached to the instrument mesh.
+      if (freeHand && freeHand.influence > 0.0001 && record.rig.parent?.localToWorld) {
+        const avatar = record.rig.parent; // Player/editor avatar origin; follows body movement but ignores tool rotations.
+        const handPosition = new record.THREE.Vector3(Number(freeHand.x)||0, Number(freeHand.y)||0, Number(freeHand.z)||0);
+        avatar.localToWorld(handPosition);
+        const handRotation = hierarchyWorldQuaternion(record, avatar, new record.THREE.Quaternion())
+          .multiply(quaternionFromDeg(record, { pitch: freeHand.pitch, yaw: freeHand.yaw, roll: freeHand.roll }));
+        const weight = Math.max(0, Math.min(1, freeHand.influence));
+        primary.position.lerp(handPosition, weight); // Smoothly releases/grabs the normal grip at animation boundaries.
+        primary.quaternion.slerp(handRotation, weight);
+      }
       if (dualWield) {
         const dualPrimarySocket = global.HobunjiDualWieldWeaponVisuals?.transformSocketForHand?.(record, 'right', primarySocket) || primarySocket;
         primary = handSocketAfterGripMode(record, dualPrimarySocket); // Dual Wield alone remaps the same canonical grip onto the lagged main-hand weapon copy.
@@ -649,7 +672,7 @@
       const modelCalibration = modelCalibrationForRecord(record);
       record.rig.placeHandWorld?.('right', primary.position, primary.quaternion, modelCalibration);
       const owners = ensureFallbackState(record).owners;
-      owners.right = 'primary-grip'; // Ordinary attachment ownership always wins over locomotion fallback.
+      owners.right = freeHand?.influence > 0.0001 ? 'avatar-local-free-right-hand' : 'primary-grip'; // Mobile-visible ownership exposes independent pluck mode.
       if (dualWield) owners.right = 'dual-wield-main-grip'; // Dual Wield refines that ownership to the lagged duplicate weapon.
 
       let secondaryGrip = null;
