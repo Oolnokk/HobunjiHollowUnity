@@ -28,6 +28,7 @@
   let itemDefs = null; // Shared ITEM_DEFS mutated in place; read by inventory, trader and cooking.
   let inventory = null; // Current player's seed/harvest stacks used to rehydrate saved hybrids.
   const known = new Set(); // Keys already registered as crops; avoids repeated catalog and UI work.
+  const variants = new Map(); // Cached resolved traits: rendering thousands of frames must not rebuild item definitions.
   let lastChange = 'Regional crop varieties are gene-coded; no independent world save is required.';
 
   const clamp = (n, min, max) => Math.min(max, Math.max(min, n));
@@ -69,6 +70,7 @@
   function register(family, code) {
     if (!FAMILIES.includes(family) || !MAX_CODE.test(code) || !cropData?.[family]) return null;
     const id = idFor(family, code);
+    if (variants.has(id) && cropData[id] && (!itemDefs || itemDefs[seedKey(id)])) return variants.get(id); // Hot path for rendering, crop growth and inventory.
     const traits = phenotype(family, code);
     if (!traits) return null;
     const base = cropData[family];
@@ -94,8 +96,9 @@
         tags: [...new Set([...(baseSeed.tags || []), 'Seed', 'Regional Variety'])],
         desc: 'Plant on suitable soil. Origin: ' + traits.region + '. Prefers ' + Math.round(traits.idealMin * 100) + '–' + Math.round(traits.idealMax * 100) + '% water.' };
     }
-    known.add(id);
-    return { id, seedKey: seedKey(id), label, ...traits };
+    const variant = { id, seedKey: seedKey(id), label, ...traits }; // Stable public crop metadata cached until a world rebind.
+    known.add(id); variants.set(id, variant);
+    return variant;
   }
   function ensure(key) {
     const parsed = fromItemKey(key);
@@ -105,6 +108,7 @@
     for (const key of Object.keys(stacks || {})) if (fromItemKey(key)) ensure(key);
   }
   function attach(deps = {}) {
+    if (deps.cropData && deps.cropData !== cropData) { known.clear(); variants.clear(); } // World/replay rebinding restores the new runtime crop table.
     cropData = deps.cropData || cropData;
     itemDefs = deps.ITEM_DEFS || itemDefs;
     inventory = deps.inventory || inventory;
