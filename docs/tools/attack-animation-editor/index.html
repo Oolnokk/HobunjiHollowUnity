@@ -1641,6 +1641,7 @@ async function loadWeaponIdlePresets() {
 }
 void loadWeaponIdlePresets();
 function applyPreset(preset) {
+  if (gizmoMode !== 'off') setGizmoMode('off'); // Switching Actions cannot leave the previous instrument's endpoint/hand gizmo attached.
   if (preset.name) {
     anim.name = preset.name;
     $('animName').value = anim.name;
@@ -1756,6 +1757,7 @@ function applyBodySink(pct, bodyYawDeg = 0) {
   toolBase.position.y = toolBaseRestY - worldSink; // toolBase is a sibling of the body root, so it is lowered by the same world distance.
 }
 function applyPoseToRig(pose) {
+  syncGripAxisMarkers(); // Keep Nut/Bridge markers visible while previewing, scrubbing and switching instruments, even with the gizmo off.
   window.HobunjiDualWieldWeaponVisuals?.setCarriedPose(pose); // The invisible idle-offhand tool peels the pose the holder carries right now.
   applyBodySink(handCalibrationPresentationActive ? 0 : sinkPctForPose(pose), pose.bodyYaw);
   // Body rotation (rig) is applied first/separately from the tool's own local pose —
