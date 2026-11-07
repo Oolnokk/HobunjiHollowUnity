@@ -7,9 +7,10 @@ const vm=require('node:vm');
 const file=path=>fs.readFileSync(path,'utf8');
 const native=new Map(); // Registered actual cliff ledges, keyed by area.
 const drops=[]; // Verify a killed flying carrier releases its original victim at the actual midair position.
+const flightEndpoints=[]; // Records actual generated flight legs to catch out-of-grid scout destinations.
 const supports={
   point:(id,x,y,worldY)=>({id,dimension:0,x,y,worldY}),
-  line:(id,start,end)=>({id,dimension:1,start,end}),
+  line:(id,start,end)=>{flightEndpoints.push(end);return {id,dimension:1,start,end};},
   register(area,p){if(!native.has(area))native.set(area,new Map());native.get(area).set(p.id,p);return true;},
   unregister(area,id){return native.get(area)?.delete(id)||false;},
   attach(c,p,t=0){if(c.health<=0)return false;c.onPerch=p;c.branchT=t;c.x=p.dimension? p.start.x:p.x;c.y=p.dimension?p.start.y:p.y;c.branchSurfaceY=p.dimension?p.start.worldY:p.worldY;return true;},
@@ -25,6 +26,7 @@ const player={x:128,y:128,health:100}; // Real Tzatzul prey type is the player.
 const targetFoot = a => a?.onBranch ? a.branchSurfaceY : 0; // In test the world floor is at y=0, except for explicitly perched prey.
 let hits=0; // Counts exact damage calls; a single swoop cannot hit repeatedly.
 const w={PerchSupport:supports,__farmLog(){},
+  CliffRouteNetwork:{forArea:()=>({cols:48,rows:48})}, // Real route graphs expose the active grid dimensions used by scouting bounds.
   RangedWeapons: { actorHitbox(actor) {
     const width = actor.creatureKey === 'tzatzul' ? 2.2 : .72; // Mimics the canonical 3D actorHitbox width/height contract.
     const height = actor.creatureKey === 'tzatzul' ? 2.2 : 1.16;
@@ -80,6 +82,9 @@ assert(w.TzatzulFlightRuntime.debugSnapshot().scouts>0,'a Tzatzul actively scout
 assert(bird.onPerch.dimension===1||bird._tzFlight.phase==='perched','flight uses 1D elevated support');
 for(let i=0;i<160;i++)w.TzatzulFlightRuntime.update(.1);
 assert(w.TzatzulFlightRuntime.debugSnapshot().flights>0);
+assert(flightEndpoints.length>0 && flightEndpoints.every(end =>
+  end.x>=2*64 && end.x<=46*64 && end.y>=2*64 && end.y<=46*64),
+  'every generated scouting leg stays inside the real cliff grid even near map edges');
 const bandit={creatureKey:'bandit',isBandit:true,health:100,areaId:zone,x:bird.x+7*64,y:bird.y}; // Shared hostile roster is the authoritative source of raiders.
 creatures.add(bandit);
 assert.strictEqual(w.TzatzulFlightRuntime.__test.choosePrey(bird),bandit,'bandits count as hatchling food');
