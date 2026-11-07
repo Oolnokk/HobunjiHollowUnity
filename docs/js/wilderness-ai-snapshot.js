@@ -23,6 +23,7 @@
 One frozen instant of all Porakaneki camp residents world-wide plus currently instantiated den-, nest-, and roaming-herd wildlife. Porakaneki camps keep abstract off-radius agents, so their section spans all generated wilderness zones. WILDLIFE is different: it reads live hostileObjects entries carrying a denKey, nestTreeKey, or herdKey, and those animals are normally instantiated only for the active zone. Therefore an empty WILDLIFE section does NOT mean every den, nest, or roaming herd world-wide is empty.
 PORAKANEKI header reports runtime=<version> ticks=<planner ticks> owner=<frame owner>. Camp lines include generated=<live abstract residents>/<target residents>; a nonzero target with generated=0 means the planner cadence has not populated that camp yet. Each indented "res#<index>" line is one generated resident. act=<activity> is sleep|hunt-den|wander|socialize|camp|investigate. hunt-den residents share party=<id> and den=<denId>; camp lines expose each independent hunting party and its own den and exterior target. pos=(col,row) is the planner position. dist is tile distance to the player when in the active zone. lod<=N is the current materialization threshold: normally the enter radius, or the wider release radius while already live. full=1 means that distance gate currently requests full simulation. mat=1 means a real humanoid entity exists; vis=1 means its mesh is visible; reg=1 means that exact entity is still registered in hostileObjects. state is the shared hostile-loop state. planner=1 means neutral Porakaneki target planning owns its destination while the shared hostile loop owns locomotion/rendering. sim=(x,y) is the live entity position, render=(x,y) is the avatar root position, and rd is their tile-space render delta; a large/stuck rd identifies a simulation/render handoff failure directly.
 WILDLIFE header: activeArea=<area> is the player's current area, instantiatedWildlife=<n> counts live runtime creatures carrying a denKey, nestTreeKey, or herdKey; denCreatures/nestCreatures/herdCreatures split those sources. herdMothers/carriedBabies/sleepingHerdCreatures expose the Voorg-Ass herd state directly, and scope=active-runtime is a reminder that off-zone populations are not represented here. Creature lines report source/species/state/mode/tile/home; Herd-Mothers also report role=Herd-Mother and carriedBabies=<n>.
+TZATZUL lists every live Tzatzul / Tzatzul hatchling in hostileObjects, which includes cliff-roost birds, indoor nest mothers and dev-spawned birds. They carry no denKey/nestTreeKey/herdKey so WILDLIFE never shows them. Header: activeArea, tzatzul=<n> birds, hatchlings=<n>, roosts=<area:count,...> real bird spires per cliff zone (only Northern Cliffs and Western Slope have any), flightActive=<birds owned by the cliff flight runtime>. Lines: phase/pose come from the flight runtime (perched, swooping, ...), perched=1 means standing on a perch, captive= is the creature it is carrying. Like WILDLIFE this is active-runtime only, so zero here does NOT mean other zones' spires are empty.
 DENS lists EVERY den anchor in the active zone's layout, occupied or not: species=<assigned den species> (legacy-pool = zone has no denSpecies list), stage=active|ready|cleared|collapsed, alive=<live registered pack members>, everSpawned/pendingRespawn = the wipe/next-day respawn bookkeeping. Den packs only appear in WILDLIFE while alive and instantiated, so use DENS to count caves.
 HIVES lists every honeyfuzzle hive stump in the active zone's layout: standing=0 means harvested/collapsed, swarm=1 means its swarm is out now. Swarms only come out by day and within spawnRadius tiles of the player, and excludedZone=1 (Western Slope) has stumps but no honeyfuzzles.`;
 
@@ -300,6 +301,25 @@ This is an isolated Wilderness Chunk Lab experiment. SPAWN_ARMED creates only ab
     if (!wildlife.length) lines.push('(no den-, nest-, or roaming-herd creatures currently instantiated; off-zone populations are not represented in hostileObjects)');
     return lines.join('\n');
   }
+  function tzatzulSection() {
+    const birds = [];
+    for (const c of deps.hostileObjects) {
+      if (c?.creatureKey === 'tzatzul' || c?.creatureKey === 'tzatzul-hatchling') birds.push(c);
+    }
+    const flight = window.TzatzulFlightRuntime?.debugSnapshot?.() || null; // Spire counts and per-bird flight phase from the one flight owner.
+    const phaseById = new Map((flight?.birds || []).map(b => [b.id, b]));
+    const roosts = (flight?.roosts || []).map(r => `${r.area}:${r.count}`).join(',') || '-';
+    const hatchlings = birds.filter(c => c.creatureKey === 'tzatzul-hatchling').length;
+    const lines = [`TZATZUL activeArea=${activeArea()} tzatzul=${birds.length - hatchlings} hatchlings=${hatchlings} roosts=${roosts} flightActive=${flight ? flight.active : '-'} spawnedToday=${flight ? flight.populationKeys : '-'} scope=active-runtime`];
+    for (const c of birds) {
+      const f = c._tzFlight ? phaseById.get(c._tzFlight.identity?.id) : null;
+      const target = f?.target ? ` target=${f.target}` : '';
+      const captive = f?.captive ? ` captive=${f.captive}` : '';
+      lines.push(`id=${c.id} species=${c.creatureKey} area=${c.areaId} state=${c.state} phase=${f?.phase || c._tzFlight?.phase || '-'} pose=${f?.pose || c.tzatzulFlightPose || '-'} perched=${c.onPerch ? 1 : 0} hp=${Math.round(c.health)} tile=(${Math.round(c.x / deps.TILE)},${Math.round(c.y / deps.TILE)})${target}${captive}`);
+    }
+    if (!birds.length) lines.push('(no Tzatzul currently instantiated; off-zone populations are not represented in hostileObjects)');
+    return lines.join('\n');
+  }
   function denSection() {
     const dens = window.WildlifeSpawn?.denCensus?.() || [];
     const bySpecies = {};
@@ -332,7 +352,7 @@ This is an isolated Wilderness Chunk Lab experiment. SPAWN_ARMED creates only ab
   function captureSnapshotText() {
     const hour = Number(window.CalendarSystem?.getHour?.());
     const header = `--- WILDERNESS AI SNAPSHOT t=${new Date().toISOString()} gameHour=${Number.isFinite(hour) ? hour.toFixed(2) : '-'} activeArea=${activeArea()} ---`;
-    return [header, '', porakanekiSection(), '', wildlifeSection(), '', denSection(), '', hiveSection()].join('\n');
+    return [header, '', porakanekiSection(), '', wildlifeSection(), '', tzatzulSection(), '', denSection(), '', hiveSection()].join('\n');
   }
 
   async function copySnapshot() {
