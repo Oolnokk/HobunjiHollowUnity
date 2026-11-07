@@ -232,18 +232,11 @@
     if (!context.ok) return blockedCropResult(context);
 
     const { crop, seedEntry, reticle, tile } = context;
-    lastDeps.inventory[seedEntry.key] = Math.max(0, (Number(lastDeps.inventory[seedEntry.key]) || 0) - 1);
-    lastDeps.clampInventoryStack?.(seedEntry.key);
-    tile.crop = crop;
-    tile.cropAge = 0;
-    tile.cropReady = false;
-    tile.stress = '';
+    const result = window.CropPlanting?.plantCrop?.(tile, crop); // Every input path uses the crop authority's validation and inventory mutation.
+    if (!result?.ok) return blockedCropResult({ ...context, ok: false, message: result?.message || 'Planting is not ready.' });
     persistCropTile(reticle);
 
-    const canonical = lastDeps.ITEM_DEFS?.[seedEntry.key]; // Used to present a friendly crop label while keeping the seed stack key unchanged.
-    const seedLabel = canonical?.label || seedEntry.label || crop;
-    const plantedLabel = String(seedLabel).replace(/\s+seeds?$/i, '') || crop;
-    const message = `Planted ${canonical?.icon || seedEntry.icon || '🌱'} ${plantedLabel}.`;
+    const message = result.message; // Preserve the canonical crop label and water/ditch guidance.
     lastDeps.showToast?.(message, true);
 
     lastCropDebug = {
@@ -266,20 +259,9 @@
     if (!context.ok) return blockedCropResult(context);
 
     const { crop, reticle, tile } = context;
-    const cropDef = lastDeps.ITEM_DEFS?.[crop] || {}; // Used for the inventory icon/label while the tile itself remains the source of crop identity.
-    lastDeps.inventory[crop] = Math.min(window.InventoryStacks.MAX_TOTAL, (Number(lastDeps.inventory[crop]) || 0) + 1);
-    const stars = Math.max(1, Number(targetingDeps.rollItemStars?.('farming')) || 1); // Used to preserve the same farming-quality roll as game.js harvestCrop().
-    targetingDeps.recordItemQuality?.(crop, stars, 1);
-    window.SkillSystem?.award?.('farming', window.SkillSystem?.XP_GAINS?.crop || 10, `harvested ${cropDef.label || crop}`);
-    window.HobunjiActivityEvents?.emit('crop_harvested', { cropKey: crop, label: cropDef.label || crop });
-    const starText = targetingDeps.starRatingText?.(stars) || '';
-    const message = `Harvested ${starText ? `${starText} ` : ''}${cropDef.icon || '🌱'} ${cropDef.label || crop}!`;
-
-    tile.crop = '';
-    tile.cropAge = 0;
-    tile.cropReady = false;
-    tile.stress = '';
-    window.AudioSystem?.playObjectSfx?.(window.AudioSystem?.objectSfxConfig?.().harvest);
+    const result = window.CropPlanting?.harvestCrop?.(tile); // Owns bonus yield, quality, XP, activity events, fertilizer consumption and sound once.
+    if (!result?.ok) return blockedCropResult({ ...context, ok: false, message: result?.message || 'Harvesting is not ready.' });
+    const { stars, amount, message } = result; // Canonical result also feeds the existing mobile crop diagnostics.
     persistCropTile(reticle);
     lastDeps.showToast?.(message, true);
 
@@ -288,13 +270,14 @@
       action: 'harvest',
       crop,
       stars,
+      amount,
       col: reticle.col,
       row: reticle.row,
       tileType: tile.type,
       message,
     };
     window.__farmLog?.(`[items] Immediate harvest: ${crop} @ c${reticle.col},r${reticle.row}; ${stars} star(s)`, 'items');
-    return { ...context, stars, message };
+    return { ...context, stars, amount, message };
   }
 
   function cropContext(action) {

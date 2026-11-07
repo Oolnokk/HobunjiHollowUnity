@@ -150,6 +150,13 @@ const fakeCookingDeps = {
   showToast(message, ok) { calls.toast.push({ message, ok }); },
 }; // Used to prove canonical food metadata and direct mobile planting share the same inventory registry.
 bridgeWindow.CookingSystem.init(fakeCookingDeps);
+vm.runInNewContext(source('docs/js/crop-planting.js'), { window: bridgeWindow });
+bridgeWindow.CropPlanting.init({
+  inventory: fakeCookingDeps.inventory,
+  cropData: { redberries: { label: 'Redberries', emoji: '🍓', seedKey: 'redberrySeeds', idealMin: 0.35, idealMax: 0.7, needsAdjacentDitch: true } },
+  canPlantCropOnTile: (_crop, tile) => ['tilled', 'raised'].includes(tile.type) && !tile.crop,
+  clampInventoryStack: fakeCookingDeps.clampInventoryStack,
+}); // The immediate-input adapter now delegates planting to the same owner as ordinary game dispatch.
 assert.equal(heldCropEntry.cat, 'crop', 'raw crop category reaches the selectable held item');
 assert.deepEqual(Array.from(heldCropEntry.tags), ['Crop', 'Berry'], 'raw crop tags reach the selectable held item');
 assert.equal(heldCropEntry.label, 'REDBERRIES', 'scroll-owned presentation survives metadata synchronization');

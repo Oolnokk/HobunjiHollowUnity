@@ -80,6 +80,36 @@
     return vertical || horizontal;
   }
 
+  function _connectedRoomIds(pieces, startId) {
+    const connected = new Set([startId]); // Room IDs reachable through real shared edges, including foundations.
+    const pending = pieces.filter(piece => piece.id === startId); // Small edit-time traversal; never runs in the frame loop.
+    for (let index = 0; index < pending.length; index++) {
+      const room = pending[index]; // Expand this room's component using the same adjacency rule as placement.
+      for (const candidate of pieces) {
+        if (connected.has(candidate.id) || !rectsAdjacent(room.col, room.row, room.w, room.h,
+          candidate.col, candidate.row, candidate.w, candidate.h)) continue;
+        connected.add(candidate.id);
+        pending.push(candidate);
+      }
+    }
+    return connected;
+  }
+
+  function _preservesHouseConnections(nextPieces) {
+    const previousPieces = deps.getHousePieces(); // Keep existing components intact while allowing old disconnected saves to be repaired.
+    const unchecked = new Set(nextPieces.map(piece => piece.id)); // Removed rooms themselves do not need to stay reachable.
+    while (unchecked.size) {
+      const startId = unchecked.values().next().value; // Test one surviving representative of each previous component.
+      const previous = _connectedRoomIds(previousPieces, startId); // Includes a removed bridge so its surviving neighbors must still connect.
+      const next = _connectedRoomIds(nextPieces, startId); // Moving, turning or removing a room must not split that component.
+      for (const id of previous) {
+        if (unchecked.has(id) && !next.has(id)) return false;
+        unchecked.delete(id);
+      }
+    }
+    return true;
+  }
+
   // In bounds, no trench/tilled/raised/paddy/water tile or crop, no other
   // world object in the footprint, no overlap with a barn — shared by both
   // a brand-new piece placement and a whole-house move (moveHouse below),
@@ -800,6 +830,8 @@
     const entry = pieces.find(p => p.id === id);
     if (!entry) return { ok: false, message: 'House piece not found.' };
     if (entry.pieceKey === 'starter') return { ok: false, message: "The original house can't be demolished." };
+    if (!_preservesHouseConnections(pieces.filter(piece => piece.id !== id)))
+      return { ok: false, message: 'Cannot demolish this room while it connects other rooms. Move those rooms first.' };
     const interiorRoom = window.FarmhouseRoomPlanner?.roomRect?.(entry); // Recover only this full-size section's actual indoor furniture, not a neighbor's offset floor.
     const recovered = entry.stage === 'built'
       ? deps.recoverFurnitureInInteriorRect(interiorRoom?.col ?? entry.col * 2, interiorRoom?.row ?? entry.row * 2,
@@ -878,6 +910,7 @@
     const entry = pieces.find(p => p.id === id);
     if (!entry || entry.id === 'house_starter') return false;
     const others = pieces.filter(p => p.id !== id);
+    if (!_preservesHouseConnections(pieces.map(piece => piece.id === id ? { ...piece, col, row } : piece))) return false;
     _unregisterFeatureDoors(entry);
     _unregisterFootprint(entry);
     const ok = _footprintClearOfHazardsAndBarns(col, row, entry.w, entry.h)
@@ -904,7 +937,7 @@
     if (entry.id === 'house_starter') return { ok: false, message: 'Move the whole house instead of the main room on its own.' };
     if (newCol === entry.col && newRow === entry.row) return { ok: false, message: 'Already there.' };
     if (!canMovePieceTo(id, newCol, newRow)) {
-      return { ok: false, message: 'Cannot move there — needs clear, untilled ground touching the rest of your house.' };
+      return { ok: false, message: 'Cannot move there — needs clear, untilled ground and must keep connected rooms together.' };
     }
 
     _unregisterFeatureDoors(entry);
@@ -943,6 +976,8 @@
     if (!entry) return { ok: false, message: 'House piece not found.' };
     if (entry.id === 'house_starter') return { ok: false, message: "The main room can't be rotated on its own." };
     const newW = entry.h, newH = entry.w;
+    if (!_preservesHouseConnections(pieces.map(piece => piece.id === id ? { ...piece, w: newW, h: newH } : piece)))
+      return { ok: false, message: 'Cannot rotate this room because it would disconnect other rooms.' };
 
     const others = pieces.filter(p => p.id !== id);
     _unregisterFeatureDoors(entry);

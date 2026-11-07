@@ -26524,7 +26524,7 @@
           // Water sim cadence (1/8 game-hour ticks + the farm/town area gate)
           // now lives in js/water-system.js's tickSimulation.
           window.WaterSystem.tickSimulation(dt, currentArea, {
-            gameHoursPerSecond: (NIGHT_HOUR - MORNING_HOUR) / DAY_LENGTH_SECONDS,
+            gameHoursPerSecond: window.CalendarSystem.getNaturalGameHoursPerSecond(),
             onFarmTick: tickWorldObjects,
             onTick: () => window.WeatherFX.spawnRipples(),
           });

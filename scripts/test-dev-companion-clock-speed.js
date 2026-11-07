@@ -24,7 +24,7 @@ const context = vm.createContext({
   MAX_NATURAL_TIME_WRITE: 0.02, NATURAL_TIME_WRITE_SCALE: 288 / 672,
   devTimeSpeed: 1,
 }); // Supplies only the accessor's runtime dependencies, keeping DOM transitions outside this test.
-vm.runInContext(['installNaturalTimeScale', 'setTime01Raw', 'registerDevCompanionPanel'].map(extract).join('\n'), context);
+vm.runInContext(['installNaturalTimeScale', 'naturalClockScale', 'setTime01Raw', 'registerDevCompanionPanel'].map(extract).join('\n'), context);
 context.installNaturalTimeScale();
 context.registerDevCompanionPanel();
 const panel = panels[0]; // Uses the same action route exposed to the companion window.
