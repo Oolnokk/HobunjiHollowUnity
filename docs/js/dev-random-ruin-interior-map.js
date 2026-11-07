@@ -639,9 +639,24 @@
     }
   }
 
+  // The lab's four movable blocks reuse native V50 face bracing, smooth sliding and swept collisions.
+  function registerLabPushBlock(block,worldStep=1) {
+    if(!ruin?.singleRoomTrial||ruin.singleRoomTrial.kind!=='findBlocks'||!ruin.occupancy?.registerSlidingPushBlock||!block?.isObject3D)return false;
+    if(ruin.pushBlocks.includes(block))return true;
+    block.userData ||= {};
+    block.userData.previewMotion={type:'pushPuzzleBlock'}; // Selected by both the V50 push controller and dynamic occupancy.
+    if(!ruin.occupancy.registerSlidingPushBlock(block))return false;
+    ruin.pushBlocks.push(block);
+    const pusher={block,localStep:Math.max(.5,Number(worldStep)||1)/RUIN_TILE_SCALE}; // Native pusher stores generator-local step sizes.
+    ruin.blockPushers.push(pusher);
+    ruin.controls.push({kind:'pushBlock',object:block,label:'Push Stone Block',range:.36,touchIcon:'✋',
+      onPress:()=>pushBlock(pusher,getPushFace(pusher,.36),true)});
+    return true;
+  }
+
   function getPushFace(pusher, reach) {
     const box = ruin.occupancy?.pushBlockBox(pusher.block);
-    if (!box || Math.abs(ruin.supportY - box.min.y) > .3) return null;
+    if (!box || pusher.block.userData?.findBlocksAvailable===false || pusher.block.userData?.findBlocksFalling || Math.abs(ruin.supportY - box.min.y) > .3) return null;
     const x = (box.min.x+box.max.x)/2, z = (box.min.z+box.max.z)/2; // World-space center for facing and sweep.
     const halfX = (box.max.x-box.min.x)/2, halfZ = (box.max.z-box.min.z)/2;
     const dx = x-deps.player.x/deps.TILE, dz = z-deps.player.y/deps.TILE;
@@ -666,7 +681,8 @@
       const x=face.x+face.sx*worldStep*i/probes, z=face.z+face.sz*worldStep*i/probes;
       const supported = [[0,0],[-radius,-radius],[-radius,radius],[radius,-radius],[radius,radius]]
         .every(([dx,dz])=>DS.sampleSupport(x+dx,z+dz,{minY:face.y-.13,maxY:face.y+.13}));
-      if (!supported || DS.blockerAt(x,z,options)) {
+      const mayFall=block.userData?.findBlocksCanDrop===true && face.y>Number(block.userData.findBlocksFloorY)+.5; // Only an elevated lab block may leave its supporting ledge; other native courses still require continuous support.
+      if ((!supported&&!mayFall) || DS.blockerAt(x,z,options)) {
         if (manual) deps.showToast?.('The stone block cannot move that way.',false);
         return false;
       }
@@ -1052,7 +1068,7 @@
           size:cfg('generation.size','medium'),density:cfg('generation.density',62),
           roomMin:singleVestibule?1:cfg('generation.roomMin',3),
           roomMax:singleVestibule?1:cfg('generation.roomMax',6),singleRoom:singleVestibule,singleRoomLab:singleRoomTrial, // Avoid a default core moat or raised treasure display conflicting with the one selected challenge.
-          ...(soloChoice?.mode==='mechanism'||nativeSoloType==='brazier'?{roomPreset:'veryLarge'}:singleRoomTrial&&(['statueDefense','ropeChain'].includes(soloChoice.kind)||nativeSoloType)?{roomPreset:['statueDefense','nativePushBlock'].includes(soloChoice.kind)?'veryLarge':nativeSoloType==='glyphObelisk'?'medium':'large'}:{}), // The torch run and standalone mechanisms need a clear chamber.
+          ...(soloChoice?.mode==='mechanism'||nativeSoloType==='brazier'?{roomPreset:'veryLarge'}:singleRoomTrial&&(['statueDefense','ropeChain','findBlocks'].includes(soloChoice.kind)||nativeSoloType)?{roomPreset:['statueDefense','nativePushBlock','findBlocks'].includes(soloChoice.kind)?'veryLarge':nativeSoloType==='glyphObelisk'?'medium':'large'}:{}), // The torch run and standalone mechanisms need a clear chamber.
           puzzles:singleVestibule?{
              ...Object.fromEntries(Object.keys(puzzleOptions).map(key=>[key,false])),
              ...(nativeSoloType?{[nativeSoloType]:true,maxPerRoom:1,...(nativeSoloType==='brazier'?{stackedObelisk:true}:{})}:{})
@@ -1991,7 +2007,7 @@
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',installSettingsButton,{once:true});else installSettingsButton();
 
-  window.DevRandomRuin=Object.freeze({getVestibuleRoots:()=>ruin?{stone:ruin.vestibuleStone||null,props:ruin.stoneAgeStats?.props||0,bindings:ruin.rootGrowthBindings?.length||0,rooted:!!ruin.rootedMechanisms,ms:ruin.vestibuleRootMs||0,error:ruin.vestibuleRootError||null}:null,generate,generateStoryVault,reroll:()=>ruin?.shaftTest?generateShaftTest():generate(randomSeed(),ruin?.singleRoomTrial?{singleRoomTrial:true,puzzleType:ruin.singleRoomTrial.mode==='weighted'?'weighted':ruin.singleRoomTrial.kind}:{hachutu:ruin?.hachutu===true,rootMechanisms:ruin?.rootedMechanisms===true,stoneAge:ruin?.stoneAgeRequested===true,composedTrial:ruin?.composedTrialForced===true?true:undefined}),clear:()=>{if(deps?.getCurrentArea?.()===MAP_ID)leaveRuin();else clearRuntime(true);},leave:leaveRuin,exitTo,getInteractionControls:()=>ruin?ruin.controls.filter(control=>control.kind!=='story-vault-pedestal'||window.DelversGuild?.vaultPhase?.()==='search').map(control=>({...control,range:Number.isFinite(Number(control.range))?Number(control.range):CONTROL_RANGE})):[],getNativeV50TestRuntime:()=>devModeEnabled()?ruin?.nativeV50Runtime||null:null, // Developer-mode-only diagnostic handle for Playwright to exercise the actual generated puzzle controls and stage gates; not a gameplay solver.
+  window.DevRandomRuin=Object.freeze({getVestibuleRoots:()=>ruin?{stone:ruin.vestibuleStone||null,props:ruin.stoneAgeStats?.props||0,bindings:ruin.rootGrowthBindings?.length||0,rooted:!!ruin.rootedMechanisms,ms:ruin.vestibuleRootMs||0,error:ruin.vestibuleRootError||null}:null,generate,generateStoryVault,reroll:()=>ruin?.shaftTest?generateShaftTest():generate(randomSeed(),ruin?.singleRoomTrial?{singleRoomTrial:true,puzzleType:ruin.singleRoomTrial.mode==='weighted'?'weighted':ruin.singleRoomTrial.kind}:{hachutu:ruin?.hachutu===true,rootMechanisms:ruin?.rootedMechanisms===true,stoneAge:ruin?.stoneAgeRequested===true,composedTrial:ruin?.composedTrialForced===true?true:undefined}),clear:()=>{if(deps?.getCurrentArea?.()===MAP_ID)leaveRuin();else clearRuntime(true);},leave:leaveRuin,exitTo,getInteractionControls:()=>ruin?ruin.controls.filter(control=>control.kind!=='story-vault-pedestal'||window.DelversGuild?.vaultPhase?.()==='search').map(control=>({...control,range:Number.isFinite(Number(control.range))?Number(control.range):CONTROL_RANGE})):[],registerLabPushBlock,getNativeV50TestRuntime:()=>devModeEnabled()?ruin?.nativeV50Runtime||null:null, // Developer-mode-only diagnostic handle for Playwright to exercise the actual generated puzzle controls and stage gates; not a gameplay solver.
     setPuzzleLabStatus,
     getRuntimeContext:()=>ruin?{scene:ruin.scene,grid:ruin.grid,root:ruin.localeRoot,meta:ruin.meta,floorSet:ruin.floorSet,floorScope:SCOPE,ceilingY:ruin.ceilingY,spawn:{...ruin.spawn},cols:ruin.cols,rows:ruin.rows,sanctumMapSize:ruin.sanctumMapSize,sanctumPlan:ruin.sanctumPlan||null,
     shaftEntrance:ruin.compactVestibule?window.RuinShaftConnector?.entranceOutside?.(ruin.meta,{x:entryPadX,z:entryPadZ},RUIN_TILE_SCALE)||null:null,seed:ruin.seed,theme:ruin.theme,specialBoss:ruin.specialBoss,ruinName:ruin.ruinName,hachutu:!!ruin.hachutu,stoneAge:!!ruin.stoneAge,stoneAgeStats:ruin.stoneAgeStats||null,shaftHub:!!ruin.shaftHub,singleRoomTrial:ruin.singleRoomTrial||null,labFurniture:ruin.labFurniture,noLoot:ruin.noLoot===true,puzzleOptions:{...ruin.puzzleOptions}}:null,getPuzzleGenerationOptions:()=>readPuzzleGenerationOptions(),setPuzzleGenerationOptions:options=>savePuzzleGenerationOptions(options),getOccupancySnapshot:()=>ruin?.occupancy?.snapshot?.()||null,getLastSolvabilityAudit:()=>lastGenerationAudit?JSON.parse(JSON.stringify(lastGenerationAudit)):null,getShaftNetworkState:()=>ruin?{...ruin.shaftLayerRuntime?.getState?.(),obelisk:ruin.shaftObeliskRuntime?.getState?.()||null,
