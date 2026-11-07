@@ -2639,7 +2639,9 @@
         if (mode === 'tremolo-8') return noteStep(fretMidi,velocity);
         if (mode === 'strum-alternating-8') {
           if (slot === 0) return noteStep(fretMidi,velocity);
-          if (groupStart) return strumStep(slot % 2 ? 'up' : 'down',velocity,.45);
+          if (groupStart || (meter.denominator === 4 && slot % 2 === 0)) {
+            return strumStep(slot % 2 ? 'up' : 'down',velocity,.45); // Simple meters get strokes on each quarter; compound meters follow their grouped accents.
+          }
           return slot % 2 === 0 ? noteStep(fretMidi,.64) : restStep();
         }
         if (mode === 'arp-forward-8') return noteStep(rising[Math.round(progress * (rising.length - 1))],velocity);
