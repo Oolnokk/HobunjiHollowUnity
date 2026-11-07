@@ -253,6 +253,13 @@ assert(Math.abs(midway.influence-0.5)<1e-9,'detaching into Strike must smoothly 
 assert.equal(gripsApi.sampleFreeRightHand({neutral:{},windup:{},strike:{}},kurrayaPlayNote,0.4),null,'old attacks must preserve bound-hand behavior');
 
 window.HobunjiHandToolGrips=gripsApi;
+const neutralHolder={parent:{},visible:true}; // An equipped instrument must be discoverable before the player sounds any note.
+const neutralAssembly={userData:{kurrayaAssembly:true},parent:neutralHolder};
+window.PlayerBodyTransformComposer={getPlayerMesh:()=>({traverse:fn=>fn(neutralAssembly)})};
+api.beginPlayerKurraya();
+assert.equal(api.playerKurrayaHandTarget().holder,neutralHolder,'Neutral must find the already-held instrument without requiring a first sounded note');
+api.endPlayerKurraya();
+delete window.PlayerBodyTransformComposer;
 api.beginPlayerKurraya();
 assert.equal(api.playPlayerKurrayaNote(),true,'sounded player note starts the free-hand clock');
 const noteParent={visible:true}; // The real group's immediate held holder is returned as the grip frame.
