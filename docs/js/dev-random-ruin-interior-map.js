@@ -681,7 +681,10 @@
       const x=face.x+face.sx*worldStep*i/probes, z=face.z+face.sz*worldStep*i/probes;
       const supported = [[0,0],[-radius,-radius],[-radius,radius],[radius,-radius],[radius,radius]]
         .every(([dx,dz])=>DS.sampleSupport(x+dx,z+dz,{minY:face.y-.13,maxY:face.y+.13}));
-      const mayFall=block.userData?.findBlocksCanDrop===true && face.y>Number(block.userData.findBlocksFloorY)+.5; // Only an elevated lab block may leave its supporting ledge; other native courses still require continuous support.
+      const floorY=Number(block.userData?.findBlocksFloorY); // The elevated block may drop only onto actual main-floor support, never into a void or through the ruin wall.
+      const mayFall=block.userData?.findBlocksCanDrop===true && Number.isFinite(floorY) && face.y>floorY+.5
+        && [[0,0],[-radius,-radius],[-radius,radius],[radius,-radius],[radius,radius]]
+          .every(([dx,dz])=>DS.sampleSupport(x+dx,z+dz,{minY:floorY-.13,maxY:floorY+.13,pad:0}));
       if ((!supported&&!mayFall) || DS.blockerAt(x,z,options)) {
         if (manual) deps.showToast?.('The stone block cannot move that way.',false);
         return false;
