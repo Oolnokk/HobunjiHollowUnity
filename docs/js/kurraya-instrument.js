@@ -357,6 +357,7 @@
     return {
       x:sample('x'),y:sample('y'),z:sample('z'),
       pitch:sample('pitch'),yaw:sample('yaw'),roll:sample('roll'),bodyYaw:sample('bodyYaw'),
+      bodySink:sample('bodySink'), // Same phase easing as the editor; the player's existing leg/body composer consumes this.
       scale:Number(phases.neutral.scale)||1,headRelative:note.headRelative===true,
     };
   }
@@ -532,12 +533,14 @@
     installFluteUpdater();
     fluteState.active=true;
     fluteState.noteStartedAt=null;
+    window.WeaponStanceDropRuntime?.endInstrumentNote?.(); // A new performance cannot inherit an old note's body sink.
     ensureFluteMount();
     updateFlute();
   }
   function playFluteNote() {
     if(!fluteState.active)return false;
     fluteState.noteStartedAt=performance.now(); // Each genuine sounded note restarts the mouth/hand animation, not the overlapping audio.
+    window.WeaponStanceDropRuntime?.beginInstrumentNote?.('flute'); // Uses the same authored pose to sink body and fold legs on the sounded note.
     fluteState.noteCount++;
     updateFlute();
     return true;
@@ -545,6 +548,7 @@
   function endFlute() {
     fluteState.active=false;
     fluteState.noteStartedAt=null;
+    window.WeaponStanceDropRuntime?.endInstrumentNote?.(); // Release the leg/body sink immediately when the session closes.
     if(fluteState.root)fluteState.root.visible=false; // The cached geometry can be reused without fetching the sprite for every note.
   }
   function updateFlute() {
