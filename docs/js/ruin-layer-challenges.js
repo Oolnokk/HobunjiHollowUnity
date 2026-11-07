@@ -418,6 +418,10 @@
         makeStoneMaterial:()=>new THREE.MeshBasicMaterial({color:0x777267,transparent:true,opacity:0,depthWrite:false}),
       })||null; // Reuses the actual Scratchbone decal generator introduced for the newer manual melody puzzle.
       if(rec.inscription){
+        // The 9-wide chamber leaves just 2.11 tiles of stone on either side of the 4.78-wide hole.
+        // Fit the full score inside the irregular rock flank, including rough-hewn edge variation.
+        rec.inscription.group.scale?.set?.(.82,1,1);
+        rec.inscription.group.userData.puzzleCaveFlankFit=.82; // Fixed visual fit; note order and beat timing are unaffected.
         rec.glyphs=rec.inscription.group.children.filter(node=>node.userData?.melodyNoteIndex!==undefined);
       }else{
         // Standalone puzzle fixtures may omit the shared decal module. Keep the same glowing vertical score and plate-gated reveal.
