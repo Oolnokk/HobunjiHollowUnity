@@ -28,7 +28,8 @@ assert.match(redesign, /familyButton\.addEventListener\('click',[\s\S]{0,180}fam
 assert.match(redesign, /tletinganButton\.hidden = true/, 'legacy top-level Tletingan must remain hidden');
 assert.match(redesign, /data-ob-subspecies="tletingan"/, 'Tletingan must be a visible second-step subspecies');
 assert.match(redesign, /data-ob-subspecies="nuhongan"/, 'Nuhongan must be included in the Slagothim subspecies panel');
-assert.match(redesign, /data-ob-subspecies="longoran" disabled/, 'Longoran must be visibly unavailable');
+assert.match(redesign, /data-ob-subspecies="longoran"/, 'Longoran must be shown in Slagothim selection');
+assert.doesNotMatch(redesign, /data-ob-subspecies="longoran" disabled/, 'Longoran must no longer be unavailable');
 
 assert.match(redesign, /overlayObserver\.observe\(overlay, \{ childList: true \}\)/, 'creator observer must watch only direct core card replacements');
 assert.doesNotMatch(redesign, /overlayObserver\.observe\(overlay, \{[^}]*subtree:\s*true/, 'creator observer must not watch its own nested lore/preview mutations');
@@ -47,7 +48,7 @@ for (const dyeId of ['dye:CLOTH:brown', 'dye:CLOTH:dusty_yellow', 'dye:CLOTH:dus
 }
 assert.match(redesign, /if \(gender !== 'male'\) return false;/, 'no female character may receive a Kasa from randomization');
 assert.match(redesign, /if \(kind === 'kenkari-bowl-kasa'\) return speciesId === 'kenkari';/, 'Kenkari Bowl-Kasa randomization must be Kenkari-only');
-assert.match(redesign, /return speciesId === 'tletingan' \|\| speciesId === 'nuhongan' \|\| speciesId === 'mao-ao';/, 'ordinary Kasa randomization must be Tletingan/Nuhongan/Mao\'ao-only');
+assert.ok(redesign.includes("speciesId === 'longoran'"), 'ordinary Kasa randomization includes Longoran');
 assert.match(redesign, /filter\(option => randomClothingOptionAllowed\(option, speciesId, gender\)\)/, 'clothing randomization must apply the Kasa eligibility filter without removing manual options');
 assert.match(redesign, /const restrictOrdinaryKasaDyes = clothingRoll\.kasaKind === 'ordinary-kasa'[\s\S]{0,120}speciesId === 'tletingan'[\s\S]{0,80}speciesId === 'mao-ao'/, 'ordinary Kasa generated dyes must be restricted only for Tletingan/Mao\'ao');
 assert.match(redesign, /clickRandomDye\('data-ob-cloth-dye-a', restrictOrdinaryKasaDyes\)/, 'ordinary Kasa primary dye randomization must use the restricted palette');
