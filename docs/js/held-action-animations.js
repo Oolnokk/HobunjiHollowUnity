@@ -229,7 +229,34 @@
     },
     "gripMode": "palm-parallel"
   }; // Authored loaded/fire animation; independent from Drink.
-  window.HeldActionAnimations = Object.freeze({ blowgunReady, drink, heldItemSmall, heldItemLarge, throwFlask, weaponThrowSpin, weaponThrowSpearSpin, counterShield });
+  // The two instruments are non-damaging gameplay actions. Each real sounded
+  // note runs its own Neutral → Windup → Note → Return path, including rapid
+  // retriggers; both the editor and KurrayaInstrument sample these same poses.
+  const flutePlayNote = {
+    version: 1, kind: 'hobunji_held_action_animation', name: 'Flute — Play Note',
+    style: 'ranged', sequence: 'attack', headRelative: true,
+    durationS: 0.32, windupFrac: 0.18, strikeFrac: 0.34, holdFrac: 0.62,
+    poses: {
+      // The aperture is on the mouth. Its pipe extends outward along -Z
+      // exactly like the existing flute/blowgun mouth mount.
+      neutral: { headRelative: true, x: 0, y: 0, z: 0, pitch: -180, yaw: 0, roll: 4, bodyYaw: 0, scale: 1.3, shoulderAim: { grip: false, palmNormal: true }, secondaryGrip: { enabled: false }, dualWield: { enabled: false } },
+      windup: { headRelative: true, x: 0, y: 0.012, z: 0, pitch: -177, yaw: 0, roll: 1, bodyYaw: 0, shoulderAim: { grip: false, palmNormal: true }, secondaryGrip: { enabled: false }, dualWield: { enabled: false } },
+      strike: { headRelative: true, x: 0, y: -0.012, z: 0, pitch: -180, yaw: 0, roll: 4, bodyYaw: 0, shoulderAim: { grip: false, palmNormal: true }, secondaryGrip: { enabled: false }, dualWield: { enabled: false } },
+    },
+  };
+  const kurrayaPlayNote = {
+    version: 1, kind: 'hobunji_held_action_animation', name: 'Kurraya — Play Note',
+    style: 'thrust', sequence: 'attack', headRelative: false,
+    durationS: 0.32, windupFrac: 0.18, strikeFrac: 0.34, holdFrac: 0.62,
+    poses: {
+      // Local offsets from the existing held Kurraya assembly. Runtime
+      // applies the note's delta from Neutral to its already equipped hold.
+      neutral: { x: 0, y: 0, z: 0, pitch: 0, yaw: 0, roll: 0, bodyYaw: 0, scale: 1, secondaryGrip: { enabled: true, percent: 50, primaryPercent: 50 }, dualWield: { enabled: false } },
+      windup: { x: -0.012, y: 0.013, z: 0, pitch: -2, yaw: 0, roll: -3, bodyYaw: 0, secondaryGrip: { enabled: true, percent: 50, primaryPercent: 50 }, dualWield: { enabled: false } },
+      strike: { x: 0.018, y: -0.011, z: 0, pitch: 3, yaw: 0, roll: 5, bodyYaw: 0, secondaryGrip: { enabled: true, percent: 50, primaryPercent: 50 }, dualWield: { enabled: false } },
+    },
+  };
+  window.HeldActionAnimations = Object.freeze({ blowgunReady, drink, heldItemSmall, heldItemLarge, throwFlask, weaponThrowSpin, weaponThrowSpearSpin, counterShield, flutePlayNote, kurrayaPlayNote });
 
   // Shared direct-hand bootstrap. There are no arm bones, IK, reach clamps, or
   // rotating arm sprites. Shoulder coordinates are either manually authored in
