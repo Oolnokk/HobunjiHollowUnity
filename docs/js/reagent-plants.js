@@ -169,6 +169,63 @@
     };
   }
 
+  // Registers mini-cliff herb rewards as ordinary pickable reagent objects.
+  // Their visible clusters and save state belong to CliffRouteNetwork, not
+  // the daily ground-level reagent scatter, so clearing/regrowing ordinary
+  // plants never resets a collected cliff reward.
+  function registerMiniCliffHerbClusters(mapId, network = window.CliffRouteNetwork?.forArea?.(mapId)) {
+    if (!deps?._zoneReagentObjects || !network?.balconies) return 0;
+    const objects = deps._zoneReagentObjects.get(mapId) || new Map();
+    for (const [slot, obj] of objects) if (obj.miniCliffRewardId) objects.delete(slot); // Remove stale entries after terrain rebuild.
+    let registered = 0;
+    for (const shelf of network.balconies) {
+      if (shelf.reward !== 'herbCluster' || shelf.puzzleCavePortal || !shelf.reagentKey
+        || window.CliffRouteNetwork?.getRewardState?.(mapId, shelf.id)?.claimed) continue;
+      const mesh = window.CliffRouteNetwork?.herbRewardMesh?.(mapId, shelf.id);
+      const def = window.AlchemySystem?.REAGENT_DEFS?.[shelf.reagentKey];
+      if (!mesh || !def) continue;
+      const candidates = (shelf.footprint || []).slice().sort((a, b) =>
+        Math.hypot(a.c + 0.5 - shelf.x, a.r + 0.5 - shelf.z)
+        - Math.hypot(b.c + 0.5 - shelf.x, b.r + 0.5 - shelf.z)); // Select the closest reachable tile to the visible plant.
+      const tile = candidates.find(t => !objects.has(t.c + ',' + t.r));
+      if (!tile) continue; // Never overwrite another real forage object in the lower grid.
+      const slot = tile.c + ',' + tile.r;
+      const obj = {
+        id: shelf.id, type: 'reagent_plant', miniCliffRewardId: shelf.id,
+        col: tile.c, row: tile.r, mesh, reagentKey: shelf.reagentKey,
+        label: def.icon + ' ' + def.label + ' Cluster',
+        getButtons() {
+          const claimed = window.CliffRouteNetwork.getRewardState(mapId, shelf.id).claimed;
+          return [{ icon: def.icon, label: 'Pick ' + def.label + ' Cluster',
+            action: 'obj_pick_reagent', style: 'primary', allowed: !claimed }];
+        },
+        onAction(action) {
+          if (action !== 'obj_pick_reagent') return { ok: false, message: 'Unknown action.' };
+          const cliff = window.CliffRouteNetwork;
+          if (deps.getCurrentArea?.() !== mapId || cliff.getRewardState(mapId, shelf.id).claimed
+            || !cliff.herbRewardMesh(mapId, shelf.id)) return { ok: false, message: 'Those herbs are no longer here.' };
+          const bonus = (deps.random || Math.random)() < (deps.bonusYieldChance?.('foraging') || 0) ? 1 : 0;
+          const doubled = (window.PerkSystem?.rank('foraging', 'doubleForageables') || 0) > 0 ? 2 : 1;
+          const amount = (1 + bonus) * doubled;
+          const held = deps.inventory[shelf.reagentKey] || 0;
+          const gained = Math.min(amount, Math.max(0, window.InventoryStacks.MAX_TOTAL - held));
+          if (!gained) return { ok: false, message: 'Your inventory is full.' };
+          deps.inventory[shelf.reagentKey] = held + gained;
+          cliff.setRewardStage(mapId, shelf.id, 'claimed'); // Save-visible state hides all six stalks immediately.
+          objects.delete(slot);
+          deps.awardForagingXp?.();
+          deps.refreshItemScroll();
+          window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig().harvest);
+          return { ok: true, message: `Picked ${gained} ${def.icon} ${def.label} from the mini-cliff.` };
+        },
+      };
+      objects.set(slot, obj);
+      registered++;
+    }
+    deps._zoneReagentObjects.set(mapId, objects);
+    return registered;
+  }
+
   // Removes every currently-built reagent plant mesh/object for a zone
   // without regenerating placement data — used both before a fresh
   // scatter (ensureZoneReagents) and by the daily respawn to eagerly
@@ -194,7 +251,10 @@
     if (!zi) return;
     let persisted = deps._zoneReagentPersist.get(mapId);
     if (persisted?.day === deps.calendar.day && persisted?.version === HABITAT_VERSION) {
-      if (deps._zoneReagentMeshGroups.has(mapId)) return; // already built for today
+      if (deps._zoneReagentMeshGroups.has(mapId)) {
+        registerMiniCliffHerbClusters(mapId); // Daily herb refresh must not orphan persistent ledge rewards.
+        return;
+      } // already built for today
     } else {
       const previousPlacements = persisted?.placements || []; // Includes harvested entries so every prior herb tile is excluded from the next respawn.
       persisted = { version: HABITAT_VERSION, day: deps.calendar.day, placements: scatterReagentsForZone(mapId, previousPlacements) };
@@ -215,6 +275,7 @@
     }
     deps._zoneReagentMeshGroups.set(mapId, groups);
     deps._zoneReagentObjects.set(mapId, objMap);
+    registerMiniCliffHerbClusters(mapId); // Integrate raised, persistently harvestable plants after ordinary ground plants.
     deps.debugLog(`ensureZoneReagents(${mapId}): built ${groups.length} reagent plants for day ${deps.calendar.day}`);
   }
 
@@ -262,6 +323,7 @@
     buildReagentPlantMesh,
     scatterReagentsForZone,
     makeReagentPlantObject,
+    registerMiniCliffHerbClusters,
     clearZoneReagentMeshes,
     ensureZoneReagents,
     respawnAllZoneReagents,
