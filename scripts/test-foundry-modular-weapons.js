@@ -120,9 +120,14 @@ assert.equal(api.settings('warhammer', 'harlyao-longsword').scaleX, 1.65, 'Keep 
 assert.equal(api.settings('dagger', 'warhammer').y, 45, 'Keep original haft correction for each head pairing');
 const broadShaft = api.getConfig().shafts['harlyao-broadsword']; // Baseline Harlyao sword shaft used for the default longsword proportion.
 const longShaft = api.getConfig().shafts['harlyao-longsword']; // Explicit per-head overrides may intentionally diverge from this default relation.
-assert.deepEqual(plain(longShaft.mounts), plain(broadShaft.mounts));
-assert(Math.abs(api.settings('harlyao-longsword', 'dagger').scaleX - api.settings('harlyao-broadsword', 'dagger').scaleX * .9) < 1e-6);
-assert(Math.abs(api.settings('harlyao-longsword', 'dagger').scaleY - api.settings('harlyao-broadsword', 'dagger').scaleY * 1.1) < 1e-6);
+assert.deepEqual(plain(broadShaft.mounts), [
+  { type: 'tang', start: { x: 193.5, y: 662 }, end: { x: 193.5, y: 597 } },
+], 'Broadsword retains its original independently authored tang');
+assert.deepEqual(plain(longShaft.mounts), [
+  { type: 'tang', start: { x: 200.5, y: 655 }, end: { x: 200.5, y: 575 } },
+], 'Longsword retains its separately imported tang instead of inheriting broadsword geometry');
+assert.equal(api.settings('harlyao-longsword', 'dagger').scaleX, 0.9);
+assert.equal(api.settings('harlyao-longsword', 'dagger').scaleY, 1.1);
 assert.equal(longShaft.defaults, undefined, 'No global shaft correction settings remain.');
 const draft = plain(api.getConfig()); // Sparse overrides, including explicit false/zero, must remain distinct from inheritance.
 draft.shafts.dagger.overrides.warhammer = { scaleX: 1.2, scaleY: .8, flipX: false, flipY: false, x: 0, y: 10, rotation: 0, animation: 'thrust', disallow: true };
