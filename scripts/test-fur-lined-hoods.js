@@ -28,7 +28,7 @@ vm.runInContext(configSource, portraitContext, { filename: 'scratchbones-config.
 vm.runInContext(read('docs/js/portrait-utils.js'), portraitContext, { filename: 'portrait-utils.js', timeout: 5000 });
 const backRules = portraitContext.window.SCRATCHBONES_CONFIG.game.assets.pngPlaneAvatar.behindView.layerReplacements; // Used to compare each new hood to Fine Hood's existing renderer mapping.
 const liveSimple = portraitContext.portraitOptionFromJson({ id: 'simple_hood' }, simple); // Exercises real Simple Hood layer extraction.
-const liveLined = portraitContext.portraitOptionFromJson({ id: 'fur_lined_hood' }, lined); // Exercises real Fur-lined Hood trim hiding.
+const liveLined = portraitContext.portraitOptionFromJson({ id: 'fur_lined_hood' }, lined); // Exercises the real Fur-lined Hood trim renderer.
 assert(!backRules.some(rule => rule.idIncludes?.includes('fur-lined-hood') && rule.urlIncludes?.includes('furlinedhood-trim') && rule.hide), 'fur-lined fur trim must be available in the rear view');
 for (const [key, variant] of Object.entries(fine.speciesVariants)) {
   const frontFineUrl = variant.parts.head.layers.front.image.url;
