@@ -32,6 +32,8 @@
     ['StructurePreload', 'structure-preload.js?v=20260812a'],
     // Shared distance-hysteresis/tick-rate-accumulator math reused by the two LOD modules below and by game.js's NPC walker distance LOD -- must load before both.
     ['EntityDistanceLod', 'entity-distance-lod.js?v=20260919b'],
+    // View-direction counterpart: hostile leg/hand procedural animation pauses while the actor is behind or beside the camera.
+    ['OffscreenRigLod', 'offscreen-rig-lod.js?v=20261107a'],
     ['WildernessSimulationLOD', 'wilderness-simulation-lod.js?v=20261009hcee431b'],
     // Wildlife's own visibility/render-cost LOD (distance-hidden avatar/shadow/ring HUD), sibling to the bandit-sleep LOD just above.
     ['WildlifeVisualLod', 'wildlife-visual-lod.js?v=20261107hc60a80a'],
