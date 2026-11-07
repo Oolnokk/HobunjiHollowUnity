@@ -62,13 +62,34 @@ assert(!immune.tzatzulCapturedBy,'a rejected body hit cannot abduct an immune ta
 // Frequent ensureZone calls used to reset the hunt clock before REST_SECONDS elapsed.
 W.PerchSupport.attach(bird,perch);bird._tzFlight.phase='perched';bird._tzFlight.elapsed=0;bird._tzFlight.rest=5;
 for(let i=0;i<55;i++){W.TzatzulFlightRuntime.ensureZone(zone);W.TzatzulFlightRuntime.update(.1);}
-assert(W.TzatzulFlightRuntime.debugSnapshot().swoops>=2,'repeated zone census must allow natural hunting');
+assert(W.TzatzulFlightRuntime.debugSnapshot().scouts>0,'repeated zone census cannot suppress the active scouting cycle');
 W.PerchSupport.attach(bird,perch);player.x=256;player.y=256;
 assert(W.TzatzulFlightRuntime.__test.capture(bird,player));
 W.TzatzulFlightRuntime.__test.releaseCaptive(player,'returned to roost');
 assert.equal(entries[0][0],nestId,'real abduction uses the native indexed cavern loader');
 assert.equal(entries[0][3],'tzatzul_delivery','arrival avoids the automatic cave exit');
 assert(!player.tzatzulCapturedBy&&!player.onBranch,'native transition starts with no stale carry support');
+const clock={day:8,time01:.4}; // Game calendar fractions are days; 1/48 day is half an in-game hour.
+deps.calendar=clock;
+area=zone; // Re-enter the outdoor map to exercise the complete flight delivery path.
+W.PerchSupport.attach(bird,perch);bird._tzFlight.phase='perched';bird._tzFlight.retreating=false;bird.health=100;
+player.health=500;player.x=256;player.y=256;
+assert(W.TzatzulFlightRuntime.__test.capture(bird,player));
+assert(W.TzatzulFlightRuntime.__test.returnHome(bird));
+for(let i=0;i<90&&bird._tzFlight.phase==='return';i++)W.TzatzulFlightRuntime.update(.1);
+assert.equal(bird._tzFlight.phase,'in-nest','successful player delivery sends the parent into its cave');
+assert.equal(bird.tzatzulInNest,true,'the provisioning parent is hidden from exterior rendering');
+assert.equal(bird._denHidden,true,'other combat systems cannot target a bird inside its nest');
+area=zone; // Simulate exiting the native cave so the exterior hunt AI is active again.
+clock.time01+=29/60/24;
+W.TzatzulFlightRuntime.update(.1);
+assert.equal(bird._tzFlight.phase,'in-nest','the parent stays inside for the first 29 game minutes');
+clock.time01+=2/60/24;
+W.TzatzulFlightRuntime.update(.1);
+assert.notEqual(bird._tzFlight.phase,'in-nest','the parent emerges once thirty game minutes pass');
+assert.equal(bird._denHidden,false,'an emerged parent returns to normal rendering and targeting');
+area=nestId; // Subsequent assertions exercise the original interior egg/victim state.
+
 W.TzatzulNestEncounter.buildNest(nestId,{cavernFeatures:{tzatzulNest:plan},floorSurfaceY:0},scene);
 assert.equal(eggBuilds[0].itemKey,'tzatzulEgg');
 assert.equal(eggBuilds[0].remaining,3,'native nest provides three individual non-fertile eggs');
@@ -92,5 +113,18 @@ W.TzatzulNestEncounter.update(.1);
   const restored=W.TzatzulNestEncounter.ensure(nestId);
   assert.equal(restored.mother,null,'reloading a cleared nest cannot resurrect its miniboss');
   assert.equal(restored.hatchlings.length,1,'surviving hatchling adds remain independent of mother defeat');
+  const full=JSON.parse(JSON.stringify(W.TzatzulNestEncounter.serialize())); // Restore test data rather than mutating persistent live victims.
+  const originalVictim=full.nests[0].victims[0]; // Saved first corpse remains the inventory-bearing example.
+  W.TzatzulNestEncounter.restore({version:1,nests:[{
+    ...full.nests[0],victims:Array.from({length:8},()=>({...originalVictim}))
+  }]});
+  const ninth=deps.makeCreatureEntity('bandit',128,128,{isBandit:true}); // Subsequent meals feed hatchlings without unlimited corpse buildup.
+  living.add(ninth);
+  assert(W.TzatzulNestEncounter.storeVictim(ninth,bird,true),'the ninth visible delivery still feeds hatchlings');
+  assert(!living.has(ninth)&&ninth.health===0,'overflow meal is consumed and removed from the outdoor world');
+  assert.equal(W.TzatzulNestEncounter.debugSnapshot().overflowMeals,1,'extra meals are counted in mobile diagnostics');
+  assert.equal(W.TzatzulNestEncounter.serialize().nests[0].victims.length,8,'the existing hoard stays capped at eight searchable remains');
+  W.TzatzulNestEncounter.restore(full); // Leave original persisted state intact for follow-on tests.
+
   console.log('Tzatzul rendered-only prey delivery, native eggs, player abduction and persistent nest state PASS');
 })().catch(error=>{console.error(error);process.exitCode=1;});

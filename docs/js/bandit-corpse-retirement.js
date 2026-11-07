@@ -24,6 +24,7 @@
     enabled: true,
     keepFull: 6,       // Newest settled bodies per area that always keep their rig.
     nearTiles: 5,      // A body this close to the player keeps its rig, so nothing changes under their feet.
+    farTiles: 24,      // A settled body at least this far from the player is swapped even inside the keepFull newest (0 disables). Matches the Porakaneki release radius, so a dead hunter never keeps a rig its living camp-mates have already dropped. Game tiles: a generated wilderness tile is 2x2 of these.
     minSettledS: 12,   // A body must have lain still this long before its rig can be swapped.
     perTick: 3,        // At most this many swaps per run, so a big pile never costs a single hitchy frame.
     intervalMs: 1000,  // Wall clock between runs, so a slow frame rate does not stretch it.
@@ -106,11 +107,24 @@
       if (c._corpseSettledAt == null) c._corpseSettledAt = now; // First run that sees it settled.
       candidates.push(c);
     }
-    if (candidates.length <= cfg.keepFull) return 0;
-    candidates.sort((a, b) => b._corpseSettledAt - a._corpseSettledAt); // Newest first: those keep their rigs.
+    if (!candidates.length) return 0;
     const player = deps.getPlayer();
-    const nearPx = cfg.nearTiles * deps.getTile();
+    const tile = deps.getTile();
     let retired = 0;
+    const farPx = Number(cfg.farTiles) > 0 ? cfg.farTiles * tile : Infinity;
+    if (farPx !== Infinity) { // Distance rule: far bodies go regardless of how new they are or how few there are.
+      for (const c of candidates) {
+        if (retired >= cfg.perTick) break;
+        if (now - c._corpseSettledAt < cfg.minSettledS * 1000) continue;
+        if (Math.hypot(player.x - c.x, player.y - c.y) < farPx) continue;
+        if (retire(c)) retired++;
+      }
+    }
+    const remaining = candidates.filter(c => !c._banditCorpseRetired);
+    if (remaining.length <= cfg.keepFull) return retired;
+    candidates.length = 0; candidates.push(...remaining);
+    candidates.sort((a, b) => b._corpseSettledAt - a._corpseSettledAt); // Newest first: those keep their rigs.
+    const nearPx = cfg.nearTiles * tile;
     for (let i = candidates.length - 1; i >= cfg.keepFull && retired < cfg.perTick; i--) { // Oldest first, stopping at the bodies that keep their rigs.
       const c = candidates[i];
       if (now - c._corpseSettledAt < cfg.minSettledS * 1000) continue;

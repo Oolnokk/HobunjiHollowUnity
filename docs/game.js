@@ -729,8 +729,8 @@
         yellowberries: { emoji: '🟡', seedKey: 'yellowberrySeeds',   cropKey: 'yellowberries', growDays: 4, idealMin: 0.25, idealMax: 0.60, label: 'yellowberries', needsAdjacentDitch: true, tags: ['Berry', 'Ditch-loving'] },
         whiteberries:  { emoji: '⚪', seedKey: 'whiteberrySeeds',    cropKey: 'whiteberries',  growDays: 4, idealMin: 0.40, idealMax: 0.75, label: 'whiteberries',  needsAdjacentDitch: true, tags: ['Berry', 'Ditch-loving'] },
         blackberries:  { emoji: '⚫', seedKey: 'blackberrySeeds',    cropKey: 'blackberries',  growDays: 4, idealMin: 0.45, idealMax: 0.80, label: 'blackberries',  needsAdjacentDitch: true, tags: ['Berry', 'Ditch-loving'] },
-        blackMustard:  { emoji: '⚫', seedKey: 'blackMustardSeed',   cropKey: 'blackMustard',  growDays: 3, idealMin: 0.15, idealMax: 0.40, label: 'black mustard', tags: ['Mustard', 'Hot'] },
-        greenMustard:  { emoji: '🥬', seedKey: 'greenMustardSeed',   cropKey: 'greenMustard',  growDays: 3, idealMin: 0.30, idealMax: 0.65, label: 'green mustard', tags: ['Mustard', 'Fresh'] },
+        blackMustard:  { emoji: '⚫', seedKey: 'blackMustardSeed',   cropKey: 'blackMustard',  growDays: 3, idealMin: 0.15, idealMax: 0.40, label: 'black mushtard', tags: ['Mushtard', 'Hot'] },
+        greenMustard:  { emoji: '🥬', seedKey: 'greenMustardSeed',   cropKey: 'greenMustard',  growDays: 3, idealMin: 0.30, idealMax: 0.65, label: 'green mushtard', tags: ['Mushtard', 'Fresh'] },
       };
 
       // Each tool gets at most 3 actions — the action bar only has 3 tool-
@@ -2446,7 +2446,7 @@
       const PROCESSING_FURNITURE_DEFS = {
         pestle: {
           itemKey: 'pestleFurniture', icon: '🥣', name: 'Pestle Station', method: 'mashing', color: 0x9a6a3a,
-          desc: 'Placeable processor for mashing: berries into jam, mustard seed into paste, and starchy crops into mash.'
+          desc: 'Placeable processor for mashing: berries into jam, mushtard seed into paste, and starchy crops into mash.'
         },
         squeezer: {
           itemKey: 'squeezerFurniture', icon: '🧃', name: window.HobunjiFoodProcessing?.SQUEEZING_VAT?.name || 'Squeezing Vat', method: 'squeezing', color: 0x4f9eb8,
@@ -2454,7 +2454,7 @@
         },
         handMill: {
           itemKey: 'handMillFurniture', icon: '⚙️', name: 'Hand Mill', method: 'grinding', color: 0x8f8a78,
-          desc: 'Placeable processor for grinding: needlegrain/heftroot into flour and mustard seed into powder.'
+          desc: 'Placeable processor for grinding: needlegrain/heftroot into flour and mushtard seed into powder.'
         },
         teaGrinder: {
           itemKey: 'teaGrinderFurniture', icon: '🍵', name: 'Tea Grinder', method: 'teaGrinding', specialMode: 'teaGrinder', questOnly: true, color: 0x617a4b,
@@ -2749,8 +2749,8 @@
         // Berry seeds are intentionally not sold — all 5 varieties grow wild
         // across the wilderness zones instead (see WILD_BERRY_ZONES) and
         // have a small chance to yield a seed when foraged.
-        { key: 'blackMustardSeed',   icon: '⚫', name: 'Black Mustard Seed',  desc: 'Hot mustard crop. Ideal water 15–40%.', price: 14, gives: { blackMustardSeed: 2 } },
-        { key: 'greenMustardSeed',   icon: '🥬', name: 'Green Mustard Seed',  desc: 'Fresh mustard crop. Ideal water 30–65%.', price: 14, gives: { greenMustardSeed: 2 } },
+        { key: 'blackMustardSeed',   icon: '⚫', name: 'Black Mushtard Seed',  desc: 'Hot mushtard crop. Ideal water 15–40%.', price: 14, gives: { blackMustardSeed: 2 } },
+        { key: 'greenMustardSeed',   icon: '🥬', name: 'Green Mushtard Seed',  desc: 'Fresh mushtard crop. Ideal water 30–65%.', price: 14, gives: { greenMustardSeed: 2 } },
         { key: 'mulchBag',           icon: '🍂', name: 'Mulch Bag',           desc: 'Boosts soil recovery and gives clearing material.', price: 3, gives: { mulch: 5 } },
         // Furniture (processing stations and decorative pieces) is no longer
         // mail-order-able — see FURNITURE_BLUEPRINT_CATALOG. Blueprints are
@@ -7757,6 +7757,29 @@
       const FOLLOW_NEAR_PX = TILE * 1.1;
       const ALERT_RANGE_PX = TILE * 4.5;
 
+      // Resolve a moving owner's *walkable landing*, not their midair position.
+      // CreatureCliffClimb.navigate owns actual cliff travel and its collision rules.
+      function companionFollowGoal(c, master) {
+        const hasLanding = !!master.climbing && Number.isFinite(master.climbEndX) && Number.isFinite(master.climbEndY); // Used to target the owner's landing during a scripted climb.
+        const x = hasLanding ? master.climbEndX : master.x; // Ground destination passed to travelCreatureToward.
+        const y = hasLanding ? master.climbEndY : master.y; // Ground destination passed to travelCreatureToward.
+        const followGrid = _isZoneArea(currentArea) ? (c.areaGrid || window.GridTileAccessors.getActiveGrid()) : null; // Used only for wilderness elevation comparisons.
+        const hereTile = followGrid?.[Math.floor(c.y / TILE)]?.[Math.floor(c.x / TILE)]; // Companion's current elevation for the route decision.
+        const goalTile = followGrid?.[Math.floor(y / TILE)]?.[Math.floor(x / TILE)]; // Destination elevation for the route decision.
+        const differentTier = !!hereTile && !!goalTile && !hereTile.incline && !goalTile.incline
+          && (hereTile.elevTier || 0) !== (goalTile.elevTier || 0); // Prevents a nearby companion idling below its owner.
+        const routeNetwork = followGrid && window.CliffRouteNetwork?.forArea?.(currentArea); // Existing cached network differentiates disconnected platforms at the SAME elevation.
+        const fromComponent = routeNetwork && window.CliffRouteNetwork.componentAt(routeNetwork, Math.floor(c.x / TILE), Math.floor(c.y / TILE)); // Companion's walkable connected component.
+        const toComponent = routeNetwork && window.CliffRouteNetwork.componentAt(routeNetwork, Math.floor(x / TILE), Math.floor(y / TILE)); // Owner/landing's walkable connected component.
+        const separatePlatforms = Number.isInteger(fromComponent) && fromComponent >= 0
+          && Number.isInteger(toComponent) && toComponent >= 0 && fromComponent !== toComponent; // Forces route finding even when two plateaus share a height tier.
+        return {
+          x, y,
+          distance: Math.hypot(x - c.x, y - c.y),
+          routeRequired: differentTier || separatePlatforms || !!c._cliffClimb || !!c._cliffRouteTravel, // In-progress hops must finish before ordinary wandering or attacks resume.
+        };
+      }
+
       // Shared ground truth for where a mount saddle, shoulder-pet grip,
       // character posterior (seat), and character shoulder-perch actually sit
       // — hand-authored in docs/tools/animation-author/index.html's Rig
@@ -8742,28 +8765,6 @@
           // field existed (e.g. a save mid-load) doesn't go masterless.
           const master = c.master || player;
 
-          if (master.climbing) {
-            _clearCompanionTreasureCue(c, dt, 'master climbing');
-            _clearCompanionWatchIdle(c, 'master climbing');
-            // Teleport-and-stick: an untagged companion can't path through an
-            // incline tile on its own (see CREATURE_DB canClimb / moveCreatureToward),
-            // so for the duration of the climb it just clings to its master's
-            // back instead of trying to follow normally.
-            const backAngle = master.angle + Math.PI;
-            c.x = master.x + Math.cos(backAngle) * TILE * 0.35;
-            c.y = master.y + Math.sin(backAngle) * TILE * 0.35;
-            c.facing = master.angle;
-            c.vx = 0; c.vy = 0;
-            updateCreatureMesh(c, dt, c.facing);
-            updateCreatureAnimFrame(c, dt, false);
-            // Pin to the master's actual climb-blended height rather than the
-            // incline tile's raw (unblended) surface — see updatePlayerMesh.
-            // (Only the real player has a climb-blended playerMesh height;
-            // a non-player master would need its own mesh reference here.)
-            c.avatarRef.group.position.y = playerMesh.position.y + c.halfHeight * 0.5;
-            continue;
-          }
-
           // A mount is driven entirely by updateMountRide/updateMountedMovement
           // (see the V-key/D-pad-down call-in/dismiss flow) — it never runs
           // the fight/wander companion AI at all, so skip it here.
@@ -8879,6 +8880,17 @@
 
           const dxp = master.x - c.x, dyp = master.y - c.y;
           const distToMaster = Math.hypot(dxp, dyp);
+          const followGoal = companionFollowGoal(c, master); // Shared walking/cliff-route destination for ordinary companions.
+          c._companionGroundFollow = {
+            mode: master.climbing ? 'owner-climbing' : followGoal.routeRequired ? 'cliff-route' : 'ground',
+            distancePx: Math.round(followGoal.distance),
+            destinationX: Math.round(followGoal.x), destinationY: Math.round(followGoal.y),
+            routeActive: !!c._cliffClimb || !!c._cliffRouteTravel,
+          }; // Included in the existing mobile-friendly CompanionCombatResponse diagnostics.
+          if (master.climbing && c.stableRole === 'companion') {
+            if (c.treasureCue) _clearCompanionTreasureCue(c, dt, 'owner climbing');
+            if (c.watchPlayerIdle) _clearCompanionWatchIdle(c, 'owner climbing');
+          }
           const isBanditCompanion = c.banditCompanion === true; // Used to invert only a Beastmaster pet's target faction while retaining companion movement.
           const playerNearBanditMaster = Math.hypot(player.x - master.x, player.y - master.y) <= ALERT_RANGE_PX; // Used to give the enemy pet the same master-centered alert rule as a player companion.
           let target = isBanditCompanion && player.health > 0 && playerNearBanditMaster ? player : null;
@@ -8991,6 +9003,12 @@
             } else if (c.knockbackT <= 0) {
               if (!beginKnockbackLedgeFall(c)) window.KnockbackCollisionImpact?.cancel?.(c);
             }
+          } else if (c._cliffClimb || c._cliffRouteTravel) {
+            // A crossing already in progress owns the animal's physical position.
+            // Finish it before any newly acquired combat target can trigger a
+            // melee animation or backup movement while hanging off a cliff.
+            moving = travelCreatureToward(c, followGoal.x, followGoal.y, def.chaseSpeed, dt);
+            aimAngle = c.facing;
           } else if (target) {
             const dist = Math.hypot(target.x - c.x, target.y - c.y);
             aimAngle = Math.atan2(target.y - c.y, target.x - c.x);
@@ -9075,9 +9093,15 @@
             moving = cueMotion.moving;
             runInPlace = cueMotion.runInPlace;
             aimAngle = cueMotion.aimAngle;
-          } else if (distToMaster > FOLLOW_FAR_PX) {
-            moving = travelCreatureToward(c, master.x, master.y, def.chaseSpeed, dt);
-            aimAngle = Math.atan2(dyp, dxp);
+          } else if (master.climbing || followGoal.routeRequired || distToMaster > FOLLOW_FAR_PX) {
+            // A climbing owner is not a carrier: chase the walkable destination via
+            // the shared cliff-route network, or wait on the ground once nearby.
+            if (followGoal.routeRequired || followGoal.distance > (master.climbing ? FOLLOW_NEAR_PX : FOLLOW_FAR_PX)) {
+              moving = travelCreatureToward(c, followGoal.x, followGoal.y, def.chaseSpeed, dt);
+              if (moving) aimAngle = Math.atan2(c.vy, c.vx);
+            } else {
+              c.vx = 0; c.vy = 0;
+            }
           } else if (!isBanditCompanion && _isPlayerFocusedOnHead(c)) {
             // The player is staring right at its head — hold position and
             // let them approach instead of drifting back out to the donut
@@ -16943,8 +16967,8 @@
         { key: 'yellowberrySeeds',   icon: '🟡', label: 'YELLOWBERRY SEEDS', max: 99, seedFor: 'yellowberries' },
         { key: 'whiteberrySeeds',    icon: '⚪', label: 'WHITEBERRY SEEDS',  max: 99, seedFor: 'whiteberries' },
         { key: 'blackberrySeeds',    icon: '⚫', label: 'BLACKBERRY SEEDS',  max: 99, seedFor: 'blackberries' },
-        { key: 'blackMustardSeed',   icon: '⚫', label: 'BLACK MUSTARD SEED', max: 99, seedFor: 'blackMustard' },
-        { key: 'greenMustardSeed',   icon: '🥬', label: 'GREEN MUSTARD SEED', max: 99, seedFor: 'greenMustard' },
+        { key: 'blackMustardSeed',   icon: '⚫', label: 'BLACK MUSHTARD SEED', max: 99, seedFor: 'blackMustard' },
+        { key: 'greenMustardSeed',   icon: '🥬', label: 'GREEN MUSHTARD SEED', max: 99, seedFor: 'greenMustard' },
         { key: 'needlegrain',        icon: '🌾', label: 'NEEDLEGRAIN',       max: 99 },
         { key: 'heftroot',           icon: '🟡', label: 'HEFTROOT',          max: 99 },
         { key: 'garlink',            icon: '🧄', label: 'GARLINK',           max: 99 },
@@ -16954,8 +16978,8 @@
         { key: 'yellowberries',      icon: '🟡', label: 'YELLOWBERRIES',     max: 99 },
         { key: 'whiteberries',       icon: '⚪', label: 'WHITEBERRIES',      max: 99 },
         { key: 'blackberries',       icon: '⚫', label: 'BLACKBERRIES',      max: 99 },
-        { key: 'blackMustard',       icon: '⚫', label: 'BLACK MUSTARD',     max: 99 },
-        { key: 'greenMustard',       icon: '🥬', label: 'GREEN MUSTARD',     max: 99 },
+        { key: 'blackMustard',       icon: '⚫', label: 'BLACK MUSHTARD',     max: 99 },
+        { key: 'greenMustard',       icon: '🥬', label: 'GREEN MUSHTARD',     max: 99 },
         { key: 'mulch',              icon: '🍂', label: 'MULCH',            max: 99 },
         { key: 'garWolfMeat',        icon: '🥩', label: 'GAR-WOLF MEAT',    max: 99 },
         { key: 'garWolfHide',        icon: '🟫', label: 'GAR-WOLF HIDE',    max: 99 },
@@ -16995,8 +17019,8 @@
         yellowberrySeeds: { icon: '🟡', label: 'Yellowberry Seeds', cat: 'seed', sellPrice: 0, tags: ['Seed', 'Berry'], desc: 'Plants yellowberries. Berries grow best when any adjacent tile is a ditch; ideal water 25–60%.' },
         whiteberrySeeds: { icon: '⚪', label: 'Whiteberry Seeds', cat: 'seed', sellPrice: 0, tags: ['Seed', 'Berry'], desc: 'Plants whiteberries. Berries grow best when any adjacent tile is a ditch; ideal water 40–75%.' },
         blackberrySeeds: { icon: '⚫', label: 'Blackberry Seeds', cat: 'seed', sellPrice: 0, tags: ['Seed', 'Berry'], desc: 'Plants blackberries. Berries grow best when any adjacent tile is a ditch; ideal water 45–80%.' },
-        blackMustardSeed: { icon: '⚫', label: 'Black Mustard Seed', cat: 'seed', sellPrice: 0, tags: ['Seed', 'Mustard'], desc: 'Plants black mustard. Hot mustard crop; ideal water 15–40%.' },
-        greenMustardSeed: { icon: '🥬', label: 'Green Mustard Seed', cat: 'seed', sellPrice: 0, tags: ['Seed', 'Mustard'], desc: 'Plants green mustard. Fresh mustard crop; ideal water 30–65%.' },
+        blackMustardSeed: { icon: '⚫', label: 'Black Mushtard Seed', cat: 'seed', sellPrice: 0, tags: ['Seed', 'Mushtard'], desc: 'Plants black mushtard. Hot mushtard crop; ideal water 15–40%.' },
+        greenMustardSeed: { icon: '🥬', label: 'Green Mushtard Seed', cat: 'seed', sellPrice: 0, tags: ['Seed', 'Mushtard'], desc: 'Plants green mushtard. Fresh mushtard crop; ideal water 30–65%.' },
         needlegrain: { icon: '🌾', label: 'Needlegrain', cat: 'crop', sellPrice: CROP_SELL_PRICES.needlegrain, tags: ['Crop', 'Sellable', 'Grain'], desc: 'Dry-default grain crop from the cooking system.' },
         heftroot: { icon: '🟡', label: 'Heftroot', cat: 'crop', sellPrice: CROP_SELL_PRICES.heftroot, tags: ['Crop', 'Sellable', 'Root'], desc: 'Starchy root crop used for heftroot flour and yellow noodles.' },
         garlink: { icon: '🧄', label: 'Garlink', cat: 'crop', sellPrice: CROP_SELL_PRICES.garlink, tags: ['Crop', 'Sellable', 'Pungent'], desc: 'Pungent vegetable and broth base.' },
@@ -17006,8 +17030,8 @@
         yellowberries: { icon: '🟡', label: 'Yellowberries', cat: 'crop', sellPrice: CROP_SELL_PRICES.yellowberries, tags: ['Crop', 'Sellable', 'Berry'], desc: 'Berry crop. Grows well beside adjacent ditches.' },
         whiteberries: { icon: '⚪', label: 'Whiteberries', cat: 'crop', sellPrice: CROP_SELL_PRICES.whiteberries, tags: ['Crop', 'Sellable', 'Berry'], desc: 'Mild berry crop. Grows well beside adjacent ditches.' },
         blackberries: { icon: '⚫', label: 'Blackberries', cat: 'crop', sellPrice: CROP_SELL_PRICES.blackberries, tags: ['Crop', 'Sellable', 'Berry'], desc: 'Dark berry crop. Grows well beside adjacent ditches.' },
-        blackMustard: { icon: '⚫', label: 'Black Mustard', cat: 'crop', sellPrice: CROP_SELL_PRICES.blackMustard, tags: ['Crop', 'Sellable', 'Mustard'], desc: 'Hot mustard crop. Can be processed into pungent paste later.' },
-        greenMustard: { icon: '🥬', label: 'Green Mustard', cat: 'crop', sellPrice: CROP_SELL_PRICES.greenMustard, tags: ['Crop', 'Sellable', 'Mustard'], desc: 'Fresh mustard crop. Can be processed into pungent paste later.' },
+        blackMustard: { icon: '⚫', label: 'Black Mushtard', cat: 'crop', sellPrice: CROP_SELL_PRICES.blackMustard, tags: ['Crop', 'Sellable', 'Mushtard'], desc: 'Hot mushtard crop. Can be processed into pungent paste later.' },
+        greenMustard: { icon: '🥬', label: 'Green Mushtard', cat: 'crop', sellPrice: CROP_SELL_PRICES.greenMustard, tags: ['Crop', 'Sellable', 'Mushtard'], desc: 'Fresh mushtard crop. Can be processed into pungent paste later.' },
         mulch: { icon: '🍂', label: 'Mulch', cat: 'material', sellPrice: 2, tags: ['Material', 'Organic'], desc: 'Organic matter from cleared vegetation. Useful by-product of land clearing.' },
         soursapFruitFlesh: { icon: '🍈', label: 'Soursap Fruit Flesh', cat: 'crop', sellPrice: 10, tags: ['Fruit', 'Food', 'Foraged', 'Sellable'], desc: 'Sticky, sour pulp collected from a Soursap Fruit after its impact burst. The intact fruit is a physical burden, not an inventory stack.' },
         // Instrument metadata pairs with TOOL_ITEM_DEFS for permanent gear assignment.
@@ -21122,6 +21146,10 @@
               }
             }
           }
+          const geometryY = projectile && !tile.mapBoundary
+            ? window.ZonePlateauMesa?.surfaceYAt?.(currentArea, wx / TILE, wy / TILE) : null; // Airborne actors and shots use the visible displaced cliff skin.
+          if (Number.isFinite(geometryY)) cliffTopY = geometryY;
+          else if (projectile && !tile.mapBoundary && window.ZonePlateauMesa?.hasTerrain?.(currentArea)) cliffTopY = -Infinity;
           const intersectsCliff = !projectile || worldY <= cliffTopY + 0.01;
           if (tile.incline && intersectsCliff) return null;
           // Preserve the original escape exception for an actor already on
@@ -26208,6 +26236,15 @@
         wildlifeDistanceInput.addEventListener('change', () => {
           window.WildlifeVisualLod.setWakeRadius(wildlifeDistanceInput.value);
           wildlifeDistanceInput.value = window.WildlifeVisualLod.wakeRadius();
+          if (wildlifeCombatDistanceInput) wildlifeCombatDistanceInput.value = window.WildlifeVisualLod.combatReleaseRadius(); // The fighting radius is floored by the calm radii.
+        });
+      }
+      const wildlifeCombatDistanceInput = document.getElementById('settingWildlifeCombatDistance'); // Separate distance at which fighting animals return to data.
+      if (wildlifeCombatDistanceInput) {
+        wildlifeCombatDistanceInput.value = window.WildlifeVisualLod.combatReleaseRadius();
+        wildlifeCombatDistanceInput.addEventListener('change', () => {
+          window.WildlifeVisualLod.setCombatReleaseRadius(wildlifeCombatDistanceInput.value);
+          wildlifeCombatDistanceInput.value = window.WildlifeVisualLod.combatReleaseRadius();
         });
       }
 
@@ -32418,7 +32455,7 @@
         player,
         TILE,
         getMovementInput: climbMovementInput,
-        getFeetY: () => window.DevRandomRuin?.getPlayerSupportY?.() ?? activeSurfaceYAtWorld(player.x / TILE, player.y / TILE),
+        getFeetY: () => player._freeJump?.feetY ?? window.DevRandomRuin?.getPlayerSupportY?.() ?? activeSurfaceYAtWorld(player.x / TILE, player.y / TILE),
         canStandAt: (x, z, y) => !!window.DynamicSurfaces?.sampleSupport?.(x, z, { minY: y - 0.3, maxY: y + 0.3, pad: 0.02 }), // A mantle needs a registered walkable surface at the top.
         setFacingAngle: (v) => { facingAngle = v; },
         setTargetAimAngle: (v) => { targetAimAngle = v; },

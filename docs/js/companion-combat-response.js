@@ -76,6 +76,7 @@
         (companion?._honeyfuzzleRescueTarget === window.Combat?.deps?.player ? 'player' :
           companion?._honeyfuzzleRescueTarget?.creatureKey || companion?._honeyfuzzleRescueTarget?.name || null), // The player actor has no creature ID; show 'player' during an actual rescue.
       backingUp: companion?._stage?.mode === 'backingUp',
+      groundFollow: companion?._companionGroundFollow || null, // Exposes the current ground/route destination to mobile Companion Combat diagnostics.
       cooldown: companion?.attackCooldownT ?? null };
   }
 

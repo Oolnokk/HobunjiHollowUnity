@@ -15,8 +15,19 @@ const loaderSource = source('docs/js/combat/combat-config-loader.js'); // Used t
 const cropRenderingSource = source('docs/js/vegetation-crop-rendering.js'); // Used to pin the existing foliage/placeholder crop ownership that must remain untouched.
 const gameSource = source('docs/game.js'); // Used to verify source-colored crop PNGs bypass the shared recolor pipeline in both inventory and held-item rendering.
 
-assert.match(cropRenderingSource, /const FOLIAGE_CROPS = new Set\(\['needlegrain', 'heftroot'\]\);/,
-  'needlegrain and heftroot remain owned by the foliage renderer lifecycle');
+const foliageFamiliesMatch = cropRenderingSource.match(/const FOLIAGE_CROPS = new Set\(\[([^\]]+)\]\);/); // Reads the actual foliage family list rather than freezing it to two crop IDs.
+assert.ok(foliageFamiliesMatch, 'crop foliage renderer exposes its foliage-crop family set');
+const foliageFamilies = [...foliageFamiliesMatch[1].matchAll(/'([^']+)'/g)].map(match => match[1]); // Parsed family IDs let this test permit future foliage crops.
+for (const family of ['needlegrain', 'heftroot', 'blackMustard', 'greenMustard']) {
+  assert.ok(foliageFamilies.includes(family), `${family} remains owned by the foliage renderer lifecycle`);
+}
+for (const billboardCrop of ['garlink', 'ongyums']) {
+  assert.ok(!foliageFamilies.includes(billboardCrop), `${billboardCrop} remains in the separate authored PNG cluster pipeline`);
+}
+assert.match(cropRenderingSource, /assets\/leaves\/small_leaf\.png/, 'outer mushtard leaves reuse existing lobed source PNG');
+assert.match(cropRenderingSource, /assets\/leaves\/speartip_leaf\.png/, 'inner mushtard leaves reuse existing pointed source PNG');
+assert.match(cropRenderingSource, /new THREE\.InstancedMesh\(/, 'mushtard leaf cards are batched for mobile rendering');
+assert.match(cropRenderingSource, /group\.userData\.hobunjiMustardLeafCount/, 'mushtard rosettes expose debug leaf counts');
 assert.match(cropRenderingSource, /Simple colored cube \(all other crops\)/,
   'non-foliage crops still expose the generic placeholder path that crop-sprite-art upgrades or tags');
 assert.match(cropArtSource, /garlink:\s*Object\.freeze\(\{ spriteIcon: 'garlink_bunch\.png', worldMode: 'billboard', ingredientColor: 0xD1D1CB \}\)/,

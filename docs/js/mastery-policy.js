@@ -40,7 +40,7 @@
   const guardedRecordProxies = new WeakSet(); // Used to avoid proxy nesting.
   const awardedEnemyKills = new WeakSet(); // Used to make direct ranged attribution and wrapped Combat attribution converge on one mastery award per defeated entity.
   const debug = {
-    blockedWrites: 0, suppressedLegacyCombatAwards: 0, suppressedLegacyPopups: 0,
+    blockedWrites: 0, suppressedNonPlayerKills: 0, suppressedLegacyCombatAwards: 0, suppressedLegacyPopups: 0,
     lastBlocked: null, lastAward: null, lastKill: null, lastHarvest: null, lastTreasure: null, lastDeathRecovery: null,
   }; // Used by mobile-friendly getDebug()/formatDebug().
 
@@ -311,6 +311,19 @@
     return granted;
   }
 
+  // Only the player's own lethal hit earns weapon mastery. Actor-vs-actor hits
+  // (Porakaneki hunters, bandits, predators) route through the same wrapped
+  // damageCreature with friendlyFire/factionCombat and a non-player `attacker`;
+  // a companion's hit names itself or carries fromCompanion. None of those are
+  // the player's kill, however close the player is standing.
+  function isPlayerAttributedHit(options) {
+    if (!options) return true;
+    if (options.friendlyFire === true || options.factionCombat === true || options.fromCompanion === true) return false;
+    const attacker = options.attacker;
+    if (!attacker) return true;
+    return !!combatDeps?.player && attacker === combatDeps.player; // A named attacker must be provably the player.
+  }
+
   function recordRangedKill(itemKey, enemy, observedHealth = null) {
     const observed = Number(observedHealth); // Used to preserve pre-hit difficulty when RangedWeapons owns a separate, unwrapped damageCreature reference.
     if (enemy && Number.isFinite(observed) && observed > Number(enemy._masteryObservedMaxHealth || 0)) enemy._masteryObservedMaxHealth = observed;
@@ -349,7 +362,9 @@
             result = false;
           }
           const after = Math.max(0, Number(enemy?.health) || 0);
-          if (before > 0 && after <= 0) {
+          if (before > 0 && after <= 0 && !isPlayerAttributedHit(options)) {
+            debug.suppressedNonPlayerKills++; // Visible in getDebug so a missing award is explained.
+          } else if (before > 0 && after <= 0) {
             if (options.ranged) {
               if (options.friendlyFire === true) {
                 pendingRangedKill = null;
@@ -567,6 +582,7 @@
   function getDebug() {
     return {
       armed, blockedWrites: debug.blockedWrites,
+      suppressedNonPlayerKills: debug.suppressedNonPlayerKills,
       suppressedLegacyCombatAwards: debug.suppressedLegacyCombatAwards,
       suppressedLegacyPopups: debug.suppressedLegacyPopups,
       equipped: { hoe: slots().hoe || null, shovel: slots().shovel || null, weapon: meleeKey(), ranged: rangedKey() },
