@@ -121,6 +121,10 @@ async function main(){
         const canvas=label?.material?.map?.image;
         if(!label?.visible||!canvas?.getContext)
           throw Error('The Tankan inscription exists only as metadata; no rendered lettering is visible');
+        const up=new THREE.Vector3(0,0,1).applyQuaternion(label.quaternion); // The top-facing decal must point up, not through the plate.
+        const readTop=new THREE.Vector3(0,1,0).applyQuaternion(label.quaternion); // Canvas top must aim toward the locked doorway.
+        if(up.y<.99||readTop.z<.99)
+          throw Error('Tankan plate lettering is upside down from the cave approach or faces through the floor');
         const pixels=canvas.getContext('2d',{willReadFrequently:true}).getImageData(0,0,canvas.width,canvas.height).data;
         let visiblePixels=0;
         for(let i=3;i<pixels.length;i+=4)if(pixels[i]>0)visiblePixels++;
