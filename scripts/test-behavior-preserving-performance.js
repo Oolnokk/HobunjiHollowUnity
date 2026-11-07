@@ -150,6 +150,7 @@ function replayHandSync(source, diagnostic) {
   const context = {
     syncing: false, global: { HobunjiHandGripModes: { currentModeKey: () => 'test' } },
     JSON: { stringify: value => { copies++; return JSON.stringify(value); }, parse: JSON.parse },
+    playerKurrayaActive: () => false, freeRightHandFor: () => null,
     currentToolKey: () => 'axe', currentGripContext: () => 'melee',
     toolGrips: { primaryGripForTool: () => primaryGrip, secondaryGripForTool: () => useSecondary ? secondaryGrip : null },
     toolSocketWorld: (_record, _holder, grip) => grip,
