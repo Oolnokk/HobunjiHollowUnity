@@ -198,7 +198,7 @@
 
     // Scene-owned landmark roots are authoritative: no guesswork from terrain proximity,
     // and no lingering glow for retired cave facades, claimed herbs or unloaded camps.
-    const denEntrances = scene.getObjectByName?.('animalDenEntrances'); // Supplies actual live cave-mouth meshes, excluding auxiliary den furniture.
+    const denEntrances = scene.children?.find(root => root.name === 'animalDenEntrances'); // Direct scene child in ZoneDenTotemFeatures: avoid a full-scene traversal every 150 ms.
     const landmarkSources = { // Each owner supplies only mounted, meaningful feature geometry.
       caves: (denEntrances?.children || []).filter(root => root.userData?.denCaveEntrance || root.userData?.localeCave),
       camps: [
