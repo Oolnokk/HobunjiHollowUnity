@@ -336,9 +336,17 @@
         solid('normal-pillar-'+n,x,z,.46,.46);
       }
     }
+    function releaseControls(){
+      for(const item of controls){
+        if(kit.removeControl)kit.removeControl(item);
+        else{const i=kit.state.controls.indexOf(item);if(i>=0)kit.state.controls.splice(i,1);}
+      }
+      controls.length=0; // Solved rooms must not keep inactive brazier/bomb prompts that claim the player's attack action.
+    }
     function openGate(){
       if(solved)return;
       solved=true;
+      releaseControls();
       onSolved();
     }
     const gateX=cx,gateZ=room.z+room.d-1.1; // The far-side sealed doorway visibly rises on completion.
@@ -353,10 +361,7 @@
       netChallenge?.dispose?.();
       for(const burn of burnIds)fire?.unregisterTarget?.(burn);
       for(const stop of disposers)stop();
-      for(const item of controls){
-        if(kit.removeControl)kit.removeControl(item);
-        else{const i=kit.state.controls.indexOf(item);if(i>=0)kit.state.controls.splice(i,1);}
-      }
+      releaseControls();
       for(const block of blocks)game.unregisterLabPushBlock?.(block.mesh); // Release native V50 block collision and interactions, including partially installed rooms.
       occupancy?.clearSolids?.(solidOwner);
       kit.disposeObject(group);
