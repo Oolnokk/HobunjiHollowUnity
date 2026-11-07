@@ -77,7 +77,7 @@ console.log('dev random ruin occupancy re-stamp regression passed');
 // Drive the production push and collision code with a block in the room.
 const player = {x:1.84*64, y:4.5*64, inputX:1, inputY:0, inputStrength:1}; // At the west face, with ordinary movement input held.
 const block = {
-  id:'test-slide', userData:{previewMotion:{type:'pushPuzzleBlock'},pushBlockSize:.49}, position:{x:1.25,y:0,z:2.25},
+  id:'test-slide', userData:{previewMotion:{type:'pushPuzzleBlock'},pushBlockSize:.49}, position:{x:1.25,y:0,z:2.25}, parent:{updateWorldMatrix() {}},
   get box() {
     const {x,y,z} = this.position;
     return {min:[2*x-.49,y,2*z-.49],max:[2*x+.49,y+1,2*z+.49]};
