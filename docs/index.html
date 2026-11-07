@@ -247,7 +247,7 @@
   <!-- Species-driven food sources and retaliatory/guard rules share one existing wildlife AI tick. -->
   <script src="js/wildlife-food-web.js?v=20261020foodweb1"></script>
   <!-- Procedural foliage / crop geometry -->
-  <script src="js/ice-stalagmite-coverage.js?v=20261105stoneAudit4"></script>
+  <script src="js/ice-stalagmite-coverage.js?v=20261107unified1"></script>
   <script src="js/foliage-generator.js?v=20261105koma1"></script>
   <script src="js/roadside-koma-hedges.js?v=20261105koma1"></script> <!-- Path-adjacent shrub row detection, separate from general foliage. -->
   <script src="js/dungeon-door-ice-coverage.js?v=20261103doorice1"></script>
@@ -436,7 +436,7 @@
   <!-- Banubu's Tea Grinder delegates trait legality/targeting to AlchemySystem
        but outputs cooking Tea Blends, so it must load after both systems. -->
   <script src="js/tea-grinder.js?v=20261019h0edeaef"></script>
-  <script src="js/persistent-ground-fire.js?v=20261107puzzleFire1"></script><!-- Area-scoped fire patches shared by flasks, Shattercasks and stone sconces. -->
+  <script src="js/persistent-ground-fire.js?v=20261107unified1"></script><!-- Area-scoped fire patches shared by flasks, Shattercasks and stone sconces. -->
   <script src="js/alchemy-flasks.js?v=20261106hbd5b51f"></script>
   <!-- Dye catalog/ownership (window.DyeSystem) — character creation, the
        redye panel, General Store clothing stock, and treasure loot all
@@ -619,14 +619,14 @@
   <script src="js/shaft-hub.js?v=20261106h0b61a44"></script>
   <script src="js/ruin-layer-plan.js?v=20261106h9a05c84"></script>
   <script src="js/dev-ruin-single-room-trial.js?v=20261107findblocks1"></script> <!-- One-room developer puzzle chooser and normal-plan weighted odds. -->
-  <script src="js/dev-ruin-find-blocks.js?v=20261107findblocks1"></script> <!-- Four-block compound lab fixture, using native ruin push, fire, flute and bomb mechanics. -->
+  <script src="js/dev-ruin-find-blocks.js?v=20261107unified1"></script> <!-- Four-block compound lab fixture, using native ruin push, fire, flute and bomb mechanics. -->
   <script src="js/ruin-shaft-corridor.js?v=20261104directVestibule1"></script>
   <script src="js/ruin-layer-defense.js?v=20261104soloNoLoot1"></script>
   <script src="js/puzzle-cave-melody.js?v=20261105puzzleCaves1"></script><!-- Reusable rhythm grid and timed plate-gated cave songs. -->
-  <script src="js/ruin-layer-challenges.js?v=20261107puzzleWallAudit2"></script>
-  <script src="js/ruin-layer-playable.js?v=20261106ha9f48ae"></script>
+  <script src="js/ruin-layer-challenges.js?v=20261107unified1"></script>
+  <script src="js/ruin-layer-playable.js?v=20261107unified1"></script>
   <script src="js/ruin-v50-native-mechanisms.js?v=20261105hc10ba02"></script>
-  <script src="js/ruin-v50-native-floors.js?v=20261105hd86bc92"></script>
+  <script src="js/ruin-v50-native-floors.js?v=20261107unified1"></script>
   <script src="js/ruin-shaft-connector.js?v=20261105reach-connector1"></script>
   <script src="js/ruin-v50-vestibule.js?v=20261105reachVest1"></script>
   <script src="js/ruin-multifloor-v50-style.js?v=20261106h753f499"></script> <!-- Vertical hub room composed on a CellGrid3D: balconies, doors, climbable buttresses; see docs/architecture/vertical-grid.md -->
@@ -2960,7 +2960,7 @@
   <!-- Camera-safe utility spyglass: capture Fishing/ActionArcUI init before game.js boots; action-arch prompt and lens are created at DOM ready. -->
   <script src="js/utility-spyglass.js?v=20261103spyglassControls3"></script>
   <!-- Dev-only Random Test Ruin runtime; injects nothing unless Dev Mode is on. -->
-  <script src="js/dev-random-ruin-bootstrap.js?v=20261107jump-rebased2"></script>
+  <script src="js/dev-random-ruin-bootstrap.js?v=20261107unified1"></script>
   <!-- Dev Testing Switchbox: dev-only performance kill switches (audio,
        NPC/creature AI, water sim, low-poly foliage). Must load after
        audio-system.js/water-system.js/foliage-generator.js (wraps their
