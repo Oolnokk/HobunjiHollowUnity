@@ -217,6 +217,7 @@
     puktuk: ['belly', 'foxtail'],
     'voorg-ass': ['belly'],
     moot: [], // Moot inherits its single coat color and Size without requiring unauthored pattern sprites.
+    pingdort: [], // Wild fertile eggs and farm breeding inherit coat color and Size; no invented Pingdort pattern overlays.
     uumkaoii: ['shell'], // Permanent shell over a recolorable base; replaces the old fur/plates pair.
     nelk: ['brushtail', 'cape', 'spectacles'],
     nazgraku: ['spectacles'],
