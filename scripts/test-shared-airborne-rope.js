@@ -117,6 +117,29 @@ function world() {
   t.window.PlayerJump.reset();
   assert.equal(t.player._freeJump,null,'leaving a ruin clears the shared record');
 }
+// A released ruin swing must also catch ordinary puzzle-room ropes, not only
+// specially tagged rope-chain links. It must never recatch the released rope.
+{
+  const start=ruinSource.indexOf('  function catchAirborneRope(f) {');
+  const end=ruinSource.indexOf('\n\n  function createLavaMaterial() {',start);
+  assert(start>=0&&end>start,'the ruin shares one airborne catch routine');
+  const rope={id:'another-ordinary-rope',attached:false,burden:null};
+  let catches=0; // Confirms both owner-controlled releases and ordinary airborne approaches reach the real catch path.
+  const state={activeRope:null,flight:null,ropes:[rope]};
+  const catcher=new Function('state','inRuin','ropeCatchPoint','catchRopeInFlight',
+    ruinSource.slice(start,end)+'\nreturn catchAirborneRope;')(
+      state,()=>true,()=>true,()=>{catches++;return true});
+  const released={x:1,y:2,z:3,ropeId:'previous-rope'};
+  state.flight=released;
+  assert.equal(catcher(released),true,'a released swing can catch an ordinary ruin rope');
+  assert.equal(catches,1);
+  assert.equal(catcher({...released}),false,'an unrelated flight cannot steal the current rope flight');
+  released.ropeId=rope.id;
+  assert.equal(catcher(released),false,'cannot immediately catch the same rope after releasing it');
+  state.flight=null;
+  released.ropeId='different-rope';
+  assert.equal(catcher(released),true,'ordinary mid-jump entry may grab the same rope');
+}
 // Ruin ledge falls use the same entry point when directional movement is held.
 {
   const interior=read('docs/js/dev-random-ruin-interior-map.js'); // Native ruin ledge/floor owner.
