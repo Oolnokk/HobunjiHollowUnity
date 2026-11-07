@@ -90,7 +90,11 @@
     }
     return n;
   }
-  function remove(id) { return surfaces.delete(id); }
+  function remove(id) {
+    const current = surfaces.get(id); // Unloading a world climb provider cannot leave the player gripping an orphaned surface.
+    if (current && deps?.player?.onClimbSurface?.surface === current) release();
+    return surfaces.delete(id);
+  }
   function retarget(id, raw) {
     const current = surfaces.get(id); // Preserve the live object referenced by any climber holding a rotating obelisk face.
     if (!current) return register({ ...raw, id });
@@ -119,7 +123,7 @@
     }
     return true;
   }
-  function clearScope(scope) { let n = 0; for (const [id, s] of surfaces) if (s.scope === scope) { surfaces.delete(id); n++; } return n; }
+  function clearScope(scope) { let n = 0; for (const [id, s] of surfaces) if (s.scope === scope) { remove(id); n++; } return n; }
   const list = () => [...surfaces.values()];
 
   // ---------------------------------------------------------------- pure math
