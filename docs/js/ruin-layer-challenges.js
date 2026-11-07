@@ -79,6 +79,8 @@
           rec.variant=puzzle.variant;rec.netVariant=puzzle.netVariant;rec.ready=true;rec.linked=targets.length===0;
           options.onLink?.(rec);
         }catch(error){
+          DS?.clearScope?.(scope); // Roll back raised platforms and blockers if any native submodule failed during construction.
+          targets.length=0; // No external ranged callbacks are installed before the chamber finishes building.
           failed=true;rec.error=String(error?.message||error);
           options.onError?.(rec); // Show the failure in the mobile dungeon diagnostics instead of silently generating a fake plate.
         }
