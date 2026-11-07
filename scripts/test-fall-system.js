@@ -84,3 +84,72 @@ assert.equal(spent.length, 1, 'landing applies exactly one Footing cost');
 assert.ok(spent[0][0] > 0 && spent[0][0] < 40, 'a 3-unit (1.2 tier) slip is a stumble, not a knockdown: ' + JSON.stringify(spent));
 assert.equal(proneCalls, 0, 'and does not drop the player prone');
 console.log('fall-system ok');
+
+// --- Cliff dodge, jump/climb, auto-grab, auto top-out -----------------------------
+const CRN = { ...require('../docs/js/cliff-route-network.js') }; // Real nextHop; graph lookups are stubbed below.
+context.window.CliffRouteNetwork = CRN;
+const faceRoute = { id: 'f', normal: { x: 1, z: 0 }, tangent: { x: 0, z: 1 }, upperNode: 4,
+  nodes: [
+    { id: 0, x: 5, z: 5, y: 0, links: [1] },
+    { id: 1, x: 5, z: 5, y: 1, links: [0, 2, 5] },
+    { id: 2, x: 5, z: 5, y: 2, links: [1, 3] },
+    { id: 3, x: 5, z: 5, y: 3, transfer: true, links: [2, 4] },
+    { id: 4, x: 4.5, z: 5, y: 3.1, links: [3] },
+    { id: 5, x: 5, z: 5.6, y: 1.02, links: [1] },
+  ] };
+const network = { routes: [faceRoute], balconies: [], area: 'zone' };
+CRN.forGrid = () => network;
+CRN.shelfAt = () => null;
+let cliffDodges = 0, dodgeAllowed = true, moveIn = { x: 0, y: 0 };
+const p2 = { x: 5 * TILE, y: 5 * TILE, angle: 0, climbing: false, vx: 0, vy: 0, health: 100, footing: 100 };
+ClimbSystem.init({
+  _isZoneArea: () => true, getCurrentArea: () => 'zone', player: p2, TILE, PLATEAU_UNIT: 2.5,
+  getActiveGrid: () => [[{}]], getActiveCols: () => 1, getActiveRows: () => 1, isSolid: () => false,
+  getMountRideState: () => 'none', showToast() {}, facingCardinal: () => ({ x: 1, y: 0 }),
+  setFacingAngle() {}, setTargetAimAngle() {}, setLastMoveAngle() {},
+  getMovementInput: () => moveIn, clamp: (v, a, b) => Math.max(a, Math.min(b, v)),
+  beginCliffDodgeEffects: () => { if (!dodgeAllowed) return false; cliffDodges++; return true; },
+});
+function hang(nodeIndex) {
+  p2.climbing = true; p2._climbFall = null; p2.onCliffBalcony = null; p2.climbSurfaceY = faceRoute.nodes[nodeIndex].y;
+  p2.x = faceRoute.nodes[nodeIndex].x * TILE; p2.y = faceRoute.nodes[nodeIndex].z * TILE;
+  p2._cliffRouteSession = { area: 'zone', route: faceRoute, nodeIndex, moving: false, toIndex: -1, progress: 0, phase: 0, distance: 0 };
+  FallSystem.resetGrip(p2);
+}
+// Dodge on the face: sidestep along the rock, never lets go.
+hang(1); moveIn = { x: 0, y: 1 };
+assert.equal(ClimbSystem.cliffDodge(), true, 'dodge on a cliff is handled by the cliff sidestep');
+assert.equal(cliffDodges, 1, 'it pays the normal dodge cost / i-frames once');
+assert.equal(p2._cliffRouteSession.toIndex, 5, 'it traverses to the lateral hold');
+assert.ok(p2.climbing && p2._cliffRouteSession, 'and stays on the wall');
+dodgeAllowed = false; hang(1);
+assert.equal(ClimbSystem.cliffDodge(), true, 'a gated dodge is swallowed, never turned into a leap');
+assert.ok(p2.climbing && !p2._climbFall, 'and the player is still on the wall');
+dodgeAllowed = true;
+p2.climbing = false; p2._cliffRouteSession = null;
+assert.equal(ClimbSystem.cliffDodge(), false, 'off the cliff, dodge is a normal dodge');
+
+// Jump/Climb hops up one hold toward the wall.
+hang(1); moveIn = { x: 0, y: 0 };
+assert.equal(ClimbSystem.jumpAction(), true);
+assert.equal(p2._cliffRouteSession.toIndex, 2, 'jump with no input climbs to the next hold up');
+
+// Moving toward the wall climbs; the rim hold tops out with no extra input.
+hang(2); moveIn = { x: -1, y: 0 };
+for (let i = 0; i < 400 && p2._cliffRouteSession; i++) ClimbSystem.updateClimb(1 / 60);
+assert.equal(p2._cliffRouteSession, null, 'the climb ends on its own');
+assert.ok(!p2.climbing && Math.abs(p2.climbSurfaceY - 3.1) < 1e-6 && p2.x === 4.5 * TILE, 'automatically topping out onto the walkable surface: ' + JSON.stringify([p2.climbing, p2.climbSurfaceY, p2.x]));
+
+// Falling past a hold catches it automatically; a slip does not.
+p2.climbing = false; p2._cliffRouteSession = null; p2.x = 5.2 * TILE; p2.y = 5 * TILE;
+moveIn = { x: 0, y: 0 };
+ClimbSystem.startScriptedWorldClimb({ endX: 5.2 * TILE, endY: 5 * TILE, startWorldY: 2.05, endWorldY: 0, hopCount: 2, shortHops: true });
+p2.climbHopCount = 1; p2._climbFall = { dropWorld: 2.05, deliberate: false, source: 'test' };
+for (let i = 0; i < 60 && !p2._cliffRouteSession; i++) ClimbSystem.updateClimb(1 / 60);
+assert.ok(p2._cliffRouteSession && p2.climbing, 'falling past a handhold grabs it');
+assert.ok(FallSystem.gripFraction(p2) >= 0.35, 'a catch still leaves a usable grip');
+hang(2); p2._grip = 0.0001;
+ClimbSystem.updateClimb(0.1);
+for (let i = 0; i < 120 && p2.climbing; i++) ClimbSystem.updateClimb(1 / 60);
+assert.equal(p2._cliffRouteSession, null, 'a slip is not instantly re-grabbed');
+console.log('fall-system climb integration ok');

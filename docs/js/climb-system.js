@@ -702,7 +702,7 @@
     const tiers = window.FallSystem?.dropTiers?.(dropWorld) ?? dropWorld / 2.5;
     player.climbHopCount = 1; // One uninterrupted drop, not a stagger of hops.
     resetClimbTiming(player, { activeS: Math.max(0.2, Math.min(0.55, 0.18 + tiers * 0.07)), pauseS: 0, bounce: 0 });
-    player._climbFall = { dropWorld, deliberate: false, rolled: false, source: 'climb ' + why };
+    player._climbFall = { dropWorld, deliberate: false, rolled: false, noGrab: true, source: 'climb ' + why }; // A slip lands on the ground; only other falls auto-grab.
     climbSafetyDebug.lastJumpMode = 'fall-' + why;
     deps.showToast?.('You lose your grip!', false);
     window.__farmLog?.('[climb] grip lost; falling ' + dropWorld.toFixed(2) + ' units to the base', 'wildlife');
@@ -728,27 +728,35 @@
     return state === 'slip' && fallFromClimb(player, 'slipped');
   }
 
+  function beginRouteHop(player, session, next) {
+    session.toIndex = next.id; session.moving = true; session.progress = 0;
+    session.elapsed = 0; // Seconds elapsed on this single graph edge, not on the whole route.
+    player.climbStartX = player.x; player.climbStartY = player.y;
+    player.climbEndX = next.x * deps.TILE; player.climbEndY = next.z * deps.TILE;
+    player.climbSurfaceStartY = player.climbSurfaceY;
+    player.climbSurfaceEndY = next.y;
+    session.distance = Math.hypot(
+      (player.climbEndX - player.x) / deps.TILE,
+      (player.climbEndY - player.y) / deps.TILE,
+      next.y - player.climbSurfaceY
+    ); // True movement in the cliff plane, including lateral or diagonal traverses.
+    session.duration = Math.max(0.28, session.distance / 1.35);
+  }
+
   function updateRouteCrawl(player, session, dt) {
     if (tickRouteGrip(player, session, dt)) return;
     if (!session.moving) {
       const raw = deps.getMovementInput?.() || { x: 0, y: 0 };
-      const next = window.CliffRouteNetwork?.nextHop?.(session.route, session.nodeIndex, { x: raw.x, z: raw.y });
+      let next = window.CliffRouteNetwork?.nextHop?.(session.route, session.nodeIndex, { x: raw.x, z: raw.y });
+      // Topping out is automatic: once the rim hold is reached there is only one
+      // way to go, onto the walkable surface, so no further input is needed.
+      const here = session.route.nodes[session.nodeIndex];
+      if (!next && here?.transfer && session.route.nodes[session.route.upperNode]) next = session.route.nodes[session.route.upperNode];
       if (!next) {
         player.vx = 0; player.vy = 0; player.climbHopBounce = 0;
         return; // Maintain hand/foot contact on the selected hold, including at forks.
       }
-      session.toIndex = next.id; session.moving = true; session.progress = 0;
-      session.elapsed = 0; // Seconds elapsed on this single graph edge, not on the whole route.
-      player.climbStartX = player.x; player.climbStartY = player.y;
-      player.climbEndX = next.x * deps.TILE; player.climbEndY = next.z * deps.TILE;
-      player.climbSurfaceStartY = player.climbSurfaceY;
-      player.climbSurfaceEndY = next.y;
-      session.distance = Math.hypot(
-        (player.climbEndX - player.x) / deps.TILE,
-        (player.climbEndY - player.y) / deps.TILE,
-        next.y - player.climbSurfaceY
-      ); // True movement in the cliff plane, including lateral or diagonal traverses.
-      session.duration = Math.max(0.28, session.distance / 1.35);
+      beginRouteHop(player, session, next);
     }
     const step = Math.max(0, Math.min(0.1, Number(dt) || 0));
     session.elapsed += step;
@@ -778,6 +786,36 @@
     player._climbDropped = false;
   }
 
+  // Falling past a climbable face grabs it automatically (no input needed).
+  // Searches every cliff route in the zone for a hold close to the body, after a
+  // short grace so a deliberate jump-down is not snagged by the face it left.
+  const AUTO_GRAB_GRACE_S = 0.15, AUTO_GRAB_RADIUS_TILES = 0.75, AUTO_GRAB_REACH_Y = 0.7;
+  function tryAutoGrab(player, dt) {
+    const fall = player._climbFall;
+    if (!fall || player._cliffRouteSession || player.climbElapsed < AUTO_GRAB_GRACE_S) return false;
+    if (fall.noGrab) return false;
+    const net = currentCliffNetwork();
+    if (!net?.routes?.length) return false;
+    const px = player.x / deps.TILE, pz = player.y / deps.TILE, py = player.climbSurfaceY;
+    let best = null, bestD = Infinity;
+    for (const route of net.routes) {
+      for (const node of route.nodes) {
+        if (node.id === 0 || node.id === route.upperNode || node.balconyId) continue; // Rest points are landings, not grabs.
+        if (Math.abs(node.y - py) > AUTO_GRAB_REACH_Y) continue;
+        const d = Math.hypot(node.x - px, node.z - pz);
+        if (d < AUTO_GRAB_RADIUS_TILES && d < bestD) { best = { route, node }; bestD = d; }
+      }
+    }
+    if (!best) return false;
+    const grip = player._grip;
+    player.climbing = false; player._climbFall = null; player._climbCancelable = false;
+    if (!startRouteClimb({ route: best.route, entry: best.node.id })) return false;
+    player._grip = Math.max(Number.isFinite(grip) ? grip : 1, 0.35); // A catch is a scramble: never a full reset, never an instant re-slip.
+    deps.showToast?.('You catch a handhold!', false);
+    climbSafetyDebug.lastJumpMode = 'auto-grab';
+    return true;
+  }
+
   function updateClimb(dt) {
     const player = deps.player;
     const session = player._cliffRouteSession; // Active only for exterior directional handhold climbing.
@@ -789,6 +827,7 @@
       return;
     }
     if (climbCancelRequested(player, dt)) dropFromClimb(player);
+    if (player._climbFall && tryAutoGrab(player, dt)) return;
     const hopActiveS = player._climbHopActiveS ?? CLIMB_HOP_ACTIVE_S;
     const hopPauseS = player._climbHopPauseS ?? CLIMB_HOP_PAUSE_S;
     const hopBounce = player._climbHopBounceUnits ?? CLIMB_HOP_BOUNCE_UNITS;
@@ -920,6 +959,20 @@
     if (!player?.onCliffBalcony) return false;
     const shelf = window.CliffRouteNetwork?.shelfAt?.(net, player.onCliffBalcony);
     if (!shelf) { player.onCliffBalcony = null; return false; }
+    const step = player._cliffSideStep;
+    if (step) { // Dodge sidestep along the ledge: stops at the lip, never steps off.
+      const advance = Math.min(step.dur - step.t, Math.max(0, dt));
+      step.t += advance;
+      const dist = step.tiles * advance / step.dur;
+      const x = player.x / deps.TILE + step.dx * dist, z = player.y / deps.TILE + step.dz * dist;
+      const ok = window.CliffElevatedSurfaces?.canStandOn
+        ? window.CliffElevatedSurfaces.canStandOn(net, shelf.id, x, z, -0.12)
+        : window.CliffRouteNetwork.shelfContains(shelf, x, z, -0.12);
+      if (ok) { player.x = x * deps.TILE; player.y = z * deps.TILE; }
+      if (step.t >= step.dur || !ok) player._cliffSideStep = null;
+      player.vx = 0; player.vy = 0;
+      return true;
+    }
     const raw = deps.getMovementInput?.() || { x: 0, y: 0 };
     const length = Math.hypot(raw.x, raw.y);
     if (length > 0.22) {
@@ -961,7 +1014,57 @@
     return true;
   }
 
+  // Dodge while on a cliff: a short sidestep (or, with nowhere to go, a flinch
+  // against the rock) that gives dodge i-frames to avoid projectiles. It never
+  // lets go; leaving the face is the Jump action. Returns true if handled.
+  function cliffDodge() {
+    const player = deps?.player;
+    if (!player || player._cliffSideStep) return false;
+    const session = player._cliffRouteSession;
+    const net = currentCliffNetwork();
+    const shelf = player.onCliffBalcony ? window.CliffRouteNetwork?.shelfAt?.(net, player.onCliffBalcony) : null;
+    if (!(session && player.climbing) && !shelf) return false;
+    if (!deps.beginCliffDodgeEffects?.()) return true; // Cooldown/stamina gate: swallow the press, never fall back to a leap.
+    const raw = deps.getMovementInput?.() || { x: 0, y: 0 };
+    const tangent = session ? session.route.tangent : shelf.tangent;
+    const along = raw.x * tangent.x + raw.y * tangent.z;
+    const sign = Math.abs(along) > 0.2 ? Math.sign(along) : (player._cliffDodgeSign = -(player._cliffDodgeSign || 1));
+    if (session) {
+      if (!session.moving) {
+        const next = window.CliffRouteNetwork?.nextHop?.(session.route, session.nodeIndex, { x: tangent.x * sign, z: tangent.z * sign });
+        if (next) beginRouteHop(player, session, next);
+      }
+    } else {
+      player._cliffSideStep = { t: 0, dur: 0.22, dx: tangent.x * sign, dz: tangent.z * sign, tiles: 1.1 };
+    }
+    return true;
+  }
+
+  // Jump/Climb: the one deliberate vertical action. Up a cliff it hops to the next
+  // hold, on a ledge it steps off toward the input, otherwise it grabs whatever
+  // climbable is in front (cliff, branch, authored ledge).
+  function jumpAction() {
+    const player = deps?.player;
+    if (!player) return false;
+    const session = player._cliffRouteSession;
+    if (session && player.climbing) {
+      if (session.moving) return true;
+      const n = session.route.normal;
+      const next = window.CliffRouteNetwork?.nextHop?.(session.route, session.nodeIndex, { x: -n.x, z: -n.z });
+      if (next) beginRouteHop(player, session, next);
+      return true;
+    }
+    if (player.climbing) return false;
+    if (player.onCliffBalcony) return jumpFromBalcony();
+    const climb = getClimbTarget();
+    if (climb) return startClimb(climb);
+    const world = getWorldClimbTarget();
+    if (world) { world.start(); return true; }
+    return false;
+  }
+
   window.ClimbSystem = {
+    cliffDodge, jumpAction,
     updateBalcony, jumpFromBalcony, fallFromClimb,
     init,
     getClimbTarget,

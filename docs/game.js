@@ -19,6 +19,7 @@
       const cameraJoystickZone = document.getElementById('cameraJoystickZone');
       const cameraJoystickKnob = document.getElementById('cameraJoystickKnob');
       const dodgeBtn = document.getElementById('dodgeBtn');
+      const jumpBtn = document.getElementById('jumpBtn');
       const btnSwapTarget = document.getElementById('btnSwapTarget');
       const btnWeaponSwitch = document.getElementById('btnWeaponSwitch');
       const btnWeaponSwitchIcon = document.getElementById('btnWeaponSwitchIcon');
@@ -10298,17 +10299,20 @@
         }
         if (window.Fishing?.state?.active) { window.Fishing.close(); return; } // Dodge dismisses every fishing phase through the shared camera/pose cleanup.
         if (window.DevRandomRuinSimplePuzzles?.releaseActiveRope?.()) return; // Rope traversal outranks climb/door context while attached.
-        if (window.ClimbSurfaces?.release?.()) return; // Dodge while attached to a climbable wall lets go.
+        if (window.ClimbSystem?.cliffDodge?.()) return; // On a cliff face or ledge, Dodge is a projectile-dodging sidestep and never lets go; leaving the rock is the Jump action.
         if (player.climbing || player.dodging) return;
         if (_pendingSpotTransition) { startSceneTransition(() => performTravel(_pendingSpotTransition)); return; }
-        // Climbing is now the forward-dodge context action. Sideways/backward
-        // dodges remain ordinary evasive movement and cannot grab a nearby tree.
-        const climb = window.ClimbSystem.getClimbTarget();
-        if (climb && (climb.type === 'branchJumpDown' || dodgeInputIsForward())) { window.ClimbSystem.startClimb(climb); return; }
-        const worldClimb = window.ClimbSystem.getWorldClimbTarget?.(); // Non-grid ledges (ruins) climb from the same forward dodge.
-        if (worldClimb && dodgeInputIsForward()) { worldClimb.start(); return; }
-        if (player.onCliffBalcony && window.ClimbSystem?.jumpFromBalcony?.()) return; // Side/back dodge leaps from the raised ledge to the highest lower support.
         performDodge();
+      }
+
+      // Jump/Climb: the one deliberate vertical action (Space, pad A when nothing
+      // else wants it, touch inner ring). Climbing used to be the forward dodge.
+      function performJumpAction() {
+        if (window.PlayerDowned?.isDowned?.() || player.prone) return false;
+        if (window.DevRandomRuinSimplePuzzles?.releaseActiveRope?.()) return true; // Rope traversal: jump lets go, as dodge used to.
+        if (window.ClimbSurfaces?.release?.()) return true; // Attached climbable wall: jump lets go.
+        if (player.dodging) return false;
+        return !!window.ClimbSystem?.jumpAction?.();
       }
 
       // Combat-ability movement: a short forward step/leap toward the aim
@@ -27689,7 +27693,7 @@
           || (interactionButton ? _worldInteractionPromptAnchor : null);
         const promptActionIds = ['action1', 'action2', 'action3', 'interact'];
         const promptInputs = promptButtons.map((button, index) => { // Used by each floating row to render its rebound input and matching arch color independently.
-          const actionId = button.inputAction || (button.action === 'climb_branch' ? 'dodge' : (promptActionIds[index] || `action${index + 1}`)); // Context providers may bind a row to an exact physical arch input; otherwise preserve the ordinary inferred slot mapping.
+          const actionId = button.inputAction || (button.action === 'climb_branch' ? 'jump' : (promptActionIds[index] || `action${index + 1}`)); // Context providers may bind a row to an exact physical arch input; otherwise preserve the ordinary inferred slot mapping.
           const touchLabel = actionId === 'dodge' ? 'Dodge' : `Action ${index + 1}`; // Used when touch controls have no keyboard/controller glyph.
           return {
             actionId,
@@ -27747,9 +27751,15 @@
           // unconditional textContent write queues childList mutations that wake
           // every action-arch MutationObserver (arch-button-labels, action-arch-icons...).
           const fishingCancel = !!window.Fishing?.state?.active; // Fishing owns Dodge regardless of nearby climb context.
-          const dodgeIcon = fishingCancel ? '🏳️' : climbBtn ? climbBtn.icon : '💨', dodgeLabel = fishingCancel ? 'Exit fishing' : climbBtn ? climbBtn.label : 'Dodge';
+          const dodgeIcon = fishingCancel ? '🏳️' : '💨', dodgeLabel = fishingCancel ? 'Exit fishing' : 'Dodge';
           if (icon && icon.textContent !== dodgeIcon) icon.textContent = dodgeIcon;
           if (label && label.textContent !== dodgeLabel) label.textContent = dodgeLabel;
+        }
+        if (jumpBtn) { // Jump/Climb owns the climb prompt now; Dodge always says Dodge.
+          const icon = jumpBtn.querySelector('.abt-icon'), label = jumpBtn.querySelector('.abt-label');
+          const jumpIcon = climbBtn ? climbBtn.icon : '🧗', jumpLabel = climbBtn ? climbBtn.label : 'Jump';
+          if (icon && icon.textContent !== jumpIcon) icon.textContent = jumpIcon;
+          if (label && label.textContent !== jumpLabel) label.textContent = jumpLabel;
         }
 
         if (!needsRebuild) return;
@@ -28344,6 +28354,9 @@
         toggleQuickWeaponSwitch();
       });
 
+      // Jump / Climb touch button (inner ring, beside Dodge).
+      jumpBtn?.addEventListener('pointerdown', ev => { ev.preventDefault(); performJumpAction(); });
+
       // Mobile mirror of the V key / D-pad down 'toggleMount' action —
       // .active is kept in sync with rideState in window.Mounts.updateMountRide.
       btnCallMount?.addEventListener('pointerdown', ev => {
@@ -28627,7 +28640,7 @@
           || /^(?:plant_|place_|spawn_)/.test(action);
         const btn = computeActionButtons().find(b => b.allowed !== false
           && !toolSet.has(b.action) && !isItemAction(b.action));
-        if (!btn) return;
+        if (!btn) { performJumpAction(); return; } // Pad A doubles as Jump/Climb when there is nothing to interact with.
         activeAction = btn.action;
         useActiveAction();
       }
@@ -28871,6 +28884,7 @@
           return;
         }
         if (actionId === 'dodge') { performContextAction(); return; }
+        if (actionId === 'jump') { performJumpAction(); return; }
         if (actionId === 'toggleMount') { window.Mounts?.toggleMount(); return; }
         if (actionId === 'swapTarget') {
           const aimAngle = controllerLookActive ? controllerLookAngle
@@ -32241,6 +32255,16 @@
         },
       });
       window.ClimbSystem?.init({
+        beginCliffDodgeEffects: () => { // Same stamina/i-frames/cooldown as a normal dodge, without the roll movement.
+          if (player.dodgeCooldownT > 0) return false;
+          if (window.ResourceSystem) window.ResourceSystem.spendStamina(player, DODGE_STAMINA_COST, 'dodge');
+          else player.stamina = Math.max(0, player.stamina - DODGE_STAMINA_COST);
+          player.dodgeCooldownT = DODGE_COOLDOWN_S;
+          player.invulnUntil = performance.now() + DODGE_IFRAME_MS;
+          window.CombatVocalizations?.playDodge?.(player);
+          window.CombatTutorial?.observe?.('dodge');
+          return true;
+        },
         _isZoneArea,
         getCurrentArea: () => currentArea,
         player,

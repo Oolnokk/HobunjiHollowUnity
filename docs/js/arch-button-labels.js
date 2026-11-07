@@ -20,6 +20,7 @@
   }); // Maps the five rendered action buttons to their configurable physical action slots.
   const FIXED_BINDING_ACTION_BY_BUTTON_ID = Object.freeze({
     dodgeBtn: 'dodge',
+    jumpBtn: 'jump',
     btnWeaponSwitch: 'weaponSwitch',
     toolBtn: 'toolSelect',
     itemBtn: 'itemSelect',
@@ -30,6 +31,7 @@
   }); // Maps permanent arch controls to the same semantic actions exposed in Settings.
   const FIXED_MEANING_BY_BUTTON_ID = Object.freeze({
     dodgeBtn: 'DODGE',
+    jumpBtn: 'JUMP',
     btnWeaponSwitch: 'SWAP',
     toolBtn: 'TOOLS',
     itemBtn: 'ITEMS',
@@ -46,6 +48,7 @@
   ]); // Prevents centered meaning text from being added to combat attacks; their existing combat icon treatment stays untouched.
   const DECORATED_SELECTOR = [
     '#dodgeBtn',
+    '#jumpBtn',
     '#toolSelect button',
     '#actionStack button',
     '#btnAmmoSelect',
