@@ -12,7 +12,7 @@
     assistReach: 1, assistSeconds: 0.16, // Short, collision-checked forward lerp after clearing an obstacle.
   }); // Halve the original 1.65-world-unit apex (~0.83) via launch speed; retain fall gravity.
   let deps = null; // Injected from ClimbSystem.init; contains the same live player and terrain readers.
-  const debug = { starts: 0, landings: 0, blockedMoves: 0, lastEvent: 'not started', lastObstacle: null, grabs: 0, slides: 0, assists: 0 }; // Mobile diagnostics in ClimbSystem.debug.
+  const debug = { starts: 0, landings: 0, blockedMoves: 0, lastEvent: 'not started', lastObstacle: null, grabs: 0, ropeCatches: 0, flights: 0, slides: 0, assists: 0 }; // Mobile diagnostics in ClimbSystem.debug.
 
   const number = (value, fallback = null) => Number.isFinite(Number(value)) ? Number(value) : fallback;
   const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
@@ -158,6 +158,59 @@
     debug.lastEvent = reason;
   }
 
+  // One physical airborne record is shared by free jumps, rope launches and rope rides.
+  // Ruins can own the integration of external flights while sharing elevation and input.
+  function beginFlight(flight, options = {}) {
+    const player = deps?.player;
+    if (!player || !flight || !['x', 'y', 'z', 'vy'].every(key => Number.isFinite(Number(flight[key])))) return null;
+    if (player._freeJump) reset(player, 'airborne ownership transferred');
+    const x = Number(flight.x), z = Number(flight.z), feetY = Number(flight.y);
+    const state = {
+      ...flight, area: deps.getCurrentArea(), phase: 'air', feetY,
+      launchGround: feetY, vy: Number(flight.vy), vx: number(flight.vx, 0), vz: number(flight.vz, 0),
+      elapsed: 0, lastX: x, lastZ: z,
+      safeX: Number.isFinite(flight.safeX) ? flight.safeX : x,
+      safeZ: Number.isFinite(flight.safeZ) ? flight.safeZ : z, // Native falls can retain the last grounded point before leaving a ledge.
+      external: options.external === true, source: options.source || 'rope swing',
+      ropeId: options.ropeId ?? flight.ropeId ?? null, deliberate: options.deliberate !== false,
+    }; // Native free-fall and ruin rope release use the same elevation/state contract.
+    player._freeJump = state;
+    player.x = x * deps.TILE; player.y = z * deps.TILE;
+    player.vx = 0; player.vy = 0;
+    setElevation(player, state);
+    debug.flights++;
+    debug.lastEvent = state.source + ' airborne';
+    return state;
+  }
+
+  function beginRopeRide(rope) {
+    const player = deps?.player, bob = rope?.bob;
+    if (!player || !bob || !Number.isFinite(bob.y)) return false;
+    if (player._freeJump) reset(player, 'caught rope');
+    const x = bob.x, z = bob.z;
+    const state = { area: deps.getCurrentArea(), phase: 'rope', feetY: bob.y,
+      launchGround: groundAt(x, z) ?? bob.y, ropeId: rope.id, vy: 0, elapsed: 0 };
+    player._freeJump = state; // The ordinary renderer and movement loop now respect an outdoor rope rider's physical feet.
+    return setRopeRidePoint(bob);
+  }
+
+  function setRopeRidePoint(bob) {
+    const player = deps?.player, state = player?._freeJump;
+    if (!player || state?.phase !== 'rope' || !bob) return false;
+    player.x = bob.x * deps.TILE; player.y = bob.z * deps.TILE;
+    player.vx = 0; player.vy = 0;
+    state.feetY = bob.y;
+    setElevation(player, state);
+    return true;
+  }
+
+  function airControl(scale = 1) {
+    const direction = movementVector();
+    const speed = Math.max(0, number(deps?.getBaseMoveSpeedTiles?.(), CONFIG.airTilesPerSecond))
+      * direction.strength * Math.max(0, number(scale, 1));
+    return { x: direction.x * speed, z: direction.z * speed, direction }; // World units/second; steering is added to inherited rope momentum.
+  }
+
   function start() {
     const player = deps?.player;
     if (!player) return false;
@@ -165,6 +218,7 @@
       reset(player, 'stale jump discarded'); // Scene transitions do not preserve the previous world's raised supports.
     }
     const old = player._freeJump;
+    if (old?.phase === 'rope') return window.HangingRopes?.releaseActiveRope?.() === true;
     if (old?.phase === 'air') return true; // Consume presses; no unintended double jump.
     if (player.climbing || player.onCliffBalcony || player.onClimbSurface) return false; // Scripted traversal retains priority.
     if (deps.canStartFreeJump?.() === false) return false; // Dialogue, cutscenes, sleep and other owned activities cannot queue a jump.
@@ -182,7 +236,7 @@
     const launchGround = groundAt(x, z) ?? baseY;
     const state = {
       area: deps.getCurrentArea(), phase: 'air', feetY: baseY,
-      launchGround, vy: CONFIG.launchSpeed, elapsed: 0, blocked: null,
+      launchGround, vy: CONFIG.launchSpeed, vx: 0, vz: 0, elapsed: 0, blocked: null, source: 'free jump',
       lastX: x, lastZ: z, safeX: x, safeZ: z, // Last verified walkable point for fallback when no area-specific abyss physics exists.
     }; // Sole airborne state; kept off save data and discarded on area changes.
     player._freeJump = state; // Independent of player.climbing so the player can use ordinary actions while elevated.
@@ -204,6 +258,15 @@
   function tryAirGrab(state, direction) {
     if (state.phase !== 'air') return false;
     const pos = { x: deps.player.x / deps.TILE, z: deps.player.y / deps.TILE, y: state.feetY }; // Shared physical airborne position for both climb owners.
+    const speed = number(deps.getBaseMoveSpeedTiles?.(), CONFIG.airTilesPerSecond);
+    const flight = { ...pos, vx: (state.vx || direction.x * speed), vy: state.vy,
+      vz: (state.vz || direction.z * speed), ropeId: state.ropeId ?? null };
+    if (window.DevRandomRuinSimplePuzzles?.catchAirborneRope?.(flight) ||
+      window.HangingRopes?.catchAirborneRope?.(flight)) {
+      debug.grabs++; debug.ropeCatches++;
+      debug.lastEvent = 'caught rope in air';
+      return true;
+    }
     if (!window.ClimbSurfaces?.tryAirGrab?.(pos, direction) && !window.ClimbSystem?.tryAirGrab?.(pos, direction)) return false;
     debug.grabs++;
     debug.lastEvent = 'caught climbable wall';
@@ -260,9 +323,11 @@
     const direction = movementVector();
     player.inputX = direction.x; player.inputY = direction.z; player.inputStrength = direction.strength; // Keep aiming/movement systems informed during free jumps and raised-support walking.
     if (tryAirGrab(state, direction.strength ? direction : state.lastDirection || { x: Math.cos(player.angle || 0), z: Math.sin(player.angle || 0) })) return;
-    if (!direction.strength) { state.assist = null; return; }
-    state.lastDirection = direction; // Falling beside the approached face can still catch it after movement input is released.
-    if (state.assist) {
+    const carryX = number(state.vx, 0) * seconds, carryZ = number(state.vz, 0) * seconds; // Ballistic rope velocity is retained while steering remains available.
+    if (!direction.strength && !Math.hypot(carryX, carryZ)) { state.assist = null; return; }
+    if (!direction.strength) state.assist = null;
+    if (direction.strength) state.lastDirection = direction; // Falling beside the approached face can still catch it after movement input is released.
+    if (state.assist && direction.strength) {
       const x = player.x / deps.TILE, z = player.y / deps.TILE; // Lerp from the live position; never skip changed collision.
       const alpha = Math.min(1, seconds / Math.max(seconds, state.assist.remaining)); // Finishes within the short assist window.
       const tx = x + (state.assist.x - x) * alpha, tz = z + (state.assist.z - z) * alpha; // Candidate interpolated point.
@@ -276,10 +341,11 @@
     }
     const nativeSpeed = number(deps.getBaseMoveSpeedTiles?.(), speed); // Uses the same unbuffed speed as ordinary movement; fallback serves isolated tests.
     const travel = (nativeSpeed > 0 ? nativeSpeed : speed) * seconds * direction.strength;
-    const segments = Math.max(1, Math.ceil(travel / 0.08));
+    const dx = direction.x * travel + carryX, dz = direction.z * travel + carryZ;
+    const segments = Math.max(1, Math.ceil(Math.hypot(dx, dz) / 0.08));
     for (let i = 0; i < segments; i++) {
-      const x = player.x / deps.TILE + direction.x * travel / segments;
-      const z = player.y / deps.TILE + direction.z * travel / segments;
+      const x = player.x / deps.TILE + dx / segments;
+      const z = player.y / deps.TILE + dz / segments;
       const blocked = blockingReason(x, z, state.feetY);
       if (blocked) {
         state.blocked = blocked;
@@ -287,10 +353,11 @@
         debug.lastObstacle = blocked;
         state.obstaclePending = true; // Trigger assistance only after this actual collider is cleared.
         const slide = slideMovement(player.x / deps.TILE, player.y / deps.TILE,
-          direction.x * travel / segments, direction.z * travel / segments, state.feetY); // Preserve tangential input while gravity continues.
-        if (!slide) break;
+          dx / segments, dz / segments, state.feetY); // Preserve tangential input while gravity continues.
+        if (!slide) { state.vx = 0; state.vz = 0; break; } // A blocked rope launch cannot keep tunnelling into a wall.
         player.x = slide.x * deps.TILE; player.y = slide.z * deps.TILE;
         debug.slides++;
+        if (state.phase === 'air' && tryAirGrab(state, direction.strength ? direction : state.lastDirection || direction)) return; // Also catch at the swept slide point, not only before the frame.
         continue;
       }
       if (state.phase === 'air' && state.obstaclePending) {
@@ -301,6 +368,7 @@
       }
       player.x = x * deps.TILE; player.y = z * deps.TILE;
       state.lastX = x; state.lastZ = z;
+      if (state.phase === 'air' && tryAirGrab(state, direction.strength ? direction : state.lastDirection || direction)) return; // Fast rope swings can cross a grip between frame starts; sample each swept movement segment.
     }
   }
 
@@ -330,7 +398,7 @@
     debug.lastEvent = 'landed on ' + support.kind;
     window.FallSystem?.land?.(player, {
       dropWorld: Math.max(0, state.launchGround - support.y),
-      deliberate: true, source: 'free jump',
+      deliberate: state.deliberate !== false, source: state.source || 'free jump',
     });
     if (support.kind === 'ground') {
       window.DevRandomRuin?.acceptFreeJumpLanding?.(support.y); // Prevent multi-story ruins from charging the same drop a second time.
@@ -345,11 +413,25 @@
   function tick(dt) {
     const player = deps?.player, state = player?._freeJump;
     if (!state) return false;
+    if (state.phase === 'rope' && player.dodging && window.HangingRopes?.releaseActiveRope?.() === true) return true; // Dodge dismount uses the same release trajectory as Jump; never snap a rider to the floor.
     if (state.area !== deps.getCurrentArea() || player.health <= 0 || player.prone ||
       player.climbing || player.onBranch || player.onCliffBalcony || player.onClimbSurface ||
-      player.dodging || player.lunging || player.knockbackT > 0) {
+      (player.dodging && state.source !== 'rope swing' && state.source !== 'ruin rope swing') ||
+      player.lunging || player.knockbackT > 0) { // Dodge is the rope-release input, not a reason to erase its ballistic flight.
       reset(player, 'jump interrupted/area changed');
       return false; // Let the native action/movement handler proceed in this frame.
+    }
+    if (state.phase === 'rope') {
+      const control = airControl();
+      player.inputX = control.direction.x; player.inputY = control.direction.z;
+      player.inputStrength = control.direction.strength;
+      setElevation(player, state);
+      return true; // HangingRopes alone steps the attached pendulum.
+    }
+    if (state.external) {
+      state.feetY = Number.isFinite(state.y) ? state.y : state.feetY;
+      setElevation(player, state);
+      return true; // Ruin rope flight shares state but keeps its special layered sweep and deadly pit checks.
     }
     let remaining = clamp(number(dt, 0), 0, CONFIG.maxFrameSeconds);
     if (state.phase === 'supported') {
@@ -422,11 +504,19 @@
 
   window.PlayerJump = Object.freeze({
     init(injected) { deps = injected; },
-    start, tick,
+    start, tick, beginFlight, beginRopeRide, setRopeRidePoint, airControl,
+    canOccupyAir: (x, z, feetY) => blockingReason(x, z, feetY) === null,
+    syncExternalFlight: flight => {
+      const player = deps?.player;
+      if (!player || player._freeJump !== flight || !flight?.external) return false;
+      flight.feetY = flight.y;
+      setElevation(player, flight);
+      return true;
+    },
     reset: () => reset(deps?.player),
     get debug() {
       const s = deps?.player?._freeJump;
-      return { ...debug, latestChange: 'Air grabs, geometry sliding, adjacent elevated landings and one-tile landing assist', active: !!s, phase: s?.phase || null, feetY: s?.feetY ?? null,
+      return { ...debug, latestChange: 'Shared free-jump, rope-flight and rope-ride elevation; momentum steering and midair rope catches', active: !!s, phase: s?.phase || null, feetY: s?.feetY ?? null,
         heightAboveGround: deps?.player?.heightAboveGround ?? 0,
         vy: s?.vy ?? 0, elapsed: s?.elapsed ?? 0, blocked: s?.blocked || null };
     },

@@ -1660,6 +1660,24 @@
     return true;
   }
 
+  // When the player steps off a ruin ledge with directional input, use the
+  // same gravity, steering and height-aware collision as an ordinary jump.
+  // The native staged drop remains available when there is no input.
+  function beginSteerableRuinFall(x,z) {
+    const input=deps.getMovementInput?.()||{x:deps.player.inputX,y:deps.player.inputY};
+    if(Math.hypot(Number(input.x)||0,Number(input.y)||0)<=.05)return false;
+    const safe=ruin.lastSafePx; // Last collision-approved floor point before the proposed step into open air.
+    const flight=window.PlayerJump?.beginFlight?.({
+      x,y:ruin.supportY,z,vx:0,vy:0,vz:0,
+      safeX:safe?.x/deps.TILE,safeZ:safe?.y/deps.TILE,
+    },{source:'ruin ledge fall',deliberate:false});
+    if(!flight)return false;
+    ruin.falling=null; // Do not also run the original timed fall/footing penalty.
+    ruin.lastAcceptedPx={x:deps.player.x,y:deps.player.y};
+    syncRuinPresentationHeight(flight.feetY);
+    return true;
+  }
+
   function reconcilePlayer(now){
     if(window.DevRandomRuinSimplePuzzles?.ownsPlayerMotion?.())return;
     const freeJump=deps.player?._freeJump; // Ordinary jump maintains its own physical foot height until it lands.
@@ -1749,6 +1767,7 @@
       }
     }else info=positionInfo(deps.player.x,deps.player.y,ruin.levelRelativeSupport?ruin.supportY:null);
     if(grid && info.support && ruin.supportY-info.support.y>grid.cellHeight+.02){
+      if(beginSteerableRuinFall(x,z))return;
       ruin.falling={startedAt:now,x:deps.player.x,y:deps.player.y,landing:info.support};
       window.ResourceSystem?.spendFooting?.(deps.player,35,'shaft fall');
       return;
@@ -1763,6 +1782,7 @@
         if(window.PlayerDowned?.dieImmediately?.('hachutu-temple-abyss')!==true)deps.damagePlayer?.(999999);
         return;
       }
+      if(beginSteerableRuinFall(x,z))return;
       ruin.falling={startedAt:now,x:deps.player.x,y:deps.player.y,safe:{...ruin.lastSafePx}};
       window.ResourceSystem?.spendFooting?.(deps.player,35,'test ruin fall');
       return;

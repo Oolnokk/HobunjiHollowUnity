@@ -362,11 +362,21 @@
       clear(area); // Relocation requires rebuilding from a new network/anchor, never keeping a stale portal.
     }
   }
+  function senseTargets(scene){
+    if(!scene)return [];
+    const roots=[]; // Mounted authored cliffDoor models, excluding plates, glyphs, and disposed portals.
+    for(const state of areas.values()){
+      if(state.scene!==scene)continue;
+      for(const portal of state.portals)if(!portal.disposed && portal.doorModel?.parent===portal.visualRoot && portal.visualRoot?.parent===scene)
+        roots.push(portal.doorModel);
+    }
+    return roots;
+  }
   function debugSnapshot(){
     return {areas:[...areas.values()].map(state=>({area:state.area,count:state.portals.length,
       portals:state.portals.map(p=>({mapId:p.mapId,shelfId:p.shelf.id,door:p.door,
         plate:p.plate,entry:p.entry,locked:isGateLocked(p),solved:p.solved,
         progress:p.progress,rewardTier:p.song?.rewardTier||null,modelReady:!!p.doorModel}))}))};
   }
-  return Object.freeze({init,plan,mount,update,clear,forgetCave,hasPortal,debugSnapshot});
+  return Object.freeze({init,plan,mount,update,clear,forgetCave,hasPortal,senseTargets,debugSnapshot});
 });
