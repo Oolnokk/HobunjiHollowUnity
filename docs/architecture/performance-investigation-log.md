@@ -66,6 +66,24 @@ through the bandit path:
 | **Outline passes as the cause of the *persistent* slowdown.** | Not that cause, but see "Real but not fixed". | Toggling outlines showed no clear effect in a town test (the scene was still loading between the two phases, so the comparison was noisy); the cost shows when many outlined characters are present. |
 | **Wildlife not being evicted.** | Works. | Wildlife drops to data at trim time (`releaseResidentRigs`); in the zones that stayed built the only pins were bandits. |
 
+### Camera-view gating (what can and cannot pause while an actor is behind the camera)
+
+`docs/js/offscreen-rig-lod.js` (`OffscreenRigLod`) pauses a hostile's procedural **leg solve** and **hand-frame sync**
+while it is outside the camera frustum (0.25 s sleep delay, instant wake, always on within 3 tiles). It only skips
+per-frame updates; nothing is unloaded or rebuilt. `OffscreenRigLod.setEnabled(false)` restores the old behaviour for A/B
+checks. Frame-time impact in a large fight is **not yet measured** on real hardware.
+
+Checked and deliberately **not** gated:
+
+| Candidate | Verdict | Why |
+| --- | --- | --- |
+| Shell outline pass | Nothing to gain. | Headless census (arena, camera at default): 271 visible shell-outlined meshes, 2 in view, 269 outside and all frustum-culled by three.js already, 0 drawn anyway. Weak evidence: the run did not confirm the spawned bandits were in the scene, and the count spans 3 scenes. Re-run with confirmed bandits before trusting it for a big fight. |
+| `BanditCombat.updateToolMesh` | Unsafe. | It owns swing state, not just visuals: it expires `_banditToolTail` from `performance.now()`, refreshes `_banditToolSettleUntil` (read by the idle-stance adapter, sleep gate and combat log), ticks `GhoulSpecialVariants`, toggles holder visibility and releases the body sink. Pausing it mid-swing would leave stale timers. |
+| `updateTrailArc` | Already a no-op. | `combat-bandit.js` stubs it; `Combat.update` owns ribbon lifetime. |
+| Ground shadow position | Nothing to save. | Three assignments; three.js already culls the mesh. |
+| `ResourceRings.updateRingHud` | Would cause a hitch, not save time. | `findAutoTarget()` is already cached per frame. The ring rebuilds geometry only when its key changes (health etc.); skipping it off-screen would defer those rebuilds to the frame the actor re-enters view, for every actor at once after a camera swing. Also `updateAfflictionPulses` is stateful. |
+| Reticle aim, ragdoll playback, animal frame animation | Left alone. | Feed targeting / gameplay state; not provably invisible. |
+
 ### Measurement traps (these produced wrong conclusions at least once)
 
 - **`renderer.info` is reset on every `render()` call**, so reading it after a frame shows only the last pass
