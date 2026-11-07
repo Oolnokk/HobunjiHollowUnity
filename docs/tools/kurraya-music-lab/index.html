@@ -884,7 +884,7 @@
       `song=${snapshot?.songTitle || 'When the Kininjis Bloom'}`,
       `scale=${snapshot?.scaleName || selectedScale}`,
       `tonic=${snapshot?.tonicName || midiName(selectedTonic)} (MIDI ${snapshot?.tonicMidi ?? selectedTonic})`,
-      `audition Auto Pick=${selectedAuditionPattern} · meter=${selectedAuditionMeter}`,
+      `audition figure=${auditionPatterns.find(figure => figure.id === selectedAuditionPattern)?.label || 'Single Note'} · meter=${selectedAuditionMeter}`,
       `progression=${(snapshot?.progression || []).map(step => step.chordName).join(' → ') || 'waiting'}`,
       `meter now=${snapshot?.currentTimeSignature || (snapshot?.timeSignature || [6,8]).join('/')} · intro=6/8×4 → melody=3/4×16`,
       `cadence=${snapshot?.harmonyCadence ? `${snapshot.harmonyCadence.sixEightChords} intro bars × 6/8 → ${snapshot.harmonyCadence.threeFourChords} melody bars × 3/4 · default ending F→G→C→C` : 'waiting'}`,
