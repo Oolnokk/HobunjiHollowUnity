@@ -44,7 +44,9 @@ async function ready(page) {
       const authored = Object.entries(shaft.overrides).flatMap(([head, pair]) =>
         (pair.bridges?.strokes || []).filter(op => op.recipe).map(op => ({ head, recipe: op.recipe, box: op.box })));
       return { mounts: JSON.stringify(shaft.mounts), boxes: authored.length,
-        authored: JSON.stringify(authored) };
+        authored: JSON.stringify(authored),
+        daggerOperations: JSON.stringify(shaft.overrides.dagger?.bridges?.strokes || []),
+        daggerOperationCount: shaft.overrides.dagger?.bridges?.strokes?.length || 0 }; // Retain authored hand-brush work when old recipe boxes are removed.
     });
     assert.equal(original.boxes, 1, 'Shipped Kylie retains its newly authored fuse placement, not the old bulk copies');
     assert.match(original.authored, /"recipe":"fuse"/, 'The authored Kylie fuse recipe is shipped');
@@ -68,12 +70,16 @@ async function ready(page) {
     await page.waitForFunction(() => document.querySelector('#assembly-legacy-summary')
       ?.textContent.includes('Found 18 unchanged copied'));
     assert.equal(await page.locator('#assembly-mount-elements .assembly-element-row').count(), 2);
-    assert.equal(await page.locator('#assembly-operation-elements .assembly-element-row').count(), 2);
+    assert.equal(await page.locator('#assembly-operation-elements .assembly-element-row').count(), original.daggerOperationCount + 2,
+      'Legacy draft adds two boxes without discarding hand-authored brush strokes');
+    assert.equal(await page.locator('#assembly-operation-elements .assembly-element-row button').filter({hasText:'Edit box'}).count(), 2,
+      'Only two accidental recipe boxes expose recipe editing');
     assert.match(await page.locator('#assembly-summary').innerText(), /1 matching head primitive/);
 
     // The new element list opens the correct existing recipe and haft line editors.
-    const editRecipe = page.locator('#assembly-operation-elements .assembly-element-row').first()
-      .getByRole('button',{name:'Edit box'}); // Real touch-sized control, never a forced DOM click.
+    const editRecipe = page.locator('#assembly-operation-elements .assembly-element-row')
+      .filter({has:page.getByRole('button',{name:'Edit box'})}).first()
+      .getByRole('button',{name:'Edit box'}); // Authored brush strokes appear before the imported boxes. // Real touch-sized control, never a forced DOM click.
     try { await editRecipe.click({ timeout: 10000 }); }
     catch (error) {
       const layout = await page.evaluate(() => {
@@ -105,7 +111,10 @@ async function ready(page) {
     await page.locator('#assembly-prune-legacy').click();
     await page.waitForFunction(() => document.querySelector('#assembly-status')
       ?.textContent.includes('Removed 18 legacy bulk placements'));
-    assert.equal(await page.locator('#assembly-operation-elements .assembly-element-row').count(), 0);
+    assert.equal(await page.locator('#assembly-operation-elements .assembly-element-row').count(), original.daggerOperationCount,
+      'Cleaning two legacy boxes must not remove authored brush strokes');
+    assert.equal(await page.evaluate(() => JSON.stringify(window.ModularWeapons.getConfig().shafts.kylie.overrides.dagger?.bridges?.strokes || [])),
+      original.daggerOperations, 'Hand-authored Kylie strokes survive legacy recipe cleanup without modification');
     assert.equal(await page.evaluate(() => JSON.stringify(window.ModularWeapons.getConfig().shafts.kylie.mounts)),
       original.mounts);
     await page.locator('#pair-undo').click();

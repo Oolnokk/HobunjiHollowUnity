@@ -190,10 +190,17 @@ async function run() {
   assert.equal(api.shaftMounts(api.getConfig().shafts.bshuakauitl).length, 4);
   const oldDraft = JSON.parse(JSON.stringify(window.MODULAR_WEAPON_CONFIG));
   oldDraft.shafts.hachutuTorchStaff.duplicateTransform = { scaleX: 1.3, scaleY: 1.6, x: -45, y: 70 };
+  delete oldDraft.shafts.hachutuTorchStaff.attachmentRigTransform; // Old exports did not have the modern canonical field.
   api.replace(oldDraft);
   assert.deepEqual({ ...api.shaftRigTransform(api.getConfig().shafts.hachutuTorchStaff) },
     { scaleX: 1.3, scaleY: 1.6, x: -45, y: 70 },
     'existing exported duplicateTransform drafts migrate to the canonical rig transform');
+  const withBothFields = JSON.parse(JSON.stringify(oldDraft)); // Conflicting-field fixture tests canonical precedence.
+  withBothFields.shafts.hachutuTorchStaff.attachmentRigTransform = { scaleX: 1, scaleY: 1, x: 0, y: 0 };
+  api.replace(withBothFields);
+  assert.deepEqual({ ...api.shaftRigTransform(api.getConfig().shafts.hachutuTorchStaff) },
+    { scaleX: 1, scaleY: 1, x: 0, y: 0 },
+    'modern attachmentRigTransform wins when an import also carries an old duplicateTransform');
 
   vm.runInContext(fs.readFileSync('docs/js/modular-weapon-bridge-fill.js','utf8'), ctx); // Recipe expansion is required for actual area tests.
   // Independently transformed local area: only the TOP eye/head and the TOP
