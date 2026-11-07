@@ -1035,6 +1035,12 @@
         blockedKeys.add(tileKey(tile.col,tile.row));
       }
     }
+    if(profile.contents === TYPES.PUZZLE_CAVE && Number.isFinite(mapData.exitCol) && Number.isFinite(mapData.exitRow)) {
+      mapData.entrySpots = {
+        ...(mapData.entrySpots || {}),
+        den_exit: { col: mapData.exitCol, row: mapData.exitRow },
+      }; // Cached and freshly generated Puzzle Caves use the same guaranteed-walkable SDF entrance instead of falling back to (0,0).
+    }
     if(profile.contents === TYPES.PUZZLE_CAVE && profile.parentMapId && mapData.exits?.length) {
       const exit = mapData.exits[0]; // Reciprocal transition returns into the ordinary cave, not out to the wilderness.
       exit.targetMap = profile.parentMapId;
