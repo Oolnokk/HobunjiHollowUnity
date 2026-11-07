@@ -21122,6 +21122,10 @@
               }
             }
           }
+          const geometryY = projectile && !tile.mapBoundary
+            ? window.ZonePlateauMesa?.surfaceYAt?.(currentArea, wx / TILE, wy / TILE) : null; // Airborne actors and shots use the visible displaced cliff skin.
+          if (Number.isFinite(geometryY)) cliffTopY = geometryY;
+          else if (projectile && !tile.mapBoundary && window.ZonePlateauMesa?.hasTerrain?.(currentArea)) cliffTopY = -Infinity;
           const intersectsCliff = !projectile || worldY <= cliffTopY + 0.01;
           if (tile.incline && intersectsCliff) return null;
           // Preserve the original escape exception for an actor already on
@@ -32427,7 +32431,7 @@
         player,
         TILE,
         getMovementInput: climbMovementInput,
-        getFeetY: () => window.DevRandomRuin?.getPlayerSupportY?.() ?? activeSurfaceYAtWorld(player.x / TILE, player.y / TILE),
+        getFeetY: () => player._freeJump?.feetY ?? window.DevRandomRuin?.getPlayerSupportY?.() ?? activeSurfaceYAtWorld(player.x / TILE, player.y / TILE),
         canStandAt: (x, z, y) => !!window.DynamicSurfaces?.sampleSupport?.(x, z, { minY: y - 0.3, maxY: y + 0.3, pad: 0.02 }), // A mantle needs a registered walkable surface at the top.
         setFacingAngle: (v) => { facingAngle = v; },
         setTargetAimAngle: (v) => { targetAimAngle = v; },

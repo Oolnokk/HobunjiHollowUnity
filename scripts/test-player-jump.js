@@ -76,7 +76,7 @@ assert(coverSource.includes('movementCoverNear,'));
 const TILE = 64; // Player positions use pixels, semantic colliders use world/tile units.
 const groundTile = () => ({ type: 'floor', surfaceY: 0 });
 function harness({ rock = null, furniture = null, wall = null, pit = null, start = { x: 2.5, z: 3.5 },
-  heightBlocked = null, deepSupportY = null } = {}) {
+  heightBlocked = null, deepSupportY = null, geometry = null } = {}) {
   const grid = Array.from({ length: 9 }, () => Array.from({ length: 10 }, groundTile));
   if (rock) grid[rock.row][rock.col] = { type: 'rock', rockKind: 'undiggableBoulder', projectileCoverHeightTiles: rock.top, top: rock.top };
   if (wall) grid[wall.row][wall.col] = { type: 'wall' };
@@ -94,6 +94,7 @@ function harness({ rock = null, furniture = null, wall = null, pit = null, start
   const scene = { children: furnitureNode ? [furnitureNode] : [] }; // Minimal scene for the real semantic-cover spatial index.
   if (furnitureNode) furnitureNode.parent = scene;
   const window = {
+    ZonePlateauMesa: { hasTerrain: () => !!geometry, surfaceYAt: (_area, x, z) => geometry?.(x, z) ?? null }, // Same interface as the generated triangle index.
     MapBoundaryGuard: { isBoundaryTile: () => false },
     GridTileAccessors: { isHouseFootprint: () => false, isFarmBuildingCollisionTile: () => false, isTownBuildingCollisionTile: () => false },
     InteriorDoorTiles: { blocksBox: () => false }, // Closed doors must never be treated as low cover.
@@ -321,5 +322,94 @@ function harness({ rock = null, furniture = null, wall = null, pit = null, start
   }
   assert.equal(h.player._freeJump?.phase, 'supported', 'fall continues past seven units to a ten-unit-deep floor');
   assert(Math.abs(h.player.physicalFeetY + 10) < .01, 'deep landing uses physical lower elevation');
+}
+{
+  const h = harness({ start: { x: 3.45, z: 3.5 }, geometry: (x, z) => x >= 4 && x <= 5 && z >= 3 && z <= 4 ? 0.7 : null });
+  h.grid[3][4] = { type: 'floor', incline: true }; // Reserved incline cells are finite rendered geometry, not infinite walls.
+  h.input.x = 1;
+  assert(h.window.PlayerJump.start());
+  h.advance(1.2);
+  assert(h.player.x / TILE > 4.2, 'airborne feet can clear the actual cliff skin inside an incline tile');
+}
+{
+  const h = harness({ start: { x: 3.45, z: 3.5 }, geometry: () => null });
+  h.grid[3][4] = { type: 'floor', incline: true };
+  h.input.x = 1;
+  assert(h.window.PlayerJump.start());
+  h.advance(0.3);
+  assert(h.player.x / TILE > 4, 'an empty part of an indexed incline has no invisible tile wall');
+}
+{
+  const h = harness({ start: { x: 3.5, z: 3.5 }, wall: { col: 4, row: 3 } });
+  h.input.x = 1; h.input.y = 0.4;
+  assert(h.window.PlayerJump.start());
+  h.advance(0.5);
+  assert(h.player.y / TILE > 3.9, 'diagonal approach slides along an unclimbable wall');
+  assert(h.window.PlayerJump.debug.slides > 0);
+}
+{
+  const h = harness({ start: { x: 3.45, z: 3.5 } });
+  h.grid[3][4] = { type: 'floor', surfaceY: 0.65 }; // Plateau top in the adjacent tile.
+  h.input.x = 1;
+  assert(h.window.PlayerJump.start());
+  for (let i = 0; i < 85; i++) {
+    if (h.player.x / TILE > 4.3) h.input.x = 0;
+    h.advance(1 / 60);
+  }
+  assert(h.player.x / TILE > 4, 'crossing the adjacent plateau height permits entry');
+  assert.equal(h.player._freeJump, null, 'plateau landing returns to ordinary grounded movement');
+}
+{
+  const h = harness({ start: { x: 3.45, z: 3.5 }, deepSupportY: 0.65 });
+  h.input.x = 1;
+  assert(h.window.PlayerJump.start());
+  for (let i = 0; i < 85; i++) {
+    if (h.player.x / TILE > 4.3) h.input.x = 0;
+    h.advance(1 / 60);
+  }
+  assert.equal(h.player._freeJump?.phase, 'supported', 'adjacent dynamic minicliff/platform is reachable when feet cross its elevation');
+  assert(Math.abs(h.player.physicalFeetY - 0.65) < 0.01);
+}
+{
+  const h = harness({ start: { x: 3.45, z: 3.5 }, rock: { col: 4, row: 3, top: 0.65 } });
+  h.input.x = 1;
+  assert(h.window.PlayerJump.start());
+  h.advance(0.5);
+  assert(h.window.PlayerJump.debug.assists > 0, 'clearing a collider finds a forward landing within one tile');
+  const before = h.player.x; // Releasing input cancels remaining assisted movement immediately.
+  h.input.x = 0;
+  h.advance(0.05);
+  assert.equal(h.player.x, before);
+}
+{
+  const h = harness({ start: { x: 3.45, z: 3.5 }, rock: { col: 4, row: 3, top: 0.65 }, heightBlocked: x => x > 4.05 });
+  h.input.x = 1;
+  assert(h.window.PlayerJump.start());
+  h.advance(0.9);
+  assert(h.player.x / TILE <= 4.05, 'landing assist cannot lerp through an independent collider');
+}
+{
+  const h = harness();
+  const ctx = { window: h.window, self: h.window, console }; // Execute the real authored wall-climb owner beside PlayerJump.
+  vm.runInNewContext(read('docs/js/climb-surfaces.js'), ctx);
+  h.window.ClimbSurfaces.init({ player: h.player, TILE, getFeetY: () => h.player._freeJump?.feetY ?? 0 });
+  h.window.ClimbSurfaces.register({ id: 'air-wall', axis: 'z', plane: 3.1, u0: 3, u1: 4, y0: 0, y1: 6, normal: { x: -1, z: 0 } });
+  h.input.x = 1;
+  assert(h.window.PlayerJump.start());
+  h.advance(0.3);
+  assert(h.player.onClimbSurface, 'airborne contact automatically grabs a registered climbable wall');
+  assert.equal(h.player._freeJump, null, 'a grab transfers ownership out of the free jump');
+  assert(h.player.wallClimbY > 0, 'grab preserves airborne height instead of restarting from the floor');
+}
+{
+  const h = harness({ geometry: x => x >= 4 && x <= 5 ? (x - 4) * 2 : null });
+  h.grid[3][4] = { type: 'floor', incline: true };
+  assert(h.window.PlayerJump.start());
+  h.player.x = 4.45 * TILE;
+  h.player._freeJump.feetY = 1.26;
+  h.player._freeJump.vy = -1;
+  h.advance(0.15);
+  assert(h.player.x / TILE < 4.45, 'falling onto an unclimbable face slides downhill even without input');
+  assert(h.player._freeJump.feetY > 0, 'slope contact never falls through the rock shell');
 }
 console.log('player-jump ok');
