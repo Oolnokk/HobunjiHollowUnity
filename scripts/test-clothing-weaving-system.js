@@ -613,7 +613,7 @@ assert.match(source, /window\.setTimeout\(attempt, 0\)/, 'session rebuild is def
 assert.match(source, /const startupFinished = window\.__hobunjiGameStarted === true[\s\S]*?liveWoven && initialPortraitPrepared && startupFinished[\s\S]*?equipmentDeps\.refreshPlayerAvatar\(\)/, 'post-load rebuild waits for live woven Gear, the initial gear-to-profile pass, and fully completed game startup before refreshing');
 assert.match(indexSource, /combat-config-loader\.js\?v=[A-Za-z0-9_-]+/, 'index cache-busts the loader that owns the authored clothing trim runtime URL');
 assert.match(combatLoaderSource, /clothing-weaving-system\.js\?v=[A-Za-z0-9_-]+/, 'combat loader cache-busts the authored clothing trim runtime itself');
-assert.match(portraitSource, /renderOptions\?\.imageForTint[\s\S]*?: _imageForTint/, 'portrait rendering accepts a per-render tint resolver with the canonical tint path as fallback');
+assert.match(portraitSource, /renderOptions\?\.imageForTint[\s\S]*?:layerImageOverrides[\s\S]*?:_imageForTint/, 'portrait rendering preserves the canonical tint fallback while allowing per-render fitted image overrides');
 // Execute the shared breathing-layer draw rather than pinning local variable names.
 {
   const calls = [];

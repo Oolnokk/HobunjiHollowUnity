@@ -41,7 +41,7 @@ const R={
   patchWorkflow:{active:false,canvas:null,descriptor:null,filename:'',patchName:'',revision:0}, // Live routed patch source. Clothing routes a source+patch composite; body routes patch-only pixels as a separate canonical body-tinted rear backplane layer in front of the selected base body layer and behind clothing.
   three:{
     ready:false,scene:null,camera:null,renderer:null,group:null,drag:null,rotX:0,rotY:0,zoom:3.0,
-    runtimeReadyPromise:null,runtimeDocsBase:null,portraitCache:new Map(),rigRoot:null,avatarModel:null,feet:null,
+    runtimeReadyPromise:null,runtimeDocsBase:null,portraitCache:new Map(),cosmetics:null,rigRoot:null,avatarModel:null,feet:null, // Cache of the game's parsed cosmetic options, used for canonical fitted-garment preview.
     extendedGroup:null,buildGeneration:0,buildTimer:null,lastBuiltKey:null,matchedFront2D:null // Stores the inverse-projected copy of the exact portrait texture used on the current 3D rig.
   },
   logs:[]

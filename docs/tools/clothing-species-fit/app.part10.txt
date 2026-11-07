@@ -41,6 +41,7 @@ function refreshDebug(){
     `extended warped: ${R.extendedWarped?`${R.extendedWarped.width}x${R.extendedWarped.height}`:'(none)'}`,
     `3D runtime docs: ${R.three.runtimeDocsBase||'(not loaded yet)'}`,
     `3D runtime rig: ${R.three.rigRoot?.name||'(not built yet)'}`,
+    `3D renderer status: ${E.threeStatus.textContent}`, // Distinguish canonical game clothing raster from manually routed patch previews on mobile.
     `game garment xform: preset B ${JSON.stringify(window.getPortraitXformPreset?.('B')||'(runtime loading)')}`,
     `2D portrait mode: ${E.match3D.checked?'game matched':'raw art'}`,
     `2D and 3D shared front texture: ${!!R.three.matchedFront2D?.canvas&&R.three.matchedFront2D.buildGeneration===R.three.buildGeneration&&R.three.matchedFront2D.assetGeneration===R.assetGeneration?'current':'pending or unavailable'}`,
@@ -104,15 +105,22 @@ function resetTarget(){
 function resetBaseTransform(){
   pushUndo();A.baseTransforms[targetKey(E.species.value,E.gender.value)]=defaultTransform();saveState();syncTransformControls();render();log('Reset recorded base scale and translation.');
 }
-function setTransformField(field,value){
-  const n=Number(value);if(!Number.isFinite(n))return;
-  currentTransform()[field]=n;saveState();syncTransformControls();render();
+function setTransformField(field,value,control){
+  if(String(value).trim()==='')return false; // Editing an empty mobile number field must not collapse the sprite to zero width.
+  const n=Number(value);
+  if(!Number.isFinite(n))return false;
+  const min=String(control?.min??'').trim(),max=String(control?.max??'').trim(); // Follow the actual paired control bounds.
+  if((min&&n<Number(min))||(max&&n>Number(max)))return false;
+  if((field==='scaleX'||field==='scaleY')&&n<=0)return false;
+  currentTransform()[field]=n;saveState();syncTransformControls();render();return true;
 }
 function wireTransformPair(slider,number,field){
   slider.addEventListener('pointerdown',()=>pushUndo(),{passive:true});
   number.addEventListener('focus',()=>pushUndo(),{passive:true});
-  slider.addEventListener('input',()=>setTransformField(field,slider.value));
-  number.addEventListener('input',()=>setTransformField(field,number.value));
+  slider.addEventListener('input',()=>setTransformField(field,slider.value,slider));
+  number.addEventListener('input',()=>setTransformField(field,number.value,number));
+  number.addEventListener('change',()=>syncTransformControls());
+  number.addEventListener('blur',()=>syncTransformControls()); // Mobile number fields may blur without a change event.
 }
 function resetMaskTransform(){
   pushUndo();
