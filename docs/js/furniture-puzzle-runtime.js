@@ -385,7 +385,9 @@
     const started = performance.now();
     const revision = (object.userData.puzzleAnimationRevision || 0) + 1;
     object.userData.puzzleAnimationRevision = revision;
-    if(puzzle.role==='mechanism'&&Math.abs(from-target)>.00001
+    const stoneBehavior=['stoneDoor','bridge','bridgeSequence','movingDais','collapsingStairs',
+      'pushPuzzleBlock','elevatorPushBlock','rotatingObelisk','linkedCubePair'].includes(puzzle.behavior); // Non-stone furniture (including witch-bomb dispensers and braziers) must not grind like a ruin door.
+    if(puzzle.role==='mechanism'&&stoneBehavior&&Math.abs(from-target)>.00001
       &&object.userData.__ruinSoundTarget!==target){
       object.userData.__ruinSoundTarget=target; // Tracks the most recent motion command, preventing restarted tween frames from replaying the recording.
       window.RuinInteractionAudio?.mechanism?.(object);
