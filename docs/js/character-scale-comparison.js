@@ -193,6 +193,10 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
 #${PANEL_ID} .scaleHead{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 #${PANEL_ID} .scaleSelected{font-weight:850;color:var(--accent)}
 #${PANEL_ID} .scaleRow{display:grid;grid-template-columns:minmax(0,1fr) 68px;gap:8px;align-items:center}
+#${PANEL_ID} .scaleRow>label{grid-column:1/-1}
+#${PANEL_ID} .scaleRow>input[type=range]{min-width:0}
+#${PANEL_ID} .scaleRow>input[type=number]{width:100%;min-width:0}
+#${PANEL_ID} .scaleRow>select{grid-column:1/-1;width:100%}
 #${PANEL_ID} input[type=range]{width:100%;min-height:44px;padding:0;accent-color:var(--accent)}
 #${PANEL_ID} output{text-align:right;color:var(--accent);font-weight:850;font-variant-numeric:tabular-nums}
 #${PANEL_ID} .scaleActions{display:flex;gap:7px;flex-wrap:wrap}
@@ -237,15 +241,15 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
       panel.className = 'maaInteractive';
       const scaleRow = (axis, label, min, max, step, value, ariaLabel) => `
         <div class="scaleRow">
-          <label for="maaFullScaleRange${axis}">${label}</label>
+          <label for="maaFullScaleRange${axis}">${label} (%)</label>
           <input id="maaFullScaleRange${axis}" type="range" min="${min}" max="${max}" step="${step}" value="${value}" aria-label="${ariaLabel}">
-          <input id="maaFullScaleNum${axis}" type="number" min="${min}" max="${max}" step="${step}" value="${value}" aria-label="${ariaLabel} (exact value)">%
+          <input id="maaFullScaleNum${axis}" type="number" min="${min}" max="${max}" step="${step}" value="${value}" aria-label="${ariaLabel} (exact value)">
         </div>`;
       const tuningRow = (axis, label, min, max, step, value, unit) => `
         <div class="scaleRow">
-          <label for="maaLongoranRange${axis}">${label}</label>
+          <label for="maaLongoranRange${axis}">${label}${unit ? ' (' + unit + ')' : ''}</label>
           <input id="maaLongoranRange${axis}" type="range" min="${min}" max="${max}" step="${step}" value="${value}" aria-label="${label}">
-          <input id="maaLongoranNum${axis}" type="number" min="${min}" max="${max}" step="${step}" value="${value}" aria-label="${label} exact value">${unit}
+          <input id="maaLongoranNum${axis}" type="number" min="${min}" max="${max}" step="${step}" value="${value}" aria-label="${label} exact value">
         </div>`; // Same range+numeric mobile authoring pattern as the full-character scale inputs.
       panel.innerHTML = `
         <div class="scaleHead"><b>Full character scale</b><span id="maaFullScaleSelected" class="scaleSelected">Choose a character</span><span id="maaFullScaleNpc" class="pill">—</span></div>
