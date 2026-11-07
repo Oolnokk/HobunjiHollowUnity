@@ -39,6 +39,7 @@ assert(loot.pools.puzzleCave.entries.length > 0, 'mixed remains include the merg
 
 const created = []; // Tracks actual per-instance rig allocations and disposal after death.
 const painted = []; // Confirms the game-controlled pose reaches the authored wing renderer.
+const tintChecks = []; // Confirms hit-flash expiry restores the identity tint instead of leaving a white body.
 let createDelay = null; // Deferred rig construction simulates an async image fetch outliving the actor.
 const visualWorld = {
   window: {
@@ -49,7 +50,8 @@ const visualWorld = {
         const instance = {
           identity, disposed: false,
           root: { parent: null, rotation: { y: 0 }, scale: { x: null, setScalar(x) { this.x = x; } } },
-          update(camera, pose, elapsed, carrying) { painted.push({ pose, elapsed, carrying }); },
+          update(camera, pose, elapsed, carrying, blinkShut) { painted.push({ pose, elapsed, carrying, blinkShut }); },
+          restoreTint() { tintChecks.push(identity.tintHex); return false; },
           dispose() { this.disposed = true; this.root.parent?.remove(this.root); }
         };
         created.push(instance);
@@ -57,6 +59,7 @@ const visualWorld = {
       }
     },
     Combat: { deps: { getActiveCamera: () => ({ getWorldPosition() {} }) } },
+    CreatureBlink: { isShut: () => true },
     __farmLog() {}
   },
   console, Math, Date, Promise, Map, Set, performance: { now: () => 1000 },
@@ -90,6 +93,7 @@ async function flush() { for (let i = 0; i < 8; i++) await Promise.resolve(); }
   assert.equal(adult.avatarRef.backPlane.visible, false);
   visuals.tick(0.016, 'map_northern_cliffs');
   assert.equal(painted.at(-1).pose, 'perched');
+  assert.equal(painted.at(-1).blinkShut, true, 'the custom bird rig gets the native individual blink state');
   const cameraProvider = visualWorld.window.Combat.deps.getActiveCamera; // Reproduce an early area load with no combat camera available yet.
   visualWorld.window.Combat.deps.getActiveCamera = () => null;
   const beforeNoCamera = painted.length; // Counts actual authored pose updates rather than hidden default sprites.
@@ -106,10 +110,32 @@ async function flush() { for (let i = 0; i < 8; i++) await Promise.resolve(); }
   assert.deepEqual([painted.at(-1).pose, painted.at(-1).carrying], ['glide', true],
     'later flight/prey AI can choose glide and gripping-portrait art directly');
   assert.equal(visuals.snapshot().scans, 1, 'only the initial tick scans the full hostile roster');
+  const replacement = { isMesh: true, parent: adult.avatarRef.group, name: 'animal_front_plane', visible: true,
+    geometry: { parameters: { height: 2.2 } }, userData: { hobunjiPlaneFace: 'front' } }; // Hit reaction re-builds the original native plane.
+  adult.avatarRef.group.children.push(replacement);
+  adult.avatarRef.frontPlane = replacement;
+  const beforeTint = tintChecks.length;
+  adult.hitFlashT = .15;
+  visuals.tick(.016, 'map_northern_cliffs');
+  assert.equal(replacement.visible, false, 'a regenerated untinted native portrait never covers the colored flying rig');
+  assert.equal(tintChecks.length, beforeTint, 'custom bird tint is not forced over a legitimate hit flash');
+  adult.hitFlashT = 0;
+  visuals.tick(.016, 'map_northern_cliffs');
+  assert.equal(tintChecks.length, beforeTint + 1, 'individual color is restored once the damage flash ends');
+  assert.equal(visuals.snapshot().refreshedPlanes, 1, 'mobile diagnostics count the native replacement');
+  const captive = { avatarRef: { group: { quaternion: {
+    angle: .37, clone() { return { angle: this.angle }; }, copy(pose) { this.angle = pose.angle; }
+  } } } }; // A live Porakaneki/player avatar keeps its original quaternion through a bird release.
+  assert(visuals.rememberCaptive(captive));
+  captive.avatarRef.group.quaternion.angle = -1.23;
+  assert(visuals.restoreCaptive(captive), 'a released prey is returned to its own native orientation');
+  assert.equal(captive.avatarRef.group.quaternion.angle, .37);
+  assert.equal(visuals.restoreCaptive(captive), false, 'repeat releases must never replay stale rotations');
+  assert.equal(visuals.snapshot().captiveRestores, 1);
   adult.health = 0;
   visuals.tick(0.016, 'map_northern_cliffs');
   assert.equal(created[0].disposed, true, 'corpse transition disposes bird-specific textures and geometry');
-  assert.equal(adult.avatarRef.frontPlane.visible, true, 'death restores the canonical lootable corpse portrait');
+  assert.equal(adult.avatarRef.frontPlane.visible, true, 'death restores the latest canonical lootable corpse portrait');
   assert.equal(visuals.snapshot().tracked, 0);
 
   // Late-resolving PNG downloads can never insert a detached scene tree.
