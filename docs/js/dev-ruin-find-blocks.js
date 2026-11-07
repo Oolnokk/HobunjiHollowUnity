@@ -197,7 +197,11 @@
           isActive:alive,onSolved:triggerSink,
           getPlayerPosition:kit.playerWorld,
           getPlayerY:()=>game.getPlayerGroundSupportY?.()??kit.playerWorld()?.y??floorY,
-          music:root.MusicMinigame
+          music:root.MusicMinigame,
+          melodySurfaces:[
+            {x,y:floorY+1.6,z:z-.976,yaw:Math.PI},
+            {x:x-.976,y:floorY+1.6,z,yaw:-Math.PI/2},
+          ] // Both exposed stone faces have a clear view from the song plate; seeded selection varies the clue.
         });
         if(!challenge)throw new Error('Could not compose the native melody echo for the tall pillar.');
         melody=challenge; // Its own flute judge, event subscriptions, note decals and cleanup stay authoritative.
@@ -367,6 +371,8 @@
         blocks:blocks.map(b=>({name:b.name,phase:b.phase,x:b.mesh.position.x,z:b.mesh.position.z,
           y:b.mesh.position.y,available:b.mesh.userData.findBlocksAvailable})),
         targets:targets.map(t=>({id:t.id,hit:t.active})),pillarHeight,
+        melody:melody?{notes:melody.notes?.slice(),attempts:melody.attempts,
+          heardNotes:melody.heardNotes?.slice(),inscription:melody.inscription?.diagnostics?.()}:null,
         iceMelt,fireReady:!!fire,witchBombReady:!!bombs};},
       dispose(){
         if(disposed)return;disposed=true;

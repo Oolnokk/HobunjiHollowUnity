@@ -1,4 +1,4 @@
-// Procedural, readable Scratchbone inscriptions for the Random Ruin melody plates.
+// Plate-revealed Scratchbone inscriptions on visible ruin stone faces.
 // The notes are supplied by the ruin composer, never baked into a texture or songbook.
 (() => {
   'use strict';
@@ -51,11 +51,11 @@
       z:plate.z + vector.z * distance,
     })); // Try the four immediately adjacent faces first, keeping the working trigger clear.
     const lateralStep = Math.max(.65,layout.width * .6); // If adjacent faces are obstructed, slide along their edges before falling back onto the trigger.
-    for (const [vector,distance] of offsets) for (const side of [-1,1]) {
+    for (const [vector,distance] of offsets) for (const side of [-1,1]) for(const spread of [1,1.5,2]) {
       const perpendicular = {x:-vector.z,z:vector.x};
       candidates.push({
-        x:plate.x + vector.x * distance + perpendicular.x * lateralStep * side,
-        z:plate.z + vector.z * distance + perpendicular.z * lateralStep * side,
+        x:plate.x + vector.x * distance + perpendicular.x * lateralStep * side * spread,
+        z:plate.z + vector.z * distance + perpendicular.z * lateralStep * side * spread,
       });
     }
     return candidates;
@@ -63,11 +63,12 @@
 
   function choosePlacement(plate, layout, axis, hallway, bounds, sampleSupport, blockedAt) {
     const yaw = axis === 'z' ? Math.PI / 2 : 0; // The local glyph row becomes a line of notes along world Z in a north/south hall.
-    const cos = Math.cos(yaw), sin = Math.sin(yaw);
     const points = candidatePoints(plate,layout,axis,hallway); // Try adjacent floor in a stable order before using the embedded fallback.
     const samples = [[-.5,-.5],[-.5,0],[-.5,.5],[0,-.5],[0,0],[0,.5],[.5,-.5],[.5,0],[.5,.5]]; // Check the actual stone corners and edges, not inset points that can leave a visible strip through a wall.
     const fits = (position, strict) => samples.every(([u,v]) => {
       if (!strict && (u || v)) return true; // The emergency placement only requires its center to be supported.
+      const facing=Math.atan2(plate.x-position.x,plate.z-position.z); // Validate the final plate-facing footprint, including diagonal fallback placements.
+      const cos=Math.cos(facing),sin=Math.sin(facing);
       const localX=u * layout.width, localZ=v * layout.depth;
       const x=position.x + cos * localX + sin * localZ;
       const z=position.z - sin * localX + cos * localZ;
@@ -84,7 +85,43 @@
     return {x:plate.x,z:plate.z,y:plate.y+.07,yaw,fallback:true}; // Last resort: a raised inscription centered over its own bronze trigger.
   }
 
-  function create({root,plate,notes,bounds=null,hallway=false,hallAxis='x',sampleSupport,blockedAt,makeStoneMaterial} = {}) {
+  function chooseSurface(plate,layout,surfaces,surfaceRoot,seed) {
+    const candidates=surfaces.slice(); // Explicit fixtures and sampled stone faces share one placement path.
+    const visibleHit=entry=>{
+      if(!entry.face||entry.distance<=.9)return false;
+      for(let node=entry.object;node;node=node.parent)if(node.visible===false)return false;
+      const material=entry.object.material; // Invisible collider helpers cannot receive a visible inscription.
+      return !material||Array.isArray(material)||material.visible!==false&&material.opacity!==0;
+    };
+    if(surfaceRoot&&THREE.Raycaster){
+      surfaceRoot.updateWorldMatrix?.(true,true);
+      const origin=new THREE.Vector3(plate.x,plate.y+1.6,plate.z); // Eye-height rays select only faces visible from the trigger.
+      const ray=new THREE.Raycaster(); // Used at creation only; no scene scan or ray allocations in the frame loop.
+      for(let i=0;i<16;i++){
+        const angle=i*Math.PI/8; // Sample surrounding walls and pillars without favoring a compass direction.
+        ray.set(origin,new THREE.Vector3(Math.sin(angle),0,Math.cos(angle)));
+        ray.far=14;
+        const hit=ray.intersectObject(surfaceRoot,true).find(visibleHit);
+        if(!hit)continue;
+        const normal=hit.face.normal.clone().transformDirection(hit.object.matrixWorld); // Accept vertical faces, never floors or ceilings.
+        if(Math.abs(normal.y)>.15)continue;
+        if(normal.x*(plate.x-hit.point.x)+normal.z*(plate.z-hit.point.z)<0)normal.negate();
+        const yaw=Math.atan2(normal.x,normal.z); // The PNG's top stays world-up, and its front faces the plate.
+        let fits=true;
+        for(const offset of [-layout.width/2,layout.width/2])for(const height of [-layout.depth/2,layout.depth/2]){
+          const edge=new THREE.Vector3(hit.point.x+Math.cos(yaw)*offset,hit.point.y+height,hit.point.z-Math.sin(yaw)*offset);
+          ray.set(origin,edge.clone().sub(origin).normalize());
+          const edgeHit=ray.intersectObject(surfaceRoot,true).find(visibleHit);
+          if(!edgeHit||edgeHit.object!==hit.object||edgeHit.point.distanceTo(edge)>.12){fits=false;break;}
+        }
+        if(fits)candidates.push({x:hit.point.x+normal.x*.025,y:hit.point.y,z:hit.point.z+normal.z*.025,yaw});
+      }
+    }
+    if(!candidates.length)return null;
+    return {...candidates[(Number(seed)>>>0)%candidates.length],vertical:true,fallback:false};
+  }
+
+  function create({root,plate,notes,bounds=null,hallway=false,hallAxis='x',sampleSupport,blockedAt,makeStoneMaterial,surfaces=[],surfaceRoot=null,seed=0} = {}) {
     if (!root?.add || !plate || typeof sampleSupport !== 'function') return null;
     const noteLimit = window.KurrayaPuzzle?.NOTE_CODES?.length ?? 8; // Only the eight playable pitches have matching Scratchbone number sprites.
     const valid = value => Array.isArray(value) && value.length > 0 &&
@@ -113,12 +150,14 @@
       const nextKey = nextNotes.join(','); // Every arbitrary sequence, including repeats, has a distinct ordered key.
       if (nextKey === sequenceKey) return true;
       const layout = layoutFor(nextNotes); // Panel length and row wrapping are derived entirely from the new generated notes.
-      const nextPlacement = choosePlacement(plate,layout,axis,hallway,bounds,sampleSupport,blockedAt);
+      const nextPlacement = chooseSurface(plate,layout,surfaces,surfaceRoot,seed)
+        || choosePlacement(plate,layout,axis,hallway,bounds,sampleSupport,blockedAt);
+      if(!nextPlacement.vertical)nextPlacement.yaw=Math.atan2(plate.x-nextPlacement.x,plate.z-nextPlacement.z); // Floor fallback reads upright from its own plate.
       clearParts();
       const backingMaterial = makeStoneMaterial?.() || new THREE.MeshBasicMaterial({color:0xc2b39b});
-      const backing = new THREE.Mesh(new THREE.BoxGeometry(layout.width,.03,layout.depth),backingMaterial);
+      const backing = new THREE.Mesh(new THREE.BoxGeometry(layout.width,nextPlacement.vertical?layout.depth:.03,nextPlacement.vertical?.03:layout.depth),backingMaterial);
       backing.name = 'dev_ruin_melody_decal_stone';
-      backing.position.y = .027;
+      backing.position.y = nextPlacement.vertical?0:.027;
       backing.userData.devRuinFootprintIgnore = true;
       backing.userData.hobunjiGroundSurface = true;
       backing.raycast = () => {}; // Decorative stone and ink must never steal an interaction or projectile hit.
@@ -129,7 +168,7 @@
         const row = Math.floor(index/MAX_COLUMNS), column=index%MAX_COLUMNS;
         const rowLength = Math.min(MAX_COLUMNS,nextNotes.length-row*MAX_COLUMNS);
         const texture=getGlyphTexture(note); // Reuses the authored Scratchbone silhouette through the canonical sprite pipeline.
-        const appearance={color:0xffffff,transparent:true,side:THREE.DoubleSide,
+        const appearance={color:0xffda70,transparent:true,side:THREE.DoubleSide,
           depthWrite:false,polygonOffset:true,polygonOffsetFactor:-1,polygonOffsetUnits:-2};
         const material=pngSurface?.makeMaterial
           ? pngSurface.makeMaterial(THREE,texture,'ruin-melody-scratchbone-' + (index+1),appearance)
@@ -137,9 +176,10 @@
         const glyph = new THREE.Mesh(getGlyphGeometry(),material);
         glyph.name = 'dev_ruin_melody_scratchbone_' + (index+1);
         glyph.scale.set(.26,.28,1);
-        glyph.rotation.x = -Math.PI/2; // Flat, upward-facing plane reads as an engraved floor decal from the gameplay camera.
-        glyph.position.set((column-(rowLength-1)/2)*GLYPH_STEP,.048,
-          (row-(layout.rows-1)/2)*LINE_STEP);
+        glyph.rotation.x = nextPlacement.vertical?0:-Math.PI/2; // Vertical faces keep world-up; floor fallbacks face upward.
+        glyph.position.set((column-(rowLength-1)/2)*GLYPH_STEP,
+          nextPlacement.vertical?((layout.rows-1)/2-row)*LINE_STEP:.048,
+          nextPlacement.vertical?.028:(row-(layout.rows-1)/2)*LINE_STEP);
         glyph.userData.devRuinFootprintIgnore = true;
         glyph.userData.hobunjiGroundSurface = true;
         glyph.userData.melodyNoteIndex = note;
@@ -155,6 +195,7 @@
     }
 
     if (!setNotes(notes)) {root.remove(group);return null;}
+    group.visible=false; // Clues appear only while the player stands on the owning pressure plate.
     const matchesNotes = candidate => {
       const displayed=group.userData.melodyNotes; // Avoid allocation/serialization in the ruin's per-frame sequence synchronization.
       return Array.isArray(candidate) && candidate.length===displayed.length &&
@@ -162,8 +203,10 @@
     };
     return {
       group,setNotes,matchesNotes,
+      setVisible(visible){group.visible=!!visible;},
+      dispose(){clearParts();group.parent?.remove(group);},
       get sequenceKey() {return sequenceKey;},
-      diagnostics:()=>({notes:group.userData.melodyNotes?.slice()||[],...placement}),
+      diagnostics:()=>({visible:group.visible,notes:group.userData.melodyNotes?.slice()||[],...placement}),
     };
   }
 
