@@ -263,7 +263,8 @@
                 width, depth, overhangDepths, // Left, center, right front-edge depths drive geometry and walkable support.
                 contourOffsets: width > 4 ? [0, ((hash(c.a.c, c.a.r, 69 + j) % 7) - 3) * 0.085, 0] : [0, 0, 0], // Only longer bodies bend around a contour.
                 tangent: tan, normal, footprint: [], // Tile/elevation cells never overwrite the ordinary ground grid.
-                reward: hash(c.a.c, c.a.r, 94 + j) % 2 ? 'buriedTreasure' : 'oreRock',
+                reward: hash(c.a.c, c.a.r, 94 + j) % 2 ? 'buriedTreasure'
+                  : (hash(c.a.c, c.a.r, 101 + j) % 2 ? 'oreRock' : 'herbCluster'), // Half of former ore ledges become forageable herb clusters.
               };
               const capOutline = [[-1,-1],[0,-1],[1,-1],[1,1],[0,1],[-1,1]]
                 .map(([u,v]) => miniCliffTopPoint(shelf, u, v)); // Used for exact cap/tile overlap rather than sampled misses.
@@ -585,11 +586,16 @@
     // The scene's instanced reward bodies are owned by render(), but both
     // interactive changes and save restores must update them immediately.
     for (const handle of rewardMeshesByArea.get(area)?.get(id) || []) {
-      const visible = !state.claimed && (handle.kind === 'oreRock' || state.revealed);
+      const visible = !state.claimed && (handle.kind !== 'buriedTreasure' || state.revealed);
+      if (handle.object) { handle.object.visible = visible; continue; } // Herb groups share the same save/restore visibility contract.
       handle.mesh.setMatrixAt(handle.index, visible ? handle.matrix : handle.hidden);
       handle.mesh.instanceMatrix.needsUpdate = true;
     }
   }
+  function herbRewardMesh(area, id) {
+    return rewardMeshesByArea.get(area)?.get(id)?.find(handle => handle.kind === 'herbCluster')?.object || null;
+  }
+
   function setRewardStage(area, id, stage) {
     const state = getRewardState(area, id);
     if (stage === 'revealed') state.revealed = true;
@@ -784,9 +790,11 @@
     };
     const cap = makeMiniCliffRockMesh(THREE, scene, network, rockMaterial || _stoneMaterial, topMaterial);
     if (cap) meshes.push(cap); // Already generated as one fused mesh across all inverted profiles.
-    const ores = shelves.filter(s => s.reward === 'oreRock' && !s.puzzleCavePortal); // Avoid a protruding ore boulder across the entrance.
-    const chests = shelves.filter(s => s.reward !== 'oreRock' && !s.puzzleCavePortal); // The rock-door occupies this ledge; a hidden treasure chest would overlap the player's pressure plate.
-    const oreMesh = makeInstanced(new THREE.DodecahedronGeometry(1, 0), _stoneMaterial, ores.length, 'cliff-balcony-ores');
+    const ores = shelves.filter(s => s.reward === 'oreRock' && !s.puzzleCavePortal); // Keep ore away from puzzle-cave entrances.
+    const chests = shelves.filter(s => s.reward === 'buriedTreasure' && !s.puzzleCavePortal); // Herbs must not turn into buried chests.
+    const naturalRock = ores.length ? globalThis.TerrainGeometry?.buildRockTileGeo?.(0, 0)?.stoneGeo : null; // Same modeled mound as farm/zone loose rocks.
+    const oreMesh = makeInstanced(naturalRock || new THREE.DodecahedronGeometry(1, 0),
+      rockMaterial || _stoneMaterial, ores.length, 'cliff-balcony-ores');
     const chestWood = makeInstanced(new THREE.BoxGeometry(1, 1, 1),
       _chestWoodMaterial, chests.length, 'cliff-balcony-chest-bodies');
     const chestLid = makeInstanced(new THREE.BoxGeometry(1, 1, 1),
@@ -809,10 +817,39 @@
       if(s.puzzleCavePortal)continue; // The entrance reserves this shelf's decorative reward slot.
       const yaw = Math.atan2(-s.tangent.z, s.tangent.x);
       const state = getRewardState(network.area, s.id);
-      const visible = !state.claimed && (s.reward === 'oreRock' || state.revealed);
+      const visible = !state.claimed && (s.reward !== 'buriedTreasure' || state.revealed);
       if (s.reward === 'oreRock') {
-        transform(oreMesh, oi++, s.x, s.y + 0.18, s.z, 0.32, 0.23, 0.29, yaw, visible, s.reward, s.id);
-      } else {
+        // Natural mound geometry is centered at the origin with its base at y=0, unlike the old dodecahedron.
+        transform(oreMesh, oi++, s.x, s.y + (naturalRock ? 0.015 : 0.18), s.z,
+          naturalRock ? 0.82 : 0.32, naturalRock ? 0.65 : 0.23, naturalRock ? 0.82 : 0.29,
+          yaw, visible, s.reward, s.id);
+      } else if (s.reward === 'herbCluster') {
+        const pool = (globalThis.AlchemySystem?.reagentsForZone?.(network.area) || [])
+          .filter(key => globalThis.AlchemySystem?.REAGENT_DEFS?.[key] && !/mushroom/i.test(key)); // Only plants native to this zone, never cave fungi.
+        const builder = globalThis.ReagentPlants?.buildReagentPlantMesh;
+        if (!pool.length || !builder) continue;
+        s.reagentKey = pool[hash(Math.floor(s.x * 100), Math.floor(s.z * 100), 197) % pool.length]; // Shared with mini-cliff forage interaction.
+        const cluster = new THREE.Group();
+        const rand = n => hash(Math.floor(s.x * 100), Math.floor(s.z * 100), n) / 4294967296; // Stable per-ledge plant positions.
+        for (let stem = 0; stem < 6; stem++) {
+          const plant = builder(s.reagentKey);
+          if (!plant) continue;
+          const rot = rand(300 + stem) * Math.PI * 2;
+          const radial = (0.08 + rand(320 + stem) * 0.25);
+          plant.position.set(Math.cos(rot) * radial, 0, Math.sin(rot) * radial);
+          plant.scale.multiplyScalar(0.78 + rand(340 + stem) * 0.43);
+          cluster.add(plant);
+        }
+        if (!cluster.children.length) continue;
+        cluster.position.set(s.x, s.y + 0.016, s.z);
+        cluster.name = network.area + '-mini-cliff-herb-' + s.id;
+        cluster.userData.miniCliffHerb = { area: network.area, id: s.id, reagentKey: s.reagentKey }; // Pickable forage lookup.
+        cluster.userData.isBillboard = true;
+        cluster.visible = visible;
+        scene.add(cluster);
+        meshes.push(cluster);
+        rewardMeshes.set(s.id, [{ object: cluster, kind: 'herbCluster' }]);
+      } else if (s.reward === 'buriedTreasure') {
         transform(chestWood, ci, s.x, s.y + 0.16, s.z, 0.42, 0.27, 0.3, yaw, visible, s.reward, s.id);
         transform(chestLid, ci, s.x, s.y + 0.33, s.z, 0.44, 0.075, 0.32, yaw, visible, s.reward, s.id);
         ci++;
@@ -826,10 +863,11 @@
   }
   return Object.freeze({
     build, forGrid, verifyReachability, componentAt, crossing, toward, nextHop, shelfContains, shelfAt, highestBelow, render, overlapsClimb,
-    getRewardState, setRewardStage, serializeRewards, restoreRewards, releaseArea,
+    getRewardState, herbRewardMesh, setRewardStage, serializeRewards, restoreRewards, releaseArea,
     forArea: area => activeByArea.get(area) || null,
     debugSnapshot: () => ({ ...debug, areas: [...activeByArea.entries()].map(([area,n]) => ({
       area, routes: n.routes.length, balconies: n.balconies.length,
+      herbClusters: n.balconies.filter(s => s.reward === 'herbCluster' && !s.puzzleCavePortal).length, // Visible in on-device cliff diagnostics.
       components: n.components.length, rejectedRoutes: n.rejectedRoutes, disconnectedSets: n.unconnectedComponents, candidates: n.candidateCount,
       unreachablePlateaus: n.verification?.unreachablePlateaus?.length ?? null,
       unreachableBalconies: n.verification?.unreachableBalconies?.length ?? null,
