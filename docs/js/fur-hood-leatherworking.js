@@ -12,6 +12,7 @@
   let manifest = fallbackManifest; // Read by every portrait/icon draw and by the dev tool after the first fetch.
   let loading = null; // Shared manifest request avoids races between loot menus, game startup, and portraits.
   let activePanel = null; // The current mobile-friendly leatherworking overlay, if open.
+  let closeKeyHandler = null; // Removed by closePanel so Escape cannot linger across newly opened loom dialogs.
   let lastCraft = null; // Source quality and resulting uid for phone diagnostics.
   let lastError = null; // Human-readable failed fetch/render/craft cause for the in-game debug report.
   const copy = value => value == null ? null : JSON.parse(JSON.stringify(value));
@@ -308,6 +309,8 @@
     return results;
   }
   function closePanel() {
+    if (closeKeyHandler) window.removeEventListener('keydown', closeKeyHandler, true); // Reopening the loom must not accumulate old Escape handlers.
+    closeKeyHandler = null;
     activePanel?.remove();
     activePanel = null;
   }
@@ -320,28 +323,35 @@
     // The ordinary fur-lined recipe does not depend on the optional trophy-hood species manifest.
     const overlay = document.createElement('div');
     overlay.className = 'furhood-overlay';
+    overlay.setAttribute?.('data-ctrl-panel', ''); // ControllerUI routes the remappable Cancel and Open Menu actions to this modal.
     overlay.innerHTML = '<section class="furhood-dialog" role="dialog" aria-modal="true" aria-label="Loom leatherworking">' +
-      '<header><h2>Leatherworking · Fur Hoods</h2><button data-action="close" aria-label="Close">✕</button></header>' +
+      '<header><h2>Leatherworking · Fur Hoods</h2><button data-action="close" data-ctrl-cancel type="button" aria-label="Close leatherworking">✕</button></header>' +
       '<nav><button data-action="cloth">Cloth weaving</button><button class="selected" disabled>Leatherworking</button></nav>' +
+      '<div class="furhood-layout"><div class="furhood-fields">' +
       '<label>Hood style<select data-field="hood-kind"><option value="fur_lined_hood">Fur-lined Hood</option><option value="fur_hood">Species Fur Hood (trophy)</option></select></label>' +
       '<label data-dye-row>Hood fabric dye<select data-field="dye"></select></label>' +
       '<label>Choose an individual hide from your pack<select data-field="hide"></select></label>' +
       '<p class="furhood-help">Fur-lined Hood: dye the simple hood fabric; the trim takes only the selected hide\'s genotype base color. No species unlock or species-specific art. The older trophy Fur Hood still uses full hide markings and requires its species unlock.</p>' +
-      '<div class="furhood-preview"><canvas data-view="preview" width="1" height="1"></canvas></div>' +
+      '</div><aside class="furhood-preview-card" aria-label="Leatherworking preview">' +
+      '<div class="furhood-preview-title"><h3>Preview</h3><button data-action="view" type="button">View behind</button></div>' +
+      '<div class="furhood-preview"><img data-view="preview" alt="Hood preview, front view" hidden><span class="furhood-preview-message" data-view="message" role="status">Rendering preview…</span></div>' +
       '<div class="furhood-unlock"><button data-action="unlock" type="button">Unlock species · 2 Motes</button></div>' +
-      '<div class="furhood-row"><button data-action="view">View behind</button><button data-action="craft">Craft fur hood</button></div>' +
+      '<div class="furhood-row"><button data-action="craft" type="button">Craft fur hood</button></div>' +
       '<output data-field="status" aria-live="polite"></output>' +
-      '</section>';
+      '</aside></div></section>';
     const style = document.createElement('style');
     style.textContent = '.furhood-overlay{position:fixed;inset:0;z-index:9005;background:#000b;display:grid;place-items:center;padding:12px}' +
-      '.furhood-dialog{width:min(600px,100%);max-height:94dvh;overflow:auto;background:#14201e;color:#f4f5ed;border:1px solid #6d9986;border-radius:13px;padding:15px;font-family:system-ui}' +
+      '.furhood-dialog{width:min(860px,100%);max-height:94dvh;overflow:auto;box-sizing:border-box;background:#14201e;color:#f4f5ed;border:1px solid #6d9986;border-radius:13px;padding:15px;font-family:system-ui}' +
+      '.furhood-layout{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,.95fr);gap:14px;align-items:start}.furhood-fields,.furhood-preview-card{min-width:0}' +
+      '.furhood-preview-card{background:#182923;border:1px solid #436857;border-radius:12px;padding:12px;min-width:0}.furhood-preview-title{display:flex;justify-content:space-between;gap:8px;align-items:center}.furhood-preview-title h3{font-size:13px;text-transform:uppercase;letter-spacing:.4px;margin:0;color:#c2d5c8}' +
       '.furhood-dialog header,.furhood-dialog nav,.furhood-row{display:flex;justify-content:space-between;gap:9px;align-items:center;flex-wrap:wrap}' +
       '.furhood-dialog h2{font-size:19px;margin:0}.furhood-dialog nav{margin:12px 0}.furhood-dialog label{display:block;font-size:13px;font-weight:700}' +
       '.furhood-dialog select{display:block;width:100%;min-height:43px;background:#091713;color:white;border:1px solid #81b09b;border-radius:7px;margin:6px 0;padding:5px}' +
       '.furhood-dialog button{background:#284f40;color:#fff;border:1px solid #699c83;border-radius:8px;min-height:43px;padding:9px 12px}' +
       '.furhood-dialog button.selected{background:#416b54}.furhood-dialog button:disabled{opacity:.6}.furhood-help{font-size:12px;line-height:1.45;color:#c2d5c8}' +
-      '.furhood-preview{min-height:200px;display:grid;place-items:center;background:#101915;margin:9px 0;border:1px solid #436857}' +
-      '.furhood-preview canvas{max-width:100%;max-height:280px;image-rendering:pixelated}.furhood-row button{flex:1}.furhood-unlock{margin:8px 0}.furhood-unlock button{width:100%}' +
+      '.furhood-preview{height:260px;min-width:0;max-width:100%;overflow:hidden;display:grid;place-items:center;box-sizing:border-box;background:#101915;margin:9px 0;border:1px solid #436857;border-radius:10px}' +
+      '.furhood-preview img{display:block;width:100%;height:100%;min-width:0;max-width:100%;max-height:100%;object-fit:contain;image-rendering:pixelated}.furhood-preview-message{font-size:12px;color:#c2d5c8;text-align:center;padding:12px}.furhood-row button{flex:1}.furhood-unlock{margin:8px 0}.furhood-unlock button{width:100%}' +
+      '@media(max-width:640px){.furhood-layout{grid-template-columns:minmax(0,1fr)}.furhood-preview{height:clamp(150px,30dvh,230px)}}' +
       '.furhood-dialog [hidden]{display:none!important}.furhood-dialog output{display:block;white-space:pre-wrap;min-height:35px;font-size:12px;color:#c3e4d1;margin-top:7px}';
     overlay.appendChild(style);
     document.body.appendChild(overlay);
@@ -360,7 +370,8 @@
     const isLined = () => kindSelect.value === 'fur_lined_hood';
     const selectedDye = () => dyes.find(dye => dye.id === dyeSelect.value) || null;
     const status = overlay.querySelector('[data-field="status"]');
-    const preview = overlay.querySelector('[data-view="preview"]');
+    const previewImage = overlay.querySelector('[data-view="preview"]'); // Fixed-size contained image of the actual shared clothing renderer output.
+    const previewMessage = overlay.querySelector('[data-view="message"]'); // In-panel empty/loading/error feedback, visible even on mobile.
     const craftButton = overlay.querySelector('[data-action="craft"]'); // Disabled until the selected hide's animal species is learned.
     const unlockButton = overlay.querySelector('[data-action="unlock"]'); // Purchases the selected species node through the existing Mastery API.
     const choices = hideChoices(deps.inventory); // Recomputed after a craft so one-of-a-kind hides cannot be selected twice.
@@ -386,11 +397,12 @@
     };
     const refresh = async () => {
       const choice = chosen(), request = ++revision;
-      const canvas = preview;
-      const ctx = canvas.getContext('2d');
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      previewImage.hidden = true; // An old hood cannot remain onscreen while another hide or dye is rendering.
+      previewImage.removeAttribute('src');
+      previewMessage.hidden = false;
+      previewMessage.textContent = 'Rendering preview…';
       const recipeStatus = unlockStatus(choice); // Recomputed for every selected hide and after a Mote purchase.
-      if (!choice) { status.textContent = 'No saved-genotype hides in Pack. Legacy hides without genotype cannot be used.'; return; }
+      if (!choice) { status.textContent = 'No saved-genotype hides in Pack. Legacy hides without genotype cannot be used.'; previewMessage.textContent = 'Choose a genotype-bearing hide to preview its hood.'; return; }
       const details = choice.furHood;
       const furTrimColorName = trimColorNameFor(choice.record); // Selected full-genotype hide provides exactly one persisted trim color name.
       status.textContent = isLined()
@@ -404,14 +416,19 @@
           furTrimColorName: isLined() ? furTrimColorName : null,
           furHood: isLined() ? null : details, view,
         });
-        if (request !== revision || activePanel !== overlay || !rendered?.canvas) return;
-        canvas.width = rendered.canvas.width;
-        canvas.height = rendered.canvas.height;
-        ctx.imageSmoothingEnabled = false;
-        ctx.drawImage(rendered.canvas, 0, 0);
+        if (request !== revision || activePanel !== overlay) return;
+        if (!rendered?.canvas) { previewMessage.textContent = 'No sprite preview is available for this hood.'; return; }
+        previewImage.src = rendered.canvas.toDataURL('image/png'); // The display image has CSS dimensions independent of the source canvas size.
+        previewImage.alt = (isLined() ? 'Fur-lined hood' : 'Species fur hood') + ' · ' + view + ' view';
+        previewImage.hidden = false;
+        previewMessage.hidden = true;
+        lastError = null;
       } catch (error) {
         lastError = String(error?.message || error);
-        if (request === revision) status.textContent += '\nPreview: ' + lastError;
+        if (request === revision && activePanel === overlay) {
+          status.textContent += '\nPreview: ' + lastError;
+          previewMessage.textContent = 'Preview unavailable; crafting still uses the selected settings.';
+        }
       }
     };
     choices.forEach((choice, index) => {
@@ -424,6 +441,13 @@
     kindSelect.onchange = refresh;
     dyeSelect.onchange = refresh;
     overlay.querySelector('[data-action="close"]').onclick = closePanel;
+    closeKeyHandler = event => { // Keyboard Escape and the ControllerUI fallback both close this modal before gameplay can use the same press.
+      if (event.key !== 'Escape' || activePanel !== overlay) return;
+      event.preventDefault();
+      event.stopImmediatePropagation?.();
+      closePanel();
+    };
+    window.addEventListener('keydown', closeKeyHandler, true);
     overlay.querySelector('[data-action="cloth"]').onclick = () => {
       closePanel();
       window.ClothingWeavingSystem?.openLoom?.(null, options);
@@ -518,7 +542,7 @@
       speciesUnlocks: Object.keys(manifest.species || {}).map(kind => ({ kind, id: speciesUnlockId(kind), unlocked: hasSpeciesUnlock(kind) })), // Copyable on-device evidence of world-specific species progress.
       leatherworkingOpen: !!activePanel?.isConnected,
       lastCraft: copy(lastCraft), lastError,
-      latestChange: 'Leatherworking now crafts dyeable Fur-lined Hoods with base-genotype trim names and no unlock; the original species Fur Hood stays available separately.',
+      latestChange: 'Leatherworking has a contained, responsive clothing-renderer preview; controller Cancel/Menu and keyboard Escape close its dedicated dialog.',
     };
   }
   window.FurHoodLeatherworking = Object.freeze({
