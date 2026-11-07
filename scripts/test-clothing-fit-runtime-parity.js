@@ -404,6 +404,56 @@ async function main() {
   assert(failedE.threeStatus.textContent.includes('simulated runtime load failure'),
     '3D failure is reported visibly on mobile');
 
+
+// Canonical garment previews must call the live portrait renderer, not paint
+// a manual interpretation of hood/hat tint and behind-view replacement rules.
+const eightSource=part(8);
+const canonicalFns=sourceBetween(eightSource,'function canonicalPreviewSlot(', 'async function composeRuntimePortrait()');
+let fittedColor=null,backOption=null;
+const canonicalHarness=new Function('R','E','document','window','garmentRecord','mode',
+  'routedPatchIsBody','warpGarment','warpGridForMode','fittedSourceCanvasForLayer',
+  canonicalFns+'\nreturn {canonicalPreviewGarmentOption,canonicalFittedGarmentPortrait};');
+const fineMeta=[
+  {url:'cosmetics/clothes/hood/tl_finehood-base.png',pos:'front',paletteColorKey:'A'},
+  {url:'cosmetics/clothes/hood/tl_finehood-trim.png',pos:'front',paletteColorKey:'B'}
+];
+const fineOption={id:'fine_hood',slot:'hood',tintSlot:'HOOD',
+  variantLayers:{tletingan_male:fineMeta}};
+const fitLayers=[
+  {name:'head.layers.front',path:['parts','head','layers','front'],canvas:{id:'base'}},
+  {name:'head.layers.front_trim',path:['parts','head','layers','front_trim'],canvas:{id:'trim'}}
+];
+const portraitCalls=[];
+const paintCanvas=()=>({width:0,height:0,naturalWidth:0,naturalHeight:0,getContext(){return{drawImage(){},set globalAlpha(n){}};}});
+const previewR={body:{width:234,height:173},cloth:{_layers:fitLayers},
+  patchWorkflow:{active:false},
+  three:{buildGeneration:19,cosmetics:{optionCache:new Map([['fine_hood',fineOption]])}}};
+const previewE={species:{value:'tletingan'},gender:{value:'male'},sourceSpecies:{value:'tletingan'},sourceGender:{value:'male'},
+  opacity:{value:'1'},showGarment:{checked:true},showAuthored:{checked:false}};
+const renderer={
+  NpcAvatarPreview:{renderProfileToCanvas:async(canvas,profile,opts)=>{
+    portraitCalls.push({canvas,profile,opts});
+    assert.equal(profile.hood.id,'fine_hood','Canonical option is the actual equipped hood');
+    assert.equal(profile.hood.tintSlot,'HOOD','Game's hood dye slot is preserved');
+    assert.deepEqual(profile.hood.variantLayers.tletingan_male.map(l=>l.paletteColorKey),['A','B'],
+      'Game's base and trim dye material roles remain intact');
+    assert(opts.layerImageOverrides.size===2,'Both fitted hood materials enter one render-local image map');
+    if(opts.portraitView==='behind')backOption=profile.hood;
+    fittedColor=opts.layerImageOverrides.get(profile.hood.variantLayers.tletingan_male[0].url);
+  }}
+};
+const canonical=canonicalHarness(previewR,previewE,{createElement:paintCanvas},renderer,
+  ()=>({id:'fine_hood',slot:'hood'}),'fit',()=>false,
+  (source)=>({width:234,height:173,id:source.id}),()=>Array(36).fill({x:0,y:0}),s=>s);
+const made=await canonical.canonicalFittedGarmentPortrait({profile:{bodyColors:{}},front:{width:200},back:{width:200}});
+assert(made.canonicalGarmentPreview,'Canonical renderer replaced the manual headwear painter');
+assert.equal(portraitCalls.length,2,'The game renders both front and back portraits');
+assert.equal(portraitCalls[1].opts.portraitView,'behind','Back view uses the engine behind-view rules');
+assert.strictEqual(made.frontComposed,portraitCalls[0].canvas,'3D uses the canonical front render');
+assert.strictEqual(made.backComposed,portraitCalls[1].canvas,'3D uses the canonical behind render');
+assert(fittedColor.naturalWidth===234&&fittedColor.naturalHeight===173,'Fitted canvas exposes image-compatible dimensions');
+assert(backOption.variantLayers.tletingan_male[0].url.includes('tl_finehood-base.png'),
+  'The original asset path remains recognizable to game behind replacement rules');
   console.log('clothing fit/game portrait, head/body B alignment, retired cloud mask, 2D/3D parity, grid-only and failed-rig cleanup tests passed');
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });

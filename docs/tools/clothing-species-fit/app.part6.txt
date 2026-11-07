@@ -35,10 +35,10 @@
       assetBase:new URL('assets/',docs).href,
       configBase:new URL('config/',docs).href,
     });
-    await Promise.race([
+    R.three.cosmetics=await Promise.race([
       cosmeticsPromise,
       new Promise((_,reject)=>setTimeout(()=>reject(new Error('Timed out loading portrait configuration')),20000))
-    ]);
+    ]); // Retain the exact optionCache parsed by the game for palette, slot, and rear-view rules.
 
     window.applyHobunjiAttachmentRigProfileCorrections?.();
     E.threeStatus.textContent='Hobunji runtime rig loaded.';
