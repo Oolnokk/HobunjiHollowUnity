@@ -389,9 +389,9 @@ const THREE={Group,Mesh,BoxGeometry:Geometry,PlaneGeometry:Geometry,BufferGeomet
 // Native V50 offshoots use a separate snapshot path; the entrance map ceiling does not follow them automatically.
 {
   const roof=NativeV50.buildNativeCeiling(THREE,{floorCells:[[0,0]],rooms:[{col:2,row:2,w:2,h:2}],wallHeight:3},
-    {originX:30,originZ:40,cs:1},16,new Material());
+    {originX:30,originZ:40,cs:1},16,new Material(),[[35,41]]);
   assert(roof?.geometry?.attributes?.position?.array?.length>0,'native V50 offshoot creates a real roof mesh');
-  assert.equal(roof.userData.ceilingCells,5,'the native roof spans both passage and room footprint, including missing floor tiles');
+  assert.equal(roof.userData.ceilingCells,6,'native roof spans the room footprint and the standalone shaft connector tiles');
   assert(roof.geometry.attributes.normal.array.every((n,i)=>i%3!==1||n===-1),'native V50 roof faces downward');
   const roofHeights=roof.geometry.attributes.position.array.filter((_,i)=>i%3===1);
   assert(roofHeights.every(y=>y===19),'native roof is aligned to that story and the source V50 wall-top');
