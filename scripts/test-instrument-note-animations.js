@@ -27,6 +27,13 @@ for (const [key, action] of Object.entries({flutePlayNote,kurrayaPlayNote})) {
 }
 assert.equal(flutePlayNote.headRelative, true, 'flute remains mouth anchored');
 assert.equal(kurrayaPlayNote.headRelative, false, 'Kurraya stays in its normal held-tool space');
+assert.equal(kurrayaPlayNote.poses.neutral.x,0.27,'supplied Kurraya Neutral X must survive');
+assert.equal(kurrayaPlayNote.poses.neutral.y,0.08,'supplied Kurraya Neutral Y must survive');
+assert.equal(kurrayaPlayNote.poses.neutral.z,0.02,'supplied Kurraya Neutral Z must survive');
+assert.equal(kurrayaPlayNote.poses.neutral.shoulderAim.grip,true);
+assert.equal(JSON.stringify(kurrayaPlayNote.poses.neutral.elbows.right),JSON.stringify({x:-0.08,y:-0.2,z:0.085}));
+assert.equal(kurrayaPlayNote.poses.neutral.offhandIdle.enabled,false);
+assert.equal(kurrayaPlayNote.gripMode,'palm-parallel');
 
 const clock = { ms: 0 }; // Deterministic sounded-note frame clock for the sampled game animation.
 const window = { HeldActionAnimations: {flutePlayNote,kurrayaPlayNote} }; // Runtime receives exactly the authored values.
@@ -44,7 +51,8 @@ const group = {
 api.triggerTwitch(twitch, group);
 clock.ms = kurrayaPlayNote.durationS * 1000 * kurrayaPlayNote.strikeFrac;
 api.updateTwitch(twitch, group);
-assert(group.position.x > 0.1, 'Kurraya note visibly plucks, rather than remaining idle');
+assert(Math.abs(group.position.x - (0.1 + kurrayaPlayNote.poses.strike.x - kurrayaPlayNote.poses.neutral.x)) < 1e-9,
+  'Kurraya note samples the newly authored Neutral→Strike delta, rather than the old uncalibrated rest');
 assert(group.rotation.z > -1.25, 'authored Kurraya roll affects its held assembly');
 api.triggerTwitch(twitch, group);
 assert.equal(group.position.x, 0.1, 'rapid retriggers restore its held position before starting a new note');
@@ -183,4 +191,72 @@ fluteActive=false; // Closing the music session returns the hands to the standar
 assert.equal(handBridge.currentToolKey(local),'hatchet','normal weapon grip must return after the flute session closes');
 assert.equal(handBridge.currentGripContext(local),'melee','ordinary grip context must return after the flute session closes');
 
-console.log('Flute and Kurraya note animations: authored flute grip/pose, strike-only body sink and regression checks passed');
+
+// Integration tests for the optional custom 3D virtual Z and the detachable plucking hand.
+// Instantiate the real grip module with a no-op frame scheduler (there is no browser DOM here).
+const gripWindow = { RuntimeFrameScheduler: {register:()=>{}}, location:{pathname:'/game'} };
+vm.runInNewContext(grips,{window:gripWindow,document:{getElementById:()=>null}});
+const gripsApi=gripWindow.HobunjiHandToolGrips;
+assert(gripsApi?.customGripAxisForTool && gripsApi?.sampleFreeRightHand,'real runtime must export both custom-axis and independent-hand samplers');
+assert.equal(gripsApi.defaultData.tools.kurraya.customGripAxis.enabled,false,'Kurraya axis is opt-in until Nut and Bridge have been measured');
+const length=Math.sqrt(0.32); // Distance from (0.1,0.2,0) Nut to (0.5,0.6,0) Bridge in tool units.
+gripsApi.mutate(data=>{
+  const k=data.tools.kurraya; // This is the actual game-editor shared grip profile, not a second fixture.
+  k.customGripAxis={enabled:true,start:{x:0.1,y:0.2,z:0},end:{x:0.5,y:0.6,z:0}};
+  k.primaryGripSpan={enabled:true,startZ:0,endZ:length};
+  k.secondaryGripSpan={enabled:true,startZ:0,endZ:length};
+});
+const activeGrip={animationGripState:{influence:1,primaryPercent:50,percent:100}};
+const primary=gripsApi.primaryGripForTool('kurraya','melee',activeGrip);
+const secondary=gripsApi.secondaryGripForTool('kurraya','melee',activeGrip);
+for (const [actual,expected] of [['x',0.3],['y',0.4],['z',0]].map(([key,value])=>[primary.position[key],value]))
+  assert(Math.abs(actual-expected)<1e-8,'primary hand must lie halfway along tilted 3D axis');
+for (const key of ['x','y','z'])
+  assert(Math.abs(secondary.position[key] - ({x:0.5,y:0.6,z:0})[key])<1e-8,'offhand must reach the bridge endpoint in 3D');
+gripsApi.mutate(data=>{ data.tools.kurraya.customGripAxis.enabled=false; });
+assert.equal(gripsApi.primaryGripForTool('kurraya','melee',activeGrip).position.x,0,'unchecked axis falls back to legacy Z-only coordinates');
+gripsApi.mutate(data=>{data.tools.kurraya.customGripAxis={enabled:true,start:{x:0,y:0,z:0},end:{x:0,y:0,z:0}};});
+assert.equal(gripsApi.customGripAxisForTool('kurraya').enabled,false,'degenerate 3D axes must fail safely without NaNs');
+
+const freePhases={
+  neutral:{rightHand:{enabled:false,x:0,y:0,z:0}},
+  windup:{rightHand:{enabled:true,x:0.2,y:0.3,z:0.1,pitch:12}},
+  strike:{rightHand:{enabled:true,x:0.4,y:0.2,z:0.3,pitch:24}},
+};
+const freeStart=gripsApi.sampleFreeRightHand(freePhases,kurrayaPlayNote,0);
+const freeWindup=gripsApi.sampleFreeRightHand(freePhases,kurrayaPlayNote,kurrayaPlayNote.windupFrac);
+const freeStrike=gripsApi.sampleFreeRightHand(freePhases,kurrayaPlayNote,kurrayaPlayNote.strikeFrac);
+assert.equal(freeStart.influence,0,'hand starts on instrument before detaching');
+assert.equal(freeWindup.influence,1);
+assert.equal(freeWindup.y,0.3);
+assert.equal(freeStrike.x,0.4);
+assert.equal(freeStrike.pitch,24);
+assert.equal(gripsApi.sampleFreeRightHand({neutral:{},windup:{},strike:{}},kurrayaPlayNote,0.4),null,'old attacks must preserve bound-hand behavior');
+
+window.HobunjiHandToolGrips=gripsApi;
+api.beginPlayerKurraya();
+assert.equal(api.playPlayerKurrayaNote(),true,'sounded player note starts the free-hand clock');
+const noteParent={visible:true}; // The real group's immediate held holder is returned as the grip frame.
+const playerAssembly={userData:{kurrayaAssembly:true},position:{x:0,y:0,z:0},rotation:{x:0,y:0,z:0},parent:noteParent};
+api.triggerTwitch(api.newTwitchState(),playerAssembly);
+assert.equal(api.playerKurrayaHandTarget().holder,noteParent,'player hand follows the actual Kurraya holder');
+assert.equal(api.kurrayaHandDiagnostics().noteCount,1);
+const savedFreePhases=kurrayaPlayNote.poses;
+kurrayaPlayNote.poses=freePhases;
+clock.ms += 30;
+assert(api.playerRightHandPose().influence>0,'a genuine note must interpolate the free hand');
+kurrayaPlayNote.poses=savedFreePhases;
+api.endPlayerKurraya();
+assert.equal(api.playerRightHandPose(),null,'closing player music releases the free hand');
+assert.equal(api.playerKurrayaHandTarget(),null,'closing player music releases the captured holder');
+assert.equal(api.playPlayerKurrayaNote(),false,'no player hand notes outside a session');
+
+assert(editor.includes('handCustomGripAxisPickStart'),'editor exposes moveable Nut marker');
+assert(editor.includes('handCustomGripAxisPickEnd'),'editor exposes moveable Bridge marker');
+assert(editor.includes('poseFreeRightHandEnabled'),'editor offers a per-pose free-right-hand switch');
+assert(editor.includes("setGizmoMode('translate', 'rightHand')"),'free hand can be dragged in avatar space');
+assert(editor.includes("setGizmoMode('rotate', 'rightHand')"),'free hand can be rotated in avatar space');
+assert(music.includes('playPlayerKurrayaNote?.()'),'game relays sounded notes to the free hand');
+assert(handDriver.includes('freeRightHandFor(record, toolKey)'),'live procedural hand driver consumes independent hand poses');
+
+console.log('Flute/Kurraya authored poses, 3D grip axis, right-hand mode, note routing and body sink passed');
