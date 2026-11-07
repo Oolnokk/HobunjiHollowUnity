@@ -2367,7 +2367,7 @@
   watchNamespace('NpcScheduling', installScheduling);
   window.PorakanekiCamps = createTribeCamps({
     id: 'porakaneki', label: 'Porakaneki', speciesId: 'porakaneki', chiefNpcId: 'porakaneki_chief',
-    configUrl: 'config/porakaneki-camp.json',
+    configUrl: 'config/porakaneki-camp.json?v=20261107nearbySocial2',
     smallLocaleUrl: 'config/locales/locale_porakaneki_camp_small.json',
     chiefLocaleUrl: 'config/locales/locale_porakaneki_camp_chief.json',
     tentPieceUrl: 'config/pieces/porakaneki-hunting-tent.json',
