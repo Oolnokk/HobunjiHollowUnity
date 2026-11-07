@@ -234,7 +234,7 @@
       if(!RuinReachingObelisks?.mount)throw new Error('Selected Reaching Obelisks module is not loaded.');
       obeliskRuntime=RuinReachingObelisks.mount(placed.obelisks,{
         scope:'shaft-obelisks',THREE,parent:rec.scene,DynamicSurfaces:DS,ClimbSurfaces,
-        tradition:ruin.theme,getPlayerPosition,getPlayerY,projectileBus:root.DevRandomRuinSimplePuzzles,onStateChange,
+        tradition:ruin.theme,getPlayerPosition,getPlayerY,onStateChange,
       });
     }
     ruin.shaftObeliskRuntime=obeliskRuntime; // Height-aware fall, switch updates and mobile badge all reuse this one runtime.
