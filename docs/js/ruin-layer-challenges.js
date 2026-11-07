@@ -405,7 +405,13 @@
     if(options.authoredCliffDoor && kind==='timedMelody'){
       const notes=rec.song.notes.map(note=>note.index); // Exact eight-key Scratchbone pitch indices, independent of note duration.
       const side=(melodyFor(id)[0]&1)?-1:1; // Stable side selection: clues don't teleport when the cave reloads.
-      const scoreFace={x:cx+side*3.45,y:y+1.95,z:caveGateZ+.11,yaw:Math.PI,vertical:true,fallback:false}; // Visible from the pressure plate on a permanent carved jamb, not the rising slab.
+      const scoreFace={x:cx+side*3.45,y:y+1.95,z:caveGateZ+.11,yaw:Math.PI,vertical:true,fallback:false}; // Stable carved flank, never the moving slab.
+      if(THREE.Raycaster&&rec.rockSurround?.raycast){
+        const ray=new THREE.Raycaster(new THREE.Vector3(scoreFace.x,scoreFace.y,cz-1.6),
+          new THREE.Vector3(0,0,1),0,10); // One-time snap to the sculpted rock face, not a per-frame performance raycast.
+        const face=ray.intersectObject(rec.rockSurround,false)[0];
+        if(face?.point&&Number.isFinite(face.point.z))scoreFace.z=face.point.z-.025; // Attach ink to the actual surface, avoiding a floating decal.
+      }
       rec.inscription=root.RuinMelodyGlyphDecal?.create?.({
         root:group,plate:{x:cx,y,z:cz-1.6},notes,seed:melodyFor(id)[1],
         surfaces:[scoreFace],sampleSupport:()=>({y}),
