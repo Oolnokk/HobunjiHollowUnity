@@ -121,6 +121,7 @@ const CONTROL_SCHEMA = [
   {group:'Terrain',key:'stepCurve',label:'Step curve',type:'select',values:['northernCliffs','greatIncline']},{group:'Terrain',key:'boundaryMode',label:'Boundary mode',type:'select',values:['legacyFullRing','followMapHeight','entrySideDistantLandscape']},
   {group:'Terrain',key:'boundaryCliffBoost',label:'Boundary cliff boost',min:-8,max:20,step:1},{group:'Terrain',key:'plateaus',label:'Plateau attempts',min:0,max:180,step:1},{group:'Terrain',key:'maxTier',label:'Max tier',min:1,max:32,step:1},
   {group:'Terrain',key:'lowProfilePlateaus',label:'Low-profile plateaus',type:'checkbox'},{group:'Terrain',key:'plateauAreaMul',label:'Plateau area multiplier',min:.25,max:3.5,step:.05},
+  {group:'Terrain',key:'plateauSteepness',label:'Cliff plateau steepness',min:1,max:3,step:.05}, // Live cliff biome multiplier; exact-zone recipes populate this control.
   {group:'Terrain',key:'ramps',label:'Ramp attempts',min:0,max:50,step:1},{group:'Terrain',key:'wideRamps',label:'Wide ramps',type:'checkbox'},{group:'Terrain',key:'rampMinDiff',label:'Ramp minimum tier diff',min:1,max:8,step:1},{group:'Terrain',key:'rampMaxAngle',label:'Ramp max angle',min:5,max:85,step:1},{group:'Terrain',key:'entryGateWidthMul',label:'Entry gate width',min:.2,max:3,step:.05},
   {group:'Islands',key:'archipelagoEnabled',label:'Generate archipelago',type:'checkbox'},
   {group:'Islands',key:'islandCount',label:'Major island count',min:2,max:32,step:1},
