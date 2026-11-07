@@ -27,6 +27,7 @@
   let RANGE_SCALE = 0.6;
   let LUNGE_SCALE = 1.5;
 
+  const FINISHER_MASTERY_SCALE = 0.5; // Scales only the qualified third hit's scroll/mastery bonuses against the equivalent Quick Attack bonuses.
   const SPECIAL_FINISHER_DAMAGE_MULTIPLIER = 1.5; // A qualified third hit is visibly stronger, even before unlocked mastery bonuses.
   // Populated by attack-values.json through applyComboConfig below. Keeping
   // the fallback empty means an unavailable config produces no override and
@@ -166,7 +167,7 @@
       const isFinisher = comboStep === steps.length - 1; // Used for explicit power-hit vulnerability consumption and its conditional huge impact cue.
       const qualifiedTargets = isFinisher ? new Set([...firstHits].filter(target => secondHits.has(target) && target.health > 0 && target.areaId === deps.getCurrentArea())) : new Set(); // Dead/area-transferred enemies cannot empower a new finisher.
       const finisherEffects = qualifiedTargets.size ? window.CombatProgression?.getEffects(weaponKey, id + 'Finisher', { includePerks: false }) : null; // Scroll-unlocked Quick Attack payload; inert without a connected chain.
-      const finisherStats = finisherEffects?.stats || {}; // Only non-damage geometry/cost choices apply to the whole qualified swing.
+      const finisherStats = Object.fromEntries(Object.entries(finisherEffects?.stats || {}).map(([stat, value]) => [stat, value * FINISHER_MASTERY_SCALE])); // Halve finisher-only stat bonuses, including damage, reach, lunge and cost.
       const configuredPitch = SFX_PITCH_BY_STEP[comboStep];
       const sfxPitch = Number.isFinite(configuredPitch) && configuredPitch > 0 ? configuredPitch : undefined;
       comboIndex = (comboIndex + 1) % steps.length;
@@ -270,7 +271,8 @@
           const ordinaryHitTargets = new Set(); // Used after the ordinary hit loop so Living Gust can affect only the widened peripheral cone without duplicating normal damage.
           const landedTargets = new Set(); // Used to advance ONLY actually connected hits, not geometric overlaps during an iframe dodge.
           let specialProcs = 0; // Per-strike count for sound feedback and mobile diagnostics.
-          const bonusPower = Math.max(0, Number(window.Combat.quickAttackData?.BONUS_EFFECT_POWER_MULTIPLIER) || 2); // Share Quick Attack bonus strength, including authored tuning.
+          const quickBonusPower = Number(window.Combat.quickAttackData?.BONUS_EFFECT_POWER_MULTIPLIER); // The same configurable bonus multiplier that Quick Attacks use; zero remains a valid tuning value.
+          const bonusPower = (Number.isFinite(quickBonusPower) ? Math.max(0, quickBonusPower) : 2) * FINISHER_MASTERY_SCALE; // Qualified finisher afflictions, debuffs and instant effects get half of Quick Attack strength.
           for (const c of deps.hostileObjects) {
             if (c.health <= 0 || c.areaId !== deps.getCurrentArea()) continue;
             const specialProc = isFinisher && qualifiedTargets.has(c); // Third hit must reconnect with the same enemy that took both openers.
@@ -313,7 +315,7 @@
             });
             if (specialProc && c.health > 0) for (const debuff of finisherEffects?.quickBonusDebuffs || []) {
               window.ResourceSystem?.applyTimedDebuff?.(c, debuff.id, debuff.durationS, {
-                power: (Number(debuff.power) || 1) * (debuff.id === 'knockdown' ? 1 : bonusPower) * pronePower,
+                power: (Number.isFinite(Number(debuff.power)) ? Number(debuff.power) : 1) * (debuff.id === 'knockdown' ? FINISHER_MASTERY_SCALE : bonusPower) * pronePower, // Knockdown scales duration via power, rather than using the regular debuff severity multiplier.
                 fromX: deps.player.x, fromY: deps.player.y,
                 source: 'Combo: Special Finisher',
               }); // Reuse existing timed-debuff stacking, including additive Knockdown durations.
@@ -330,7 +332,7 @@
             });
             const impactSize = specialProc || (isFinisher && vulnerabilityBefore > 0) ? 'huge' : ['small', 'medium', 'large'][comboStep]; // A finisher escalates only when it actually had vulnerability available to consume.
             deps.playWeaponHitSfx?.(dmgType, c.x, c.y, c.areaId, sfxPitch, impactSize);
-            if (specialProc) { specialProcs++; window.AudioSystem?.playQuickAttackBonusSfx?.(c.x, c.y, c.areaId); } // Distinct impact cue for earned specials.
+            if (specialProc) { specialProcs++; window.AudioSystem?.playComboFinisherBonusSfx?.(c.x, c.y, c.areaId); } // Only qualified third hits receive the faster, double anime-slash cue.
             hits++;
             lastName = c.def.label;
           }
