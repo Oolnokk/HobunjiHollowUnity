@@ -59,6 +59,20 @@
   const document = { currentScript:{src:'https://example.test/docs/js/fur-hood-leatherworking.js'} };
   const source = read('docs/js/fur-hood-leatherworking.js');
   assert.match(source, /config\/patterns\/fur-hoods\.json\?v=[A-Za-z0-9_-]+/, 'fur-hood runtime must request a versioned animal sprite manifest');
+
+  // UI regressions: keep the large composited sprite inside the dedicated preview card
+  // and make both configured controller Menu/Cancel actions close the same dialog.
+  const controllerUi = read('docs/js/controller-ui-nav.js'); // Establishes the existing remappable semantic menu actions used by Leatherworking.
+  assert(source.includes("overlay.setAttribute?.('data-ctrl-panel', '')"), 'leatherworking must register with the universal controller menu navigator');
+  assert(source.includes('data-action="close" data-ctrl-cancel'), 'controller Cancel/Menu must click the Leatherworking close button');
+  assert(source.includes('furhood-preview-card') && source.includes('furhood-layout'), 'leatherworking must have its own preview layout');
+  assert(source.includes('object-fit:contain') && source.includes('overflow:hidden'), 'hood artwork must stay contained on wide and mobile screens');
+  assert(source.includes("previewImage.src = rendered.canvas.toDataURL('image/png')"), 'preview must reuse the canonical rendered clothing layers');
+  assert(!source.includes('<canvas data-view="preview"'), 'raw unbounded canvas must not be displayed directly in the modal');
+  assert(source.includes("window.addEventListener('keydown', closeKeyHandler, true)") && source.includes("window.removeEventListener('keydown', closeKeyHandler, true)"), 'Escape listener must be scoped to the open dialog');
+  assert(controllerUi.includes('if (actionPressed(UI_ACTIONS.cancel, cancelDown)) cancel();'), 'controller Cancel must route to the active menu cancel button');
+  assert(controllerUi.includes('if (actionPressed(UI_ACTIONS.open, openDown)) cancel();'), 'controller Menu must route to the active menu cancel button');
+
   vm.runInNewContext(source, {window,document,URL,fetch: async()=>({ok:true,json:async()=>painted})});
   async function main() {
     await window.FurHoodLeatherworking.ensureManifest();
