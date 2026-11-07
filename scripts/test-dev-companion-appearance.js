@@ -108,10 +108,21 @@ assert(panel, 'inspector registers through the existing companion panel API');
   assert.notEqual(playerMesh.material, originalMaterial, 'material is cloned');
   assert.equal(playerMesh.material.opacity, .75);
   assert.equal(originalMaterial.color.value, '#999999', 'shared original material is unchanged');
+  playerData.appearance.bodyColors.B = { hex: '#445566' }; // Simulate another system updating a different body-color channel.
   assert.equal((await panel.onAction('reset')).ok, true);
   assert.equal(playerMesh.material, originalMaterial);
   assert.equal(playerMesh.scale.x, 1);
   assert.equal(playerData.appearance.bodyColors.A.hex, '#aa1100');
+  assert.equal(playerData.appearance.bodyColors.B.hex, '#445566', 'reset preserves unedited body-color channels');
+
+  assert.equal((await panel.onAction('tint', { value: '#00aa00' })).ok, true);
+  const externalMaterial = makeMaterial('#123123'); // Simulate a normal runtime material swap after the filter was applied.
+  playerMesh.material = externalMaterial;
+  assert.equal((await panel.onAction('opacity', { value: 60 })).ok, true);
+  assert.notEqual(playerMesh.material, externalMaterial, 'filter clones a newly swapped material instead of mutating it');
+  assert.equal(externalMaterial.color.value, '#123123', 'external shared material remains pristine');
+  await panel.onAction('reset');
+  assert.equal(playerMesh.material, externalMaterial, 'reset preserves the runtime material swap');
 
   assert(panel.render().actions.some(a => a.id === 'cloth-color:hood:colorA' && a.input.type === 'color'));
   assert(panel.render().actions.some(a => a.id === 'cloth-pattern:hood:cloth:0:meshScale'));
@@ -124,7 +135,11 @@ assert(panel, 'inspector registers through the existing companion panel API');
   assert.equal((await panel.onAction('cloth-pattern:hood:cloth:0:meshScale', { value: -10 })).ok, false);
   assert.equal(playerHood.weight, 500, 'appearance tuning does not change garment weight');
   assert.equal(playerHood.defense, 20, 'appearance tuning does not change garment defense');
+  playerData.appearance.bodyColors.A = { hex: '#543210' }; // Real gameplay change since the clothing-only snapshot.
+  playerMesh.scale.y = 1.25; // External movement/height system should not be reverted by the clothing editor.
   await panel.onAction('reset');
+  assert.equal(playerData.appearance.bodyColors.A.hex, '#543210', 'clothing reset does not reset unrelated character colors');
+  assert.equal(playerMesh.scale.y, 1.25, 'clothing reset does not reset unrelated body scale');
   assert.equal(playerHood.colorA.hex, '#123456', 'original garment dye restored');
   assert.equal(playerHood.weaving.layers.cloth.patterns[0].meshScale, 1, 'original weaving restored');
   assert.equal(playerHood.weaving.trim.enabled, true, 'original trim restored');
@@ -135,10 +150,12 @@ assert(panel, 'inspector registers through the existing companion panel API');
   assert.equal((await panel.onAction('cloth-color:torso:colorA', { value: '#bb3333' })).ok, true);
   assert.equal(npcPreview.get('torso').colorA.hex, '#bb3333');
   assert.equal(npcOutfit.colorA.hex, '#44aa44', 'NPC preview does not modify authored outfit');
+  walker.rec.appearance.bodyColors.B = { hex: '#222222' }; // Unrelated NPC complexion edit must survive garment reset.
   assert.equal((await panel.onAction('cloth-pattern:torso:__legacy:0:usageOffsetY', { value: 24 })).ok, true);
   assert.equal(npcPreview.get('torso').weaving.pattern.usageOffsetY, 24);
   await panel.onAction('reset');
   assert.equal(npcPreview.size, 0, 'reset clears NPC clothing preview');
+  assert.equal(walker.rec.appearance.bodyColors.B.hex, '#222222', 'NPC clothing reset preserves unrelated appearance');
   assert.equal((await panel.onAction('color:A', { value: '#abcdef' })).ok, true);
   assert.equal(walker.rec.appearance.bodyColors.A.hex, '#abcdef');
   assert(calls.npc >= 1);
