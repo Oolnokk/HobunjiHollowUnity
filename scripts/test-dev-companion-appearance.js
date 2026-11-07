@@ -30,12 +30,15 @@ function mesh(name, x, z) {
 const playerMesh = mesh('Player', 0, 0);
 const npcMesh = mesh('Jubmir', 1, 0);
 const animalMesh = mesh('dabinggi', 2, 0);
+const animalFront = { name: 'dabinggi_front_plane', material: { map: { id: 'old-front' } } };
+const animalBack = { name: 'dabinggi_back_plane', material: { map: { id: 'old-back' } } };
+animalMesh.children = [animalFront, animalBack]; // Actual animal avatars expose two sprite planes, not a humanoid userData.frontTexture.
 const propMesh = mesh('Lantern', 3, 0);
 const farMesh = mesh('Far decoration', 30, 0);
 const playerData = { appearance: { bodyColors: { A: { hex: '#aa1100' } } } };
 const walker = { area: 'farm', root: npcMesh, profile: { bodyColors: { A: { hex: '#11aa00' } } },
   rec: { id: 'jubmir', name: 'Jubmir', appearance: { bodyColors: { A: { hex: '#11aa00' } } } } };
-const creature = { areaId: 'farm', creatureKey: 'dabinggi', avatarRef: { group: animalMesh },
+const creature = { areaId: 'farm', creatureKey: 'dabinggi', avatarRef: { group: animalMesh, frontPlane: animalFront, backPlane: animalBack },
   genotype: { base: { color: '#ffff00' } }, visualScaleX: 1, visualScaleY: 1, visualScaleZ: 1 };
 const calls = { player: 0, npc: 0, creature: 0, upload: 0 };
 const playerHood = {
@@ -70,8 +73,17 @@ const window = {
     getDevClothingVisual: (_id, slot) => npcPreview.get(slot) || null,
     clearDevClothingVisual: (_id, slot = null) => slot ? npcPreview.delete(slot) : (npcPreview.clear(), true),
   },
-  CreatureGeneticsRender: { composeFrame: async () => { calls.creature++; return {}; } },
-  PNGPlaneAvatar: { refreshSinglePlaneAvatarModel: () => { calls.upload++; return true; } },
+  CreatureGeneticsRender: { SPECIES: { dabinggi: {} } },
+  FarmAnimals: { refreshGenotypeAvatar: async (avatarRef, kind, genotype) => {
+    assert.equal(avatarRef, creature.avatarRef, 'inspector passes the authoritative animal avatar, not just its root');
+    assert.equal(kind, 'dabinggi');
+    assert.equal(genotype, creature.genotype);
+    calls.creature++;
+    avatarRef.frontPlane.material.map = { id: 'fresh-front' };
+    avatarRef.backPlane.material.map = { id: 'fresh-back' };
+    return true;
+  } },
+  PNGPlaneAvatar: { refreshSinglePlaneAvatarModel: () => { calls.upload++; return true; } }, // Humanoid texture uploader must never run on animals.
 };
 
 vm.runInNewContext(fs.readFileSync('docs/js/dev-companion-appearance.js', 'utf8'), { window, THREE, console });
@@ -146,7 +158,9 @@ assert(panel, 'inspector registers through the existing companion panel API');
   assert.equal((await panel.onAction('coat', { value: '#654321' })).ok, true);
   assert.equal(creature.genotype.base.color, '#654321');
   assert.equal(calls.creature, 1);
-  assert.equal(calls.upload, 1);
+  assert.equal(calls.upload, 0, 'animal refresh never calls the humanoid texture uploader');
+  assert.equal(animalFront.material.map.id, 'fresh-front');
+  assert.equal(animalBack.material.map.id, 'fresh-back');
   assert.equal((await panel.onAction('opacity', { value: 120 })).ok, false, 'invalid values yield a companion error');
   await panel.onAction('reset');
   assert.equal(creature.genotype.base.color, '#ffff00');
