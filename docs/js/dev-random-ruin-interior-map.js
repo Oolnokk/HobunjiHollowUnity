@@ -1586,7 +1586,12 @@
   function shaftAt(x,z,referenceY=0){
     // Reuse the pure tested selector instead of duplicating 3D wing overlap
     // logic in this 2D interior adapter. The shaft retains precedence at ports.
-    return window.RuinLayerPlayable?.selectGrid?.(ruin?.shaftGrids,x,z,referenceY)||null;
+    const grid=window.RuinLayerPlayable?.selectGrid?.(ruin?.shaftGrids,x,z,referenceY)||null;
+    // A wing whose floor is more than a level above the actor is overhead, not underfoot. Treating it as the
+    // collision owner makes every cell below its bedrock read as solid: an invisible tile-sized wall that
+    // snaps the player back to spawn.
+    if(grid&&Number.isFinite(Number(referenceY))&&grid.yToLevel(Number(referenceY)+1e-5)<-1)return null;
+    return grid;
   }
 
   function shaftActorFloor(actor,x,z,maxDrop=1){
