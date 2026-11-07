@@ -99,10 +99,10 @@
     '<label>Back fine Z<input id="carryPortraitZ" type="number" step="0.01"></label>',
     '</div></div>',
     '<div class="section"><h2>Held avatar preview</h2>',
-    '<label class="row"><input type="checkbox" id="carryShowAvatar" checked> Show Mao’ao avatar holding this object</label>',
+    '<label class="row"><input type="checkbox" id="carryShowAvatar" checked> Show Mao’ao avatar automatically in Carryable mode</label>',
     '<button type="button" id="carryFrameHoldingPose">Frame holding pose</button>',
     '<p class="muted tight">The purple posterior is calculated from the exact avatar model and shared character rig rule; the cyan attachment point is offset from it. Real hands use the combat handFromTool GLB calibration, with editable individual grip rotations.</p>',
-    '<div class="pill" id="carryAvatarStatus">Avatar loads when Carryable mode opens.</div></div>',
+    '<div class="pill" id="carryAvatarStatus">An avatar preview appears automatically when Carryable mode opens.</div></div>',
     '<p class="muted">Use the viewport translate / rotate gizmos or edit numeric values. Avatar preview is editor-only; exported JSON retains the invisible billboard anchor and both hand targets.</p>',
     '<div id="carrySummary" class="pill"></div>',
     '</section>'
@@ -120,6 +120,7 @@
   heldPreview.name='carry_avatar_preview_only';
   heldPreview.visible=false;helperRoot.add(heldPreview);
   let previewEnabled=true,previewStarted=false,previewActor=null,previewHands=null,modelW=.9,modelH=.9;
+  let previewPortraitModel=null,previewSource='not-started'; // Replaces the immediate placeholder with loaded portrait art; mobile diagnostics report which is visible.
   let previewPosterior=new THREE.Vector3(0,.42,0),posteriorMarker=null,attachmentMarker=null,attachmentLine=null;
   const handLocalEuler=new THREE.Euler(0,0,0,'XYZ'),handLocalQuat=new THREE.Quaternion();
   const handInverse=new THREE.Quaternion(),handAbsolute=new THREE.Quaternion(),avatarScaleScratch=new THREE.Vector3();
@@ -184,34 +185,31 @@
     camera.position.copy(center).add(new THREE.Vector3(radius*1.2,radius*.75,radius*2.1));
     camera.lookAt(center);camera.updateProjectionMatrix();orbit?.update();
   }
-  async function startPreview(){
-    if(previewStarted||!previewEnabled)return;
-    previewStarted=true;status('Loading Mao’ao avatar and hand models…');
-    try{
-      const portrait=await renderSeatPortrait('mao-ao','male');
-      const width=Number(effectiveAvatarConfig().worldModelWidth)||.9;
-      const options={backCanvas:portrait.back,profile:portrait.profile,
-        speciesId:'mao-ao',gender:'male',appearance:{speciesId:'mao-ao',species:'mao-ao',gender:'male'},
-        npcRecord:{species:'mao-ao',gender:'male'},name:'carry_preview_maoao',
-        modelWidth:width,modelHeight:width};
-      const model=window.PNGPlaneAvatar?.buildSinglePlaneAvatarModel
-        ?window.PNGPlaneAvatar.buildSinglePlaneAvatarModel(THREE,portrait.front,options)
-        :buildFallbackSeatedAvatarModel(portrait,options,'mao-ao','male');
-      modelH=Math.max(.01,Number(model.userData?.portraitModelHeight)||width);
-      modelW=Math.max(.01,Number(model.userData?.portraitModelWidth)||width);
-      const actor=new THREE.Group();
+  function installPreviewPortrait(portrait,placeholder=false){
+    const width=Number(effectiveAvatarConfig().worldModelWidth)||.9;
+    const options={backCanvas:portrait.back,profile:portrait.profile,
+      speciesId:'mao-ao',gender:'male',appearance:{speciesId:'mao-ao',species:'mao-ao',gender:'male'},
+      npcRecord:{species:'mao-ao',gender:'male'},name:'carry_preview_maoao',
+      modelWidth:width,modelHeight:width};
+    let model;
+    if(placeholder)model=buildFallbackSeatedAvatarModel(portrait,options,'mao-ao','male');
+    else{
+      try{
+        model=window.PNGPlaneAvatar?.buildSinglePlaneAvatarModel
+          ?window.PNGPlaneAvatar.buildSinglePlaneAvatarModel(THREE,portrait.front,options)
+          :buildFallbackSeatedAvatarModel(portrait,options,'mao-ao','male');
+      }catch(error){
+        log('Carry avatar runtime model unavailable; using rendered portrait plane. '+(error?.message||error),'warn');
+        model=buildFallbackSeatedAvatarModel(portrait,options,'mao-ao','male');
+      }
+    }
+    if(!model)throw new Error('Carry preview avatar model could not be constructed');
+    const nextHeight=Math.max(.01,Number(model.userData?.portraitModelHeight)||width);
+    const nextWidth=Math.max(.01,Number(model.userData?.portraitModelWidth)||width);
+    if(!previewActor){
+      const actor=new THREE.Group(); // Stable preview transform owns the visible avatar and reference markers.
       actor.name='carry_preview_actor';
-      model.position.y=modelH/2;actor.add(model);heldPreview.add(actor);previewActor=actor;
-      const profile=window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters?.['mao-ao::male']||{};
-      const fromModel=posteriorAnchorForModel(model,'mao-ao','male').position;
-      const sharedY=window.HOBUNJI_ATTACHMENT_RIG_MATH?.characterPosteriorY?.(
-        profile.posteriorRule,modelH,Number(model.userData?.handAttachY));
-      previewPosterior=new THREE.Vector3(
-        Number(profile.anchors?.posterior?.position?.x)||fromModel.x,
-        Number.isFinite(sharedY)?sharedY:fromModel.y,
-        Number(profile.anchors?.posterior?.position?.z)||fromModel.z);
-      // Explicit THREE markers live on the avatar, so they follow the same
-      // portrait rotation, scale and deadzone as the real rendered character.
+      heldPreview.add(actor);previewActor=actor;
       posteriorMarker=new THREE.Group();posteriorMarker.name='carry_reference_posterior';
       const hipBall=new THREE.Mesh(new THREE.SphereGeometry(.02,12,10),
         new THREE.MeshBasicMaterial({color:0xc788ff,depthTest:false,depthWrite:false}));
@@ -223,15 +221,59 @@
       attachmentLine=new THREE.Line(new THREE.BufferGeometry(),
         new THREE.LineBasicMaterial({color:0x9fe9ef,depthTest:false,depthWrite:false}));
       attachmentLine.renderOrder=90;actor.add(posteriorMarker,attachmentMarker,attachmentLine);
-      previewHands=window.ProceduralHandAttachments?.attach?.(THREE,actor,{
+    }
+    if(previewPortraitModel){ // The async actual portrait replaces the placeholder instead of stacking duplicate avatars.
+      previewActor.remove(previewPortraitModel);
+      disposeObject(previewPortraitModel);
+    }
+    modelH=nextHeight;modelW=nextWidth;
+    model.position.y=modelH/2;
+    previewActor.add(model);previewPortraitModel=model;
+    const profile=window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters?.['mao-ao::male']||{};
+    const fromModel=posteriorAnchorForModel(model,'mao-ao','male').position;
+    const sharedY=window.HOBUNJI_ATTACHMENT_RIG_MATH?.characterPosteriorY?.(
+      profile.posteriorRule,modelH,Number(model.userData?.handAttachY));
+    previewPosterior=new THREE.Vector3(
+      Number(profile.anchors?.posterior?.position?.x)||fromModel.x,
+      Number.isFinite(sharedY)?sharedY:fromModel.y,
+      Number(profile.anchors?.posterior?.position?.z)||fromModel.z);
+    if(!placeholder&&!previewHands){
+      previewHands=window.ProceduralHandAttachments?.attach?.(THREE,previewActor,{
         name:'carry_preview',speciesId:'mao-ao',gender:'male',modelHeight:modelH,
         handAttachY:Number(model.userData?.handAttachY)||modelH*.45,
-        avatarRoot:actor,
+        avatarRoot:previewActor,
         bodyColors:portrait.profile?.appearance?.bodyColors||portrait.profile?.bodyColors
       })||null;
-      syncHoldingPreview();if(previewActive())frameHoldingPreview();
-      if(!previewHands)status('Mao’ao portrait loaded; hand assets unavailable, grip guides remain.');
-    }catch(error){previewStarted=false;status('Avatar unavailable: '+(error?.message||error));log('Carry preview: '+(error?.stack||error),'warn');}
+    }
+    previewSource=placeholder?'placeholder':'runtime-portrait'; // Mobile debug distinguishes instant feedback from completed loading.
+    syncHoldingPreview();
+    if(avatarGroup)avatarGroup.visible=!heldPreview.visible; // Hide the separate Avatar-tab reference when the Carryable preview exists.
+    if(previewActive())frameHoldingPreview();
+  }
+  async function startPreview(){
+    if(previewStarted||!previewEnabled)return;
+    previewStarted=true;
+    try{
+      // Opening the Carryable tab must not wait on async portrait or cosmetic assets.
+      installPreviewPortrait({front:placeholderAvatarCanvas('runtimePortrait'),back:null,profile:null},true);
+      status('Showing Mao’ao reference avatar · loading rendered portrait and hands…');
+    }catch(error){
+      log('Carry preview immediate avatar failed: '+(error?.stack||error),'warn');
+    }
+    try{
+      const portrait=await renderSeatPortrait('mao-ao','male');
+      installPreviewPortrait(portrait);
+      if(!previewHands)status('Mao’ao avatar shown; hand assets unavailable, grip guides remain.');
+    }catch(error){
+      if(previewActor){
+        status('Mao’ao reference avatar shown (portrait assets unavailable).');
+        log('Carry preview kept visible fallback: '+(error?.stack||error),'warn');
+      }else{
+        previewStarted=false;
+        status('Avatar unavailable: '+(error?.message||error));
+        log('Carry preview: '+(error?.stack||error),'warn');
+      }
+    }
   }
   function setHoldingVisibility(){
     heldPreview.visible=previewActive()&&!!previewActor;
@@ -471,7 +513,7 @@
   renderControls();
   window.HobunjiCarryableFurnitureAuthor={
     normalize:normalized,
-    snapshot:()=>({carryable:cloneJson(state.carryable),selected:state.selectedType==='carry'?state.selectedId:null,backPreview:state.selectedId==='back',preview:{visible:heldPreview.visible,ready:!!previewActor,hands:!!previewHands}})
+    snapshot:()=>({carryable:cloneJson(state.carryable),selected:state.selectedType==='carry'?state.selectedId:null,backPreview:state.selectedId==='back',preview:{visible:heldPreview.visible,ready:!!previewActor,hands:!!previewHands,source:previewSource}})
   };
   if(bootStatus)bootStatus.hidden=true; // Hide the pending notice only after the complete Carryable API is ready.
 })();
