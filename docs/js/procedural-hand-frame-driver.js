@@ -295,6 +295,7 @@
   function visualGripBasisDelta(record, toolHolder) {
     const Quaternion = toolHolder.quaternion.constructor;
     const identity = new Quaternion();
+    if (toolHolder.name === 'player_flute_mouth_mount') return { quaternion: identity, source: 'flute-mouth-mount', angleDeg: 0 }; // Never apply a still-equipped sweep weapon's basis correction to the flute's exact ranged grip.
     const plane = findToolVisualPlane(toolHolder);
     if (!plane?.rotation) return { quaternion: identity, source: 'none', angleDeg: 0 };
 
