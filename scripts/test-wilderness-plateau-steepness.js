@@ -4,6 +4,7 @@
 // Regression: adjacent cliff tiers grow without rewriting the shallow biomes.
 const assert = require('node:assert/strict');
 const generator = require('../docs/js/wilderness-map-generator.js');
+const cliffRoutes = require('../docs/js/cliff-route-network.js');
 const BALCONY_GAP_TIERS = 3; // Three 2.5-unit tiers leave room for the balcony cap and embedded base.
 
 const compact = { // Short deterministic generation while preserving the same plateau algorithms as full zones.
@@ -69,5 +70,24 @@ assert.deepEqual(
   'non-cliff Great Basin terrain must not be regraded'
 );
 assert.equal(forestAfter.plateauSteepnessReport, null, 'shallow zone has no cliff-relief pass');
+
+
+// A real route-graph comparison checks that vertical clearance actually unlocks balcony generation,
+// not just that neighboring elevations became numerically larger.
+const syntheticCliff = tier => Array.from({ length: 36 }, () => Array.from({ length: 18 }, (_, col) => ({
+  type: col === 7 ? 'rock' : 'grass',
+  incline: col === 7,
+  elevTier: col > 7 ? tier : 0,
+}))); // Same wide plateau/rock-face footprint for both heights; only its true tier changes.
+const cliffRouteOptions = { // Shared gameplay cliff graph uses 2.5 world units per terrain tier.
+  plateauUnit: 2.5,
+  blocked: tile => !tile || tile.incline || tile.type === 'rock',
+};
+const shortCliff = cliffRoutes.build(syntheticCliff(1), { ...cliffRouteOptions, area: 'short-cliff' }); // Prior one-tier, 2.5-world-unit wall.
+const tallCliff = cliffRoutes.build(syntheticCliff(Math.round(1 * 1.75)), { ...cliffRouteOptions, area: 'tall-cliff' }); // New two-tier, 5-world-unit wall.
+assert.equal(shortCliff.balconies.length, 0, 'short cliffs leave no clearance for a correctly embedded balcony base');
+assert(tallCliff.balconies.length > shortCliff.balconies.length, 'raising the same cliff must actually permit balcony spawns');
+assert(tallCliff.verification.ok, 'new taller cliff routes and balconies remain traversable');
+assert.equal(tallCliff.unconnectedComponents, 0, 'the taller cliff does not strand the upper plateau');
 
 console.log(`PASS plateau steepness: balcony-clearance edges ${before.balconyFriendly} -> ${after.balconyFriendly}, mean tier gap ${before.averageGap.toFixed(2)} -> ${after.averageGap.toFixed(2)}; Great Basin unchanged`);
