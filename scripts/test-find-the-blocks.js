@@ -37,7 +37,7 @@ new vm.Script(source,{filename:'dev-ruin-find-blocks.js'}); // Catch syntax erro
 
 function test(seed,size=24){
   const center=Math.floor(size*.5)+.5,offset=Math.max(4,Math.min(5,Math.floor(size*.29))); // Exercise both generous lab rooms and minimum-sized 18x18 shaft rooms.
-  const fireTargets=[],projectileTargets=[],breakablePillars=[],registeredBlocks=[],surfaces=[],cleared=[],barriers=[]; // Retain the actual authored obstruction centers for a push-route audit.
+  const fireTargets=[],projectileTargets=[],breakablePillars=[],registeredBlocks=[],unregisteredBlocks=[],surfaces=[],cleared=[],barriers=[]; // Retain native registration and cleanup records along with authored obstruction centers.
   const soloGroup=new Object3D(); // Parent scene has the same lifetime as one Puzzle Lab reroll.
   const subpuzzles=[]; // Every nested melody/glyph/rail challenge must be solved and disposed through its real callback seam.
   let solved=0;
@@ -45,6 +45,7 @@ function test(seed,size=24){
     THREE,
     DevRandomRuin:{
       registerLabPushBlock(mesh){registeredBlocks.push(mesh);return true;},
+      unregisterLabPushBlock(mesh){unregisteredBlocks.push(mesh);return true;},
       isSlidingPushBlock(){return false;}
     },
     DevRandomRuinTileOccupancy:{
@@ -213,6 +214,7 @@ function test(seed,size=24){
   room.tick(.05);
   assert.equal(solved,1);
   room.dispose();
+  assert.equal(unregisteredBlocks.length,4,'Every movable block unregisters from the native pusher and V50 occupancy');
   assert.equal(state.controls.length,0,'No ghost interaction controls remain after reroll');
   assert(cleared.some(id=>id.startsWith('find-the-blocks:')),'The specific chamber-owned blocker footprints are released');
   assert.equal(cleared.filter(id=>id.endsWith('-ice')||id.endsWith('-net')).length,room.netVariant==='fire'?2:1,
@@ -228,6 +230,7 @@ function test(seed,size=24){
   for(const block of tight.blocks)
     assert(block.mesh.position.y+.41<=lowRoof-.17,'No block may clip through a real V50 ceiling: '+block.name);
   tight.dispose();
+  assert.equal(unregisteredBlocks.length,8,'A short-roof reroll releases its own four native push blocks');
   assert.equal(state.controls.length,0,'A short-roof reroll must also release every control');
   if(seed===0){
     const elevated=[]; // Test the separate collision authority used only in layered dungeon stories.
@@ -246,7 +249,16 @@ function test(seed,size=24){
         'Raised stone obstacles never produce invisible blockers at ground level');
     }
     upper.dispose();
+    assert.equal(unregisteredBlocks.length,12,'An elevated chamber unregisters its four native push blocks');
     assert.equal(state.controls.length,0,'Elevated chamber cleanup removes all interactive controls');
+    const partialBefore=unregisteredBlocks.length; // A construction failure must roll back partially attached blocks and controls.
+    assert.throws(()=>env.DevRuinFindBlocks.create({
+      THREE,kit:{...kit,registerSurface(){throw new Error('injected-surface-failure');}},
+      context:{seed,ceilingY:5},room:{id:'partial',x:0,z:0,w:18,d:18},y:0,
+      isActive:()=>true,onSolved:()=>{}
+    }),/injected-surface-failure/);
+    assert.equal(unregisteredBlocks.length-partialBefore,3,'Three registered source blocks are released when a late climbing support fails');
+    assert.equal(state.controls.length,0,'A half-built puzzle cannot leave an interactable brazier or dispenser');
   }
   return room.variant+'/'+room.netVariant;
 }
