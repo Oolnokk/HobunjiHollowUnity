@@ -253,6 +253,24 @@
     return true;
   }
 
+  function forgetMap(mapId) {
+    const id=String(mapId),wall=separatorWalls.get(id),rocks=rockMaps.get(id);
+    pendingRebuilds.delete(id); // A retired cave cannot be re-meshed by a queued blast from the previous world.
+    wall?.mesh?.parent?.remove(wall.mesh);
+    wall?.mesh?.geometry?.dispose?.();
+    separatorWalls.delete(id);
+    for(const group of rocks?.values()||[]){
+      group.parent?.remove(group);
+      group.traverse(node=>{
+        node.geometry?.dispose?.();
+        for(const material of Array.isArray(node.material)?node.material:[node.material])
+          if(material&&!material.userData?.sharedOreRockMaterial)material.dispose?.();
+      });
+    }
+    if(deps?.zoneMineableRockMeshes?.get?.(id)===rocks)deps.zoneMineableRockMeshes.delete(id);
+    rockMaps.delete(id);rockScenes.delete(id); // Scene retirement releases geometry and registries without touching shared ore textures.
+  }
+
   let deps = null; // { TileType, markOutline, zoneMineableRockMeshes, oreDefs } from game.js.
 
   function init(injectedDeps) { deps = injectedDeps; }
@@ -264,9 +282,7 @@
     // forgetZoneDenState) so removeZoneMineableRockVisual never targets an
     // orphaned rock group from a layout that no longer exists.
     const oreRockMeshes = new Map();
-    pendingRebuilds.delete(mapId); // Rebuilding an evicted cave must not later apply a queued cut to its replacement scene.
-    const stale=separatorWalls.get(mapId);
-    if(stale){stale.mesh?.parent?.remove(stale.mesh);stale.mesh?.geometry?.dispose?.();separatorWalls.delete(mapId);}
+    forgetMap(mapId); // A fresh cave scene must not retain GPU geometry or mineable registrations from its previous visit.
     rockMaps.set(mapId,oreRockMeshes); // Rebuilt caves replace stale tile indices completely.
     rockScenes.set(mapId,scene);
     const barriers=(mapData.oreRocks||[]).filter(rock=>rock.caveSeparator);
@@ -338,5 +354,5 @@
     const wall=separatorWalls.get(String(mapId)); // Scalar probe allows mobile debugging of mined holes without browser developer tools.
     return wall ? rockField(wall,Number(x),Number(y),Number(z)) : null;
   }
-  window.CavernOreRocks = { init, build, senseTargets, removeVisual, withBatchedCuts, carveStoneGate, debugSnapshot, probeRock, CAVERN_ORE_TINTS };
+  window.CavernOreRocks = { init, build, senseTargets, removeVisual, withBatchedCuts, carveStoneGate, forgetMap, debugSnapshot, probeRock, CAVERN_ORE_TINTS };
 })();
