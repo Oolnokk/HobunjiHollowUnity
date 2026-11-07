@@ -3315,9 +3315,9 @@
           && c < obj.col + bounds.fw && r < obj.row + bounds.fd;
       }
 
-      function furnitureBlocksMovementAt(area, x, z) {
-        if (window.AreaFootprintBlockers?.blocksPoint(area, x, z)) return true;
-        if (window.FurnitureTableSystem?.blocksBox(area, x, z)) return true; // Exterior and locale furniture share the normal NPC/player movement authority.
+      function furnitureBlocksMovementAt(area, x, z, worldY = null) {
+        if (window.AreaFootprintBlockers?.blocksBox(area, x, z, 0, worldY)) return true;
+        if (window.FurnitureTableSystem?.blocksBox(area, x, z, 0, worldY)) return true; // Exterior and locale furniture share the normal NPC/player movement authority.
         if (_isZoneArea(area) && window.FoliageFurnitureRuntime?.blocksPoint(area, x, z)) return true;
         if (interiorFurnitureObjects.some(obj => obj.area === area && decorativeFurnitureBlocksPoint(obj, x, z))) return true;
         if (area === 'interior' && _derivedHearthMeshes.some(h => {
@@ -19249,6 +19249,22 @@
             && tileSpeedAt(wx + radius, wy + radius, tileWorldY) !== null;
       }
 
+      function canPlayerOccupyAtHeight(wx, wy, feetY) {
+        if (!Number.isFinite(feetY)) return canPlayerOccupy(wx, wy);
+        const radius = PLAYER_RADIUS * 0.72; // Physical free-jump footprint matches normal walking.
+        if (window.InteriorDoorTiles?.blocksBox(currentArea, wx / TILE, wy / TILE, radius / TILE)) return false;
+        // Projectile-height occupancy skips some legacy 2D-only colliders.
+        // Check those at each player-collider corner, separately from the
+        // providers that already understand furniture and footprint height.
+        const grid = window.GridTileAccessors.getActiveGrid();
+        for (const [dx, dy] of [[-radius, -radius], [radius, -radius], [-radius, radius], [radius, radius]]) {
+          const x = (wx + dx) / TILE, z = (wy + dy) / TILE;
+          if (grid[Math.floor(z)]?.[Math.floor(x)]?._banditTentCollisionId) return false;
+          if (furnitureBlocksMovementAt(currentArea, x, z, feetY + 0.05)) return false;
+        }
+        return canOccupyAt(wx, wy, radius, feetY + 0.05);
+      }
+
       function canPlayerOccupy(wx, wy) {
         if (window.InteriorDoorTiles?.blocksBox(currentArea, wx / TILE, wy / TILE, PLAYER_RADIUS * 0.72 / TILE)) return false; // Closed interior doors stop the player only (js/interior-door-tiles.js); NPC pathing ignores them.
         if (canOccupyAt(wx, wy, PLAYER_RADIUS * 0.72)) return true;
@@ -32348,7 +32364,8 @@
           !window.Fishing?.state?.active && !window.MusicMinigame?.state?.active &&
           !window.BedLiePose?.isActive?.() && !window.FarmAnimals?.isHarvesting?.() &&
           !window.PlayerSocialPoses?.active, // Actions/minigames that own the player must not secretly queue a jump.
-        canPlayerOccupy, // Ordinary blockers (buildings, doors, non-cover furniture) remain authoritative for jumping.
+        canPlayerOccupy, // Normal grounded movement authority.
+        canPlayerOccupyAtHeight, // Jump uses native world collision at the physical foot height.
         furnitureBlocksMovementAt, // Allows only finite-height cover to be jumped; otherwise retains normal furniture collision.
       });
 

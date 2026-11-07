@@ -106,27 +106,22 @@
       if (area === 'farm' && (access?.isHouseFootprint?.(col, row) || access?.isFarmBuildingCollisionTile?.(col, row))) return 'farm building';
       if ((area === 'town' || deps._isZoneArea?.(area)) && access?.isTownBuildingCollisionTile?.(col, row, area)) return 'town building';
     }
-    const clearedCover = near.some(obstacle => Number.isFinite(obstacle.topY) && obstacle.topY <= feetY + CONFIG.landingTolerance);
-    const footprintBlocked = window.AreaFootprintBlockers?.blocksBox?.(area, x, z, CONFIG.radius, feetY + 0.05);
-    const dynamicBlocked = window.DynamicSurfaces?.blockerAt?.(x, z, {
+    // Clearing one low piece of cover does not exempt any other blocker.
+    if (window.AreaFootprintBlockers?.blocksBox?.(area, x, z, CONFIG.radius, feetY + 0.05))
+      return 'solid footprint';
+    if (window.DynamicSurfaces?.blockerAt?.(x, z, {
       worldY: feetY, radius: CONFIG.radius, actorHeight: 1.25,
-    });
-    if (dynamicBlocked) return 'dynamic blocker';
-    // A provider may only offer 2D blockage. If semantic finite-height cover
-    // is already cleared, that same object must not become an infinite wall.
-    if (footprintBlocked && !clearedCover) return 'solid footprint';
-    // FurnitureTableSystem, foliage, decorative interiors, and farm processors
-    // still provide 2D blockers; only semantic cover below the feet can clear them.
-    if (deps.furnitureBlocksMovementAt?.(area, x, z) && !clearedCover) return 'non-cover furniture';
-    // Final world authority catches custom blockers that the semantic cover
-    // path did not enumerate. Finite-height rocks and furniture are exceptions.
-    let crossedRock = false; // Boolean exemption only for a physically cleared, finite-height rock.
-    for (let row = r0; row <= r1 && !crossedRock; row++) for (let col = c0; col <= c1; col++) {
-      const top = coverAtTile(grid[row]?.[col], col, row);
-      if (Number.isFinite(top) && top <= feetY + CONFIG.landingTolerance) { crossedRock = true; break; }
+    })) return 'dynamic blocker';
+    if (deps.canPlayerOccupyAtHeight) {
+      if (!deps.canPlayerOccupyAtHeight(x * deps.TILE, z * deps.TILE, feetY))
+        return 'world collision';
+    } else {
+      // Non-game test owners fail closed, rather than granting global passage
+      // because a semantically unrelated rock or table is below the feet.
+      if (deps.furnitureBlocksMovementAt?.(area, x, z, feetY)) return 'non-cover furniture';
+      if (deps.canPlayerOccupy && !deps.canPlayerOccupy(x * deps.TILE, z * deps.TILE))
+        return 'world collision';
     }
-    if (!clearedCover && !crossedRock && deps.canPlayerOccupy &&
-      !deps.canPlayerOccupy(x * deps.TILE, z * deps.TILE)) return 'world collision';
     return null;
   }
 
@@ -275,32 +270,33 @@
       if (groundAt(player.x / deps.TILE, player.y / deps.TILE) != null) {
         state.safeX = player.x / deps.TILE; state.safeZ = player.y / deps.TILE; // Track the nearest walkable tile passed above during this jump.
       }
-      // Native ruin/pit systems must regain control after an unsupported drop;
-      // do not keep a perpetual falling state with no valid surface below.
-      if (state.feetY < state.launchGround - 7) {
-        // V50 and other native abyss handlers own their real death/respawn
-        // consequences. Ordinary maps have no generic continuous-fall driver:
-        // return to the last valid surface with a real Footing fall cost instead
-        // of leaving the player walking invisibly on a floorless tile.
-        if (Number.isFinite(window.DevRandomRuin?.getPlayerGroundSupportY?.())) {
-          reset(player, 'unsupported fall handed back to ruin');
-        } else if (window.DynamicSurfaces?.pointInPit?.(player.x / deps.TILE, player.y / deps.TILE)
-          && window.PlayerDowned?.dieImmediately?.('jump-abyss') === true) {
+      const px = player.x / deps.TILE, pz = player.y / deps.TILE;
+      const support = state.vy <= 0
+        ? highestSupport(px, pz, previous + CONFIG.landingTolerance)
+        : null;
+      if (support && state.feetY <= support.y + CONFIG.landingTolerance
+        && previous >= support.y - CONFIG.landingTolerance) {
+        land(state, support);
+        break;
+      }
+      // The arbitrary seven-unit cutoff must never erase a real lower
+      // landing. Only hand off when no floor exists farther below.
+      if (state.feetY < state.launchGround - 7
+        && !highestSupport(px, pz, state.feetY - CONFIG.landingTolerance)) {
+        const instantPit = window.DevRandomRuinSimplePuzzles?.isInstantDeathPit?.(px, pz);
+        const fatalPit = instantPit || window.DevHachutuRuin?.isDeadlyPit?.(px, pz)
+          || window.DynamicSurfaces?.pointInPit?.(px, pz);
+        if (fatalPit && ((instantPit && window.DevRandomRuinSimplePuzzles?.instantRopeChainDeath?.() === true)
+          || window.PlayerDowned?.dieImmediately?.('jump-abyss') === true)) {
           reset(player, 'fatal abyss landing');
+        } else if (Number.isFinite(window.DevRandomRuin?.getPlayerGroundSupportY?.())) {
+          reset(player, 'unsupported fall handed back to ruin');
         } else {
           player.x = state.safeX * deps.TILE; player.y = state.safeZ * deps.TILE;
           window.FallSystem?.land?.(player, { dropWorld: 7, source: 'unsupported jump fall' });
           reset(player, 'unsupported fall returned to safe ground');
         }
         return true;
-      }
-      const support = state.vy <= 0
-        ? highestSupport(player.x / deps.TILE, player.y / deps.TILE, previous + CONFIG.landingTolerance)
-        : null;
-      if (support && state.feetY <= support.y + CONFIG.landingTolerance
-        && previous >= support.y - CONFIG.landingTolerance) {
-        land(state, support);
-        break;
       }
     }
     if (player._freeJump === state) {

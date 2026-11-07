@@ -23,6 +23,9 @@ assert(integration.includes('window.PlayerJump?.init?.(injectedDeps)'));
 assert(gameSource.includes('if (window.PlayerJump?.tick?.(dt)) return;'), 'game loop must tick jump independently');
 assert(gameSource.includes('player._freeJump ? player.physicalFeetY'), 'renderer uses physical jump height');
 assert(gameSource.includes('getBaseMoveSpeedTiles: () => MOVE_SPEED / TILE'), 'ordinary player speed drives airborne travel');
+assert(gameSource.includes('canPlayerOccupyAtHeight, // Jump uses native world collision'), 'jump uses the native height-aware collision authority');
+assert(gameSource.includes('function furnitureBlocksMovementAt(area, x, z, worldY = null)'), 'furniture collision now understands optional height');
+assert(gameSource.includes('furnitureBlocksMovementAt(currentArea, x, z, feetY + 0.05)'), 'non-cover furniture remains solid when jumping');
 assert(ruinSource.includes('const freeJump=deps.player?._freeJump;'), 'native ruin floor reconciliation must honor airborne jump state');
 assert(integration.includes('return window.PlayerJump?.start?.() || false; // Empty ground'));
 assert(index.indexOf('js/player-jump.js?') < index.indexOf('js/climb-system.js?'));
@@ -31,7 +34,8 @@ assert(coverSource.includes('movementCoverNear,'));
 
 const TILE = 64; // Player positions use pixels, semantic colliders use world/tile units.
 const groundTile = () => ({ type: 'floor', surfaceY: 0 });
-function harness({ rock = null, furniture = null, wall = null, pit = null, start = { x: 2.5, z: 3.5 } } = {}) {
+function harness({ rock = null, furniture = null, wall = null, pit = null, start = { x: 2.5, z: 3.5 },
+  heightBlocked = null, deepSupportY = null } = {}) {
   const grid = Array.from({ length: 9 }, () => Array.from({ length: 10 }, groundTile));
   if (rock) grid[rock.row][rock.col] = { type: 'rock', rockKind: 'undiggableBoulder', projectileCoverHeightTiles: rock.top, top: rock.top };
   if (wall) grid[wall.row][wall.col] = { type: 'wall' };
@@ -55,7 +59,12 @@ function harness({ rock = null, furniture = null, wall = null, pit = null, start
     DevRandomRuin: { groundLandings: 0, acceptFreeJumpLanding(y) { this.groundLandings++; this.lastY = y; }, getPlayerGroundSupportY: () => null }, // Confirmed ground landings must be reported once.
     ProjectileTileCover: { coverTop(tile) { return tile?.type === 'rock' ? tile.top : null; } },
     AreaFootprintBlockers: { surfaceYAt: () => null, blocksBox: () => false },
-    DynamicSurfaces: { sampleSupport: () => null, blockerAt: () => null },
+    DynamicSurfaces: {
+      sampleSupport: (x, z, opts = {}) => deepSupportY != null && x >= 3
+        && deepSupportY >= (opts.minY ?? -Infinity) && deepSupportY <= (opts.maxY ?? Infinity)
+        ? { y: deepSupportY, id: 'deep-floor' } : null,
+      blockerAt: () => null,
+    },
     FallSystem: { land: () => null },
   };
   const context = { window, console, performance: { now: () => 1000 } };
@@ -78,6 +87,7 @@ function harness({ rock = null, furniture = null, wall = null, pit = null, start
     getMountRideState: () => 'none',
     canStartFreeJump: () => canJump,
     canPlayerOccupy: () => true,
+    canPlayerOccupyAtHeight: (wx, wy, feetY) => !heightBlocked?.(wx / TILE, wy / TILE, feetY),
     furnitureBlocksMovementAt: () => false,
   });
   function advance(seconds) {
@@ -222,4 +232,40 @@ function harness({ rock = null, furniture = null, wall = null, pit = null, start
   assert(h.window.PlayerJump.start(), 'the same input works again once the movement lock ends');
 }
 
+{
+  const h = harness({ furniture: { x: 4.5, z: 3.5, top: 1.1, radius: .48 },
+    start: { x: 3.45, z: 3.5 } });
+  h.window.AreaFootprintBlockers.blocksBox = (_area, x) => x >= 3.85;
+  h.input.x = 1;
+  assert(h.window.PlayerJump.start());
+  h.advance(1.5);
+  assert(h.player.x / TILE < 3.85, 'overlapping independent footprint remains solid above low cover');
+}
+{
+  const h = harness({ furniture: { x: 4.5, z: 3.5, top: 1.1, radius: .48 },
+    start: { x: 3.45, z: 3.5 }, heightBlocked: x => x >= 3.85 });
+  h.input.x = 1;
+  assert(h.window.PlayerJump.start());
+  h.advance(1.5);
+  assert(h.player.x / TILE < 3.85, 'an unrelated world blocker cannot be bypassed by a low table');
+}
+{
+  const h = harness({ rock: { col: 4, row: 3, top: 1.1 },
+    start: { x: 3.45, z: 3.5 }, heightBlocked: x => x >= 3.85 });
+  h.input.x = 1;
+  assert(h.window.PlayerJump.start());
+  h.advance(1.5);
+  assert(h.player.x / TILE < 3.85, 'low rock cannot bypass a separate world collider');
+}
+{
+  const h = harness({ pit: { row: 3, firstCol: 3, lastCol: 7 }, deepSupportY: -10 });
+  h.input.x = 1;
+  assert(h.window.PlayerJump.start());
+  for (let i = 0; i < 260; i++) {
+    if (h.player.x / TILE > 4.5) h.input.x = 0;
+    h.advance(1 / 60);
+  }
+  assert.equal(h.player._freeJump?.phase, 'supported', 'fall continues past seven units to a ten-unit-deep floor');
+  assert(Math.abs(h.player.physicalFeetY + 10) < .01, 'deep landing uses physical lower elevation');
+}
 console.log('player-jump ok');
