@@ -60,7 +60,7 @@ const window = {
   WorldPortraitLife: { getPlayerAvatar: () => ({ profile: { bodyColors: playerData.appearance.bodyColors } }) },
   __hobunjiFurnitureDebug: { getNpcWalkers: () => [walker] },
   EquipmentPanel: {
-    refreshPlayerAvatar: async () => { calls.player++; },
+    refreshPlayerAvatar: async () => { calls.player++; playerMesh.scale.x = 1; }, // Simulates the full avatar rebuild clearing a temporary visual transform.
     devWornClothing: () => ({ hood: playerHood }),
   },
   NpcWardrobe: {
@@ -87,6 +87,8 @@ assert(panel, 'inspector registers through the existing companion panel API');
   assert.equal(calls.player, 1, 'canonical player refresh used');
   assert.equal((await panel.onAction('scale:x', { value: 150 })).ok, true);
   assert.equal(playerMesh.scale.x, 1.5);
+  assert.equal((await panel.onAction('refresh')).ok, true);
+  assert.equal(playerMesh.scale.x, 1.5, 'rebuild re-applies the selected visual scale');
 
   const originalMaterial = playerMesh.material;
   assert.equal((await panel.onAction('tint', { value: '#ff0000' })).ok, true);
