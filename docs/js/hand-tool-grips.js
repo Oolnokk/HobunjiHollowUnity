@@ -413,7 +413,6 @@
         ? (fallbackEntry.heightMultiplier ?? DEFAULT_HEIGHT_MULTIPLIER)
         : normalizeHeightMultiplier(entry.heightMultiplier, fallbackEntry.heightMultiplier ?? DEFAULT_HEIGHT_MULTIPLIER);
       entry.primaryGrip = normalizeTransform(entry.primaryGrip);
-    entry.customGripAxis = normalizeCustomGripAxis(entry.customGripAxis ?? fallbackEntry.customGripAxis); // Materialize the default for editor picks and imported legacy profiles.
       entry.customGripAxis = normalizeCustomGripAxis(entry.customGripAxis ?? fallbackEntry.customGripAxis); // One optional 3D axis per tool, independent of 1H and ranged grip anchors.
       if (previousPrimaryRotationPreset !== PRIMARY_ROTATION_PRESET) {
         entry.primaryGrip.position.x = HATCHET_PRIMARY_GRIP_EXAMPLE.x; // Hatchet's authored X belongs to the shared hand-on-item frame.
@@ -537,6 +536,7 @@
     if (!entry.aperture) delete entry.aperture;
     entry.heightMultiplier = normalizeHeightMultiplier(entry.heightMultiplier, fallbackEntry.heightMultiplier ?? DEFAULT_HEIGHT_MULTIPLIER);
     entry.primaryGrip = normalizeTransform(entry.primaryGrip);
+    entry.customGripAxis = normalizeCustomGripAxis(entry.customGripAxis ?? fallbackEntry.customGripAxis); // Materialize defaults for legacy entries and keep invalid endpoints safe.
     entry.secondaryGripSpan = inferredSpan(entry);
     entry.primaryGripSpan = inferredSpan({ secondaryGripSpan: entry.primaryGripSpan });
     entry.secondaryGrip = disabledLegacySecondary();
