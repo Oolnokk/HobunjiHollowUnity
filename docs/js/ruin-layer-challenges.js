@@ -7,7 +7,7 @@
   else root.RuinLayerChallenges=api;
 })(typeof self!=='undefined'?self:globalThis,function(root){
   'use strict';
-  const TYPES=Object.freeze(['pressurePlate','glyphObelisk','ceilingRailTargets','melodyEcho','dungeonFire','ropeChain','statueDefense','timedMelody','fireSconces']);
+  const TYPES=Object.freeze(['pressurePlate','glyphObelisk','ceilingRailTargets','melodyEcho','dungeonFire','ropeChain','statueDefense','findBlocks','timedMelody','fireSconces']);
   const boneTextures=new Map(); // Shared Scratchbone numeral textures for every generated melody decal.
   function melodyFor(id){
     let seed=2166136261; // Deterministic FNV hash; the same generated chamber always has the same note sequence.
@@ -35,6 +35,84 @@
 
   function compose(options={}){
     const {THREE,parent,room,id,kind,y,isActive,onSolved,getPlayerPosition,getPlayerY}=options;
+    if(kind==='findBlocks'){
+      // A V50 push-block controller is available only after the generated ruin enters
+      // the gameplay map. Delay installation instead of failing shaft construction.
+      const bus=options.projectileBus||root.DevRandomRuinSimplePuzzles;
+      const game=options.DevRandomRuin||root.DevRandomRuin;
+      const DS=options.DynamicSurfaces||root.DynamicSurfaces;
+      const scope='ruin-layer-find-blocks-'+id; // Each stage owns its own raised supports and can be disposed independently.
+      const targets=[],disposers=[]; // Native projectile callbacks and their remover functions for this chamber only.
+      let puzzle=null,failed=false;
+      const rec={id,kind,solved:false,ready:false,linked:false,disposed:false,error:null};
+      const seed=Array.from(String(id)).reduce((hash,ch)=>Math.imul(hash^ch.charCodeAt(0),16777619)>>>0,2166136261); // A reproducible mix of net and pillar mechanisms per wing.
+      function setup(){
+        if(rec.disposed||puzzle||failed||!isActive()
+          ||bus?.hasActiveRuinState?.()!==true||!game?.getOccupancySnapshot?.())return;
+        const player=getPlayerPosition?.(); // Deferred construction avoids eagerly mounting several heavy compound rooms on a story the player has just reached.
+        if(!player||player.x<room.x-5||player.x>room.x+room.w+5
+          ||player.z<room.z-5||player.z>room.z+room.d+5)return;
+        try{
+          const kit={
+            state:{controls:[]},group:()=>parent,
+            deps:{showToast:(message,ok)=>options.showToast?.(message,ok)},
+            playerWorld:getPlayerPosition,
+            addControl:control=>options.addControl?.(control),
+            removeControl:control=>options.removeControl?.(control),
+            registerSurface:surface=>DS.registerSurface({...surface,scope}),
+            registerBlocker:blocker=>DS.registerBlocker({...blocker,scope}), // Every pillar, blocker and closed gate collides only at its authored wing elevation.
+            registerProjectileTarget:target=>{targets.push(target);return target;},
+            disposeObject:object=>{
+              object.parent?.remove(object);
+              const geometries=new Set(),materials=new Set();
+              object.traverse?.(node=>{
+                if(node.geometry&&!node.geometry.userData?.devRuinSharedPrimitive)geometries.add(node.geometry);
+                for(const mat of Array.isArray(node.material)?node.material:[node.material])if(mat)materials.add(mat);
+              });
+              geometries.forEach(geo=>geo.dispose?.());
+              materials.forEach(mat=>mat.dispose?.());
+            }
+          }; // The same native cube/fire/music/bomb implementation receives a layered-wing lifecycle adapter.
+          puzzle=root.DevRuinFindBlocks?.create?.({
+            THREE,kit,context:{seed,ceilingY:y+4.5},room,y,
+            showGate:false,isActive,
+            onSolved:()=>{if(!rec.disposed&&!rec.solved){rec.solved=true;onSolved(rec);}}
+          });
+          if(!puzzle)throw new Error('Find the Blocks module is unavailable.');
+          rec.variant=puzzle.variant;rec.netVariant=puzzle.netVariant;rec.ready=true;rec.linked=targets.length===0;
+          options.onLink?.(rec);
+        }catch(error){
+          DS?.clearScope?.(scope); // Roll back raised platforms and blockers if any native submodule failed during construction.
+          targets.length=0; // No external ranged callbacks are installed before the chamber finishes building.
+          failed=true;rec.error=String(error?.message||error);
+          options.onError?.(rec); // Show the failure in the mobile dungeon diagnostics instead of silently generating a fake plate.
+        }
+      }
+      rec.tick=dt=>{
+        if(rec.disposed||!isActive())return;
+        setup();
+        if(!puzzle)return;
+        if(targets.length&&!rec.linked){
+          const next=[];
+          for(const target of targets){
+            const release=bus?.registerExternalProjectileTarget?.(target);
+            if(typeof release!=='function')break;
+            next.push(release);
+          }
+          if(next.length===targets.length){disposers.push(...next);rec.linked=true;options.onLink?.(rec);}
+          else for(const remove of next)remove();
+        }
+        puzzle.tick?.(dt);
+      };
+      rec.snapshot=()=>puzzle?.snapshot?.()||{id,kind,ready:false,error:rec.error};
+      rec.dispose=()=>{
+        if(rec.disposed)return;rec.disposed=true;
+        for(const release of disposers)release();
+        puzzle?.dispose?.();
+        DS?.clearScope?.(scope);
+      };
+      return rec;
+    }
     if(kind==='statueDefense'){
       const defense=options.RuinLayerDefense||root.RuinLayerDefense; // Delegates authored statue and combat rules instead of duplicating their puzzle state.
       if(!defense?.create)throw new Error('Native RuinLayerDefense module is not installed.');
@@ -183,25 +261,13 @@
       // and a progression gate; it never guesses from a normal arrow hit.
       const source=authored('ruinStandingBrazier',cx-2.3,y,cz)
         ||body('ruin-fire-source-'+id,new THREE.CylinderGeometry(.65,.8,.65,8),stone,cx-2.3,y+.37,cz);
-      const createEmitter=root.AuthoredFurniture?.createEmitterVisual;
-      if(typeof createEmitter==='function'){
-        const flameRoot=new THREE.Group(); // Particle flame stays attached to the authored brazier's bowl.
-        flameRoot.name='ruin-fire-flame-'+id;
-        flameRoot.position.set(cx-2.3,y+1.2,cz);group.add(flameRoot);
-        for(const stream of [
-          {id:'yellow',colorA:'#fff56a',colorB:'#ffdc12'},
-          {id:'red',colorA:'#ff5225',colorB:'#e91b08'},
-          {id:'orange',colorA:'#ffab3b',colorB:'#ff740c'}
-        ]){
-          const emitter=createEmitter(flameRoot,{id:'ruin_fire_'+stream.id,name:'Brazier flame',type:'fire',enabled:true,
-            position:{x:0,y:0,z:0},rotation:{x:0,y:0,z:0},radius:.12,size:.16,rate:9,
-            lifetime:.7,speed:.65,spread:.25,gravity:-.05,colorA:stream.colorA,colorB:stream.colorB},11);
-          if(emitter){emitter.update?.(1/9,true);flameVisuals.push(emitter);}
-        }
-        if(!flameVisuals.length)flameRoot.parent?.remove(flameRoot);
-      }
-      if(!flameVisuals.length)body('ruin-fire-source-flame-'+id,new THREE.ConeGeometry(.35,.8,7),
-        idle,cx-2.3,y+1.3,cz); // Only a fallback when the shared authored emitter runtime is unavailable.
+      const flameRoot=new THREE.Group(); // Reuses the player's campfire visual; no custom flame cones or alternative particle recipes.
+      flameRoot.name='ruin-fire-flame-'+id;
+      flameRoot.position.set(cx-2.3,y+1.2,cz);group.add(flameRoot);
+      const flameVisual=(options.puzzleFireVisuals||root.PersistentGroundFire)?.attachCampfireFlame?.(flameRoot,{
+        scale:.94,rateScale:.8,
+      }); // AuthoredFurniture loads campfire_fire from the exact campfire furniture JSON.
+      if(flameVisual)flameVisuals.push(flameVisual); // Shared update/dispose lifecycle below remains authoritative.
       const frozen=basic(0x9fdaed);
       const ice=body('ruin-fire-ice-seal-'+id,
         new THREE.BoxGeometry(2.3,2.1,.75),frozen,cx+2.1,y+1.18,cz);
@@ -253,6 +319,7 @@
       const dark=body('puzzle-cave-fire-darkness-'+id,
         new THREE.BoxGeometry(5.05,3.65,.025),basic(0x050404),cx,y+1.82,caveGateZ+.21);
       dark.userData.puzzleCaveBackdrop=true;
+      dark.visible=false; // An actual carved cave is behind the door, not an opaque dungeon-portal rectangle.
       gate.userData.puzzleCaveDoor=true;
       rec.door=gate;rec.backdrop=dark;rec.sconces=[];rec.doorRise=0;
       const gateY=gate.position.y; // Slab-only rise leaves the black cave entrance fixed and both sconces attached to the wall.
@@ -274,7 +341,7 @@
         if(!rec.solved||rec.disposed)return;
         rec.doorRise=Math.min(1,rec.doorRise+Math.max(0,Number(dt)||0)/.95);
         gate.position.y=gateY+3.5*rec.doorRise;
-        dark.visible=rec.doorRise<.96; // Once the door opens, the opaque black wall must not hide the revealed reward chest.
+        dark.visible=false; // Never cover the physical treasure alcove with a black portal plane.
       };
     }else if(kind==='timedMelody'){
       // Cliff-door score: visible Scratchbone notation on a stone gate, no audible example.
@@ -284,54 +351,34 @@
       const song=composer.generate(id,options.songOptions||{}); // The cave's stable ID fixes the tune and reward tier on reload.
       const plate=body('puzzle-cave-music-plate-'+id,
         new THREE.CylinderGeometry(1.18,1.18,.15,32),plateMat,cx,y+.08,cz-1.6);
-      rec.plate=plate;rec.song=song;rec.attempts=0;rec.lastDown=false;rec.musicOpened=false;rec.musicClosing=0;
+      rec.plate=plate;rec.song=song;rec.attempts=0;rec.lastDown=false;
+      rec.plateArt=root.PuzzleCavePlateArt?.decorate?.(THREE,plate,{
+        radius:1.18,thickness:.15,toward:{x:0,z:1}
+      })||null; // Furniture-textured stone, inscribed with hao'uun in the Tankan author font.
       const gate=body('puzzle-cave-stone-door-'+id,
         new THREE.BoxGeometry(4.7,3.4,.32),stone,cx,y+1.75,caveGateZ);
       const backdrop=body('puzzle-cave-door-darkness-'+id,
         new THREE.BoxGeometry(5.05,3.65,.025),basic(0x050404),cx,y+1.82,caveGateZ+.21);
       gate.userData.puzzleCaveDoor=true;backdrop.userData.puzzleCaveBackdrop=true;
-      rec.door=gate;rec.backdrop=backdrop;rec.glyphs=[];
-      const columns=Math.min(8,song.notes.length),rows=Math.ceil(song.notes.length/columns);
-      for(let i=0;i<song.notes.length;i++){
-        const note=song.notes[i],number=note.index+1;
-        let texture=boneTextures.get(number);
-        if(!texture&&THREE.TextureLoader){
-          texture=new THREE.TextureLoader().load('assets/hud/scratchbone'+number+'.png');
-          if(THREE.SRGBColorSpace)texture.colorSpace=THREE.SRGBColorSpace;
-          boneTextures.set(number,texture);
-        }
-        const glyphMat=texture?new THREE.MeshBasicMaterial({
-          map:texture,color:0xc6baab,transparent:true,depthWrite:false,side:THREE.DoubleSide
-        }):basic(0xc6baab);
-        if(texture)materials.push(glyphMat);
-        const glyph=new THREE.Mesh(new THREE.PlaneGeometry(.43,.48),glyphMat);
-        glyph.name='puzzle-cave-timed-note-'+i;
-        glyph.position.set((i%columns-(columns-1)/2)*.53,
-          .59-(Math.floor(i/columns)-(rows-1)/2)*.61,-.17);
-        glyph.userData.puzzleCaveNote={index:note.index,duration:note.lengthTicks};
-        gate.add(glyph);owned.push(glyph);rec.glyphs.push(glyph);
-      }
+      backdrop.visible=false; // The puzzle already lives in a carved cave: a black portal card is not an interior wall.
+      rec.door=gate;rec.backdrop=backdrop;rec.glyphs=[];rec.scorePanel=null;rec.inscription=null;
+      // The inscription is placed on an unmoving stone flank after its fused wall has been constructed.
       const baseY=gate.position.y; // Door opening lifts the same slab and its inscriptions, leaving the black aperture fixed.
       rec.animate=dt=>{
         if(!rec.solved)return;
         rec.doorRise=Math.min(1,(rec.doorRise||0)+Math.max(0,Number(dt)||0)/.85);
         gate.position.y=baseY+3.6*rec.doorRise;
-        backdrop.visible=rec.doorRise<.96; // The solved cavern shows the chest, not a permanently black entrance card.
-        if(rec.musicClosing>0){
-          rec.musicClosing=Math.max(0,rec.musicClosing-Math.max(0,Number(dt)||0));
-          if(rec.musicClosing===0&&rec.musicOpened){music?.close?.();rec.musicOpened=false;}
-        }
+        backdrop.visible=false; // No black plane before or after opening, including during the authored model's async load.
       };
       rec.session=composer.createSession(song,{
         onSolved:()=>{
-          rec.plate.material=hit;
-          rec.musicClosing=.48; // Allow the last played flute note to sound before the overlay closes.
-          complete();
+          rec.plate.material?.color?.setHex?.(TARGET_COLORS.hit); // Keep carved_smooth on the solved plate.
+          complete(); // The player chose to play their instrument; never seize or dismiss it.
         },
         onChanged:snapshot=>{
           for(let i=0;i<rec.glyphs.length;i++){
             const material=rec.glyphs[i].material;
-            const color=i===snapshot.activeIndex?0xffda70:0xc6baab;
+            const color=i===snapshot.activeIndex?0xffee89:0xffb35e; // Cycling glow teaches timing without opening any instrument UI.
             material.color?.setHex?.(color); // One glyph glows during its full written duration; silence means none glows.
           }
           rec.melodyState=snapshot; // Exposed in the existing mobile ruin diagnostics.
@@ -343,9 +390,7 @@
       };
       events?.addEventListener?.('hobunji-kurraya-puzzle-note',timedNoteListener);
     }else if(kind==='melodyEcho'){
-      // This is the existing melody-echo mini-game: stepping onto the bronze
-      // plate plays the generated phrase; step off/on to hear it again, then
-      // play the note sequence using the equipped flute. No WRONG overlay.
+      // Read the inscription and play the ordinary equipped instrument; the plate never opens or claims input.
       const plate=body('ruin-melody-trigger-'+id,
         new THREE.BoxGeometry(1.35,.14,1.35),plateMat,cx,y+.07,cz);
       const plateSkin=authored('ruinRewardPlate',cx,y,cz);
@@ -358,23 +403,31 @@
       rec.plate=plate;rec.plateSkin=plateSkin;
       rec.notes=melodyFor(id);
       rec.lastDown=false;rec.attempts=0;
-      if(THREE.TextureLoader&&THREE.PlaneGeometry){
+      rec.heardNotes=[];rec.glyphs=[]; // Rolling player-note history and owned fallback art for native challenge diagnostics.
+      rec.inscription=root.RuinMelodyGlyphDecal?.create?.({
+        root:group,plate:{x:cx,y,z:cz},notes:rec.notes,
+        bounds:{minX:room.x,maxX:room.x+room.w,minZ:room.z,maxZ:room.z+room.d},
+        sampleSupport:()=>({y}),surfaces:options.melodySurfaces||[],surfaceRoot:options.surfaceRoot,
+        seed:melodyFor(id).reduce((sum,n)=>sum*8+n,0),
+      });
+      if(!rec.inscription&&THREE.TextureLoader&&THREE.PlaneGeometry){
+        // Standalone layered rooms may load without the random-ruin decal module.
         for(let i=0;i<rec.notes.length;i++){
-          const number=rec.notes[i]+1; // Actual Scratchbone 1–8 sprites match the generated instrument notes.
-          let texture=boneTextures.get(number);
+          const number=rec.notes[i]+1;
+          let texture=boneTextures.get(number); // Shared immutable textures, with per-challenge glowing sprite materials.
           if(!texture){
             texture=new THREE.TextureLoader().load('assets/hud/scratchbone'+number+'.png');
-            if(THREE.SRGBColorSpace)texture.colorSpace=THREE.SRGBColorSpace;
+            root.HobunjiSpritePngSurface?.configureTexture?.(THREE,texture,'ruin-melody-'+number);
             boneTextures.set(number,texture);
           }
-          const material=new THREE.MeshBasicMaterial({
-            map:texture,color:0xf5ead9,transparent:true,depthWrite:false,side:THREE.DoubleSide,
-          });
-          materials.push(material); // Textures are immutable and shared; only the decal material is owned by this room.
-          const decal=body('scratchbone-note-'+id+'-'+i,
-            new THREE.PlaneGeometry(.65,.75),material,
-            cx+(i-(rec.notes.length-1)/2)*.8,y+1.8,room.z+.55);
-          decal.userData.devRuinScratchboneMelodyNote=number;
+          const appearance={color:0xffda70,transparent:true,depthWrite:false,side:THREE.DoubleSide}; // Unlit glyphs stay luminous in dark ruins.
+          const material=root.HobunjiSpritePngSurface?.makeMaterial?.(THREE,texture,'ruin-melody-'+number,appearance)
+            ||new THREE.MeshBasicMaterial({map:texture,...appearance});
+          materials.push(material);
+          const decal=body('scratchbone-note-'+id+'-'+i,new THREE.PlaneGeometry(.65,.75),material,
+            cx-(i-(rec.notes.length-1)/2)*.8,y+1.8,room.z+.55);
+          decal.rotation.y=Math.PI;decal.visible=false; // Upright and facing south toward the plate, rather than a mirrored rear face.
+          decal.userData.devRuinScratchboneMelodyNote=number;rec.glyphs.push(decal);
         }
       }
       rec.onMelodyResult=detail=>{
@@ -385,8 +438,18 @@
           complete();
         }
       };
-      melodyListener=event=>rec.onMelodyResult(event?.detail); // One authoritative callback shared by browser event and tests.
-      events?.addEventListener?.('hobunji-ruin-melody-result',melodyListener);
+      melodyListener=event=>{
+        const detail=event?.detail,playerY=getPlayerY?.(); // Only ordinary player notes from this map and floor may advance the phrase.
+        if(rec.disposed||rec.solved||!isActive()||!Number.isFinite(playerY)||Math.abs(playerY-y)>=.75)return;
+        if((options.area||options.mapId)&&detail?.area!==(options.area||options.mapId))return;
+        const note=detail?.noteIndex;
+        if(!Number.isInteger(note)||note<0||note>=8)return;
+        rec.heardNotes.push(note);
+        if(rec.heardNotes.length>rec.notes.length)rec.heardNotes.shift();
+        if(rec.heardNotes.length===rec.notes.length&&rec.notes.every((n,i)=>n===rec.heardNotes[i]))
+          rec.onMelodyResult({id,solved:true});
+      };
+      events?.addEventListener?.('hobunji-kurraya-puzzle-note',melodyListener);
     }else if(kind==='glyphObelisk'){
       // Three separate real projectile targets spaced around the room.
       // Each uses the existing ranged weapon's world-space hit sweep.
@@ -419,6 +482,55 @@
       }); // Slightly behind the slab so sconces and score glyphs remain visible in front.
       if(surround){owned.push(surround);rec.rockSurround=surround;}
     }
+    if(options.authoredCliffDoor && kind==='timedMelody'){
+      const notes=rec.song.notes.map(note=>note.index); // Exact eight-key Scratchbone pitch indices, independent of note duration.
+      const side=(melodyFor(id)[0]&1)?-1:1; // Stable side selection: clues don't teleport when the cave reloads.
+      const scoreFace={x:cx+side*3.45,y:y+1.95,z:caveGateZ+.11,yaw:Math.PI,vertical:true,fallback:false}; // Stable carved flank, never the moving slab.
+      if(THREE.Raycaster&&rec.rockSurround?.raycast){
+        const ray=new THREE.Raycaster(new THREE.Vector3(scoreFace.x,scoreFace.y,cz-1.6),
+          new THREE.Vector3(0,0,1),0,10); // One-time snap to the sculpted rock face, not a per-frame performance raycast.
+        const face=ray.intersectObject(rec.rockSurround,false)[0];
+        if(face?.point&&Number.isFinite(face.point.z))scoreFace.z=face.point.z-.025; // Attach ink to the actual surface, avoiding a floating decal.
+      }
+      rec.inscription=root.RuinMelodyGlyphDecal?.create?.({
+        root:group,plate:{x:cx,y,z:cz-1.6},notes,seed:melodyFor(id)[1],
+        surfaces:[scoreFace],sampleSupport:()=>({y}),
+        makeStoneMaterial:()=>new THREE.MeshBasicMaterial({color:0x777267,transparent:true,opacity:0,depthWrite:false}),
+      })||null; // Reuses the actual Scratchbone decal generator introduced for the newer manual melody puzzle.
+      if(rec.inscription){
+        // The 9-wide chamber leaves just 2.11 tiles of stone on either side of the 4.78-wide hole.
+        // Fit the full score inside the irregular rock flank, including rough-hewn edge variation.
+        rec.inscription.group.scale?.set?.(.82,1,1);
+        rec.inscription.group.userData.puzzleCaveFlankFit=.82; // Fixed visual fit; note order and beat timing are unaffected.
+        rec.glyphs=rec.inscription.group.children.filter(node=>node.userData?.melodyNoteIndex!==undefined);
+      }else{
+        // Standalone puzzle fixtures may omit the shared decal module. Keep the same glowing vertical score and plate-gated reveal.
+        const board=new THREE.Group();
+        board.name='puzzle-cave-fallback-score';board.position.set(scoreFace.x,scoreFace.y,scoreFace.z);
+        if(board.rotation)board.rotation.y=scoreFace.yaw;
+        else board.rotation={y:scoreFace.yaw}; // Headless Group stubs lack Euler rotation; the rendered THREE.Group has it.
+        board.visible=false;group.add(board);rec.scorePanel=board;
+        const columns=Math.min(6,notes.length),rows=Math.ceil(notes.length/6);
+        notes.forEach((index,i)=>{
+          const number=index+1;
+          let texture=boneTextures.get(number);
+          if(!texture&&THREE.TextureLoader){
+            texture=new THREE.TextureLoader().load('assets/hud/scratchbone'+number+'.png');
+            root.HobunjiSpritePngSurface?.configureTexture?.(THREE,texture,'puzzle-cave-note-'+number);
+            boneTextures.set(number,texture);
+          }
+          const mat=new THREE.MeshBasicMaterial({map:texture||null,color:0xffb35e,transparent:true,
+            depthWrite:false,side:THREE.DoubleSide});
+          materials.push(mat);
+          const glyph=new THREE.Mesh(new THREE.PlaneGeometry(.25,.28),mat);
+          const row=Math.floor(i/6),column=i%6,rowLength=Math.min(6,notes.length-row*6);
+          glyph.position.set((column-(rowLength-1)/2)*.31,((rows-1)/2-row)*.35,.028);
+          glyph.name='puzzle-cave-timed-note-'+i;glyph.userData.melodyNoteIndex=index;
+          glyph.userData.puzzleCaveNote={index,duration:rec.song.notes[i].lengthTicks};
+          board.add(glyph);owned.push(glyph);rec.glyphs.push(glyph);
+        });
+      }
+    }
     if(options.authoredCliffDoor && (kind==='timedMelody'||kind==='fireSconces')){
       // Use the real authored, lightly rockified cliff gate (frame, darkness,
       // stone slab and 0.95-second slab motion). No interactive puzzle metadata
@@ -437,30 +549,16 @@
         rec.authoredGate=model;
         rec.door.visible=false; // The modeled slab/frame/darkness replace the placeholder when the JSON is ready.
         const darkness=group.children.find(node=>node.userData?.puzzleCaveBackdrop);
-        if(darkness)darkness.visible=false;
-        let board=null;
-        if(rec.glyphs?.length){
-          board=new THREE.Group(); // Visible Scratchbone score stays engraved on the movable slab, not the wall behind it.
-          board.name='puzzle_cave_stone_score';
-          board.position.set(cx,y+1.67,gateZ-.36);
-          const cols=Math.min(8,rec.glyphs.length);
-          rec.glyphs.forEach((glyph,index)=>{
-            rec.door.remove(glyph);
-            board.add(glyph);
-            glyph.position.set((index%cols-(cols-1)/2)*.44,.28-Math.floor(index/cols)*.49,0);
-          });
-          group.add(board);
-        }
+        if(darkness)darkness.visible=false; // The authored passage is a real treasure alcove, not a painted black card.
         const off=motion.off,on=motion.on;
-        const authoredDark=model.userData?.meshById?.get?.('cliff_gate_darkness')||null; // The original authored black plane is not an actual passage once the reward is revealed.
-        const baseBoardY=y+1.67;
+        const authoredDark=model.userData?.meshById?.get?.('cliff_gate_darkness')||null; // This decorative portal plane is inappropriate inside a real carved cave.
+        if(authoredDark)authoredDark.visible=false; // Hide it even while the physical stone slab remains locked.
         const updateAuthoredDoor=()=>{
           const progress=Math.max(0,Math.min(1,Number(rec.doorRise)||0));
           const ease=progress*progress*(3-2*progress);
           slab.position.y=off.y+(on.y-off.y)*ease;
           slab.scale.z=off.sz+(on.sz-off.sz)*ease;
-          if(authoredDark)authoredDark.visible=progress<.96; // Let the carved chamber and the newly revealed chest be visible once unlocked.
-          if(board){board.position.y=baseBoardY+(on.y-off.y)*3*ease;board.visible=progress<.94;}
+          if(authoredDark)authoredDark.visible=false; // A late async animation must never bring the black rectangle back.
         };
         const priorAnimation=rec.animate;
         rec.animate=dt=>{priorAnimation?.(dt);updateAuthoredDoor();};
@@ -543,27 +641,18 @@
         const down=!rec.solved&&isActive()&&player&&Number.isFinite(currentY)&&Math.abs(currentY-y)<.75
           &&Math.hypot(player.x-cx,player.z-(cz-1.6))<=1.18;
         rec.session.step(dt,down);
-        if(down&&!rec.lastDown){
-          rec.musicOpened=!!music?.beginPlayerSession?.(); // Native flute instrument, including mobile/controller bindings.
-          if(rec.musicOpened){rec.attempts++;options.onMusicStart?.(rec);}
-          else options.onMusicUnavailable?.(rec);
-        }
-        if(!down&&rec.lastDown&&rec.musicOpened&&!rec.solved){
-          music?.close?.();rec.musicOpened=false;
-        }
+        rec.inscription?.setVisible?.(down);
+        if(rec.scorePanel)rec.scorePanel.visible=!!down;
+        if(down&&!rec.lastDown)rec.attempts++; // The plate only reveals the score; equipping/playing the instrument is the player's choice.
         rec.lastDown=!!down;
       }
-      if(kind==='melodyEcho'&&!rec.solved){
-        const down=isActive()&&player&&Number.isFinite(currentY)&&Math.abs(currentY-y)<.75
+      if(kind==='melodyEcho'){
+        const down=!rec.solved&&isActive()&&player&&Number.isFinite(currentY)&&Math.abs(currentY-y)<.75
           &&Math.abs(player.x-cx)<.58&&Math.abs(player.z-cz)<.58;
-        if(down&&!rec.lastDown){
-          const started=music?.beginPlayerSession?.({echoChallenge:{id,notes:rec.notes}});
-          if(started){
-            rec.attempts++;
-            options.onMusicStart?.(rec);
-          }else options.onMusicUnavailable?.(rec);
-        }
-        rec.lastDown=!!down; // Step off and on to replay the phrase, including after an incomplete attempt.
+        if(down&&!rec.lastDown)rec.attempts++;
+        rec.inscription?.setVisible?.(down);
+        for(const glyph of rec.glyphs)glyph.visible=!!down;
+        rec.lastDown=!!down;
       }
       if(kind==='ceilingRailTargets'&&!rec.solved){
         rec.elapsed+=Math.min(.05,Math.max(0,dt));
@@ -631,9 +720,11 @@
       rec.removeFootprintGate?.(); // Release the real player/NPC occupancy blocker before this scene is reused.
       if(rec.colliderId)(options.DynamicSurfaces||root.DynamicSurfaces)?.remove?.(rec.colliderId); // One owner for both collision removal and room teardown.
       if(ropeChain)bus?.removeExternalRopeChain?.(ropeChain);
-      if(melodyListener)events?.removeEventListener?.('hobunji-ruin-melody-result',melodyListener);
+      if(melodyListener)events?.removeEventListener?.('hobunji-kurraya-puzzle-note',melodyListener);
+      rec.inscription?.dispose?.();
       if(timedNoteListener)events?.removeEventListener?.('hobunji-kurraya-puzzle-note',timedNoteListener);
-      if(rec.musicOpened)music?.close?.();
+      rec.plateArt?.dispose?.(); // Retire async Tankan lettering without affecting the player's own instrument session.
+      if(rec.plateArt)rec.plate?.material?.dispose?.(); // Author-textured plate material is owned by this challenge, not the shared furniture texture.
       for(const emitter of flameVisuals)emitter.dispose?.();
       flameVisuals=[];
       if(icePlacement)root.DungeonDoorIceCoverage?.clear?.(icePlacement);

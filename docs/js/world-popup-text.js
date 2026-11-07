@@ -340,6 +340,14 @@
     event.texture.dispose();
   }
 
+  // A rendered acquisition is handed to the readout after its floating popup finishes,
+  // irrespective of the world popup style selected in the authoring tool.
+  // RewardReadout excludes damage, non-acquisitions, and negative values.
+  function forwardToReadout(event) {
+    if (!event || event.interactionPrompt || !['centeredFiveRow', 'floatPlus'].includes(event.mode)) return;
+    window.RewardReadout?.enqueue(event.kind, event.text, { color: state.settings.colors[event.kind] });
+  }
+
   function listFor(root) {
     return state.active
       .filter(event => event.root === root && event.mode === 'centeredFiveRow' && !event.interactionPrompt)
@@ -376,15 +384,18 @@
     const mode = entry.modeOverride || state.settings.assignments[entry.kind];
     if (!state.deps || !entry.root || (mode !== 'floatPlus' && mode !== 'centeredFiveRow')) return null;
     const cfg = state.settings[mode];
+    const scene = entry.scene || state.deps.getActiveScene?.(); // Resolved scene owner is retained so zone cleanup sees default-scene rewards.
+    if (!scene?.add) return null;
     const planeCfg = mode === 'centeredFiveRow'
       ? { ...cfg, worldHeight: cfg.worldHeight * CENTERED_LIST_SCALE }
       : cfg;
     const parts = makePlane(entry.text, entry.kind, planeCfg);
-    const event = { ...entry, ...parts, mode, sequence: state.sequence++, startedAt: performance.now(), lifetimeMs: cfg.lifetimeMs, listSlot: -1, offsetX: 0, offsetY: 0 };
+    const event = { ...entry, scene, ...parts, mode, sequence: state.sequence++, startedAt: performance.now(), lifetimeMs: cfg.lifetimeMs, listSlot: -1, offsetX: 0, offsetY: 0 };
     if (mode === 'centeredFiveRow') {
       const list = listFor(entry.root);
       if (list.length >= cfg.maxRows) {
         const oldest = list.reduce((candidate, item) => item.sequence < candidate.sequence ? item : candidate, list[0]);
+        forwardToReadout(oldest); // A sixth world reward cannot erase a gain before it reaches the reading queue.
         dispose(oldest);
         state.active.splice(state.active.indexOf(oldest), 1);
       }
@@ -395,7 +406,7 @@
       event.offsetX = offset.x;
       event.offsetY = offset.y;
     }
-    (entry.scene || state.deps.getActiveScene()).add(event.plane);
+    scene.add(event.plane);
     state.active.push(event);
     return event.sequence;
   }
@@ -805,11 +816,13 @@
     const camera = state.deps?.camera;
     if (!camera) return;
     const cameraRight = new state.deps.THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0).normalize();
+    const finishedRewards = []; // Completed rewards are forwarded in their original event order after the reverse removal pass.
     for (let index = state.active.length - 1; index >= 0; index--) {
       const event = state.active[index];
       const progress = event.interactionPrompt ? 0 : Math.max(0, Math.min(1, (now - event.startedAt) / event.lifetimeMs));
       const center = popupAnchorWorld(event.root, event.mode);
       if (!center || progress >= 1) {
+        finishedRewards.push(event); // Also covers a player root lost during a scene change.
         dispose(event);
         state.active.splice(index, 1);
         continue;
@@ -833,6 +846,7 @@
       const listScale = event.mode === 'centeredFiveRow' ? CENTERED_LIST_SCALE : 1;
       event.plane.scale.setScalar(state.settings[event.mode].worldHeight * listScale * pop);
     }
+    finishedRewards.sort((a, b) => a.sequence - b.sequence).forEach(forwardToReadout);
     updateConditionCallout(camera, cameraRight);
     updateAimLabel(camera);
     updateInfoLists(camera, cameraRight);
@@ -873,12 +887,15 @@
   function releaseScene(scene) {
     if (!scene) return 0;
     let released = 0;
+    const finishedRewards = []; // Zone disposal must not silently discard reward rows already displayed in that scene.
     for (let index = state.active.length - 1; index >= 0; index--) {
       if (state.active[index].scene !== scene) continue;
+      finishedRewards.push(state.active[index]);
       dispose(state.active[index]);
       state.active.splice(index, 1);
       released++;
     }
+    if (typeof forwardToReadout === 'function') finishedRewards.sort((a, b) => a.sequence - b.sequence).forEach(forwardToReadout);
     const before = state.pending.length + state.levelUpQueue.length;
     state.pending = state.pending.filter(item => item.scene !== scene);
     state.levelUpQueue = state.levelUpQueue.filter(item => item.scene !== scene);
@@ -911,6 +928,7 @@
       levelUpQueueLength: state.levelUpQueue.length,
       levelUpActive: state.levelUpActive ? { ...state.levelUpActive } : null,
       infoLists: [...state.infoLists.keys()],
+      rewardReadout: window.RewardReadout?.debugSnapshot?.() || null, // Mobile debug surfaces can inspect the five visible and remaining queued gains.
     }),
   };
   window.WorldPopupText = api;

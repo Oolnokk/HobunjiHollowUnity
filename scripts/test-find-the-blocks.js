@@ -35,14 +35,18 @@ const THREE={
 const source=fs.readFileSync(path.join(__dirname,'../docs/js/dev-ruin-find-blocks.js'),'utf8');
 new vm.Script(source,{filename:'dev-ruin-find-blocks.js'}); // Catch syntax errors before running any behavioral checks.
 
-function test(seed){
-  const fireTargets=[],projectileTargets=[],breakablePillars=[],registeredBlocks=[],surfaces=[],cleared=[],barriers=[]; // Retain the actual authored obstruction centers for a push-route audit.
+function test(seed,size=24){
+  const center=Math.floor(size*.5)+.5,offset=Math.max(4,Math.min(5,Math.floor(size*.29))); // Exercise both generous lab rooms and minimum-sized 18x18 shaft rooms.
+  const fireTargets=[],projectileTargets=[],breakablePillars=[],registeredBlocks=[],unregisteredBlocks=[],surfaces=[],cleared=[],barriers=[]; // Retain native registration and cleanup records along with authored obstruction centers.
   const soloGroup=new Object3D(); // Parent scene has the same lifetime as one Puzzle Lab reroll.
-  let melody=null,solved=0;
+  const subpuzzles=[]; // Every nested melody/glyph/rail challenge must be solved and disposed through its real callback seam.
+  let solved=0,playerFloor=16; // Simulates transitions between independently stacked dungeon stories for height-aware blockers.
   const env={
     THREE,
     DevRandomRuin:{
       registerLabPushBlock(mesh){registeredBlocks.push(mesh);return true;},
+      unregisterLabPushBlock(mesh){unregisteredBlocks.push(mesh);return true;},
+      getPlayerGroundSupportY(){return playerFloor;},
       isSlidingPushBlock(){return false;}
     },
     DevRandomRuinTileOccupancy:{
@@ -51,11 +55,21 @@ function test(seed){
     },
     DynamicSurfaces:{
       sampleSupport(x,z){
-        // The test's 24x24 room centers at 12.5: the raised source begins at (7.5,17.5).
-        return x>=7.2&&x<=8.6&&z>=16&&z<=19?{y:2.52}:null;
+        // The elevated source support follows the same per-room offset as the real winding dais.
+        return x>=center-offset-.3&&x<=center-offset+1.1&&z>=center+offset-1.5&&z<=center+offset+1.5?{y:2.52}:null;
       }
     },
     DevRandomRuinFurniturePieces:{build(){return null;}},
+    DungeonRopeArt:{
+      createNetFrustum(){const net=new Object3D();net.userData.ropeAtlas='rope_long.png';return net;}
+    }, // Test uses the shared rope atlas instead of a primitive net fallback.
+    DungeonDoorIceCoverage:{scaledRecipe(){return {kind:'iceStalagmites',count:16,density:1};}},
+    IceStalagmiteCoverage:{
+      buildCeiling(_THREE,parent){
+        const layer=new Object3D();parent.add(layer);return {layer};
+      }, // The authored ceiling builder already inverts its own spikes.
+      setGrowth(layer,growth){layer.userData.growth=growth;}
+    },
     DungeonFire:{
       registerTarget(target){fireTargets.push(target);return target.id;},
       unregisterTarget(id){cleared.push(id);},
@@ -67,10 +81,27 @@ function test(seed){
       unregisterDispenser(){cleared.push('dispenser');},
       dispenseFromMechanism(){return true;}
     },
+    ProceduralFurniture:{
+      makePartMaterial(spec){
+        assert.equal(spec.materialTexture,'carved_smooth.png','Every requested authored stone material uses the dungeon texture');
+        assert.equal(spec.materialLighting,'unlit','Stone follows the native ruin wall lighting');
+        const textured=new Material();
+        textured.userData={materialTexture:spec.materialTexture}; // Inspectable marker for geometry-specific texture coverage assertions.
+        return textured;
+      }
+    },
     RuinLayerChallenges:{
       compose(options){
-        melody={tick(){},animate(){},dispose(){cleared.push('melody');},solve:options.onSolved};
-        return melody;
+        if(options.id.endsWith('-pillar-unlock')&&options.kind==='melodyEcho'){
+          assert.equal(options.mapId,'map_i_dev_random_ruin','manual notes stay scoped to the owning ruin');
+          assert.equal(options.melodySurfaces?.length,2,'pillar notes can use either upright stone face');
+          const plateX=options.room.x+options.room.w/2,plateZ=options.room.z+options.room.d/2; // The note faces must point back toward this authored plate.
+          for(const surface of options.melodySurfaces)
+            assert(Math.sin(surface.yaw)*(plateX-surface.x)+Math.cos(surface.yaw)*(plateZ-surface.z)>0,'inscription face should look toward the plate');
+        }
+        const challenge={kind:options.kind,id:options.id,tick(){},animate(){},dispose(){cleared.push('challenge:'+options.id);},solve:options.onSolved};
+        subpuzzles.push(challenge);
+        return challenge;
       }
     }
   }; // Each seed gets fresh services, so a previous variant cannot leak state into the next one.
@@ -84,11 +115,23 @@ function test(seed){
     playerWorld:()=>({x:0,y:0,z:0}),deps:{showToast(){}}
   };
   const room=env.DevRuinFindBlocks.create({
-    THREE,kit,context:{seed,ceilingY:5},room:{x:0,z:0,w:24,d:24},y:0,
+    THREE,kit,context:{seed,ceilingY:5},room:{x:0,z:0,w:size,d:size},y:0,
     isActive:()=>true,onSolved:()=>solved++
   });
   assert.equal(room.blocks.length,4);
   assert.equal(room.plates.length,4);
+  const named=new Map();
+  soloGroup.traverse(object=>{if(object?.isMesh&&object?.name)named.set(object.name,object);});
+  for(const name of ['find-block-net','find-block-inset-net','find-blocks-pressure-plate-0',
+    'find-blocks-plate-frame-0','find-blocks-winding-step-0','find-blocks-high-platform',
+    'find-blocks-tall-pillar','find-blocks-blocker-0','find-blocks-gate']){
+    const mesh=named.get(name);
+    assert(mesh,'Required gameplay mesh exists: '+name);
+    assert.equal(mesh.material?.userData?.materialTexture,'carved_smooth.png',
+      'All major Find the Blocks stone surfaces, plates, trim and marks must be carved smooth: '+name);
+  }
+  assert.notEqual(named.get('find-blocks-ice-fire-hit')?.material?.userData?.materialTexture,
+    'carved_smooth.png','The invisible ice contact target must retain ice behavior rather than stone texture');
   assert.equal(registeredBlocks.length,4);
   // Native block pushes are whole world-unit steps. Every plate must lie on that same lattice.
   for(const plate of room.plates){
@@ -100,11 +143,20 @@ function test(seed){
   assert.equal(surfaces.length,9,'Seven stairs, their dais and tower support are registered');
   assert.equal(room.solved,false);
 
-  for(const kind of ['net','ice']){
-    const target=fireTargets.find(item=>item.id.endsWith('-'+kind));
-    assert(target,'Both ceiling mechanisms need native DungeonFire targets');
-    assert.notEqual(target.onBurn(),false,'Fire must release the overhead restraint');
+  const net=fireTargets.find(item=>item.id.endsWith('-net'));
+  if(room.netVariant==='fire'){
+    assert(net,'Burnable ceiling net uses the native DungeonFire target');
+    assert.notEqual(net.onBurn(),false,'Fire must sever the ceiling net');
+  }else{
+    assert.equal(net,undefined,'Non-fire net variant must not expose a fake burn target');
+    const netUnlock=subpuzzles.find(challenge=>challenge.id.endsWith('-net-challenge'));
+    assert(netUnlock,'The ceiling net must be linked to a real reusable subpuzzle');
+    assert.equal(netUnlock.kind,room.netVariant==='glyphs'?'glyphObelisk':room.netVariant==='movingTargets'?'ceilingRailTargets':'melodyEcho');
+    netUnlock.solve();
   }
+  const ice=fireTargets.find(item=>item.id.endsWith('-ice'));
+  assert(ice,'Ceiling icicles always use the existing DungeonFire system');
+  assert.notEqual(ice.onBurn(),false);
   for(let i=0;i<100;i++)room.tick(.05);
   assert.equal(room.blocks[0].phase,'ready','Net block lands after fire');
   assert.equal(room.blocks[1].phase,'ready','Ice block lands after melting');
@@ -118,13 +170,15 @@ function test(seed){
   assert.equal(ledge.phase,'ready','Block settles and re-enters the native pusher');
   assert.equal(ledge.mesh.userData.findBlocksCanDrop,false,'Grounded blocks must not keep the ledge exception');
 
-  if(seed===0){
-    assert(melody,'Melody variant must use existing ruin melody composer');
-    melody.solve();for(let i=0;i<100;i++)room.tick(.05);
-    assert(room.snapshot().pillarHeight<.1,'Solved flute phrase sinks the pillar');
-  }else if(seed===1){
+  if(room.variant==='melody'||room.variant==='ceilingRail'){
+    const pillarUnlock=subpuzzles.find(challenge=>challenge.id.endsWith('-pillar-unlock'));
+    assert(pillarUnlock,'Tall pillar must use a real native melody or moving-target challenge');
+    assert.equal(pillarUnlock.kind,room.variant==='melody'?'melodyEcho':'ceilingRailTargets');
+    pillarUnlock.solve();for(let i=0;i<100;i++)room.tick(.05);
+    assert(room.snapshot().pillarHeight<.1,'Solving the native pillar challenge sinks the stone');
+  }else if(room.variant==='projectiles'){
     assert.equal(projectileTargets.length,3,'Projectile variant registers three ranged targets');
-    const posts=[[13.5,15.5],[15.5,13.5],[17.5,13.5]]; // The three solid blocker pillars frame the central room.
+    const posts=[[center+1,center+3],[center+3,center+1],[center+5,center+1]]; // The three solid blocker pillars frame the central room.
     projectileTargets.forEach((target,i)=>{
       const [px,pz]=posts[i],glyph=target.hitMesh.position;
       assert(Math.max(Math.abs(glyph.x-px),Math.abs(glyph.z-pz))>.475,
@@ -133,7 +187,7 @@ function test(seed){
     });
     for(let i=0;i<100;i++)room.tick(.05);
     assert(room.snapshot().pillarHeight<.1,'All projectile glyphs sink the pillar');
-  }else{
+  }else if(room.variant==='witchBomb'){
     assert.equal(breakablePillars.length,1,'Cracked pillar must register with actual bomb explosions');
     breakablePillars[0].onBreak();
     for(let i=0;i<100;i++)room.tick(.05);
@@ -141,7 +195,7 @@ function test(seed){
   }
   assert.equal(room.solved,false,'Release subpuzzles never bypass the final four plates');
   const free=(x,z)=>{
-    if(x<.5||x>23.5||z<.5||z>23.5)return false;
+    if(x<.5||x>size-.5||z<.5||z>size-.5)return false;
     return !barriers.some(barrier=>{
       if(barrier.enabled?.()===false)return false;
       return Math.abs(x-barrier.box.cx)<barrier.box.halfX+.41
@@ -174,25 +228,71 @@ function test(seed){
   }
   room.tick(.05);
   assert.equal(room.solved,true);
+  assert.equal(state.controls.length,0,'After four plates settle, completed fire and bomb controls no longer claim Action 1');
   assert.equal(solved,1,'The completion event fires only once');
   room.tick(.05);
   assert.equal(solved,1);
   room.dispose();
+  assert.equal(unregisteredBlocks.length,4,'Every movable block unregisters from the native pusher and V50 occupancy');
   assert.equal(state.controls.length,0,'No ghost interaction controls remain after reroll');
-  assert(cleared.includes('find-the-blocks'),'Custom blocker footprints are released');
-  assert.equal(cleared.filter(id=>id.endsWith('-net')||id.endsWith('-ice')).length,2,'Both flame targets are unregistered');
+  assert(cleared.some(id=>id.startsWith('find-the-blocks:')),'The specific chamber-owned blocker footprints are released');
+  assert.equal(cleared.filter(id=>id.endsWith('-ice')||id.endsWith('-net')).length,room.netVariant==='fire'?2:1,
+    'Every registered flame target is unregistered, without inventing a target for other net variants');
+  assert.equal(cleared.filter(id=>id.startsWith('challenge:')).length,subpuzzles.length,'All native subpuzzle hooks are disposed');
   // V50 ceiling heights vary with generated wall profiles; none of the four blocks may breach a short roof.
   const lowRoof=3.05;
   const tight=env.DevRuinFindBlocks.create({
-    THREE,kit,context:{seed,ceilingY:lowRoof},room:{x:0,z:0,w:24,d:24},y:0,
+    THREE,kit,context:{seed,ceilingY:lowRoof},room:{x:0,z:0,w:size,d:size},y:0,
     isActive:()=>true,onSolved:()=>{}
   });
   assert(tight.snapshot().stairRise<.36,'The climbing route compresses safely when the ceiling is low');
   for(const block of tight.blocks)
     assert(block.mesh.position.y+.41<=lowRoof-.17,'No block may clip through a real V50 ceiling: '+block.name);
   tight.dispose();
+  assert.equal(unregisteredBlocks.length,8,'A short-roof reroll releases its own four native push blocks');
   assert.equal(state.controls.length,0,'A short-roof reroll must also release every control');
-  return room.variant;
+  if(seed===0){
+    const elevated=[]; // Test the separate collision authority used only in layered dungeon stories.
+    const wingKit={...kit,registerBlocker:blocker=>elevated.push(blocker)};
+    const upper=env.DevRuinFindBlocks.create({
+      THREE,kit:wingKit,context:{seed,ceilingY:20.5},room:{id:'floor1-N-room1',x:0,z:0,w:18,d:18},y:16,
+      showGate:false,isActive:()=>true,onSolved:()=>{}
+    });
+    assert(elevated.length>=3,'Pillars and block obstacles use height-aware collision in upper stories');
+    const permanent=elevated.find(item=>item.id.endsWith('normal-pillar-0')); // Must remain solid even after the external progress gate opens.
+    assert(permanent&&permanent.enabled(),'The current story has physical stone columns');
+    for(const obstacle of elevated){
+      const mx=(obstacle.bounds.minX+obstacle.bounds.maxX)/2;
+      const mz=(obstacle.bounds.minZ+obstacle.bounds.maxZ)/2;
+      assert.equal(obstacle.blocksAt(mx,mz,1,null,0,{worldY:16}),true,
+        'Raised stone obstacles block movement and pushes on their own story');
+      assert.equal(obstacle.blocksAt(mx,mz,1,null,0,{worldY:0}),false,
+        'Raised stone obstacles never produce invisible blockers at ground level');
+    }
+    playerFloor=0;
+    assert.equal(permanent.enabled(),false,'Upper-story stone does not block actors exploring below');
+    playerFloor=16;
+    upper.blocks.forEach((block,i)=>{
+      block.phase='ready';block.mesh.position.set(upper.plates[i].x,16+.41,upper.plates[i].z);
+    });
+    upper.tick(.05);
+    assert.equal(upper.solved,true,'Four filled plates can complete an elevated chamber');
+    assert.equal(permanent.enabled(),true,'Visible permanent stone remains solid after the wing progression gate opens');
+    upper.dispose();
+    assert.equal(unregisteredBlocks.length,12,'An elevated chamber unregisters its four native push blocks');
+    assert.equal(state.controls.length,0,'Elevated chamber cleanup removes all interactive controls');
+    const partialBefore=unregisteredBlocks.length; // A construction failure must roll back partially attached blocks and controls.
+    assert.throws(()=>env.DevRuinFindBlocks.create({
+      THREE,kit:{...kit,registerSurface(){throw new Error('injected-surface-failure');}},
+      context:{seed,ceilingY:5},room:{id:'partial',x:0,z:0,w:18,d:18},y:0,
+      isActive:()=>true,onSolved:()=>{}
+    }),/injected-surface-failure/);
+    assert.equal(unregisteredBlocks.length-partialBefore,3,'Three registered source blocks are released when a late climbing support fails');
+    assert.equal(state.controls.length,0,'A half-built puzzle cannot leave an interactable brazier or dispenser');
+  }
+  return room.variant+'/'+room.netVariant;
 }
-assert.deepEqual([0,1,2].map(test),['melody','projectiles','witchBomb']);
-console.log('PASS Find the Blocks: 4 movable blocks, 4 plates, fire, ice, winding rise, ledge drop, 3 pillar variants, gate, cleanup');
+const combinations=new Set(Array.from({length:16},(_,seed)=>test(seed,24)));
+assert.equal(combinations.size,16,'Four independent pillar triggers and four independent net triggers must generate sixteen stable combinations');
+for(let seed=0;seed<16;seed++)test(seed,18); // Minimum-sized production rooms must preserve four distinct pushable paths.
+console.log('PASS Find the Blocks: 16 native mechanism combinations, 4 blocks/plates, real fire/ice/ledge, reachable push paths, scoped cleanup');

@@ -15,7 +15,7 @@ for(let length=11;length<=18;length++){
   const span=pit.maxX-pit.minX,count=Math.max(3,Math.min(8,Math.ceil((span-1)/2.25)+1));
   assert.ok((span-1)/(count-1)<=2.25,'normal rope catch distances must be physically achievable');
 }
-assert.equal(valid.size,12,'Find the Blocks is selectable without entering normal weighted rolls');
+assert.equal(valid.size,12,'Find the Blocks remains independently selectable in the lab');
 assert.equal(solo.pick(19,'findBlocks',planner).mode,'forced');
 assert.deepEqual(Object.values(solo.NATIVE_VARIANTS),['brazier','glyphObelisk','stackedObelisk','linkedCubePillars','pressurePlate']);
 for(const kind of valid){const selected=solo.pick(19,kind,planner);assert.equal(selected.kind,kind);assert.equal(selected.mode,'forced');}
@@ -39,7 +39,8 @@ for(let seed=1;seed<=200;seed++){
   assert.deepEqual(solo.pick(seed,'weighted',planner),selected);
   counts.set(selected.kind,(counts.get(selected.kind)||0)+1);
 }
-assert.equal(counts.size,6,'weighted mode samples only normal layered challenge rooms');
+assert.equal(counts.size,7,'weighted mode includes all seven playable layered challenge families');
+assert((counts.get('findBlocks')||0)>=30,'Frequent Find the Blocks rooms must be sampled by the ordinary weighted lab');
 assert.equal(counts.has('pressurePlate'),false,'retired pressure plate must never enter the random lab');
 const interior=read('docs/js/dev-random-ruin-interior-map.js');
 const simple=read('docs/js/dev-random-ruin-simple-puzzles.js');

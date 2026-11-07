@@ -12,7 +12,7 @@
     {side:'S',dx:0,dz:1},{side:'W',dx:-1,dz:0},
   ]);
   const TRAVERSAL_METHODS=Object.freeze(['reachingObelisks']); // Expand this list as distinct complete shaft methods are authored.
-  const PLAYABLE_PUZZLES=Object.freeze(['pressurePlate','glyphObelisk','ceilingRailTargets','melodyEcho','dungeonFire','ropeChain','statueDefense']); // Shared by composer and acceptance proof.
+  const PLAYABLE_PUZZLES=Object.freeze(['pressurePlate','glyphObelisk','ceilingRailTargets','melodyEcho','dungeonFire','ropeChain','statueDefense','findBlocks']); // Shared by composer and acceptance proof.
   const RANGED_PUZZLES=Object.freeze(['glyphObelisk','ceilingRailTargets']); // Every wing includes at least one actual ranged stage.
   const DEFAULTS=Object.freeze({
     spacing:64, // World cells between invisible multi-floor anchor slots; normal rooms fit between them.
@@ -83,7 +83,7 @@
     // ONLY puzzle families backed by an implemented real runtime may be
     // selected. Advanced rope/defence/fire variants will be added as their
     // actual mechanics are integrated, never disguised as plain floor plates.
-    const puzzles=PLAYABLE_PUZZLES.filter(type=>type!=='statueDefense'); // Ordinary-size rooms cannot fit the authored enemy pillars, so they exclude the oversized objective.
+    const puzzles=PLAYABLE_PUZZLES.filter(type=>type!=='statueDefense'&&type!=='findBlocks'); // Oversized compound rooms are selected before dimensions are calculated, not from the small solo-room pool. // Ordinary-size rooms cannot fit the authored enemy pillars, so they exclude the oversized objective.
     const rangedPuzzles=RANGED_PUZZLES;
     for(let floor=0;floor<floorCount;floor++){
       const y=floor*o.floorHeight; // Physical y datum for this otherwise ordinary 2D map.
@@ -119,16 +119,21 @@
           z:cz+dir.dz*outerRadius+lateral.dz*o.portalOffset};
         let previous={...portal}; // Far wall of the last room, initially the shaft portal threshold.
         for(let stage=1;stage<=challengeCount+1;stage++){ // One or two authored puzzles per shaft exit, followed by one required brazier.
-          const defence=wi>0&&stage===1&&challengeCount===1&&rng()<.24; // Short solo wings can still host the full 18×18 statue-defense arena; keep this puzzle family in weighted rolls.
-          const rw=defence?18:(dir.dx?integer(rng,11,19):integer(rng,9,15));
-          const rd=defence?18:(dir.dz?integer(rng,11,19):integer(rng,9,15));
+          const isGoal=stage===challengeCount+1;
+          const findBlocks=!isGoal&&wi>0&&(
+            stage===1?(wi===1||rng()<.57)
+              :stage===2&&nodes[0]?.challenge!=='findBlocks'&&rng()<.5
+          ); // Every story places at least one Find the Blocks wing; other branches roll additional chambers, never twice in a row.
+          const defence=!findBlocks&&wi>0&&stage===1&&challengeCount===1&&rng()<.24; // Keep the authored statue defense in the remaining solo-room pool.
+          const large=defence||findBlocks; // Four block sources and their push lanes require a full 18×18 clear footprint.
+          const rw=large?18:(dir.dx?integer(rng,11,19):integer(rng,9,15));
+          const rd=large?18:(dir.dz?integer(rng,11,19):integer(rng,9,15));
           const gap=integer(rng,3,6); // Short walk between consecutive puzzle rooms; no empty approach needs the old 7–15 cells.
           const offset=integer(rng,-2,2),depth=Math.floor((dir.dx?rw:rd)/2); // Small lateral bends retain variety without stretching the empty corridor.
           const rx=previous.x+dir.dx*(gap+depth+1)+lateral.dx*offset;
           const rz=previous.z+dir.dz*(gap+depth+1)+lateral.dz*offset;
-          const isGoal=stage===challengeCount+1;
           const id=`${wingId}-room${stage}`;
-          const challenge=isGoal?null:defence?'statueDefense'
+          const challenge=isGoal?null:findBlocks?'findBlocks':defence?'statueDefense'
             :stage===1&&challengeCount>1?'pressurePlate'
             :stage===2?rangedPuzzles[integer(rng,0,rangedPuzzles.length-1)]
             :puzzles[integer(rng,0,puzzles.length-1)]; // Solo branches retain all implemented puzzle families; the lead wing guarantees plate + ranged.
@@ -198,9 +203,9 @@
         add(wing.id+'-challenges',wing.rooms.length>=2&&wing.rooms.length<=5);
         add(wing.id+'-playableMechanisms',wing.rooms.slice(0,-1).every(
           r=>PLAYABLE_PUZZLES.includes(r.challenge)
-            &&(r.challenge!=='statueDefense'||r.w>=18&&r.d>=18))
-          &&(wing.rooms.length===2||wing.rooms[0].id===plan.trialRoomId||wing.rooms[0].challenge==='pressurePlate')
-          &&(wing.rooms.length===2||wing.rooms[1].id===plan.trialRoomId||RANGED_PUZZLES.includes(wing.rooms[1].challenge)));
+            &&(!['statueDefense','findBlocks'].includes(r.challenge)||r.w>=18&&r.d>=18))
+          &&(wing.rooms.length===2||wing.rooms[0].id===plan.trialRoomId||['pressurePlate','findBlocks'].includes(wing.rooms[0].challenge))
+          &&(wing.rooms.length===2||wing.rooms[1].id===plan.trialRoomId||[...RANGED_PUZZLES,'findBlocks'].includes(wing.rooms[1].challenge)));
         add(wing.id+'-portalConnected', wing.corridors[0]?.start.x===wing.entry.x&&wing.corridors[0]?.start.z===wing.entry.z);
         const shellRadius=Math.floor((plan.options.shaftSize+plan.options.shaftWall*2)/2);
         add(wing.id+'-clearShaft', wing.rooms.every(room=>!

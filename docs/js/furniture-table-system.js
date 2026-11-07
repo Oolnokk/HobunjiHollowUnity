@@ -496,7 +496,8 @@
       if(hitbox)socialCandidates.push({kind:'npc',walker,hitbox});
     };
     for(const walker of deps.getWalkers?.() || [])addNpc(walker);
-    addNpc(deps.extraWalker?.());
+    const nearbyGiftWalker = deps.extraWalker?.(); // Proximity-gated tribe hunter proxy; a missed camera ray must not make a two-tile gift impossible.
+    addNpc(nearbyGiftWalker);
     // Aim uses the actual (possibly raised) camera ray. Nearby NPCs keep their
     // priority; a broad table blocker must not hide a pot that its ray hits.
     const socialHit = deps.focusCandidates(socialCandidates, 40) || null; // NPC priority remains unless the physical wardrobe is visibly nearer to the camera.
@@ -518,7 +519,15 @@
       const visible = deps.focusCandidates(unobstructedCandidates, 40)?.candidate;
       focused = visible?.kind === 'service' && visible.entry === furnitureFocus.entry
         ? visible : furnitureFocus;
-    } else focused = furnitureFocus;
+    } else {
+      // Preserve aimed characters, chairs, storage and solid blockers; only use the
+      // nearby gift proxy when the camera ray hit nothing else. No remote offers:
+      // the same two-tile rule is enforced here even if a caller supplies a stale proxy.
+      const p = nearbyGiftWalker?.root?.position;
+      const nearbyGiftCandidate = p && Math.hypot(p.x - player.x, p.z - player.z) <= 2
+        ? socialCandidates.find(candidate => candidate.walker === nearbyGiftWalker) : null; // Only candidates that passed area, visibility and actor-hitbox checks can be selected.
+      focused = furnitureFocus?.kind === 'blocker' ? (nearbyGiftCandidate || furnitureFocus) : (furnitureFocus || nearbyGiftCandidate || null); // A noninteractive scenery hit must not hide a gift available to a nearby hunter; actionable furniture still wins.
+    }
     return focused;
   }
 
@@ -565,12 +574,19 @@
     return surfaceView;
   }
 
+  function npcDistance(walker) {
+    const player = deps?.getPlayerPosition?.(); // Same live player-space source as camera targeting, used to reject distant tribe gifts.
+    const position = walker?.root?.position; // The visible NPC or hunter proxy's world position, in map tiles.
+    if (!player || !position || areaId(walker.area) !== areaId(deps?.getArea?.())) return Infinity;
+    return Math.hypot(position.x - player.x, position.z - player.z);
+  }
+
   function invalidateFocus() { focusStamp = null; } // Public invalidation for async wardrobe registry loads and changed house assignments.
 
   function snapshot(area = deps?.getArea?.()) {
     return { latestChange: 'Camera lift depends only on an authored upward surface occupying the player tile or any of eight neighboring tiles; looking direction and camera pitch do not affect it.',
       surfaceCamera:{...surfaceView,probe:{...surfaceProbe,refreshMs:SURFACE_PROBE_REFRESH_MS}}, collision:{...collisionStats},
-      socialReach:deps?.npcReach?.()||6, socialIgnoresColliders:true, area: areaId(area), focused:focused?.kind || null, focusedNpc:focused?.walker?.rec?.id || null, seatReservations:seatClaims.size, wardrobeLocks:{...wardrobeLockDebug}, placements: [...entries(area).values()].map(entry => ({ id: entry.id, tableId: entry.record.tableId || null, serviceId: entry.record.serviceId || null, wardrobeFor: window.NpcFurnitureWardrobes?.ownerForPlacement?.(area, entry.record)?.npcId || null })) };
+      socialReach:deps?.npcReach?.()||6, socialIgnoresColliders:true, area: areaId(area), focused:focused?.kind || null, focusedNpc:focused?.walker?.rec?.id || null, focusedNpcDistance:focused?.walker ? npcDistance(focused.walker) : null, seatReservations:seatClaims.size, wardrobeLocks:{...wardrobeLockDebug}, placements: [...entries(area).values()].map(entry => ({ id: entry.id, tableId: entry.record.tableId || null, serviceId: entry.record.serviceId || null, wardrobeFor: window.NpcFurnitureWardrobes?.ownerForPlacement?.(area, entry.record)?.npcId || null })) };
   }
-  window.FurnitureTableSystem = { nearbySurface, init, clearArea, registerPlacement, unregisterPlacement, assignTable, tableForSeat, members, findSeat, seatTransform, lieTransform, registerService, aimedService, objectAt, refreshServices, invalidateFocus, snapshot, seatKey, isSeatTaken, setSeatTarget, blocksBox, grassFootprintKeys, focusedTarget, companionSeat };
+  window.FurnitureTableSystem = { nearbySurface, init, clearArea, registerPlacement, unregisterPlacement, assignTable, tableForSeat, members, findSeat, seatTransform, lieTransform, registerService, aimedService, objectAt, refreshServices, invalidateFocus, snapshot, seatKey, isSeatTaken, setSeatTarget, blocksBox, grassFootprintKeys, focusedTarget, npcDistance, companionSeat };
 })();

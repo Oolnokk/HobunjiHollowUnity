@@ -74,11 +74,15 @@
     const material=root.ProceduralFurniture?.makePartMaterial?.({
       materialTexture:'carved_smooth.png',materialLighting:'unlit',materialFillMode:'never',color:'#777267'
     })||new THREE.MeshBasicMaterial({color:0x777267});
-    const plateMat=new THREE.MeshBasicMaterial({color:0x8c735b});
-    const gateMat=new THREE.MeshBasicMaterial({color:0x4f3b32});
-    const brazierMat=new THREE.MeshBasicMaterial({color:0x665346});
-    const flameMat=new THREE.MeshBasicMaterial({color:0xffb92a});
-    const materials=[material,plateMat,gateMat,brazierMat,flameMat]; // Disposed together with the geometry and owned interactive controls.
+    const tintedStone=(hex,fallback)=>root.ProceduralFurniture?.makePartMaterial?.({
+      materialTexture:'carved_smooth.png',materialLighting:'unlit',
+      materialFillEnabled:true,materialFillColor:hex,materialFillMode:'always',color:hex,
+    })||new THREE.MeshBasicMaterial({color:fallback}); // Recolor the author's stone PNG rather than substituting flat-colored dungeon furniture.
+    const plateMat=tintedStone('#8c735b',0x8c735b);
+    const gateMat=tintedStone('#4f3b32',0x4f3b32);
+    const brazierMat=tintedStone('#665346',0x665346);
+    const materials=[material,plateMat,gateMat,brazierMat]; // Disposed together with the geometry and owned interactive controls.
+    const wingFlameVisuals=[]; // Owns the player's campfire particle emitters for every ignited wing brazier.
     const states=[],gridScopes=[],added=new Set(),surfaces=[]; // Runtime gate/puzzle records, registered voxel scopes, map floor keys and terrain rectangles.
     const ownedControls=new Set(); // Every wing brazier, fire-source and authored puzzle control is released on reroll or failed setup.
     function addControl(control){ruin.controls.push(control);ownedControls.add(control);}
@@ -109,6 +113,7 @@
       if(activeId&&states.some(state=>state.challenges.some(challenge=>challenge.kind==='melodyEcho'&&challenge.id===activeId)))
         music.close?.();
       for(const state of states)for(const challenge of state.challenges)challenge.dispose?.();
+      for(const flame of wingFlameVisuals)flame.dispose?.(); // No stale authored GPU particles after a dungeon reroll.
       for(const control of [...ownedControls])removeControl(control);
       for(const scopeId of gridScopes)DevRandomRuin?.unregisterShaftGrid?.(scopeId);
       DS.clearScope(scope);group.parent?.remove(group);
@@ -251,15 +256,17 @@
           challenge=Challenges.compose({
             THREE,parent:activeRoot,room,y:floor.y,id:room.id,kind:room.challenge,side:wing.side,
             RuinLayerDefense:Defense,mapId:String(rec.mapData?.id||'map_i_dev_random_ruin'),
-            isActive:()=>record.solved===i&&!owner.disposed,
+            isActive:()=>record.solved===i&&!owner.disposed
+              &&(room.challenge!=='findBlocks'||Math.abs(Number(getPlayerY?.())-floor.y)<4.5), // Stacked block barriers must not project onto a lower floor.
             getPlayerPosition,getPlayerY,
-            addControl,removeControl, // One shared resolver owns these controls, and this network owns their cleanup.
+            addControl,removeControl,
+            showToast:options.showToast, // One shared resolver owns these controls, and this network owns their cleanup.
             onFireArmed:()=>options.showToast?.('The next projectile ignites.',true),
             onFireUnavailable:()=>options.showToast?.('Equip a ranged weapon to ignite the next shot.',false),
             onMusicStart:()=>{}, // Zelda-style discovery: pressing the bronze plate plays the tune with no tutorial popup.
             onMusicUnavailable:()=>options.showToast?.('The bronze plate remains silent.',false),
             onLink:()=>options.onStateChange?.(), // Report native projectile/fire/defence registration without a dev console.
-            onError:challenge=>{options.showToast?.('Statue defence unavailable: '+challenge.error,false);options.onStateChange?.();},
+            onError:challenge=>{options.showToast?.(challenge.kind==='findBlocks'?'Find the Blocks unavailable: '+challenge.error:'Statue defence unavailable: '+challenge.error,false);options.onStateChange?.();},
             onSolved:()=>{
               if(owner.disposed||record.solved!==i)return;
               record.solved++;
@@ -269,6 +276,7 @@
                 :challenge.kind==='dungeonFire'?'The ice recedes — a stone gate opens.'
                 :challenge.kind==='statueDefense'?'The defended statue sinks into the plinth — a stone gate opens.'
                 :challenge.kind==='ropeChain'?'The far bank releases the stone gate.'
+                :challenge.kind==='findBlocks'?'Four stone blocks settle — the gate opens.'
                 :'The last target falls — the stone gate opens.',true);
               options.onStateChange?.();
             }
@@ -293,8 +301,11 @@
         const goal=wing.rooms[wing.rooms.length-1],bx=goal.x+goal.w/2,bz=goal.z+goal.d/2;
         const pedestal=mesh('ruin-brazier-'+wing.id,new THREE.CylinderGeometry(.7,.85,.65,8),
           brazierMat,bx,floor.y+.38,bz);
-        const flame=mesh('ruin-brazier-flame-'+wing.id,new THREE.ConeGeometry(.43,1.3,7),
-          flameMat,bx,floor.y+1.27,bz);flame.visible=false;
+        const flame=new THREE.Group(); // Particle anchor replaces the opaque cone; visible only after this brazier is lit.
+        flame.name='ruin-brazier-flame-'+wing.id;
+        flame.position.set(bx,floor.y+1.27,bz);flame.visible=false;activeRoot.add(flame);
+        const flameVisual=root.PersistentGroundFire?.attachCampfireFlame?.(flame,{scale:1.1,rateScale:.95});
+        if(flameVisual)wingFlameVisuals.push(flameVisual); // Uses the exact player-placeable campfire emitter recipe.
         const brazier={id:wing.goalBrazierId,wingId:wing.id,lit:false,flame,pedestal};
         record.braziers.push(brazier);
         addControl({
@@ -341,6 +352,7 @@
       // be drawn over the player by the overhead third-person camera. Keep
       // physical collision/supports active; hide ONLY the upper story meshes.
       for(const [floor,rootGroup] of floorRoots)rootGroup.visible=floor*plan.options.floorHeight<=y+.8;
+      for(const flame of wingFlameVisuals)flame.update?.(Math.max(0,Math.min(.05,dt))); // Particle lifecycle is owned by the ruin's existing tick.
       for(const record of states){
         record.challenges[record.solved]?.tick?.(dt); // Only the current room consumes inputs, notes and target hooks.
         for(let i=0;i<record.solved;i++)
@@ -360,6 +372,8 @@
       defenseRoomsReady:states.reduce((n,r)=>n+r.challenges.filter(c=>c.kind==='statueDefense'&&c.ready).length,0),
       defenseErrors:states.flatMap(r=>r.challenges.filter(c=>c.kind==='statueDefense'&&c.error)
         .map(c=>({id:c.id,error:c.error,attempts:c.attempts}))),
+      findBlocks:states.flatMap(r=>r.challenges.filter(c=>c.kind==='findBlocks')
+        .map(c=>({id:c.id,ready:c.ready,linked:c.linked,error:c.error,variant:c.variant,netVariant:c.netVariant,progress:c.snapshot?.()?.weighted??0}))), // In-game mobile diagnostics show each compound chamber's progress and installed variants.
       pendingRuntimeLinks:states.flatMap(record=>{
         const stage=record.challenges[record.solved];
         if(!stage)return [];
@@ -367,6 +381,7 @@
         return ranged&&!stage.linked||stage.kind==='dungeonFire'&&!stage.fireLinked
           ||stage.kind==='ropeChain'&&!stage.ropeLinked
           ||stage.kind==='statueDefense'&&!stage.ready
+          ||stage.kind==='findBlocks'&&(!stage.ready||!stage.linked)
           ?[{wingId:record.wingId,stage:stage.id,kind:stage.kind}]:[];
       }),
       perFloor:plan.floors.map(f=>({floor:f.floor,y:f.y,nativeV50:!!f.nativePort,

@@ -209,15 +209,33 @@
     }; // The same sculpting field works for a locked puzzle gate and for a mined wall.
     const geometry=fusedRockGeometry(THREE,wall);
     if(!geometry)return null; // Headless puzzle labs keep their existing authored gate fallback.
-    const material=window.OreRockTextures?.materialFor?.(THREE,'stone',{}) || new THREE.MeshStandardMaterial({color:0x777267,roughness:.94});
+    let caveWall=null; // Find the actual carved cavern shell so the inserted puzzle wall uses its exact material, not ore-rock recoloring.
+    parent.parent?.traverse?.(node=>{
+      if(!caveWall&&node.isMesh&&node.userData?.interiorCavernMaterialParity)caveWall=node;
+    }); // The already-built cave shell is the visual authority for the cave's rock texture and lighting.
+    const material=caveWall?.material || window.OreRockTextures?.materialFor?.(THREE,'stone',{})
+      || new THREE.MeshStandardMaterial({color:0x777267,roughness:.94});
     const mesh=new THREE.Mesh(geometry,material);
+    if(!caveWall && window.NaturalSurfaceMaterials?.naturalizeMesh){
+      window.NaturalSurfaceMaterials.naturalizeMesh(mesh,'rocks','planar-stretch'); // Standalone labs without a cave shell use its same farm-cliff material pipeline.
+      window.FacetedNaturalSurfaceShellReduction?.suppressMesh?.(mesh,'rocks');
+    }
+    if(window.HobunjiSurfaceStretchUV?.mapMesh){
+      delete mesh.geometry.userData.hobunjiSurfaceStretchSignature; // Re-project this wall's independent sculpted geometry just like the carved cavern mesh.
+      delete mesh.geometry.userData.hobunjiSurfaceStretch;
+      delete mesh.geometry.userData.naturalSurfaceUvMapping;
+      window.HobunjiSurfaceStretchUV.mapMesh(mesh,{label:'puzzle-cave:carved-gate',maxPatchWorldSize:6});
+    }
+    mesh.userData.caveSharedWallMaterial=!!caveWall; // Mobile diagnostics reveal whether the real shell material was reused.
+    mesh.userData.interiorCavernMaterialParity=caveWall?.userData?.interiorCavernMaterialParity||'farm-cliffs';
     mesh.name='puzzle-cave-carved-roof-height-stone-gate';
     mesh.castShadow=mesh.receiveShadow=true;
     mesh.userData.caveSeparatorFused=true;
     mesh.userData.caveCarvedDoorOpening=true;
     mesh.userData.caveSeparatorHeight=wall.height;
     mesh.userData.devRuinFootprintIgnore=true; // Existing gate blocker remains the sole authority for movement and pathfinding.
-    window.OreRockTextures?.fitRockMesh?.(mesh);
+    // Do not run OreRockTextures.fitRockMesh here: it marks this real cavern wall as legacy-UV ore,
+    // suppressing the natural-surface mapping metadata that matches the surrounding cave shell.
     parent.add(mesh);
     return mesh;
   }

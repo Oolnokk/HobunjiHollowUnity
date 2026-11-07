@@ -168,7 +168,7 @@
   <script src="js/metal-armor-system.js?v=20261104hPatternQuick1435a"></script>
   <script src="config/colors/config.js?v=20261026h7f369c3"></script>
   <script src="config/attachment-rig-profiles.js?v=20261026homgurkulower03"></script>
-  <link rel="stylesheet" href="style.css?v=20261106puzzleHud4">
+  <link rel="stylesheet" href="style.css?v=20261107rewardReadout1">
   <link rel="stylesheet" href="cooking-ui.css?v=20261009mobiletarget3">
   <link rel="stylesheet" href="ui-element-editor.css?v=20260814a">
   <!-- Shared gameplay presentation: mirrors the outlined text + light translucent containers used by character/save select. -->
@@ -247,7 +247,7 @@
   <!-- Species-driven food sources and retaliatory/guard rules share one existing wildlife AI tick. -->
   <script src="js/wildlife-food-web.js?v=20261020foodweb1"></script>
   <!-- Procedural foliage / crop geometry -->
-  <script src="js/ice-stalagmite-coverage.js?v=20261105stoneAudit4"></script>
+  <script src="js/ice-stalagmite-coverage.js?v=20261107integratedDungeon1"></script>
   <script src="js/foliage-generator.js?v=20261105koma1"></script>
   <script src="js/roadside-koma-hedges.js?v=20261105koma1"></script> <!-- Path-adjacent shrub row detection, separate from general foliage. -->
   <script src="js/dungeon-door-ice-coverage.js?v=20261103doorice1"></script>
@@ -260,7 +260,7 @@
   <!-- Loads the richer per-piece data authored by furniture-avatar-author (seat
        anchors, processing VFX/warps, livestock stomp points) on top of it -->
   <script src="js/table-chair-placement.js?v=20261102chairreview3"></script>
-  <script src="js/furniture-table-system.js?v=20261104familylocks1"></script>
+  <script src="js/furniture-table-system.js?v=20261107nearbygift2"></script>
   <script src="js/furniture-surface-png-runtime.js?v=20261103materialv3"></script> <!-- Opt-in per-face PNG tiling, alpha padding and opacity from Furniture Editor. -->
   <script src="js/authored-furniture-runtime.js?v=20261105stoneSyntaxFix2"></script>
   <!-- Preserve authored sign decals when house fixtures render at town load. -->
@@ -411,7 +411,7 @@
   <script src="js/bounty-board.js?v=20261008h416634c"></script>
   <!-- Loads docs/config/combat/attack-values.json and overrides every
        combat-*.js module's hardcoded defaults with it. -->
-  <script src="js/combat/combat-config-loader.js?v=20261107h5aeebb4"></script>
+  <script src="js/combat/combat-config-loader.js?v=20261107nearbygift2"></script>
   <!-- Shared timed-effect HUD, skill progression, food processing rules, and
        hearth cooking. These modules own their state/UI and expose narrow
        adapters to game.js. -->
@@ -436,7 +436,7 @@
   <!-- Banubu's Tea Grinder delegates trait legality/targeting to AlchemySystem
        but outputs cooking Tea Blends, so it must load after both systems. -->
   <script src="js/tea-grinder.js?v=20261019h0edeaef"></script>
-  <script src="js/persistent-ground-fire.js?v=20261107puzzleFire1"></script><!-- Area-scoped fire patches shared by flasks, Shattercasks and stone sconces. -->
+  <script src="js/persistent-ground-fire.js?v=20261107integratedDungeon1"></script><!-- Area-scoped fire patches shared by flasks, Shattercasks and stone sconces. -->
   <script src="js/alchemy-flasks.js?v=20261106hbd5b51f"></script>
   <!-- Dye catalog/ownership (window.DyeSystem) — character creation, the
        redye panel, General Store clothing stock, and treasure loot all
@@ -498,7 +498,7 @@
        time, not at load time, so script order relative to them doesn't
        matter; must load before game.js, which calls
        window.HousePieces.init(...) during its own setup. -->
-  <script src="js/house-pieces.js?v=20261107h1e26334&surfaceUv=20261026orequad1"></script>
+  <script src="js/house-pieces.js?v=20261107nearbySocial2&surfaceUv=20261026orequad1"></script>
   <!-- Death ragdoll → lootable corpse (window.CreatureDeath) —
        self-contained aside from deps injected via init(), so load order
        relative to the other systems above doesn't matter; must load
@@ -617,16 +617,18 @@
   <script src="js/ruin-wall-faces.js?v=20261106walls1"></script> <!-- Merged stretch-to-fit wall faces; shaft-hub.js builds its stone from them. -->
   <script src="js/ruin-reaching-obelisks.js?v=20261105reach-obelisk1"></script> <!-- Complete stateful vertical traversal, after CellGrid3D and the climb pipeline. -->
   <script src="js/shaft-hub.js?v=20261106h0b61a44"></script>
-  <script src="js/ruin-layer-plan.js?v=20261107hallcompact1"></script>
+  <script src="js/ruin-layer-plan.js?v=20261107integrationBlocks1"></script>
   <script src="js/dev-ruin-single-room-trial.js?v=20261107findblocks1"></script> <!-- One-room developer puzzle chooser and normal-plan weighted odds. -->
-  <script src="js/dev-ruin-find-blocks.js?v=20261107findblocks1"></script> <!-- Four-block compound lab fixture, using native ruin push, fire, flute and bomb mechanics. -->
+  <script src="js/dev-ruin-find-blocks.js?v=20261107integrationBlocks1"></script> <!-- Four-block compound lab fixture, using native ruin push, fire, flute and bomb mechanics. -->
   <script src="js/ruin-shaft-corridor.js?v=20261104directVestibule1"></script>
   <script src="js/ruin-layer-defense.js?v=20261104soloNoLoot1"></script>
   <script src="js/puzzle-cave-melody.js?v=20261105puzzleCaves1"></script><!-- Reusable rhythm grid and timed plate-gated cave songs. -->
-  <script src="js/ruin-layer-challenges.js?v=20261107puzzleWallAudit2"></script>
-  <script src="js/ruin-layer-playable.js?v=20261106ha9f48ae"></script>
+  <script src="js/puzzle-cave-plate-art.js?v=20261107haoUun1"></script><!-- Carved-smooth Tankan lettering, reused by interior and exterior melody plates. -->
+  <script src="js/ruin-melody-glyph-decal.js?v=20261107integratedDungeon1"></script><!-- Plate-revealed Scratchbone clues outside the dev ruin bootstrap. -->
+  <script src="js/ruin-layer-challenges.js?v=20261107integratedDungeon1"></script>
+  <script src="js/ruin-layer-playable.js?v=20261107integratedDungeon1"></script>
   <script src="js/ruin-v50-native-mechanisms.js?v=20261105hc10ba02"></script>
-  <script src="js/ruin-v50-native-floors.js?v=20261105hd86bc92"></script>
+  <script src="js/ruin-v50-native-floors.js?v=20261107integratedDungeon1"></script>
   <script src="js/ruin-shaft-connector.js?v=20261107shaftdoor1"></script>
   <script src="js/ruin-v50-vestibule.js?v=20261105reachVest1"></script>
   <script src="js/ruin-multifloor-v50-style.js?v=20261106h753f499"></script> <!-- Vertical hub room composed on a CellGrid3D: balconies, doors, climbable buttresses; see docs/architecture/vertical-grid.md -->
@@ -891,7 +893,7 @@
   <script src="js/cavern-generator.js?v=20261026cavewalls1"></script>
   <script src="js/tzatzul-nest-interior.js?v=20261107h10e155e"></script> <!-- Author four high-vault boss rooms using the existing cavern mesh and stone stalagmite generator. -->
   <script src="js/ore-rock-textures.js?v=20261102authorAssetBase1"></script> <!-- Shared metal-bodied ore and verdigris materials: mine, wilderness, caves. -->
-  <script src="js/cavern-ore-rocks.js?v=20261107puzzleWallAudit2"></script>
+  <script src="js/cavern-ore-rocks.js?v=20261107caveStone1"></script>
   <script src="js/town-mine.js?v=20261026ghouls1"></script>
   <script src="js/town-mine-descent.js?v=20261023mdesc2"></script>
   <!-- A wilderness zone's in-bounds elevated plateau/mesa terrain
@@ -924,8 +926,8 @@
   <script src="js/locale-cave-runtime.js?v=20261010h40fea5e"></script>
   <!-- Promotes wilderness den anchors into generic cave sites; wraps WildlifeSpawn/CavernGenerator/DevSpawner, all loaded above. -->
   <script src="js/locale-cliff-wall-mounts.js?v=20261105cliffPortal1"></script><!-- Mount editor-authored furniture on the resolved procedural wall normal and elevation. -->
-  <script src="js/puzzle-cave-entrances.js?v=20261107verdigris1"></script><!-- Real mini-cliff cliffDoor placement, exterior timed plate, and authoritative gated transition. -->
-  <script src="js/cave-site-system.js?v=20261107puzzleWallAudit2"></script>
+  <script src="js/puzzle-cave-entrances.js?v=20261107haoUun1"></script><!-- Real mini-cliff cliffDoor placement, exterior timed plate, and authoritative gated transition. -->
+  <script src="js/cave-site-system.js?v=20261107caveStone1"></script>
   <!-- Two-necked Shattercask runtime. Loaded after Combat/DevSpawner/CaveSiteSystem so their
        hooks bind before game.js initializes the subsystems; also handles touch prompts. -->
   <!-- Capability/event substrate (window.WorldEvents, window.Targetables): pure registries with no
@@ -2783,7 +2785,7 @@
     <button class="fcv-continue" id="fcvContinueBtn">Continue</button>
   </div>
 
-  <script src="js/tool-icon-render.js?v=20261107h2f7130c"></script>
+  <script src="js/tool-icon-render.js?v=20261107hloaderdepth1"></script>
   <script src="js/sprite-recolor.js?v=20261105koma1"></script>
   <script src="js/object-sprite-catalog.js?v=20261105koma1"></script> <!-- Central metadata-to-authored-PNG resolver for new inventory icons. -->
   <!-- Mount ride system (window.Mounts) — must load before game.js, which
@@ -2813,7 +2815,7 @@
   <!-- Pixel Probe debug tool (window.PixelProbe) — wires its own DOM
        buttons at load time, and must load before game.js, which calls
        window.PixelProbe.init(...) during its own setup. -->
-  <script src="js/pixel-probe.js?v=20261104cliffCrawlAudit2"></script>
+  <script src="js/pixel-probe.js?v=20261107hpixelbudget1"></script>
   <!-- NPC dialogue CONTENT (window.DialogueContent) — text/token
        resolution, tree/pool selection, typewriter, portrait rendering,
        choice buttons. Must load before game.js, which calls
@@ -2845,8 +2847,10 @@
   <script src="js/tutorial-unlock-visits.js?v=20260930doorstep1"></script>
   <script src="js/farmhouse-login-spawn.js?v=20260930doorstep1"></script>
   <script src="js/banubu-questline.js?v=20261026banubuoverpass3"></script>
+  <!-- Completed world-space loot and XP rewards move into the five-row, screen-fixed reading queue. -->
+  <script src="js/reward-readout.js?v=20261107rewardReadout1"></script>
   <!-- World-space Float+ combat text and centered five-row reward lists. -->
-  <script src="js/world-popup-text.js?v=20261105h5fcacdd"></script>
+  <script src="js/world-popup-text.js?v=20261107rewardReadout1"></script>
   <!-- Quick Attack opportunity reticle needs WorldPopupText's avatar centroid
        helper at module evaluation time, so it belongs here rather than in the
        earlier combat-definition block. It still loads before game.js and
@@ -2960,7 +2964,7 @@
   <!-- Camera-safe utility spyglass: capture Fishing/ActionArcUI init before game.js boots; action-arch prompt and lens are created at DOM ready. -->
   <script src="js/utility-spyglass.js?v=20261103spyglassControls3"></script>
   <!-- Dev-only Random Test Ruin runtime; injects nothing unless Dev Mode is on. -->
-  <script src="js/dev-random-ruin-bootstrap.js?v=20261107nativeglyphsource1"></script>
+  <script src="js/dev-random-ruin-bootstrap.js?v=20261107integratedDungeon1"></script>
   <!-- Dev Testing Switchbox: dev-only performance kill switches (audio,
        NPC/creature AI, water sim, low-poly foliage). Must load after
        audio-system.js/water-system.js/foliage-generator.js (wraps their

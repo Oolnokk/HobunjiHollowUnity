@@ -131,6 +131,16 @@
   let scissoredReplayCount = 0; // Replays whose passes were clipped to the held/foot screen rectangle.
   let fullscreenReplayCount = 0; // Replays that fell back to full-framebuffer passes (see replayScissorRect).
   let lastReplayScissorCoverage = 1; // Fraction of the framebuffer the last replay's passes touched.
+  let lastScissorFailureReason = 'none'; // Reason the latest scissor attempt rejected an unsafe viewport or mesh.
+  let lastHeldFullscreenReason = 'none'; // Held-pass fallback cause, captured before later bounds checks can overwrite it.
+  let lastShellFullscreenReason = 'none'; // Shell-pass fallback cause, captured separately from the held pass.
+  let lastBaseReplayCandidates = 0; // Held and foot meshes considered after the last base render.
+  let lastBaseOffscreenFiltered = 0; // Rigid offscreen meshes removed before grouping into expensive depth replays.
+  let lastShellReplayCandidates = 0; // Held and foot shell meshes considered by the most recent shell pass.
+  let lastShellOffscreenFiltered = 0; // Rigid offscreen shell meshes skipped before their depth passes.
+  let lastBaseElevationGroups = 0; // Distinct visible actor heights that needed the last held depth rebuild.
+  let lastShellElevationGroups = 0; // Distinct visible actor heights that needed the last shell-depth rebuild.
+  let groupScissorCount = 0; // Elevation-group passes assigned their own tighter depth-replay screen rectangle.
   let missingStencilFootReplaySkipCount = 0; // Safety fallback for auxiliary/offscreen targets that cannot carry the two-bit mask.
   let lastBaseStencilBits = 0; // STENCIL_BITS of the framebuffer bound for the most recent real world pass.
   let baseWorldRenderCount = 0;
@@ -891,6 +901,8 @@
     while (typeof current === 'function' && !seen.has(current)) {
       seen.add(current);
       const next = current.__hobunjiTerrainChunkOriginal
+        || current.__hobunjiTerrainSurfaceOriginal
+        || current.__hobunjiNaturalSurfacePostJigsawOriginal
         || current.__hobunjiOutlineRenderPerfOriginal
         || current.__hobunjiHeldRenderOrderOriginal
         || current.__hobunjiPlayerBodyComposerOriginal
@@ -924,6 +936,9 @@
   const scissorBox = new THREE.Box3();
   const scissorCorner = new THREE.Vector3();
   const scissorRect = new THREE.Vector4();
+  const elevationScissorRect = new THREE.Vector4(); // Temporary screen bounds for one actor elevation.
+  const participantFrustum = new THREE.Frustum(); // Conservative game-camera bounds for source meshes.
+  const participantProjection = new THREE.Matrix4(); // Reused camera view-projection matrix for source-mesh culling.
   const scissorViewport = new THREE.Vector4();
   const scissorDrawingSize = new THREE.Vector2();
   const SCISSOR_MARGIN_PX = 4;
@@ -989,21 +1004,61 @@
     return culled;
   }
 
+  function filterOffscreenReplayMeshes(camera, meshes) {
+    if (!camera?.projectionMatrix || !camera?.matrixWorldInverse) return meshes;
+    participantProjection.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+    participantFrustum.setFromProjectionMatrix(participantProjection);
+    return meshes.filter(mesh => {
+      // Only rigid leaf bounds are trustworthy. Keep animated/instanced meshes,
+      // child-bearing weapon assemblies and VFX with extra shader/particle extent.
+      if (!mesh?.isMesh || !mesh.geometry || !mesh.matrixWorld || mesh.frustumCulled === false
+          || mesh.isSkinnedMesh || mesh.isInstancedMesh || mesh.children?.length
+          || mesh.geometry.morphAttributes?.position?.length
+          || mesh.userData?.hobunjiReplayNeverCull === true
+          || Number(mesh.userData?.hobunjiHeldOverlayVfxPadding) > 0
+          || Number(mesh.userData?.hobunjiDungeonFireVfxPadding) > 0) return true;
+      return participantFrustum.intersectsObject(mesh);
+    });
+  }
+
+  function applyElevationScissor(renderer, camera, meshes, glState) {
+    // An uncertain group always falls back to the proven union bounds; never clip unknown geometry.
+    if (replayScissorRect(renderer, camera, meshes, elevationScissorRect)
+        && elevationScissorRect.z > 0 && elevationScissorRect.w > 0) {
+      glState.scissor(elevationScissorRect);
+      groupScissorCount++;
+      return;
+    }
+    glState.scissor(scissorRect);
+  }
+
   function replayScissorRect(renderer, camera, meshes, out) {
-    if (!camera?.isPerspectiveCamera && !camera?.isOrthographicCamera) return false;
+    if (!camera?.isPerspectiveCamera && !camera?.isOrthographicCamera) {
+      lastScissorFailureReason = 'unsupported-camera';
+      return false;
+    }
     const target = renderer.getRenderTarget?.() || null;
     let width, height;
     if (target) { width = target.width; height = target.height; }
     else { renderer.getDrawingBufferSize(scissorDrawingSize); width = scissorDrawingSize.x; height = scissorDrawingSize.y; }
-    if (!(width > 0 && height > 0)) return false;
+    if (!(width > 0 && height > 0)) {
+      lastScissorFailureReason = 'invalid-framebuffer';
+      return false;
+    }
     renderer.getCurrentViewport?.(scissorViewport);
-    if (scissorViewport.x !== 0 || scissorViewport.y !== 0 || scissorViewport.z !== width || scissorViewport.w !== height) return false;
+    if (scissorViewport.x !== 0 || scissorViewport.y !== 0 || scissorViewport.z !== width || scissorViewport.w !== height) {
+      lastScissorFailureReason = 'partial-viewport';
+      return false;
+    }
 
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     const near = Number(camera.near) || 0;
     function includeBounds(mesh) {
       const geometry = mesh?.geometry; // Used to project one held mesh or one visible child with a live enchantment emitter.
-      if (!geometry || mesh.isSkinnedMesh || mesh.isInstancedMesh || geometry.morphAttributes?.position?.length) return false;
+      if (!geometry || mesh.isSkinnedMesh || mesh.isInstancedMesh || geometry.morphAttributes?.position?.length) {
+        lastScissorFailureReason = !geometry ? 'missing-geometry' : mesh.isSkinnedMesh ? 'skinned-mesh' : mesh.isInstancedMesh ? 'instanced-mesh' : 'morphed-mesh';
+        return false;
+      }
       if (!geometry.boundingBox) geometry.computeBoundingBox();
       if (!geometry.boundingBox || geometry.boundingBox.isEmpty()) return true;
       scissorBox.copy(geometry.boundingBox).applyMatrix4(mesh.matrixWorld);
@@ -1020,7 +1075,10 @@
       for (let corner = 0; corner < 8; corner++) {
         scissorCorner.set(corner & 1 ? max.x : min.x, corner & 2 ? max.y : min.y, corner & 4 ? max.z : min.z);
         scissorCorner.applyMatrix4(camera.matrixWorldInverse);
-        if (camera.isPerspectiveCamera && scissorCorner.z > -near) return false; // Never clip uncertain near-plane projections.
+        if (camera.isPerspectiveCamera && scissorCorner.z > -near) {
+          lastScissorFailureReason = 'near-plane-intersection';
+          return false; // Never clip uncertain near-plane projections.
+        }
         scissorCorner.applyMatrix4(camera.projectionMatrix);
         if (scissorCorner.x < minX) minX = scissorCorner.x;
         if (scissorCorner.x > maxX) maxX = scissorCorner.x;
@@ -1042,8 +1100,12 @@
         if (!valid || child === mesh || !(Number(child.userData?.hobunjiHeldOverlayVfxPadding) > 0 || Number(child.userData?.hobunjiDungeonFireVfxPadding) > 0)) return;
         if (!includeBounds(child)) valid = false;
       });
-      if (!valid) return false;
+      if (!valid) {
+        lastScissorFailureReason = 'unbounded-child-emitter';
+        return false;
+      }
     }
+    lastScissorFailureReason = 'none';
     scissorTargetWidth = width;
     scissorTargetHeight = height;
     if (minX === Infinity) { out.set(0, 0, 0, 0); return true; } // Nothing drawable: no replay pixel can change.
@@ -1283,7 +1345,11 @@
     // Each actor elevation gets its own depth replay. Same-level upward-facing
     // ground fragments are omitted; other tiers, trench/raised surfaces, walls,
     // props and protective covers remain real occluders.
-    if (!held.length && !feet.length) return;
+    if (!held.length && !feet.length) {
+      lastBaseElevationGroups = 0;
+      lastHeldFullscreenReason = 'no-visible-participants';
+      return;
+    }
 
     const oldAutoClear = renderer.autoClear;
     const oldAutoClearColor = renderer.autoClearColor;
@@ -1299,12 +1365,15 @@
     const overlayMeshes = [...held, ...feet];
     const scissorMeshes = overlayMeshes; // Same visible actor meshes define replay bounds and the conservative cull set.
     const groundMeshes = [...ground, ...topFaceGround];
-    window.HobunjiHandOutlineParity?.refreshHeldMatrices?.(held);
     const actorElevationCache = new Map(); // Reuses one authoritative surface sample for every hand/tool/foot belonging to the same actor.
     const groups = groupXrayMeshesByElevation(overlayMeshes, mesh => actorElevationForXrayMesh(mesh, scene, actorElevationCache));
+    lastBaseElevationGroups = groups.length;
     recordElevationGroups(groups);
     const tintOverlay = lastBaseStencilBits >= 1 && hasOverlappingHeldCover(renderer, camera, overlayMeshes, tintCovers);
-    let scissored = replayScissorEnabled && !!(glState?.scissor && glState?.setScissorTest) && replayScissorRect(renderer, camera, scissorMeshes, scissorRect);
+    const hasScissorApi = !!(glState?.scissor && glState?.setScissorTest); // Separates unavailable GL scissor support from unsafe geometry.
+    let scissored = replayScissorEnabled && hasScissorApi && replayScissorRect(renderer, camera, scissorMeshes, scissorRect);
+    lastHeldFullscreenReason = scissored ? 'none' : !replayScissorEnabled ? 'disabled'
+      : !hasScissorApi ? 'scissor-api-unavailable' : lastScissorFailureReason;
     let replayCulled = null;
     let overlayHidden = null;
     const colorBuffer = renderer.state?.buffers?.color;
@@ -1340,6 +1409,7 @@
       if (scissored) glState.setScissorTest(true);
 
       for (const group of groups) {
+        if (scissored) applyElevationScissor(renderer, camera, group.meshes, glState);
         const filterStates = setGroundElevationFilter(groundMeshes, group.elevation);
         renderer.clearDepth();
         const prepPerf = window.PerfProfiler?.begin('held-overlay: depth material prep');
@@ -1367,7 +1437,9 @@
         }
 
         for (const mesh of group.meshes) mesh.visible = overlayHidden.get(mesh) !== false;
-        if (scissored) glState.setScissorTest(false);
+        // Keep this group's scissor for the held color/stencil draw. Drawing outside
+        // the group's reconstructed depth rectangle can reveal weapons through
+        // unrelated foreground terrain and stamp invalid water-tint stencil bits.
         const overlayStates = tintOverlay ? prepareSubmergedOverlayStencilMaterials(group.meshes) : null;
         try {
           camera.layers.mask = HELD_OVERLAY_MASK;
@@ -1378,10 +1450,15 @@
         } finally {
           if (overlayStates) restoreMaterialStates(overlayStates);
           for (const mesh of group.meshes) mesh.visible = false;
-          if (scissored) glState.setScissorTest(true);
         }
       }
 
+      // The final ground and translucent-cover restores must cover every group's
+      // original union, not only the final actor's smaller replay rectangle.
+      if (scissored) {
+        glState.scissor(scissorRect);
+        lastReplayScissorCoverage = (scissorRect.z * scissorRect.w) / (scissorTargetWidth * scissorTargetHeight);
+      }
       // Restore the original complete ground depth before water/slush tinting.
       restoreVisibility(overlayHidden);
       overlayHidden = null;
@@ -1476,6 +1553,7 @@
     const groundMeshes = [...ground, ...topFaceGround];
     const actorElevationCache = new Map(); // Shells reuse the exact actor floor elevation resolved for their source meshes.
     const groups = groupXrayMeshesByElevation(xrayMeshes, mesh => actorElevationForXrayMesh(mesh, scene, actorElevationCache));
+    lastShellElevationGroups = groups.length;
     recordElevationGroups(groups);
     let scissorActive = false;
     let depthWasCleared = false;
@@ -1512,6 +1590,7 @@
       // visible tool/hand/foot replay. The shell cannot become visible through
       // a different floor than its source object.
       for (const group of groups) {
+        if (scissorActive) applyElevationScissor(renderer, camera, group.meshes, glState);
         const filterStates = setGroundElevationFilter(groundMeshes, group.elevation);
         renderer.clearDepth();
         depthWasCleared = true;
@@ -1550,6 +1629,11 @@
       // material-ID consumers. This is colorless and retains ordinary occlusion.
       try {
         if (depthWasCleared) {
+          // Restore all actor rectangles before rebuilding the final unfiltered depth.
+          if (scissorActive) {
+            glState.scissor(scissorRect);
+            lastReplayScissorCoverage = (scissorRect.z * scissorRect.w) / (scissorTargetWidth * scissorTargetHeight);
+          }
           clearGroundElevationFilter(setGroundElevationFilter(groundMeshes, NaN));
           scene.overrideMaterial = null;
           camera.layers.mask = MASK_ALL;
@@ -1595,15 +1679,26 @@
     if (isShellOutlinePass(scene, camera)) {
       const held = collectVisible(heldRegistry, scene);
       const feet = collectVisible(waterOccludedRegistry, scene);
-      const xrayMeshes = [...new Set([...held, ...feet])].filter(mesh => hasLayer(mesh, SHELL_LAYER)); // Only source meshes with a real shell need the matching outline replay.
+      const shellCandidates = [...new Set([...held, ...feet])].filter(mesh => hasLayer(mesh, SHELL_LAYER)); // Only source meshes with a real shell need the matching outline replay.
+      window.HobunjiHandOutlineParity?.refreshHeldMatrices?.(shellCandidates); // Refresh live hand matrices before camera culling or shell scissor projections.
+      const xrayMeshes = filterOffscreenReplayMeshes(camera, shellCandidates);
+      lastShellReplayCandidates = shellCandidates.length;
+      lastShellOffscreenFiltered = shellCandidates.length - xrayMeshes.length;
+      if (!xrayMeshes.length) {
+        lastShellElevationGroups = 0;
+        lastShellFullscreenReason = 'no-visible-participants';
+      }
       const ground = collectVisible(groundRegistry, scene);
       const topFaceGround = collectVisible(topFaceGroundRegistry, scene);
       if (!xrayMeshes.length || (!ground.length && !topFaceGround.length)) {
         return originalRender.call(this, scene, camera);
       }
       const shellGlState = this.state; // Scissoring is shared with the existing held/foot replay safety switch.
-      const scissored = replayScissorEnabled && !!(shellGlState?.scissor && shellGlState?.setScissorTest)
+      const hasShellScissorApi = !!(shellGlState?.scissor && shellGlState?.setScissorTest); // Reports unavailable scissor support distinctly from an unsafe bound.
+      const scissored = replayScissorEnabled && hasShellScissorApi
         && replayScissorRect(this, camera, xrayMeshes, scissorRect);
+      lastShellFullscreenReason = scissored ? 'none' : !replayScissorEnabled ? 'disabled'
+        : !hasShellScissorApi ? 'scissor-api-unavailable' : lastScissorFailureReason;
       if (scissored && (scissorRect.z <= 0 || scissorRect.w <= 0)) {
         return originalRender.call(this, scene, camera);
       }
@@ -1650,8 +1745,13 @@
     }
 
     const baseRenderEndedAt = performance.now(); // The scene's matrices were last computed by the base render above.
-    const replayPerf = window.PerfProfiler?.begin('held-overlay: total replay'); // Sum of the three sub-passes above plus the depth-material-prep traversal; kept separate so it's directly comparable to held-overlay: base render.
-    replaySelectiveHeldOverlay(this, scene, camera, held, feet, ground, topFaceGround, tintCovers, originalCameraMask);
+    window.HobunjiHandOutlineParity?.refreshHeldMatrices?.(held); // Update procedural hand matrices BEFORE camera filtering and subsequent depth-scissor bounds.
+    const visibleHeld = filterOffscreenReplayMeshes(camera, held); // Omit offscreen rigid items only after the base pass updates world matrices.
+    const visibleFeet = filterOffscreenReplayMeshes(camera, feet); // Apply the same conservative test to procedural feet.
+    lastBaseReplayCandidates = held.length + feet.length;
+    lastBaseOffscreenFiltered = lastBaseReplayCandidates - visibleHeld.length - visibleFeet.length;
+    const replayPerf = window.PerfProfiler?.begin('held-overlay: total replay'); // Sum of the replay sub-passes, comparable with held-overlay: base render.
+    replaySelectiveHeldOverlay(this, scene, camera, visibleHeld, visibleFeet, ground, topFaceGround, tintCovers, originalCameraMask);
     window.PerfProfiler?.end(replayPerf);
     // The replays are renders of their own that the outline wrapper sees after the base pass, and they
     // used to end its matrix-reuse sequence. They only toggle visibility/layers/materials, so the base
@@ -1689,6 +1789,15 @@
       missingStencilFootReplaySkips: missingStencilFootReplaySkipCount,
       scissoredReplays: scissoredReplayCount,
       fullscreenReplays: fullscreenReplayCount,
+      lastHeldFullscreenReason,
+      lastShellFullscreenReason,
+      baseReplayCandidates: lastBaseReplayCandidates,
+      baseOffscreenFiltered: lastBaseOffscreenFiltered,
+      shellReplayCandidates: lastShellReplayCandidates,
+      shellOffscreenFiltered: lastShellOffscreenFiltered,
+      baseElevationGroups: lastBaseElevationGroups,
+      shellElevationGroups: lastShellElevationGroups,
+      groupScissors: groupScissorCount,
       lastReplayScissorCoverage: Number(lastReplayScissorCoverage.toFixed(4)),
       replayCullEnabled,
       lastReplayCulled: lastReplayCulledCount,
@@ -1713,7 +1822,7 @@
     const signature = JSON.stringify(state);
     if (signature !== lastDebugSignature) {
       lastDebugSignature = signature;
-      const message = `[held-xray] enabled=${state.enabled} held=${state.heldMeshes} ground=${state.groundMeshes} (grass=${state.grassMeshes} road=${state.roadMeshes} terrain=${state.terrainMeshes} interior=${state.interiorFloorMeshes} farmhouse=${state.farmhouseFloorMeshes}) footWater=${state.waterOccludedMeshes}/${state.waterReplayMeshes}/${state.waterReplays} stencil=${state.stencilBits} stencilSkips=${state.missingStencilFootReplaySkips} base=${state.baseWorldRenders} overlay=${state.selectiveOverlays} depth=${state.nonGroundDepthReplays}/${state.groundDepthRestores} shellXray=${state.shellXrayPasses}/${state.shellXrayMeshes} repairs=${state.invariantRepairs} scissor=${state.scissoredReplays}/${state.fullscreenReplays} coverage=${state.lastReplayScissorCoverage} elevationGroups=${state.elevationReplayGroups} unknownElevation=${state.unknownElevationMeshes} elevationShaders=${state.elevationShaderMaterials}/${state.elevationShaderFallbacks}`;
+      const message = `[held-xray] enabled=${state.enabled} held=${state.heldMeshes} ground=${state.groundMeshes} (grass=${state.grassMeshes} road=${state.roadMeshes} terrain=${state.terrainMeshes} interior=${state.interiorFloorMeshes} farmhouse=${state.farmhouseFloorMeshes}) footWater=${state.waterOccludedMeshes}/${state.waterReplayMeshes}/${state.waterReplays} stencil=${state.stencilBits} stencilSkips=${state.missingStencilFootReplaySkips} base=${state.baseWorldRenders} overlay=${state.selectiveOverlays} depth=${state.nonGroundDepthReplays}/${state.groundDepthRestores} shellXray=${state.shellXrayPasses}/${state.shellXrayMeshes} repairs=${state.invariantRepairs} scissor=${state.scissoredReplays}/${state.fullscreenReplays} reasons=${state.lastHeldFullscreenReason}/${state.lastShellFullscreenReason} coverage=${state.lastReplayScissorCoverage} offscreen=${state.baseOffscreenFiltered}/${state.baseReplayCandidates} shellOffscreen=${state.shellOffscreenFiltered}/${state.shellReplayCandidates} groups=${state.baseElevationGroups}/${state.shellElevationGroups} groupScissors=${state.groupScissors} elevationGroups=${state.elevationReplayGroups} unknownElevation=${state.unknownElevationMeshes} elevationShaders=${state.elevationShaderMaterials}/${state.elevationShaderFallbacks}`;
       if (typeof window.__farmLog === 'function') window.__farmLog(message, 'render');
       else console.debug(message);
     }
