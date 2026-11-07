@@ -1,4 +1,4 @@
-// Generated mini-cliff Puzzle Cave entrances, using the same plateau route,
+// Independently spawned mini-cliff Puzzle Cave entrances, using the same plateau route,
 // authored furniture, music bridge, world transitions and dynamic collision
 // contracts as the rest of Hobunji Hollow.
 (function(root,factory){
@@ -32,7 +32,7 @@
     for(const site of available){
       const anchor=site.mouthAnchor||{x:0,y:0};
       const source={x:Number(anchor.x)+.5,z:Number(anchor.y)+.5};
-      const candidates=shelves.filter(s=>!taken.has(s.id)).sort((a,b)=>{
+      const candidates=shelves.filter(s=>!taken.has(s.id) && (!site.shelfId || site.shelfId===s.id)).sort((a,b)=>{
         const d=distance(source,a)-distance(source,b);
         return d || String(a.id).localeCompare(String(b.id));
       });
@@ -73,6 +73,19 @@
   function transitionPool(area){
     const layout=deps?.zoneLayouts?.get?.(area),scene=deps?.zoneScenes?.get?.(area);
     return [...new Set([...(layout?.transitions||[]),...(scene?.transitions||[])])]; // Cached scene can own a DIFFERENT transition object from its layout.
+  }
+  function ensureIndependentTransitions(area,portal) {
+    if(portal.site?.source !== 'independent_cliff')return; // Ordinary cave anchors are never involved in these player-only gates.
+    const layout=deps?.zoneLayouts?.get?.(area),info=deps?.zoneScenes?.get?.(area);
+    const pools=[layout?.transitions,info?.transitions].filter(Array.isArray); // Scene transitions can be copied later than the layout during construction.
+    for(const pool of new Set(pools)){
+      if(pool.some(t=>t?.targetMapId===portal.mapId))continue;
+      const transition={id:'den_'+portal.denId+'_enter',label:'Small Stone Door',
+        col:portal.entry.c,row:portal.entry.r,area,target:'puzzle_cave_locked',
+        targetMapId:portal.mapId,puzzleCaveOnly:true}; // No animal-den footprint, faction/aggro marker, or hostile-interaction target.
+      pool.push(transition);
+      portal.ownedTransitions.push({pool,transition}); // Exact references removed on scene retirement.
+    }
   }
   function applyTransitions(area,portal,enabled){
     for(const t of transitionPool(area)){
@@ -250,6 +263,10 @@
       const den=deps?.zoneLayouts?.get?.(key)?.dens?.find(d=>String(d.id)===String(portal.denId));
       if(den&&portal.originalDenMouth)den.mouthAnchor={...portal.originalDenMouth}; // Do not leave a changed den exit after terrain relocation or scene eviction.
       restoreTransitions(key,portal);
+      for(const owned of portal.ownedTransitions || []){
+        const index=owned.pool.indexOf(owned.transition); // Release only our own transition, not another cave's copied spot.
+        if(index>=0)owned.pool.splice(index,1);
+      }
       if(portal.ring){
         if(portal.originalRingPosition)portal.ring.position.set(portal.originalRingPosition.x,portal.originalRingPosition.y,portal.originalRingPosition.z);
         portal.ring.visible=true;portal.ringRelocated=false;
@@ -267,16 +284,17 @@
     const old=areas.get(key);
     if(old?.network===network&&old.scene===scene)return old.portals;
     if(old)clear(key);
-    const profiles=sites||root.CaveSiteSystem?.sitesForZone?.(key)||[];
+    const profiles=sites||root.CaveSiteSystem?.registerOutdoorPuzzleSites?.(key,network?.balconies||[])||[]; // Independent roll, not the ordinary cave/animal-den pool.
     const portals=plan(network,profiles).map(p=>({
       ...p,area:key,disposed:false,solved:!p.requiresSong,justSolved:false,
       musicOpened:false,lastDown:false,openWait:0,
       rise:p.requiresSong?0:1,progress:null,glyphs:[],visualRoot:null,
-      blockerId:null,hiddenDenMeshes:new Map(),facadeCheckElapsed:0, // Captured visibility and slow recheck for asynchronously added den entrance meshes.
+      blockerId:null,ownedTransitions:[],hiddenDenMeshes:new Map(),facadeCheckElapsed:0, // Captured visibility and slow recheck for asynchronously added den entrance meshes.
     }));
     const state={area:key,network,scene,portals};
     areas.set(key,state);
     for(const portal of portals){
+      ensureIndependentTransitions(key,portal); // Creates dedicated transitions in both layout and loaded scene without generating a den.
       if(portal.requiresSong){
         const saved=stateFor(portal);portal.solved=!!saved.solved;portal.rise=portal.solved?1:0;
         attachMusic(portal);
@@ -309,6 +327,7 @@
     const px=Number(player?.x)/tile,pz=Number(player?.y)/tile;
     for(const portal of state.portals){
       if(portal.disposed)continue;
+      ensureIndependentTransitions(area,portal); // Late scene copies still get their own player-only portal.
       const onShelf=player?.onCliffBalcony===portal.shelf.id && !player?.climbing;
       const down=onShelf&&Math.hypot(px-portal.plate.x,pz-portal.plate.z)<.55; // A separate activation circle leaves room to step up to the gate after the final note.
       if(portal.session){
