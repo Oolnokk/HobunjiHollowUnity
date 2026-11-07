@@ -311,12 +311,22 @@
 
   function profileForMapId(mapId) {
     const id = String(mapId || '');
-    if (sitesByMapId.has(id)) return clone(sitesByMapId.get(id));
-    if (!id.startsWith('map_i_den_')) return null; // Only den caverns can be cave sites; skip the layout scan for every other area (called each runtime tick).
-    wildlifeDeps?.zoneLayouts?.forEach?.((layout, zoneId) => {
-      if (!sitesByMapId.has(id) && layout?.dens?.length) zoneSites(zoneId);
-    });
-    return clone(sitesByMapId.get(id) || null);
+    if (!sitesByMapId.has(id) && id.startsWith('map_i_den_')) {
+      wildlifeDeps?.zoneLayouts?.forEach?.((layout, zoneId) => {
+        if (!sitesByMapId.has(id) && layout?.dens?.length) zoneSites(zoneId);
+      });
+    }
+    const profile = sitesByMapId.get(id); // Resolve independent child maps without treating them as animal-den anchors.
+    if(!profile)return null;
+    if(profile.source === 'independent_rock') {
+      const parent = sitesByMapId.get(profile.parentMapId); // Parent signature owns the persistent reciprocal doorway coordinates.
+      const remembered = parent ? stateFor(parent).rockPuzzleDoorReturn : null;
+      if(remembered) {
+        profile.returnCol = remembered.col;
+        profile.returnRow = remembered.row;
+      } // A world save restored after workspace registration must not return the player to unwalkable 0,0.
+    }
+    return clone(profile);
   }
 
   function isAnimalDenSite(profileOrDen) {
@@ -1115,6 +1125,10 @@
   function restore(saved) {
     deferredSaveGeneration++;
     deferredSaveQueued = false;
+    for(const sites of outdoorPuzzleSitesByZone.values())for(const site of sites)sitesByMapId.delete(site.mapId);
+    for(const site of rockPuzzleSitesByParent.values())sitesByMapId.delete(site.mapId);
+    outdoorPuzzleSitesByZone.clear(); // A restored world must reroll its own cliff doors, not inherit the prior world's entrance registry.
+    rockPuzzleSitesByParent.clear(); // The restored parent profiles lazily recreate the correct hidden-door identities.
     savedCaveState = saved && typeof saved === 'object' && typeof saved.identity === 'string' && saved.sites && typeof saved.sites === 'object' ? clone(saved) : null;
     stateIdentity = null; // Next access reloads from the restored payload (or the legacy key).
     runtimeStateBySignature.clear();
