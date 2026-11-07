@@ -25,7 +25,7 @@ class Material {
   constructor(opts={}){this.color={hex:opts.color,setHex(v){this.hex=v;}};this.map=opts.map;this.opacity=opts.opacity??1;}
   dispose(){this.disposed=true;}
 }
-class Geometry {dispose(){this.disposed=true;}}
+class Geometry {constructor(...dimensions){this.dimensions=dimensions;}dispose(){this.disposed=true;}}
 const THREE={Group,Mesh,MeshBasicMaterial:Material,CylinderGeometry:Geometry,PlaneGeometry:Geometry,BoxGeometry:Geometry,
   AdditiveBlending:2,
   TextureLoader:class{load(name){return {name};}},DoubleSide:2,SRGBColorSpace:'srgb'};
@@ -158,7 +158,7 @@ assert.equal(gate.scoreSurface.kind,'pillar',
   'when the test scene has no approved cliff-wall faces the exterior score mounts on a real supported pillar');
 const stone=gate.scoreBoard.children.find(child=>child.name==='puzzle-cave-score-pillar');
 assert(stone,'a wall-less ledge receives an actual vertical carved-stone backing for its note decal');
-const pillarBottom=gate.scoreBoard.position.y-(stone.geometryHeight||(.27*Math.ceil(gate.song.notes.length/2)+.16+.14))/2;
+const pillarBottom=gate.scoreBoard.position.y-stone.geometry.dimensions[1]/2;
 assert(Math.abs(pillarBottom-gate.shelf.y-.015)<.001,
   'the score pillar is rooted into the ledge rather than floating over snow or empty air');
 assert.equal(gate.glyphGlows.length,gate.song.notes.length,'each outdoor note has a shared-visibility additive halo');
