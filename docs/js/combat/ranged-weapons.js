@@ -19,8 +19,8 @@
   const DEFAULT_PROJECTILE_MAX_EMBEDDED = 3; // Default visible embedded projectile cap per owner + weapon key.
   const DEFAULT_RANGED_LOAD_STAMINA_FRACTION = 0.85; // A full reload spends enough effective Stamina to put a rested target below Exhaust Cutter's 20% threshold.
   const HELD_CHARGE_MIN_READY_POSE = 0.48; // Matches Charged Breaker's minimum ready pose for the shared cumulative charge-cost curve.
-  const HELD_CHARGE_COST_MIN = 12; // Matches Charged Breaker's cost at its first releasable pose.
-  const HELD_CHARGE_COST_MAX = 18; // Matches Charged Breaker's full-pose charge cost.
+  const HELD_CHARGE_COST_MIN = 24; // Matches Charged Breaker's cost at the first releasable pose when its live helper is unavailable.
+  const HELD_CHARGE_COST_MAX = 54; // Matches Charged Breaker's full-pose charge cost when its live helper is unavailable.
   const RANGED_LOAD_REGEN_BLOCK_SOURCE = 'ranged-weapon-load'; // Keeps the reloader's newly depleted Stamina low throughout the vulnerable loading animation.
   const FISHING_MACE_SPIN_RATE_DEG_FALLBACK = 9720; // Used only before Fishing is available; matches Fishing.projectileVisuals.maceSpinRateDeg exactly.
   // Reused across calls instead of allocated fresh each time — projectileHit
@@ -366,12 +366,12 @@
   function chargeStaminaCostForPose(poseCharge, staminaCostMul = 1) {
     const pose = Math.max(0, Math.min(1, Number(poseCharge) || 0)); // The visible Neutral→Windup interpolation is the one progress axis shared with Charged Breaker.
     const chargedBreakerCost = window.Combat?.chargedBreakerData?.chargeCostForPose;
-    const costMultiplier = Math.max(0, Number(staminaCostMul) || 1); // Carries the same charged-attack progression multiplier into thrown holds.
+    const multiplier = Number(staminaCostMul); // Carries the same charged-attack progression multiplier into thrown holds.
+    const costMultiplier = Number.isFinite(multiplier) ? Math.max(0, multiplier) : 1; // Preserves legitimate zero-cost modifiers.
     if (typeof chargedBreakerCost === 'function') return chargedBreakerCost(pose, costMultiplier); // Uses the live Charged Breaker config so both held actions stay in lockstep after tuning.
-    const ready = Math.max(0.0001, HELD_CHARGE_MIN_READY_POSE);
-    const rawCost = pose <= ready
-      ? HELD_CHARGE_COST_MIN * (pose / ready)
-      : HELD_CHARGE_COST_MIN + (HELD_CHARGE_COST_MAX - HELD_CHARGE_COST_MIN) * ((pose - ready) / Math.max(0.0001, 1 - ready));
+    if (pose < HELD_CHARGE_MIN_READY_POSE) return 0; // A thrown hold cannot pay before a real release is possible.
+    const readyProgress = (pose - HELD_CHARGE_MIN_READY_POSE) / Math.max(1e-6, 1 - HELD_CHARGE_MIN_READY_POSE); // Interpolates only the releasable interval.
+    const rawCost = HELD_CHARGE_COST_MIN + (HELD_CHARGE_COST_MAX - HELD_CHARGE_COST_MIN) * readyProgress;
     return rawCost * costMultiplier;
   }
 
@@ -1818,11 +1818,12 @@
       if (action.kind === 'fire' && action.chargeDurationS > 0) {
         const chargePose = Math.max(0, Math.min(1, action.t / action.chargeDurationS)); // NPC thrown holds spend against the same pose-based cost curve as player Charged Breaker.
         const targetPaid = chargeStaminaCostForPose(chargePose);
-        const segmentCost = Math.max(0, targetPaid - (Number(action.paidChargeCost) || 0));
+        const segmentCost = Math.max(0, targetPaid - (Number(action.committedChargeCost) || 0)); // Track the pre-discount target independently of actual Stamina consumed.
         if (segmentCost > 0) {
           const payment = window.ResourceSystem?.spendStamina?.(c, segmentCost, `${def.label} charge`, {
             actionKind: 'offensiveHeldCharge', abilityId: 'thrownWeapon',
           });
+          action.committedChargeCost = targetPaid; // One charged slice per visible pose, even when modifiers discount or tax the spend.
           action.paidChargeCost = (Number(action.paidChargeCost) || 0) + paymentTotal(payment);
         }
       }
