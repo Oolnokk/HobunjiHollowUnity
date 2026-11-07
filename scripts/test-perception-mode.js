@@ -41,6 +41,7 @@ function mesh(parent) {
 
 const scene = node('scene', { x: 0, z: 0 });
 scene.isScene = true;
+scene.getObjectByName = name => scene.children.find(child => child.name === name) || null; // Resolves the live cave-mouth group without a scene traversal.
 const otherScene = node('other', { x: 0, z: 0 });
 otherScene.isScene = true;
 
@@ -154,6 +155,36 @@ assert.deepStrictEqual(cowRows[1].map(s => s.text), ['Fed', 'No', '(trough empty
 assert.deepStrictEqual(cowRows[2].map(s => s.text), ['Petted', 'Yes']);
 assert.deepStrictEqual(cowRows[3].map(s => s.text), ['Egg', 'in 2 days']);
 
+// Wilderness landmarks use independent discovery distances, share verdigris, and do
+// not extend the original 14-tile actor/interactable perception radius.
+const entrances = node('animalDenEntrances', { x: 0, z: 0 }, scene); // Existing cave renderer's scene-root group.
+const denAt24 = entity({ x: 24, z: 0 }, entrances); denAt24.userData.denCaveEntrance = true;
+const localeCave = entity({ x: 22, z: 1 }, entrances); localeCave.userData.localeCave = true;
+const denBeyond24 = entity({ x: 24.01, z: 0 }, entrances); denBeyond24.userData.denCaveEntrance = true;
+entity({ x: 2, z: 0 }, entrances); // Den furniture without a cave-mouth flag must not glow.
+const banditCampAt24 = entity({ x: 0, z: 24 });
+const banditCampBeyond24 = entity({ x: 0, z: 24.01 });
+const porakanekiCamp = entity({ x: 18, z: 0 });
+const omgurkuCamp = entity({ x: 21, z: 0 });
+const cliffDoorAt12 = entity({ x: 12, z: 0 });
+const cliffDoorBeyond12 = entity({ x: 12.01, z: 0 });
+const herbAt12 = entity({ x: 0, z: 12 });
+const herbBeyond12 = entity({ x: 0, z: 12.01 });
+const staleHerb = entity({ x: 2, z: 0 }, otherScene);
+sandbox.window.BanditCamps = { senseTargets: () => [banditCampAt24, banditCampBeyond24] };
+sandbox.window.PorakanekiCamps = { senseTargets: () => [porakanekiCamp] };
+sandbox.window.OmgurkuCamps = { senseTargets: () => [omgurkuCamp] };
+sandbox.window.PuzzleCaveEntrances = { senseTargets: () => [cliffDoorAt12, cliffDoorBeyond12] };
+sandbox.window.CliffRouteNetwork = { senseTargets: () => [herbAt12, herbBeyond12, staleHerb] };
+PM.update(7000);
+const landmarkSnap = PM.debugSnapshot();
+assert.equal(landmarkSnap.byCategory.landmark, 7, 'two cave mouths, three camps, one cliffdoor and one herb glow at their individual distance boundaries');
+assert.equal(landmarkSnap.byCategory.hostile, 5, 'ordinary creature range stays unchanged');
+assert.equal(landmarkSnap.byCategory.interact, 10, 'ordinary interactables retain their existing 14-tile radius');
+assert.deepStrictEqual(JSON.parse(JSON.stringify(landmarkSnap.landmarkRanges)), { caves: 24, camps: 24, cliffDoors: 12, herbClusters: 12 });
+assert.deepStrictEqual(JSON.parse(JSON.stringify(landmarkSnap.landmarkSources)), { caves: 3, camps: 4, cliffDoors: 2, herbClusters: 3 }, 'provider counts appear in mobile debug before distance/off-scene rejection');
+assert.equal(PM.COLORS.landmark, '#6ab69e', 'all four landmark kinds share the bronze-verdigris mask material');
+
 // lerpHex endpoints.
 assert.strictEqual(PM.__test.lerpHex('#ffffff', '#dc143c', 1), '#dc143c');
 
@@ -192,6 +223,7 @@ const renderer = {
     const mask = renderScene === scene;
     if (mask) {
       assert.notStrictEqual(targetMesh.material, originalMaterial, 'mask pass draws with the category material');
+      assert.strictEqual(cliffDoorAt12.children[0].material.args[0].color, PM.COLORS.landmark, 'landmarks render in bronze verdigris through the actual mask pipeline');
       assert.strictEqual(this.autoClear, false);
       if (this.failMask) throw new Error('mask failure');
     }
