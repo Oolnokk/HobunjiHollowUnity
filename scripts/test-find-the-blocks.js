@@ -124,7 +124,13 @@ function test(seed){
     assert(room.snapshot().pillarHeight<.1,'Solved flute phrase sinks the pillar');
   }else if(seed===1){
     assert.equal(projectileTargets.length,3,'Projectile variant registers three ranged targets');
-    projectileTargets.forEach(target=>target.onHit());
+    const posts=[[13.5,15.5],[15.5,13.5],[17.5,13.5]]; // The three solid blocker pillars frame the central room.
+    projectileTargets.forEach((target,i)=>{
+      const [px,pz]=posts[i],glyph=target.hitMesh.position;
+      assert(Math.max(Math.abs(glyph.x-px),Math.abs(glyph.z-pz))>.475,
+        'Projectile glyph needs a visible exposed face, not a buried stone hitbox');
+      target.onHit();
+    });
     for(let i=0;i<100;i++)room.tick(.05);
     assert(room.snapshot().pillarHeight<.1,'All projectile glyphs sink the pillar');
   }else{
