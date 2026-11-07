@@ -160,6 +160,21 @@ assert.equal(secondCaptive.tzatzulCapturedBy,null,'lost roost clears captive own
 supports.attach=originalAttach;
 w.TzatzulFlightRuntime.ensureZone(zone);
 assert.equal(farBird._tzFlight.phase,'perched','the original perch can recover after scene regeneration');
+const dropPrey={creatureKey:'bandit',isBandit:true,health:50,areaId:zone,x:farBird.x-64*2,y:farBird.y,state:'patrol'}; // Actual humanoid captive for companion rescue behavior.
+farBird.health=100;farBird.maxHealth=100;farBird._tzFlight.phase='perched';farBird._tzFlight.retreating=false;farBird._tzFlight.rest=100;
+assert(supports.attach(farBird,farBird._tzFlight.roost));
+assert(w.TzatzulFlightRuntime.__test.capture(farBird,dropPrey),'a healthy parent carries bandit prey');
+farBird.health=70; // A single modest hit is not enough to drive off this mother.
+w.TzatzulFlightRuntime.update(.1);
+assert.strictEqual(farBird._tzFlight.captive,dropPrey,'minor combat injury does not release prey');
+assert.equal(w.TzatzulFlightRuntime.resistsCarryKnockback(farBird),true,'routine knockback cannot eject an active carrier');
+farBird.health=29; // The existing thirty-percent wildlife escape threshold is now reached.
+w.TzatzulFlightRuntime.update(.1);
+assert.equal(farBird._tzFlight.captive,null,'threshold damage triggers prey release and real flee');
+assert.equal(dropPrey.tzatzulCapturedBy,null,'flee clears original live prey capture state');
+assert.equal(dropPrey.state,'patrol','flee restores the original bandit behavior');
+assert.equal(w.TzatzulFlightRuntime.debugSnapshot().fleeDrops,1,'mobile debug counts threshold-triggered rescue drops');
+
 assert.match(file('docs/js/wildlife-visual-lod.js'),/c\.tzatzulCapturedBy/,
   'captured wildlife bypass ordinary distance hiding while airborne');
 player.x=originalPlayerX;player.y=originalPlayerY;
