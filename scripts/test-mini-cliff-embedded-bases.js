@@ -113,6 +113,8 @@ for(let seed=0;seed<32;seed++){
   }
 }
 assert(auditedCaps>=8,'varied plateau contours must still generate meaningful miniature plateaus');
+assert(wideCaps>0,'the generator must actually produce some long contour-following mini-plateaus');
+assert(nonUnitProjections>0,'some embedded mini-plateaus must successfully translate their caps by two or three tiles');
 console.log('mini-plateau contour audit:',{auditedCaps,wideCaps,nonUnitProjections});
 
 // Tiny THREE stand-in records the exact final triangle positions. It does
