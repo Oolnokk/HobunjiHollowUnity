@@ -45,7 +45,9 @@
     const glyph = new THREE.Mesh(new THREE.PlaneGeometry(width,height),
       new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,depthWrite:false,side:THREE.DoubleSide}));
     glyph.name='puzzle-cave-tankan-hao-uun';
-    const heading=Math.atan2(Number(toward?.x)||0,Number(toward?.z)||1); // From the plate toward the locked door, where the player reads the inscription.
+    const towardX=Number(toward?.x),towardZ=Number(toward?.z); // Signed vector from plate to locked door; zero must remain zero for east/west cave approaches.
+    const heading=Math.atan2(Number.isFinite(towardX)?towardX:0,
+      Number.isFinite(towardZ)?towardZ:1); // Tangent and diagonal doors now face correctly instead of accidentally adding Z=1.
     glyph.rotation.order='YXZ'; // Compose the world-facing yaw before the top-facing tilt, preserving the upward decal normal.
     glyph.rotation.x=-Math.PI/2;
     glyph.rotation.y=heading;
