@@ -131,7 +131,7 @@ assert(tank.water>0,'small tank retains water after sustained irrigation');
 grid[1][5]={type:'tilled',depth:0,water:0,crop:'wetCrop'};production.irrigate(grid,calendar,0,true);assert(tank.irrigationWarning.includes('incompatible'));
 assert(saves>0,'queue and tank mutations checkpoint the world layout');
 for(const definition of Object.values(context.FARM_SPECIALIZATIONS_CONFIG.buildings)){
- const assetKey=definition.base||definition.key; // Asset aliases use the same authored shape as FarmProduction.spawn.
+ const assetKey=definition.modelKey||definition.key; // Only explicit model aliases reuse another building's authored geometry.
  const asset=JSON.parse(fs.readFileSync('docs/config/furniture-authored/'+assetKey+'.json'));assert.equal(asset.footprint.w,definition.w);assert.equal(asset.footprint.d,definition.h);assert(asset.parts.length>=10);
  if(definition.family.endsWith('Mill')||definition.family==='windmill')assert.equal(asset.parts.filter(part=>part.kind==='glb').length,4);
 }
