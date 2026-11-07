@@ -33,6 +33,8 @@ assert.equal(cfg.schema, 'hobunji_porakaneki_camp.v3');
 assert.deepEqual(cfg.wildernessZones, ZONES);
 assert.equal(cfg.smallCamps.minPerZone, 1);
 assert.equal(cfg.smallCamps.maxPerZone, 1);
+assert.equal(cfg.reputation.greetingRadiusTiles, 2, 'Porakaneki greetings require a speaker within two tiles');
+assert.equal(cfg.reputation.warningSpeakerRadiusTiles, 2, 'territorial warnings require an actual nearby hunter, not just a nearby camp');
 assert.equal(cfg.smallCamps.huntingPartiesMinPerZone, 2);
 assert.equal(cfg.smallCamps.huntingPartiesMaxPerZone, 4);
 assert.equal(cfg.smallCamps.minResidents, 2);
@@ -574,6 +576,21 @@ function hunterDebug(api, zoneId, campId, index) {
   };
   const fakeHunter = { entity: fakeHunterEntity, camp: { zoneId: 'test_area' } };
   const fakeWalker = { root: { fakeRoot: true }, rec: { id: 'porakaneki_chief' }, profile: { fighter: { id: 'chief_walker_profile' } } };
+  const beforeWarningProbe = { x: combatDeps.player.x, y: combatDeps.player.y }; // Restore the real LOD test world after isolated speech distance assertions.
+  const warningCamp = { zoneId: 'test_area', hunters: [fakeHunter] }; // One visible live hunter: never select an unrelated distant camp member.
+  combatDeps.player.x = 0; combatDeps.player.y = 0;
+  fakeHunterEntity.x = 2.1 * combatDeps.TILE; fakeHunterEntity.y = 0;
+  assert.equal(api.__test.speakerHunterFor(warningCamp, 2), null, 'a hunter more than two tiles away cannot warn the player');
+  fakeHunterEntity.x = 1.9 * combatDeps.TILE;
+  assert.equal(api.__test.speakerHunterFor(warningCamp, 2), fakeHunter, 'the actual nearby hunter speaks within the two-tile reach');
+  combatDeps.player.x = beforeWarningProbe.x; combatDeps.player.y = beforeWarningProbe.y;
+  const beforeFriendlyFavor = relation.favor; // Positive daily Rapport makes the tribe friendly even while permanent Favor is still negative.
+  relation.favor = -3;
+  contextWindow.NpcRapport = { get: () => 25 };
+  assert.equal(api.__test.friendlyGreetingAllowed(), true, 'friendly daily Rapport can greet rather than leaving the tribe silently neutral');
+  delete contextWindow.NpcRapport;
+  assert.equal(api.__test.friendlyGreetingAllowed(), false, 'a truly unfriendly hunter still warns instead of greeting');
+  relation.favor = beforeFriendlyFavor;
 
   let ok = api.__test.speakOverheadFromHunter(fakeHunter, 'Go way. No want trouble', { tone: 'warning', important: false, allowToastFallback: false });
   assert.equal(ok, true, 'speakOverheadFromHunter reports success when AmbientDialogue accepts the bubble');
