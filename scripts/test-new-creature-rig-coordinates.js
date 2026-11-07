@@ -140,7 +140,8 @@ const document = {
             return true;
           },
         };
-        window.MootRegistration.ensureRendererSpecies(window.CreatureGeneticsRender.SPECIES);
+        // Do not register Moot in the fixture: the real Moot module only exports helpers.
+        // Animation Author must call ensureRendererSpecies itself, since WildlifeSpawn.init never runs here.
       } else if (script.src.includes('/creature-genetics.js?')) {
         const reinstallRendererExtensions = () => {
           window.CreatureGeneticsRender.SPECIES.puktuk = { base: { idle: 'assets/creaturesprites/puktuk_idle.png' } };
