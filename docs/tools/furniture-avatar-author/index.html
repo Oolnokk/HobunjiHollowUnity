@@ -126,12 +126,14 @@ hr{border:0;border-top:1px solid rgba(255,255,255,.11);margin:9px 0}
       <button data-left-tab="ice">Ice / Stone Stalagmites</button>
       <button data-left-tab="repo">Repo</button>
       <button data-left-tab="avatar">Avatar</button>
+      <button id="carryModeTab" type="button" data-left-tab="carry">Carryable</button>
       <button data-left-tab="base">Tile Base</button>
       <button data-left-tab="io">I/O</button>
     </div>
 
     <div id="tab-foliage" class="hidden"></div>
     <div id="tab-ice" class="hidden"></div>
+    <div id="tab-carry" class="hidden"><div class="section"><h2>Carryable world objects</h2><p id="carryAuthorLoadStatus" role="status">Carryable controls have not initialized. If they remain unavailable, check the on-screen debug log.</p></div></div>
     <div id="tab-parts">
       <div class="section">
         <h2>Add pre-made piece</h2>
@@ -2284,7 +2286,7 @@ function setEditorMode(mode) {
   if(mode==='effects'&&['part','partGroup'].includes(state.selectedType))state.effectTargetPartIds=activePartIds();
   activeEditorMode=mode;
   document.querySelectorAll('[data-left-tab]').forEach(button=>button.classList.toggle('active',button.dataset.leftTab===mode));
-  ['parts','presets','surfaces','placement','effects','foliage','ice','repo','avatar','base','io'].forEach(tab=>$('tab-'+tab).classList.toggle('hidden',tab!==mode));
+  ['parts','presets','surfaces','placement','effects','foliage','ice','repo','avatar','carry','base','io'].forEach(tab=>$('tab-'+tab).classList.toggle('hidden',tab!==mode));
   emitterMarkerRoot.visible=mode==='effects';stompAttachMarkerRoot.visible=mode==='effects';
   if(mode==='ice')window.IceStalagmiteAuthoring?.refresh?.(); // Reflect imported/saved layers when the dedicated ice tab opens.
   const allowed=selectionTypeForMode(mode);
@@ -2482,6 +2484,6 @@ furnitureDatabase=normalizeFurnitureDatabase(makeDefaultFurnitureDatabase());set
 <script src="climb-wall-properties.js?v=1"></script>
 <script src="foliage-furniture-mode.js?v=20261104h0c4597a"></script>
 <script src="ice-stalagmites.js?v=20261105stoneAudit3"></script>
-<script src="carryable-objects.js?v=20261104portraitAnchorAudit1"></script>
+<script src="carryable-objects.js?v=20261107autoAvatarPreview4" onload="if(!window.HobunjiCarryableFurnitureAuthor){const status=document.getElementById('carryAuthorLoadStatus');if(status)status.textContent='Carryable editor failed to initialize. See the on-screen debug log.';}" onerror="const status=document.getElementById('carryAuthorLoadStatus');if(status)status.textContent='Carryable editor script failed to load. Reload the page and check the on-screen debug log.';"></script>
 </body>
 </html>
