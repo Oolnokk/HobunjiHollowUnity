@@ -610,6 +610,36 @@ function hunterDebug(api, zoneId, campId, index) {
   assert.equal(showCalls[1][2].profile, fakeWalker.profile);
   assert.equal(showCalls[1][2].mode, 'chathead');
 
+  // A failed or not-yet-ready ambient speech attempt must not consume the chief's
+  // one-per-day greeting. Test the production greeting function rather than a
+  // source-text check so retry behavior survives future dialogue changes.
+  const greetingProbe = { area: currentArea, chiefArea: chief.area, chiefPosition: { ...chief.root.position },
+    player: { x: combatDeps.player.x, y: combatDeps.player.y }, favor: relation.favor,
+    memory: [...relation.memory], count: api.debugSnapshot().greetings }; // Restores all mutable world state after the one-off greeting check.
+  currentArea = api.debugSnapshot().chiefZoneId;
+  chief.area = currentArea;
+  chief.root.position.x = 30; chief.root.position.z = 30;
+  combatDeps.player.x = 30 * combatDeps.TILE;
+  combatDeps.player.y = 30 * combatDeps.TILE;
+  relation.favor = 1;
+  const chiefMarker = `porakaneki_chief_greet_day_${day}`; // Same day key as the live chief's once-per-day memory gate.
+  relation.memory = relation.memory.filter(entry => entry.event !== chiefMarker);
+  const originalAmbientShow = contextWindow.AmbientDialogue.show; // Existing successful fake render restored before the actual positive retry.
+  contextWindow.AmbientDialogue.show = () => null;
+  api.__test.maybeChiefGreeting();
+  assert.equal(relation.memory.some(entry => entry.event === chiefMarker), false, 'chief does not use the daily greeting if ambient speech failed');
+  assert.equal(api.debugSnapshot().greetings, greetingProbe.count, 'a failed chief greeting is not counted as shown');
+  contextWindow.AmbientDialogue.show = originalAmbientShow;
+  api.__test.maybeChiefGreeting();
+  assert.equal(relation.memory.filter(entry => entry.event === chiefMarker).length, 1, 'chief spends daily greeting exactly once after a bubble succeeds');
+  assert.equal(api.debugSnapshot().greetings, greetingProbe.count + 1, 'successfully rendered chief greeting increments the counter');
+  api.__test.maybeChiefGreeting();
+  assert.equal(api.debugSnapshot().greetings, greetingProbe.count + 1, 'chief cannot repeat a successful greeting on the same day');
+  currentArea = greetingProbe.area; chief.area = greetingProbe.chiefArea;
+  Object.assign(chief.root.position, greetingProbe.chiefPosition);
+  combatDeps.player.x = greetingProbe.player.x; combatDeps.player.y = greetingProbe.player.y;
+  relation.favor = greetingProbe.favor; relation.memory = greetingProbe.memory;
+
   delete contextWindow.AmbientDialogue;
   const warningToastCount = toastLog.length;
   ok = api.__test.speakOverheadFromHunter(fakeHunter, 'This our spot, not yours. Leave.', { important: false, allowToastFallback: false });
