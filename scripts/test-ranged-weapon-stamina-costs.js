@@ -82,17 +82,17 @@ assert.strictEqual(thrownCost(0.5, 'hatchet_copper'), 6.25,
   'thrown charge must inherit Charged Breaker progression cost modifiers and weapon efficiency');
 
 const chargePayments = []; // Captures the incremental payment slices for one held thrown weapon.
-let thrownSpendMultiplier = 1; // Simulates global Stamina discounts/taxes without changing the authored cumulative charge target.
+const chargeOptions = { spendMultiplier: 1 }; // Shared test-only control passed into the isolated throw-payment fixture to simulate global Stamina discounts/taxes.
 const chargePlayer = {}; // Actor identity used to verify all charge slices are charged to the player.
 const payCharge = vm.runInNewContext(`(() => {
   const window = {
     Combat: { deps: { player: chargePlayer } },
-    ResourceSystem: { spendStamina: (actor, amount, reason, transaction) => { chargePayments.push({ actor, amount, reason, transaction }); return { spent: amount * thrownSpendMultiplier }; } },
+    ResourceSystem: { spendStamina: (actor, amount, reason, transaction) => { chargePayments.push({ actor, amount, reason, transaction }); return { spent: amount * chargeOptions.spendMultiplier }; } },
   };
   const thrownChargeCostForPose = pose => pose < 0.48 ? 0 : 24 + 30 * (pose - 0.48) / 0.52;
   ${extractFunction(archetypeSource, 'payThrownChargeStamina')}
   return payThrownChargeStamina;
-})()`, { chargePlayer, chargePayments });
+})()`, { chargePlayer, chargePayments, chargeOptions });
 const heldThrow = { itemKey: 'hatchet_copper', paidChargeCost: 0, committedChargeCost: 0 }; // Tracks the cumulative charge payment across hold updates and release settlement.
 payCharge(heldThrow, 0.48, 'test-ready');
 payCharge(heldThrow, 0.48, 'test-same-frame');
@@ -102,7 +102,7 @@ assert.deepStrictEqual(chargePayments.map(entry => entry.amount), [24, 15, 15],
   'held throws must pay only newly reached charge slices, with release settling the final delta once');
 assert.strictEqual(heldThrow.paidChargeCost, 54);
 assert.strictEqual(heldThrow.committedChargeCost, 54, 'pre-tax progress is tracked separately from paid amounts');
-thrownSpendMultiplier = 0.5; // Reduced Stamina Use/Alchemy should never cause repeat spending at an unchanged charge pose.
+chargeOptions.spendMultiplier = 0.5; // Reduced Stamina Use/Alchemy should never cause repeat spending at an unchanged charge pose.
 const discountedThrow = { itemKey: 'hatchet_copper', paidChargeCost: 0, committedChargeCost: 0 }; // Fresh hold for discounted-payment regression.
 chargePayments.length = 0;
 payCharge(discountedThrow, 0.74, 'discounted-first');
@@ -112,7 +112,7 @@ payCharge(discountedThrow, 1, 'discounted-release');
 assert.deepStrictEqual(chargePayments.map(entry => entry.amount), [39, 15], 'discounted holds still spend only the unpaid authored progress');
 assert.strictEqual(discountedThrow.committedChargeCost, 54);
 assert.strictEqual(discountedThrow.paidChargeCost, 27, 'the effective paid amount reflects the global discount exactly once');
-thrownSpendMultiplier = 1;
+chargeOptions.spendMultiplier = 1;
 assert.ok(chargePayments.every(entry => entry.actor === chargePlayer && entry.transaction.actionKind === 'offensiveHeldCharge'),
   'all held throw charge slices must use the offensive held-charge resource transaction');
 
