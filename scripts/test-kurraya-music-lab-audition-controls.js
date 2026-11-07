@@ -90,7 +90,7 @@ assert.match(engine,/startSong\(state\.selectedSong,\{demoMode:state\.songAuditi
 assert.match(engine,/autoPickAuditionState\(\)/,'the bridge must expose the authoritative pattern definitions');
 assert.match(engine,/setAutoPickAuditionPattern\(mode\)/,'the bridge must validate and update the Lab pattern');
 assert.match(engine,/setSongAuditionMeter\(mode\)/,'the bridge must validate and update the Lab meter');
-assert.match(engine,/kurrayaLabMeterData\\(options\\.labMeterOverride\\)/,'the generated song must parse numeric meter from the dropdown id');
+assert.ok(engine.includes('kurrayaLabMeterData(options.labMeterOverride)'), 'the generated song must parse numeric meter from the dropdown id');
 assert.match(engine,/spanQuarterBeats:segment\.lengthBars \* \(phase\.chordQuarterBeats/,'chord sustains must stretch with the selected meter');
 assert.match(lab,/id="auditionPatternSelect"/,'the picker must be visible in Music Lab');
 assert.match(lab,/id="auditionMeterSelect"/,'the time signature control must be visible in Music Lab');
