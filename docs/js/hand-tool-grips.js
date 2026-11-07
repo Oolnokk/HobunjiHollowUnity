@@ -16,7 +16,6 @@
   const HEIGHT_MULTIPLIER_PRESET = 'height-multiplier-0.5-v1'; // One-time migration of drafts saved when every shape defaulted to 1.
   const FLUTE_GRIP_PRESET = 'flute-playing-grips-20261106-v1'; // One-time migration for stored grip drafts to this user-authored flute calibration only.
   const AUTHORED_HAND_ROTATIONS_PRESET = 'instrument-hand-rotations-20261107-v1'; // Migrates only the three rotations newly calibrated in the exported grip profile; positions, spans, scales, and axes stay authored.
-  const KURRAYA_NUT_BRIDGE_PRESET = 'kurraya-nut-bridge-20261107-v1'; // Adopts the measured Kurraya line and paired ranges once in older editor drafts that still have their disabled defaults.
   const SECONDARY_GRIP_PRESET = 'animation-span-v1'; // Migrates old always-on secondary points into animation-gated Z spans.
   const MANUAL_MELEE_SPAN_PRESET = 'manual-handle-spans-20261004-v1'; // Updates the six inspected handle ranges in older saved drafts once.
   const MANUAL_MELEE_SPAN_TOOLS = new Set(['plainssword', 'bshuakauitl', 'fishingspear', 'pickshovel', 'hoe', 'hatchet']); // Limits that migration to the manually inspected weapons.
@@ -64,7 +63,6 @@
     heightMultiplierPreset: HEIGHT_MULTIPLIER_PRESET,
     fluteGripPreset: FLUTE_GRIP_PRESET, // Older local grip drafts adopt the supplied flute grip without changing other weapons.
     authoredHandRotationsPreset: AUTHORED_HAND_ROTATIONS_PRESET, // Already-authored rotations are not overwritten on later loads.
-    kurrayaNutBridgePreset: KURRAYA_NUT_BRIDGE_PRESET, // Preserve artist-adjusted endpoints and ranges on later reloads.
     tools: {
       hatchet: {
         primaryGrip: { position: { x: -0.04, y: -0.04, z: -0.0106 }, rotationDeg: { pitch: 90, yaw: -90, roll: 0 } },
@@ -214,13 +212,9 @@
         rangedGripMode: null,
       },
       kurraya: {
-        customGripAxis: {
-          enabled: true, // User-authored Nut→Bridge axis: these are the exported model-space endpoints, not inferred mesh coordinates.
-          start: { x: 0.4229580686978533, y: 0.13525912280456098, z: -0.015 },
-          end: { x: -0.2939021690442711, y: -0.09932862507652179, z: 0.06094914739001003 },
-        },
-        primaryGripSpan: { enabled: true, startZ: 0.9719, endZ: 0.3333 }, // Authored main-hand travel along the same virtual axis.
-        secondaryGripSpan: { enabled: true, startZ: 0.6456, endZ: -0.5429 }, // Authored offhand travel; reversed endpoint order is intentional.
+        customGripAxis: { enabled: false, start: { x: 0, y: 0, z: 0 }, end: { x: 0, y: 0, z: 0.5 } }, // Keep artist-authored Kurraya endpoints opt-in; do not silently enable the 3D axis.
+        primaryGripSpan: { enabled: false, startZ: 0, endZ: 0.5 }, // Main-hand range requires explicit authoring and opt-in.
+        secondaryGripSpan: { enabled: false, startZ: 0, endZ: 0.5 }, // Offhand range is independently controlled.
         primaryGrip: { position: { x: 0, y: 0, z: 0 }, rotationDeg: { pitch: -135, yaw: 3, roll: 0 } }, // Only Kurraya's hand rotation is newly authored; no exported position or axis is imported.
         rangedPrimaryGrip: { position: { x: 0, y: 0, z: 0 }, rotationDeg: { pitch: 90, yaw: -90, roll: 0 } }, // Preserve the export's separate ranged rotation without taking its ranged hand position.
       },
@@ -431,7 +425,6 @@
     const resetHeightMultipliers = next.heightMultiplierPreset !== HEIGHT_MULTIPLIER_PRESET; // Drafts from the all-1.0 default era adopt the 0.5 default once.
     const resetFluteGrip = next.fluteGripPreset !== FLUTE_GRIP_PRESET; // Previously saved flute grips adopt these exported coordinates only once.
     const resetAuthoredHandRotations = next.authoredHandRotationsPreset !== AUTHORED_HAND_ROTATIONS_PRESET; // Prior drafts get the corrected hand rotations once, without migrating tool placement.
-    const resetKurrayaNutBridge = next.kurrayaNutBridgePreset !== KURRAYA_NUT_BRIDGE_PRESET; // Older saved drafts often contain the disabled dummy Kurraya axis, masking the authored geometry.
     next.schema = SCHEMA;
     next.secondaryGripPreset = SECONDARY_GRIP_PRESET;
     next.twoHandSpanPreset = TWO_HAND_SPAN_PRESET;
@@ -442,7 +435,6 @@
     next.heightMultiplierPreset = HEIGHT_MULTIPLIER_PRESET;
     next.fluteGripPreset = FLUTE_GRIP_PRESET;
     next.authoredHandRotationsPreset = AUTHORED_HAND_ROTATIONS_PRESET;
-    next.kurrayaNutBridgePreset = KURRAYA_NUT_BRIDGE_PRESET;
     const rawTools = next.tools && typeof next.tools === 'object' ? next.tools : {}; // Saved drafts override defaults, while newly added weapon defaults still appear after upgrades.
     next.tools = { ...clone(DEFAULT_DATA.tools), ...rawTools };
     if (resetFluteGrip) next.tools.flute = clone(DEFAULT_DATA.tools.flute); // One-time targeted replacement preserves every unrelated tool, including unsaved drafts.
@@ -457,11 +449,6 @@
         : normalizeHeightMultiplier(entry.heightMultiplier, fallbackEntry.heightMultiplier ?? DEFAULT_HEIGHT_MULTIPLIER);
       entry.primaryGrip = normalizeTransform(entry.primaryGrip);
       entry.customGripAxis = normalizeCustomGripAxis(entry.customGripAxis ?? fallbackEntry.customGripAxis); // One optional 3D axis per tool, independent of 1H and ranged grip anchors.
-      if (toolKey === 'kurraya' && resetKurrayaNutBridge) {
-        if (!entry.customGripAxis.enabled) entry.customGripAxis = clone(fallbackEntry.customGripAxis); // Restore exported points only when a previous draft still has no usable axis.
-        if (!entry.primaryGripSpan?.enabled) entry.primaryGripSpan = clone(fallbackEntry.primaryGripSpan); // Existing custom enabled ranges always win.
-        if (!entry.secondaryGripSpan?.enabled) entry.secondaryGripSpan = clone(fallbackEntry.secondaryGripSpan);
-      }
       if (previousPrimaryRotationPreset !== PRIMARY_ROTATION_PRESET) {
         entry.primaryGrip.position.x = HATCHET_PRIMARY_GRIP_EXAMPLE.x; // Hatchet's authored X belongs to the shared hand-on-item frame.
         entry.primaryGrip.position.y = HATCHET_PRIMARY_GRIP_EXAMPLE.y; // Hatchet's authored Y belongs to the shared hand-on-item frame.
@@ -1376,11 +1363,14 @@
     const previewMatches = previewAxis?.toolKey === editorCurrentToolKey();
     const previewLabel = previewMatches ? (previewAxis.visible ? '3D guide visible' : '3D guide hidden') : '3D guide awaiting sprite';
     const coordinates = point => `(${point.x.toFixed(3)}, ${point.y.toFixed(3)}, ${point.z.toFixed(3)})`;
+    const disabledRangeNames = [!mainSpan.enabled ? 'main-hand' : null, !span.enabled ? 'offhand' : null].filter(Boolean); // Explain invisible hand travel without changing authored checkboxes.
+    const rangeHint = axis.enabled && melee && disabledRangeNames.length
+      ? ` · 2H ${disabledRangeNames.join(' and ')} range${disabledRangeNames.length === 1 ? ' is' : 's are'} unchecked; enable the corresponding range checkbox below to display hand travel.`
+      : ''; // Distinguishes a hidden hand-range preview from a missing Nut/Bridge axis.
     const axisStatusText = axis.enabled
-      ? `Nut ${coordinates(axis.start)} → Bridge ${coordinates(axis.end)} · length ${Math.hypot(axis.end.x-axis.start.x,axis.end.y-axis.start.y,axis.end.z-axis.start.z).toFixed(3)} · ${previewLabel}. Grip ranges measure distance from Nut.`
+      ? `Nut ${coordinates(axis.start)} → Bridge ${coordinates(axis.end)} · length ${Math.hypot(axis.end.x-axis.start.x,axis.end.y-axis.start.y,axis.end.z-axis.start.z).toFixed(3)} · ${previewLabel}. Grip ranges measure distance from Nut.${rangeHint}`
       : `Standard Z grip axis · ${previewLabel}. Enable the custom axis to show Nut → Bridge.`;
     if (editorUi.axisStatus.textContent !== axisStatusText) editorUi.axisStatus.textContent = axisStatusText;
-    editorUi.axisRestore.style.display = editorCurrentToolKey() === 'kurraya' ? '' : 'none'; // A focused one-tap recovery is easier on mobile than resetting every tool's grip profile.
     editorUi.scalePair.set(normalizeToolScale(entry?.toolScale));
     editorUi.heightPair.set(normalizeHeightMultiplier(entry?.heightMultiplier));
     editorUi.spanEnabled.checked = span.enabled === true;
@@ -1456,7 +1446,6 @@
     panel.innerHTML = `
       <div class="poseGroupHead"><span class="dot" style="background:#fb7185"></span>Two-hand grip ranges</div>
       <label class="fieldRow" style="cursor:pointer"><input id="handCustomGripAxisEnabled" type="checkbox" style="width:auto;margin-right:6px">Custom 3D haft axis (Nut → Bridge)</label>
-      <button type="button" class="secondary" id="handRestoreKurrayaAxis">Restore exported Kurraya Nut → Bridge</button>
       <div id="handCustomGripAxisFields">
         <div class="help">Specify two points in the <b>instrument's local XYZ frame</b>. This becomes a virtual Z axis only for grip ranges. StartZ/EndZ are distances in item units along the line: 0 at Nut, full line length at Bridge. Use the buttons to position each point directly with the 3D Move gizmo.</div>
         <div class="poseGroupHead">Nut (axis origin)</div><div id="handCustomGripAxisStart"></div>
@@ -1478,17 +1467,6 @@
     host.insertBefore(panel, status);
     const spanFields = panel.querySelector('#handSecondarySpanFields'), animationFields = panel.querySelector('#handSecondaryAnimationFields'), spanEnabled = panel.querySelector('#handSecondarySpanEnabled');
     const axisEnabled = panel.querySelector('#handCustomGripAxisEnabled'); // Switches from ordinary Z to an artist-specified local 3D grip line.
-    const axisRestore = panel.querySelector('#handRestoreKurrayaAxis'); // Allows a one-tap Kurraya-only recovery without clearing unrelated saved tool calibrations.
-    axisRestore.addEventListener('click', () => {
-      if (editorCurrentToolKey() !== 'kurraya') return; // An asynchronous sprite swap cannot apply Kurraya geometry to a different instrument.
-      mutate(() => {
-        const entry = ensureTool('kurraya'); // The bundled export is the authored source of truth for this recovery action.
-        entry.customGripAxis = clone(DEFAULT_DATA.tools.kurraya.customGripAxis);
-        entry.primaryGripSpan = clone(DEFAULT_DATA.tools.kurraya.primaryGripSpan);
-        entry.secondaryGripSpan = clone(DEFAULT_DATA.tools.kurraya.secondaryGripSpan);
-      });
-      global.HobunjiAttackEditorGripAxis?.refresh?.();
-    });
     const axisFields = panel.querySelector('#handCustomGripAxisFields'); // Shown only when the artist opts into the custom axis.
     const axisStatus = panel.querySelector('#handCustomGripAxisStatus'); // Mobile-visible measurement and invalid-axis guidance.
     const axisPairs = { start: {}, end: {} }; // Numeric endpoints mirror 3D gizmo edits for both Nut and Bridge.
@@ -1567,7 +1545,7 @@
       pose[phase] = { enabled, dual, percent, primaryPercent, offhandEnabled, offhandCustom, offhandFields, offhandPairs };
     }
     spanEnabled.addEventListener('change', () => mutate(() => { currentSpan().enabled = spanEnabled.checked; }));
-    editorUi = { scalePanel, scalePair, heightPair, panel, axisEnabled, axisRestore, axisFields, axisStatus, axisPairs, mainEnabled, mainStartPair, mainEndPair, spanEnabled, startPair, endPair, pose, status: panel.querySelector('#handSecondarySpanStatus') };
+    editorUi = { scalePanel, scalePair, heightPair, panel, axisEnabled, axisFields, axisStatus, axisPairs, mainEnabled, mainStartPair, mainEndPair, spanEnabled, startPair, endPair, pose, status: panel.querySelector('#handSecondarySpanStatus') };
 
     document.getElementById('toolSpriteSelect')?.addEventListener('change', () => setTimeout(syncEditorSpanUi, 0));
     document.getElementById('handGripContextSelect')?.addEventListener('change', () => {
