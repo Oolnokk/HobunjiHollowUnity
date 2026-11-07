@@ -621,6 +621,35 @@ console.log(`PASS cave-site-system: ${workspace.animalDens.length} anchors -> ${
   assert(oreCtx.CavernOreRocks.probeRock(doorMap,3.5,2.6,.5)<0,'the carved passage has a solid stone lintel above the doorway');
   assert(doorMesh.geometry.userData.caveFusedRockTriangles>0,'the healed doorway is triangulated into the rock rather than a texture mask');
   assert.equal(oreCtx.CavernOreRocks.debugSnapshot(doorMap)[0].doorOpening,true,'the mobile diagnostics identify a carved door');
+  const stagedScene=new Obj(),stagedMap='map_i_batch_wall',stagedGrid=[[{},{},{}]];
+  oreCtx.CavernOreRocks.build(stagedMap,{oreRocks:[0,1,2].map(col=>({
+    col,row:0,oreKind:'stone',caveSeparator:true,
+  }))},stagedScene,stagedGrid);
+  const stagedInitial=stagedScene.children.find(child=>child.userData?.caveSeparatorFused);
+  oreCtx.CavernOreRocks.withBatchedCuts(()=>{
+    oreCtx.CavernOreRocks.removeVisual(stagedMap,0,0);
+    oreCtx.CavernOreRocks.withBatchedCuts(()=>oreCtx.CavernOreRocks.removeVisual(stagedMap,1,0));
+    assert.equal(stagedInitial.geometry.disposed,false,'nested blast/restore cuts do not remesh before the final tile changes');
+    assert.equal(stagedScene.children.find(child=>child.userData?.caveSeparatorFused),stagedInitial,
+      'one continuous blast footprint retains its scene mesh until the batch ends');
+  });
+  assert.equal(stagedInitial.geometry.disposed,true,'the batched removals dispose the previous visual exactly once');
+  assert.equal(stagedScene.children.filter(child=>child.userData?.caveSeparatorFused).length,1,
+    'one final rock wall remains after clearing two adjacent tiles with a Shattercask');
+  assert.equal(oreCtx.CavernOreRocks.debugSnapshot(stagedMap)[0].liveTiles,1,
+    'multiple blasted cuts heal into a single surviving column');
+
+  const gateScene=new Obj();
+  const stoneGate=oreCtx.CavernOreRocks.carveStoneGate(gateScene,{
+    x:5,y:0,z:7,openingWidth:4.78,openingHeight:3.55,sideThickness:1.24,roofHeight:9,
+  });
+  assert(stoneGate?.geometry?.userData?.caveFusedRockTriangles>0,
+    'puzzle-locked fire and melody doors receive an actual sculpted, roof-height stone opening');
+  assert.equal(stoneGate.userData.caveCarvedDoorOpening,true,
+    'the gate geometry advertises its carved door for mobile visual diagnostics');
+  assert.equal(stoneGate.userData.caveSeparatorHeight,9,'the stone gate rises through the cavern ceiling');
+  assert.equal(gateScene.children.length,1,'one fused rock wall replaces a cluster of intersecting doorframe boulders');
+
   const mineKinds = new Set();
   for (let i = 0; i < 40; i++) {
     for (const rock of decorate(profile(`map_i_test_ores_${i}`, 'ore_mine')).oreRocks) mineKinds.add(rock.oreKind);
