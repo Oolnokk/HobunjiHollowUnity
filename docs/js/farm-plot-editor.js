@@ -12,7 +12,7 @@
 
   const KIND_FOR_BRUSH = { tilled: 'till', trench: 'dig' };
   const CROPS = ['needlegrain', 'heftroot', 'garlink', 'ongyums', 'redberries', 'blueberries', 'yellowberries', 'whiteberries', 'blackberries', 'blackMustard', 'greenMustard'];
-  const allCrops = () => [...new Set([...CROPS, ...(window.CropVarieties?.registered?.() || []).map(variety => variety.id)])]; // Adds known hybrid varieties to family-plot planting choices.
+  const allCrops = () => [...new Set([...CROPS, ...(window.CropVarieties?.registered?.({ ownedOnly: true }) || []).map(variety => variety.id), ...plots.flatMap(plot => [plot.crop, ...(plot.seedBlocks || []).flatMap(block => block.seeds || [])]).filter(Boolean)])]; // Owned cultivars and previously assigned seeds stay selectable without listing 55 unowned imports. // Adds known hybrid varieties to family-plot planting choices.
   const SLOTS = 3;
   let deps = null;
   let plots = []; // { id, label, kind, tiles: [[c, r]], crop, workers: [npcId], hours: [from, to] }
