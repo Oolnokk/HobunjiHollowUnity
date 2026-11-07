@@ -33,7 +33,7 @@ for(let seed=0;seed<200;seed++){
   shortHalls+=compact.length;totalHalls+=network.hallways.length;
   fullPuzzleHalls+=network.hallways.filter(hall=>(hall.axis==='x'?hall.w:hall.h)>=5).length;
   assert(network.hallways.every(hall=>(hall.axis==='x'?hall.h:hall.w)>=5),'do not shrink playable doorway widths');
-  assert(network.hallways.filter(hall=>(hall.axis==='x'?hall.w:hall.h)>=5).length>=2,'preserve at least two hallway puzzle slots');
+  assert(network.hallways.every(hall=>(hall.axis==='x'?hall.w:hall.h)>=5),'reserved V50 stages retain tested 5+ cell hallway lengths');
   assert(network.cols<=180&&network.rows<=180);
   for(const rect of [...network.rooms,...network.hallways]){
     assert(rect.col>=2&&rect.row>=2&&rect.col+rect.w<=178&&rect.row+rect.h<=178);
@@ -43,7 +43,16 @@ for(let seed=0;seed<200;seed++){
   if(Native.analyze(meta).ok)accepted++;
 }
 assert(accepted>150,`native topology acceptance unexpectedly low: ${accepted}`);
-assert(shortHalls>totalHalls*.20,`V50 failed to compact enough empty corridors (${shortHalls}/${totalHalls})`);
+assert.equal(shortHalls,0,'reserved native floors retain unchanged hallway lengths');
+let compactHalls=0,unreservedHalls=0; // Standalone V50 networks should still use compact 2–4-cell passages.
+context.window.__devRuinLayoutReservation=null;
+for(let seed=0;seed<120;seed++){
+  const network=context.generateInteriorRoomNetwork({kind:'small'},context.seededRng(seed),.62,{min:6,max:8});
+  compactHalls+=network.hallways.filter(hall=>(hall.axis==='x'?hall.w:hall.h)<=4).length;
+  unreservedHalls+=network.hallways.length;
+  assert(network.hallways.every(hall=>(hall.axis==='x'?hall.h:hall.w)>=5),'standalone hallways keep player width');
+}
+assert(compactHalls>unreservedHalls*.2,`standalone corridors failed to compact (${compactHalls}/${unreservedHalls})`);
 assert(fullPuzzleHalls>=200*2,'retain puzzle-capable halls on every V50 floor');
 // A constrained allocation must alter placement, not only reject its final result.
 context.window.__devRuinLayoutReservation={w:50,d:50,tileScale:2};
