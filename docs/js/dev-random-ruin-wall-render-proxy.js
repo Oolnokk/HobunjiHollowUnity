@@ -91,6 +91,15 @@
       if (data.mechanismId && data.previewMotion?.type === 'stoneDoor') object.traverse?.(mesh => add(mesh, 'door', object));
       if (data.linkedMechanismId && data.activatorType) object.traverse?.(mesh => add(mesh, 'activator', object));
     });
+    // Glyph plaques can be mounted in upper native V50 roots rather than the single base root.
+    // Find their actual authored decal meshes in the active game scene instead of
+    // mistaking a zero base-root activator count for missing or invisible glyphs.
+    activeScene()?.traverse?.(object => {
+      if (object.userData?.activatorType !== 'glyphObelisk') return;
+      object.traverse?.(mesh => {
+        if (mesh.userData?.furnitureDecal === true) add(mesh, 'activator', object);
+      });
+    });
     return [...candidates.values()];
   }
 
