@@ -592,7 +592,9 @@
 
   function setTorchLit(record, lit, resetTimer = false) {
     if (!record) return;
+    const wasLit=!!record.lit; // The carried torch's fire state controls whether a re-ignition sound is warranted.
     record.lit = !!lit;
+    if(record.lit&&!wasLit)window.RuinInteractionAudio?.igniteTorch?.();
     if(record.lit&&resetTimer)record.burnRemainingMs=TORCH_BURN_MS;
     if(!record.lit)record.burnRemainingMs=0; // Torch lifetime is measured in active, frame-clamped game time; a stuck WebGL frame cannot consume an entire puzzle window.
     updateFlameVisual(record);
@@ -776,6 +778,7 @@
     }
     if (carriedTorch.lit && !target.lit) {
       target.lit = true;
+      window.RuinInteractionAudio?.igniteTorch?.(); // The actual torch or brazier takes fire, not just a puzzle-complete flag.
       const state = mechanismSignals.get(target.mechanismId);
       if (state && state.target < 1) { state.target = 1; window.AudioSystem?.playObjectSfxKey?.('puzzleComplete'); }
       devDeps?.showToast?.(target.kind === 'brazier' ? 'Brazier lit.' : 'Ruin torch lit.', true);
