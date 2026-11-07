@@ -68,6 +68,12 @@ assert.equal(oreMesh.material,rockMaterial,'mini-cliff ore uses the zone stone m
 const herbs=routes.herbRewardMesh(area,herb.id);
 assert(herbs && herbs.children.length===6,'herb reward is visibly clustered into six plants');
 assert.equal(herbs.position.y,herb.y+0.016,'herbs grow from the mini-cliff lid');
+assert.equal(herb.herbTile.c,4,'cluster belongs to one mini-cliff tile');
+assert.equal(herb.herbTile.r,5,'cluster belongs to one mini-cliff row');
+for (const plant of herbs.children) {
+  assert.equal(Math.floor(herbs.position.x+plant.position.x),4,'every herb stalk stays on the selected tile');
+  assert.equal(Math.floor(herbs.position.z+plant.position.z),5,'no herb stalk spills into a neighboring tile');
+}
 assert.equal(chest.reagentKey,undefined,'buried chests remain separate rewards');
 routes.setRewardStage(area,herb.id,'claimed');
 assert.equal(herbs.visible,false,'harvesting hides all six plants immediately');
@@ -108,6 +114,8 @@ vm.runInNewContext(game.slice(handlerStart,handlerEnd)
   + ';this.getCliffResource = getCliffBalconyResourceAt;',ctx);
 const pick=ctx.getCliffResource(4,5);
 assert(pick,'elevated herb receives an interactable with the existing reward priority');
+herb.footprint.push({c:5,r:5}); // Long ledges can overlap multiple ground grid tiles.
+assert.equal(ctx.getCliffResource(5,5),null,'herbs are pickable only from their actual clustered tile');
 assert.equal(pick.getButtons()[0].action,'obj_balcony_pick','herb picking is neither mining nor digging');
 assert.equal(pick.onAction('obj_balcony_dig').ok,false,'herbs cannot be dug into treasure chests');
 assert.equal(pick.onAction('obj_balcony_pick').ok,true,'picking harvests the real elevated reward');
