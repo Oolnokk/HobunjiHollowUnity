@@ -24,7 +24,7 @@
   }
   // Small, inexpensive seed maker reuses the 2×1 compost-crate exterior and the production queue system.
   buildings.seedMakerSmall = { key: 'seedMakerSmall', family: 'seedMaker', tier: 'small', label: 'Seed Maker',
-    icon: '🌱', base: 'compostBinSmall', w: 2, h: 1, planItem: 'seedMakerSmallPlan',
+    icon: '🌱', modelKey: 'compostBinSmall', w: 2, h: 1, planItem: 'seedMakerSmallPlan',
     price: 150, yield: 2, daysPerInput: 2, waterCapacity: 0, minTownValue: 0 };
   // Honeyfuzzle swarms are never barn animals: each lives in its own 1x1 house on the farm
   // (see js/honeyfuzzle-house.js). It is a production-style building — placed from a plan,
