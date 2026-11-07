@@ -69,6 +69,27 @@ W.TzatzulFlightRuntime.__test.releaseCaptive(player,'returned to roost');
 assert.equal(entries[0][0],nestId,'real abduction uses the native indexed cavern loader');
 assert.equal(entries[0][3],'tzatzul_delivery','arrival avoids the automatic cave exit');
 assert(!player.tzatzulCapturedBy&&!player.onBranch,'native transition starts with no stale carry support');
+const clock={day:8,time01:.4}; // Game calendar fractions are days; 1/48 day is half an in-game hour.
+deps.calendar=clock;
+area=zone; // Re-enter the outdoor map to exercise the complete flight delivery path.
+W.PerchSupport.attach(bird,perch);bird._tzFlight.phase='perched';bird._tzFlight.retreating=false;bird.health=100;
+player.health=500;player.x=256;player.y=256;
+assert(W.TzatzulFlightRuntime.__test.capture(bird,player));
+assert(W.TzatzulFlightRuntime.__test.returnHome(bird));
+for(let i=0;i<90&&bird._tzFlight.phase==='return';i++)W.TzatzulFlightRuntime.update(.1);
+assert.equal(bird._tzFlight.phase,'in-nest','successful player delivery sends the parent into its cave');
+assert.equal(bird.tzatzulInNest,true,'the provisioning parent is hidden from exterior rendering');
+assert.equal(bird._denHidden,true,'other combat systems cannot target a bird inside its nest');
+area=zone; // Simulate exiting the native cave so the exterior hunt AI is active again.
+clock.time01+=29/60/24;
+W.TzatzulFlightRuntime.update(.1);
+assert.equal(bird._tzFlight.phase,'in-nest','the parent stays inside for the first 29 game minutes');
+clock.time01+=2/60/24;
+W.TzatzulFlightRuntime.update(.1);
+assert.notEqual(bird._tzFlight.phase,'in-nest','the parent emerges once thirty game minutes pass');
+assert.equal(bird._denHidden,false,'an emerged parent returns to normal rendering and targeting');
+area=nestId; // Subsequent assertions exercise the original interior egg/victim state.
+
 W.TzatzulNestEncounter.buildNest(nestId,{cavernFeatures:{tzatzulNest:plan},floorSurfaceY:0},scene);
 assert.equal(eggBuilds[0].itemKey,'tzatzulEgg');
 assert.equal(eggBuilds[0].remaining,3,'native nest provides three individual non-fertile eggs');
