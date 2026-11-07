@@ -19,6 +19,10 @@
       label: 'Nuhongan',
       text: 'A smaller Slagothim subspecies using the same authored Tletingan appearance and anatomy: 75% of Tletingan height and 80% of Tletingan width.',
     }),
+    longoran: Object.freeze({
+      label: 'Longoran',
+      text: 'Towering Slagothim, 50% taller and 25% wider than Tletingans, with a pronounced forward-curled back and heavy lurching steps.',
+    }),
     mashtzarr: Object.freeze({
       label: 'Mashtzarr',
       text: 'Oliphanti of the Eastern Highplains. Though smaller and rounder-headed than their western cousins, the Mammakhbuur, but still tower over most other peoples of Khymeryya. Their homeland is a harsh, elevated grassland rich with deep copper mines. Most live their whole lives in isolated communities, working as miners or herders.',
@@ -154,11 +158,13 @@
     const currentSpecies = activeCoreSpecies(overlay);
     const tletinganActive = currentSpecies === 'tletingan' || !!tletinganButton?.classList.contains('ob-active');
     const nuhonganButton = group.querySelector('[data-ob-species="nuhongan"]'); // Existing core button owns the saved Nuhongan identity.
-    const nuhonganActive = currentSpecies === 'nuhongan'; // Keeps the family panel open while its second subspecies is selected.
-    if (tletinganActive || nuhonganActive) familyOpen = true;
+    const nuhonganActive = currentSpecies === 'nuhongan'; // Keeps the family panel open when the smaller subspecies is selected.
+    const longoranButton = group.querySelector('[data-ob-species="longoran"]'); // Uses the core save identity, like Nuhongan.
+    const longoranActive = currentSpecies === 'longoran'; // Keeps the family group active for the towering subspecies.
+    if (tletinganActive || nuhonganActive || longoranActive) familyOpen = true;
 
     const familyButton = group.querySelector('[data-ob-family="slagothim"]');
-    const showFamily = familyOpen || tletinganActive || nuhonganActive;
+    const showFamily = familyOpen || tletinganActive || nuhonganActive || longoranActive;
     familyButton?.classList.toggle('ob-active', showFamily);
 
     const details = document.createElement('div');
@@ -178,9 +184,9 @@
       <div class="ob-subspecies-group">
         <button type="button" class="ob-sel-btn${tletinganActive ? ' ob-active' : ''}" data-ob-subspecies="tletingan">Tletingan</button>
         <button type="button" class="ob-sel-btn${nuhonganActive ? ' ob-active' : ''}" data-ob-subspecies="nuhongan"${nuhonganButton ? '' : ' disabled'}>Nuhongan</button>
-        <button type="button" class="ob-sel-btn ob-disabled ob-subspecies-unavailable" data-ob-subspecies="longoran" disabled>Longoran</button>
+        <button type="button" class="ob-sel-btn${longoranActive ? ' ob-active' : ''}" data-ob-subspecies="longoran"${longoranButton ? '' : ' disabled'}>Longoran</button>
       </div>
-      <div class="ob-subspecies-description"><strong>${(nuhonganActive ? LORE.nuhongan : LORE.tletingan).label}:</strong> ${(nuhonganActive ? LORE.nuhongan : LORE.tletingan).text}</div>`;
+      <div class="ob-subspecies-description"><strong>${(LORE[currentSpecies] || LORE.tletingan).label}:</strong> ${(LORE[currentSpecies] || LORE.tletingan).text}</div>`;
     details.appendChild(subspecies);
     group.after(details);
 
@@ -203,6 +209,8 @@
     tletinganButton.hidden = true;
     const nuhonganButton = group.querySelector('[data-ob-species="nuhongan"]'); // Nuhongan shares the Slagothim family row instead of a separate top-level choice.
     if (nuhonganButton) nuhonganButton.hidden = true;
+    const longoranButton = group.querySelector('[data-ob-species="longoran"]'); // Hidden core button keeps creator save semantics intact.
+    if (longoranButton) longoranButton.hidden = true;
     if (tletinganButton.classList.contains('ob-active')) familyOpen = true;
 
     const maoButton = group.querySelector('[data-ob-species="mao-ao"]');
@@ -226,7 +234,7 @@
       if (button.dataset.obRedesignBound === '1') return;
       button.dataset.obRedesignBound = '1';
       button.addEventListener('click', () => {
-        if (button.dataset.obSpecies !== 'tletingan' && button.dataset.obSpecies !== 'nuhongan') familyOpen = false;
+        if (button.dataset.obSpecies !== 'tletingan' && button.dataset.obSpecies !== 'nuhongan' && button.dataset.obSpecies !== 'longoran') familyOpen = false;
       }, true);
     });
 
@@ -275,7 +283,7 @@
     if (!kind) return true;
     if (gender !== 'male') return false;
     if (kind === 'kenkari-bowl-kasa') return speciesId === 'kenkari';
-    return speciesId === 'tletingan' || speciesId === 'nuhongan' || speciesId === 'mao-ao';
+    return speciesId === 'tletingan' || speciesId === 'nuhongan' || speciesId === 'longoran' || speciesId === 'mao-ao';
   }
 
   function randomizeVisibleClothing(overlay, speciesId, gender) {
@@ -341,7 +349,7 @@
       collectionsTab?.click(); // Core rerenders synchronously; all following queries intentionally reacquire the current DOM.
       let current = creatorOverlay();
       const clothingRoll = current ? randomizeVisibleClothing(current, speciesId, gender) : { kasaSelected: false, kasaKind: null };
-      const restrictOrdinaryKasaDyes = clothingRoll.kasaKind === 'ordinary-kasa' && (speciesId === 'tletingan' || speciesId === 'nuhongan' || speciesId === 'mao-ao');
+      const restrictOrdinaryKasaDyes = clothingRoll.kasaKind === 'ordinary-kasa' && (speciesId === 'tletingan' || speciesId === 'nuhongan' || speciesId === 'longoran' || speciesId === 'mao-ao');
 
       clickRandomDye('data-ob-cloth-dye-a', restrictOrdinaryKasaDyes);
       clickRandomDye('data-ob-cloth-dye-b', restrictOrdinaryKasaDyes);

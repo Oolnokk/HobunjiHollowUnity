@@ -102,7 +102,15 @@
       try {
         const r = await fetch(`config/species/${speciesId}.json`);
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        return await r.json();
+        const species = await r.json();
+        const parentId = String(species.parentSpecies || '').trim(); // Child species can share Tletingan clothing pools without copying thousands of authored cosmetic lines.
+        if (!parentId || parentId === speciesId) return species;
+        const parent = await loadBanditSpeciesDef(parentId);
+        return parent ? {
+          ...parent, ...species,
+          male: { ...(parent.male || {}), ...(species.male || {}) },
+          female: { ...(parent.female || {}), ...(species.female || {}) },
+        } : species;
       } catch (e) {
         deps.debugLog(`Bandits: species def load failed for ${speciesId}: ${e.message}`, 'warn');
         return null;
@@ -630,7 +638,7 @@
     // CREATURE_PLANE_ROT_MODE) instead of drifting out of sync with it,
     // same clipping fix applied to the mounted-rider case.
     characterBuildStatus.stage = 'leg-rig';
-    const spine = roster.spine ? window.HobunjiCharacterSpine?.bind(portrait, { spine: roster.spine }) : null; // Static hunch from the enemy loadout rule; shoulder aim reads it live off the portrait root.
+    const spine = window.HobunjiCharacterSpine?.bind(portrait, { speciesId: roster.appearance.speciesId, spine: roster.spine }) || null; // Explicit loadout spine wins; Longoran species defaults give their unarmed/idle portrait the same permanent forward curve.
     if (spine?.hunch > 0 && frontNeckSkin) { // Stoop the portrait itself: lower the spine bone of both the front and rear skins (they share the same weights).
       window.HobunjiCharacterSpine.applyToRig({ splineNodes: { front: frontNeckSkin.splineNodes, back: backNeckSkin?.splineNodes }, neckLocal: frontNeckSkin.neckLocal, spinePosteriorY: frontNeckSkin.spinePosteriorY, spineBase: frontNeckSkin.spineBase }, spine, modelHeight);
     }

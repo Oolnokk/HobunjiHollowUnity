@@ -17,7 +17,7 @@
   const animationAuthorColorFill = new URL('./color-fill.js?v=20260923colorfill7', src).href; // Used before Animation Author's repository-runtime loader can execute portrait-utils.js.
   const animationAuthorColorFillTag = isAnimationAuthor ? `<script src="${animationAuthorColorFill}"></script>` : ''; // Keeps parser-time ColorFill ordering explicit without changing other tools.
   const isCharacterStudio = /\/tools\/character-studio\/(?:index\.html)?$/.test(location.pathname); // Used to install derived-species appearance metadata before Character Studio reads scratchbones-config.js.
-  const characterStudioMammakhbuur = new URL('./character-studio-mammakhbuur-config.js?v=20261005nuhonganreview2', src).href; // Supplies Mammakhbuur plus full Nuhongan/Tletingan inheritance before Character Studio initializes.
+  const characterStudioMammakhbuur = new URL('./character-studio-mammakhbuur-config.js?v=20261107longoran1', src).href; // Supplies Mammakhbuur plus full Nuhongan/Tletingan inheritance before Character Studio initializes.
   const characterStudioMammakhbuurTag = isCharacterStudio ? `<script src="${characterStudioMammakhbuur}"></script>` : ''; // Parser-time hook must run before the later scratchbones-config assignment.
   const isWallBuilder = /\/tools\/wall-builder\/(?:index\.html)?$/.test(location.pathname); // Used to isolate log-cabin authoring controls to the Wall Builder page.
   const logWallExtension = new URL('./log-wall-extension.js?v=20261023h81e6928', src).href; // Shared deterministic generated/baked log-wall authority used by runtime and the Wall Builder tool.

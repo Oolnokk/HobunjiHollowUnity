@@ -259,8 +259,14 @@
 
     const offsetNumber = Number(overrides.offsetY);
     const baseOffset = Number.isFinite(offsetNumber) ? offsetNumber : resolved.offsetY;
-    const spineShare = rig.splineNodes ? window.HobunjiCharacterSpine?.profileFor?.(ageFraction)?.shoulderDrop || 0 : 0; // The spline already lowers the head by this much (the head bones sit on its last node); only the rest comes from the head bone.
-    applyHeadYOffset(target, clampOffset(baseOffset) + ageHunchFraction(ageFraction) + spineShare, modelHeight);
+    // A Longoran's permanent curve belongs to the portrait spine, not the NPC's age.
+    // Later hand attachment and Full Character Scale reapply head compensation with age=0:
+    // preserve the actually bound spine's hunch rather than undoing its head drop.
+    const boundLongoranHunch = normalizeKey(species) === 'longoran'
+      ? Number(found.node?.userData?.hobunjiSpine?.hunch) : NaN; // Reads the same portrait rig just found above, so explicit per-character spine overrides still win.
+    const composedHunch = Number.isFinite(boundLongoranHunch) ? boundLongoranHunch : ageFraction; // Other species retain their unchanged age-only logic.
+    const spineShare = rig.splineNodes ? window.HobunjiCharacterSpine?.profileFor?.(composedHunch)?.shoulderDrop || 0 : 0; // The spline already lowers the head by this much.
+    applyHeadYOffset(target, clampOffset(baseOffset) + ageHunchFraction(composedHunch) + spineShare, modelHeight);
     return true;
   }
 

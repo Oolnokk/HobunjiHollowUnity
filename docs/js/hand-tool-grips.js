@@ -236,7 +236,7 @@
     return String(value || '').trim().toLowerCase().replace(/[’']/g, '').replace(/_/g, '-').replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '');
   }
 
-  const LEGACY_OFFHAND_IDLE_SPECIES = new Set(['kenkari', 'tletingan', 'rakakoan', 'nuhongan']); // Species whose free arm keeps the original locomotion idle instead of the invisible one-grip offhand pose.
+  const LEGACY_OFFHAND_IDLE_SPECIES = new Set(['kenkari', 'tletingan', 'rakakoan', 'nuhongan', 'longoran']); // Species whose free arm keeps the original locomotion idle instead of the invisible one-grip offhand pose.
   function usesLegacyOffhandIdle(speciesId) {
     return LEGACY_OFFHAND_IDLE_SPECIES.has(normalizeKey(speciesId));
   }

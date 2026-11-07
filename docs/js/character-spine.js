@@ -70,6 +70,12 @@
       const hunch = asNumber(object ? candidate.hunch : candidate);
       if (Number.isFinite(hunch)) return { hunch, sway: object ? asNumber(candidate.sway) : NaN, kyphosis: object ? asNumber(candidate.kyphosis) : NaN };
     }
+    const speciesId = String(source.speciesId || source.species || source.appearance?.speciesId || source.appearance?.species
+      || source.profile?.speciesId || source.profile?.species || source.profile?.appearance?.speciesId
+      || source.profile?.fighter?.speciesId || source.npcRecord?.appearance?.speciesId
+      || source.avatarRoot?.userData?.speciesId || '').trim().toLowerCase().replace(/_/g, '-');
+    const speciesDefault = speciesId === 'longoran' ? window.HobunjiLongoranSpecies?.spineProfile : null; // Longoran keep an authored forward curve when no individual age/spine override exists.
+    if (speciesDefault) return { hunch: asNumber(speciesDefault.hunch), sway: asNumber(speciesDefault.sway), kyphosis: asNumber(speciesDefault.kyphosis) };
     return { hunch: NaN, sway: NaN, kyphosis: NaN };
   }
 

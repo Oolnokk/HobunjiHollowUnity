@@ -1,0 +1,11 @@
+{
+  "speciesId": "longoran",
+  "label": "Longoran",
+  "parentSpecies": "tletingan",
+  "genders": [
+    "male",
+    "female"
+  ],
+  "male": {},
+  "female": {}
+}
