@@ -455,11 +455,16 @@
       const onShelf=player?.onCliffBalcony===portal.shelf.id && !player?.climbing;
       const down=onShelf&&Math.hypot(px-portal.plate.x,pz-portal.plate.z)<.55; // A separate activation circle leaves room to step up to the gate after the final note.
       if(portal.session){
+        root.RuinInteractionAudio?.watchPlate?.(portal.plateMesh,down); // Real raised-shelf plate press/release, never a per-frame click.
         portal.session.step(dt,down); // The active plate alone advances the rhythm; the player decides when to equip and play.
         portal.lastDown=!!down;
         if(portal.scoreBoard)portal.scoreBoard.visible=!!down&&!portal.solved&&portal.rise<.95;
       }
-      if(portal.solved&&portal.rise<1){portal.rise=Math.min(1,portal.rise+Math.max(0,Number(dt)||0)/.95);moveSlab(portal);}
+      if(portal.solved&&portal.rise<1){
+        portal.rise=Math.min(1,portal.rise+Math.max(0,Number(dt)||0)/.95);
+        root.RuinInteractionAudio?.watchMovement?.(portal.slab||portal.doorModel,portal.rise,{size:3.5}); // A large stone slab opens only once per solved melody.
+        moveSlab(portal);
+      }
       portal.openWait=Math.max(0,portal.openWait-Math.max(0,Number(dt)||0));
       const nearDoor=onShelf&&Math.hypot(px-(portal.entry.c+.5),pz-(portal.entry.r+.5))<.73;
       const enabled=portal.solved&&portal.rise>=.98&&portal.openWait<=0&&nearDoor&&(!portal.requiresSong||!down);
