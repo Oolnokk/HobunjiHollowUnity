@@ -174,6 +174,41 @@
     return heights;
   }
 
+  function buildNativeCeiling(THREE,meta,place,storyY,material){
+    const cells=new Set(); // Shared floor/room footprint prevents holes above sunken chambers and omitted support tiles.
+    const addCell=(c,r)=>{
+      const x0=place.originX+c*place.cs,z0=place.originZ+r*place.cs;
+      for(let x=Math.floor(x0);x<Math.ceil(x0+place.cs-1e-6);x++)
+        for(let z=Math.floor(z0);z<Math.ceil(z0+place.cs-1e-6);z++)cells.add(key(x,z));
+    };
+    for(const [c,r] of meta.floorCells||[])if(Number.isFinite(c)&&Number.isFinite(r))addCell(c,r);
+    for(const room of meta.rooms||[]){
+      if(![room.col,room.row,room.w,room.h].every(Number.isFinite)||room.w<1||room.h<1||room.w>128||room.h>128)continue;
+      for(let c=room.col;c<room.col+room.w;c++)for(let z=room.row;z<room.row+room.h;z++)addCell(c,z);
+    }
+    if(!cells.size)return null;
+    const y=storyY+(Number(meta.floorSurfaceY)||0)+(Number(meta.wallHeight)||3); // Match the main V50 ceiling datum instead of the moving plateau height.
+    const xs=[...cells].map(k=>Number(k.split(',')[0])),zs=[...cells].map(k=>Number(k.split(',')[1]));
+    const minX=Math.min(...xs),maxX=Math.max(...xs),minZ=Math.min(...zs),maxZ=Math.max(...zs);
+    const width=maxX-minX+1,depth=maxZ-minZ+1;
+    const Faces=root.RuinWallFaces;
+    let roof;
+    if(Faces){
+      const mask=new Uint8Array(width*depth);
+      for(const k of cells){const [x,z]=k.split(',').map(Number);mask[(z-minZ)*width+x-minX]=1;}
+      const quads=Faces.mergeMask(mask,width,depth).map(r=>({axis:'y',side:-1,plane:0,a0:r.i0,a1:r.i1,b0:r.j0,b1:r.j1}));
+      const geometry=Faces.toGeometry(THREE,Faces.buildQuads(quads,{origin:{x:minX,y,z:minZ},size:{x:1,y:1,z:1},patch:{h:6,v:6}}));
+      roof=new THREE.Mesh(geometry,material);
+    }else{
+      const geometry=new THREE.PlaneGeometry(1,1);geometry.rotateX(Math.PI/2);
+      roof=new THREE.InstancedMesh(geometry,material,cells.size);
+      const matrix=new THREE.Matrix4();let i=0;
+      for(const k of cells){const [x,z]=k.split(',').map(Number);roof.setMatrixAt(i++,matrix.makeTranslation(x+.5,y,z+.5));}
+      roof.instanceMatrix.needsUpdate=true;
+    }
+    roof.name='native-v50-textured-ceiling';roof.userData={...roof.userData,devRandomRuinCeiling:true,devRuinFootprintIgnore:true,ceilingCells:cells.size};
+    return roof;
+  }
   function mount(options={}){
     const {ruin,rec,plan,hub,records,makeTile,getPlayerPosition,getPlayerY}=options;
     const THREE=options.THREE||root.THREE,DS=options.DynamicSurfaces||root.DynamicSurfaces;
@@ -201,8 +236,10 @@
     })||new THREE.MeshBasicMaterial({color:fallback}); // Use the author's stone PNG recolored for native floor furniture.
     const gateMaterial=tintStone('#4d3831',0x4d3831);
     const bronzeMaterial=tintStone('#715e48',0x715e48);
+    const ceilingMaterial=material.clone?.()||new THREE.MeshBasicMaterial({color:0x777267}); // Stone-textured underside, never an overhead opaque lid.
+    ceilingMaterial.side=THREE.FrontSide;ceilingMaterial.needsUpdate=true; // Match the entry-floor ceiling's downward-facing/front-only treatment.
     const nativeFlames=[]; // Tracks player campfire emitters on the native V50 floor goal braziers.
-    const owner={records:[],lit:0,total:records.length,disposed:false,group:base};
+    const owner={records:[],lit:0,total:records.length,disposed:false,group:base,ceilingMeshes:0}; // Exposes native ceiling coverage to mobile debug.
     const disposeMeshes=new Set(),controls=[],scopes=[]; // These are owned by native V50 floors, not the existing one-floor V50 entry.
     const views=[];
     function addControl(control){ruin.controls.push(control);controls.push(control);}
@@ -255,7 +292,7 @@
       base.parent?.remove(base);
       base.traverse?.(obj=>{if(obj.geometry)disposeMeshes.add(obj.geometry);});
       for(const geo of disposeMeshes)geo.dispose?.();
-      for(const mat of [material,gateMaterial,bronzeMaterial])mat.dispose?.();
+      for(const mat of [material,gateMaterial,bronzeMaterial,ceilingMaterial])mat.dispose?.();
     };
     try{
       for(const item of records){
@@ -304,6 +341,8 @@
         nativeRoot.position.set(place.originX+place.width/2,floor.y,
           place.originZ+place.depth/2);
         group.add(nativeRoot);
+        const ceiling=buildNativeCeiling(THREE,meta,place,floor.y,ceilingMaterial); // V50 snapshot roots lack the standalone entrance map's procedural roof.
+        if(ceiling){group.add(ceiling);owner.ceilingMeshes++;}
         if(particles){
           particles.scale.x*=options.tileScale||2;particles.scale.z*=options.tileScale||2;
           particles.position.set(nativeRoot.position.x,nativeRoot.position.y,nativeRoot.position.z); // Snapshot emitters were authored in V50 preview coordinates; align them to the same upper-story placement as their original host meshes.
@@ -511,6 +550,7 @@
     };
     owner.getState=()=>({
       floors:owner.records.length,rooms:owner.records.reduce((n,r)=>n+r.analysis.rooms,0),
+      ceilingMeshes:owner.ceilingMeshes, // Each generated native V50 story now receives its own real carved stone ceiling.
       hallways:owner.records.reduce((n,r)=>n+r.analysis.hallways,0),
       totalBraziers:owner.total,lit:owner.lit,
       stagesSolved:owner.records.reduce((n,r)=>n+r.solved,0),
@@ -528,5 +568,5 @@
     });
     return owner;
   }
-  return Object.freeze({analyze,doorwayCells,nativeSeed,generateFloors,layoutPlacement,nativeRoom,cellProjection,mount,isNativeGrid:grid=>nativeGridOwnership.has(grid)});
+  return Object.freeze({analyze,doorwayCells,nativeSeed,generateFloors,layoutPlacement,nativeRoom,cellProjection,buildNativeCeiling,mount,isNativeGrid:grid=>nativeGridOwnership.has(grid)});
 });
