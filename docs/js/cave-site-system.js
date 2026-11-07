@@ -1018,7 +1018,7 @@
         plan.puzzleDoor = {id:'rock-puzzle-door-'+child.denId,col:tile.col,row:tile.row,targetMapId:child.mapId};
         mapData.exits.push({
           id:plan.puzzleDoor.id,label:'Hidden Stone Door',tiles:[[tile.col,tile.row]],
-          targetMap:child.mapId,spawnCol:0,spawnRow:0,generateDoor:false,
+          targetMap:child.mapId,targetSpotId:'den_exit',spawnCol:0,spawnRow:0,generateDoor:false, // Resolve the child's actual generated entrance instead of spawning at tile 0,0.
         }); // Native building-to-building transitions, not NPC triggers or cave replacements.
         addProp(mapData,{id:plan.puzzleDoor.id,key:'cliffDoor',col:tile.col,row:tile.row,
           rotY:facing,scaleX:0.65,scaleZ:0.65,alwaysOpen:true});
@@ -1028,6 +1028,7 @@
     if(profile.contents === TYPES.PUZZLE_CAVE && profile.parentMapId && mapData.exits?.length) {
       const exit = mapData.exits[0]; // Reciprocal transition returns into the ordinary cave, not out to the wilderness.
       exit.targetMap = profile.parentMapId;
+      exit.targetSpotId = 'rock-puzzle-door-' + profile.denId; // Reciprocal owner resolves the parent's hidden-door exit even after a fresh scene load.
       exit.spawnCol = Number(profile.returnCol) || 0;
       exit.spawnRow = Number(profile.returnRow) || 0;
       exit.label = 'Back to the cave';
