@@ -47,6 +47,13 @@
     return fallback;
   }
 
+  function seedPouchColor(key, def) {
+    const inherited = parseColor(def.varietyColor); // Canonical crossbreed phenotype takes priority over copied parent-item metadata.
+    if (inherited != null) return inherited;
+    const cropColor = parseColor(window.CropVarieties?.seedColorOf?.(key)); // Native and saved regional seeds use the crop renderer's actual fruit/vegetable pigment.
+    return cropColor ?? materialColor(key, def, 0xB6A17A); // Unknown/non-crop seeds remain legible with a natural pouch tint.
+  }
+
   function combatCategoryForAbility(id) {
     const category = window.Combat?.abilities?.get?.(id)?.category; // Technique manuals use the actual combat registry, not their titles.
     return Object.prototype.hasOwnProperty.call(SLOT_COLORS, category) ? category : null;
@@ -90,6 +97,9 @@
     if (/tablet|rune\s*slab|inscribed\s*stone/i.test(joined)) {
       return { spriteIcon: 'stone_tablet.png', spriteColor: materialColor(key, def, 0x9C998B), spriteMode: 'direct' };
     }
+    if (def.cat === 'seed' || def.seedFor || /Seeds?$/.test(String(key))) {
+      return { spriteIcon: 'pouch.png', spriteColor: seedPouchColor(key, def), spriteMode: 'direct' };
+    }
     if (/\b(ore|ores)\b|(^|[_:-])ore([_:-]|$)/i.test(joined)) {
       return { spriteIcon: 'ore.png', spriteColor: materialColor(key, def, 0x967967), spriteMode: 'direct' };
     }
@@ -113,6 +123,11 @@
       // Respect a bespoke crop/reagent rendering where one has already been authored.
       if (def.spriteIcon && !/^(?:leaf|herb|item|plant)[_.-]/i.test(def.spriteIcon)) return null;
       return { spriteIcon: '../leaves/speartip_leaf.png', spriteColor: materialColor(key, def, 0x6BA153), spriteMode: 'direct' };
+    }
+    // These are loose, stackable finds. Do not replace the bespoke sprites of larger artifacts or equipment.
+    if (/^(?:harlyao(?:Copper|Tin|Bronze)Coin|hachutuMoneyBones)$/.test(String(key))
+        || (!def.spriteIcon && /\b(?:pebbles?|beads?|buttons?|marbles?|tokens?|loose shells?)\b/i.test(joined))) {
+      return { spriteIcon: 'pouch.png', spriteMode: 'direct' };
     }
     return null;
   }
