@@ -104,6 +104,8 @@ async function canonicalFittedGarmentPortrait(runtime){
   const group={...option,onlyExactSpeciesVariant:true,
     variantLayers:{...option.variantLayers,[targetVariant]:[...fitted,...authored]}};
   const profile={...runtime.profile,[slot]:group}; // Game owns tint selection, front/back layer order, head overlap, and special rear image replacement.
+  const colorRng=window.NpcAvatarPreview?.seededRng?.(`clothing-fit-preview:${E.species.value}:${E.gender.value}:${garment.id}`);
+  window.ensurePortraitClothingPaletteColors?.(profile,colorRng); // Newly equipped garments get the same complete base/trim palette slots as regular NPC gear.
   const size=runtime.front.width;
   const front=Object.assign(document.createElement('canvas'),{width:size,height:size});
   const back=Object.assign(document.createElement('canvas'),{width:size,height:size});

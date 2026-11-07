@@ -454,6 +454,23 @@ assert.strictEqual(made.backComposed,portraitCalls[1].canvas,'3D uses the canoni
 assert(fittedColor.naturalWidth===234&&fittedColor.naturalHeight===173,'Fitted canvas exposes image-compatible dimensions');
 assert(backOption.variantLayers.tletingan_male[0].url.includes('tl_finehood-base.png'),
   'The original asset path remains recognizable to game behind replacement rules');
+
+  // The renderer must use the GAME's actual fine hood behind-substitution rules.
+  const vm = require('node:vm');
+  const gameCtx=vm.createContext({window:{},console}); // Canonical parser and replacement logic without mock rear-view rules.
+  vm.runInContext(fs.readFileSync(path.resolve(root,'../../config/scratchbones-config.js'),'utf8'),gameCtx);
+  vm.runInContext(fs.readFileSync(path.resolve(root,'../../js/portrait-utils.js'),'utf8'),gameCtx);
+  const fineHood=JSON.parse(fs.readFileSync(path.resolve(root,'../../config/cosmetics/fine_hood.json'),'utf8'));
+  const parsedFineHood=gameCtx.portraitOptionFromJson({id:'fine_hood'},fineHood);
+  const actualMaleLayers=parsedFineHood.variantLayers.tletingan_male;
+  assert.deepEqual(Array.from(actualMaleLayers,layer=>layer.paletteColorKey),['A','B'],
+    'The real game defines a separately dyed Tletingan hood trim');
+  assert.equal(gameCtx._getBehindLayerUrl({...actualMaleLayers[0],url:actualMaleLayers[0].url+'#fit-19-0'},parsedFineHood,'male'),
+    'cosmetics/clothes/hood/tl_finehood-back_m.png',
+    'The game substitutes the real Tletingan finehood back when the fitted layer carries its original path');
+  assert.equal(gameCtx._getBehindLayerUrl({...actualMaleLayers[1],url:actualMaleLayers[1].url+'#fit-19-1'},parsedFineHood,'male'),
+    null,'The game hides fine hood front-opening trim from behind');
+
   console.log('clothing fit/game portrait, head/body B alignment, retired cloud mask, 2D/3D parity, grid-only and failed-rig cleanup tests passed');
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });
