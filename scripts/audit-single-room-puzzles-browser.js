@@ -62,7 +62,7 @@ async function main(){
     const seeds={glyphObelisk:0x51a7cafe,ceilingRailTargets:0x17a31,melodyEcho:0x17a32,
       dungeonFire:0x17a33,ropeChain:0x2468ace0,statueDefense:0x17a35,
       nativeBrazier:0x17a36,nativeGlyphObelisk:0x17a37,
-      nativeStackedObelisk:0x4ed17f2a,nativeLinkedCubePillars:0x17a39,nativePushBlock:0x17a3a};
+      nativeStackedObelisk:0x4ed17f2a,nativeLinkedCubePillars:0x17a39,nativePushBlock:0x17a3a,findBlocks:0x17a3b};
     for(const kind of kinds){
       const row={kind,seed:seeds[kind]||12,ok:false,ready:false,linked:false};
       report.push(row);
