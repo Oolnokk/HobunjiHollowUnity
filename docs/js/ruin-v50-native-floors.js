@@ -174,7 +174,7 @@
     return heights;
   }
 
-  function buildNativeCeiling(THREE,meta,place,storyY,material){
+  function buildNativeCeiling(THREE,meta,place,storyY,material,connectorTiles=[]){
     const cells=new Set(); // Shared floor/room footprint prevents holes above sunken chambers and omitted support tiles.
     const addCell=(c,r)=>{
       const x0=place.originX+c*place.cs,z0=place.originZ+r*place.cs;
@@ -186,10 +186,13 @@
       if(![room.col,room.row,room.w,room.h].every(Number.isFinite)||room.w<1||room.h<1||room.w>128||room.h>128)continue;
       for(let c=room.col;c<room.col+room.w;c++)for(let z=room.row;z<room.row+room.h;z++)addCell(c,z);
     }
+    for(const [x,z] of connectorTiles)if(Number.isFinite(x)&&Number.isFinite(z))cells.add(key(x,z)); // Roof the physical shaft-to-native corridor as well as the V50 rooms.
     if(!cells.size)return null;
     const y=storyY+(Number(meta.floorSurfaceY)||0)+(Number(meta.wallHeight)||3); // Match the main V50 ceiling datum instead of the moving plateau height.
-    const xs=[...cells].map(k=>Number(k.split(',')[0])),zs=[...cells].map(k=>Number(k.split(',')[1]));
-    const minX=Math.min(...xs),maxX=Math.max(...xs),minZ=Math.min(...zs),maxZ=Math.max(...zs);
+    let minX=Infinity,maxX=-Infinity,minZ=Infinity,maxZ=-Infinity; // Bound the merged roof without spreading tens of thousands of coordinates onto the call stack.
+    for(const cell of cells){const [x,z]=cell.split(',').map(Number);
+      minX=Math.min(minX,x);maxX=Math.max(maxX,x);minZ=Math.min(minZ,z);maxZ=Math.max(maxZ,z);
+    }
     const width=maxX-minX+1,depth=maxZ-minZ+1;
     const Faces=root.RuinWallFaces;
     let roof;
@@ -341,7 +344,7 @@
         nativeRoot.position.set(place.originX+place.width/2,floor.y,
           place.originZ+place.depth/2);
         group.add(nativeRoot);
-        const ceiling=buildNativeCeiling(THREE,meta,place,floor.y,ceilingMaterial); // V50 snapshot roots lack the standalone entrance map's procedural roof.
+        const ceiling=buildNativeCeiling(THREE,meta,place,floor.y,ceilingMaterial,route.tiles); // V50 snapshot roots and their connector lack the entrance map's roof.
         if(ceiling){group.add(ceiling);owner.ceilingMeshes++;}
         if(particles){
           particles.scale.x*=options.tileScale||2;particles.scale.z*=options.tileScale||2;
