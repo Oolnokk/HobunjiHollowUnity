@@ -351,7 +351,7 @@
     new URL('config/hand-shoulder-points.js?v=20260818b', docsBase).href,
     new URL('config/hand-shoulder-pose-profiles.js?v=20260920localhinge1', docsBase).href,
     new URL('js/procedural-hand-foot-material-roles.js?v=20260821e', docsBase).href,
-    new URL('js/hand-tool-grips.js?v=20261101offhandrace1', docsBase).href,
+    new URL('js/hand-tool-grips.js?v=20261106fluteGrip1', docsBase).href,
     new URL('js/hand-tool-grip-authored-overrides.js?v=20261022hbc21c80', docsBase).href, // Must follow hand-tool-grips.js: migrates authored spear/bshuakauitl grips onto its live data.
     new URL('js/dual-wield-weapon-visuals.js?v=20261031h84160bf', docsBase).href,
     new URL('js/hand-grip-modes.js?v=20261005h2e47f31', docsBase).href,
@@ -383,7 +383,7 @@
   } else if (!isAnimationAuthor && !isEnemyLoadoutEditor) {
     handScripts.push(new URL('js/procedural-hand-grip-runtime.js?v=20260918throwcharge3', docsBase).href);
     handScripts.push(new URL('js/weapon-idle-body-yaw-runtime.js?v=20260915perf1', docsBase).href);
-    handScripts.push(new URL('js/weapon-stance-drop-runtime.js?v=20261030a', docsBase).href);
+    handScripts.push(new URL('js/weapon-stance-drop-runtime.js?v=20261106fluteSink1', docsBase).href);
     handScripts.push(new URL('js/crossbow-strike-audio-trim.js?v=20260818a', docsBase).href);
     handScripts.push(new URL('js/weapon-png-scale.js?v=20260902c', docsBase).href);
     handScripts.push(new URL('js/hand-pixel-probe-diagnostics.js?v=20261101handdrift2', docsBase).href);
