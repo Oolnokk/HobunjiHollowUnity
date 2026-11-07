@@ -2623,11 +2623,13 @@
       const meter = harmonyClock.meter;
       const barSlots = Math.max(2,Math.round(meter.measureQuarterBeats * 2)); // One eighth-note step each: e.g. 3/4 = 6, 5/4 = 10, 7/8 = 7.
       const accentSlots = new Set(meter.groupStarts.map(beat => Math.round(beat * meter.quarterUnitsPerBeat * 2))); // Starts of 3+3 or 2+2+3 groups.
-      const rising = smartArpeggioMidis(fretMidi,'forward',harmonyClock);
-      const falling = smartArpeggioMidis(fretMidi,'reverse',harmonyClock);
+      const rising = definition.kind === 'arp' && mode !== 'arp-reverse-8' ? smartArpeggioMidis(fretMidi,'forward',harmonyClock) : null;
+      const falling = mode === 'arp-reverse-8' || mode === 'arp-alternating-8' ? smartArpeggioMidis(fretMidi,'reverse',harmonyClock) : null; // Never compute unused chord permutations for simple pulses and strokes.
       const direction = definition.arpStyle === 'alternating' ? assignSlowArpDirection(fret) : 'forward'; // A new melody changes the direction, not the bar clock.
       const roll = direction === 'reverse' ? falling : rising;
-      const lower = melodyTopStrumMidis(fretMidi,'full',harmonyClock).slice(0,-1).sort((a,b) => a - b);
+      const lower = mode === 'arp-alberti-16'
+        ? melodyTopStrumMidis(fretMidi,'full',harmonyClock).slice(0,-1).sort((a,b) => a - b)
+        : []; // The low/high weave is the only choice that needs a second chord voicing.
       const low = lower[0] ?? fretMidi - 12;
       const inner = lower[Math.floor((lower.length - 1) / 2)] ?? fretMidi - 7;
       const high = lower.at(-1) ?? fretMidi - 3;
