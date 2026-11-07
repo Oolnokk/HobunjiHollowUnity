@@ -437,6 +437,38 @@
     }
     const first = selector('First harvested crop', false); // Input one is always required.
     const second = selector('Second harvested crop (optional)', true); // Crossing is opt-in, not accidental.
+    const preview = document.createElement('div'); // Live parent/offspring color swatches work without a desktop console.
+    preview.style.cssText = 'display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:9px 0 12px;font-size:12px';
+    preview.setAttribute('aria-live', 'polite');
+    panel.append(preview);
+    function renderColorPreview() {
+      preview.textContent = '';
+      if (!first.value) return;
+      const firstItem = JSON.parse(first.value).itemKey; // Select values were authored from filtered inventory, not external JSON.
+      const secondItem = second.value ? JSON.parse(second.value).itemKey : null;
+      const crops = window.CropVarieties; // Reuses the actual color-mixing calculation, never a separate UI formula.
+      const firstColor = crops?.colorOf?.(firstItem);
+      const secondColor = secondItem ? crops?.colorOf?.(secondItem) : null;
+      const mixed = secondItem ? crops?.blendedColor?.(firstItem, secondItem) : firstColor;
+      const swatch = (label, color) => {
+        if (!Number.isInteger(color)) return;
+        const pill = document.createElement('span');
+        pill.style.cssText = 'display:inline-flex;align-items:center;gap:5px';
+        const chip = document.createElement('span');
+        chip.style.cssText = 'display:inline-block;width:22px;height:22px;border-radius:6px;border:1px solid #aaa';
+        chip.style.backgroundColor = '#' + color.toString(16).padStart(6, '0'); // Paints the exact stored 24-bit pigment.
+        chip.setAttribute('aria-hidden', 'true');
+        pill.append(chip, document.createTextNode(label));
+        preview.append(pill);
+      };
+      swatch('Parent 1', firstColor);
+      if (secondItem) swatch('Parent 2', secondColor);
+      if (mixed != null) swatch(secondItem ? 'Blended offspring' : 'Resulting seeds', mixed);
+      else if (secondItem) preview.append(document.createTextNode('These crop species cannot be crossed.'));
+    }
+    first.addEventListener('change', renderColorPreview);
+    second.addEventListener('change', renderColorPreview);
+    renderColorPreview();
     const button = (label, action) => { const el = document.createElement('button'); el.className = 'settings-small-btn'; el.textContent = label; el.onclick = action; panel.append(el); return el; };
     button('Queue seeds', () => {
       if (!first.value) return;
