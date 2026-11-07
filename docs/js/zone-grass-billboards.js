@@ -201,6 +201,7 @@
     group.visible = deps.getGrassEnabled(); // Honors the same settings toggle as the rest of the zone.
     group.userData.isBillboard = true;
     group.userData.isWildernessGrassChunkGroup = true; // Same cover/seasonal occlusion category as normal wilderness tufts.
+    group.userData.miniCliffGrassGroup = true; // Used by the ordinary grass setting change handler below.
     group.add(mesh);
     scene.add(group);
     window.__farmLog?.(`[wilderness] mini-cliff grass: ${shelves.length} caps, ${index} billboard planes`, 'info');
@@ -291,6 +292,18 @@
     window.__farmLog?.(`[wilderness] rich foliage: ${tiles.length} tile(s), ${instances} blade-plane instance(s), ${group.children.length} frustum-cullable chunk(s)`, 'info');
     return group;
   }
+
+  // The ordinary setting updates existing wilderness grass meshes after the
+  // checkbox changes. Mirror that visibility state for the separate elevated
+  // cap group, without retaining old zone scenes or introducing a frame loop.
+  if (typeof document !== 'undefined') document.addEventListener('change', () => {
+    queueMicrotask(() => {
+      const scene = window.GridTileAccessors?.getActiveScene?.();
+      scene?.traverse?.(node => {
+        if (node.userData?.miniCliffGrassGroup) node.visible = !!deps?.getGrassEnabled?.();
+      });
+    });
+  });
 
   window.ZoneGrassBillboards = {
     init,
