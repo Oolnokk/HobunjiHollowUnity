@@ -1411,6 +1411,19 @@ function _behindFlippedLayer(layer) {
   return { ...layer, xformPreset: null, ax: preset.ax, ay: preset.ay, sx: -preset.sx, sy: preset.sy };
 }
 
+function _isFurLinedHood(hood) {
+  const hoodIds = [hood?.id, hood?.originalId].filter(Boolean).join(' '); // Includes custom loom-made instance IDs.
+  return _textMatchesAny(hoodIds, ['fur-lined-hood']);
+}
+
+function _placeFurLinedTrimBehindRearHood(layers, hood) {
+  if (!_isFurLinedHood(hood)) return;
+  const trimIndex = layers.findIndex(({ layer }) => layer?.paletteColorKey === 'B'); // Finds fur trim in the resolved hood stack.
+  if (trimIndex < 1) return;
+  const [trim] = layers.splice(trimIndex, 1); // Put fur under the opaque finehood-back without changing other hood styles.
+  layers.unshift(trim);
+}
+
 function _cloneBehindLayer(layer, group, gender) {
   if (!layer) return layer;
   const url = _getBehindLayerUrl(layer, group, gender);
@@ -1664,6 +1677,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
     headUrl = _getBehindHeadUrl(speciesId, gender) || headUrl;
     if (!profile?.bodyColors?.__hobunjiWovenClothing?.some(item=>item?.slot==='hood' && item?.furHood)
         && resolveOptionLayers(hood, resolvedFighter).some(layer => layer.pos === 'back')) hoodLayers.length = 0; // Preserve other hoods' rear silhouette logic; fur stacks supply their own explicit rear order.
+    _placeFurLinedTrimBehindRearHood(hoodLayers, hood); // The front trim becomes a narrow rear edge behind the Fine Hood shell.
     const useBehindLayers = (layerList) => {
       for (const entry of layerList) {
         entry.layer = _cloneBehindLayer(entry.layer, entry.group, gender);
@@ -1968,7 +1982,21 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
       torsoClothing: () => drawBreathingLayers(torsoClothingLayers),
       overwear:      () => drawBreathingLayers(overwearLayers),
       hatUnder:      () => drawEmoteLayers(hatUnderLayers),
-      hood:          () => { drawBreathingLayers(hoodBackLayers); drawBreathingLayers(hoodLayers); },
+      hood:          () => {
+        drawBreathingLayers(hoodBackLayers);
+        const rearTrim = _isFurLinedHood(hood) && hoodLayers[0]?.layer?.paletteColorKey === 'B' ? hoodLayers[0] : null; // Only the Fur-lined Hood uses its front trim as rear fur fringe.
+        if (!rearTrim) { drawBreathingLayers(hoodLayers); return; }
+        const xf = resolveXform(rearTrim.layer); // Match the rear trim's transformed source rectangle.
+        const height = PORTRAIT_L * xf.sy; // Crop the unrelated topmost 20% of the reused front trim without touching its fringe.
+        const cropTop = PORTRAIT_CH / 2 - xf.ax * PORTRAIT_L - height * 0.30; // Source pixels at y=35/173 and below remain visible.
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(0, cropTop, PORTRAIT_CW, PORTRAIT_CH);
+        ctx.clip();
+        drawBreathingLayers([rearTrim]);
+        ctx.restore();
+        drawBreathingLayers(hoodLayers.slice(1)); // The existing finehood-back shell covers the fur, preserving the intended edge.
+      },
       pauldron:      () => drawEmoteLayers(pauldronLayers),
       hatOver:       () => drawEmoteLayers(hatOverLayers),
       snowgoggles:   () => drawEmoteLayers(behindSnowgogglesLayers),
