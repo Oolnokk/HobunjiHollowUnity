@@ -56,6 +56,18 @@ const offspring = game.CropVarieties.breed(east.id, west.id, () => .6); // Predi
 assert.ok(offspring.id.startsWith('cv_needlegrain_'));
 assert.equal(Object.keys(offspring.effects).length, 2);
 assert.ok(itemDefs[offspring.seedKey]);
+const rgbMidpoint = (a, b) => [16, 8, 0].reduce((rgb, shift) => rgb | (Math.round((((a >>> shift) & 255) + ((b >>> shift) & 255)) / 2) << shift), 0); // Independent exact 50/50 color expectation.
+const expectedPigment = rgbMidpoint(east.color, west.color); // Both visible parent colors contribute equally.
+assert.equal(offspring.color, expectedPigment, 'first-generation color must blend both parents');
+assert.equal(game.CropVarieties.colorOf(offspring.seedKey), expectedPigment, 'seed key must preserve blended crop pigment');
+assert.equal(itemDefs[offspring.id].ingredientColor, expectedPigment, 'harvested item uses the same inherited color');
+assert.equal(offspring.id.endsWith('_' + expectedPigment.toString(16).padStart(6, '0')), true, 'blended RGB remains in serialized cultivar identity');
+const grandchild = game.CropVarieties.breed(offspring.id, east.id, () => .6); // Breed an already mixed cultivar again.
+assert.equal(grandchild.color, rgbMidpoint(expectedPigment, east.color), 'second generation blends actual parent appearances, not original allele colors');
+assert.equal(game.CropVarieties.details(grandchild.seedKey).color, grandchild.color, 'genetic color survives round-trip through a seed key');
+assert.equal(game.CropVarieties.colorOf('cv_needlegrain_222222'), east.color, 'older six-gene imported seeds retain their original coloring');
+assert.equal(game.CropVarieties.blendedColor(east.id, 'heftroot'), null, 'incompatible crop species cannot get a preview color');
+assert.equal(game.CropVarieties.blendedColor(offspring.id, east.id), grandchild.color, 'seed-maker preview exactly matches actual breeding result');
 assert.equal(game.CropVarieties.breed(east.id, 'heftroot', () => .6), null);
 assert.equal(game.CropVarieties.breed('needlegrain', 'needlegrain', () => .6).seedKey, 'needlegrainSeeds');
 assert.equal(game.CropVarieties.offers(() => .5).length, 3); // One import offering per available family in this fixture.
@@ -129,8 +141,17 @@ game.CropPlanting.init({ cropData, inventory, CropType: { NONE: '' },
 const planted = { crop: '', type: 'tilled' };
 assert.equal(game.CropPlanting.plantCrop(planted, 'needlegrain').ok, true);
 assert.equal(planted.crop, 'needlegrain');
+inventory[offspring.seedKey] = 1; // Persisted mixed-color seed is plantable without a special inventory or tile format.
+const blendedTile = { crop: '', type: 'tilled' }; // Holds a genuine crossbred plant in the ordinary farm grid.
+assert.equal(game.CropPlanting.plantCrop(blendedTile, offspring.id).ok, true);
+assert.equal(blendedTile.crop, offspring.id);
+assert.equal(cropData[blendedTile.crop].varietyColor, expectedPigment, 'world renderer uses the exact blended offspring color');
 
 const html = fs.readFileSync('docs/index.html', 'utf8'); // The real Farm Editor hosts a mobile-accessible cultivar selector.
 assert.match(html, /id="regionalCropBrushes"/);
+assert.match(fs.readFileSync('docs/js/farm-production.js', 'utf8'), /Blended offspring/, 'mobile seed maker shows the parental color mixture');
+assert.match(fs.readFileSync('docs/js/crop-sprite-art.js', 'utf8'), /hobunjiCropVarietyColor/, 'authored garlink\/ongyums sprite bridge carries hybrid pigment');
+assert.match(fs.readFileSync('docs/js/vegetation-crop-rendering.js', 'utf8'), /hobunjiCropBaseKey/, 'renderer identifies hybrid plants by species, not their new hue');
+new vm.Script(fs.readFileSync('docs/js/vegetation-crop-rendering.js', 'utf8'), { filename: 'docs/js/vegetation-crop-rendering.js' }); // Compile-check for duplicate let/const declarations without a Three.js scene.
 assert.match(fs.readFileSync('docs/js/farm-production.js', 'utf8'), /AuthoredFurniture\.load\(definition\.base \|\| entry\.key\)/);
 console.log('crop-varieties: ok (regional climates, inheritance, processing, seeds, planting, persistence)');
