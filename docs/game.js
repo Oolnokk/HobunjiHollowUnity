@@ -825,6 +825,10 @@
         // (no stamina cost, no terrain collision) rendered as a chain of
         // staggered hops rather than a continuous slide; climbSurfaceY/
         // climbHopBounce are consumed by updatePlayerMesh for the vertical rise.
+        physicalFeetY: null, // Jump's physical foot elevation, used by the renderer and height-aware traversal.
+        heightAboveGround: 0, // Actual distance above the local terrain, including raised furniture support.
+        jumpHeightAboveGround: 0, // Debug-compatible alias consumed by the jump system.
+        _freeJump: null, // Transient airborne/elevated-support motion, never part of save data.
         climbing: false, climbElapsed: 0, climbHopCount: 0,
         climbStartX: 0, climbStartY: 0, climbEndX: 0, climbEndY: 0,
         climbSurfaceStartY: 0, climbSurfaceEndY: 0, climbSurfaceY: 0, climbHopBounce: 0,
@@ -18846,6 +18850,7 @@
 
         const _fsPrevX = player.x, _fsPrevY = player.y;
 
+        if (window.PlayerJump?.tick?.(dt)) return; // Free-jump movement owns its physical elevation without impersonating a wall climb.
         if (player.climbing) {
           window.ClimbSystem.updateClimb(dt);
           return;
@@ -25437,6 +25442,7 @@
         const ordinaryStandY = player.onBranch ? player.branchSurfaceY
           : player.onCliffBalcony ? player._cliffBalconyY
           : player.onClimbSurface ? player.wallClimbY
+          : player._freeJump ? player.physicalFeetY // Jump is an independently grounded/airborne motion, not a scripted climb.
           : player.climbing ? player.climbSurfaceY
           : Number.isFinite(ruinStandY) ? ruinStandY
           : (_isZoneArea(currentArea) ? surfaceYAtWorld(currentArea, wx, wz) : tileSurfaceYInArea(tile, currentArea));
@@ -32337,6 +32343,13 @@
         getPlayerInteractionRay: currentPlayerInteractionRay,
         worldSurfaceY: (x, y) => activeSurfaceYAtWorld(x / TILE, y / TILE),
         getMovementInput: climbMovementInput,
+        getBaseMoveSpeedTiles: () => MOVE_SPEED / TILE, // Jump travel reuses normal walking distance per second, not a separate hard-coded pace.
+        canStartFreeJump: () => gameStarted && !paused && !dialogueOpen && !sitInteraction &&
+          !window.Fishing?.state?.active && !window.MusicMinigame?.state?.active &&
+          !window.BedLiePose?.isActive?.() && !window.FarmAnimals?.isHarvesting?.() &&
+          !window.PlayerSocialPoses?.active, // Actions/minigames that own the player must not secretly queue a jump.
+        canPlayerOccupy, // Ordinary blockers (buildings, doors, non-cover furniture) remain authoritative for jumping.
+        furnitureBlocksMovementAt, // Allows only finite-height cover to be jumped; otherwise retains normal furniture collision.
       });
 
       // Climbable wall surfaces (js/climb-surfaces.js): attach on a forward dodge via
