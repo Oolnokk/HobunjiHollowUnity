@@ -71,7 +71,7 @@
   <script src="js/loot-rolling.js?v=20261105puzzleCaves1"></script>
   <!-- Seed planting/crop harvesting, extracted out of game.js. Must load
        before game.js, which calls window.CropPlanting.init(...). -->
-  <script src="js/crop-varieties.js?v=20261107cultivarColor3"></script>
+  <script src="js/crop-varieties.js?v=20261107mushtardReview2"></script>
   <script src="js/crop-planting.js?v=20261107h5b0aac4"></script>
   <!-- Wilderness den teleport + Den-Mother nest hold-to-take interaction,
        extracted out of game.js. Must load before game.js, which calls
@@ -117,7 +117,7 @@
        ZoneGrassBillboards, ReagentPlants, WildBerries, WildTreasure) also
        read its exported mbRng/grassBladeGeo/getGrassBillboardMat helpers
        from their own init() calls further down game.js. -->
-  <script src="js/vegetation-crop-rendering.js?v=20261107cultivarColor3"></script>
+  <script src="js/vegetation-crop-rendering.js?v=20261107mushtardReview2"></script>
   <!-- Active-area grid/scene/dimension accessors and building/den footprint
        collision checks, extracted out of game.js. Must load before game.js,
        which calls window.GridTileAccessors.init(...) alongside the other
@@ -153,7 +153,7 @@
        js/wild-berries.js also read from it via their own init() calls
        further down game.js. Doesn't touch the DOM (see player-vitals.js's
        comment above and the plan notes on that bug class). -->
-  <script src="js/item-processing.js?v=20261107cultivar2"></script>
+  <script src="js/item-processing.js?v=20261107mushtardReview2"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
   <script src="debug.js?v=20261107h4ad2a3b"></script>
@@ -423,7 +423,7 @@
   <!-- Wearer-only trinket hooks: imported from PR #1421 and child #1426, before Combat.init in game.js. -->
   <script src="js/combat/specialized-combat-trinket-hooks.js?v=20261106trinkets20"></script>
   <script src="js/combat/double-edged-combat-trinkets.js?v=20261106trinkets20"></script>
-  <script src="js/cooking-data.js?v=20261107moot2"></script>
+  <script src="js/cooking-data.js?v=20261107mushtardReview2"></script>
   <script src="js/food-processing.js?v=20261015hc6ddbcf"></script>
   <script src="js/cooking-system.js?v=20261105tzEgg1"></script>
   <script src="js/key-item-system.js?v=20260918banubu1"></script>
@@ -1113,8 +1113,8 @@
           <button class="fed-btn" data-btype="crop" data-bval="redberries"   onclick="window._farmEditor?.setBrush('crop','redberries')">🍓 Redberries</button>
           <button class="fed-btn" data-btype="crop" data-bval="blueberries"  onclick="window._farmEditor?.setBrush('crop','blueberries')">🫐 Blueberries</button>
           <button class="fed-btn" data-btype="crop" data-bval="yellowberries"onclick="window._farmEditor?.setBrush('crop','yellowberries')">🟡 Yellowberries</button>
-          <button class="fed-btn" data-btype="crop" data-bval="blackMustard" onclick="window._farmEditor?.setBrush('crop','blackMustard')">⚫ Black Mustard</button>
-          <button class="fed-btn" data-btype="crop" data-bval="greenMustard" onclick="window._farmEditor?.setBrush('crop','greenMustard')">🥬 Green Mustard</button>
+          <button class="fed-btn" data-btype="crop" data-bval="blackMustard" onclick="window._farmEditor?.setBrush('crop','blackMustard')">⚫ Black Mushtard</button>
+          <button class="fed-btn" data-btype="crop" data-bval="greenMustard" onclick="window._farmEditor?.setBrush('crop','greenMustard')">🥬 Green Mushtard</button>
         </div>
         <div class="fed-label" style="margin-top:8px">Imported &amp; crossbred varieties (seeds owned)</div>
         <div class="fed-grid" id="regionalCropBrushes" hidden></div>
@@ -3005,7 +3005,7 @@
   <script src="js/delvers-vault-signal.js?v=20261031storyVault1"></script>
   <script src="js/bed-lie-pose.js?v=20261102mattressxray2"></script> <!-- Surface-aligned sleep presentation; game.js injects the live player and calendar. -->
   <script src="js/lunge-targeting.js?v=1"></script>
-  <script src="game.js?v=20261107compgroundreview2"></script>
+  <script src="game.js?v=20261107mushtardReview2"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261029hguild2"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->
