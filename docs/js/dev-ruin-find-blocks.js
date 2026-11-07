@@ -186,11 +186,14 @@
       const block=makeBlock('ice',x,z,ceiling-1.85);
       const iceRoot=new THREE.Group();
       iceRoot.name='find-blocks-ceiling-icicles';iceRoot.position.set(x,ceiling-.1,z);
-      iceRoot.rotation.x=Math.PI;iceRoot.userData.devRuinFootprintIgnore=true;group.add(iceRoot);
+      iceRoot.userData.devRuinFootprintIgnore=true;group.add(iceRoot);
       const builder=root.IceStalagmiteCoverage,recipe=root.DungeonDoorIceCoverage?.scaledRecipe?.(2.2,id+'-ceiling',{
         count:16,density:1,iceHeightMin:1.15,iceHeightMax:1.7,radius:.25,iceFootprintPadding:.08
       });
-      if(builder?.build&&recipe){
+      const ceilingIce=builder?.buildCeiling?.(THREE,iceRoot,{width:.96,depth:.96,height:1.65,recipe})||null; // Prefer the shared inverted furniture-ice authoring path used by ruin doors.
+      if(ceilingIce?.layer)iceLayer=ceilingIce.layer; // Subsequent melt animation operates on the authored spikes, not their parent.
+      if(!iceLayer&&builder?.build&&recipe){
+        iceRoot.rotation.x=Math.PI; // Compatibility path for test doubles and older authoring exports without buildCeiling.
         const source=new THREE.Group(); // The furniture-editor ice builder receives the same invisible source geometry as its normal door treatment.
         const proxy=new THREE.Mesh(new THREE.BoxGeometry(.96,1.65,.96),new THREE.MeshBasicMaterial());
         proxy.userData.authoredPartId='find_blocks_ceiling_ice_source';proxy.position.y=.83;source.add(proxy);
@@ -250,7 +253,11 @@
           isActive:alive,onSolved:triggerSink,
           getPlayerPosition:kit.playerWorld,
           getPlayerY:()=>game.getPlayerGroundSupportY?.()??kit.playerWorld()?.y??floorY,
-          music:root.MusicMinigame
+          music:root.MusicMinigame,
+          melodySurfaces:[
+            {x,y:floorY+1.6,z:z-.976,yaw:Math.PI},
+            {x:x-.976,y:floorY+1.6,z,yaw:-Math.PI/2}
+          ] // Two exposed pillar faces give manual musicians a glowing note clue in the plate's line of sight.
         });
         if(!challenge)throw new Error('Could not compose the native '+variant+' challenge for the tall pillar.');
         melody=challenge; // Native challenge handles real instrument/ranged input, registration and cleanup.
@@ -448,6 +455,8 @@
         blocks:blocks.map(b=>({name:b.name,phase:b.phase,x:b.mesh.position.x,z:b.mesh.position.z,
           y:b.mesh.position.y,available:b.mesh.userData.findBlocksAvailable})),
         targets:targets.map(t=>({id:t.id,hit:t.active})),pillarHeight,
+        melody:melody?{notes:melody.notes?.slice(),attempts:melody.attempts,
+          heardNotes:melody.heardNotes?.slice(),inscription:melody.inscription?.diagnostics?.()}:null, // Mobile snapshot reveals manual input and plate-visible carved notes.
         iceMelt,fireReady:!!fire,witchBombReady:!!bombs};},
       dispose:teardown, // Both normal teardown and failed initialization use identical scoped cleanup.
     };
