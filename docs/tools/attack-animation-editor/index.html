@@ -1200,6 +1200,21 @@ function elbowControlPoint(phase, side) {
 function elbowInputId(side, axis) {
   return `poseElbow_${side}_${axis}`;
 }
+function elbowSliderId(side, axis) {
+  return `${elbowInputId(side, axis)}_slider`; // The elbow's range and number fields edit the same authored per-pose channel.
+}
+
+function syncPoseCoordinatePair(slider, numberInput, value, min, max, blankWhenUnset = false) {
+  const finite = Number.isFinite(value) ? value : 0; // An unkeyed elbow displays a neutral slider without creating a keyframe.
+  if (slider) {
+    slider.min = String(Math.min(min, Math.floor(finite))); // Keep gizmo-authored out-of-range points representable.
+    slider.max = String(Math.max(max, Math.ceil(finite)));
+    slider.value = String(finite);
+  }
+  if (numberInput && document.activeElement !== numberInput) {
+    numberInput.value = blankWhenUnset && value === null ? '' : String(finite); // Blank elbows remain explicitly unauthored until touched.
+  }
+}
 
 function readElbowInputs(side) {
   const values = Object.fromEntries(ELBOW_AXES.map(axis => {
@@ -1265,7 +1280,7 @@ function renderActivePosePanel() {
     <div class="field" data-elbow-pose-side="${side}">
       <label>${side === 'left' ? 'Left' : 'Right'} elbow position (shoulder-relative)</label>
       <div class="row" style="gap:7px;align-items:center;flex-wrap:wrap">
-        ${ELBOW_AXES.map(axis => `<label class="fieldRow" style="margin:0;min-width:88px">${axis.toUpperCase()} <input id="${elbowInputId(side, axis)}" type="number" step="0.01" placeholder="unset" style="width:72px"></label>`).join('')}
+        ${ELBOW_AXES.map(axis => `<div class="field" style="flex:1 1 180px;min-width:0"><label>${axis.toUpperCase()}</label><div class="fieldRow" style="gap:7px"><input id="${elbowSliderId(side, axis)}" type="range" min="-2" max="2" step="0.005" aria-label="${side} elbow ${axis} slider" style="flex:1;min-width:0"><input id="${elbowInputId(side, axis)}" type="number" step="0.005" placeholder="unset" aria-label="${side} elbow ${axis} coordinate" style="width:77px;flex:0 0 77px"></div></div>`).join('')}
         <button type="button" class="secondary" id="poseElbowMidpoint_${side}">Set halfway shoulder↔hand</button>
       </div>
     </div>`).join('');
@@ -1287,7 +1302,7 @@ function renderActivePosePanel() {
       <div class="help">When enabled, right-hand XYZ and rotation are relative to the <b>character's body</b>, not the moving tool. Transitions blend between the normal grip and this independent pose. Useful for plucking/strumming while the left hand holds the instrument.</div>
       <div id="poseFreeRightHandFields">
         <div class="compactGrid">
-          ${FREE_RIGHT_HAND_CHANNELS.map(axis => `<div class="field"><label>Hand ${axis.toUpperCase()}${['pitch','yaw','roll'].includes(axis) ? ' (°)' : ''}</label><input type="number" step="${['pitch','yaw','roll'].includes(axis) ? '1' : '0.005'}" id="poseFreeRightHand_${axis}"></div>`).join('')}
+          ${FREE_RIGHT_HAND_CHANNELS.map(axis => `<div class="field"><label>Hand ${axis.toUpperCase()}${['pitch','yaw','roll'].includes(axis) ? ' (°)' : ''}</label><div class="fieldRow" style="gap:7px"><input type="range" id="poseFreeRightHand_${axis}_slider" min="${['pitch','yaw','roll'].includes(axis) ? -180 : -2}" max="${['pitch','yaw','roll'].includes(axis) ? 180 : 2}" step="${['pitch','yaw','roll'].includes(axis) ? 1 : 0.005}" aria-label="Free right hand ${axis} slider" style="flex:1;min-width:0"><input type="number" step="${['pitch','yaw','roll'].includes(axis) ? 1 : 0.005}" id="poseFreeRightHand_${axis}" aria-label="Free right hand ${axis} coordinate" style="width:82px;flex:0 0 82px"></div></div>`).join('')}
         </div>
         <div class="row">
           <button type="button" class="secondary" id="poseCaptureRightGrip">Use current grip</button>
@@ -1308,12 +1323,25 @@ function renderActivePosePanel() {
   }
   for (const side of ELBOW_SIDES) {
     for (const axis of ELBOW_AXES) {
-      $(elbowInputId(side, axis))?.addEventListener('input', () => {
+      const numberInput = $(elbowInputId(side, axis)); // Precision control and slider write into the same authored elbow coordinate.
+      const slider = $(elbowSliderId(side, axis)); // Touch-friendly control without a separate pose model.
+      const commitElbow = () => {
         writeElbowPoseValue(editPhase, side, readElbowInputs(side));
         focusPreviewOnPhase(editPhase);
         applyPoseToRig(anim.poses[editPhase]);
         window.ProceduralHandFrameDriver?.syncNow?.();
         refreshJsonView();
+      };
+      numberInput?.addEventListener('input', () => {
+        const raw = numberInput.value.trim();
+        if (raw !== '' && Number.isFinite(Number(raw))) {
+          syncPoseCoordinatePair(slider, numberInput, Number(raw), -2, 2);
+        }
+        commitElbow(); // Clearing a numeric elbow may un-author it; the slider never silently recreates it.
+      });
+      slider?.addEventListener('input', () => {
+        numberInput.value = String(Number(slider.value)); // Sliding an unset elbow explicitly authors its first keyframe.
+        commitElbow();
       });
     }
     $(`poseElbowMidpoint_${side}`)?.addEventListener('click', () => {
@@ -1338,15 +1366,23 @@ function renderActivePosePanel() {
     syncPosePanelFromState(editPhase); window.ProceduralHandFrameDriver?.syncNow?.(); refreshJsonView();
   });
   for (const channel of FREE_RIGHT_HAND_CHANNELS) {
-    $('poseFreeRightHand_' + channel).addEventListener('input', event => {
-      const value = Number(event.target.value);
+    const numeric = $('poseFreeRightHand_' + channel); // Precision input pairs with its touch-friendly slider.
+    const slider = $('poseFreeRightHand_' + channel + '_slider'); // Both controls persist to the selected phase's rightHand object.
+    const angle = ['pitch','yaw','roll'].includes(channel);
+    const limit = angle ? 360 : 5; // Guard against accidental mobile inputs moving a hand far outside the avatar.
+    const applyFreeChannel = (raw, fromSlider = false) => {
+      if (String(raw).trim() === '') return; // Allow partially edited number fields without corrupting their pose.
+      const value = Number(raw);
       if (!Number.isFinite(value)) return;
-      const limit = ['pitch','yaw','roll'].includes(channel) ? 360 : 5; // Guard against a mobile typo teleporting the hand out of view.
+      const bounded = Math.max(-limit, Math.min(limit, value));
       const right = anim.poses[editPhase].rightHand ||= {};
-      right[channel] = Math.max(-limit, Math.min(limit, value));
+      right[channel] = bounded;
+      syncPoseCoordinatePair(slider, fromSlider ? numeric : null, bounded, angle ? -180 : -2, angle ? 180 : 2);
       focusPreviewOnPhase(editPhase);
       window.ProceduralHandFrameDriver?.syncNow?.(); refreshJsonView();
-    });
+    };
+    numeric?.addEventListener('input', () => applyFreeChannel(numeric.value));
+    slider?.addEventListener('input', () => applyFreeChannel(slider.value, true));
   }
   $('poseCaptureRightGrip').onclick = () => {
     focusPreviewOnPhase(editPhase);
@@ -1383,15 +1419,15 @@ function syncPosePanelFromState(phase = editPhase) {
   const freeFields = $('poseFreeRightHandFields');
   if (freeFields) freeFields.style.display = freeHand.enabled === true ? '' : 'none';
   for (const channel of FREE_RIGHT_HAND_CHANNELS) {
-    const input = $('poseFreeRightHand_' + channel);
-    if (input && document.activeElement !== input) input.value = String(Number(freeHand[channel]) || 0);
+    const angle = ['pitch','yaw','roll'].includes(channel);
+    syncPoseCoordinatePair($('poseFreeRightHand_' + channel + '_slider'), $('poseFreeRightHand_' + channel),
+      Number(freeHand[channel]) || 0, angle ? -180 : -2, angle ? 180 : 2);
   }
   for (const side of ELBOW_SIDES) {
     const point = elbowControlPoint(editPhase, side);
     for (const axis of ELBOW_AXES) {
-      const input = $(elbowInputId(side, axis));
-      if (!input || document.activeElement === input) continue;
-      input.value = point && Number.isFinite(Number(point[axis])) ? String(Number(point[axis])) : '';
+      const value = point && Number.isFinite(Number(point[axis])) ? Number(point[axis]) : null;
+      syncPoseCoordinatePair($(elbowSliderId(side, axis)), $(elbowInputId(side, axis)), value, -2, 2, true);
     }
   }
 }
