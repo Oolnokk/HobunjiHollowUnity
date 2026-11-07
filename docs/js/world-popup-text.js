@@ -340,10 +340,11 @@
     event.texture.dispose();
   }
 
-  // A reward leaves the world-space list before entering the screen-fixed reading queue.
-  // Combat floaters, social favor, interaction prompts, and unrendered events are excluded.
+  // A rendered acquisition is handed to the readout after its floating popup finishes,
+  // irrespective of the world popup style selected in the authoring tool.
+  // RewardReadout excludes damage, non-acquisitions, and negative values.
   function forwardToReadout(event) {
-    if (event?.mode !== 'centeredFiveRow' || event.interactionPrompt) return;
+    if (!event || event.interactionPrompt || !['centeredFiveRow', 'floatPlus'].includes(event.mode)) return;
     window.RewardReadout?.enqueue(event.kind, event.text, { color: state.settings.colors[event.kind] });
   }
 
