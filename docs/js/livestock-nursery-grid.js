@@ -36,6 +36,7 @@
     puktuk: '🦊',
     'voorg-ass': '🫏',
     honeyfuzzle: '🐝',
+    pingdort: '🐦', // Fallback until the authored flying/folded sprite atlas is composited.
   }); // Used only until/if an accurate composed genetics portrait cannot be produced.
 
   let animalDeps = null; // Captured from FarmAnimals.init; used for Nursery records, permissions, persistence, breeding cleanup, and toasts.
