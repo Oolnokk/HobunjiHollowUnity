@@ -227,8 +227,8 @@
     const x=room.x+1.15,z=room.z+.17,y=room.y+1.35;
     const mesh=new THREE.Mesh(new THREE.BoxGeometry(1.25,.94,.18),session.hatchMaterial);
     mesh.position.set(x,y,z);mesh.name='skeeri-concealed-wall-hatch';session.scene.add(mesh);
-    const hatch={id:'skeeri-hatch-'+room.id+'-'+index,x,z,y:room.y,floor:room.y,
-      size,trigger,reason:'proximity',opened:false,spawned:false,age:0,mesh,closedY:y};
+    const hatch={id:'skeeri-hatch-'+room.id+'-'+index,x,z,y:room.y,floor:index,
+      size,trigger,reason:'proximity',opened:false,spawned:false,age:0,mesh,closedY:y}; // Floor index, not floor elevation, controls combat difficulty.
     session.hatches.push(hatch);session.roots.push(mesh);return hatch;
   }
   function mount(options={}) {
