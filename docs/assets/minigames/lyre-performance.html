@@ -1418,6 +1418,10 @@
     'strum-waltz':{label:'Waltz Down–Up–Up',short:'WALTZ',ringLabel:'WALTZ',kind:'strum',division:1,strumStyle:'waltz',category:'Strum',tradition:'European ballroom',description:'A three-beat melody-led down–up–up cycle.'},
     'strum-bluegrass-8':{label:'Bluegrass Boom–Chuck',short:'BOOM CHK',ringLabel:'BOOM<br>CHK',kind:'strum',division:2,strumStyle:'bluegrass',category:'Strum',tradition:'Appalachian bluegrass',description:'Alternates a low-plus-melody boom with a crisp melody-top chord.'}
   };
+  const KURRAYA_LAB_METERS = Object.freeze([
+    {id:'original',label:'Original · 6/8 intro → 3/4 melody'},
+    ...['2/4','3/4','4/4','5/4','6/8','7/8','9/8','12/8'].map(id=>({id,label:id}))
+  ]); // Standalone audition alternatives, never silently replacing gameplay's authored mixed meter.
   const FRETTED_PLUCK_MODES = AUTO_PICK_PATTERN_LIBRARY; // Compatibility alias used by the existing automatic-pick scheduler and preview system.
   const NPC_AUTO_PICK_PATTERNS = Object.keys(AUTO_PICK_PATTERN_LIBRARY).filter(id => ['arp','strum'].includes(AUTO_PICK_PATTERN_LIBRARY[id].kind)); // NPC performance selection only; player loadouts still offer Single Note and every tremolo.
   function randomNpcAutoPickPattern() {
@@ -1581,6 +1585,8 @@
     customSongs:{}, // Persistent user-authored songs keyed by custom:<id>; loaded separately from sampler settings.
     midiStudio:{parsed:null,project:null,fileName:'',status:'idle',lastError:''}, // Holds the in-memory MIDI parser/editor state without serializing the raw file.
     selectedSong:'when-the-kininjis-bloom',
+    songAuditionPattern:'direct', // Lab-only successful-preview picking style, separate from the player's four saved auto-pick slots.
+    songAuditionMeter:'original', // Lab-only meter choice; original mixed 6/8→3/4 remains the default for gameplay.
     gameplaySelection:'freeplay', // V86: the song selector doubles as the Free Play/song mode switch.
     bpm:104,
     hitWindow:170,
@@ -1908,8 +1914,32 @@
     return kurrayaSixEightMeterCache || (kurrayaSixEightMeterCache = timeSignatureData(KURRAYA_TIME_SIGNATURE,KURRAYA_BEAT_GROUPING));
   }
 
+  function activeKurrayaLabMeter() {
+    const mode = state.game.active && state.game.labMeterOverride; // Only a Lab audition uses the override while playing; free play and NPCs stay unchanged.
+    return mode ? timeSignatureData(mode) : null;
+  }
+
   function fixedKurrayaMixedMeterPhase(performanceQuarterBeatFloat = 0) {
     const quarterBeat = Math.max(0,Number(performanceQuarterBeatFloat) || 0);
+    const labMeter = activeKurrayaLabMeter();
+    if (labMeter) {
+      const barQuarterBeats = labMeter.measureQuarterBeats; // Every one of the twenty authored harmony bars now occupies one selected meter.
+      const cycleQuarterBeats = FIXED_HARMONY_CYCLE_CHORDS * barQuarterBeats;
+      const cycleIndex = Math.floor(quarterBeat / cycleQuarterBeats);
+      const cycleQuarterBeat = modulo(quarterBeat,cycleQuarterBeats);
+      const chordWithinCycle = Math.min(FIXED_HARMONY_CYCLE_CHORDS - 1,Math.floor(cycleQuarterBeat / barQuarterBeats));
+      const chordStartQuarterBeat = chordWithinCycle * barQuarterBeats;
+      const quarterBeatIntoChord = Math.max(0,cycleQuarterBeat - chordStartQuarterBeat);
+      const meterBeatsBeforeChord = chordWithinCycle * labMeter.numerator;
+      const absoluteStartMeterBeat = cycleIndex * FIXED_HARMONY_CYCLE_CHORDS * labMeter.numerator + meterBeatsBeforeChord;
+      const meterBeatIntoChord = quarterBeatIntoChord / labMeter.quarterUnitsPerBeat;
+      return {
+        cycleIndex,cycleQuarterBeat,chordWithinCycle,absoluteChord:cycleIndex * FIXED_HARMONY_CYCLE_CHORDS + chordWithinCycle,
+        sixEight:false,meter:labMeter,chordStartQuarterBeat,quarterBeatIntoChord,meterBeatIntoChord,
+        absoluteStartMeterBeat,performanceMeterBeatFloat:absoluteStartMeterBeat + meterBeatIntoChord,
+        labMeterOverride:true,chordQuarterBeats:barQuarterBeats
+      };
+    }
     const cycleIndex = Math.floor(quarterBeat / FIXED_HARMONY_CYCLE_QUARTER_BEATS);
     const cycleQuarterBeat = modulo(quarterBeat,FIXED_HARMONY_CYCLE_QUARTER_BEATS);
     const chordWithinCycle = Math.min(FIXED_HARMONY_CYCLE_CHORDS - 1,Math.floor(cycleQuarterBeat / FIXED_HARMONY_CHORD_QUARTER_BEATS));
@@ -2164,7 +2194,7 @@
     const bpm = activeClockBpm();
     const quarterBeatMs = 60000 / bpm;
     const fixedKurraya = usesFixedKurrayaHarmony();
-    const initialMeter = fixedKurraya ? kurrayaSixEightMeter() : activeSongMeter(0);
+    const initialMeter = fixedKurraya ? (activeKurrayaLabMeter() || kurrayaSixEightMeter()) : activeSongMeter(0);
     const transportElapsedMs = state.game.active ? gameClockElapsedMs(referenceNowMs) : Math.max(0, referenceNowMs - state.harmonyStartTime);
     const initialBeatMs = quarterBeatMs * initialMeter.quarterUnitsPerBeat;
     const countInBeats = state.game.active ? Math.max(0,Math.round(state.game.countInBeats || initialMeter.numerator)) : 0;
@@ -2176,7 +2206,7 @@
       ? transportElapsedMs / Math.max(1,quarterBeatMs)
       : performanceBeatFloat; // During the authored song, harmony advances through the four 6/8 intro bars while melody performance time remains parked at zero.
     const harmonyQuarterBeatFloat = fixedKurraya && state.game.active
-      ? Math.min(rawHarmonyQuarterBeatFloat,FIXED_HARMONY_CYCLE_QUARTER_BEATS - 1e-6)
+      ? Math.min(rawHarmonyQuarterBeatFloat,(activeKurrayaLabMeter()?.measureQuarterBeats || FIXED_HARMONY_CHORD_QUARTER_BEATS) * FIXED_HARMONY_CYCLE_CHORDS - 1e-6)
       : rawHarmonyQuarterBeatFloat; // Holds the final authored root through the song's short post-melody tail instead of wrapping before playback actually stops.
     const mixedPhase = fixedKurraya ? fixedKurrayaMixedMeterPhase(harmonyQuarterBeatFloat) : null;
     const meter = fixedKurraya ? mixedPhase.meter : activeSongMeter(performanceBeatFloat);
@@ -2236,9 +2266,10 @@
       const sectionBar = inIntro ? phase.chordWithinCycle : phase.chordWithinCycle - FIXED_HARMONY_SIX_EIGHT_CHORDS;
       const segments = inIntro ? arrangement.introSegments : arrangement.bodySegments;
       const segment = segments.find(candidate => sectionBar >= candidate.startBar && sectionBar < candidate.startBar + candidate.lengthBars) || segments[segments.length - 1];
-      const sectionMeterBeatOffset = inIntro ? 0 : FIXED_HARMONY_SIX_EIGHT_CHORDS * KURRAYA_TIME_SIGNATURE[0]; // Body meter-beat positions begin after the 24 eighth-note intro clicks.
-      const meterNumerator = inIntro ? KURRAYA_TIME_SIGNATURE[0] : KURRAYA_THREE_FOUR_TIME_SIGNATURE[0];
-      const absoluteStartMeterBeat = phase.cycleIndex * FIXED_HARMONY_METER_BEATS_PER_CYCLE + sectionMeterBeatOffset + segment.startBar * meterNumerator;
+      const meterNumerator = phase.labMeterOverride ? phase.meter.numerator : inIntro ? KURRAYA_TIME_SIGNATURE[0] : KURRAYA_THREE_FOUR_TIME_SIGNATURE[0];
+      const sectionMeterBeatOffset = inIntro ? 0 : FIXED_HARMONY_SIX_EIGHT_CHORDS * (phase.labMeterOverride ? meterNumerator : KURRAYA_TIME_SIGNATURE[0]);
+      const cycleMeterBeats = phase.labMeterOverride ? FIXED_HARMONY_CYCLE_CHORDS * meterNumerator : FIXED_HARMONY_METER_BEATS_PER_CYCLE;
+      const absoluteStartMeterBeat = phase.cycleIndex * cycleMeterBeats + sectionMeterBeatOffset + segment.startBar * meterNumerator;
       return {
         eventSerial:phase.cycleIndex * FIXED_HARMONY_CYCLE_CHORDS + segment.startChord, // Stays unchanged across every bar covered by one long section so the pad is not retriggered mid-sustain.
         progressionStep:segment.step,
@@ -2249,7 +2280,7 @@
         spanBeats:segment.lengthBars * meterNumerator,
         absoluteStartMeasure:segment.startChord,
         absoluteStartMeterBeat,
-        spanQuarterBeats:segment.lengthBars * FIXED_HARMONY_CHORD_QUARTER_BEATS,
+        spanQuarterBeats:segment.lengthBars * (phase.chordQuarterBeats || FIXED_HARMONY_CHORD_QUARTER_BEATS),
         meter:phase.meter,
         arrangementSegment:{...segment}
       };
@@ -2264,7 +2295,7 @@
       spanBeats:phase.meter.numerator,
       absoluteStartMeasure:phase.absoluteChord,
       absoluteStartMeterBeat:phase.absoluteStartMeterBeat,
-      spanQuarterBeats:FIXED_HARMONY_CHORD_QUARTER_BEATS,
+      spanQuarterBeats:phase.chordQuarterBeats || FIXED_HARMONY_CHORD_QUARTER_BEATS,
       meter:phase.meter
     };
   }
@@ -2881,6 +2912,9 @@
     const definition = getSongDefinition('when-the-kininjis-bloom'); // Supplies the active authored/generated melody so the standalone Music Lab draws exactly what Play will audition.
     const arrangement = activeKurrayaSongArrangement();
     const tonicPitchClass = ((state.tonicMidi % 12) + 12) % 12;
+    const auditionMeter = state.songAuditionMeter === 'original' ? null : timeSignatureData(state.songAuditionMeter);
+    const quarterBeatsPerBar = auditionMeter?.measureQuarterBeats || FIXED_HARMONY_CHORD_QUARTER_BEATS;
+    const auditionNoteScale = quarterBeatsPerBar / FIXED_HARMONY_CHORD_QUARTER_BEATS; // Display reinterprets note timing without altering saved 48-quarter-beat melody drafts.
     let melodyBeat = 0;
     const melodyNotes = (definition?.notes || []).map(([degree,duration],index) => {
       const noteDuration = Math.max(0.03125,Number(duration) || 0.25);
@@ -2889,9 +2923,10 @@
         degree:Number(degree) || 0,
         midi:state.tonicMidi + scaleDegreeOffset(Number(degree) || 0),
         noteName:midiName(state.tonicMidi + scaleDegreeOffset(Number(degree) || 0)),
-        startQuarterBeat:KURRAYA_INTRO_QUARTER_BEATS + melodyBeat,
-        melodyQuarterBeat:melodyBeat,
-        durationQuarterBeats:noteDuration
+        startQuarterBeat:FIXED_HARMONY_SIX_EIGHT_CHORDS * quarterBeatsPerBar + melodyBeat * auditionNoteScale,
+        melodyQuarterBeat:melodyBeat * auditionNoteScale,
+        durationQuarterBeats:noteDuration * auditionNoteScale,
+        authoredDurationQuarterBeats:noteDuration // Keeps exported and locally saved song drafts in the original quarter-note durations.
       };
       melodyBeat += noteDuration;
       return note;
@@ -2913,10 +2948,11 @@
       totalBars:FIXED_HARMONY_CYCLE_CHORDS,
       introBars:FIXED_HARMONY_SIX_EIGHT_CHORDS,
       bodyBars:FIXED_HARMONY_THREE_FOUR_CHORDS,
-      quarterBeatsPerBar:FIXED_HARMONY_CHORD_QUARTER_BEATS,
-      totalQuarterBeats:FIXED_HARMONY_CYCLE_QUARTER_BEATS,
-      melodyStartQuarterBeat:KURRAYA_INTRO_QUARTER_BEATS,
-      melodyQuarterBeats:melodyBeat,
+      quarterBeatsPerBar,
+      totalQuarterBeats:FIXED_HARMONY_CYCLE_CHORDS * quarterBeatsPerBar,
+      melodyStartQuarterBeat:FIXED_HARMONY_SIX_EIGHT_CHORDS * quarterBeatsPerBar,
+      melodyQuarterBeats:melodyBeat * auditionNoteScale,
+      auditionMeterLabel:auditionMeter?.label || null,
       introSteps:arrangement.introSteps.slice(),
       bodySteps:arrangement.bodySteps.slice(),
       segments:[
@@ -6718,13 +6754,15 @@
     return {noteIndex:rounded - modeOffset,modeOffset};
   }
 
-  function generateSong(type, bpm) {
+  function generateSong(type, bpm, options = {}) {
     const melodyDefinition = getSongDefinition(type);
-    const meter = timeSignatureData(melodyDefinition?.timeSignature || [4,4],melodyDefinition?.beatGrouping);
+    const labMeter = type === 'when-the-kininjis-bloom' && options.labMeterOverride ? timeSignatureData(options.labMeterOverride) : null;
+    const meter = labMeter || timeSignatureData(melodyDefinition?.timeSignature || [4,4],melodyDefinition?.beatGrouping);
+    const melodyDurationScale = labMeter ? meter.measureQuarterBeats / FIXED_HARMONY_CHORD_QUARTER_BEATS : 1; // Fits all sixteen melody bars to the experimental denominator and numerator.
     const quarterBeatMs = 60000 / bpm; // MIDI note positions and saved chord lengths remain quarter-note based.
     const beatMs = quarterBeatMs * meter.quarterUnitsPerBeat; // Metronome, count-in, prompt horizon, and Auto Pick follow the selected denominator beat.
     const countInBeats = type === 'when-the-kininjis-bloom'
-      ? FIXED_HARMONY_SIX_EIGHT_CHORDS * KURRAYA_TIME_SIGNATURE[0]
+      ? FIXED_HARMONY_SIX_EIGHT_CHORDS * meter.numerator
       : meter.numerator; // Kininjis reserves four full 6/8 accompaniment bars before its 16-bar 3/4 melody body; other songs keep the ordinary one-measure count-in.
     const countInMs = beatMs * countInBeats;
     const events = [];
@@ -6757,7 +6795,7 @@
           events.push({time:countInMs + quarterBeatMs * note.beat,noteIndex:input.noteIndex,modeOffset:input.modeOffset,inputType:'button',state:'pending',element:null});
         }
         time = countInMs + quarterBeatMs * Math.max(0,...melody.notes.map(note => note.beat + Math.max(.0625,note.duration || .25)));
-      } else melody.notes.forEach(([degree,duration]) => addDegree(degree,duration));
+      } else melody.notes.forEach(([degree,duration]) => addDegree(degree,duration * melodyDurationScale));
     } else {
       const offsets = currentModeOffsets(); // Keeps the etude within the selected preset's lane count.
       const pattern = Array.from({length:24}, (_, index) => [index % 4, offsets[(index * 3 + Math.floor(index / 4)) % offsets.length]]);
@@ -6881,9 +6919,9 @@
     }
     state.bpm = clamp(Number($('#bpmInput').value) || melody?.defaultBpm || melody?.bpm || 104, 45, 300);
     state.hitWindow = Number($('#difficultySelect').value) || 170;
-    const song = generateSong(type, state.bpm);
+    const song = generateSong(type, state.bpm, options);
     clearNoteElements();
-    state.game = {active:true,startTime:nowMs(),pausedAt:0,pauseAccum:0,events:song.events,score:0,combo:0,hits:0,attempts:0,total:song.events.length,travelMs:3000,endAt:song.endAt,songType:type,beatMs:song.beatMs,quarterBeatMs:song.quarterBeatMs,timeSignature:song.timeSignature,beatGrouping:song.beatGrouping,countInBeats:song.countInBeats,countInMs:song.countInMs,totalSongBeats:song.totalSongBeats,demoActive:!!demoMode,demoMode,demoNextSlowArpDirection:'forward',backupAccompaniment:!!options.backupAccompaniment,loopDemo:!!options.loopDemo,proceduralAmbient:!!options.proceduralAmbient};
+    state.game = {active:true,startTime:nowMs(),pausedAt:0,pauseAccum:0,events:song.events,score:0,combo:0,hits:0,attempts:0,total:song.events.length,travelMs:3000,endAt:song.endAt,songType:type,beatMs:song.beatMs,quarterBeatMs:song.quarterBeatMs,timeSignature:song.timeSignature,beatGrouping:song.beatGrouping,countInBeats:song.countInBeats,countInMs:song.countInMs,totalSongBeats:song.totalSongBeats,demoActive:!!demoMode,demoMode,demoNextSlowArpDirection:'forward',labMeterOverride:options.labMeterOverride || null,backupAccompaniment:!!options.backupAccompaniment,loopDemo:!!options.loopDemo,proceduralAmbient:!!options.proceduralAmbient};
     document.body.classList.toggle('backup-accompaniment',!!state.game.backupAccompaniment);
     state.visibilityPauseStarted = 0;
     state.lastHarmonyStep = -1;
@@ -6893,7 +6931,9 @@
     state.paused = false;
     updateHUD();
     closeAllModals();
-    const introStatus = type === 'when-the-kininjis-bloom' ? '4-bar 6/8 accompaniment intro → 16-bar 3/4 melody' : `${song.countInBeats}-beat shared count-in`; // Makes the authored pre-melody harmony offset visible without requiring Mobile Debug.
+    const introStatus = type === 'when-the-kininjis-bloom'
+      ? options.labMeterOverride ? `4-bar ${options.labMeterOverride} intro → 16-bar ${options.labMeterOverride} melody (experimental re-metering)` : '4-bar 6/8 accompaniment intro → 16-bar 3/4 melody'
+      : `${song.countInBeats}-beat shared count-in`; // Makes the authored pre-melody harmony offset visible without requiring Mobile Debug.
     refs.transportStatus.innerHTML = `<strong>${demoMode ? 'Successful preview' : songTitle(type)}</strong> · ${songTitle(type)} · ${state.bpm} quarter-BPM · ${song.timeSignature[0]}/${song.timeSignature[1]} · ${introStatus}${song.beatGrouping.length>1 ? ` · accents ${song.beatGrouping.join('+')}` : ''}${demoMode ? ` · ${automaticPluckLabel(demoMode)} selected` : ''}${melody?.chords ? ' · silent song chords active' : ''}`;
     log(demoMode ? 'Successful preview started' : 'Song started', `${songTitle(type)}, ${state.bpm} quarter-BPM, ${song.timeSignature[0]}/${song.timeSignature[1]}, ±${state.hitWindow} ms${demoMode ? `, ${automaticPluckLabel(demoMode)}` : ''}`);
   }
@@ -7651,12 +7691,36 @@
       if (state.rootPadEnabled) syncRootPad(true);
       return this.scaleAuditionState();
     },
+    autoPickAuditionState() {
+      return {
+        selectedMode:state.songAuditionPattern,
+        selectedMeter:state.songAuditionMeter,
+        patterns:Object.entries(AUTO_PICK_PATTERN_LIBRARY).map(([id,definition]) => ({
+          id,label:definition.label,category:definition.category,kind:definition.kind,division:definition.division,
+          tradition:definition.tradition,description:definition.description
+        })), // The Lab reads exactly the same definition table as the four gameplay Auto Pick slots.
+        meters:KURRAYA_LAB_METERS.map(entry=>({...entry}))
+      };
+    },
+    setAutoPickAuditionPattern(mode) {
+      if (!Object.prototype.hasOwnProperty.call(AUTO_PICK_PATTERN_LIBRARY,mode)) throw new RangeError('Unknown Kurraya Auto Pick pattern.');
+      if (state.game.active) stopSong('Audition picking pattern changed.');
+      state.songAuditionPattern = mode;
+      return this.autoPickAuditionState();
+    },
+    setSongAuditionMeter(mode) {
+      if (!KURRAYA_LAB_METERS.some(entry => entry.id === mode)) throw new RangeError('Unknown audition time signature.');
+      if (state.game.active) stopSong('Audition time signature changed.');
+      state.songAuditionMeter = mode;
+      return this.autoPickAuditionState();
+    },
     async startSongAudition(scaleName = state.scaleName, tonicMidi = state.tonicMidi) {
       await ensureAudio();
       applyPerformanceTonic(tonicMidi,{persist:false});
-      const auditionScaleName = applyPerformanceScale(scaleName,{persist:false}); // Used as an explicit startSong override so authored playback cannot silently snap the tool back to Major.
+      const auditionScaleName = applyPerformanceScale(scaleName,{persist:false}); // An audition never persists a different scale to gameplay.
       state.selectedSong = 'when-the-kininjis-bloom';
-      startSong(state.selectedSong,{demoMode:'direct',scaleOverride:auditionScaleName,persistScale:false});
+      const labMeterOverride = state.songAuditionMeter === 'original' ? null : state.songAuditionMeter;
+      startSong(state.selectedSong,{demoMode:state.songAuditionPattern,labMeterOverride,scaleOverride:auditionScaleName,persistScale:false});
       return this.scaleAuditionState();
     },
     stopSongAudition() {
