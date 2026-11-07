@@ -980,13 +980,21 @@
     const shelf = window.CliffRouteNetwork?.shelfAt?.(currentCliffNetwork(), player?.onCliffBalcony);
     if (!player || !shelf || player.climbing || !window.PlayerJump?.beginFlight || !outside) return false;
     const length = Math.hypot(Number(raw?.x) || 0, Number(raw?.y) || 0);
-    if (length <= 0.01 || window.CliffRouteNetwork?.shelfContains?.(shelf, outside.x, outside.z, 0.02)) return false;
-    if (window.PlayerJump?.canOccupyAir?.(outside.x, outside.z, shelf.y) === false) return false;
+    if (length <= 0.01) return false;
+    const nx = raw.x / length, nz = raw.y / length; // Normalized movement aimed across the shelf lip.
+    let launchX = outside.x, launchZ = outside.z; // Actual physical edge is slightly beyond the walkability inset.
+    for (let probe = 0; probe < 8; probe++) {
+      if (window.PlayerJump?.canOccupyAir?.(launchX, launchZ, shelf.y) === false) return false;
+      if (!window.CliffRouteNetwork?.shelfContains?.(shelf, launchX, launchZ, 0.02)) break;
+      launchX += nx * 0.04; launchZ += nz * 0.04; // Short collision-checked sweep across the final lip; no teleport to the landing tile.
+    }
+    if (window.CliffRouteNetwork?.shelfContains?.(shelf, launchX, launchZ, 0.02) ||
+        window.PlayerJump?.canOccupyAir?.(launchX, launchZ, shelf.y) === false) return false;
     const balconyId = player.onCliffBalcony; // Used only to restore the original support if flight creation fails.
     player.onCliffBalcony = null;
     const flight = window.PlayerJump.beginFlight({
-      x: outside.x, y: shelf.y, z: outside.z,
-      vx: raw.x / length * 0.6, vy: 0, vz: raw.y / length * 0.6,
+      x: launchX, y: shelf.y, z: launchZ,
+      vx: nx * 0.6, vy: 0, vz: nz * 0.6,
       safeX: player.x / deps.TILE, safeZ: player.y / deps.TILE,
     }, { source: 'cliff balcony fall', deliberate: true });
     if (!flight) { player.onCliffBalcony = balconyId; return false; }
