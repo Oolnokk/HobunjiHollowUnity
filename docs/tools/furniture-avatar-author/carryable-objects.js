@@ -55,6 +55,7 @@
   const pane=document.getElementById('tab-carry')||document.createElement('div'); // Replace the permanent diagnostic placeholder with live controls.
   pane.id='tab-carry';
   pane.classList.add('hidden');
+  const bootStatus=pane.querySelector('#carryAuthorLoadStatus'); // Keep mobile error reporting available until every editor control is initialized.
   pane.innerHTML=[
     '<section class="fed-section">',
     '<h2>Carryable world objects</h2>',
@@ -106,6 +107,7 @@
     '<div id="carrySummary" class="pill"></div>',
     '</section>'
   ].join('');
+  if(bootStatus)pane.prepend(bootStatus); // Module errors after constructing controls must still be visible in the Carryable tab.
   if(!pane.isConnected)document.querySelector('#tab-effects').insertAdjacentElement('afterend',pane);
   const el=id=>document.getElementById(id);
   const guideRoot=new THREE.Group();
@@ -470,4 +472,5 @@
     normalize:normalized,
     snapshot:()=>({carryable:cloneJson(state.carryable),selected:state.selectedType==='carry'?state.selectedId:null,backPreview:state.selectedId==='back',preview:{visible:heldPreview.visible,ready:!!previewActor,hands:!!previewHands}})
   };
+  if(bootStatus)bootStatus.hidden=true; // Hide the pending notice only after the complete Carryable API is ready.
 })();
