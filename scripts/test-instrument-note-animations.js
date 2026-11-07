@@ -275,6 +275,9 @@ assert(grips.includes('handCustomGripAxisPickEnd') && editor.includes('gripAxisM
 assert(editor.includes('poseFreeRightHandEnabled'),'editor offers a per-pose free-right-hand switch');
 assert(editor.includes("setGizmoMode('translate', 'rightHand')"),'free hand can be dragged in avatar space');
 assert(editor.includes("setGizmoMode('rotate', 'rightHand')"),'free hand can be rotated in avatar space');
+assert(editor.includes('function enableFreeRightHandForPhase(phase)'), 'gizmo and checkbox must both initialize from the actual grip');
+assert(editor.includes('const holderQ = toolHolder.getWorldQuaternion(new THREE.Quaternion())'), 'capturing free hand must keep its wrist orientation as well as position');
+assert(editor.includes('syncGripAxisMarkers(); // Keep Nut/Bridge markers visible'), 'nut and bridge preview markers must update during ordinary playback');
 assert(music.includes('playPlayerKurrayaNote?.()'),'game relays sounded notes to the free hand');
 assert(handDriver.includes('freeRightHandFor(record, toolKey)'),'live procedural hand driver consumes independent hand poses');
 
