@@ -204,6 +204,7 @@
       if (required) parent[b] = a;
     }
     debug.miniBasesAccepted = 0; debug.miniBasesRejected = 0; debug.lastMiniBaseFailure = null; // Reset per build for mobile inspection.
+    const shelfRejections = {}; // Track post-embedding route clearance failures per reason for mobile debugging.
     const balconies = [];
     for (const route of routes) {
       const c = selected[route.id], id = route.id, h = c.y1 - c.y0;
@@ -270,8 +271,8 @@
             shelf.projectionTiles = shelf.base.projectionTiles; // Exact normal displacement of its original top.
             const landing = {
               id: shelf.nodeId, y: shelf.y, links: [idx], balconyId: shelf.id,
-              x: shelf.x - tan.x * side * (width / 2 - 0.22),
-              z: shelf.z - tan.z * side * (width / 2 - 0.22),
+              x: shelf.x - tan.x * side * (width / 2 - 0.06),
+              z: shelf.z - tan.z * side * (width / 2 - 0.06),
             }; // A lateral hop lands just inside the cap, clear of its center reward.
             const halfX = (Math.abs(tan.x) * width + Math.abs(normal.x) * depth) / 2; // Cardinal cap bounds.
             const halfZ = (Math.abs(tan.z) * width + Math.abs(normal.z) * depth) / 2;
@@ -290,8 +291,13 @@
             const landingFace = opts.sampleFace?.(c, landing.x, landing.y, landing.z);
             if (opts.sampleFace && (!landingFace ||
                 (landing.x - landingFace.x) * normal.x + (landing.z - landingFace.z) * normal.z < 0.08)) continue;
-            if (capBlocked || shelfBlocksRoute || !legalHop(anchor, landing, obstacles) ||
-                !clearOfFace(anchor, landing, c, normal, opts.sampleFace)) continue;
+            const hopClear = legalHop(anchor, landing, obstacles); // A landing 0.06 tile inside the edge remains within one climb hop.
+            const faceClear = clearOfFace(anchor, landing, c, normal, opts.sampleFace); // Avoid wall penetration when using the actual sampled rock mesh.
+            if (capBlocked || shelfBlocksRoute || !hopClear || !faceClear) {
+              for (const [reason, fails] of Object.entries({ capBlocked, shelfBlocksRoute, hopTooFar: !hopClear, faceBlocked: !faceClear }))
+                if (fails) shelfRejections[reason] = (shelfRejections[reason] || 0) + 1; // Quality inspector reports the actual obstacle reason.
+              continue;
+            }
             nodes.push(landing);
             nodes[idx].links.push(shelf.nodeId);
             balconies.push(shelf);
@@ -307,7 +313,7 @@
     }
     const connectedRoots = new Set(components.map((_, i) => find(i)));
     const network = { area: opts.area || null, grid, cols, rows, components, component, routes, balconies, adjacency,
-      miniBaseStats: { accepted:debug.miniBasesAccepted, rejected:debug.miniBasesRejected, lastFailure:debug.lastMiniBaseFailure }, // In-game generator debug export.
+      miniBaseStats: { accepted:debug.miniBasesAccepted, rejected:debug.miniBasesRejected, lastFailure:debug.lastMiniBaseFailure, shelfRejections }, // In-game generator debug export.
       unconnectedComponents: Math.max(0, connectedRoots.size - 1), candidateCount: candidates.length, rejectedRoutes, options: opts };
     // Adapt ShaftHub.reachable(): walking components, legal climbing links,
     // and every balcony node must be reachable from some ground entrance.
