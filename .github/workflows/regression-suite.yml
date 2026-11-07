@@ -51,6 +51,8 @@ jobs:
         run: node scripts/verify-dungeon-fire-three.js
       - name: Install Chromium for browser regressions
         run: npx playwright install --with-deps chromium
+      - name: Clothing species fit runtime portrait browser smoke
+        run: node scripts/test-clothing-fit-runtime-browser.js
       - name: Camera occlusion bounded-ray parity against real three
         run: node scripts/test-camera-occlusion-bounded-rays.js
       - name: Interior Editor floorless exit mouse and touch browser regression
