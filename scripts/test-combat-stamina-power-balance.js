@@ -62,10 +62,14 @@ for (const [label, type] of Object.entries({ Sharp: sharpType, Blunt: bluntType 
 }
 
 const swingComboCost = attackValues.combo.swingCombo.reduce((sum, step) => sum + step.staminaCost, 0); // Full three-hit sweep combo cost before perks/buffs.
-const fullBreakerCost = breaker.CHARGE_DRAIN_PER_S * breaker.MAX_CHARGE_S + breaker.COST_MAX; // Worst-case full-charge stamina spend from hold start through release.
+const pokeComboCost = attackValues.combo.pokeCombo.reduce((sum, step) => sum + step.staminaCost, 0); // Full thrust combo is the new heavy-charge balance anchor.
+const fullBreakerCost = breaker.COST_MAX; // One cumulative full-pose price, independent of time held.
 const standardStaminaBar = 100; // Ordinary player combat budget used by existing resource-system balance fixtures.
-assert.equal(fullBreakerCost, 34, 'full Charged Breaker should cost 34 stamina at authored maximum charge');
-assert(swingComboCost + fullBreakerCost <= standardStaminaBar, 'full combo -> Death Mark -> full Charged Breaker should fit inside one standard stamina bar');
+assert.equal(fullBreakerCost, 54, 'full Charged Breaker should cost 54 Stamina at authored maximum charge');
+assert.equal(fullBreakerCost, pokeComboCost, 'full Charged Breaker should cost exactly one completed thrust combo');
+assert(fullBreakerCost < swingComboCost, 'full Charged Breaker remains slightly cheaper than a completed sweep combo');
+assert.equal('CHARGE_DRAIN_PER_S' in breaker, false, 'obsolete time-drain setting must not reappear');
+assert(swingComboCost + fullBreakerCost > standardStaminaBar, 'full sweep combo and full Charged Breaker must exceed an untouched Stamina bar');
 
 const swingFinisherDamage = Math.round(nativeCopperCutDamage * attackValues.combo.swingCombo[2].damageMul); // Direct damage of the mark-granting third sweep hit.
 const oneMarkBreakerBonus = fullBreakerDamage * deathMarks[0] - fullBreakerDamage; // Extra heavy damage earned by successfully reaching the third combo hit.
