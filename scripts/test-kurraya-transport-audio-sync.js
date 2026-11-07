@@ -181,7 +181,7 @@ assert.match(
 
 assert.match(
   source,
-  /function generateSong\(type, bpm\)[\s\S]*?countInBeats = type === 'when-the-kininjis-bloom'[\s\S]*?FIXED_HARMONY_SIX_EIGHT_CHORDS \* KURRAYA_TIME_SIGNATURE\[0\][\s\S]*?countInMs = beatMs \* countInBeats/,
+  /function generateSong\(type, bpm, options = \{\}\)[\s\S]*?countInBeats = type === 'when-the-kininjis-bloom'[\s\S]*?FIXED_HARMONY_SIX_EIGHT_CHORDS \* meter\.numerator[\s\S]*?countInMs = beatMs \* countInBeats/,
   'the four 6/8 accompaniment bars must live before the 16-bar melody body instead of consuming its first four bars'
 );
 
@@ -199,7 +199,7 @@ assert.match(
 
 assert.match(
   source,
-  /function sharedTransportData\([\s\S]*?rawHarmonyQuarterBeatFloat = fixedKurraya && state\.game\.active[\s\S]*?transportElapsedMs \/ Math\.max\(1,quarterBeatMs\)[\s\S]*?harmonyQuarterBeatFloat[\s\S]*?FIXED_HARMONY_CYCLE_QUARTER_BEATS - 1e-6[\s\S]*?mixedPhase = fixedKurraya \? fixedKurrayaMixedMeterPhase\(harmonyQuarterBeatFloat\)[\s\S]*?transportMeterBeatFloat = fixedKurraya[\s\S]*?transportAbsoluteBeat = Math\.floor\(transportMeterBeatFloat\)/,
+  /function sharedTransportData\([\s\S]*?rawHarmonyQuarterBeatFloat = fixedKurraya && state\.game\.active[\s\S]*?transportElapsedMs \/ Math\.max\(1,quarterBeatMs\)[\s\S]*?harmonyQuarterBeatFloat[\s\S]*?activeKurrayaLabMeter\(\)\?\.measureQuarterBeats[\s\S]*?FIXED_HARMONY_CYCLE_CHORDS - 1e-6[\s\S]*?mixedPhase = fixedKurraya \? fixedKurrayaMixedMeterPhase\(harmonyQuarterBeatFloat\)[\s\S]*?transportMeterBeatFloat = fixedKurraya[\s\S]*?transportAbsoluteBeat = Math\.floor\(transportMeterBeatFloat\)/,
   'the authored-song harmony clock must advance through the four 6/8 intro bars, then stay monotonic through the 3/4 melody and hold the final authored root through the playback tail'
 );
 
@@ -298,7 +298,7 @@ assert.match(musicLab, /importKurrayaSample[\s\S]*?importPadSample[\s\S]*?useLab
 
 assert.match(
   source,
-  /function kurrayaSongArrangementState\(\)[\s\S]*?melodyStartQuarterBeat:KURRAYA_INTRO_QUARTER_BEATS[\s\S]*?melodyNotes/,
+  /function kurrayaSongArrangementState\(\)[\s\S]*?melodyStartQuarterBeat:FIXED_HARMONY_SIX_EIGHT_CHORDS \* quarterBeatsPerBar[\s\S]*?melodyNotes/,
   'the bridge must expose the real melody after the four-bar intro for timeline authoring'
 );
 
