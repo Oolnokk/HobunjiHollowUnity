@@ -109,9 +109,23 @@ function testCarryableTabBoot() {
   assert.match(html,/id="tab-carry"[^>]*class="hidden"/,'the Carryable fallback panel exists without JavaScript');
   assert.match(html,/id="carryAuthorLoadStatus"/,'loading failures have visible mobile-safe diagnostics');
   assert.match(html,/'avatar','carry','base','io'/,'base mode switches include the Carryable pane');
-  assert.match(html,/carryable-objects\.js\?v=20261107carryPosteriorFrame2[^>]+onerror=/,'the separate authoring script exposes load errors');
+  assert.match(html,/carryable-objects\.js\?v=20261107autoAvatarPreview3[^>]+onerror=/,'the separate authoring script exposes load errors');
   assert.match(author,/getElementById\('carryModeTab'\)\|\|document\.createElement\('button'\)/,'authoring reuses the static tab');
   assert.match(author,/getElementById\('tab-carry'\)\|\|document\.createElement\('div'\)/,'authoring reuses the static panel');
+}
+
+function testCarryableAutomaticAvatarPreview() {
+  const author=read('docs/tools/furniture-avatar-author/carryable-objects.js'); // Automatic preview must be visible even while cosmetics render asynchronously.
+  assert.match(author,/if\(previewActive\(\)\)startPreview\(\)/,'opening an active Carryable tab automatically requests its preview');
+  assert.match(author,/if\(mode==='carry'\)select\('anchor'\);[\s\S]{0,140}setHoldingVisibility\(\)/,'changing to Carryable mode activates avatar visibility');
+  const fallback=author.indexOf("installPreviewPortrait({front:placeholderAvatarCanvas('runtimePortrait'),back:null,profile:null},true)");
+  const asyncLoad=author.indexOf("const portrait=await renderSeatPortrait('mao-ao','male')");
+  assert(fallback>=0&&asyncLoad>fallback,'avatar placeholder is constructed synchronously before waiting on actual portrait assets');
+  assert.match(author,/previewActor\.add\(model\);previewPortraitModel=model/,'the automatic fallback is attached as a visible model');
+  assert.match(author,/previewActor\.remove\(previewPortraitModel\)/,'the real portrait replaces rather than duplicates the placeholder');
+  assert.match(author,/if\(previewActor\)\{[\s\S]{0,110}reference avatar shown \(portrait assets unavailable\)/,'a failed portrait load keeps the fallback visible');
+  assert.match(author,/if\(previewActive\(\)\)frameHoldingPreview\(\)/,'opening the tab frames the automatically shown avatar');
+  assert.match(author,/source:previewSource/,'mobile diagnostics distinguish placeholder and actual portrait');
 }
 
 function testRuntime() {
@@ -410,5 +424,6 @@ function testRuntime() {
 
 testEditorAuthoring();
 testCarryableTabBoot();
+testCarryableAutomaticAvatarPreview();
 testRuntime();
 console.log('PASS back-carried burdens: live portrait selection, deadzone parenting, carrier collision, transitions, rebuilds, explosions, editor');
