@@ -123,6 +123,7 @@ function testRuntime() {
   const deps={player,TILE:64,getCurrentArea:()=>currentArea,getActiveScene:()=>activeScene,
     worldSurfaceY:()=>0,refreshActionBar(){},showToast(){},hostileObjects:new Set(),npcWalkers:new Set()};
   const bodyRoot=new Group();bodyRoot.name='player_body_root'; // Canonical composer root for back attachment.
+  bodyRoot.userData={speciesId:'nuhongan',gender:'female',portraitModelHeight:.46}; // Short Nuhongan fixture reproduces the misplaced Mao'ao-height stow.
   const headJoint=new Group();headJoint.name='player_neck_joint'; // Held burden continues to use this preexisting dependency unchanged.
   bodyRoot.add(headJoint);
   headJoint.position.set(.25,.3,.15);
@@ -131,7 +132,7 @@ function testRuntime() {
     new MeshBasicMaterial({name:'npc_avatar_skinned_back_material'})]);
   portrait.name='player_avatar_skinned_plane_assembly'; // Active skinned portrait and its back-only x-ray clone.
   portrait.renderOrder=2; // The native PNG draw order must be restored after back carry or avatar rebuild.
-  portrait.position.set(.08,.2,-.12);portrait.scale.setScalar(1.2);
+  portrait.position.set(.08,.65,-.12);portrait.scale.setScalar(1.2); // A high-centered portrait makes accidental portrait-origin placement obvious.
   const firstAvatar=new Group();firstAvatar.name='original_player_avatar'; // Live avatar instance can be swapped without removing its predecessor immediately.
   firstAvatar.userData.neckRig={skinnedPlane:portrait};
   bodyRoot.add(firstAvatar);firstAvatar.add(portrait);
@@ -143,7 +144,7 @@ function testRuntime() {
     THREE:{Vector3,Group,Euler,Quaternion,MeshBasicMaterial,SkinnedMesh},Combat:{deps,update(){},init(){}},
     Targetables:{addSource:(key,fn)=>targetSources.set(key,fn),makeActor:entry=>({entry})},
     ProceduralHandAttachments:{gameDeps:deps},
-    PlayerBodyTransformComposer:{getPlayerMesh:()=>currentBodyRoot,getPosteriorY:()=>.42},
+    PlayerBodyTransformComposer:{getPlayerMesh:()=>currentBodyRoot,getPosteriorY:()=>.19},
     WorldPortraitLife:{getPlayerAvatar:()=>({group:activeAvatar})},
     GridTileAccessors:{getActiveScene:()=>activeScene,getCurrentArea:()=>currentArea,getActiveGrid:()=>grid},
     __farmLog(){},WorldEvents:{emit(){}},AudioSystem:{playObjectSfxKey(){}},
@@ -206,7 +207,7 @@ function testRuntime() {
   assert.equal(priorMaterial.depthWrite,true,'detached original material is restored on replacement');
   const authoredBurdenPoint=new Vector3(.13,.22,-.16); // Object-space contact point; the actual stow transform determines its world location.
   const actualAttachment=charge.group.localToWorld(authoredBurdenPoint.clone());
-  const expectedAttachment=bodyRoot.localToWorld(new Vector3(.08+.12,.42-.08,.18+.04)); // Hip position plus both back-only offsets.
+  const expectedAttachment=bodyRoot.localToWorld(new Vector3(.08+.12,.19-.08,.18+.04)); // Hip position plus both back-only offsets.
   for(const axis of ['x','y','z'])
     assert(Math.abs(actualAttachment[axis]-expectedAttachment[axis])<1e-8,'back uses the same species-adjusted posterior frame as holding on '+axis);
   assert(Math.abs(actualAttachment.y-(portrait.position.y-.08))>.01,
@@ -349,7 +350,7 @@ function testRuntime() {
   assert(window.Shattercasks.stowOnBack());
   assert.equal(travel.group.parent,rigidPortrait,'default back stow mounts to the available rigid portrait');
   const travelWorld=travel.group.getWorldPosition(new Vector3());
-  const defaultPosteriorWorld=currentBodyRoot.localToWorld(new Vector3(0,.42,0)); // Even unconfigured Burdens inherit the carrier's anatomical hip.
+  const defaultPosteriorWorld=currentBodyRoot.localToWorld(new Vector3(0,.19,0)); // Even unconfigured Burdens inherit the carrier's anatomical hip.
   for(const axis of ['x','y','z'])assert(Math.abs(travelWorld[axis]-defaultPosteriorWorld[axis])<1e-8,
     'a burden without authored back coordinates defaults to the species-adjusted posterior on '+axis);
   const secondScene=new Group(); // Mimics a destination ruin with a static object using the same local ID.
