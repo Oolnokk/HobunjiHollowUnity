@@ -26,7 +26,7 @@
   document.write('<script src="js/dev-random-ruin-hit-puzzles.js?v=20261105gametime1"></scr' + 'ipt>'); // Plain source (formerly nine base64 part files reassembled with eval).
   document.write('<script src="js/dev-random-ruin-prototype-hooks.js?v=20261018badge1"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-solid-footprints.js?v=20261031hcefb03e"></scr' + 'ipt>');
-  document.write('<script src="js/dev-random-ruin-tile-occupancy.js?v=20261107findblocks2"></scr' + 'ipt>');
+  document.write('<script src="js/dev-random-ruin-tile-occupancy.js?v=20261107integrationBlocks1"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-solvability.js?v=20261104directVestibule2"></scr' + 'ipt>');
   document.write('<script src="js/live-root-network.js?v=1"></scr' + 'ipt>');
   document.write('<script src="js/live-root-growth.js?v=20261101htempleroot1"></scr' + 'ipt>');
@@ -34,7 +34,7 @@
   document.write('<script src="js/stone-age-ruin-scenery.js?v=20261102h20daaea"></scr' + 'ipt>'); // Same quarry floor, wall rockification and Temple vegetation as the author preview.
   document.write('<script src="js/dev-random-ruin-door-slabs.js?v=20261105slab1"></scr' + 'ipt>'); // Must precede the interior map: its material pass calls DevRandomRuinDoorSlabs.normalize.
   document.write('<script src="js/dev-random-ruin-cube-pillars.js?v=20261105cube2"></scr' + 'ipt>'); // Must precede the interior map: its material pass calls DevRandomRuinCubePillars.normalize.
-  document.write('<script src="js/dev-random-ruin-interior-map.js?v=20261107shaftdoorAir1"></scr' + 'ipt>');
+  document.write('<script src="js/dev-random-ruin-interior-map.js?v=20261107integrationBlocks1"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-wall-planes.js?v=20260927geometry1"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-wall-render-proxy.js?v=20261107nativeglyphsource1"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-collision-precision.js?v=20260927geometry1"></scr' + 'ipt>');

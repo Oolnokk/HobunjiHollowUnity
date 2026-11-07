@@ -508,6 +508,7 @@
         if(!model.slidingPushBlocks.has(block))model.slidingPushBlocks.set(block,{});
         return true;
       },
+      unregisterSlidingPushBlock:block=>model.slidingPushBlocks.delete(block), // Used when a compound chamber is discarded independently of the whole V50 ruin.
       pushBlockBox:block => pushBlockBox(model, block),
       snapshot:() => snapshot(model),
       scanSolids:(root, tag) => model.footprints.scan(root, tag),
@@ -569,6 +570,7 @@
     refresh:() => activeModel?.refresh?.() || false,
     blocksAt:(x,z,radius=.22,options={}) => activeModel?.blocksAt?.(x,z,radius,options) === true, // Traversal modules use the exact same generated occupancy that is stamped into the ordinary interior grid.
     registerSlidingPushBlock:block=>activeModel?.registerSlidingPushBlock?.(block)===true, // Late-built lab blocks move with the native V50 pusher and still block player/world movement.
+    unregisterSlidingPushBlock:block=>activeModel?.unregisterSlidingPushBlock?.(block)===true, // A discarded room must not leave a ghost block collider in the active map.
     scanSolids:(root, tag = 'dynamic-scan') => activeModel?.scanSolids?.(root, tag) || 0, // Later-built puzzle modules add their visible solids to the same footprint set.
     clearSolids:tag => activeModel?.clearSolids?.(tag),
     addSolidBox:(id, box, enabled = null, tag = 'dynamic') => activeModel?.addSolidBox?.(id, box, enabled, tag) || null,

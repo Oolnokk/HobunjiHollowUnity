@@ -7,7 +7,7 @@
   else root.RuinLayerChallenges=api;
 })(typeof self!=='undefined'?self:globalThis,function(root){
   'use strict';
-  const TYPES=Object.freeze(['pressurePlate','glyphObelisk','ceilingRailTargets','melodyEcho','dungeonFire','ropeChain','statueDefense','timedMelody','fireSconces']);
+  const TYPES=Object.freeze(['pressurePlate','glyphObelisk','ceilingRailTargets','melodyEcho','dungeonFire','ropeChain','statueDefense','findBlocks','timedMelody','fireSconces']);
   const boneTextures=new Map(); // Shared Scratchbone numeral textures for every generated melody decal.
   function melodyFor(id){
     let seed=2166136261; // Deterministic FNV hash; the same generated chamber always has the same note sequence.
@@ -35,6 +35,84 @@
 
   function compose(options={}){
     const {THREE,parent,room,id,kind,y,isActive,onSolved,getPlayerPosition,getPlayerY}=options;
+    if(kind==='findBlocks'){
+      // A V50 push-block controller is available only after the generated ruin enters
+      // the gameplay map. Delay installation instead of failing shaft construction.
+      const bus=options.projectileBus||root.DevRandomRuinSimplePuzzles;
+      const game=options.DevRandomRuin||root.DevRandomRuin;
+      const DS=options.DynamicSurfaces||root.DynamicSurfaces;
+      const scope='ruin-layer-find-blocks-'+id; // Each stage owns its own raised supports and can be disposed independently.
+      const targets=[],disposers=[]; // Native projectile callbacks and their remover functions for this chamber only.
+      let puzzle=null,failed=false;
+      const rec={id,kind,solved:false,ready:false,linked:false,disposed:false,error:null};
+      const seed=Array.from(String(id)).reduce((hash,ch)=>Math.imul(hash^ch.charCodeAt(0),16777619)>>>0,2166136261); // A reproducible mix of net and pillar mechanisms per wing.
+      function setup(){
+        if(rec.disposed||puzzle||failed||!isActive()
+          ||bus?.hasActiveRuinState?.()!==true||!game?.getOccupancySnapshot?.())return;
+        const player=getPlayerPosition?.(); // Deferred construction avoids eagerly mounting several heavy compound rooms on a story the player has just reached.
+        if(!player||player.x<room.x-5||player.x>room.x+room.w+5
+          ||player.z<room.z-5||player.z>room.z+room.d+5)return;
+        try{
+          const kit={
+            state:{controls:[]},group:()=>parent,
+            deps:{showToast:(message,ok)=>options.showToast?.(message,ok)},
+            playerWorld:getPlayerPosition,
+            addControl:control=>options.addControl?.(control),
+            removeControl:control=>options.removeControl?.(control),
+            registerSurface:surface=>DS.registerSurface({...surface,scope}),
+            registerBlocker:blocker=>DS.registerBlocker({...blocker,scope}), // Every pillar, blocker and closed gate collides only at its authored wing elevation.
+            registerProjectileTarget:target=>{targets.push(target);return target;},
+            disposeObject:object=>{
+              object.parent?.remove(object);
+              const geometries=new Set(),materials=new Set();
+              object.traverse?.(node=>{
+                if(node.geometry&&!node.geometry.userData?.devRuinSharedPrimitive)geometries.add(node.geometry);
+                for(const mat of Array.isArray(node.material)?node.material:[node.material])if(mat)materials.add(mat);
+              });
+              geometries.forEach(geo=>geo.dispose?.());
+              materials.forEach(mat=>mat.dispose?.());
+            }
+          }; // The same native cube/fire/music/bomb implementation receives a layered-wing lifecycle adapter.
+          puzzle=root.DevRuinFindBlocks?.create?.({
+            THREE,kit,context:{seed,ceilingY:y+4.5},room,y,
+            showGate:false,isActive,
+            onSolved:()=>{if(!rec.disposed&&!rec.solved){rec.solved=true;onSolved(rec);}}
+          });
+          if(!puzzle)throw new Error('Find the Blocks module is unavailable.');
+          rec.variant=puzzle.variant;rec.netVariant=puzzle.netVariant;rec.ready=true;rec.linked=targets.length===0;
+          options.onLink?.(rec);
+        }catch(error){
+          DS?.clearScope?.(scope); // Roll back raised platforms and blockers if any native submodule failed during construction.
+          targets.length=0; // No external ranged callbacks are installed before the chamber finishes building.
+          failed=true;rec.error=String(error?.message||error);
+          options.onError?.(rec); // Show the failure in the mobile dungeon diagnostics instead of silently generating a fake plate.
+        }
+      }
+      rec.tick=dt=>{
+        if(rec.disposed||!isActive())return;
+        setup();
+        if(!puzzle)return;
+        if(targets.length&&!rec.linked){
+          const next=[];
+          for(const target of targets){
+            const release=bus?.registerExternalProjectileTarget?.(target);
+            if(typeof release!=='function')break;
+            next.push(release);
+          }
+          if(next.length===targets.length){disposers.push(...next);rec.linked=true;options.onLink?.(rec);}
+          else for(const remove of next)remove();
+        }
+        puzzle.tick?.(dt);
+      };
+      rec.snapshot=()=>puzzle?.snapshot?.()||{id,kind,ready:false,error:rec.error};
+      rec.dispose=()=>{
+        if(rec.disposed)return;rec.disposed=true;
+        for(const release of disposers)release();
+        puzzle?.dispose?.();
+        DS?.clearScope?.(scope);
+      };
+      return rec;
+    }
     if(kind==='statueDefense'){
       const defense=options.RuinLayerDefense||root.RuinLayerDefense; // Delegates authored statue and combat rules instead of duplicating their puzzle state.
       if(!defense?.create)throw new Error('Native RuinLayerDefense module is not installed.');
