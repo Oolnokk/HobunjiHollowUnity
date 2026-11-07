@@ -422,6 +422,7 @@
       const entry = EXTENSION_SCRIPTS[index]; // Supplies the diagnostic name and commit-relative source path for this dependency stage.
       if ((entry.name === 'voorg-ass-registration' && global.VoorgAssRegistration)
         || (entry.name === 'moot-registration' && global.MootRegistration)) { // Reuse registrations already loaded by gameplay without adding duplicate scripts.
+        if (entry.name === 'moot-registration') global.MootRegistration.ensureRendererSpecies?.(global.CreatureGeneticsRender?.SPECIES); // Unlike CreatureGenetics, Moot's own module does not auto-register in the editor.
         loadNext(index + 1);
         return;
       }
@@ -439,6 +440,7 @@
       script.dataset.hobunjiAnimationAuthorCreatureRegistry = entry.name;
       script.onload = () => {
         status.loads += 1;
+        if (entry.name === 'moot-registration') global.MootRegistration?.ensureRendererSpecies?.(global.CreatureGeneticsRender?.SPECIES); // The editor has no WildlifeSpawn.init to register this renderer species.
         loadNext(index + 1);
       };
       script.onerror = () => {
