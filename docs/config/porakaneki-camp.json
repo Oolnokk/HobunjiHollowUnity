@@ -94,7 +94,7 @@
     "maximumFavor": 10,
     "attackOnSightFavor": -5,
     "greetingFavorThreshold": 1,
-    "greetingRadiusTiles": 3,
+    "greetingRadiusTiles": 2,
     "greetingLines": [
       "Good to see you, friend.",
       "Welcome back to our camp.",
@@ -108,6 +108,7 @@
     "damageAttributionRadiusTiles": 14,
     "initializationMemoryEvent": "porakaneki_faction_initialized",
     "warningRadiusTiles": 10,
+    "warningSpeakerRadiusTiles": 2,
     "warningStaySeconds": 10,
     "initialWarnings": [
       "Go way. No want trouble",

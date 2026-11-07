@@ -12,6 +12,7 @@ class Vector {
   lerp(v,t){this.x+=(v.x-this.x)*t;this.y+=(v.y-this.y)*t;this.z+=(v.z-this.z)*t;return this;}
 }
 let frame=0,pressed=0;
+let giftWalker = null; // Test-only proximity-gated tribe hunter returned from FurnitureTableSystem.extraWalker.
 const ray={origin:new Vector(0,.5,-3),direction:new Vector(0,0,1)};
 const window={},context=vm.createContext({window,console,AIM_EPSILON:1e-8,interactionAimRay:()=>ray});
 // Execute the production camera-ray/slab selector; only its camera source and lightweight vector boundary are injected.
@@ -22,7 +23,7 @@ const actor=(id,x,z,area='town')=>({rec:{id},area,root:{position:{x,y:0,z},visib
 const target=actor('aimed',0,5),offRay=actor('near-but-off-ray',1.3,1),tooFar=actor('too-far',0,6.1),otherMap=actor('other-map',0,.5,'map_i_inn');
 const walkers=[target,offRay,tooFar,otherMap];
 tables.init({getArea:()=> 'town',getPlayerPosition:()=>({x:0,z:0}),getWalkers:()=>walkers,frameId:()=>frame,
-  getPlayerSeat:()=>null,focusCandidates:window.testFocus,
+  getPlayerSeat:()=>null,focusCandidates:window.testFocus,extraWalker:()=>giftWalker,
   actorHitbox:w=>({box:{min:{x:w.root.position.x-.2,y:0,z:w.root.position.z-.2},max:{x:w.root.position.x+.2,y:1,z:w.root.position.z+.2}}}),
   makeSitInteractable:()=>({getButtons:()=>[{action:'obj_sit',allowed:true}],onAction:()=>{pressed++;return{ok:true};}})});
 const root=(x,z)=>({parent:{},position:{x,y:0,z},scale:{x:1,y:1,z:1}});
@@ -39,6 +40,30 @@ assert(tables.objectAt('town',0,3).onAction('obj_sit').ok);assert.equal(pressed,
 const nearer=actor('nearer-on-ray',0,4);walkers.push(nearer);target.root.position.x=0;frame++;
 assert.equal(tables.focusedTarget('town').walker,nearer,'overlapping NPC silhouettes use the first actor along the ray');
 assert.equal(tables.snapshot().socialReach,6);assert.equal(tables.snapshot().socialIgnoresColliders,true);
+// A Porakaneki hunter with a held gift can be offered one at close range even
+// if the mobile camera ray misses the slim portrait. This must not steal an
+// intentionally aimed NPC or work from beyond two tiles.
+giftWalker=actor('porakaneki-gift',1.1,.2,'map_pora'); // Off the forward camera ray but within two player tiles.
+frame++;
+assert.equal(tables.focusedTarget('map_pora')?.walker,giftWalker,'a visible nearby gift proxy remains selectable without exact camera aim');
+const scenery=root(0,1.5); // Solid but non-interactive camp scenery should not steal a nearby hunter's gift prompt.
+tables.registerPlacement('map_pora',{id:'gift-scenery',key:'ordinaryWall',col:0,row:1},scenery,{fw:1,fd:1});
+frame++;
+assert.equal(tables.focusedTarget('map_pora')?.walker,giftWalker,'unrelated scenery targeted by the camera must not suppress an in-range gift');
+giftWalker=null;frame++;
+assert.equal(tables.focusedTarget('map_pora')?.kind,'blocker','without a nearby held-gift target the solid scenery retains its ordinary focus');
+scenery.parent=null;giftWalker=actor('porakaneki-gift',1.1,.2,'map_pora'); // Restore a gift candidate without scenery for the usual aimed-NPC priority checks.
+frame++;
+const directlyAimed=actor('directly-aimed',0,1.5,'map_pora'); // Ordinary aimed NPC still outranks the proximity gift fallback.
+walkers.push(directlyAimed);frame++;
+assert.equal(tables.focusedTarget('map_pora')?.walker,directlyAimed,'intentional NPC aim wins over nearby tribe gift fallback');
+walkers.pop();giftWalker.root.position.x=2.1;frame++;
+assert.equal(tables.focusedTarget('map_pora'),null,'off-ray gift proxy is never selected beyond two tiles');
+giftWalker.root.position.x=1.1;giftWalker.root.visible=false;frame++;
+assert.equal(tables.focusedTarget('map_pora'),null,'invisible tribe hunters cannot appear in the gift prompt');
+giftWalker.root.visible=true;giftWalker.area='map_elsewhere';frame++;
+assert.equal(tables.focusedTarget('map_pora'),null,'tribe hunter gift proxies cannot leak between maps');
+giftWalker=null;frame++;
 // A raised camera must target real serving objects instead of the broad parent-table blocker.
 // Load the shipped eight attachments so this also detects accidentally changing their authoring.
 const servingData=JSON.parse(fs.readFileSync('docs/config/furniture-authored/servingTable.json','utf8')); // Actual Gorkunash placements define the fixture.

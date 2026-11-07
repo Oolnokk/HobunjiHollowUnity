@@ -40,6 +40,11 @@
     return walker?.isPorakanekiHunter === true ? 'porakaneki' : null;
   }
   function isPorakaneki(walker) { return tribeOf(walker) === 'porakaneki'; }
+  function withinPorakanekiGiftReach(walker) {
+    if (!isPorakaneki(walker)) return true;
+    const distance = window.FurnitureTableSystem?.npcDistance?.(walker); // The same two-tile reach applies to named chiefs and generated hunters, including stale button presses.
+    return Number.isFinite(distance) && distance <= 2; // A missing/uninitialized distance authority must never allow a stale remote gift press.
+  }
   function relationshipId(walker) {
     const tribe = tribeOf(walker);
     return tribe ? TRIBE_CHIEFS[tribe] : walker?.rec?.id;
@@ -384,7 +389,7 @@
 
   function getNpcGiftOfferAction(walker) {
     const npcId = walker?.rec?.id;
-    if (!npcId || window.NpcInteractionPolicy?.isPassiveGreatFey?.(walker.rec)) return null; // Great Fey never advertise the ordinary gift action.
+    if (!npcId || window.NpcInteractionPolicy?.isPassiveGreatFey?.(walker.rec) || !withinPorakanekiGiftReach(walker)) return null; // Great Fey never advertise the ordinary gift action; Porakaneki require two-tile proximity.
     const held = deps.getHeldGiftItem();
     if (!isItemGiftable(held)) return null;
     const prefRec = preferenceRecord(walker); // Reused by both armor-specific and ordinary warning calculations.
@@ -406,7 +411,7 @@
   function offerGift(walker) {
     const npcId = relationshipId(walker);
     const held = deps?.getHeldGiftItem?.();
-    if (!npcId || window.NpcInteractionPolicy?.isPassiveGreatFey?.(walker?.rec) || !isItemGiftable(held)) return false; // Guard the direct action too: no inventory, Favor, Rapport, or wardrobe changes.
+    if (!npcId || window.NpcInteractionPolicy?.isPassiveGreatFey?.(walker?.rec) || !isItemGiftable(held) || !withinPorakanekiGiftReach(walker)) return false; // Guard direct presses too: distant tribe gifts cannot consume items or alter Favor.
 
     const evaluation = evaluateHeldGift(preferenceRecord(walker), held); // Uses the same combined trait + food preference evaluator exposed to diagnostics/tests.
     const tier = evaluation.tier;
