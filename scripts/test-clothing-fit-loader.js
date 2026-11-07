@@ -85,6 +85,8 @@ const pastedReport=[
   'source→target points:',...reportNodes,'recent log:'
 ].join('\n');
 const importedReport=parseDiagnostics(pastedReport);
+const numericStringReport=parseDiagnostics(pastedReport.replace('"translateX":-3.5','"translateX":"-3.5"'));
+assert.equal(numericStringReport.transform.translateX,-3.5,'Pasted numeric strings must be normalized before grid math');
 const repaired=fitMath.repairedImportedFitState(importedReport,importedReport.stage.width,importedReport.stage.height);
 assert.deepEqual(repaired.repairedAxes,['scaleX'],'The flattened X axis is the only repaired axis');
 assert.equal(repaired.transform.scaleX,1,'Import restores a usable hood width');

@@ -13,6 +13,7 @@
   for(const key of ['scaleX','scaleY','translateX','translateY']){
     if(transform?.[key]==null||String(transform[key]).trim()===''||!Number.isFinite(Number(transform[key])))
       throw new Error(`The base transform is missing a valid ${key}.`);
+    transform[key]=Number(transform[key]); // Normalize numeric JSON strings before pixel-space translation math.
   }
   // Nonpositive scales are repaired on import, using the original scale to recover local offsets.
 
