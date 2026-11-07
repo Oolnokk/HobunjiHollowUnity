@@ -1,4 +1,4 @@
-// Find the Blocks — four-stage compound Puzzle Lab room.
+// Find the Blocks — four-stage compound chamber shared by Puzzle Lab and generated dungeon wings.
 // The ordinary V50 pusher/occupancy owns every block's horizontal motion;
 // DungeonFire, KurrayaPuzzle and HronalWitchBombs own their existing triggers.
 (function(root,factory){
@@ -18,14 +18,15 @@
   function create(options={}){
     const {THREE,kit,context,room,y:floorY,onSolved,isActive}=options;
     if(!THREE||!kit||!context||!room||typeof onSolved!=='function'||typeof isActive!=='function')
-      throw new Error('Find the Blocks requires an active Puzzle Lab and native ruin services.');
+      throw new Error('Find the Blocks requires an active ruin and native puzzle services.');
     if(room.w<18||room.d<18)throw new Error('Find the Blocks needs a very-large (18 x 18 or larger) room.');
     const occupancy=root.DevRandomRuinTileOccupancy,game=root.DevRandomRuin;
     if(!occupancy?.addSolidBox||!game?.registerLabPushBlock)
       throw new Error('The native sliding-block collision adapter is unavailable.');
     const group=new THREE.Group(); // Owns the entire compound puzzle and all temporary meshes.
     group.name='dev_ruin_find_the_blocks';kit.group().add(group);
-    const id='find-blocks-'+String(context.seed);
+    const id='find-blocks-'+String(context.seed)+'-'+String(room.id||room.x+'-'+room.z);
+    const solidOwner='find-the-blocks:'+id; // Each generated chamber releases only its own live obstacle footprints.
     const cx=Math.floor(room.x+room.w*.5)+.5,cz=Math.floor(room.z+room.d*.5)+.5; // Grid-centered origin shared by the four stages and plates.
     const offset=Math.max(4,Math.min(5,Math.floor(Math.min(room.w,room.d)*.29))); // Leaves walkable perimeter around every source.
     const roof=Number(context.ceilingY); // The actual V50 ceiling, not a raised artificial anchor that could hide a hanging target above the stone.
@@ -33,10 +34,13 @@
     if(ceiling-floorY<2.65)throw new Error('Find the Blocks needs at least 2.65 units of ceiling clearance.');
     const stairRise=Math.min(STAIR_RISE,(ceiling-floorY-BLOCK_SIZE-.22)/7); // Seven actual walkable steps end below the ceiling with space for the block.
     const initialPillarHeight=Math.min(3.35,ceiling-floorY-BLOCK_SIZE-.22); // The pillar is as tall as the chamber permits without clipping its carried block.
-    const variant=['melody','projectiles','witchBomb'][(Number(context.seed)>>>0)%3]; // Only the tall pillar's unlocking mechanism rotates between seeds.
+    const roll=Number(context.seed)>>>0; // Stable per-chamber seed; different floors and wings receive independent mixes.
+    const variant=['melody','projectiles','witchBomb','ceilingRail'][roll%4]; // The tall pillar can be unlocked by four real puzzle systems.
+    const netVariant=['fire','glyphs','movingTargets','melody'][Math.floor(roll/4)%4]; // Ceiling net bindings are independently varied.
+    const stairMirror=!!(roll&2); // Flips the walkable winding approach without changing its achievable step height.
     const blocks=[],plates=[],targets=[],controls=[],disposers=[],burnIds=[],chips=[]; // Session-local ownership; no world save or drops.
     let disposed=false,solved=false,sinking=false,pillarHeight=initialPillarHeight,pillarBroken=false,pillarLowered=false;
-    let melody=null,iceLayer=null,iceMelt=0,bombTube=null,hitCount=0; // Driven by tick, never by artificial completion switches.
+    let melody=null,netChallenge=null,iceLayer=null,iceMelt=0,bombTube=null,hitCount=0; // Driven by tick, never by artificial completion switches.
     const fire=root.DungeonFire,bombs=root.HronalWitchBombs;
     const alive=()=>!disposed&&isActive();
     const mat=(color,emissive=0)=>new THREE.MeshStandardMaterial({
@@ -53,8 +57,8 @@
     const cylinder=(name,x,z,bottom,rad,h,color)=>
       newMesh(name,new THREE.CylinderGeometry(rad,rad,h,12),mat(color),x,bottom+h*.5,z);
     const solid=(name,x,z,halfX,halfZ,enabled=()=>alive())=>
-      occupancy.addSolidBox(id+'-'+name,{cx:x,cz:z,halfX,halfZ},enabled,'find-the-blocks'); // Blocking is live and no larger than its visible stone.
-    const control=record=>{controls.push(record);kit.state.controls.push(record);return record;};
+      occupancy.addSolidBox(id+'-'+name,{cx:x,cz:z,halfX,halfZ},enabled,solidOwner); // Blocking is live and no larger than its visible stone.
+    const control=record=>{controls.push(record);if(kit.addControl)kit.addControl(record);else kit.state.controls.push(record);return record;};
     const support=(name,x,z,w,d,topY,enabled=()=>alive())=>kit.registerSurface({
       id:id+'-'+name,bounds:{minX:x-w*.5,maxX:x+w*.5,minZ:z-d*.5,maxZ:z+d*.5},
       topY,enabled,priority:23
@@ -130,7 +134,20 @@
       }
       const hit=cube('find-blocks-net-fire-hit',x,z,ceiling-1.18,.95,1.12,.95,0x8c7551);
       hit.material.transparent=true;hit.material.opacity=0;hit.material.depthWrite=false;
-      registerBurn('net',hit,()=>{net.visible=false;hit.visible=false;return startFall(block);});
+      const release=()=>{net.visible=false;hit.visible=false;return startFall(block);}; // Every net trigger releases the same physical falling block.
+      if(netVariant==='fire')registerBurn('net',hit,release);
+      else{
+        netChallenge=root.RuinLayerChallenges?.compose?.({
+          THREE,parent:group,room:{x:cx-offset-1.5,z:cz-3.5,w:3,d:3},y:floorY,
+          id:id+'-net-challenge',kind:netVariant==='glyphs'?'glyphObelisk'
+            :netVariant==='movingTargets'?'ceilingRailTargets':'melodyEcho',
+          mapId:MAP_ID,isActive:alive,onSolved:release,
+          getPlayerPosition:kit.playerWorld,
+          getPlayerY:()=>game.getPlayerGroundSupportY?.()??kit.playerWorld()?.y??floorY,
+          music:root.MusicMinigame
+        });
+        if(!netChallenge)throw new Error('Could not mount the native net-release challenge '+netVariant+'.');
+      }
       return block;
     }
     function iceSource(){
@@ -169,9 +186,10 @@
       block.mesh.userData.findBlocksCanDrop=true; // Allows one supported block to be pushed off a ledge without bypassing other V50 courses.
       // A narrow winding walkable route, not invisible stairs or an interaction that teleports the player.
       // Each tile is separated by at most the normal step-up threshold.
+      const side=stairMirror?-1:1; // Both mirrored paths end at the same climbable block dais.
       const path=[
-        [x+4,z+1],[x+4,z],[x+3,z],[x+3,z-1],
-        [x+2,z-1],[x+2,z],[x+1,z]
+        [x+4,z+side],[x+4,z],[x+3,z],[x+3,z-side],
+        [x+2,z-side],[x+2,z],[x+1,z]
       ];
       path.forEach(([sx,sz],i)=>{
         const topY=floorY+stairRise*(i+1);
@@ -194,17 +212,17 @@
         if(!alive()||sinking||pillarLowered||pillarBroken)return false;
         sinking=true;kit.deps?.showToast?.('The tall stone pillar is sinking!',true);return true;
       };
-      if(variant==='melody'){
+      if(variant==='melody'||variant==='ceilingRail'){
         const challenge=root.RuinLayerChallenges?.compose?.({
           THREE,parent:group,room:{x:cx+1.5,z:cz-4.5,w:3,d:3},y:floorY, // Away from all four block plates and their pushing approaches.
-          id:id+'-pillar-song',kind:'melodyEcho',mapId:MAP_ID,
+          id:id+'-pillar-unlock',kind:variant==='melody'?'melodyEcho':'ceilingRailTargets',mapId:MAP_ID,
           isActive:alive,onSolved:triggerSink,
           getPlayerPosition:kit.playerWorld,
           getPlayerY:()=>game.getPlayerGroundSupportY?.()??kit.playerWorld()?.y??floorY,
           music:root.MusicMinigame
         });
-        if(!challenge)throw new Error('Could not compose the native melody echo for the tall pillar.');
-        melody=challenge; // Its own flute judge, event subscriptions, note decals and cleanup stay authoritative.
+        if(!challenge)throw new Error('Could not compose the native '+variant+' challenge for the tall pillar.');
+        melody=challenge; // Native challenge handles real instrument/ranged input, registration and cleanup.
       }else if(variant==='projectiles'){
         const locations=[[cx+1,cz+3],[cx+3,cz+1],[cx+5,cz+1]];
         locations.forEach(([px,pz],index)=>{
@@ -293,9 +311,9 @@
       onSolved();
     }
     const gateX=cx,gateZ=room.z+room.d-1.1; // The far-side sealed doorway visibly rises on completion.
-    const gate=cube('find-blocks-gate',gateX,gateZ,floorY,2.2,2.9,.3,COLOR.stone);
-    const gateStart=gate.position.y;
-    solid('gate',gateX,gateZ,1.1,.18,()=>alive()&&!solved);
+    const gate=options.showGate===false?null:cube('find-blocks-gate',gateX,gateZ,floorY,2.2,2.9,.3,COLOR.stone);
+    const gateStart=gate?.position.y??0; // Layered wings already own a progression gate; never add a duplicate slab.
+    if(gate)solid('gate',gateX,gateZ,1.1,.18,()=>alive()&&!solved);
     createPlates();
     ordinaryPillars();
     fireSource();
@@ -304,13 +322,15 @@
     climbingSource();
     pillarSource();
 
-    const result={id,kind:'findBlocks',ready:true,linked:true,variant,blocks,plates,
+    const result={id,kind:'findBlocks',ready:true,linked:true,variant,netVariant,stairMirror,blocks,plates,
       get solved(){return solved;},
       tick(dt){
         if(!alive())return;
         const step=Math.max(0,Math.min(.05,Number(dt)||0));
         melody?.tick?.(step);
         melody?.animate?.(step);
+        netChallenge?.tick?.(step);
+        netChallenge?.animate?.(step);
         if(sinking){
           pillarHeight=Math.max(0,pillarHeight-step*1.45);
           const pillar=blocks[3].pillar;
@@ -365,9 +385,9 @@
           if(found)weighted++;
         }
         if(weighted===4)openGate();
-        if(solved)gate.position.y=Math.min(gateStart+3.2,gate.position.y+step*3.6);
+        if(solved&&gate)gate.position.y=Math.min(gateStart+3.2,gate.position.y+step*3.6);
       },
-      snapshot(){return {id,variant,solved,ceilingY:ceiling,stairRise,initialPillarHeight,weighted:plates.filter(p=>p.filled).length,
+      snapshot(){return {id,variant,netVariant,stairMirror,solved,ceilingY:ceiling,stairRise,initialPillarHeight,weighted:plates.filter(p=>p.filled).length,
         blocks:blocks.map(b=>({name:b.name,phase:b.phase,x:b.mesh.position.x,z:b.mesh.position.z,
           y:b.mesh.position.y,available:b.mesh.userData.findBlocksAvailable})),
         targets:targets.map(t=>({id:t.id,hit:t.active})),pillarHeight,
@@ -375,10 +395,14 @@
       dispose(){
         if(disposed)return;disposed=true;
         melody?.dispose?.();
+        netChallenge?.dispose?.();
         for(const burn of burnIds)fire?.unregisterTarget?.(burn);
         for(const stop of disposers)stop();
-        for(const item of controls){const i=kit.state.controls.indexOf(item);if(i>=0)kit.state.controls.splice(i,1);}
-        root.DevRandomRuinTileOccupancy?.clearSolids?.('find-the-blocks');
+        for(const item of controls){
+          if(kit.removeControl)kit.removeControl(item);
+          else{const i=kit.state.controls.indexOf(item);if(i>=0)kit.state.controls.splice(i,1);}
+        }
+        root.DevRandomRuinTileOccupancy?.clearSolids?.(solidOwner);
         kit.disposeObject(group); // Release the chamber meshes/materials now; removing the root alone would leak GPU resources on reroll.
       },
     };
