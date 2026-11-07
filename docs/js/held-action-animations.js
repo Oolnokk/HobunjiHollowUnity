@@ -254,6 +254,9 @@
       strike: { ...copyFluteNotePose(), bodySink: FLUTE_STRIKE_BODY_SINK_PCT }, // Only the body's downward bend distinguishes the sounded note.
     },
   };
+  const kurrayaHoldTransform = { // All three phases use this exact instrument placement; a note moves fingers, not the lute body.
+    x: 0.27, y: 0.08, z: 0.02, pitch: 0, yaw: 0, bodyYaw: 0, roll: 0,
+  };
   const kurrayaPlayNote = {
     version: 1, kind: 'hobunji_held_action_animation', name: 'Kurraya — Play Note',
     actionId: 'kurraya_play_note', style: 'thrust', sequence: 'attack',
@@ -261,7 +264,7 @@
     headRelative: false, toolEndFlip: false, gripMode: 'palm-parallel',
     poses: {
       neutral: {
-        x: 0.27, y: 0.08, z: 0.02, pitch: 0, yaw: 0, bodyYaw: 0, roll: 0,
+        ...kurrayaHoldTransform,
         scale: 1, bodySink: 0,
         shoulderAim: { grip: true, palmNormal: true },
         secondaryGrip: { enabled: false, percent: 50, primaryPercent: 50 },
@@ -270,13 +273,13 @@
         offhandIdle: { enabled: false },
       },
       windup: {
-        x: -0.012, y: 0.013, z: 0, pitch: -2, yaw: 0, bodyYaw: 0, roll: -3,
+        ...kurrayaHoldTransform, // Preserve Neutral placement and tilt while the hand animation begins.
         shoulderAim: { grip: false, palmNormal: true },
         secondaryGrip: { enabled: true, percent: 50, primaryPercent: 50 },
         dualWield: { enabled: false },
       },
       strike: {
-        x: 0.018, y: -0.011, z: 0, pitch: 3, yaw: 0, bodyYaw: 0, roll: 5,
+        ...kurrayaHoldTransform, // The string-plucking strike is independent of the Kurraya's fixed held transform.
         shoulderAim: { grip: false, palmNormal: true },
         secondaryGrip: { enabled: true, percent: 50, primaryPercent: 50 },
         dualWield: { enabled: false },
