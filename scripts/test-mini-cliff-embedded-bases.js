@@ -160,7 +160,8 @@ for(const shelf of net.balconies){
   assert(elevated.canStandOn(net,shelf.id,shelf.x,shelf.z,0),'registered top is walkable at its center');
   for(const u of [-0.9,0,0.9]){
     const i=u<0?0:1,t=u<0?u+1:u,along=u*shelf.width/2;
-    const front=-shelf.depth/2+shelf.overhangDepths[i]+(shelf.overhangDepths[i+1]-shelf.overhangDepths[i])*t;
+    const shift=shelf.contourOffsets[i]+(shelf.contourOffsets[i+1]-shelf.contourOffsets[i])*t; // Follow the noodle's bent front edge, not the old flat rectangle.
+    const front=-shelf.depth/2+shift+shelf.overhangDepths[i]+(shelf.overhangDepths[i+1]-shelf.overhangDepths[i])*t;
     const x=shelf.x+shelf.tangent.x*along+shelf.normal.x*(front+0.06);
     const z=shelf.z+shelf.tangent.z*along+shelf.normal.z*(front+0.06);
     assert(!elevated.canStandOn(net,shelf.id,x,z,0),'support registry rejects the missing part of a varied overhang');
