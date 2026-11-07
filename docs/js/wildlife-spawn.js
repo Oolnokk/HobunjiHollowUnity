@@ -1258,11 +1258,11 @@
   function spawnRoamingHerd(zoneId, herdIndex, herdKey, speciesOverride = null, totalSlotsOverride = null) {
     const zdef = deps.EXTERIOR_ZONES?.[zoneId];
     const pool = zdef?.roamingHerdSpecies || [];
-    if (!pool.length) return 0;
-    const speciesKey = speciesOverride || pool[Math.floor(deps.rnd() * pool.length)]; // Fixed species for the independent Nazgraku forager slot.
+    if (!pool.length && !speciesOverride) return 0; // Explicit Moot/Nazgraku forager slots need not depend on an unrelated herd pool.
+    const speciesKey = speciesOverride || pool[Math.floor(deps.rnd() * pool.length)]; // Explicit species for each independent surface-forager slot.
     const herdCount = Math.max(1, Math.floor(Number(totalSlotsOverride ?? zdef.roamingHerdCount) || 1));
     const anchor = roamingHerdAnchor(zoneId, herdIndex, herdCount);
-    const count = speciesOverride ? (3 + Math.floor(deps.rnd() * 3)) : (ROAMING_HERD_SIZE_MIN + Math.floor(deps.rnd() * (ROAMING_HERD_SIZE_MAX - ROAMING_HERD_SIZE_MIN + 1))); // Nazgraku forage in modest groups, not 8–12 member Voorg herds.
+    const count = speciesOverride ? (3 + Math.floor(deps.rnd() * 3)) : (ROAMING_HERD_SIZE_MIN + Math.floor(deps.rnd() * (ROAMING_HERD_SIZE_MAX - ROAMING_HERD_SIZE_MIN + 1))); // Moots and Nazgraku use small groups, not Voorg-ass-sized herds.
     const zoneData = deps.zoneLayouts.get(zoneId);
     const waterTile = nearestWaterTile(zoneData, anchor.x, anchor.y);
     const motherIndex = speciesKey === VOORG_ASS_SPECIES ? Math.floor(deps.rnd() * count) : -1; // Exactly one Herd-Mother per Voorg-Ass herd.
@@ -1314,7 +1314,7 @@
     }
 
     if (spawned > 0) {
-      window.__farmLog?.(`[${speciesKey === 'moot' ? 'moot' : 'voorg-ass'}] spawned roaming herd key=${herdKey} size=${spawned} mother=${motherIndex >= 0 ? 1 : 0} babies=${motherBabyCount} anchor=(${Math.round(anchor.x / deps.TILE)},${Math.round(anchor.y / deps.TILE)})`, 'wildlife');
+      window.__farmLog?.(`[${speciesKey}] spawned roaming herd key=${herdKey} size=${spawned} mother=${motherIndex >= 0 ? 1 : 0} babies=${motherBabyCount} anchor=(${Math.round(anchor.x / deps.TILE)},${Math.round(anchor.y / deps.TILE)})`, 'wildlife');
       if (zoneId === deps.getCurrentArea() && speciesKey === VOORG_ASS_SPECIES) deps.showToast('A large Voorg-Ass herd is roaming the cliffs.', false);
     }
     return spawned;
