@@ -179,6 +179,11 @@ const oldDebug = context.window.AudioSystem.combatSfxDebugSnapshot().last;
 assert.deepStrictEqual([...oldDebug.detail.actualPitchModes], ['lower-pitch-slow', 'lower-pitch-slow']);
 assert.deepStrictEqual([...oldDebug.detail.actualPlaybackRates], [2 ** (-5 / 12), 2 ** (-6 / 12)]);
 context.Audio = FakeAudio; // Restore the normal test backend.
+const mutedStart = FakeAudio.plays; // Asset-level zero volume must never be replaced with the usual default 80%.
+combatSfx.quickAttackBonusSlash.volume = 0;
+context.window.AudioSystem.playComboFinisherBonusSfx(0, 0, 'farm');
+assert.equal(FakeAudio.plays, mutedStart, 'a deliberately muted anime slash must stay silent');
+combatSfx.quickAttackBonusSlash.volume = .9; // Restore normal mix before unrelated SFX checks.
 assert.match(audio, /startAt \+ clips\[0\]\.durationS/, 'decoded Web Audio must schedule the second slash exactly at the first clip end');
 assert.match(audio, /tempo: COMBO_FINISHER_SLASH_TEMPO, pitchSemitones/, 'independent DSP must receive triple tempo and each requested lowered pitch');
 assert.match(combo, /playComboFinisherBonusSfx/, 'only combo specials call the new semantic cue');
@@ -282,6 +287,9 @@ async function testDecodedFinisherTiming() {
   assert(Math.abs(starts[1].duration / starts[1].rate - .3) < 1e-8, 'second processed recording lasts precisely one-third duration');
   assert.equal(FakeAudio.plays, nativeBefore, 'processed audio never triggers coupled native playback');
   assert.equal(world.window.AudioSystem.combatSfxDebugSnapshot().last.detail.backend, 'independent-WSOLA');
+  settings.combatSfx.quickAttackBonusSlash.volume = 0; // Explicit zero must silence even already-decoded positional voices.
+  world.window.AudioSystem.playComboFinisherBonusSfx(0, 0, 'farm');
+  assert.equal(starts.length, 2, 'asset mute prevents another WebAudio source from starting');
 }
 
 testDecodedFinisherTiming().then(() => console.log('combat SFX wiring: ok'))
