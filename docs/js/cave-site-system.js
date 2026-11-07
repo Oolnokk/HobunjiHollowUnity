@@ -45,8 +45,7 @@
     [TYPES.MUSHROOM_CAVE, 22],
     [TYPES.TRAPPED_CACHE, 18],
     [TYPES.CATACOMB, 18],
-    [TYPES.RUIN_ENTRANCE, 16],
-    [TYPES.PUZZLE_CAVE, 8], // Rare enough to reward searching cliffs and the wilderness.
+    [TYPES.RUIN_ENTRANCE, 16], // Ordinary cave contents; independent Puzzle Caves never consume these slots.
   ]);
 
   const INHABITANT_WEIGHTS = Object.freeze([
@@ -55,7 +54,7 @@
     [TYPES.BANDIT_HIDEOUT, 22],
   ]);
 
-  const PROFILE_SCHEMA = 2; // contents + inhabitant layers; den.caveSite tags from older schemas are rerolled.
+  const PROFILE_SCHEMA = 3; // Independent puzzle-cave generation; reroll legacy profiles that consumed ordinary cave slots.
   const MUSHROOM_REAGENT_KEY = 'duskcapMushroom'; // AlchemySystem reagent the mushroom cave grows (the game's only mushroom item).
   const MUSHROOM_INTERACT_RADIUS_TILES = 1.55; // Used only for aimed, explicit cave-cluster pickup; walking across a cluster never harvests it.
   const MUSHROOM_REGROW_DAYS = 3; // Picked clusters regrow after this many in-game days.
@@ -74,7 +73,9 @@
   const CACHE_RELIC_CHANCE = 0.28; // Used by cache loot; Harlyao relic logic already owns enchanted-weapon construction/persistence.
   const CACHE_NARCOTIC_CHANCE = 0.35; // Used by cache loot; AlchemySystem authors the actual narcotic recipe item.
 
-  const sitesByZone = new Map(); // zoneId -> cave profiles used by ecology filtering, map labels, and diagnostics.
+  const sitesByZone = new Map(); // zoneId -> ordinary cave profiles used by ecology filtering, map labels, and diagnostics.
+  const outdoorPuzzleSitesByZone = new Map(); // Independently generated cliff Puzzle Caves; never placed in wildlife dens.
+  const rockPuzzleSitesByParent = new Map(); // Hidden-door Puzzle Caves attached to a separate ordinary-cave parent map.
   const sitesByMapId = new Map(); // cavern map id -> cave profile used while decorating/loading interiors.
   const plansByMapId = new Map(); // cavern map id -> generated feature positions used by runtime traps/cache/bandits/ruin thresholds.
   const runtimeStateBySignature = new Map(); // site signature -> current-world persistent-ish discovery/interaction state.
@@ -162,7 +163,7 @@
     const signature = caveSignature(zoneId, den); // Stable site identity used by deterministic profile generation and persistence.
     // Separate streams so retuning one layer's weights never reshuffles the other.
     const contents = weightedPick(makeRng(`${signature}:contents`), CONTENTS_WEIGHTS);
-    const inhabitant = contents === TYPES.PUZZLE_CAVE ? TYPES.NONE : weightedPick(makeRng(`${signature}:inhabitant`), INHABITANT_WEIGHTS); // Puzzle caves are solitary mechanisms, never bandit or animal homes.
+    const inhabitant = weightedPick(makeRng(`${signature}:inhabitant`), INHABITANT_WEIGHTS); // Wildlife ecology belongs exclusively to ordinary cave anchors.
     return {
       schema: PROFILE_SCHEMA,
       id: `cave_${String(den?.id || 'site')}`,
@@ -178,6 +179,70 @@
       mouthAnchor: den?.mouthAnchor ? clone(den.mouthAnchor) : null,
       source: 'promoted_den_anchor',
     };
+  }
+
+  const MAX_OUTDOOR_PUZZLE_CAVES = 24; // Upper bound for independent entrances in a wilderness zone.
+  const MIN_OUTDOOR_PUZZLE_CAVES = 4; // Favor several doors where enough genuine balconies exist.
+  const OUTDOOR_PUZZLE_DENSITY = 0.72; // Independent per-balcony roll, with a minimum floor.
+  const ROCK_PUZZLE_CHANCE = 0.8; // Extra hidden doors only appear when an ordinary cave actually has a mineable separator.
+
+  function puzzleProfile(zoneId, denId, signature, source, extra = {}) {
+    const mapId = caveMapId(zoneId, denId); // Shared cavern loader and return-zone registration; no wildlife den anchor is created.
+    return {
+      schema: PROFILE_SCHEMA, id: 'puzzle_' + denId, zoneId, denId, mapId, signature,
+      contents: TYPES.PUZZLE_CAVE, inhabitant: TYPES.NONE,
+      layers: [TYPES.PUZZLE_CAVE], exteriorLabel: 'Small Stone Door',
+      discoveredLabel: 'Puzzle Cave', source, ...extra,
+    };
+  }
+
+  function registerOutdoorPuzzleSites(zoneId, balconies = []) {
+    const key = String(zoneId || ''); // Separate zone key avoids ever replacing an ordinary den/cave profile.
+    const candidates = (balconies || []).filter(shelf =>
+      shelf?.base?.footprint?.length && shelf?.footprint?.length >= 2
+      && Number.isFinite(shelf.y) && shelf.y > 0
+      && Number(shelf.width) >= 1.7 && Number(shelf.depth) >= 1
+      && shelf.normal && shelf.tangent
+    ).slice().sort((a,b) => String(a.id).localeCompare(String(b.id)));
+    const rng = makeRng(key + ':puzzle-cliffs:' + currentStateIdentity()); // Same saved world/cycle rolls identical independent gates.
+    for(let index=candidates.length-1;index>0;index--) {
+      const other=Math.floor(rng()*(index+1)); // Stable Fisher-Yates scatter, so the 24-door cap does not cluster in the first grid row.
+      [candidates[index],candidates[other]]=[candidates[other],candidates[index]];
+    }
+    const selected = candidates.filter(() => rng() < OUTDOOR_PUZZLE_DENSITY).slice(0, MAX_OUTDOOR_PUZZLE_CAVES);
+    for(const shelf of candidates) {
+      if(selected.length >= Math.min(MIN_OUTDOOR_PUZZLE_CAVES, candidates.length, MAX_OUTDOOR_PUZZLE_CAVES)) break;
+      if(!selected.includes(shelf)) selected.push(shelf);
+    }
+    const sites = selected.map(shelf => {
+      const denId = 'puzzle_cliff_' + hashSeed(key + ':' + shelf.id).toString(36); // Stable synthetic cavern id, not an animal-den id.
+      return puzzleProfile(key, denId, key + ':puzzle-cliff:' + String(shelf.id),
+        'independent_cliff', { shelfId:shelf.id, mouthAnchor:{x:Math.floor(shelf.x),y:Math.floor(shelf.z)} });
+    });
+    for(const old of outdoorPuzzleSitesByZone.get(key) || []) {
+      if(!sites.some(site => site.mapId === old.mapId)) sitesByMapId.delete(old.mapId);
+    }
+    outdoorPuzzleSitesByZone.set(key, sites);
+    for(const site of sites) sitesByMapId.set(site.mapId,site);
+    return clone(sites);
+  }
+
+  function registerRockPuzzleSite(parent, tile = null) {
+    const denId = 'puzzle_rock_' + hashSeed(parent.signature).toString(36); // One separate secret cavern per ordinary parent cave.
+    const state = stateFor(parent); // Persist the reciprocal tile for loading directly inside a previously discovered secret cave.
+    const remembered = state.rockPuzzleDoorReturn || null;
+    const back = tile || remembered || {col:0,row:0}; // A reserved profile is harmless until the parent actually has a valid mined wall.
+    const site = puzzleProfile(parent.zoneId, denId, parent.signature + ':puzzle-rock',
+      'independent_rock', {parentMapId:parent.mapId,returnCol:back.col,returnRow:back.row});
+    if(tile) {
+      rockPuzzleSitesByParent.set(parent.mapId,site);
+      if(!remembered || remembered.col!==tile.col || remembered.row!==tile.row) {
+        state.rockPuzzleDoorReturn = {col:tile.col,row:tile.row};
+        persistState(true); // Saved player can return to the real hidden doorway after reloading inside the side cave.
+      }
+    } else if(remembered) rockPuzzleSitesByParent.set(parent.mapId,site);
+    sitesByMapId.set(site.mapId,site);
+    return site;
   }
 
   function forceAnimalProfile(profile) {
@@ -209,6 +274,7 @@
       sitesByMapId.set(profile.mapId, profile);
     }
     sitesByZone.set(key, profiles);
+    for(const profile of profiles) if(profile.contents!==TYPES.PUZZLE_CAVE) registerRockPuzzleSite(profile); // Reserve recoverable identities without counting unopened/invalid secret doors.
     return profiles;
   }
 
@@ -245,12 +311,22 @@
 
   function profileForMapId(mapId) {
     const id = String(mapId || '');
-    if (sitesByMapId.has(id)) return clone(sitesByMapId.get(id));
-    if (!id.startsWith('map_i_den_')) return null; // Only den caverns can be cave sites; skip the layout scan for every other area (called each runtime tick).
-    wildlifeDeps?.zoneLayouts?.forEach?.((layout, zoneId) => {
-      if (!sitesByMapId.has(id) && layout?.dens?.length) zoneSites(zoneId);
-    });
-    return clone(sitesByMapId.get(id) || null);
+    if (!sitesByMapId.has(id) && id.startsWith('map_i_den_')) {
+      wildlifeDeps?.zoneLayouts?.forEach?.((layout, zoneId) => {
+        if (!sitesByMapId.has(id) && layout?.dens?.length) zoneSites(zoneId);
+      });
+    }
+    const profile = sitesByMapId.get(id); // Resolve independent child maps without treating them as animal-den anchors.
+    if(!profile)return null;
+    if(profile.source === 'independent_rock') {
+      const parent = sitesByMapId.get(profile.parentMapId); // Parent signature owns the persistent reciprocal doorway coordinates.
+      const remembered = parent ? stateFor(parent).rockPuzzleDoorReturn : null;
+      if(remembered) {
+        profile.returnCol = remembered.col;
+        profile.returnRow = remembered.row;
+      } // A world save restored after workspace registration must not return the player to unwalkable 0,0.
+    }
+    return clone(profile);
   }
 
   function isAnimalDenSite(profileOrDen) {
@@ -669,7 +745,12 @@
         if (!data) window.__farmLog?.(`[cave-sites] prop ${prop.key} has no authored data.`, 'warn');
         return 0;
       }
-      const group = A.buildGroup(data);
+      const group = A.buildGroup(prop.alwaysOpen ? {...data,puzzle:null} : data);
+      if(prop.alwaysOpen) {
+        const slab = group.userData?.meshById?.get?.('cliff_door_slab'); // Hidden stone door is already open after the surrounding mineable wall is cleared.
+        const openPose = data.puzzle?.motion?.parts?.cliff_door_slab?.on;
+        if(slab && openPose) {slab.position.y = openPose.y;slab.scale.z = openPose.sz;}
+      }
       group.position.set(prop.col + 0.5, 0, prop.row + 0.5);
       group.rotation.y = (Number(prop.rotY) || 0) * Math.PI / 180;
       group.scale.set(Number(prop.scaleX) || 1, 1, Number(prop.scaleZ) || 1); // Ruin rear tunnels extend into the solid rim while fitting the three-tile doorway width.
@@ -837,7 +918,7 @@
     if (profile.contents === TYPES.RUIN_ENTRANCE) addRuinLayer(mapData, rng,
       allTiles.filter(tile => Math.hypot(tile.col - Number(mapData.exitCol), tile.row - Number(mapData.exitRow)) >= 3), blockedKeys, plan);
     if (profile.contents === TYPES.PUZZLE_CAVE)
-      addPuzzleCaveLayer(mapData, allTiles, blockedKeys, plan, rng); // Reserve its one real challenge before cavern geometry is rebuilt.
+      addPuzzleCaveLayer(mapData, allTiles, blockedKeys, plan, rng); // Dedicated cave gets its one challenge; ordinary caves may have separate hidden doors.
     if (clearanceFootprints.length) {
       window.CavernGenerator.expandCavernMapData(mapData, clearanceFootprints, makeRng(`${profile.signature}:clearance`));
       for (const key of solidTiles) blockedKeys.delete(key);
@@ -852,7 +933,9 @@
     // doesn't reshuffle loot in caves where no suitable chokepoint exists.
     const contents = profile.contents;
     const extensionRng = makeRng(`${profile.signature}:extension`); // Stable optional annex roll per cave incarnation.
-    if (contents !== TYPES.PUZZLE_CAVE && (contents === TYPES.TRAPPED_CACHE || (awayFromEntrance.length >= MIN_OPTIONAL_EXTENSION_FLOOR && extensionRng() < (EXTENSION_CHANCES[contents] || 0)))) {
+    const wantsRockPuzzle = contents !== TYPES.PUZZLE_CAVE && awayFromEntrance.length >= MIN_OPTIONAL_EXTENSION_FLOOR
+      && makeRng(profile.signature + ':puzzle-rock-roll')() < ROCK_PUZZLE_CHANCE; // Independent of ordinary cave contents and inhabitants.
+    if (contents !== TYPES.PUZZLE_CAVE && (wantsRockPuzzle || contents === TYPES.TRAPPED_CACHE || (awayFromEntrance.length >= MIN_OPTIONAL_EXTENSION_FLOOR && extensionRng() < (EXTENSION_CHANCES[contents] || 0)))) {
       installMineableSeparator(mapData, extensionRng, blockedKeys, plan);
     }
     if (contents === TYPES.ORE_MINE) addMineLayer(mapData, rng, awayFromEntrance, blockedKeys, plan);
@@ -924,6 +1007,49 @@
       addBanditLayer(mapData, rng, reachable, blockedKeys, plan);
     }
 
+    if (wantsRockPuzzle && plan.separator) {
+      const far = new Set(plan.separator.farKeys); // Only the rock wall's hidden side can contain the secret doorway.
+      const rocks = new Set((mapData.oreRocks || []).map(rock => tileKey(rock.col,rock.row)));
+      const wall = plan.separator.cells; // Existing five-layer mining barrier protects the puzzle entrance.
+      const candidates = awayFromEntrance.filter(tile =>
+        far.has(tileKey(tile.col,tile.row)) && !rocks.has(tileKey(tile.col,tile.row))
+        && hasFeatureClearance(tile,blockedKeys,1.55)
+        && !(mapData.exits || []).some(exit => (exit.tiles || []).some(pair => tileKey(pair[0],pair[1]) === tileKey(tile.col,tile.row)))
+      ).sort((a,b) => {
+        const distanceToWall = tile => Math.min(...wall.map(c => (tile.col-c.col)**2+(tile.row-c.row)**2));
+        return distanceToWall(a)-distanceToWall(b) || a.col-b.col || a.row-b.row;
+      });
+      if(candidates.length) {
+        const tile = candidates[0]; // First safe supported far-side floor tile, adjacent to the mined-through chamber.
+        const child = registerRockPuzzleSite(profile,tile); // Dedicated puzzle map; ordinary cave loot and occupancy remain untouched.
+        const nearestRock = wall.slice().sort((a,b) =>
+          ((a.col-tile.col)**2+(a.row-tile.row)**2)-((b.col-tile.col)**2+(b.row-tile.row)**2))[0]; // Model faces the mineable barrier rather than an arbitrary compass direction.
+        const facing = nearestRock ? Math.atan2(nearestRock.col-tile.col,nearestRock.row-tile.row)*180/Math.PI : 0;
+        plan.puzzleDoor = {id:'rock-puzzle-door-'+child.denId,col:tile.col,row:tile.row,targetMapId:child.mapId};
+        mapData.exits.push({
+          id:plan.puzzleDoor.id,label:'Hidden Stone Door',tiles:[[tile.col,tile.row]],
+          targetMap:child.mapId,targetSpotId:'den_exit',spawnCol:0,spawnRow:0,generateDoor:false, // Resolve the child's actual generated entrance instead of spawning at tile 0,0.
+        }); // Native building-to-building transitions, not NPC triggers or cave replacements.
+        addProp(mapData,{id:plan.puzzleDoor.id,key:'cliffDoor',col:tile.col,row:tile.row,
+          rotY:facing,scaleX:0.65,scaleZ:0.65,alwaysOpen:true});
+        blockedKeys.add(tileKey(tile.col,tile.row));
+      }
+    }
+    if(profile.contents === TYPES.PUZZLE_CAVE && Number.isFinite(mapData.exitCol) && Number.isFinite(mapData.exitRow)) {
+      mapData.entrySpots = {
+        ...(mapData.entrySpots || {}),
+        den_exit: { col: mapData.exitCol, row: mapData.exitRow },
+      }; // Cached and freshly generated Puzzle Caves use the same guaranteed-walkable SDF entrance instead of falling back to (0,0).
+    }
+    if(profile.contents === TYPES.PUZZLE_CAVE && profile.parentMapId && mapData.exits?.length) {
+      const exit = mapData.exits[0]; // Reciprocal transition returns into the ordinary cave, not out to the wilderness.
+      exit.targetMap = profile.parentMapId;
+      exit.targetSpotId = 'rock-puzzle-door-' + profile.denId; // Reciprocal owner resolves the parent's hidden-door exit even after a fresh scene load.
+      exit.spawnCol = Number(profile.returnCol) || 0;
+      exit.spawnRow = Number(profile.returnRow) || 0;
+      exit.label = 'Back to the cave';
+    }
+
     plan.outerRimTileCount = mapData.outerRimTiles?.length || 0;
     plan.wallHeightScale = mapData.cavernCarvedHeightScale || window.CavernGenerator?.caveShape?.().base || mapData.wallHeightScale || 1; // Peak carved height (ruin caves: at the door).
 
@@ -932,7 +1058,7 @@
     mapData.caveSitePlan = {
       shattercasks: clone(plan.shattercasks), separatorRock: plan.separator ? { col: plan.separator.col, row: plan.separator.row, cells: clone(plan.separator.cells), oreKind: plan.separator.oreKind } : null,
       banditSpawns: clone(plan.banditSpawns), bodies: clone(plan.bodies), traps: clone(plan.traps), cache: clone(plan.cache),
-      coffins: clone(plan.coffins), ruinEntrance: clone(plan.ruinEntrance), puzzleCave: clone(plan.puzzleCave), mushrooms: clone(plan.mushrooms), mineRockCount: plan.mineRocks.length,
+      coffins: clone(plan.coffins), ruinEntrance: clone(plan.ruinEntrance), puzzleCave: clone(plan.puzzleCave), puzzleDoor:clone(plan.puzzleDoor), mushrooms: clone(plan.mushrooms), mineRockCount: plan.mineRocks.length,
       extension: plan.separator ? { contentType: contents, hiddenTiles: plan.separator.farKeys.length } : null,
     };
     plansByMapId.set(String(mapId), plan);
@@ -1005,9 +1131,15 @@
   function restore(saved) {
     deferredSaveGeneration++;
     deferredSaveQueued = false;
+    for(const sites of outdoorPuzzleSitesByZone.values())for(const site of sites)sitesByMapId.delete(site.mapId);
+    for(const site of rockPuzzleSitesByParent.values())sitesByMapId.delete(site.mapId);
+    outdoorPuzzleSitesByZone.clear(); // A restored world must reroll its own cliff doors, not inherit the prior world's entrance registry.
+    rockPuzzleSitesByParent.clear(); // The restored parent profiles lazily recreate the correct hidden-door identities.
     savedCaveState = saved && typeof saved === 'object' && typeof saved.identity === 'string' && saved.sites && typeof saved.sites === 'object' ? clone(saved) : null;
     stateIdentity = null; // Next access reloads from the restored payload (or the legacy key).
     runtimeStateBySignature.clear();
+    for(const profiles of sitesByZone.values())for(const profile of profiles)
+      if(profile.contents!==TYPES.PUZZLE_CAVE) registerRockPuzzleSite(profile); // Rebind any already-loaded parent maps to their newly restored reciprocal door state.
   }
   function init(injectedDeps) { saveDeps = injectedDeps || null; }
 
@@ -1042,12 +1174,14 @@
     let changed = 0;
     const layout = zoneLayout(zoneId);
     for (const transition of layout?.transitions || []) {
+      if(transition?.puzzleCaveOnly)continue; // Inert cliff-door labels never become wildlife Den-Mother cave labels.
       if (!byMapId.has(transition?.targetMapId)) continue;
       const label = window.WildlifeSpawn?.denTurnoverStateForCavern?.(transition.targetMapId)?.name || 'Unexplored cave'; // Exterior labels reveal the name only after entry.
       if (transition.label !== label) { transition.label = label; changed++; }
     }
     const info = wildlifeDeps?.zoneScenes?.get?.(zoneId);
     for (const transition of info?.transitions || []) {
+      if(transition?.puzzleCaveOnly)continue; // Preserve dedicated stone-door labels in the live scene.
       if (!byMapId.has(transition?.targetMapId)) continue;
       const label = window.WildlifeSpawn?.denTurnoverStateForCavern?.(transition.targetMapId)?.name || 'Unexplored cave'; // Exterior labels reveal the name only after entry.
       if (transition.label !== label) { transition.label = label; changed++; }
@@ -1096,6 +1230,12 @@
     ensureStateLoaded();
     const profile = sitesByMapId.get(mapId); // Old signature's discovery/loot state must not follow the relocated cave slot.
     if (profile) runtimeStateBySignature.delete(profile.signature);
+    const child = rockPuzzleSitesByParent.get(mapId); // A relocated parent may not leave a walkable secret door behind.
+    if(child){
+      runtimeStateBySignature.delete(child.signature);
+      sitesByMapId.delete(child.mapId);
+      rockPuzzleSitesByParent.delete(mapId);
+    }
     for (const record of bodiesByMapId.get(mapId) || []) {
       const resident = wildlifeDeps?.hostileObjects?.has?.(record.entity) || devSpawnerDeps?.corpseObjects?.has?.(record.entity); // Wildlife renewal may already have removed this entity through the shared despawn owner.
       wildlifeDeps?.hostileObjects?.delete?.(record.entity);
@@ -1556,14 +1696,19 @@
     const zones = zoneId ? [String(zoneId)] : [...sitesByZone.keys()]; // Requested/all registered zones included in the mobile-readable diagnostic snapshot.
     const sites = zones.flatMap(id => sitesForZone(id));
     const currentArea = String(wildlifeDeps?.getCurrentArea?.() || '');
+    const cliffSites = zones.flatMap(id => outdoorPuzzleSitesByZone.get(id) || []); // Debug only the selected zone(s), not stale entrances from other regions.
+    const rockSites = [...rockPuzzleSitesByParent.values()].filter(site => zones.includes(site.zoneId)); // Count hidden doors separately from ordinary caves.
     return {
       ready: integrationsInstalled,
       currentArea,
-      latestChange: 'Puzzle Caves have mini-cliff entrances, exterior stone songs, area-scoped physical gates, and a carved interior melody/fire chamber. Solved state and pending trinket rewards persist.',
+      latestChange: 'Puzzle Caves are now separately rolled: plentiful inert cliff doors and optional secret stone doors behind ordinary caves\' mineable walls. Ordinary cave counts/loot/inhabitants are preserved.',
       groundFire: window.PersistentGroundFire?.debugSnapshot?.() || null,
       cliffEntrances: window.PuzzleCaveEntrances?.debugSnapshot?.() || null, // Mobile-accessible outside score, raised support and gate lock state. // Mobile-safe inspection of active fire without devtools.
       zoneCount: zones.length,
-      caveCount: sites.length,
+      caveCount: sites.length, // Ordinary caves only.
+      puzzleCaveCount: cliffSites.length + rockSites.length, // Separate from the ordinary cave count.
+      outdoorPuzzleCaveCount:cliffSites.length,
+      rockPuzzleCaveCount:rockSites.length,
       caves: sites.map(site => ({ mapId: site.mapId, zoneId: site.zoneId, denId: site.denId, contents: site.contents, inhabitant: site.inhabitant, label: site.discoveredLabel })),
       currentPlan: plansByMapId.has(currentArea) ? clone({
         profile: plansByMapId.get(currentArea).profile,
@@ -1591,6 +1736,7 @@
     TYPES,
     TYPE_LABELS,
     applyWorkspaceProfiles,
+    registerOutdoorPuzzleSites,
     exteriorPuzzleState,markExteriorPuzzleSolved,
     sitesForZone,
     profileForMapId,
@@ -1626,6 +1772,9 @@
       plansByMapId,
       sitesByZone,
       sitesByMapId,
+      outdoorPuzzleSitesByZone,
+      rockPuzzleSitesByParent,
+      registerRockPuzzleSite,
       hashSeed,
       generatedCaveName,
       runtimeStateBySignature,
