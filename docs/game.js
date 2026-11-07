@@ -6626,9 +6626,11 @@
         // (unlike a plane, no extra ±PI/2 twist) so the legs track whichever
         // dead-zone behavior currently governs the sprite instead of the
         // prism's own free-tracking groupRot.
-        if (c.avatarRef.legsPivot) { c.avatarRef.legsPivot.rotation.y = planeDelta; c.avatarRef.syncHandFrame?.(); } // Hands share the legs' yaw frame so free hands rest on the lateral axis.
+        // Behind-the-camera actors skip the procedural leg solve and hand-frame sync until they re-enter view; js/offscreen-rig-lod.js.
+        const rigInView = window.OffscreenRigLod.shouldAnimate(c, tx, ty + 0.8, tz, dt, Math.hypot(player.x - c.x, player.y - c.y) / TILE);
+        if (c.avatarRef.legsPivot) { c.avatarRef.legsPivot.rotation.y = planeDelta; if (rigInView) c.avatarRef.syncHandFrame?.(); } // Hands share the legs' yaw frame so free hands rest on the lateral axis.
         if (c.avatarRef.bodySinkActor && (Number(c.health) || 0) <= 0) window.ActorBodySink?.release(c.avatarRef.bodySinkActor); // A corpse stands back up; js/actor-body-sink.js.
-        if (c.avatarRef.legs) c.avatarRef.legs.update(dt, Math.hypot(c.vx || 0, c.vy || 0) / TILE, false, undefined, {
+        if (c.avatarRef.legs && rigInView) c.avatarRef.legs.update(dt, Math.hypot(c.vx || 0, c.vy || 0) / TILE, false, undefined, {
           combat: c.state === 'chase' || c.state === 'searching' || !!c._banditAction,
           lunging: !!c._banditLunging,
           airborne: (c._banditLungeHopCurrent || 0) > 0.03 || !!c._knockbackLedgeAir || !!c._knockbackLedgeFall,
@@ -7039,6 +7041,7 @@
         }
         window.WildlifeFoodWeb?.tickParticles?.(dt); // Integrates scene-owned dig clods even when their owner is out of visual range.
         const foodWebCtx = { zoneId: currentArea, tile: TILE, canOccupyAt, moveCreatureToward }; // Shared across the actor batch to avoid per-animal allocation.
+        window.OffscreenRigLod.beginFrame(camera); // One frustum per frame for the behind-camera rig skip in updateCreatureMesh.
         window.WildlifeVisualLod.beginFrame(); // Caps calm character-rig promotions during an entry burst; combatants always wake immediately.
         releasePreviousAreaCreatureTextures();
         currentHostilesFrame.length = 0;
