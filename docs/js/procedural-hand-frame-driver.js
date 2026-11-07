@@ -176,6 +176,9 @@
     if (ownedHolder?.parent) return ownedHolder;
     const flute = playerFluteTarget(record); // Actual holder comes from the mouth mount and follows head-relative pose changes.
     if (flute) return flute.holder;
+    if (playerKurrayaActive(record)) {
+      return global.KurrayaInstrument?.playerKurrayaHandTarget?.()?.holder || null; // Never let a Kurraya player note use a hidden last-weapon holder.
+    }
     if (gameDeps?.playerMesh && record.rig?.parent === gameDeps.playerMesh) {
       if (global.KurrayaInstrument?.fluteDiagnostics?.().active) return null; // The flute is loading: keep hands idle rather than grabbing the last weapon.
       return gameDeps.toolHolder || null;
@@ -646,6 +649,9 @@
       const toolKey = currentToolKey(record);
       const gripContext = currentGripContext(record);
       const scaleIdentity = { speciesId: record.speciesId, gender: record.gender, rigScaleY: Number(record.avatarRoot?.userData?.proceduralHandRigScaleY) || null }; // Authored per-enemy body height (Maskbound troops), so grip targets match the resized weapon. Used by grip targets so they expand with the same calculated-height weapon scale as the visible item.
+      if (playerKurrayaActive(record)) {
+        scaleIdentity.animationGripState = global.KurrayaInstrument?.playerGripAnimationState?.() || null; // Kurraya notes, not the last weapon swing, own 2H span interpolation.
+      }
       if (record.avatarRoot?.userData?.proceduralHandToolHolder) {
         scaleIdentity.animationGripState = record.avatarRoot.userData.proceduralHandAnimationGrip ?? null; // Each NPC’s own animation gates both ranges; idle NPCs stay 1H.
       }
