@@ -86,7 +86,7 @@
           !!tile && Number.isFinite(surface(tile, opts)) && surface(tile, opts) > shelf.y + 0.2;
         const boundary = !!tile && (tile.incline || tile.type === 'rock' || tile.type === 'wall') &&
           !opts.isBoundary?.(tile);
-        if (parent) footprint.push({ c: col, r, elevation: groundY });
+        if (parent) footprint.push({ c: col, r, elevation: groundY, parentElevation: surface(tile, opts) }); // Keep the owning plateau's real surface without retaining generation callbacks.
         if (boundary) boundaryCells.push({ c: col, r, elevation: groundY });
         for (const dx of [0.25, 0.5, 0.75]) for (const dz of [0.25, 0.5, 0.75]) {
           if (!shelfContains(original, col + dx, r + dz)) continue;
@@ -226,85 +226,85 @@
           const depth = baseDepth + 1; // Maximum profile depth: one extra tile, used for bounds/obstacle broadphase.
           const preferredSide = j % 2 ? -1 : 1; // Alternate sides on tall routes.
           placement: for (const width of widthOptions) {
-          for (const side of [preferredSide, -preferredSide]) {
-            const along = side * (width / 2 + 0.65); // Center offset leaves space for the climber at the side edge.
-            const face = opts.sampleFace?.(c, anchor.x + tan.x * along, anchor.y, anchor.z + tan.z * along);
-            if (opts.sampleFace && !face) continue;
-            const faceX = face?.x ?? anchor.x + tan.x * along; // Intersect the cliff at the shelf's own lateral position.
-            const faceZ = face?.z ?? anchor.z + tan.z * along;
-            const oldIndex = clamp(Math.round(oldSpans * (j + 1) / (count + 1)), 2, oldSpans - 2);
-            const savedHeight = Math.round((c.y0 + h * oldIndex / oldSpans) * 100); // Keep existing reward state for surviving shelves.
-            const shelf = {
-              id: 'cliff-balcony-' + [c.a.c, c.a.r, c.b.c, c.b.r, savedHeight, j].join('-'),
-              routeId: id, nodeId: nodes.length,
-              x: faceX + normal.x * (depth / 2 - 0.32),
-              z: faceZ + normal.z * (depth / 2 - 0.32),
-              y: anchor.y,
-              width, depth, overhangDepths, // Left, center, right front-edge depths drive geometry and walkable support.
-              contourOffsets: width > 4 ? [0, ((hash(c.a.c, c.a.r, 69 + j) % 7) - 3) * 0.085, 0] : [0, 0, 0], // Only longer bodies bend around a contour.
-              tangent: tan, normal, footprint: [], // Tile/elevation cells never overwrite the ordinary ground grid.
-              reward: hash(c.a.c, c.a.r, 94 + j) % 2 ? 'buriedTreasure' : 'oreRock',
-            };
-            const capOutline = [[-1,-1],[0,-1],[1,-1],[1,1],[0,1],[-1,1]]
-              .map(([u,v]) => miniCliffTopPoint(shelf, u, v)); // Used for exact cap/tile overlap rather than sampled misses.
-            const minCol = Math.max(0, Math.floor(Math.min(...capOutline.map(p => p[0]))));
-            const maxCol = Math.min(cols - 1, Math.floor(Math.max(...capOutline.map(p => p[0]))));
-            const minRow = Math.max(0, Math.floor(Math.min(...capOutline.map(p => p[2]))));
-            const maxRow = Math.min(rows - 1, Math.floor(Math.max(...capOutline.map(p => p[2]))));
-            for (let rr = minRow; rr <= maxRow; rr++) for (let cc = minCol; cc <= maxCol; cc++) {
-              // Include all touched floor cells, even slivers narrower than a
-              // probe grid. The final support still uses exact shelfContains.
-              if (miniCliffTouchesCell(shelf, capOutline, cc, rr))
-                shelf.footprint.push({ c: cc, r: rr, elevation: shelf.y });
-            }
-            // Projecting ledges may overhang lower terrain, but not the entire
-            // playable map. Skip the optional shelf rather than create a half-
-            // supported floor outside the world's collision bounds.
-            const fitsMap = [-1, 0, 1].every(u => [-1, 1].every(v => {
-              const point = miniCliffTopPoint(shelf, u, v); // Exact stepped perimeter, not the bounding rectangle.
-              return point[0] >= 0.05 && point[2] >= 0.05 && point[0] <= cols - 0.05 && point[2] <= rows - 0.05;
-            }));
-            if (!fitsMap || !shelf.footprint.length) continue;
-            // The unshifted ground-rooted body must remain embedded in
-            // the upper plateau and must never act as a second walkable surface.
-            shelf.base = embeddedMiniCliffBase(c, shelf, grid, component, cols, rows, opts, groundY);
-            if (!shelf.base) continue;
-            shelf.projectionTiles = shelf.base.projectionTiles; // Exact normal displacement of its original top.
-            const landing = {
-              id: shelf.nodeId, y: shelf.y, links: [idx], balconyId: shelf.id,
-              x: shelf.x - tan.x * side * (width / 2 - 0.06),
-              z: shelf.z - tan.z * side * (width / 2 - 0.06),
-            }; // A lateral hop lands just inside the cap, clear of its center reward.
-            const halfX = (Math.abs(tan.x) * width + Math.abs(normal.x) * depth) / 2; // Cardinal cap bounds.
-            const halfZ = (Math.abs(tan.z) * width + Math.abs(normal.z) * depth) / 2;
-            const capBlocked = obstacles.some(rect => rect.x < shelf.x + halfX + 0.35 && rect.x + rect.w > shelf.x - halfX - 0.35 &&
-              rect.y < shelf.z + halfZ + 0.35 && rect.y + rect.h > shelf.z - halfZ - 0.35);
-            const capBounds = [{ x: shelf.x - halfX, y: shelf.z - halfZ, w: halfX * 2, h: halfZ * 2 }];
-            const shelfBlocksRoute = routes.some(other => {
-              if (other.id === route.id) return false; // A ledge must not reject its own connecting handholds.
-              if (Math.abs(other.a.c + 0.5 - shelf.x) >= 9 || Math.abs(other.a.r + 0.5 - shelf.z) >= 9) return false;
-              return other.nodes.some(from => from.links.some(index => {
-                if (index <= from.id) return false;
-                const to = other.nodes[index];
-                if (Math.min(from.y, to.y) > shelf.y + 0.2 || Math.max(from.y, to.y) < shelf.y - 0.85) return false; // Lower climbing routes may pass underneath the overhanging lid.
-                return crossesObstacle(from, to, capBounds, 0.25);
+            for (const side of [preferredSide, -preferredSide]) {
+              const along = side * (width / 2 + 0.65); // Center offset leaves space for the climber at the side edge.
+              const face = opts.sampleFace?.(c, anchor.x + tan.x * along, anchor.y, anchor.z + tan.z * along);
+              if (opts.sampleFace && !face) continue;
+              const faceX = face?.x ?? anchor.x + tan.x * along; // Intersect the cliff at the shelf's own lateral position.
+              const faceZ = face?.z ?? anchor.z + tan.z * along;
+              const oldIndex = clamp(Math.round(oldSpans * (j + 1) / (count + 1)), 2, oldSpans - 2);
+              const savedHeight = Math.round((c.y0 + h * oldIndex / oldSpans) * 100); // Keep existing reward state for surviving shelves.
+              const shelf = {
+                id: 'cliff-balcony-' + [c.a.c, c.a.r, c.b.c, c.b.r, savedHeight, j].join('-'),
+                routeId: id, nodeId: nodes.length,
+                x: faceX + normal.x * (depth / 2 - 0.32),
+                z: faceZ + normal.z * (depth / 2 - 0.32),
+                y: anchor.y,
+                width, depth, overhangDepths, // Left, center, right front-edge depths drive geometry and walkable support.
+                contourOffsets: width > 4 ? [0, ((hash(c.a.c, c.a.r, 69 + j) % 7) - 3) * 0.085, 0] : [0, 0, 0], // Only longer bodies bend around a contour.
+                tangent: tan, normal, footprint: [], // Tile/elevation cells never overwrite the ordinary ground grid.
+                reward: hash(c.a.c, c.a.r, 94 + j) % 2 ? 'buriedTreasure' : 'oreRock',
+              };
+              const capOutline = [[-1,-1],[0,-1],[1,-1],[1,1],[0,1],[-1,1]]
+                .map(([u,v]) => miniCliffTopPoint(shelf, u, v)); // Used for exact cap/tile overlap rather than sampled misses.
+              const minCol = Math.max(0, Math.floor(Math.min(...capOutline.map(p => p[0]))));
+              const maxCol = Math.min(cols - 1, Math.floor(Math.max(...capOutline.map(p => p[0]))));
+              const minRow = Math.max(0, Math.floor(Math.min(...capOutline.map(p => p[2]))));
+              const maxRow = Math.min(rows - 1, Math.floor(Math.max(...capOutline.map(p => p[2]))));
+              for (let rr = minRow; rr <= maxRow; rr++) for (let cc = minCol; cc <= maxCol; cc++) {
+                // Include all touched floor cells, even slivers narrower than a
+                // probe grid. The final support still uses exact shelfContains.
+                if (miniCliffTouchesCell(shelf, capOutline, cc, rr))
+                  shelf.footprint.push({ c: cc, r: rr, elevation: shelf.y });
+              }
+              // Projecting ledges may overhang lower terrain, but not the entire
+              // playable map. Skip the optional shelf rather than create a half-
+              // supported floor outside the world's collision bounds.
+              const fitsMap = [-1, 0, 1].every(u => [-1, 1].every(v => {
+                const point = miniCliffTopPoint(shelf, u, v); // Exact stepped perimeter, not the bounding rectangle.
+                return point[0] >= 0.05 && point[2] >= 0.05 && point[0] <= cols - 0.05 && point[2] <= rows - 0.05;
               }));
-            });
-            const landingFace = opts.sampleFace?.(c, landing.x, landing.y, landing.z);
-            if (opts.sampleFace && (!landingFace ||
-                (landing.x - landingFace.x) * normal.x + (landing.z - landingFace.z) * normal.z < 0.08)) continue;
-            const hopClear = legalHop(anchor, landing, obstacles); // A landing 0.06 tile inside the edge remains within one climb hop.
-            const faceClear = clearOfFace(anchor, landing, c, normal, opts.sampleFace); // Avoid wall penetration when using the actual sampled rock mesh.
-            if (capBlocked || shelfBlocksRoute || !hopClear || !faceClear) {
-              for (const [reason, fails] of Object.entries({ capBlocked, shelfBlocksRoute, hopTooFar: !hopClear, faceBlocked: !faceClear }))
-                if (fails) shelfRejections[reason] = (shelfRejections[reason] || 0) + 1; // Quality inspector reports the actual obstacle reason.
-              continue;
+              if (!fitsMap || !shelf.footprint.length) continue;
+              // The unshifted ground-rooted body must remain embedded in
+              // the upper plateau and must never act as a second walkable surface.
+              shelf.base = embeddedMiniCliffBase(c, shelf, grid, component, cols, rows, opts, groundY);
+              if (!shelf.base) continue;
+              shelf.projectionTiles = shelf.base.projectionTiles; // Exact normal displacement of its original top.
+              const landing = {
+                id: shelf.nodeId, y: shelf.y, links: [idx], balconyId: shelf.id,
+                x: shelf.x - tan.x * side * (width / 2 - 0.06),
+                z: shelf.z - tan.z * side * (width / 2 - 0.06),
+              }; // A lateral hop lands just inside the cap, clear of its center reward.
+              const halfX = (Math.abs(tan.x) * width + Math.abs(normal.x) * depth) / 2; // Cardinal cap bounds.
+              const halfZ = (Math.abs(tan.z) * width + Math.abs(normal.z) * depth) / 2;
+              const capBlocked = obstacles.some(rect => rect.x < shelf.x + halfX + 0.35 && rect.x + rect.w > shelf.x - halfX - 0.35 &&
+                rect.y < shelf.z + halfZ + 0.35 && rect.y + rect.h > shelf.z - halfZ - 0.35);
+              const capBounds = [{ x: shelf.x - halfX, y: shelf.z - halfZ, w: halfX * 2, h: halfZ * 2 }];
+              const shelfBlocksRoute = routes.some(other => {
+                if (other.id === route.id) return false; // A ledge must not reject its own connecting handholds.
+                if (Math.abs(other.a.c + 0.5 - shelf.x) >= 9 || Math.abs(other.a.r + 0.5 - shelf.z) >= 9) return false;
+                return other.nodes.some(from => from.links.some(index => {
+                  if (index <= from.id) return false;
+                  const to = other.nodes[index];
+                  if (Math.min(from.y, to.y) > shelf.y + 0.2 || Math.max(from.y, to.y) < shelf.y - 0.85) return false; // Lower climbing routes may pass underneath the overhanging lid.
+                  return crossesObstacle(from, to, capBounds, 0.25);
+                }));
+              });
+              const landingFace = opts.sampleFace?.(c, landing.x, landing.y, landing.z);
+              if (opts.sampleFace && (!landingFace ||
+                  (landing.x - landingFace.x) * normal.x + (landing.z - landingFace.z) * normal.z < 0.08)) continue;
+              const hopClear = legalHop(anchor, landing, obstacles); // A landing 0.06 tile inside the edge remains within one climb hop.
+              const faceClear = clearOfFace(anchor, landing, c, normal, opts.sampleFace); // Avoid wall penetration when using the actual sampled rock mesh.
+              if (capBlocked || shelfBlocksRoute || !hopClear || !faceClear) {
+                for (const [reason, fails] of Object.entries({ capBlocked, shelfBlocksRoute, hopTooFar: !hopClear, faceBlocked: !faceClear }))
+                  if (fails) shelfRejections[reason] = (shelfRejections[reason] || 0) + 1; // Quality inspector reports the actual obstacle reason.
+                continue;
+              }
+              nodes.push(landing);
+              nodes[idx].links.push(shelf.nodeId);
+              balconies.push(shelf);
+              break placement; // One successful ledge per height; first try the longer body, then a slim fallback.
             }
-            nodes.push(landing);
-            nodes[idx].links.push(shelf.nodeId);
-            balconies.push(shelf);
-            break placement; // One successful ledge per height; first try the longer body, then a slim fallback.
-          }
           }
         }
       }
@@ -317,7 +317,7 @@
     const connectedRoots = new Set(components.map((_, i) => find(i)));
     const network = { area: opts.area || null, grid, cols, rows, components, component, routes, balconies, adjacency,
       miniBaseStats: { accepted:debug.miniBasesAccepted, rejected:debug.miniBasesRejected, lastFailure:debug.lastMiniBaseFailure, shelfRejections }, // In-game generator debug export.
-      unconnectedComponents: Math.max(0, connectedRoots.size - 1), candidateCount: candidates.length, rejectedRoutes, options: opts };
+      unconnectedComponents: Math.max(0, connectedRoots.size - 1), candidateCount: candidates.length, rejectedRoutes };
     // Adapt ShaftHub.reachable(): walking components, legal climbing links,
     // and every balcony node must be reachable from some ground entrance.
     network.verification = verifyReachability(network);
@@ -436,7 +436,7 @@
       .filter(s => !s.base?.footprint?.length || s.base.footprint.some(cell =>
         componentAt(network, cell.c, cell.r) !== s.base.parentComponent ||
         !(s.y - s.base.neighborY >= MIN_MINI_CLIFF_HEIGHT - 0.001) ||
-        !(s.y < surface(network.grid[cell.r]?.[cell.c], network.options || {})) ||
+        !(s.y < cell.parentElevation) ||
         !(cell.elevation <= s.base.y + 0.001)) ||
         !Number.isInteger(s.base?.projectionTiles) || s.base.projectionTiles < 1 || s.base.projectionTiles > 3 ||
         s.base.parentCoverage < 0.54 || s.base.embeddedCoverage < 0.72) // The original body must remain mostly buried in its parent.
@@ -812,6 +812,7 @@
       unreachableBalconies: n.verification?.unreachableBalconies?.length ?? null,
       invalidHops: n.verification?.invalidHops?.length ?? null,
       invalidEmbeddedBases: n.verification?.invalidEmbeddedBases?.length ?? null,
+      miniBaseStats: n.miniBaseStats, // Mobile diagnostics: area coverage and reasons why a tiny plateau could not be grown.
     })) }),
   });
 });
