@@ -234,7 +234,8 @@
     mesh.userData.caveCarvedDoorOpening=true;
     mesh.userData.caveSeparatorHeight=wall.height;
     mesh.userData.devRuinFootprintIgnore=true; // Existing gate blocker remains the sole authority for movement and pathfinding.
-    window.OreRockTextures?.fitRockMesh?.(mesh);
+    // Do not run OreRockTextures.fitRockMesh here: it marks this real cavern wall as legacy-UV ore,
+    // suppressing the natural-surface mapping metadata that matches the surrounding cave shell.
     parent.add(mesh);
     return mesh;
   }
