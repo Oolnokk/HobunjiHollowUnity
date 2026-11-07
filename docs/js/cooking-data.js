@@ -1418,6 +1418,16 @@
         "Pungent Paste"
       ]
     },
+    "mootMeat": { // Northern Cliffs Moot: ordinary meat, using the existing food-processing paths.
+      "id": "mootMeat",
+      "name": "Moot Meat",
+      "categories": ["meat"],
+      "quality": 2,
+      "baseBoost": 1,
+      "processingTier": "raw",
+      "primaryEffect": "speed",
+      "tags": ["Meat", "Moot"]
+    },
     "voorgAssMeat": {
       "id": "voorgAssMeat",
       "name": "Voorg-Ass Meat",
@@ -2711,6 +2721,7 @@
     "nazgrakuMeat": "Nazgraku",
     "drenkirraMeat": "Drenkirra",
     "grehlrMeat": "Grehlr",
+    "mootMeat": "Moot",
     "voorgAssMeat": "Voorg-Ass",
     "smokedMeat": "Smoked Meat",
     "riverFish": "Northern River Fish",

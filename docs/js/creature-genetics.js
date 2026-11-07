@@ -216,6 +216,7 @@
     drenkirra: ['bodystripes', 'spectacles'],
     puktuk: ['belly', 'foxtail'],
     'voorg-ass': ['belly'],
+    moot: [], // Moot inherits its single coat color and Size without requiring unauthored pattern sprites.
     uumkaoii: ['shell'], // Permanent shell over a recolorable base; replaces the old fur/plates pair.
     nelk: ['brushtail', 'cape', 'spectacles'],
     nazgraku: ['spectacles'],
@@ -295,6 +296,7 @@
   const CREATURE_SIZE_PROFILE_ALIAS = {
     puktuk: 'gar-wolf',
     'voorg-ass': 'uumkaoii',
+    moot: 'uumkaoii', // Temporary floor/size calibration fallback until a Moot-specific attachment rig is authored.
   }; // Compatibility fallback only; a species' own authored profile always wins when present.
   // Picks two fur colors that read as visually distinct — same rejection-
   // sample loop as the HTML lab's pickTwoFurColors().

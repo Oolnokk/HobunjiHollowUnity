@@ -200,7 +200,7 @@
        Load once before all NPC interaction modules, including lazy runtimes. -->
   <script src="js/npc-interaction-policy.js?v=20261021fey1"></script>
   <!-- Reusable movement/tool/action suppression for synchronized character interactions. -->
-  <script src="js/character-action-locks.js?v=20261107h97151f8"></script>
+  <script src="js/character-action-locks.js?v=20261107mootreview2"></script>
   <!-- NPC action-lock and alcohol-impairment presentation adapter. -->
   <script src="js/npc-character-state.js?v=20261021-npcsafety-rebased1"></script>
   <script src="js/npc-movement-head-target.js?v=20261101rugchairbednpc3"></script> <!-- Shared invisible movement gaze for allied NPC walkers and humanoid hostiles. -->
@@ -228,7 +228,8 @@
        doesn't itself depend on it (each reads genotype data, not each
        other), but they're a matched pair. -->
   <script src="js/voorg-ass-registration.js?v=20261027h7e25ded"></script> <!-- Shared Voorg-Ass creature/renderer/herd registration used by the three scripts below. -->
-  <script src="js/creature-genetics.js?v=20261029h86f0973"></script>
+  <script src="js/moot-registration.js?v=20261107mootreview1"></script> <!-- Moot surface-wildlife and farm-baby registration; config must precede the main game snapshot. -->
+  <script src="js/creature-genetics.js?v=20261107moot2"></script>
   <script src="js/animal-hides.js?v=20261102-animalhides2"></script> <!-- Per-unit genetics, rarity, price, and save data for butchered hides. -->
   <!-- Creature genotype recolor + pattern-overlay compositing. -->
   <script src="js/creature-texture-cache.js?v=20261105h5c6c35c"></script>
@@ -422,7 +423,7 @@
   <!-- Wearer-only trinket hooks: imported from PR #1421 and child #1426, before Combat.init in game.js. -->
   <script src="js/combat/specialized-combat-trinket-hooks.js?v=20261106trinkets20"></script>
   <script src="js/combat/double-edged-combat-trinkets.js?v=20261106trinkets20"></script>
-  <script src="js/cooking-data.js?v=20261107h2eeee50"></script>
+  <script src="js/cooking-data.js?v=20261107moot2"></script>
   <script src="js/food-processing.js?v=20261015hc6ddbcf"></script>
   <script src="js/cooking-system.js?v=20261105tzEgg1"></script>
   <script src="js/key-item-system.js?v=20260918banubu1"></script>
@@ -470,11 +471,11 @@
        global by then), so load order relative to the other systems above
        doesn't matter; must load before game.js, which calls
        window.FarmAnimals.init(...) during its own setup. -->
-  <script src="js/farm-production.js?v=20261107cultivarColor3"></script>
+  <script src="js/farm-production.js?v=20261107moot2"></script>
   <script src="js/honeyfuzzle-house.js?v=20261026honeyEggGenes3"></script> <!-- Honeyfuzzle House: 1x1 egg/swarm slot on a FarmProduction entry; hooked by farm-production.js, initialised by game.js. -->
   <script src="js/farm-layout-editor.js?v=20261016a"></script>
   <script src="js/world-meta-store.js?v=20261102h9d8381e"></script>
-  <script src="js/farm-animals.js?v=20261107devcoat1"></script>
+  <script src="js/farm-animals.js?v=20261107mootreview1"></script>
   <!-- Farm buildings: barn placement/construction/demolition
        (window.FarmBuildings) — self-contained aside from deps injected
        via init(), and reads window.FarmAnimals at call time (already
@@ -489,7 +490,7 @@
        global by then), so load order relative to the other systems above
        doesn't matter; must load before game.js, which calls
        window.FarmTroughs.init(...) during its own setup. -->
-  <script src="js/farm-troughs.js?v=20261103crt2"></script>
+  <script src="js/farm-troughs.js?v=20261107mootreview1"></script>
   <!-- Modular player house (window.HousePieces) — barn-shaped foundation/
        build/demolish pipeline for house-piece deeds bought from the
        Carpenter, replacing the old singular Highland House GLB. Depends on
@@ -710,7 +711,7 @@
        at call time (already global by then), so load order relative to the
        other systems above doesn't matter; must load before game.js, which
        calls window.WildlifeSpawn.init(...) during its own setup. -->
-  <script src="js/wildlife-spawn.js?v=20261106tzNestBoss1"></script>
+  <script src="js/wildlife-spawn.js?v=20261107mootreview2"></script>
   <!-- Town/zone building mesh spawning + decorative furniture/prop spawning
        (window.TownZoneBuildings) — reads globally-loaded HousePieceGen/
        WallBuilder/BuildingDoor/window.ProceduralFurniture/window.Music at
