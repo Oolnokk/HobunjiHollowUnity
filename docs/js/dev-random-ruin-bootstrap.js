@@ -48,7 +48,7 @@
   document.write('<script src="js/dev-random-ruin-rope-variants.js?v=20261106h1a72ad5"></scr' + 'ipt>'); // Pump-to-height and rope-to-rope standalone rope rooms.
   document.write('<script src="js/dev-random-ruin-rail-targets.js?v=20261018sconceaudit2"></scr' + 'ipt>'); // Ceiling-rail projectile targets that emerge from the walls while the player is in their room.
   document.write('<script src="js/dev-random-ruin-target-hum.js?v=20261018targethum1"></scr' + 'ipt>'); // Proximity hum on every unstruck projectile target.
-  document.write('<script src="js/dev-random-ruin-sanctum.js?v=20261107shaftdoor1"></scr' + 'ipt>'); // Braziers, Great Door, boss sanctum + vault (simple-puzzle composer).
+  document.write('<script src="js/dev-random-ruin-sanctum.js?v=20261107unifiedShaft1"></scr' + 'ipt>'); // Braziers, Great Door, boss sanctum + vault (simple-puzzle composer).
   if(!window.RootSnareHands)document.write('<script src="js/root-snare-hands.js?v=20261101hachutu1"></scr' + 'ipt>'); // Reuse the real Root Growth Author three-digit hands for the playable Hachutu labyrinth.
   document.write('<script src="js/root-snare-runner.js?v=20261101fullbody1"></scr' + 'ipt>'); // Reuses the author preview's exact 1.5 + 1.5 + 3-second tug curve.
   document.write('<script src="js/root-snare-toss.js?v=20261101fullbody1"></scr' + 'ipt>'); // Baked renderable-only tumbling halves, no gameplay bone reparenting.
@@ -56,7 +56,7 @@
   document.write('<script src="js/dev-hachutu-ruin.js?v=20261102hachuturoots1"></scr' + 'ipt>'); // Separate dev-only stone-age encounters, moving vine rooms and Maskbound Temple Heart.
   document.write('<script src="js/dev-hachutu-vestibule-stone.js?v=20261102vestibulestone1"></scr' + 'ipt>'); // Re-skins the Hachutu vestibule doors the root binding did not take with stone-age rock.
   document.write('<script src="js/dev-random-ruin-lich-themes.js?v=20261104azgarlu3"></scr' + 'ipt>'); // Lich-specific floor/wall illumination and disposable ruin hazard composer.
-  document.write('<script src="js/dev-random-ruin-dungeon-fire.js?v=20261106hd568d31"></scr' + 'ipt>'); // One-shot ranged ignition, ice/plasm mechanisms, and modular ceiling Burdens.
+  document.write('<script src="js/dev-random-ruin-dungeon-fire.js?v=20261107unified1"></scr' + 'ipt>'); // One-shot ranged ignition, ice/plasm mechanisms, and modular ceiling Burdens.
   document.write('<script src="js/dev-random-ruin-interactions.js?v=20261104hba6f3e8"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-glyph-circuits.js?v=20261104glyphSync1"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-runtime-coverage.js?v=20261018badge1"></scr' + 'ipt>');

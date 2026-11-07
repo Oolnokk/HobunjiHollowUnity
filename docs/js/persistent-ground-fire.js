@@ -34,7 +34,7 @@
     }
     return campfireTemplatePromise;
   }
-  function attachCampfireFlame(anchor,{scale=1,rateScale=1}={}) {
+  function attachCampfireFlame(anchor,{scale=1,rateScale=1,colorA=null,colorB=null}={}) {
     if(!anchor?.add)return null;
     const state={anchor,visual:null,disposed:false}; // One independent renderer for each attached patch location or stone sconce.
     ensureCampfireTemplate().then(source=>{
@@ -42,6 +42,8 @@
       const emitter=JSON.parse(JSON.stringify(source)); // Do not mutate the campfire authoring shared with the player's campfire.
       delete emitter.attachedPartId; // An independent fire anchor does not contain the campfire ash furniture part.
       emitter.id='puzzle_campfire_flame';
+      if(typeof colorA==='string'&&/^#[0-9a-f]{6}$/i.test(colorA))emitter.colorA=colorA; // Theme-only tint; particle motion is still the player's authored campfire.
+      if(typeof colorB==='string'&&/^#[0-9a-f]{6}$/i.test(colorB))emitter.colorB=colorB; // Keep optional blue/green variant on the same shared fire template.
       emitter.position={x:0,y:0,z:0};
       emitter.radius=Math.max(.025,Number(source.radius||.13)*scale);
       emitter.size=Math.max(.04,Number(source.size||.19)*scale);
