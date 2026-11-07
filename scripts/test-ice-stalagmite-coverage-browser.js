@@ -117,6 +117,20 @@ const server = http.createServer((request, response) => {
         smallIce?.recipe?.radius < placement?.recipe?.radius; // The same builder supports full and ordinary-sized door leaves.
       const coveringDoorFace = anchors && anchors.some((value, i) => i % 3 === 0 && Math.abs(value) < 1); // Geometry anchors are door-local; engulf must cover the leaf face, not only its outer corners.
 
+      const ceilingParent=new T.Group(); // Same standalone fixture shape as icicles trapping a dungeon burden.
+      const hanging=window.IceStalagmiteCoverage.buildCeiling(T,ceilingParent,{
+        width:.92,depth:.92,height:1.7,recipe:window.DungeonDoorIceCoverage.scaledRecipe(1.7,'ceiling-browser',{
+          count:20,density:1,iceHeightMin:1.2,iceHeightMax:1.7,radius:.25,
+        })
+      }); // Tests the real Furniture Editor growth builder, rotated upside down for ceiling use.
+      const ceilingBounds=hanging&&new T.Box3().setFromObject(hanging.root);
+      const ceilingDown=!!hanging&&hanging.root.rotation.x===Math.PI &&
+        hanging.layer.userData.surfaceGrowthStats.spikes>0 &&
+        ceilingBounds.max.y<=.04&&ceilingBounds.min.y<-.9&&ceilingParent.children.length===1;
+      const ceilingRetract=!!hanging&&window.IceStalagmiteCoverage.setGrowth(hanging.layer,0) &&
+        hanging.layer.children.every(child=>child.visible===false);
+      const ceilingRestore=!!hanging&&window.IceStalagmiteCoverage.setGrowth(hanging.layer,1) &&
+        hanging.layer.children.some(child=>child.visible!==false); // Reversible growth persists even when the layer is inverted.
       let readyCallbacks = 0; // Ensures a preexisting source-ready handler isn't lost to the ice lifecycle.
       window.ProceduralFurniture = { buildPartMesh() {
         const driver = new T.Mesh(new T.BoxGeometry(.001, .001, .001), new T.MeshBasicMaterial());
@@ -143,7 +157,7 @@ const server = http.createServer((request, response) => {
       window.rebuildSurfaceFoliage = () => foliage.applySurfaceGrowth(window.root, window.state.surfaceGrowth);
       window.queueUndoHistory = () => { window.undoCalls = (window.undoCalls || 0) + 1; };
       window.log = () => {};
-      return {normalized: recipe, initialStats, minY, maxY, minX, maxX, stable, persisted, missingTargetEmpty, capped, cleaned, selfTest, initialGlbEmpty, glbAfterReady, glbReadyPreservesCallback, sourceDimensions, generatedDoorIce, midpointCorrect, fullyMelted, restoredDoorIce, scaledSmallDoor, coveringDoorFace};
+      return {normalized: recipe, initialStats, minY, maxY, minX, maxX, stable, persisted, missingTargetEmpty, capped, cleaned, selfTest, initialGlbEmpty, glbAfterReady, glbReadyPreservesCallback, sourceDimensions, generatedDoorIce, midpointCorrect, fullyMelted, restoredDoorIce, scaledSmallDoor, coveringDoorFace,ceilingDown,ceilingRetract,ceilingRestore};
     });
     assert.equal(geometryResult.normalized.kind, 'iceStalagmites', 'Normalization must retain the ice kind');
     assert.equal(geometryResult.normalized.iceFacets, 6, 'Ice-only settings must survive the common JSON schema');
@@ -160,6 +174,8 @@ const server = http.createServer((request, response) => {
     assert(Math.abs(geometryResult.sourceDimensions.radius - .5) < .0001, 'Boss-door reference must retain its .5-unit base radius');
     assert(geometryResult.scaledSmallDoor && geometryResult.coveringDoorFace,
       'Any eligible door size must inherit scaled ice and engulf its actual leaf surface');
+    assert(geometryResult.ceilingDown && geometryResult.ceilingRetract && geometryResult.ceilingRestore,
+      'Ceiling ice must grow downward from the ceiling using real authored Furniture Editor facets and reversible growth');
     assert(geometryResult.initialGlbEmpty && geometryResult.glbAfterReady && geometryResult.glbReadyPreservesCallback, 'Imported GLB should gain ice after load and retain source-ready callbacks');
 
     await page.evaluate(() => {
