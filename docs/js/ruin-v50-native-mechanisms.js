@@ -256,6 +256,7 @@
             block.position.set(Number(next.x),Number(next.y)||0,Number(next.z));
           }
           step++;
+          host.RuinInteractionAudio?.activator?.(block); // The authored V50 push block emits one impact per successful move.
           api.syncPressurePlates(nativeRoot);
           onStateChange?.();
         }});
@@ -299,12 +300,17 @@
       for(const state of states.values()){
         const d=state.object.userData,plate=d.linkedPressurePlateRoot,cubes=d.linkedCubePuzzleRoot;
         const plateValue=Number(plate?.userData?.weightProgress),cubeValue=Number(cubes?.userData?.solveProgress);
+        if(plate)host.RuinInteractionAudio?.watchPlate?.(plate,plateValue>.5); // Shared edge tracker avoids duplicate activation sounds from stacked-floor readers.
         let desired=state.target;
         if(plate&&Number.isFinite(plateValue))desired=plateValue;
         else if(cubes&&Number.isFinite(cubeValue))desired=cubeValue;
         state.solved=desired>.95; // Real V50 solution signal drives the visible mechanism; never use the substitute wing stage to solve it.
         state.progress+=clamp(desired-state.progress,-step*1.55,step*1.55);
         if(Math.abs(state.progress-desired)<.001)state.progress=desired;
+        const soundSource=state.motion==='stoneDoor'
+          ?(state.object.children||[]).find(child=>child.isMesh&&child.geometry)||state.object
+          :state.object; // Size follows the physical moving door panel, not its decorative frame.
+        host.RuinInteractionAudio?.watchMovement?.(soundSource,state.progress);
         state.reapplyAfter-=step;
         if(state.lastApplied!==state.progress||state.reapplyAfter<=0){
           api.applyProgress(state.object,state.progress);
@@ -340,6 +346,7 @@
       }
       for(const state of inventory.transitDoors){
         state.open+=clamp(state.target-state.open,-step*2.4,step*2.4);
+        host.RuinInteractionAudio?.watchMovement?.(state.panel,state.open); // Sound door travel rather than reapplying an unchanged pose.
         state.panel.position.y=state.closed+(state.height+.12)*(state.open*state.open*(3-2*state.open));
         if(state.target>.5&&state.open>.9&&state.openingSide){
           const player=getPlayerPosition?.(),position=center(state.door);
