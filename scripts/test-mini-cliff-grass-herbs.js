@@ -10,7 +10,7 @@ const routes = require('../docs/js/cliff-route-network.js');
 class Matrix4 {
   constructor(visible = true) { this.visible = visible; }
   makeScale(x, y, z) { this.visible = !!(x || y || z); return this; }
-  clone() { return new Matrix4(this.visible); }
+  clone() { const m=new Matrix4(this.visible);m.x=this.x;m.y=this.y;m.z=this.z;return m; }
 }
 class Object3D {
   constructor() {
@@ -19,7 +19,7 @@ class Object3D {
     this.rotation = { y: 0, set(){} };
     this.matrix = new Matrix4();
   }
-  updateMatrix() { this.matrix = { visible:true, x:this.position.x, y:this.position.y, z:this.position.z }; }
+  updateMatrix() { this.matrix = new Matrix4();Object.assign(this.matrix,{x:this.position.x,y:this.position.y,z:this.position.z}); }
 }
 class Group extends Object3D {
   constructor() { super(); this.children=[]; this.userData={}; this.visible=true; }
