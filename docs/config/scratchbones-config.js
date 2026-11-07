@@ -15,6 +15,7 @@ window.SCRATCHBONES_CONFIG = {
     wildlifeStreaming: { // Data-tracked den/herd actors keep identity and AI; only nearby ones allocate a native-resolution rig.
       wakeRadiusTiles: 14,
       releaseRadiusTiles: 18,
+      combatReleaseRadiusTiles: 32, // Fighting animals stay visible out to here, then go back to data (hysteresis 4 tiles).
       releaseDelaySeconds: 2,
       promotionsPerFrame: 1,
     },

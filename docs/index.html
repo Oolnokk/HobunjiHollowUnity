@@ -159,7 +159,7 @@
   <script src="debug.js?v=20261107h4ad2a3b"></script>
   <!-- Global gameplay/UI config must load before CSS so config-backed custom properties are available on first paint. -->
   <script src="config/config.js?v=20261026h7f369c3"></script>
-  <script src="config/scratchbones-config.js?v=20261107furrearconfig1"></script>
+  <script src="config/scratchbones-config.js?v=20261107h0e8d38a"></script>
   <!-- Canonical source-art color fill math shared by portraits, creatures, weaving, tools, terrain, and item sprites. -->
   <script src="js/color-fill.js?v=20260923colorfill7"></script>
   <!-- Shared frame-budget yield for long async pixel jobs (clothing weaving, creature genetics). -->
@@ -386,7 +386,7 @@
        doesn't matter as long as both exist by the time bandits actually
        spawn. -->
   <script src="js/combat/enemy-loadout-rules.js?v=20261101playerhead3"></script>
-  <script src="js/combat/combat-bandit.js?v=20261105aerial1"></script>
+  <script src="js/combat/combat-bandit.js?v=20261107h62bb1f9"></script>
   <script src="js/combat/ghoul-special-variants.js?v=20261031ghoulvar1"></script>
   <script src="js/combat/bandit-rank-wardrobe.js?v=20261031rankwardrobe1"></script> <!-- Lieutenant/captain pauldrons and circlet, patterned pants and captain overwear. --> <!-- Shadowknight / Wyrm-witch wardrobe, patterns and enchanted weapons. -->
   <script src="js/combat/combat-ghoul-wyrm-witches.js?v=20261027hcd7121b"></script> <!-- Distinct mobile-friendly Wyrm-witch cloud and stationary water-cone actions. -->
@@ -411,7 +411,7 @@
   <script src="js/bounty-board.js?v=20261008h416634c"></script>
   <!-- Loads docs/config/combat/attack-values.json and overrides every
        combat-*.js module's hardcoded defaults with it. -->
-  <script src="js/combat/combat-config-loader.js?v=20261107h28db6c3"></script>
+  <script src="js/combat/combat-config-loader.js?v=20261107h5aeebb4"></script>
   <!-- Shared timed-effect HUD, skill progression, food processing rules, and
        hearth cooking. These modules own their state/UI and expose narrow
        adapters to game.js. -->
@@ -498,7 +498,7 @@
        time, not at load time, so script order relative to them doesn't
        matter; must load before game.js, which calls
        window.HousePieces.init(...) during its own setup. -->
-  <script src="js/house-pieces.js?v=20261107hbe821b9&surfaceUv=20261026orequad1"></script>
+  <script src="js/house-pieces.js?v=20261107h05150ab&surfaceUv=20261026orequad1"></script>
   <!-- Death ragdoll → lootable corpse (window.CreatureDeath) —
        self-contained aside from deps injected via init(), so load order
        relative to the other systems above doesn't matter; must load
@@ -507,7 +507,7 @@
   <script src="js/creature-death.js?v=20261105h1558f90"></script>
   <!-- Old, un-looted bandit corpses swap their full humanoid rig for a flat marker
        (window.BanditCorpseRetirement); game.js calls init(...) and tick(...). -->
-  <script src="js/bandit-corpse-retirement.js?v=20261106bcr1"></script>
+  <script src="js/bandit-corpse-retirement.js?v=20261107hf66a80f"></script>
   <!-- An old zone's bandits are released so the zone cache can evict it, and its camps
        re-seed on the next visit (window.ZoneBanditRelease); game.js calls init(...) and
        releaseZone(...) from trimZoneCache. -->
@@ -593,7 +593,7 @@
        (already global by then), so load order relative to the other systems
        above doesn't matter; must load before game.js, which calls
        window.WildernessAiSnapshot.init(...) during its own setup. -->
-  <script src="js/wilderness-ai-snapshot.js?v=20261031h1008026"></script>
+  <script src="js/wilderness-ai-snapshot.js?v=20261107h42d3a42"></script>
   <!-- Cliff climbing scripted crossing (window.ClimbSystem) — self-contained
        aside from deps injected via init(), so load order relative to the
        other systems above doesn't matter; must load before game.js, which
@@ -2241,9 +2241,17 @@
           <label class="settings-row">
             <div class="settings-label">
               <div class="settings-name">Wildlife Activation Distance</div>
-              <div class="settings-desc">Nearby herd and den animals get full character visuals. Distant animals keep their data and AI. A shorter distance uses less memory; fighting animals stay visible.</div>
+              <div class="settings-desc">Nearby herd and den animals get full character visuals. Distant animals keep their data and AI. A shorter distance uses less memory. Fighting animals stay visible out to the separate Fighting Distance below.</div>
             </div>
             <input id="settingWildlifeDistance" type="number" min="8" max="64" step="1" aria-label="Wildlife activation distance in tiles" style="width:64px;align-self:center" value="14">
+            <span style="font-size:11px;align-self:center">tiles</span>
+          </label>
+          <label class="settings-row">
+            <div class="settings-label">
+              <div class="settings-name">Wildlife Fighting Distance</div>
+              <div class="settings-desc">Animals that are fighting, chasing or fleeing keep their full character visuals out to this distance, then go back to data until they return. Never less than the activation distance plus a margin.</div>
+            </div>
+            <input id="settingWildlifeCombatDistance" type="number" min="12" max="96" step="1" aria-label="Wildlife fighting distance in tiles" style="width:64px;align-self:center" value="32">
             <span style="font-size:11px;align-self:center">tiles</span>
           </label>
           </div>
@@ -2843,7 +2851,7 @@
        helper at module evaluation time, so it belongs here rather than in the
        earlier combat-definition block. It still loads before game.js and
        registers in RuntimeFrameScheduler's pre-game phase. -->
-  <script src="js/combat/quick-attack-bonus-indicator.js?v=20261024h7f17edc"></script>
+  <script src="js/combat/quick-attack-bonus-indicator.js?v=20261107hbab3aae"></script>
   <!-- Lore loading-screen overlay, shown while a wilderness zone or mine
        floor rebuilds from scratch. Content authored via
        tools/loading-screen-editor/index.html. -->
@@ -2997,7 +3005,7 @@
   <script src="js/delvers-vault-signal.js?v=20261031storyVault1"></script>
   <script src="js/bed-lie-pose.js?v=20261102mattressxray2"></script> <!-- Surface-aligned sleep presentation; game.js injects the live player and calendar. -->
   <script src="js/lunge-targeting.js?v=1"></script>
-  <script src="game.js?v=20261107miniherbs2"></script>
+  <script src="game.js?v=20261107hc98ae7a"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261029hguild2"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->

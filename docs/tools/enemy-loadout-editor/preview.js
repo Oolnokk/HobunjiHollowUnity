@@ -3,7 +3,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 const THREE = { ...ThreeModule };
 window.THREE = THREE;
 const files = [
-  'config/scratchbones-config.js?v=20261107furrearconfig1',
+  'config/scratchbones-config.js?v=20261107h0e8d38a',
   'config/attachment-rig-profiles.js?v=20261028a',
   'config/character-rig-scale-defaults.js?v=20261028a',
   'js/character-rig-scale.js?v=20261031hb701fa8',
@@ -63,7 +63,7 @@ const files = [
   'js/combat/ranged-weapons.js?v=20261104scent1439c',
   'js/alchemy-system.js?v=20261106h3b90df7',
   'js/combat/enemy-loadout-rules.js?v=20261101playerhead3',
-  'js/combat/combat-bandit.js?v=20261104hb48d8a3',
+  'js/combat/combat-bandit.js?v=20261107h62bb1f9',
   'js/weapon-tool-stances.js?v=20261030hb3c4ee1',
   'js/combat/enemy-weapon-stances.js?v=20261030hb21f7c7',
   'js/combat/combat-minion.js?v=20261103harlyaoDemolitionist1',
