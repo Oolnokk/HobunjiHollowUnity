@@ -150,7 +150,7 @@ const tailHarness = {
   pluckIntervalMs:() => 125,
   sharedTransportData:()=>({performanceElapsedMs:tailNow}),
   nextSharedBeatAt:()=>1000,
-  automaticPulseTimerDelay:at => Math.max(0,at - tailNow - 90),
+  canUseCompatibilitySampler:() => false, // AudioContext mode must not apply lookahead to silent end-of-beat cleanup.
   setTimeout:(callback,delay) => {armedTailTimers.push({callback,delay});return armedTailTimers.length;},
   clearTimeout:() => {},
   playFrettedPluckPulse:()=>{},
@@ -162,6 +162,7 @@ const tailHarness = {
 };
 vm.runInNewContext([
   extractFunction('nextAutomaticSubdivisionAt'),
+  extractFunction('automaticPulseTimerDelay'),
   extractFunction('armAutomaticPulseAt'),
   extractFunction('beginAutoReleaseTail'),
   extractFunction('retainFrettedPluckPulse')
@@ -188,6 +189,7 @@ tailState.autoReleaseTail = {stopAt:1000};
 tailHarness.arm(1000);
 assert.equal(armedTailTimers.at(-1).delay,70,'a silent cleanup must remain available until the actual 1000ms boundary');
 assert.equal(tailState.pluckNextPulseAt,1000,'a silent cleanup should never create an extra early note');
+assert.match(pulseSource,/automaticPulseTimerDelay\(nextTarget\)/,'the repeating pulse scheduler must also honor exact-time silent cleanup');
 
 const compatibilityState = {
   sampleObjectUrl:'test-audio', playbackEngine:'compat',sampleImported:true,
