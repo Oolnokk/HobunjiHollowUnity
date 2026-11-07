@@ -463,74 +463,104 @@
   }
 
 
-  // Mustard grows as a basal rosette, not a cube or spherical shrub. All
-  // leaves start from the crown; outer leaves spread while new leaves stand.
-  const MUSTARD_LEAF_PNG = 'assets/leaves/mustard_leaf.png'; // Shared alpha-cutout for both mustard species.
-  const MUSTARD_LEAF_CARD = new THREE.PlaneGeometry(1, 1); // One shared plane with its bottom edge anchored at the crown.
-  MUSTARD_LEAF_CARD.translate(0, 0.5, 0);
-  const mustardMaterials = new Map(); // Cached native-foliage material per mustard family.
-  let mustardLeafTexture = null; // Loaded once for both mustard crops and standalone NPC farm plots.
-  let mustardTextureState = 'not-requested'; // Available through the public diagnostics getter.
 
-  function _getMustardMaterial(family) {
-    if (!mustardLeafTexture) {
-      mustardTextureState = 'loading';
-      mustardLeafTexture = new THREE.TextureLoader().load(MUSTARD_LEAF_PNG,
-        tex => {
-          if (THREE.sRGBEncoding !== undefined) tex.encoding = THREE.sRGBEncoding;
-          tex.magFilter = THREE.NearestFilter;
-          tex.minFilter = THREE.LinearFilter;
-          mustardTextureState = 'loaded';
-        }, undefined,
-        () => {
-          mustardTextureState = 'failed';
-          window.__farmLog?.(`[mustard] PNG failed to load: ${MUSTARD_LEAF_PNG}`, 'warn');
-        });
+  // Mushtard foliage is made from existing hand-painted leaf PNGs, not a
+  // special new sprite. The outer card is lobed; the inner card is broad.
+  const MUSHTARD_LEAF_ART = Object.freeze({
+    outer: 'assets/leaves/small_leaf.png',
+    inner: 'assets/leaves/speartip_leaf.png',
+  }); // Existing foliage assets shared with the rest of the game.
+  const mushtardGeometries = new Map(); // Stores one softly warped plane per leaf shape.
+  const mushtardTextures = new Map(); // Loads each existing PNG only once for both cultivars.
+  const mushtardMaterials = new Map(); // Reuses alpha-cutout materials for each shape and plant color.
+
+  function _mushtardCardGeometry(shape) {
+    if (mushtardGeometries.has(shape)) return mushtardGeometries.get(shape);
+    const geometry = new THREE.PlaneGeometry(1, 1, 4, 8); // 4×8 subdivisions permit subtle leaf bending without a new texture.
+    geometry.translate(0, 0.5, 0); // Place the card base at the common rosette crown.
+    const positions = geometry.getAttribute('position'); // Modified here to gently widen the blade and curve its surface.
+    for (let index = 0; index < positions.count; index++) {
+      const x = positions.getX(index); // Original sideways position before a mid-blade bulge is applied.
+      const y = positions.getY(index); // Distance along the leaf from petiole to tip, in [0, 1].
+      const bulge = Math.sin(Math.PI * y); // Concentrates the broadened silhouette in the middle, leaving the root narrow.
+      const widen = shape === 'outer' ? 0.34 : 0.14; // Lobed outer leaves need more width than their source artwork.
+      const lean = (shape === 'outer' ? 0.075 : 0.035) * bulge * (2 * y - 0.5); // Slightly bends the blade away from a perfect straight strip.
+      positions.setXYZ(index,
+        x * (1 + widen * bulge) + lean,
+        y,
+        (0.045 + Math.abs(x) * 0.055) * bulge); // Shallow 3D cupping so leaves do not read as rigid rectangles.
     }
-    if (!mustardMaterials.has(family)) {
-      const color = family === 'blackMustard' ? 0x84ab67 : 0x8fc975; // Black mustard has black seeds, not black leaves.
-      mustardMaterials.set(family, new THREE.MeshLambertMaterial({
-        map: mustardLeafTexture,
-        color,
-        side: THREE.DoubleSide,
-        transparent: true,
-        alphaTest: 0.35,
-        depthWrite: true,
-      }));
-    }
-    return mustardMaterials.get(family);
+    positions.needsUpdate = true;
+    geometry.computeVertexNormals();
+    mushtardGeometries.set(shape, geometry);
+    return geometry;
+  }
+
+  function _mushtardTexture(shape) {
+    if (mushtardTextures.has(shape)) return mushtardTextures.get(shape).texture;
+    const path = MUSHTARD_LEAF_ART[shape]; // Refers only to leaves that already exist on main.
+    const record = { texture: null, state: 'loading' }; // Reports each image's loading state in the dev companion.
+    mushtardTextures.set(shape, record);
+    record.texture = new THREE.TextureLoader().load(path, texture => {
+      if (THREE.sRGBEncoding !== undefined) texture.encoding = THREE.sRGBEncoding;
+      texture.magFilter = THREE.NearestFilter;
+      texture.minFilter = THREE.NearestFilter;
+      texture.generateMipmaps = false; // Matches the shared foliage-generator PNG settings.
+      texture.needsUpdate = true;
+      record.state = 'loaded';
+    }, undefined, () => {
+      record.state = 'failed';
+      window.__farmLog?.(`[mushtard] failed to load existing leaf art: ${path}`, 'warn');
+    });
+    return record.texture;
+  }
+
+  function _mushtardMaterial(family, shape) {
+    const key = family + ':' + shape; // Reuse one leaf material for every card with the same variety and PNG.
+    if (mushtardMaterials.has(key)) return mushtardMaterials.get(key);
+    const tint = family === 'blackMustard' ? 0xc1d5b9 : 0xddf0cf; // Black mushtard's seeds are black, not its leaves.
+    const material = new THREE.MeshBasicMaterial({
+      map: _mushtardTexture(shape),
+      color: tint,
+      side: THREE.DoubleSide,
+      transparent: false,
+      alphaTest: 0.5,
+      depthWrite: true,
+    }); // Uses the foliage generator's opaque alpha-test rendering, avoiding transparent depth-sort glitches.
+    mushtardMaterials.set(key, material);
+    return material;
   }
 
   function _buildMustardMesh(family, growth, col, row) {
-    const group = new THREE.Group(); // Root at soil level, compatible with the existing foliage-crop scaling.
-    const rand = _mbRng(Math.imul(col + 1, 92837111) ^ Math.imul(row + 1, 689287499) ^ 0x4d575354); // Deterministic per-tile leaf variation.
-    const material = _getMustardMaterial(family); // Reused by all leaf planes within the plant.
-    const stage = _growthBucket(growth); // Current growth bucket controls leaf number in addition to whole-plant scale.
+    const group = new THREE.Group(); // Root at soil level, compatible with the original crop renderer.
+    const rand = _mbRng(Math.imul(col + 1, 92837111) ^ Math.imul(row + 1, 689287499) ^ 0x4d575354); // Stable per-tile variation.
+    const stage = _growthBucket(growth); // Reuses existing crop growth buckets for visual leaf density.
     const rings = [
-      { count: stage >= 3 ? 7 : stage === 2 ? 5 : stage === 1 ? 3 : 2, length: 0.55, width: 0.30, tilt: 1.12, offset: 0.0 },
-      { count: stage >= 3 ? 5 : stage === 2 ? 4 : stage === 1 ? 2 : 1, length: 0.47, width: 0.22, tilt: 0.75, offset: 0.29 },
-      { count: stage >= 3 ? 3 : stage === 2 ? 2 : 0, length: 0.38, width: 0.17, tilt: 0.34, offset: 0.57 },
-    ]; // Low broad outer ring, raised middle ring, and small upright heart.
+      { count: stage >= 3 ? 7 : stage === 2 ? 5 : stage === 1 ? 3 : 2, shape: 'outer', length: 0.58, width: 0.48, tilt: 1.10, offset: 0.0 },
+      { count: stage >= 3 ? 5 : stage === 2 ? 4 : stage === 1 ? 2 : 1, shape: 'outer', length: 0.47, width: 0.37, tilt: 0.73, offset: 0.29 },
+      { count: stage >= 3 ? 3 : stage === 2 ? 2 : 0, shape: 'inner', length: 0.37, width: 0.31, tilt: 0.33, offset: 0.57 },
+    ]; // Mature plant: wide, low lobed leaves around a smaller, upright heart.
 
     for (let ringIndex = 0; ringIndex < rings.length; ringIndex++) {
-      const ring = rings[ringIndex]; // Relative leaf lengths, angles, and counts for this ring.
-      for (let i = 0; i < ring.count; i++) {
-        const leaf = new THREE.Mesh(MUSTARD_LEAF_CARD, material); // Textured two-sided leaf, not a camera-facing billboard.
-        const azimuth = (i + ring.offset) * Math.PI * 2 / ring.count + (rand() - 0.5) * 0.20;
-        const tilt = ring.tilt + (rand() - 0.5) * 0.19;
-        const length = ring.length * (0.88 + rand() * 0.19);
-        const width = ring.width * (0.88 + rand() * 0.22);
+      const ring = rings[ringIndex]; // Leaf dimensions and growth-stage density for the current concentric ring.
+      for (let index = 0; index < ring.count; index++) {
+        const leaf = new THREE.Mesh(_mushtardCardGeometry(ring.shape), _mushtardMaterial(family, ring.shape)); // Shared curved geometry and existing PNG.
+        const azimuth = (index + ring.offset) * Math.PI * 2 / ring.count + (rand() - 0.5) * 0.2; // Radial fan with subtle irregularity.
+        const tilt = ring.tilt + (rand() - 0.5) * 0.19; // Older outside leaves lie flatter than the youngest center leaves.
+        const length = ring.length * (0.88 + rand() * 0.19); // Leaf-by-leaf length variance.
+        const width = ring.width * (0.88 + rand() * 0.22); // Leaf-by-leaf width variance.
+        const mirror = rand() < 0.5 ? -1 : 1; // Flip asymmetric source PNGs to prevent an obvious repeated stamp.
         leaf.position.set((rand() - 0.5) * 0.035, 0.018 + ringIndex * 0.018, (rand() - 0.5) * 0.035);
         leaf.rotation.set(tilt, azimuth, (rand() - 0.5) * 0.12, 'YXZ');
-        leaf.scale.set(width, length, 1);
+        leaf.scale.set(width * mirror, length, 1);
         leaf.castShadow = false;
         leaf.receiveShadow = false;
-        leaf.userData.hobunjiMustardLeaf = true; // For inspecting individual leaf planes in the dev companion.
+        leaf.userData.hobunjiMustardLeaf = true; // Enables picking individual foliage planes for appearance debugging.
         group.add(leaf);
       }
     }
     group.userData.hobunjiCropRootKey = family;
-    group.userData.hobunjiMustardLeafCount = group.children.length; // Reports stage-specific foliage density to diagnostics.
+    group.userData.hobunjiMustardLeafCount = group.children.length; // Reports stage-specific foliage density in diagnostics.
     return group;
   }
 
@@ -925,7 +955,7 @@
     vegFoliageMeshes,
     vegFoliageActive: _vegFoliageActive,
     get cropMeshes() { return cropMeshes; },
-    getMustardDebug: () => ({ texture: MUSTARD_LEAF_PNG, textureState: mustardTextureState, nativeMaterialCount: mustardMaterials.size, matureLeaves: 15 }), // Lightweight diagnostics available to mobile in-game debugging.
+    getMustardDebug: () => ({ texture: MUSHTARD_LEAF_ART.outer, textures: { ...MUSHTARD_LEAF_ART }, textureStates: Object.fromEntries([...mushtardTextures].map(([shape, record]) => [shape, record.state])), nativeMaterialCount: mushtardMaterials.size, matureLeaves: 15 }), // Lightweight mushtard PNG and card diagnostics for mobile.
     getGrassBillboardMat: () => grassBillboardMat,
     getGrassLeafTex: () => _grassLeafTex,
     getFarmGrassBillMesh: () => farmGrassBillMesh,
