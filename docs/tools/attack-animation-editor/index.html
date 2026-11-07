@@ -1232,9 +1232,28 @@ function captureFreeRightHandFromGrip(phase) {
   const p = toolHolder.localToWorld(new THREE.Vector3(grip.position.x, grip.position.y, grip.position.z));
   avatarModel.worldToLocal(p); // Capture the real current grip as avatar-local coordinates so detaching doesn't teleport the fingers.
   const right = anim.poses[phase].rightHand ||= {};
-  Object.assign(right, { enabled: true, x: p.x, y: p.y, z: p.z });
+  const holderQ = toolHolder.getWorldQuaternion(new THREE.Quaternion()); // Initial free-hand wrist rotation should match the currently grasped instrument.
+  const gripRotation = grip.rotationDeg || {};
+  holderQ.multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(
+    THREE.MathUtils.degToRad(Number(gripRotation.pitch) || 0),
+    THREE.MathUtils.degToRad(Number(gripRotation.yaw) || 0),
+    THREE.MathUtils.degToRad(Number(gripRotation.roll) || 0), 'YXZ')));
+  const localQ = avatarModel.getWorldQuaternion(new THREE.Quaternion()).invert().multiply(holderQ);
+  const angles = new THREE.Euler().setFromQuaternion(localQ, 'YXZ');
+  Object.assign(right, {
+    enabled: true, x: p.x, y: p.y, z: p.z,
+    pitch: THREE.MathUtils.radToDeg(angles.x), yaw: THREE.MathUtils.radToDeg(angles.y), roll: THREE.MathUtils.radToDeg(angles.z),
+  });
   refreshJsonView();
   return true;
+}
+function enableFreeRightHandForPhase(phase) {
+  const right = anim.poses[phase].rightHand ||= {}; // Keeps the authored transformation if the artist temporarily unticks Free mode.
+  if (!right.enabled && !FREE_RIGHT_HAND_CHANNELS.some(key => Number(right[key]) !== 0)) {
+    captureFreeRightHandFromGrip(phase); // Toggling via either checkbox or a gizmo button begins on the instrument, not at the origin.
+  }
+  right.enabled = true;
+  return right;
 }
 window.HobunjiAttackEditorRightHand = {
   currentPose() { return window.HobunjiHandToolGrips?.sampleFreeRightHand?.(anim.poses, anim, previewT, anim.sequence) || null; },
@@ -1314,10 +1333,8 @@ function renderActivePosePanel() {
   const freeSwitch = $('poseFreeRightHandEnabled');
   freeSwitch.addEventListener('change', () => {
     const right = anim.poses[editPhase].rightHand ||= {};
-    if (freeSwitch.checked && !right.enabled && !FREE_RIGHT_HAND_CHANNELS.some(key => Number(right[key]) !== 0)) {
-      captureFreeRightHandFromGrip(editPhase); // First enable starts where the right hand already touches the Kurraya.
-    }
-    right.enabled = freeSwitch.checked;
+    if (freeSwitch.checked) enableFreeRightHandForPhase(editPhase);
+    else right.enabled = false;
     syncPosePanelFromState(editPhase); window.ProceduralHandFrameDriver?.syncNow?.(); refreshJsonView();
   });
   for (const channel of FREE_RIGHT_HAND_CHANNELS) {
@@ -1338,13 +1355,11 @@ function renderActivePosePanel() {
     }
   };
   $('poseMoveRightHand').onclick = () => {
-    anim.poses[editPhase].rightHand ||= { enabled: true };
-    anim.poses[editPhase].rightHand.enabled = true;
+    enableFreeRightHandForPhase(editPhase);
     syncPosePanelFromState(editPhase); setGizmoMode('translate', 'rightHand');
   };
   $('poseRotateRightHand').onclick = () => {
-    anim.poses[editPhase].rightHand ||= { enabled: true };
-    anim.poses[editPhase].rightHand.enabled = true;
+    enableFreeRightHandForPhase(editPhase);
     syncPosePanelFromState(editPhase); setGizmoMode('rotate', 'rightHand');
   };
   const armBones = $('poseShowArmBones');
