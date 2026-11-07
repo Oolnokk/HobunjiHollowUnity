@@ -56,6 +56,17 @@ function test(seed){
       }
     },
     DevRandomRuinFurniturePieces:{build(){return null;}},
+    DungeonRopeArt:{
+      createNetFrustum(){const net=new Object3D();net.userData.ropeAtlas='rope_long.png';return net;}
+    }, // The fixture supplies the mandatory shared PNG net renderer instead of taking an obsolete geometry fallback.
+    DungeonDoorIceCoverage:{scaledRecipe(){return {count:16,density:1};}},
+    IceStalagmiteCoverage:{
+      buildCeiling(_THREE,parent){
+        const layer=new Object3D();parent.add(layer);return {layer};
+      },
+      setGrowth(layer,growth){layer.userData.growth=growth;}
+    }, // The fixture preserves the real ceiling-ice builder and reverse-melt contract.
+
     DungeonFire:{
       registerTarget(target){fireTargets.push(target);return target.id;},
       unregisterTarget(id){cleared.push(id);},
