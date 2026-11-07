@@ -111,6 +111,7 @@
       return {
         x: original.x, z: original.z, y: groundY, elevation: groundY,
         footprint, boundaryCells, parentComponent: candidate.bComp,
+        hasPaintedBoundary: candidate.walls > 0, // Direct tier jumps have no unwalkable rock tiles to share.
         projectionTiles: projection, parentCoverage: inParent / samples,
         embeddedCoverage: (inParent + inRock) / samples,
         neighborY: candidate.y0, // Rock starts at zone ground even beside an elevated neighboring plateau.
