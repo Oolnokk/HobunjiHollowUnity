@@ -16705,6 +16705,9 @@
         const routeNet = window.CliffRouteNetwork?.forArea?.(currentArea); // Reuse rendered Y-layer state rather than the underlying single-height grid.
         const shelf = window.CliffRouteNetwork?.shelfAt?.(routeNet, player.onCliffBalcony);
         if (!shelf || !shelf.footprint.some(f => f.c === col && f.r === row)) return null;
+        // A clustered herb patch belongs to one walkable mini-cliff tile, even on long ledges.
+        if (shelf.reward === 'herbCluster' && shelf.herbTile &&
+          (shelf.herbTile.c !== col || shelf.herbTile.r !== row)) return null;
         const state = window.CliffRouteNetwork.getRewardState(currentArea, shelf.id);
         if (state.claimed) return null;
         const areaAtCreation = currentArea; // Asynchronous lockpicking validates the original area/ledge before paying.
@@ -16728,7 +16731,29 @@
             }
             window.SkillSystem?.award?.('mining', window.SkillSystem?.XP_GAINS?.rock || 8, 'mined cliff ore');
             window.HobunjiActivityEvents?.emit('rock_broken', { area: currentArea });
-          } else {
+          } else if (shelf.reward === 'herbCluster') {
+            const reagentKey = shelf.reagentKey; // Chosen from this area's native plants by the cliff renderer.
+            const reagent = window.AlchemySystem?.REAGENT_DEFS?.[reagentKey]; // Shared reagent definition used by ordinary gathering.
+            if (!reagent) return { ok: false, message: 'These herbs cannot be identified yet.' };
+            const pickCount = 5; // One cluster represents five normal herb picks for yield, perks, and XP.
+            const bonusChance = window.SkillSystem?.bonusYieldChance?.('foraging') || 0; // Extra-yield chance from the ordinary Foraging perks and buffs.
+            const doubleRank = window.PerkSystem?.rank?.('foraging', 'doubleForageables') || 0; // Normal Double Forageables perk applies to every pick.
+            let amount = 0; // Total yield from five independent bonus rolls before accepting the harvest.
+            for (let pick = 0; pick < pickCount; pick++) {
+              amount += (1 + (rnd() < bonusChance ? 1 : 0)) * (doubleRank > 0 ? 2 : 1);
+            }
+            const previous = inventory[reagentKey] || 0; // Current stack before adding the whole cluster's reward.
+            if (previous + amount > window.InventoryStacks.MAX_TOTAL) {
+              return { ok: false, message: 'Not enough inventory space for all five herb picks.' }; // Never consume a cluster while discarding its herbs.
+            }
+            inventory[reagentKey] = previous + amount;
+            rewards.push(amount + ' ' + (reagent.label || reagentKey));
+            for (let pick = 0; pick < pickCount; pick++) {
+              window.SkillSystem?.award?.('foraging', window.SkillSystem?.XP_GAINS?.forage || 4, 'picked cliff herb cluster');
+              window.HobunjiActivityEvents?.emit('herb_picked', { area: currentArea, source: 'miniCliff' });
+            }
+            window.AudioSystem?.playObjectSfx?.(window.AudioSystem?.objectSfxConfig?.()?.harvest);
+          } else if (shelf.reward === 'buriedTreasure') {
             const metalLoot = window.WildTreasure?.rollTreasureMetalBarLoot?.() || {}; // Existing wilderness buried-chest metal picker.
             for (const [itemKey, amount] of Object.entries(metalLoot)) {
               inventory[itemKey] = Math.min(window.InventoryStacks.MAX_TOTAL, (inventory[itemKey] || 0) + amount);
@@ -16745,8 +16770,14 @@
         };
         return {
           id: shelf.id + '-resource', col, row, type: 'cliff_balcony_resource',
-          label: shelf.reward === 'oreRock' ? 'Ore Rock' : 'Buried Cliff Chest',
+          label: shelf.reward === 'oreRock' ? 'Ore Rock'
+            : shelf.reward === 'herbCluster' ? 'Herb Cluster' : 'Buried Cliff Chest',
           getButtons() {
+            if (shelf.reward === 'herbCluster') return [{
+              icon: '🌿', label: 'Pick the mini-cliff herb cluster',
+              action: 'obj_balcony_pick', inputAction: 'action1', worldInteraction: true,
+              style: 'primary', allowed: true,
+            }];
             if (shelf.reward === 'oreRock') return [{
               icon: '⛏️', label: 'Mine the balcony ore rock',
               action: 'obj_balcony_mine', inputAction: 'action1', worldInteraction: true,
@@ -16769,13 +16800,14 @@
               if (activeTool !== 'pick' || heldMode !== 'tool') return { ok: false, message: 'Equip a pick to mine this rock.' };
               return award();
             }
-            if (action === 'obj_balcony_dig' && shelf.reward !== 'oreRock' && !state.revealed) {
+            if (action === 'obj_balcony_pick' && shelf.reward === 'herbCluster') return award(); // Direct picking, no shovel.
+            if (action === 'obj_balcony_dig' && shelf.reward === 'buriedTreasure' && !state.revealed) {
               if (activeTool !== 'shovel' || heldMode !== 'tool') return { ok: false, message: 'Equip a shovel to dig here.' };
               window.CliffRouteNetwork.setRewardStage(currentArea, shelf.id, 'revealed');
               awardToolUseMasteryXp('shovel');
               return { ok: true, zoneVisualsUpdated: true, message: 'The dirt breaks away, revealing a buried chest.' };
             }
-            if (action === 'obj_balcony_open' && shelf.reward !== 'oreRock' && state.revealed) {
+            if (action === 'obj_balcony_open' && shelf.reward === 'buriedTreasure' && state.revealed) {
               const valid = () => isAvailable() && window.CliffRouteNetwork.getRewardState(currentArea, shelf.id).revealed;
               const started = window.ChestLockpicking?.open?.({
                 id: shelf.id, title: 'Cliff Chest', tier: 1, valid,
