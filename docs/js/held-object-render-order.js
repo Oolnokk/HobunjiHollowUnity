@@ -138,6 +138,8 @@
   let lastBaseOffscreenFiltered = 0; // Rigid offscreen meshes removed before grouping into expensive depth replays.
   let lastShellReplayCandidates = 0; // Held and foot shell meshes considered by the most recent shell pass.
   let lastShellOffscreenFiltered = 0; // Rigid offscreen shell meshes skipped before their depth passes.
+  let lastBaseElevationGroups = 0; // Distinct visible actor heights that needed the last held depth rebuild.
+  let lastShellElevationGroups = 0; // Distinct visible actor heights that needed the last shell-depth rebuild.
   let groupScissorCount = 0; // Elevation-group passes assigned their own tighter depth-replay screen rectangle.
   let missingStencilFootReplaySkipCount = 0; // Safety fallback for auxiliary/offscreen targets that cannot carry the two-bit mask.
   let lastBaseStencilBits = 0; // STENCIL_BITS of the framebuffer bound for the most recent real world pass.
@@ -1343,7 +1345,11 @@
     // Each actor elevation gets its own depth replay. Same-level upward-facing
     // ground fragments are omitted; other tiers, trench/raised surfaces, walls,
     // props and protective covers remain real occluders.
-    if (!held.length && !feet.length) return;
+    if (!held.length && !feet.length) {
+      lastBaseElevationGroups = 0;
+      lastHeldFullscreenReason = 'no-visible-participants';
+      return;
+    }
 
     const oldAutoClear = renderer.autoClear;
     const oldAutoClearColor = renderer.autoClearColor;
@@ -1362,6 +1368,7 @@
     window.HobunjiHandOutlineParity?.refreshHeldMatrices?.(held);
     const actorElevationCache = new Map(); // Reuses one authoritative surface sample for every hand/tool/foot belonging to the same actor.
     const groups = groupXrayMeshesByElevation(overlayMeshes, mesh => actorElevationForXrayMesh(mesh, scene, actorElevationCache));
+    lastBaseElevationGroups = groups.length;
     recordElevationGroups(groups);
     const tintOverlay = lastBaseStencilBits >= 1 && hasOverlappingHeldCover(renderer, camera, overlayMeshes, tintCovers);
     const hasScissorApi = !!(glState?.scissor && glState?.setScissorTest); // Separates unavailable GL scissor support from unsafe geometry.
@@ -1546,6 +1553,7 @@
     const groundMeshes = [...ground, ...topFaceGround];
     const actorElevationCache = new Map(); // Shells reuse the exact actor floor elevation resolved for their source meshes.
     const groups = groupXrayMeshesByElevation(xrayMeshes, mesh => actorElevationForXrayMesh(mesh, scene, actorElevationCache));
+    lastShellElevationGroups = groups.length;
     recordElevationGroups(groups);
     let scissorActive = false;
     let depthWasCleared = false;
@@ -1675,6 +1683,10 @@
       const xrayMeshes = filterOffscreenReplayMeshes(camera, shellCandidates);
       lastShellReplayCandidates = shellCandidates.length;
       lastShellOffscreenFiltered = shellCandidates.length - xrayMeshes.length;
+      if (!xrayMeshes.length) {
+        lastShellElevationGroups = 0;
+        lastShellFullscreenReason = 'no-visible-participants';
+      }
       const ground = collectVisible(groundRegistry, scene);
       const topFaceGround = collectVisible(topFaceGroundRegistry, scene);
       if (!xrayMeshes.length || (!ground.length && !topFaceGround.length)) {
@@ -1781,6 +1793,8 @@
       baseOffscreenFiltered: lastBaseOffscreenFiltered,
       shellReplayCandidates: lastShellReplayCandidates,
       shellOffscreenFiltered: lastShellOffscreenFiltered,
+      baseElevationGroups: lastBaseElevationGroups,
+      shellElevationGroups: lastShellElevationGroups,
       groupScissors: groupScissorCount,
       lastReplayScissorCoverage: Number(lastReplayScissorCoverage.toFixed(4)),
       replayCullEnabled,
@@ -1806,7 +1820,7 @@
     const signature = JSON.stringify(state);
     if (signature !== lastDebugSignature) {
       lastDebugSignature = signature;
-      const message = `[held-xray] enabled=${state.enabled} held=${state.heldMeshes} ground=${state.groundMeshes} (grass=${state.grassMeshes} road=${state.roadMeshes} terrain=${state.terrainMeshes} interior=${state.interiorFloorMeshes} farmhouse=${state.farmhouseFloorMeshes}) footWater=${state.waterOccludedMeshes}/${state.waterReplayMeshes}/${state.waterReplays} stencil=${state.stencilBits} stencilSkips=${state.missingStencilFootReplaySkips} base=${state.baseWorldRenders} overlay=${state.selectiveOverlays} depth=${state.nonGroundDepthReplays}/${state.groundDepthRestores} shellXray=${state.shellXrayPasses}/${state.shellXrayMeshes} repairs=${state.invariantRepairs} scissor=${state.scissoredReplays}/${state.fullscreenReplays} reasons=${state.lastHeldFullscreenReason}/${state.lastShellFullscreenReason} coverage=${state.lastReplayScissorCoverage} offscreen=${state.baseOffscreenFiltered}/${state.baseReplayCandidates} shellOffscreen=${state.shellOffscreenFiltered}/${state.shellReplayCandidates} groupScissors=${state.groupScissors} elevationGroups=${state.elevationReplayGroups} unknownElevation=${state.unknownElevationMeshes} elevationShaders=${state.elevationShaderMaterials}/${state.elevationShaderFallbacks}`;
+      const message = `[held-xray] enabled=${state.enabled} held=${state.heldMeshes} ground=${state.groundMeshes} (grass=${state.grassMeshes} road=${state.roadMeshes} terrain=${state.terrainMeshes} interior=${state.interiorFloorMeshes} farmhouse=${state.farmhouseFloorMeshes}) footWater=${state.waterOccludedMeshes}/${state.waterReplayMeshes}/${state.waterReplays} stencil=${state.stencilBits} stencilSkips=${state.missingStencilFootReplaySkips} base=${state.baseWorldRenders} overlay=${state.selectiveOverlays} depth=${state.nonGroundDepthReplays}/${state.groundDepthRestores} shellXray=${state.shellXrayPasses}/${state.shellXrayMeshes} repairs=${state.invariantRepairs} scissor=${state.scissoredReplays}/${state.fullscreenReplays} reasons=${state.lastHeldFullscreenReason}/${state.lastShellFullscreenReason} coverage=${state.lastReplayScissorCoverage} offscreen=${state.baseOffscreenFiltered}/${state.baseReplayCandidates} shellOffscreen=${state.shellOffscreenFiltered}/${state.shellReplayCandidates} groups=${state.baseElevationGroups}/${state.shellElevationGroups} groupScissors=${state.groupScissors} elevationGroups=${state.elevationReplayGroups} unknownElevation=${state.unknownElevationMeshes} elevationShaders=${state.elevationShaderMaterials}/${state.elevationShaderFallbacks}`;
       if (typeof window.__farmLog === 'function') window.__farmLog(message, 'render');
       else console.debug(message);
     }
