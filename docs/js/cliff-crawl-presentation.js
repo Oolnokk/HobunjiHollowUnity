@@ -8,7 +8,9 @@
   if (!system || !THREE) return;
 
   const OWNER = 'cliff-crawl'; // Procedural-hand ownership while the player is gripping a cliff face.
-  const worldUp = new THREE.Vector3(0, 1, 0); // Reference vector for pitching the torso toward the cliff surface.
+  const worldUp = new THREE.Vector3(0, 1, 0); // Shared upright axis for matching the portrait plane to a cliff face.
+  const portraitFront = new THREE.Vector3(0, 0, 1); // The PNG avatar's local face normal; used to derive a tangent-aligned world yaw.
+  const BODY_LEAN_RAD = 0.16; // Slight outward weight-bearing lean, not the former near-horizontal 60-degree fold.
   let installed = false; // Guards the one composer render-hook registration.
   let activeHandRig = null; // The current player's rig; invalidated on appearance rebuild or climb exit.
   let activeMesh = null; // Fast path for the current rig without searching every avatar descendant each render.
@@ -44,7 +46,7 @@
     return from.lerp(to, reach.progress)
       .addScaledVector(tangent, sideSign * modelHeight * 0.13)
       .addScaledVector(worldUp, modelHeight * height)
-      .addScaledVector(outward, modelHeight * (0.035 + reach.lift * 0.10));
+      .addScaledVector(outward, modelHeight * ((kind === 'foot' ? 0.095 : 0.085) + reach.lift * 0.10)); // Keep planted limb shells in front of cliff depth, not buried inside stone.
   }
 
   function currentHandRig(mesh) {
@@ -194,19 +196,29 @@
     if (outward.lengthSq() < 1e-8) return;
     const h = Math.max(0.2, Number(composer.getPlayerLegHandle?.()?.modelHeight) || 1);
 
-    // Interpret the rock face as the support surface: pitch the torso *into*
-    // the normal instead of bobbing vertically above world ground. The extra
-    // outward clearance keeps the face from being buried in the cliff mesh.
-    const tiltRad = 1.04; // Continuous rock-facing lean, rather than a world-up hop.
-    const posedUp = worldUp.clone().multiplyScalar(Math.cos(tiltRad))
-      .addScaledVector(outward, Math.sin(tiltRad)).normalize(); // Rock normal replaces upward gravity: torso leans AWAY from the face.
-    const tilt = new THREE.Quaternion().setFromUnitVectors(worldUp, posedUp);
+    // The avatar is a flat front/back PNG, so its horizontal PLANE NORMAL
+    // must match the cliff normal. Using only pitch left it edge-on to many
+    // walls; rotating 60 degrees around the tangent also folded it off the
+    // rock. Preserve the nearer front/back face to avoid a sudden texture flip.
+    const worldFront = portraitFront.clone().applyQuaternion(mesh.getWorldQuaternion(new THREE.Quaternion()));
+    worldFront.y = 0;
+    if (worldFront.lengthSq() < 1e-8) worldFront.copy(portraitFront); // Degenerate pitch: default to the PNG's authored forward.
+    worldFront.normalize();
+    const targetFront = outward.clone().multiplyScalar(worldFront.dot(outward) < 0 ? -1 : 1);
+    const yawRad = Math.atan2(
+      worldFront.z * targetFront.x - worldFront.x * targetFront.z,
+      worldFront.x * targetFront.x + worldFront.z * targetFront.z
+    ); // Signed world-Y rotation from the current portrait face to the rock face.
+    const worldYaw = new THREE.Quaternion().setFromAxisAngle(worldUp, yawRad);
+    const posedUp = worldUp.clone().multiplyScalar(Math.cos(BODY_LEAN_RAD))
+      .addScaledVector(outward, Math.sin(BODY_LEAN_RAD)).normalize(); // Lean outward just enough for planted hands and feet.
+    const worldLean = new THREE.Quaternion().setFromUnitVectors(worldUp, posedUp);
     const parentQ = mesh.parent?.getWorldQuaternion?.(new THREE.Quaternion()) || new THREE.Quaternion();
-    const localTilt = parentQ.clone().invert().multiply(tilt).multiply(parentQ);
+    const localPose = parentQ.clone().invert().multiply(worldLean).multiply(worldYaw).multiply(parentQ);
     const oldPosition = mesh.position.clone(), oldQuaternion = mesh.quaternion.clone();
     const shifted = mesh.getWorldPosition(new THREE.Vector3()).addScaledVector(outward, h * 0.27);
     mesh.position.copy(mesh.parent?.worldToLocal ? mesh.parent.worldToLocal(shifted) : shifted);
-    mesh.quaternion.premultiply(localTilt);
+    mesh.quaternion.premultiply(localPose);
     mesh.updateWorldMatrix?.(true, true);
     undo.push(() => { mesh.position.copy(oldPosition); mesh.quaternion.copy(oldQuaternion); mesh.updateWorldMatrix?.(true, true); });
     const previousRenderScope = inCrawlRender; // Nested/auxiliary renders restore the outer hand-pose scope.
@@ -220,6 +232,7 @@
       active: true, moving: !!state.moving, phase: Number(state.phase) || 0,
       routeId: state.route.id, supportNormal: { x: outward.x, z: outward.z },
       handRigOwned: !!rig, feetPosed, hiddenHeldVisuals,
+      portraitYawCorrectionDeg: yawRad * 180 / Math.PI, bodyLeanDeg: BODY_LEAN_RAD * 180 / Math.PI,
     };
     renderDebug.cliffCrawl = lastDebug; // Also visible through the existing composer mobile render diagnostics.
   }
