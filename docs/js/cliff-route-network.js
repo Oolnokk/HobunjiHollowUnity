@@ -280,6 +280,7 @@
               rect.y < shelf.z + halfZ + 0.35 && rect.y + rect.h > shelf.z - halfZ - 0.35);
             const capBounds = [{ x: shelf.x - halfX, y: shelf.z - halfZ, w: halfX * 2, h: halfZ * 2 }];
             const shelfBlocksRoute = routes.some(other => {
+              if (other.id === route.id) return false; // A ledge must not reject its own connecting handholds.
               if (Math.abs(other.a.c + 0.5 - shelf.x) >= 9 || Math.abs(other.a.r + 0.5 - shelf.z) >= 9) return false;
               return other.nodes.some(from => from.links.some(index => {
                 if (index <= from.id) return false;
