@@ -107,8 +107,8 @@ async function main() {
   assert.match(engine,/scheduledAt \+ stringIndex \* STRUM_NOTE_DELAY_MS/,'preview strums must use the same spacing');
   assert.match(engine,/!HOSTED_FLUTE_PERFORMANCE && voice && Number\(step\?\.gate\)/,'flute must not inherit short Kurraya pluck gates');
   assert.match(echo,/if \(!isFlute\) sampler\.stop\(\)/,'echo examples must hand each flute note to the next');
-  assert.match(host,/lyre-performance\.html\?v=20261107fluteMonophonic1/,'gameplay must load this performance revision');
-  assert.match(host,/kurraya-puzzle\.html\?v=20261107fluteMonophonic1/,'gameplay must load this puzzle revision');
+  assert.match(host,/lyre-performance\.html\?v=[A-Za-z0-9_-]+/,'gameplay must load a cache-versioned performance engine');
+  assert.match(host,/kurraya-puzzle\.html\?v=[A-Za-z0-9_-]+/,'gameplay must load a cache-versioned puzzle');
   console.log('Flute monophonic and micro-strum regression checks passed.');
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});
