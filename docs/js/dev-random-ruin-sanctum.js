@@ -141,27 +141,20 @@
     return kit.naturalizeStone(new THREE.Mesh(geometry, kit.makeBasic(color)));
   }
 
-  // Blue fire: the game's furniture fire emitter (same one the lich aura
-  // uses) plus a flickering flame sprite so it reads even with particles off.
+  // Blue braziers are the player's authored campfire particles recolored by the
+  // sanctum palette. Only the decorative glow halo remains a sprite.
   function createBlueFire(parent, scale = 1) {
-    const anchor = new THREE.Group();
+    const anchor = new THREE.Group(); // Owns the one campfire particle visual and the ambient colored halo.
     anchor.name = 'dev_ruin_blue_fire';
     anchor.visible = false;
     parent.add(anchor);
-    const flame = new THREE.Sprite(new THREE.SpriteMaterial({ map:textures().flame, color:0xffffff, transparent:true, depthWrite:false, fog:false, blending:THREE.AdditiveBlending }));
-    flame.scale.set(.34 * scale, .5 * scale, 1);
-    flame.position.y = .2 * scale;
-    flame.userData.devRuinFootprintIgnore = true;
     const halo = glowSprite(0x4fb6ff, 1.2 * scale, .5);
     halo.position.y = .2 * scale;
-    anchor.add(flame, halo);
-    const emitter = window.AuthoredFurniture?.createEmitterVisual?.(anchor, {
-      id:'dev_ruin_blue_fire', name:'Ruin Blue Fire', type:'fire', enabled:true,
-      position:{ x:0, y:.04, z:0 }, rotation:{ x:0, y:0, z:0 },
-      radius:.12 * scale, size:.12 * scale, rate:34, lifetime:.8, speed:.55 * scale, spread:.3, gravity:-.05,
-      colorA:FIRE_BRIGHT, colorB:FIRE_COLOR,
-    }, 48) || null;
-    return { anchor, flame, halo, emitter, lit:false };
+    anchor.add(halo);
+    const emitter = window.PersistentGroundFire?.attachCampfireFlame?.(anchor, {
+      scale:.87 * scale,rateScale:.9,colorA:FIRE_BRIGHT,colorB:FIRE_COLOR,
+    }) || null; // One authored campfire_fire recipe, not an independent blue-flame particle system.
+    return { anchor, halo, emitter, lit:false };
   }
 
   function igniteFire(fire) {
@@ -173,9 +166,8 @@
   function updateFire(fire, now, dt) {
     if (!fire?.lit) return;
     const flicker = .88 + .12 * Math.sin(now * .017 + fire.anchor.id) + .06 * Math.sin(now * .041);
-    fire.flame.scale.y = fire.flame.scale.x * 1.45 * flicker;
     fire.halo.material.opacity = .38 + .14 * flicker;
-    fire.emitter?.update?.(dt, true, { colorA:FIRE_BRIGHT, colorB:FIRE_COLOR });
+    fire.emitter?.update?.(dt); // Uses the saved authored campfire motion, recolored on creation.
   }
 
   // ─── Braziers on the V50 puzzle goals ──────────────────────────────────
