@@ -1365,7 +1365,6 @@
     const overlayMeshes = [...held, ...feet];
     const scissorMeshes = overlayMeshes; // Same visible actor meshes define replay bounds and the conservative cull set.
     const groundMeshes = [...ground, ...topFaceGround];
-    window.HobunjiHandOutlineParity?.refreshHeldMatrices?.(held);
     const actorElevationCache = new Map(); // Reuses one authoritative surface sample for every hand/tool/foot belonging to the same actor.
     const groups = groupXrayMeshesByElevation(overlayMeshes, mesh => actorElevationForXrayMesh(mesh, scene, actorElevationCache));
     lastBaseElevationGroups = groups.length;
@@ -1438,7 +1437,9 @@
         }
 
         for (const mesh of group.meshes) mesh.visible = overlayHidden.get(mesh) !== false;
-        if (scissored) glState.setScissorTest(false);
+        // Keep this group's scissor for the held color/stencil draw. Drawing outside
+        // the group's reconstructed depth rectangle can reveal weapons through
+        // unrelated foreground terrain and stamp invalid water-tint stencil bits.
         const overlayStates = tintOverlay ? prepareSubmergedOverlayStencilMaterials(group.meshes) : null;
         try {
           camera.layers.mask = HELD_OVERLAY_MASK;
@@ -1449,7 +1450,6 @@
         } finally {
           if (overlayStates) restoreMaterialStates(overlayStates);
           for (const mesh of group.meshes) mesh.visible = false;
-          if (scissored) glState.setScissorTest(true);
         }
       }
 
@@ -1680,6 +1680,7 @@
       const held = collectVisible(heldRegistry, scene);
       const feet = collectVisible(waterOccludedRegistry, scene);
       const shellCandidates = [...new Set([...held, ...feet])].filter(mesh => hasLayer(mesh, SHELL_LAYER)); // Only source meshes with a real shell need the matching outline replay.
+      window.HobunjiHandOutlineParity?.refreshHeldMatrices?.(shellCandidates); // Refresh live hand matrices before camera culling or shell scissor projections.
       const xrayMeshes = filterOffscreenReplayMeshes(camera, shellCandidates);
       lastShellReplayCandidates = shellCandidates.length;
       lastShellOffscreenFiltered = shellCandidates.length - xrayMeshes.length;
@@ -1744,6 +1745,7 @@
     }
 
     const baseRenderEndedAt = performance.now(); // The scene's matrices were last computed by the base render above.
+    window.HobunjiHandOutlineParity?.refreshHeldMatrices?.(held); // Update procedural hand matrices BEFORE camera filtering and subsequent depth-scissor bounds.
     const visibleHeld = filterOffscreenReplayMeshes(camera, held); // Omit offscreen rigid items only after the base pass updates world matrices.
     const visibleFeet = filterOffscreenReplayMeshes(camera, feet); // Apply the same conservative test to procedural feet.
     lastBaseReplayCandidates = held.length + feet.length;
