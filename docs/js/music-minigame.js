@@ -546,6 +546,7 @@
         Number.isInteger(data.noteIndex) && data.noteIndex >= 0 && data.noteIndex < (window.KurrayaPuzzle?.NOTE_CODES?.length ?? 8)) {
       const detail = {noteIndex:data.noteIndex,area:playerSession.area,instrumentKey:playerSession.instrumentKey}; // The active player's normal instrument publishes notes; ruin listeners never receive example playback or NPC notes.
       window.dispatchEvent(new CustomEvent('hobunji-kurraya-puzzle-note',{detail}));
+      animatePlayerNote(); // Puzzle notes are real sounded notes too: play the currently equipped instrument's authored note action.
     }
     if (data.type === 'puzzle-echo-result' && playerSession?.instrumentMode === 'puzzle' &&
         playerSession.echoChallenge?.id === data.id) {
@@ -589,6 +590,11 @@
     playerSession.announcedPlaying = true;
     window.HobunjiActivityEvents?.emit('kurraya_played', { mode: playerSession.mode });
   }
+  function animatePlayerNote() {
+    if (!playerSession) return; // Only the local player's sounded notes animate their equipped instrument.
+    if (playerSession.instrumentKey === 'flute') window.KurrayaInstrument?.playFluteNote?.();
+    else deps?.triggerPlayerKurrayaTwitch?.(); // The assembly uses Kurraya — Play Note's independent pose.
+  }
   function onSoundedNote(data, source) {
     if (source === frameEl?.contentWindow) {
       if (playerSession?.mode === 'backup') {
@@ -597,10 +603,10 @@
         // was torn down for the duration — see beginPlayerSession — so this
         // is the only place those notes are still observable) and 'backup'
         // notes are the player's own input.
-        if (data.performer === 'backup') { if (playerSession.instrumentKey !== 'flute') deps?.triggerPlayerKurrayaTwitch?.(); announcePlayerPlaying(); } // A mouth-played flute does not twitch Kurraya strings.
+        if (data.performer === 'backup') { animatePlayerNote(); announcePlayerPlaying(); } // Accompaniment sounds only animate the actual player voice.
         else if (playerSession.npcId) deps?.triggerNpcKurrayaTwitch?.(playerSession.npcId);
       } else {
-        if (playerSession?.instrumentKey !== 'flute') deps?.triggerPlayerKurrayaTwitch?.();
+        animatePlayerNote();
         announcePlayerPlaying();
       }
       return;
