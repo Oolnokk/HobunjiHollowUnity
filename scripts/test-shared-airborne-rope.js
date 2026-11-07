@@ -92,6 +92,19 @@ function world() {
   assert(t.player._freeJump?.phase!=='rope','release cannot auto-catch the same rope in the next frame');
   assert(Number.isFinite(before));
 }
+// A high-momentum launch can pass both sides of the grip within ONE frame.
+// The swept mover must sample each substep, not just the next frame's origin.
+{
+  const t=world();
+  t.window.HangingRopes.registerRope({
+    id:'fast-catch',mapId:'zone-test',x:3.2,y:2.1,z:3.5,length:1.7,yaw:0,
+  });
+  t.window.PlayerJump.beginFlight({x:2.5,y:.4,z:3.5,vx:75,vy:0,vz:0},{source:'fast rope launch'});
+  t.step();
+  assert.equal(t.player._freeJump?.phase,'rope',
+    'the horizontal sweep catches a rope crossed between two rendered frames');
+  assert.equal(t.window.HangingRopes.debugSnapshot().activePlayerRope,'fast-catch');
+}
 // Ruin flight uses the same record but leaves integration to the special ruin collision owner.
 {
   const t=world();
