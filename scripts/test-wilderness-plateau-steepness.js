@@ -5,6 +5,9 @@
 const assert = require('node:assert/strict');
 const generator = require('../docs/js/wilderness-map-generator.js');
 const cliffRoutes = require('../docs/js/cliff-route-network.js');
+const terrainPreview = require('../docs/js/terrain-preview.js'); // Same workspace-to-runtime terrain merge used in editor regression tests.
+const fs = require('node:fs'); // Read the lab control schema so exact-zone recipes cannot silently discard steepness.
+const path = require('node:path'); // Resolve the shipped lab page independently of test working directory.
 const BALCONY_GAP_TIERS = 3; // Three 2.5-unit tiers leave room for the balcony cap and embedded base.
 
 const compact = { // Short deterministic generation while preserving the same plateau algorithms as full zones.
@@ -90,4 +93,35 @@ assert(tallCliff.balconies.length > shortCliff.balconies.length, 'raising the sa
 assert(tallCliff.verification.ok, 'new taller cliff routes and balconies remain traversable');
 assert.equal(tallCliff.unconnectedComponents, 0, 'the taller cliff does not strand the upper plateau');
 
-console.log(`PASS plateau steepness: balcony-clearance edges ${before.balconyFriendly} -> ${after.balconyFriendly}, mean tier gap ${before.averageGap.toFixed(2)} -> ${after.averageGap.toFixed(2)}; Great Basin unchanged`);
+
+// Merge both full generated workspaces before evaluating cliff routes. This catches
+// differences between source-tier arithmetic and the actual Map Editor/runtime tile grid.
+function generatedCliffGraph(workspace, area) {
+  const root = workspace.maps.find(map => !map.isSubmap); // The correct parent for all exported plateau submaps.
+  const merged = terrainPreview.buildMergedZoneGrid(workspace, root.id); // Authoritative elevation and incline ownership after export.
+  const grid = terrainPreview.buildZGrid(merged.cols, merged.rows, merged.tiles); // Final row-major cliff routing input.
+  return cliffRoutes.build(grid, {
+    area,
+    plateauUnit: terrainPreview.PLATEAU_UNIT, // Identical world-height units as runtime cliff routing.
+    tileY: tile => (tile.elevTier || 0) * terrainPreview.PLATEAU_UNIT,
+    blocked: tile => !tile || tile.incline || tile.type === 'rock' || ['river','stream','trench'].includes(tile.type),
+  });
+}
+const beforeGraph = generatedCliffGraph(beforeWorkspace, 'before-relief'); // Baseline generated wilderness, not an artificial straight wall.
+const afterGraph = generatedCliffGraph(afterWorkspace, 'after-relief'); // Same seed after the live steepness remap.
+assert(afterGraph.balconies.length > beforeGraph.balconies.length,
+  `real exported cliff graph should produce more balconies: ${beforeGraph.balconies.length} -> ${afterGraph.balconies.length}`);
+assert.equal(afterGraph.verification.invalidHops.length, 0, 'new terrain must not create invalid cliff navigation hops');
+assert.equal(afterGraph.verification.invalidEmbeddedBases.length, 0, 'new balconies must retain safely embedded rock bases');
+assert(afterGraph.verification.unreachablePlateaus.length <= beforeGraph.verification.unreachablePlateaus.length,
+  'the new relief must not strand more plateau components in this seeded integration test');
+
+// Exact biome recipes use setControlValue, which deliberately ignores missing controls.
+// Keep a visible slider in the Lab so plateauSteepness survives settingsFromControls.
+const labHtml = fs.readFileSync(path.join(__dirname, '../docs/tools/wilderness-generation-lab/index.html'), 'utf8'); // Shipped lab schema checked without a browser.
+assert(labHtml.includes("key:'plateauSteepness'"), 'the exact live-zone recipe must expose a plateauSteepness control');
+const labFeatures = fs.readFileSync(path.join(__dirname, '../docs/tools/wilderness-generation-lab/lab-features.js'), 'utf8'); // Verifies the Lab still sources gameplay zone configs.
+assert(labFeatures.includes("zoneSettings?.('map_northern_cliffs')") && labFeatures.includes("zoneSettings?.('map_western_slope')"),
+  'wilderness Lab presets must use the actual live zone settings');
+
+console.log(`PASS plateau steepness: balcony-clearance edges ${before.balconyFriendly} -> ${after.balconyFriendly}, mean tier gap ${before.averageGap.toFixed(2)} -> ${after.averageGap.toFixed(2)}; actual balconies ${beforeGraph.balconies.length} -> ${afterGraph.balconies.length}; Great Basin unchanged`);
