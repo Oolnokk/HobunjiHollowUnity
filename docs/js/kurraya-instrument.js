@@ -420,8 +420,12 @@
     group.rotation[axis]=twitchState.base+Math.sin((elapsed/1000)*twitchState.frequency+twitchState.phase)*twitchState.amplitude*envelope;
   }
 
-  const playerKurrayaNote = { active: false, startedAt: null, noteCount: 0, heldAssembly: null, awaitingAssembly: false }; // Player-only note clock and real gameplay holder; NPC twitches never leak into this reference. // Player-only sounded-note clock; NPC twitches never move the player's plucking hand.
-  function beginPlayerKurraya() { playerKurrayaNote.active = true; playerKurrayaNote.startedAt = null; playerKurrayaNote.heldAssembly = null; playerKurrayaNote.awaitingAssembly = false; }
+  const playerKurrayaNote = { active: false, startedAt: null, noteCount: 0, heldAssembly: null, awaitingAssembly: false, nextResolveAtMs: 0 }; // Player-only note clock and real gameplay holder; NPC twitches never leak into this reference. // Player-only note clock and real gameplay holder; NPC twitches never leak into this reference. // Player-only sounded-note clock; NPC twitches never move the player's plucking hand.
+  function beginPlayerKurraya() {
+    playerKurrayaNote.active = true; playerKurrayaNote.startedAt = null;
+    playerKurrayaNote.heldAssembly = null; playerKurrayaNote.awaitingAssembly = false;
+    playerKurrayaNote.nextResolveAtMs = 0; // Allow an immediate first scan for the already-equipped instrument.
+  }
   function playPlayerKurrayaNote() {
     if (!playerKurrayaNote.active) return false;
     playerKurrayaNote.startedAt = performance.now(); // Reset hand keyframes on each sounded player note.
@@ -429,9 +433,21 @@
     playerKurrayaNote.noteCount++;
     return true;
   }
-  function endPlayerKurraya() { playerKurrayaNote.active = false; playerKurrayaNote.startedAt = null; playerKurrayaNote.heldAssembly = null; playerKurrayaNote.awaitingAssembly = false; }
+  function endPlayerKurraya() {
+    playerKurrayaNote.active = false; playerKurrayaNote.startedAt = null;
+    playerKurrayaNote.heldAssembly = null; playerKurrayaNote.awaitingAssembly = false; playerKurrayaNote.nextResolveAtMs = 0;
+  }
   function playerKurrayaHandTarget() {
     if (!playerKurrayaNote.active) return null;
+    if (!playerKurrayaNote.heldAssembly?.parent && performance.now() >= playerKurrayaNote.nextResolveAtMs) {
+      playerKurrayaNote.nextResolveAtMs = performance.now() + 500; // Avoid traversing the portrait subtree every render frame on slow mobile devices.
+      const player = window.Combat?.deps?.playerMesh || window.PlayerBodyTransformComposer?.getPlayerMesh?.();
+      player?.traverse?.(node => {
+        if (!playerKurrayaNote.heldAssembly?.parent && node?.userData?.kurrayaAssembly && node.parent) {
+          playerKurrayaNote.heldAssembly = node; // Existing held Kurraya can be gripped at Neutral before a note is sounded.
+        }
+      });
+    }
     const assembly = playerKurrayaNote.heldAssembly;
     if (!assembly?.parent) return null;
     return { holder: assembly.parent, toolKey: 'kurraya', gripContext: 'melee' }; // Parent is the real held-tool transform; grip points are item-local, not in the tilted decorative plane group.
