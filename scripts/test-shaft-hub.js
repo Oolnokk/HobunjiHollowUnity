@@ -386,6 +386,17 @@ class InstancedMesh {
 }
 const THREE={Group,Mesh,BoxGeometry:Geometry,PlaneGeometry:Geometry,BufferGeometry,BufferAttribute,Matrix4,
   CylinderGeometry:Geometry,ConeGeometry:Geometry,MeshBasicMaterial:Material,InstancedMesh,FrontSide:0};
+// Native V50 offshoots use a separate snapshot path; the entrance map ceiling does not follow them automatically.
+{
+  const roof=NativeV50.buildNativeCeiling(THREE,{floorCells:[[0,0]],rooms:[{col:2,row:2,w:2,h:2}],wallHeight:3},
+    {originX:30,originZ:40,cs:1},16,new Material(),[[35,41]]);
+  assert(roof?.geometry?.attributes?.position?.array?.length>0,'native V50 offshoot creates a real roof mesh');
+  assert.equal(roof.userData.ceilingCells,6,'native roof spans the room footprint and the standalone shaft connector tiles');
+  assert(roof.geometry.attributes.normal.array.every((n,i)=>i%3!==1||n===-1),'native V50 roof faces downward');
+  const roofHeights=roof.geometry.attributes.position.array.filter((_,i)=>i%3===1);
+  assert(roofHeights.every(y=>y===19),'native roof is aligned to that story and the source V50 wall-top');
+  roof.geometry.dispose();
+}
 const Defense={create:options=>({
   id:options.id,kind:'statueDefense',ready:true,solved:false,
   tick(){},dispose(){this.disposed=true;},
@@ -597,16 +608,23 @@ for(const side of ['north','east','south','west']){
   const network=connected.layerRuntime;
   network.tick(0);
   // Wings draw their stone as merged stretch-to-fit faces too, with a capped handful of engravable feature walls each.
-  const wingBoxes=[],wingFloors=[],wingWalls=[],wingFeatureGroups=[];
+  const wingBoxes=[],wingFloors=[],wingWalls=[],wingCeilings=[],wingFeatureGroups=[]; // A single downward stone roof per planned offshoot, including each corridor.
   network.group.traverse(node=>{
     if(node instanceof InstancedMesh&&/-(floor|wall-ns|wall-ew)$/.test(node.name))wingBoxes.push(node.name);
     if(node.userData?.ruinFeatureWalls)wingFeatureGroups.push(node);
     if(/^floor\d+-[NESW]-floor$/.test(node.name||''))wingFloors.push(node);
     if(/^floor\d+-[NESW]-walls$/.test(node.name||''))wingWalls.push(node);
+    if(/^floor\d+-[NESW]-ceiling$/.test(node.name||''))wingCeilings.push(node);
   });
   assert.deepEqual(wingBoxes,[],'no instanced one-unit boxes remain in any wing');
   assert(wingFloors.length>=2&&wingFloors.every(mesh=>mesh.geometry.attributes.position.array.length>0&&mesh.geometry.attributes.uv.array.every(v=>v>=0&&v<=1)),'each wing floor is merged stretch-to-fit faces');
   assert(wingWalls.length>=1,'wing walls are merged faces');
+  assert.equal(wingCeilings.length,connected.plan.totalWings,'every wing and attached corridor has a carved stone ceiling');
+  assert.equal(network.getState().ceilingMeshes,connected.plan.totalWings,'mobile debug confirms every mounted offshoot roof');
+  assert(wingCeilings.every(mesh=>mesh.material.side===THREE.FrontSide&&mesh.geometry.attributes.normal.array.every((n,i)=>i%3!==1||n===-1)),
+    'ceilings point downward, remaining visible from inside without hiding the room from the overhead camera');
+  assert(wingCeilings.every(mesh=>mesh.userData.devRandomRuinCeiling===true&&mesh.userData.devRuinFootprintIgnore===true),
+    'wing roofs are visual architecture, not hidden projectile/airborne collision slabs');
   for(const group of wingFeatureGroups)for(const mesh of group.children){ // One face only: two opposed faces collapse the pattern decorator's atlas to a sliver.
     const p=mesh.geometry.attributes.position.array,n=mesh.geometry.attributes.normal.array;
     const across=axis=>{let lo=1e9,hi=-1e9;for(let i=axis;i<p.length;i+=3){lo=Math.min(lo,p[i]);hi=Math.max(hi,p[i]);}return hi-lo;};
