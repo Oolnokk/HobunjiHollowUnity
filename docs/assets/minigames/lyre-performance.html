@@ -2665,7 +2665,9 @@
     state.pluckTimer = setTimeout(() => {
       state.pluckTimer = null;
       void playFrettedPluckPulse(generation);
-    }, automaticPulseTimerDelay(targetAt)); // The same precision path handles both a missing tail timer and a legato re-entry.
+    }, state.autoReleaseTail && targetAt >= state.autoReleaseTail.stopAt - 2
+      ? Math.max(0,targetAt - nowMs()) // Silent cleanup must wait for the actual boundary, leaving the tail available for a last-moment melody handoff.
+      : automaticPulseTimerDelay(targetAt));
   }
 
   function beginAutoReleaseTail(fret,sourceId) {
