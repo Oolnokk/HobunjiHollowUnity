@@ -16727,16 +16727,23 @@
             const reagentKey = shelf.reagentKey; // Chosen from this area's native plants by the cliff renderer.
             const reagent = window.AlchemySystem?.REAGENT_DEFS?.[reagentKey]; // Shared reagent definition used by ordinary gathering.
             if (!reagent) return { ok: false, message: 'These herbs cannot be identified yet.' };
-            const bonus = rnd() < (window.SkillSystem?.bonusYieldChance?.('foraging') || 0) ? 1 : 0; // Foraging extra-yield chance.
-            const doubleRank = window.PerkSystem?.rank?.('foraging', 'doubleForageables') || 0; // Matches the ordinary gathering perk.
-            const amount = (1 + bonus) * (doubleRank > 0 ? 2 : 1);
-            const previous = inventory[reagentKey] || 0; // Stack count before applying the inventory capacity below.
-            const granted = Math.min(amount, Math.max(0, window.InventoryStacks.MAX_TOTAL - previous)); // Failed pickups leave the plant intact.
-            if (!granted) return { ok: false, message: 'Your inventory is full.' };
-            inventory[reagentKey] = previous + granted;
-            rewards.push(granted + ' ' + (reagent.label || reagentKey));
-            window.SkillSystem?.award?.('foraging', window.SkillSystem?.XP_GAINS?.forage || 4, 'picked cliff herb cluster');
-            window.HobunjiActivityEvents?.emit('herb_picked', { area: currentArea, source: 'miniCliff' });
+            const pickCount = 5; // One cluster represents five normal herb picks for yield, perks, and XP.
+            const bonusChance = window.SkillSystem?.bonusYieldChance?.('foraging') || 0; // Extra-yield chance from the ordinary Foraging perks and buffs.
+            const doubleRank = window.PerkSystem?.rank?.('foraging', 'doubleForageables') || 0; // Normal Double Forageables perk applies to every pick.
+            let amount = 0; // Total yield from five independent bonus rolls before accepting the harvest.
+            for (let pick = 0; pick < pickCount; pick++) {
+              amount += (1 + (rnd() < bonusChance ? 1 : 0)) * (doubleRank > 0 ? 2 : 1);
+            }
+            const previous = inventory[reagentKey] || 0; // Current stack before adding the whole cluster's reward.
+            if (previous + amount > window.InventoryStacks.MAX_TOTAL) {
+              return { ok: false, message: 'Not enough inventory space for all five herb picks.' }; // Never consume a cluster while discarding its herbs.
+            }
+            inventory[reagentKey] = previous + amount;
+            rewards.push(amount + ' ' + (reagent.label || reagentKey));
+            for (let pick = 0; pick < pickCount; pick++) {
+              window.SkillSystem?.award?.('foraging', window.SkillSystem?.XP_GAINS?.forage || 4, 'picked cliff herb cluster');
+              window.HobunjiActivityEvents?.emit('herb_picked', { area: currentArea, source: 'miniCliff' });
+            }
             window.AudioSystem?.playObjectSfx?.(window.AudioSystem?.objectSfxConfig?.()?.harvest);
           } else if (shelf.reward === 'buriedTreasure') {
             const metalLoot = window.WildTreasure?.rollTreasureMetalBarLoot?.() || {}; // Existing wilderness buried-chest metal picker.
