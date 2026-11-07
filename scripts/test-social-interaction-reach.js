@@ -46,6 +46,14 @@ assert.equal(tables.snapshot().socialReach,6);assert.equal(tables.snapshot().soc
 giftWalker=actor('porakaneki-gift',1.1,.2,'map_pora'); // Off the forward camera ray but within two player tiles.
 frame++;
 assert.equal(tables.focusedTarget('map_pora')?.walker,giftWalker,'a visible nearby gift proxy remains selectable without exact camera aim');
+const scenery=root(0,1.5); // Solid but non-interactive camp scenery should not steal a nearby hunter's gift prompt.
+tables.registerPlacement('map_pora',{id:'gift-scenery',key:'ordinaryWall',col:0,row:1},scenery,{fw:1,fd:1});
+frame++;
+assert.equal(tables.focusedTarget('map_pora')?.walker,giftWalker,'unrelated scenery targeted by the camera must not suppress an in-range gift');
+giftWalker=null;frame++;
+assert.equal(tables.focusedTarget('map_pora')?.kind,'blocker','without a nearby held-gift target the solid scenery retains its ordinary focus');
+scenery.parent=null;giftWalker=actor('porakaneki-gift',1.1,.2,'map_pora'); // Restore a gift candidate without scenery for the usual aimed-NPC priority checks.
+frame++;
 const directlyAimed=actor('directly-aimed',0,1.5,'map_pora'); // Ordinary aimed NPC still outranks the proximity gift fallback.
 walkers.push(directlyAimed);frame++;
 assert.equal(tables.focusedTarget('map_pora')?.walker,directlyAimed,'intentional NPC aim wins over nearby tribe gift fallback');
