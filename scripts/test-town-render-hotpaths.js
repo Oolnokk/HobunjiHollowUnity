@@ -484,7 +484,7 @@ assert.match(heldRender, /setGroundElevationFilter\(groundMeshes, group\.elevati
   'the ground shader receives the owning actor surface height for each replay group');
 assert.match(heldRender, /const tintOverlay = lastBaseStencilBits >= 1 && hasOverlappingHeldCover\(renderer, camera, overlayMeshes, tintCovers\)/,
   'overlap checks cover both feet and held objects without tint when stencil is unavailable');
-assert.match(heldRender, /replaySelectiveHeldOverlay\(this, scene, camera, held, feet, ground, topFaceGround, tintCovers, originalCameraMask\)/,
+assert.match(heldRender, /replaySelectiveHeldOverlay\(this, scene, camera, visibleHeld, visibleFeet, ground, topFaceGround, tintCovers, originalCameraMask\)/,
   'the shared overlay receives registered water and slush covers as well as the actual feet');
 
 // Shell outlines inherit the same selective ground-x-ray policy as their
