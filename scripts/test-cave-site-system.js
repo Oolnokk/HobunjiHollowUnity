@@ -196,6 +196,10 @@ for(const map of puzzleCaves){
     for(let col=puzzle.room.col;col<puzzle.room.col+9;col++)
       assert(floorKeys.has(col+','+row), 'the whole challenge room remains walkable after cavern collision carving');
   assert.equal(map.creatureSpawns.length,0,'Puzzle Cave contains no inherited Den-Mother spawns');
+  const treasure=map.cavePuzzleTreasure; // The earned loot has a tangible authored chest even when it is initially concealed.
+  assert(treasure&&floorKeys.has(treasure.col+','+treasure.row),'puzzle chest is on an actual carved floor tile');
+  assert(map.caveProps.some(prop=>prop.id===treasure.id&&prop.key==='ruinDungeonChestT2'),
+    'both puzzle types build the ordinary authored bronze treasure chest');
   if(puzzle.kind==='fireSconces'){
     const charges=map.caveShattercasks.filter(charge=>charge.kind==='flameShattercask'&&charge.guaranteed);
     assert.equal(charges.length,2,'two usable flame charges prevent a one-use fire-sconce softlock');
@@ -443,6 +447,35 @@ assert.equal(census.denCount, expectedAnimalDens, 'wildlife diagnostics retain t
   started[1].onSuccess(); // The original loot function guards its own saved cache flag.
   assert.equal(lootGranted.length, 1, 'repeating a stale win callback cannot duplicate rewards');
   deps.getCurrentArea = () => 'map_test_wilds';
+}
+
+// Puzzle treasure remains visibly claimable after solving rather than being silently auto-granted.
+{
+  const rewardMap=puzzleCaves.find(map=>map.cavePuzzleTreasure); // A generated chamber supplies both its chest and canonical save identity.
+  const tile=rewardMap.cavePuzzleTreasure;
+  const rewardProfile=Cave.profileForMapId(rewardMap.id);
+  assert(rewardProfile,'the puzzle treasure fixture has an independent cave profile');
+  const saved={discovered:true,puzzleSolved:true,puzzleRewardTier:2,puzzleRewardClaimed:false};
+  Cave.__test.runtimeStateBySignature.set(rewardProfile.signature,saved); // Simulate the persisted just-solved cave without side-stepping the real interaction.
+  deps.getCurrentArea=()=>rewardMap.id;
+  deps.player.x=(tile.col+.5)*deps.TILE;
+  deps.player.y=(tile.row+.5)*deps.TILE;
+  const chest=Cave.objectAt(rewardMap.id,tile.col,tile.row);
+  assert.equal(chest?.getButtons()?.[0]?.action,'obj_claim_puzzle_treasure','the visible puzzle chest has a standard aimed action');
+  assert.equal(chest.onAction('obj_claim_puzzle_treasure').ok,false,'missing trinket definitions do not consume earned treasure');
+  assert.equal(saved.puzzleRewardPending,true,'unavailable reward is persisted as pending');
+  const oldTrinkets=context.TrinketSystem,oldLoot=context.LootRolling;
+  let claimed=0; // Ensures pressing a cached chest button twice cannot duplicate its single reward.
+  context.TrinketSystem={DEFINITIONS:{cave_test:{}},claimLoot(gained){claimed++;return ['Cave Test Trinket'];}};
+  context.LootRolling={getLootPools:()=>({puzzleCave:{entries:[{tier:2,itemKey:'trinket_cave_test'}]}}),
+    rollLootPool:()=>({trinket_cave_test:1})};
+  assert.equal(chest.onAction('obj_claim_puzzle_treasure').ok,true,'the earned chest can be claimed once definitions are available');
+  assert.equal(saved.puzzleRewardClaimed,true,'claim persists the one-shot reward state');
+  assert.equal(Cave.objectAt(rewardMap.id,tile.col,tile.row),null,'claimed chest cannot be reopened');
+  assert.equal(chest.onAction('obj_claim_puzzle_treasure').ok,false,'stale button cannot award another trinket');
+  assert.equal(claimed,1,'loot was granted exactly once');
+  context.TrinketSystem=oldTrinkets;context.LootRolling=oldLoot;
+  deps.getCurrentArea=()=> 'map_test_wilds';
 }
 
 // Cave Duskcaps now use ordinary aimed getButtons/onAction picking, never proximity harvest.
