@@ -1403,6 +1403,7 @@
       if (scissored) glState.setScissorTest(true);
 
       for (const group of groups) {
+        if (scissored) applyElevationScissor(renderer, camera, group.meshes, glState);
         const filterStates = setGroundElevationFilter(groundMeshes, group.elevation);
         renderer.clearDepth();
         const prepPerf = window.PerfProfiler?.begin('held-overlay: depth material prep');
@@ -1445,6 +1446,12 @@
         }
       }
 
+      // The final ground and translucent-cover restores must cover every group's
+      // original union, not only the final actor's smaller replay rectangle.
+      if (scissored) {
+        glState.scissor(scissorRect);
+        lastReplayScissorCoverage = (scissorRect.z * scissorRect.w) / (scissorTargetWidth * scissorTargetHeight);
+      }
       // Restore the original complete ground depth before water/slush tinting.
       restoreVisibility(overlayHidden);
       overlayHidden = null;
@@ -1575,6 +1582,7 @@
       // visible tool/hand/foot replay. The shell cannot become visible through
       // a different floor than its source object.
       for (const group of groups) {
+        if (scissorActive) applyElevationScissor(renderer, camera, group.meshes, glState);
         const filterStates = setGroundElevationFilter(groundMeshes, group.elevation);
         renderer.clearDepth();
         depthWasCleared = true;
@@ -1613,6 +1621,11 @@
       // material-ID consumers. This is colorless and retains ordinary occlusion.
       try {
         if (depthWasCleared) {
+          // Restore all actor rectangles before rebuilding the final unfiltered depth.
+          if (scissorActive) {
+            glState.scissor(scissorRect);
+            lastReplayScissorCoverage = (scissorRect.z * scissorRect.w) / (scissorTargetWidth * scissorTargetHeight);
+          }
           clearGroundElevationFilter(setGroundElevationFilter(groundMeshes, NaN));
           scene.overrideMaterial = null;
           camera.layers.mask = MASK_ALL;
