@@ -130,12 +130,19 @@
     return inAttackEditor() && global.HobunjiAttackEditorHandCalibrationMode?.active === true; // Dedicated editor tab bypasses every animation/tool/shoulder-derived hand transform.
   }
 
+  function playerFluteTarget(record) {
+    if (inAttackEditor() || !gameDeps?.playerMesh || record?.rig?.parent !== gameDeps.playerMesh) return null;
+    return global.KurrayaInstrument?.fluteHandTarget?.() || null; // Match the actual mouth-mounted flute rather than a stale weapon-slot holder.
+  }
+
   function currentToolKey(record = null) {
     const ownedKey = record?.avatarRoot?.userData?.proceduralHandToolKey; // Hostile/NPC avatar roots can name their own held item without leaking through the player-singleton stance state.
     if (ownedKey) return toolGrips.toolKeyFor(ownedKey);
     if (inAttackEditor()) {
       return toolGrips.toolKeyFor(document.getElementById('toolSpriteSelect')?.value || '');
     }
+    const flute = playerFluteTarget(record); // Live instrument playback owns the player's hand grip while a note is sounding.
+    if (flute) return toolGrips.toolKeyFor(flute.toolKey);
     const snapshot = global.WeaponToolStances?.getRuntimeState?.() || global.WeaponToolStances?.debugSnapshot?.() || null;
     return toolGrips.toolKeyFor(snapshot?.itemKey || snapshot?.shape || '');
   }
@@ -143,6 +150,8 @@
   function currentGripContext(record = null) {
     const ownedContext = record?.avatarRoot?.userData?.proceduralHandGripContext; // Hostile tool owners explicitly select melee/ranged instead of inheriting the player's active slot.
     if (ownedContext === 'ranged' || ownedContext === 'melee') return ownedContext;
+    const flute = playerFluteTarget(record); // The supplied flute hand calibration is the Ranged grip, not Melee.
+    if (flute) return flute.gripContext;
     if (typeof toolGrips.currentGripContext === 'function') return toolGrips.currentGripContext();
     if (inAttackEditor()) return document.getElementById('handGripContextSelect')?.value === 'ranged' ? 'ranged' : 'melee';
     const snapshot = global.WeaponToolStances?.getRuntimeState?.() || global.WeaponToolStances?.debugSnapshot?.() || null;
@@ -153,7 +162,12 @@
     if (inAttackEditor()) return findEditorToolHolder(record);
     const ownedHolder = record?.avatarRoot?.userData?.proceduralHandToolHolder; // Shared humanoid hostiles publish the exact animated holder their final-render hands must follow.
     if (ownedHolder?.parent) return ownedHolder;
-    if (gameDeps?.playerMesh && record.rig?.parent === gameDeps.playerMesh) return gameDeps.toolHolder || null;
+    const flute = playerFluteTarget(record); // Actual holder comes from the mouth mount and follows head-relative pose changes.
+    if (flute) return flute.holder;
+    if (gameDeps?.playerMesh && record.rig?.parent === gameDeps.playerMesh) {
+      if (global.KurrayaInstrument?.fluteDiagnostics?.().active) return null; // The flute is loading: keep hands idle rather than grabbing the last weapon.
+      return gameDeps.toolHolder || null;
+    }
     return null;
   }
 
