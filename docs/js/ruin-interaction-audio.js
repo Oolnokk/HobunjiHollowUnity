@@ -1,13 +1,13 @@
 // Shared recorded cues for stone interactions and fire ignition in ruins and Puzzle Caves.
 // Uses AudioSystem's object-SFX config instead of spawning raw Audio elements.
-// Sound-size references: normal push block for activators; large ruin door for mechanisms.
+// Sound-size references: authored 0.82-unit push block for activators; large ruin door for mechanisms.
 (function(root,factory){
   const api=factory(root);
   if(typeof module==='object'&&module.exports)module.exports=api;
   else root.RuinInteractionAudio=api;
 })(typeof globalThis!=='undefined'?globalThis:this,function(root){
   'use strict';
-  const REFERENCE_SPAN=Object.freeze({activator:1.2,mechanism:4}); // World-space spans whose uploaded recordings play at original pitch.
+  const REFERENCE_SPAN=Object.freeze({activator:.82,mechanism:4}); // World-space spans whose uploaded recordings play at original pitch.
   const movement=new WeakMap(); // Per physical mechanism: previous progress/direction, to play once per motion or reversal.
   const plateStates=new WeakMap(); // Per physical pressure plate: last pressed state, to suppress continuous audio.
   const debug={lastCue:null,lastPitch:1,lastSpan:null,plays:0}; // Mobile-friendly playback diagnostics.
