@@ -322,12 +322,13 @@
       const rawKind = entry.entity.creatureKey || entry.entity.animalKey; // Some gameplay creature keys share one renderer species.
       const kind = window.CreatureGeneticsRender?.SPECIES?.[rawKind] ? rawKind
         : (window.CreatureGenetics?.SPECIES_ALIAS?.[rawKind] || rawKind);
-      const draw = window.CreatureGeneticsRender?.composeFrame;
-      const upload = window.PNGPlaneAvatar?.refreshSinglePlaneAvatarModel;
-      if (!kind || !draw || !upload) throw new Error('Creature coat compositor is unavailable.');
-      const image = await draw(kind, 'idle', entry.entity.genotype, false);
-      if (!image || !upload(entry.root, image)) throw new Error('Creature art did not redraw.');
-      entry.entity._frameAppliedKey = null; // Farm livestock can restore its locomotion frame on the following tick.
+      const refreshAnimal = window.FarmAnimals?.refreshGenotypeAvatar; // Canonical animal sprites have front/back material maps, not NPC root.userData.frontTexture.
+      if (!kind || typeof refreshAnimal !== 'function') throw new Error('Creature sprite refresh is unavailable.');
+      if (!entry.entity.avatarRef?.frontPlane || !entry.entity.avatarRef?.backPlane)
+        throw new Error('This creature does not use the standard editable animal sprite planes.');
+      const refreshed = await refreshAnimal(entry.entity.avatarRef, kind, entry.entity.genotype);
+      if (!refreshed) throw new Error('Creature texture could not be refreshed.');
+      entry.entity._frameAppliedKey = null; // Farm livestock restores its active run/blink frame on the following tick.
     }
     const liveRoot = entry.kind === 'player' ? playerRoot()
       : entry.kind === 'npc' ? entry.entity.root
