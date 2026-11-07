@@ -30,7 +30,7 @@
     return texturePromise;
   }
 
-  function decorate(THREE, plate, {radius = 1, thickness = .15} = {}) {
+  function decorate(THREE, plate, {radius = 1, thickness = .15, toward = {x:0,z:1}} = {}) {
     if (!THREE?.Mesh || !THREE?.PlaneGeometry || !plate?.add) return null;
     const part = { color:'#8a8171', materialRole:'stone', materialTexture:'carved_smooth.png',
       materialLighting:'unlit', materialFillMode:'never' };
@@ -45,7 +45,11 @@
     const glyph = new THREE.Mesh(new THREE.PlaneGeometry(width,height),
       new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,depthWrite:false,side:THREE.DoubleSide}));
     glyph.name='puzzle-cave-tankan-hao-uun';
+    const heading=Math.atan2(Number(toward?.x)||0,Number(toward?.z)||1); // From the plate toward the locked door, where the player reads the inscription.
+    glyph.rotation.order='YXZ'; // Compose the world-facing yaw before the top-facing tilt, preserving the upward decal normal.
     glyph.rotation.x=-Math.PI/2;
+    glyph.rotation.y=heading;
+    glyph.rotation.z=Math.PI; // Local text top points toward the door, not upside down toward the player.
     glyph.position.y=thickness/2+.012; // Rest just above the actual stone top; never z-fight or block movement.
     glyph.visible=false; // Do not show an untextured rectangle while the font loads.
     glyph.raycast=()=>{};
