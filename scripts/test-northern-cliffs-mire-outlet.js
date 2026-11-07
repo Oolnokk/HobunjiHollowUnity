@@ -4,6 +4,8 @@
 // Regression coverage for the Northern Cliffs' geographic drainage into the Eastern Mire.
 const assert = require('node:assert/strict');
 const generator = require('../docs/js/wilderness-map-generator.js');
+const fs = require('node:fs'); // Reads the shipped Lab schema to guard against exact-biome preview settings being discarded.
+const path = require('node:path'); // Resolves the wilderness Lab page regardless of the test process working directory.
 
 const compact = { // Shared generator uses the real Northern Cliffs biome settings, with fewer props for quick seeded tests.
   ...generator.defaultSettings(),
@@ -21,7 +23,13 @@ assert.equal(compact.riverOutlet, 'southeastToMire', 'Northern Cliffs owns the e
 assert.equal(generator.zoneSettings('map_eastern_mire').riverOutlet, undefined, 'Mire does not inherit the Cliffs outlet');
 assert.equal(generator.defaultSettings().riverOutlet, 'none', 'unconfigured biomes retain random river borders');
 
-for (const seed of ['mire-outlet-one', 'mire-outlet-two', 'mire-outlet-three']) {
+const labHtml = fs.readFileSync(path.join(__dirname, '../docs/tools/wilderness-generation-lab/index.html'), 'utf8'); // The Lab should expose and forward the biome's authored river-outlet setting.
+assert(labHtml.includes("key:'riverOutlet'") && labHtml.includes("values:['none','southeastToMire']"),
+  'the exact Northern Cliffs Lab recipe must expose the same southeast river outlet setting');
+const labFeatures = fs.readFileSync(path.join(__dirname, '../docs/tools/wilderness-generation-lab/lab-features.js'), 'utf8'); // The LIVE recipe must still read generator-owned zone settings.
+assert(labFeatures.includes("zoneSettings?.('map_northern_cliffs')"), 'the exact preview must use the live Northern Cliffs recipe');
+
+for (const seed of ['mire-outlet-one', 'mire-outlet-two', 'mire-outlet-three', 'mire-outlet-four', 'mire-outlet-five']) {
   const workspace = generator.generateWorkspace(seed, compact); // Runs the actual generation/export pipeline, not a mocked river path.
   const root = workspace.maps.find(map => map && !map.isSubmap); // Exported root owns the complete playable edge.
   const outlet = workspace.waterwayOutlet; // Mobile-visible marker returned alongside the hydrology diagnostics.
@@ -32,6 +40,8 @@ for (const seed of ['mire-outlet-one', 'mire-outlet-two', 'mire-outlet-three']) 
   assert.equal(outlet.x, root.cols - 1, `${seed}: outlet reaches the actual exported map edge`);
   assert(outlet.y >= root.rows * 0.65 && outlet.y < root.rows * 0.9, `${seed}: outlet stays southeast, away from the southern entry canyon`);
   assert.equal(root.rivers.length, 2, `${seed}: both authored rivers remain present`);
+  const southRiverCells = Object.entries(root.tiles || {}).filter(([key, tile]) => Number(key.split(',')[1]) === root.rows - 1 && tile?.type === 'river'); // Proves the newly generated major rivers do not escape through the entry canyon.
+  assert.equal(southRiverCells.length, 0, `${seed}: no river should discharge through the southern entrance`);
   assert.equal(workspace.hydrologyReport.riverUpHillSteps, 0, `${seed}: drainage is still graded downhill`);
 
   for (const river of root.rivers) {
