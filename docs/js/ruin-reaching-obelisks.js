@@ -1,6 +1,6 @@
 // Reaching Obelisks — one selectable, deliberately non-linear shaft traversal method.
 // The generator owns exact unbuffed ballistic catch windows; the runtime owns moving
-// support, climb surfaces, targets, death-pit art, and complete scoped teardown.
+// support, climb surfaces, metronomic motion, death-pit art, and scoped teardown.
 (function(root,factory){
   const cjs=typeof module==='object'&&module.exports;
   const api=factory(cjs?require('./cell-grid-3d.js'):root.CellGrid3D);
@@ -15,6 +15,8 @@
   const SIZE=4; // Every obelisk is a four-cell-wide solid rectangular column with a four-cell mantle top.
   const DEATH_DEPTH=8; // Pit bottom sits below the entire ground-story gallery.
   const TRAVERSAL='reachingObelisks';
+  const BEAT_SECONDS=1.8; // Deliberate 4/4: one elevation downbeat and three quarter-turns per measure, on all story stages together.
+  const DOCK_DROP=1.25; // The highest A pillar ends just above the landing dock so the final jump descends, not climbs.
   const SIDES={N:{inX:0,inZ:1,tX:1,tZ:0},E:{inX:-1,inZ:0,tX:0,tZ:1},
     S:{inX:0,inZ:-1,tX:-1,tZ:0},W:{inX:1,inZ:0,tX:0,tZ:-1}};
   const clamp=(n,a,b)=>Math.max(a,Math.min(b,n));
@@ -26,9 +28,8 @@
   const random=seed=>{let s=(seed>>>0)||1;return()=>{s=(s+0x6d2b79f5)>>>0;let t=s;t=Math.imul(t^(t>>>15),t|1);t^=t+Math.imul(t^(t>>>7),t|61);return((t^(t>>>14))>>>0)/4294967296;}};
   const inside=(p,x,z,pad=0)=>Math.abs(x-p.x)<=SIZE/2+pad&&Math.abs(z-p.z)<=SIZE/2+pad;
   const gap=(a,b)=>Math.max(0,Math.hypot(a.x-b.x,a.z-b.z)-SIZE);
-  // Per story: A starts lowered against the upper gallery; D's strand becomes
-  // usable when A's plate rotates its climb faces. C sees B's back-mounted
-  // target, whereas an archer on A faces the target's hidden (rear) side.
+  // Per story: four reachable obelisks in a dangerous shaft. Their lift and
+  // rotation mechanisms move on a shared rhythm instead of being puzzle-activated.
   function compose(options={}){
     const o={shaft:45,wall:8,spacing:16,floors:4,seed:1,originX:0,originZ:0,baseY:0,balconySides:['N','E','S','W'],...options};
     if(!Number.isInteger(o.spacing)||o.spacing<12||o.shaft<37||o.floors<2||o.floors>5)throw new Error('Reaching Obelisks requires a spacious, high shaft.');
@@ -39,7 +40,7 @@
       return {x:base.x+d.inX*(edge+inward)+d.tX*lateral,
         z:base.z+d.inZ*(edge+inward)+d.tZ*lateral};
     };
-    const rng=random(o.seed^0xa487351d),pillars=[],targets=[],plates=[],routes=[];
+    const rng=random(o.seed^0xa487351d),pillars=[],routes=[]; // The traversal has no manually operated switches or plates.
     const toWorld=(point)=>({x:o.originX+point.x,z:o.originZ+point.z});
     for(let story=0;story<o.floors-1;story++){
       const side=o.balconySides[story];if(!SIDES[side])throw new Error('Obelisk ascent missing a balcony side.');
@@ -51,7 +52,7 @@
         C:point(side,13,7*jitter),
         B:point(side,13,1*jitter),
       };
-      const heights={A:[base+8,landing],B:[base+7,base+11],C:[base+2,base+2],D:[base+5,base+5]};
+      const heights={A:[base+8,landing+DOCK_DROP],B:[base+7,base+11],C:[base+2,base+2],D:[base+5,base+5]}; // A's raised mantle clears its floor dock by a safe 1.25-unit drop.
       const byName={};
       for(const name of ['A','B','C','D']){
         const p=positions[name],id='obelisk-f'+story+'-'+name;
@@ -75,18 +76,12 @@
         p.catchDepth=Math.max(Math.ceil(o.spacing*.55),...flights.filter(f=>f.to===p.id).map(f=>f.requiredCatchDepth));
         p.catchDepth=Math.min(15,p.catchDepth); // Keeps each spiral on the upper half of its own tall body.
       }
-      const plate={id:'obelisk-f'+story+'-rotate-A',pillarId:a.id,story,holdSeconds:.45,rotates:90};
-      const switchA={id:'obelisk-f'+story+'-raise-A',pillarId:b.id,controls:a.id,
-        story,face:'towardC',normal:{x:Math.sign(c.x-b.x),z:Math.sign(c.z-b.z)}};
-      const switchB={id:'obelisk-f'+story+'-raise-B',pillarId:c.id,controls:b.id,
-        story,face:'towardD',normal:{x:Math.sign(d.x-c.x),z:Math.sign(d.z-c.z)}};
-      plates.push(plate);targets.push(switchA,switchB);
       routes.push({story,side,entryY:base,exitY:landing,
-        states:['A lowered: climb from the gallery onto its plate','A rotated: descend through D to C','C: shoot B target from its visible face',
-          'D: grab A rotated strand','A raised: step to the upper gallery'],
-        flights,requires:[plate.id,switchA.id],galleryPillarId:a.id,approachPillarId:c.id});
+        states:['Reach the first lowered obelisk','Ride or climb the synchronized lift','Time the rotating climb faces','Jump down onto the matching floor dock'],
+        flights,requires:[],galleryPillarId:a.id,approachPillarId:c.id});
     }
-    const plan={method:TRAVERSAL,options:o,pillars,targets,plates,routes,
+    const plan={method:TRAVERSAL,options:o,pillars,targets:[],plates:[],routes,
+      rhythm:{beatsPerMeasure:4,measuresPerCycle:4,beatSeconds:BEAT_SECONDS,elevationBeat:1,rotationBeats:[2,3,4]}, // One ascent stage per story, driven by the same four-measure metronome.
       pit:{bottomY:o.baseY-DEATH_DEPTH,style:'tradition',depth:DEATH_DEPTH},
       physics:{gravity:GRAVITY,unbuffedSpeed:UNBUFFED_SPEED,fallPerTile:fallDistanceForTiles(1)}};
     plan.checks=verify(plan);plan.ok=plan.checks.every(c=>c.ok);
@@ -96,15 +91,16 @@
     const checks=[],add=(name,ok,detail)=>checks.push({name,ok:!!ok,detail:detail||''});
     for(const route of plan.routes){
       const p=plan.pillars.filter(p=>p.story===route.story),a=p.find(p=>p.name==='A'),b=p.find(p=>p.name==='B'),c=p.find(p=>p.name==='C'),d=p.find(p=>p.name==='D');
-      add('story'+route.story+'-complete',!!(a&&b&&c&&d&&route.requires.length===2));
-      add('story'+route.story+'-raise-reaches-gallery',Math.abs(a.highY-route.exitY)<.01);
-      add('story'+route.story+'-hidden-switch',plan.targets.some(t=>t.controls===a.id&&t.pillarId===b.id&&t.normal.x*(a.x-b.x)+t.normal.z*(a.z-b.z)<0));
+      add('story'+route.story+'-complete',!!(a&&b&&c&&d&&route.requires.length===0));
+      add('story'+route.story+'-raises-above-landing',Math.abs(a.highY-route.exitY-DOCK_DROP)<.01);
+      add('story'+route.story+'-rhythm-lift',a.moving&&b.moving&&c.lowY===c.highY&&d.lowY===d.highY);
       for(const f of route.flights){
         const dest=plan.pillars.find(p=>p.id===f.to);
         add('catch-'+f.from+'-'+f.to,!!dest&&f.requiredCatchDepth<=dest.catchDepth&&dest.catchDepth<=15,
           'fall '+f.freeFall.toFixed(2)+' tiles, catch depth '+(dest?.catchDepth||0));
       }
     }
+    add('four-four-rhythm',plan.rhythm.beatsPerMeasure===4&&plan.rhythm.measuresPerCycle===4&&plan.rhythm.rotationBeats.join(',')==='2,3,4');
     add('death-below-entry',plan.pit.bottomY<plan.options.baseY);
     add('unique-ids',new Set(plan.pillars.map(p=>p.id)).size===plan.pillars.length);
     return checks;
@@ -142,13 +138,14 @@
     if(!plan?.ok)throw new Error('Cannot mount an unverified obelisk route.');
     const {THREE,DynamicSurfaces:DS,ClimbSurfaces:CS,parent,getPlayerPosition,getPlayerY}=deps;
     if(!THREE?.Group||!parent?.add||!DS?.registerSurface||!CS?.register)throw new Error('Obelisk runtime dependencies are missing.');
-    const scope=deps.scope||'shaft-obelisks',group=new THREE.Group(),owned=[],materials=[],links=[];
+    const scope=deps.scope||'shaft-obelisks',group=new THREE.Group(),owned=[],materials=[]; // No projectile-bus hooks remain in the automatic rhythm.
     const basic=color=>{const mat=new THREE.MeshBasicMaterial({color});materials.push(mat);return mat;};
     const stone=root.ProceduralFurniture?.makePartMaterial?.({materialTexture:'carved_smooth.png',materialLighting:'unlit',materialFillMode:'never',color:'#726d63'})||basic(0x726d63);
     if(!materials.includes(stone))materials.push(stone);
-    const red=basic(0xe93d33),green=basic(0x46e75c),plateMat=basic(0x9b8778);
+    const beatSeconds=Math.max(.6,Number(deps.beatSeconds)||plan.rhythm.beatSeconds); // Tests can speed up the metronome without changing generated geometry.
     group.name='reaching-obelisks';parent.add(group);
-    const columns=new Map(),states=new Map(),plateStates=new Map();let elapsed=0,disposed=false,linked=false;
+    const columns=new Map(); // Existing support, climb and fall consumers share stable pillar records.
+    let elapsed=0,disposed=false,active=false,beatIndex=-1,measure=0,cycles=0,rotations=0,lifts=0; // Rhythm counters support the in-game mobile debug badge.
     const mesh=(geo,mat,name,holder)=>{
       const node=new THREE.Mesh(geo,mat);node.name=name;(holder||group).add(node);owned.push(node);return node;
     };
@@ -201,90 +198,69 @@
     // The climb registrations keep their normalized references, so a moving
     // pillar can carry climbable faces without unregister/re-register churn.
     const refreshFaces=record=>{
-      for(const entry of record.worldFaces){CS.remove(entry.id);entry.visual?.parent?.remove(entry.visual);
-        entry.visual?.traverse(n=>{n.geometry?.dispose();if(n.material&&!materials.includes(n.material))n.material.dispose();});}
-      record.worldFaces=[];
+      const prior=record.worldFaces,updated=[]; // Preserve the old normalized face objects so active climbs follow a rotating pillar instead of ghost grips.
       for(const [i,face] of climbFaces(record,Math.round(record.y),record.rotation).entries()){
-        const id=scope+'-climb-'+record.id+'-'+i;
-        const normalized=CS.register({...face,id,scope});
+        const id=scope+'-climb-'+record.id+'-'+i,old=prior[i];
+        old?.visual?.parent?.remove(old.visual);
+        old?.visual?.traverse(n=>{n.geometry?.dispose();if(n.material&&!materials.includes(n.material))n.material.dispose();});
+        const normalized=old&&CS.retarget?CS.retarget(id,{...face,scope}):CS.register({...face,id,scope});
         const visual=CS.buildVisual?.(THREE,normalized);
-        if(visual){visual.name=id;group.add(visual);} // buildVisual is already in world coordinates.
-        record.worldFaces.push({id,surface:normalized,visual});
+        if(visual){visual.name=id;group.add(visual);} // Updated visuals show exactly the grip geometry that the live player session follows.
+        updated.push({id,surface:normalized,visual});
       }
+      for(const old of prior.slice(updated.length)){CS.remove(old.id);old.visual?.parent?.remove(old.visual);
+        old.visual?.traverse(n=>{n.geometry?.dispose();if(n.material&&!materials.includes(n.material))n.material.dispose();});}
+      record.worldFaces=updated;
     };
     for(const record of columns.values())refreshFaces(record);
-    for(const plate of plan.plates){
-      const record=columns.get(plate.pillarId);
-      const node=mesh(new THREE.BoxGeometry(2,.15,2),plateMat,plate.id,record.holder);
-      node.position.y=.09;node.userData.devRuinFootprintIgnore=true;
-      plateStates.set(plate.id,{...plate,pillar:record,node,seconds:0,triggered:false});
-    }
-    for(const target of plan.targets){
-      const pillar=columns.get(target.pillarId),controls=columns.get(target.controls);
-      const toward={x:target.normal.x,z:target.normal.z};
-      const length=Math.hypot(toward.x,toward.z)||1;
-      const offset={x:toward.x/length*(SIZE/2+.12),z:toward.z/length*(SIZE/2+.12)};
-      const rune=mesh(new THREE.BoxGeometry(.75,.75,.75),red,target.id,pillar.holder);
-      rune.position.set(offset.x,-1.3,offset.z);
-      rune.userData.devRuinProjectileTarget=true; rune.userData.devRuinFootprintIgnore=true;
-      const state={id:target.id,object:rune,hitMesh:rune,active:false,
-        hittable:()=>{
-          const pos=getPlayerPosition?.(),y=Number(getPlayerY?.());
-          if(disposed||!pos||!Number.isFinite(y)||Math.abs(y-(pillar.y-1.3))>base.spacing*.8)return false;
-          // Targets on B face away from A; this physical front-face test also
-          // prevents the shaft's vertical floors from shooting through walls.
-          return (pos.x-rune.getWorldPosition(new THREE.Vector3()).x)*offset.x+
-            (pos.z-rune.getWorldPosition(new THREE.Vector3()).z)*offset.z>0;
-        },
-        onHit:()=>{
-          if(!state.hittable())return false;
-          state.active=!state.active;controls.desiredY=state.active?controls.highY:controls.lowY;
-          rune.material=state.active?green:red;
-          deps.onStateChange?.();return true;
-        },
-        controls:controls.id,pillarId:pillar.id};
-      states.set(state.id,state);
-    }
-    const link=()=>{
-      if(linked||disposed)return;
-      const bus=deps.projectileBus||root.DevRandomRuinSimplePuzzles;
-      if(bus?.hasActiveRuinState?.()!==true)return;
-      const next=[];for(const state of states.values()){
-        const remove=bus.registerExternalProjectileTarget?.(state);
-        if(typeof remove!=='function')break;
-        next.push(remove);
+    const rotateAll=()=>{ // All existing A-column rotation mechanisms tick together on beats 2, 3 and 4.
+      for(const pillar of columns.values()){
+        if(pillar.name!=='A')continue; // B/C/D retain their original fixed orientations and climb paths.
+        pillar.rotation=(pillar.rotation+1)%4;
+        pillar.rotationTarget=pillar.rotation;
+        refreshFaces(pillar);pillar.updateShape();
       }
-      if(next.length===states.size){links.push(...next);linked=true;deps.onStateChange?.();}
-      else for(const remove of next)remove();
+      rotations++;
     };
-    const turnPillar=plate=>{
-      const record=plate.pillar;
-      record.rotation=(record.rotation+1)%4;record.rotationTarget=record.rotation;
-      refreshFaces(record);record.updateShape();
-      plate.node.material=green;plate.triggered=true;deps.onStateChange?.();
+    const liftAll=()=>{ // Beat 1 flips both moving columns in every story simultaneously.
+      const rise=lifts%2===0;
+      for(const pillar of columns.values())if(pillar.moving)pillar.desiredY=rise?pillar.highY:pillar.lowY;
+      lifts++;
     };
+    const pulse=()=>{ // Measure number changes only after the fourth beat, completing every orientation in four bars.
+      beatIndex=(beatIndex+1)%16;
+      const beat=beatIndex%4+1;
+      measure=Math.floor(beatIndex/4)+1;
+      if(beat===1)liftAll();
+      else rotateAll();
+      if(beatIndex===15)cycles++;
+      deps.onStateChange?.();
+    };
+    const withinShaft=pos=>!!pos&&Number.isFinite(pos.x)&&Number.isFinite(pos.z)&&
+      pos.x>=lo-1&&pos.x<=hi+1&&pos.z>=nearZ-1&&pos.z<=farZ+1; // Offshoot chambers never advance the shaft beat.
     const tick=dt=>{
       if(disposed)return;
-      const elapsedStep=clamp(Number(dt)||0,0,.05);elapsed+=elapsedStep;link();
+      const step=clamp(Number(dt)||0,0,.05);
+      const wasActive=active;
+      active=withinShaft(getPlayerPosition?.());
+      if(!wasActive&&active){elapsed=0;beatIndex=-1;pulse();} // Enter the shaft on a clear elevation downbeat.
+      else if(active){
+        elapsed+=step;
+        while(elapsed>=beatSeconds){elapsed-=beatSeconds;pulse();}
+      }
+      if(!active)return; // Leaving for an offshoot room suspends the cycle and all motion until the shaft is reentered.
       for(const pillar of columns.values()){
         if(Math.abs(pillar.y-pillar.desiredY)>.0001){
           const oldY=pillar.y;
-          pillar.y+=clamp(pillar.desiredY-pillar.y,-elapsedStep*2.5,elapsedStep*2.5);
+          pillar.y+=clamp(pillar.desiredY-pillar.y,-step*3.2,step*3.2); // Complete a full rise within one 7.2-second measure.
           pillar.updateShape();
           const delta=pillar.y-oldY;
-          // Keep the SAME surface objects while the obelisk moves: an attached
-          // climber never loses its handhold when the supporting pillar rises.
-          for(const entry of pillar.worldFaces){entry.surface.y0+=delta;entry.surface.y1+=delta;
-            if(entry.visual)entry.visual.position.y+=delta;}
+          // Preserve each registered climb surface while a platform carries the player vertically.
+          for(const entry of pillar.worldFaces){
+            if(!CS.shift?.(entry.id,delta)){entry.surface.y0+=delta;entry.surface.y1+=delta;}
+            if(entry.visual)entry.visual.position.y+=delta; // Visuals, live climb sessions, and stone move at the same height.
+          }
         }
-      }
-      const pos=getPlayerPosition?.(),y=Number(getPlayerY?.());
-      for(const plate of plateStates.values()){
-        if(plate.triggered)continue;
-        const on=pos&&Number.isFinite(y)&&inside(plate.pillar,pos.x,pos.z,.05)
-          &&Math.abs(plate.pillar.y-y)<.65;
-        plate.seconds=on?plate.seconds+elapsedStep:0;
-        if(plate.seconds>=plate.holdSeconds)turnPillar(plate);
       }
     };
     const centerX=basin.position.x,centerZ=basin.position.z;
@@ -299,19 +275,19 @@
     };
     const dispose=()=>{
       if(disposed)return;disposed=true;
-      for(const remove of links)remove();
       DS.clearScope(scope);CS.clearScope(scope);
       group.parent?.remove(group);
       for(const node of owned)node.geometry?.dispose?.();
       const extra=new Set();group.traverse(node=>{if(node.material&&!materials.includes(node.material))extra.add(node.material);});
       extra.forEach(mat=>mat.dispose?.());for(const mat of materials)mat.dispose?.();
-      columns.clear();states.clear();plateStates.clear();
+      columns.clear();
     };
-    return {plan,method:TRAVERSAL,tick,dispose,columns,targets:states,plates:plateStates,
+    return {plan,method:TRAVERSAL,tick,dispose,columns,
       supportAt,isVoidAt,isDeathAt:(x,z,y)=>isVoidAt(x,z)&&Number(y)<=pitY+.15,
-      pitY,tradition,getState:()=>({method:TRAVERSAL,linked,targets:states.size,
-        activated:[...states.values()].filter(t=>t.active).length,rotated:[...plateStates.values()].filter(p=>p.triggered).length,
-        moving:[...columns.values()].filter(p=>Math.abs(p.y-p.desiredY)>.01).length,pit:tradition,gravity:GRAVITY,fallPerTile:plan.physics.fallPerTile})};
+      pitY,tradition,getState:()=>({method:TRAVERSAL,active,beat:active?beatIndex%4+1:0,measure,
+        beatSeconds,secondsToNextBeat:active?+(beatSeconds-elapsed).toFixed(2):null,
+        cycle:cycles,rotations,elevationChanges:lifts,moving:[...columns.values()].filter(p=>Math.abs(p.y-p.desiredY)>.01).length,
+        pit:tradition,gravity:GRAVITY,fallPerTile:plan.physics.fallPerTile})};
   }
-  return Object.freeze({TRAVERSAL,GRAVITY,UNBUFFED_SPEED,SIZE,DEATH_DEPTH,fallDistanceForTiles,catchDepthForGap,climbFaces,compose,verify,mount,traditionOf});
+  return Object.freeze({TRAVERSAL,GRAVITY,UNBUFFED_SPEED,SIZE,DEATH_DEPTH,BEAT_SECONDS,DOCK_DROP,fallDistanceForTiles,catchDepthForGap,climbFaces,compose,verify,mount,traditionOf});
 });
