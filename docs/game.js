@@ -729,8 +729,8 @@
         yellowberries: { emoji: '🟡', seedKey: 'yellowberrySeeds',   cropKey: 'yellowberries', growDays: 4, idealMin: 0.25, idealMax: 0.60, label: 'yellowberries', needsAdjacentDitch: true, tags: ['Berry', 'Ditch-loving'] },
         whiteberries:  { emoji: '⚪', seedKey: 'whiteberrySeeds',    cropKey: 'whiteberries',  growDays: 4, idealMin: 0.40, idealMax: 0.75, label: 'whiteberries',  needsAdjacentDitch: true, tags: ['Berry', 'Ditch-loving'] },
         blackberries:  { emoji: '⚫', seedKey: 'blackberrySeeds',    cropKey: 'blackberries',  growDays: 4, idealMin: 0.45, idealMax: 0.80, label: 'blackberries',  needsAdjacentDitch: true, tags: ['Berry', 'Ditch-loving'] },
-        blackMustard:  { emoji: '⚫', seedKey: 'blackMustardSeed',   cropKey: 'blackMustard',  growDays: 3, idealMin: 0.15, idealMax: 0.40, label: 'black mustard', tags: ['Mustard', 'Hot'] },
-        greenMustard:  { emoji: '🥬', seedKey: 'greenMustardSeed',   cropKey: 'greenMustard',  growDays: 3, idealMin: 0.30, idealMax: 0.65, label: 'green mustard', tags: ['Mustard', 'Fresh'] },
+        blackMustard:  { emoji: '⚫', seedKey: 'blackMustardSeed',   cropKey: 'blackMustard',  growDays: 3, idealMin: 0.15, idealMax: 0.40, label: 'black mushtard', tags: ['Mushtard', 'Hot'] },
+        greenMustard:  { emoji: '🥬', seedKey: 'greenMustardSeed',   cropKey: 'greenMustard',  growDays: 3, idealMin: 0.30, idealMax: 0.65, label: 'green mushtard', tags: ['Mushtard', 'Fresh'] },
       };
 
       // Each tool gets at most 3 actions — the action bar only has 3 tool-
@@ -2446,7 +2446,7 @@
       const PROCESSING_FURNITURE_DEFS = {
         pestle: {
           itemKey: 'pestleFurniture', icon: '🥣', name: 'Pestle Station', method: 'mashing', color: 0x9a6a3a,
-          desc: 'Placeable processor for mashing: berries into jam, mustard seed into paste, and starchy crops into mash.'
+          desc: 'Placeable processor for mashing: berries into jam, mushtard seed into paste, and starchy crops into mash.'
         },
         squeezer: {
           itemKey: 'squeezerFurniture', icon: '🧃', name: window.HobunjiFoodProcessing?.SQUEEZING_VAT?.name || 'Squeezing Vat', method: 'squeezing', color: 0x4f9eb8,
@@ -2454,7 +2454,7 @@
         },
         handMill: {
           itemKey: 'handMillFurniture', icon: '⚙️', name: 'Hand Mill', method: 'grinding', color: 0x8f8a78,
-          desc: 'Placeable processor for grinding: needlegrain/heftroot into flour and mustard seed into powder.'
+          desc: 'Placeable processor for grinding: needlegrain/heftroot into flour and mushtard seed into powder.'
         },
         teaGrinder: {
           itemKey: 'teaGrinderFurniture', icon: '🍵', name: 'Tea Grinder', method: 'teaGrinding', specialMode: 'teaGrinder', questOnly: true, color: 0x617a4b,
@@ -2749,8 +2749,8 @@
         // Berry seeds are intentionally not sold — all 5 varieties grow wild
         // across the wilderness zones instead (see WILD_BERRY_ZONES) and
         // have a small chance to yield a seed when foraged.
-        { key: 'blackMustardSeed',   icon: '⚫', name: 'Black Mustard Seed',  desc: 'Hot mustard crop. Ideal water 15–40%.', price: 14, gives: { blackMustardSeed: 2 } },
-        { key: 'greenMustardSeed',   icon: '🥬', name: 'Green Mustard Seed',  desc: 'Fresh mustard crop. Ideal water 30–65%.', price: 14, gives: { greenMustardSeed: 2 } },
+        { key: 'blackMustardSeed',   icon: '⚫', name: 'Black Mushtard Seed',  desc: 'Hot mushtard crop. Ideal water 15–40%.', price: 14, gives: { blackMustardSeed: 2 } },
+        { key: 'greenMustardSeed',   icon: '🥬', name: 'Green Mushtard Seed',  desc: 'Fresh mushtard crop. Ideal water 30–65%.', price: 14, gives: { greenMustardSeed: 2 } },
         { key: 'mulchBag',           icon: '🍂', name: 'Mulch Bag',           desc: 'Boosts soil recovery and gives clearing material.', price: 3, gives: { mulch: 5 } },
         // Furniture (processing stations and decorative pieces) is no longer
         // mail-order-able — see FURNITURE_BLUEPRINT_CATALOG. Blueprints are
@@ -16943,8 +16943,8 @@
         { key: 'yellowberrySeeds',   icon: '🟡', label: 'YELLOWBERRY SEEDS', max: 99, seedFor: 'yellowberries' },
         { key: 'whiteberrySeeds',    icon: '⚪', label: 'WHITEBERRY SEEDS',  max: 99, seedFor: 'whiteberries' },
         { key: 'blackberrySeeds',    icon: '⚫', label: 'BLACKBERRY SEEDS',  max: 99, seedFor: 'blackberries' },
-        { key: 'blackMustardSeed',   icon: '⚫', label: 'BLACK MUSTARD SEED', max: 99, seedFor: 'blackMustard' },
-        { key: 'greenMustardSeed',   icon: '🥬', label: 'GREEN MUSTARD SEED', max: 99, seedFor: 'greenMustard' },
+        { key: 'blackMustardSeed',   icon: '⚫', label: 'BLACK MUSHTARD SEED', max: 99, seedFor: 'blackMustard' },
+        { key: 'greenMustardSeed',   icon: '🥬', label: 'GREEN MUSHTARD SEED', max: 99, seedFor: 'greenMustard' },
         { key: 'needlegrain',        icon: '🌾', label: 'NEEDLEGRAIN',       max: 99 },
         { key: 'heftroot',           icon: '🟡', label: 'HEFTROOT',          max: 99 },
         { key: 'garlink',            icon: '🧄', label: 'GARLINK',           max: 99 },
@@ -16954,8 +16954,8 @@
         { key: 'yellowberries',      icon: '🟡', label: 'YELLOWBERRIES',     max: 99 },
         { key: 'whiteberries',       icon: '⚪', label: 'WHITEBERRIES',      max: 99 },
         { key: 'blackberries',       icon: '⚫', label: 'BLACKBERRIES',      max: 99 },
-        { key: 'blackMustard',       icon: '⚫', label: 'BLACK MUSTARD',     max: 99 },
-        { key: 'greenMustard',       icon: '🥬', label: 'GREEN MUSTARD',     max: 99 },
+        { key: 'blackMustard',       icon: '⚫', label: 'BLACK MUSHTARD',     max: 99 },
+        { key: 'greenMustard',       icon: '🥬', label: 'GREEN MUSHTARD',     max: 99 },
         { key: 'mulch',              icon: '🍂', label: 'MULCH',            max: 99 },
         { key: 'garWolfMeat',        icon: '🥩', label: 'GAR-WOLF MEAT',    max: 99 },
         { key: 'garWolfHide',        icon: '🟫', label: 'GAR-WOLF HIDE',    max: 99 },
@@ -16995,8 +16995,8 @@
         yellowberrySeeds: { icon: '🟡', label: 'Yellowberry Seeds', cat: 'seed', sellPrice: 0, tags: ['Seed', 'Berry'], desc: 'Plants yellowberries. Berries grow best when any adjacent tile is a ditch; ideal water 25–60%.' },
         whiteberrySeeds: { icon: '⚪', label: 'Whiteberry Seeds', cat: 'seed', sellPrice: 0, tags: ['Seed', 'Berry'], desc: 'Plants whiteberries. Berries grow best when any adjacent tile is a ditch; ideal water 40–75%.' },
         blackberrySeeds: { icon: '⚫', label: 'Blackberry Seeds', cat: 'seed', sellPrice: 0, tags: ['Seed', 'Berry'], desc: 'Plants blackberries. Berries grow best when any adjacent tile is a ditch; ideal water 45–80%.' },
-        blackMustardSeed: { icon: '⚫', label: 'Black Mustard Seed', cat: 'seed', sellPrice: 0, tags: ['Seed', 'Mustard'], desc: 'Plants black mustard. Hot mustard crop; ideal water 15–40%.' },
-        greenMustardSeed: { icon: '🥬', label: 'Green Mustard Seed', cat: 'seed', sellPrice: 0, tags: ['Seed', 'Mustard'], desc: 'Plants green mustard. Fresh mustard crop; ideal water 30–65%.' },
+        blackMustardSeed: { icon: '⚫', label: 'Black Mushtard Seed', cat: 'seed', sellPrice: 0, tags: ['Seed', 'Mushtard'], desc: 'Plants black mushtard. Hot mushtard crop; ideal water 15–40%.' },
+        greenMustardSeed: { icon: '🥬', label: 'Green Mushtard Seed', cat: 'seed', sellPrice: 0, tags: ['Seed', 'Mushtard'], desc: 'Plants green mushtard. Fresh mushtard crop; ideal water 30–65%.' },
         needlegrain: { icon: '🌾', label: 'Needlegrain', cat: 'crop', sellPrice: CROP_SELL_PRICES.needlegrain, tags: ['Crop', 'Sellable', 'Grain'], desc: 'Dry-default grain crop from the cooking system.' },
         heftroot: { icon: '🟡', label: 'Heftroot', cat: 'crop', sellPrice: CROP_SELL_PRICES.heftroot, tags: ['Crop', 'Sellable', 'Root'], desc: 'Starchy root crop used for heftroot flour and yellow noodles.' },
         garlink: { icon: '🧄', label: 'Garlink', cat: 'crop', sellPrice: CROP_SELL_PRICES.garlink, tags: ['Crop', 'Sellable', 'Pungent'], desc: 'Pungent vegetable and broth base.' },
@@ -17006,8 +17006,8 @@
         yellowberries: { icon: '🟡', label: 'Yellowberries', cat: 'crop', sellPrice: CROP_SELL_PRICES.yellowberries, tags: ['Crop', 'Sellable', 'Berry'], desc: 'Berry crop. Grows well beside adjacent ditches.' },
         whiteberries: { icon: '⚪', label: 'Whiteberries', cat: 'crop', sellPrice: CROP_SELL_PRICES.whiteberries, tags: ['Crop', 'Sellable', 'Berry'], desc: 'Mild berry crop. Grows well beside adjacent ditches.' },
         blackberries: { icon: '⚫', label: 'Blackberries', cat: 'crop', sellPrice: CROP_SELL_PRICES.blackberries, tags: ['Crop', 'Sellable', 'Berry'], desc: 'Dark berry crop. Grows well beside adjacent ditches.' },
-        blackMustard: { icon: '⚫', label: 'Black Mustard', cat: 'crop', sellPrice: CROP_SELL_PRICES.blackMustard, tags: ['Crop', 'Sellable', 'Mustard'], desc: 'Hot mustard crop. Can be processed into pungent paste later.' },
-        greenMustard: { icon: '🥬', label: 'Green Mustard', cat: 'crop', sellPrice: CROP_SELL_PRICES.greenMustard, tags: ['Crop', 'Sellable', 'Mustard'], desc: 'Fresh mustard crop. Can be processed into pungent paste later.' },
+        blackMustard: { icon: '⚫', label: 'Black Mushtard', cat: 'crop', sellPrice: CROP_SELL_PRICES.blackMustard, tags: ['Crop', 'Sellable', 'Mushtard'], desc: 'Hot mushtard crop. Can be processed into pungent paste later.' },
+        greenMustard: { icon: '🥬', label: 'Green Mushtard', cat: 'crop', sellPrice: CROP_SELL_PRICES.greenMustard, tags: ['Crop', 'Sellable', 'Mushtard'], desc: 'Fresh mushtard crop. Can be processed into pungent paste later.' },
         mulch: { icon: '🍂', label: 'Mulch', cat: 'material', sellPrice: 2, tags: ['Material', 'Organic'], desc: 'Organic matter from cleared vegetation. Useful by-product of land clearing.' },
         soursapFruitFlesh: { icon: '🍈', label: 'Soursap Fruit Flesh', cat: 'crop', sellPrice: 10, tags: ['Fruit', 'Food', 'Foraged', 'Sellable'], desc: 'Sticky, sour pulp collected from a Soursap Fruit after its impact burst. The intact fruit is a physical burden, not an inventory stack.' },
         // Instrument metadata pairs with TOOL_ITEM_DEFS for permanent gear assignment.
