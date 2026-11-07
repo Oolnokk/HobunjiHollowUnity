@@ -131,13 +131,16 @@ const expectedIds = ['assembly-summary', 'assembly-mount-elements', 'assembly-op
   'assembly-prune-legacy', 'assembly-legacy-summary'];
 const editorHtml = fs.readFileSync('docs/tools/modular-weapon-editor/index.html', 'utf8');
 for (const id of expectedIds) assert(editorHtml.includes('id="' + id + '"'), id + ' needs a visible DOM control');
-const singleEnded = ['fishing-mace', 'warhammer', 'bgungku', 'hatchet', 'hoe', 'kylie']; // High-confidence bulk import targets.
+const singleEnded = ['fishing-mace', 'warhammer', 'bgungku', 'hatchet', 'hoe', 'kylie']; // Old bulk-import targets; Kylie now retains one approved authored fuse recipe.
 for (const shaftKey of singleEnded) {
   const shaft = api.getConfig().shafts[shaftKey];
   assert.equal(shaft.mounts.filter(m => m.type === 'tang').length, 1, shaftKey + ': preserve original single tang');
   assert.equal(shaft.mounts.filter(m => m.type === 'eye').length, 1, shaftKey + ': preserve original eye');
-  assert.equal(Object.values(shaft.overrides).flatMap(pair => pair.bridges?.strokes || []).filter(op => op.recipe).length, 0,
-    shaftKey + ': remove all unchanged mass-placed recipe boxes without changing mount geometry');
+  const recipes = Object.values(shaft.overrides).flatMap(pair => pair.bridges?.strokes || []).filter(op => op.recipe); // Protects authored recipes from blanket cleanup.
+  if (shaftKey === 'kylie') assert.deepEqual(recipes.map(op => op.recipe), ['fuse'],
+    'Kylie retains its intentionally imported dagger-sword fuse recipe');
+  else assert.equal(recipes.length, 0,
+    shaftKey + ': remove only the old mass-placed recipe boxes without changing mount geometry');
 }
 for (const shaftKey of ['bshuakauitl', 'pick-shovel', 'hachutuTorchStaff'])
   assert(Object.values(api.getConfig().shafts[shaftKey].overrides).some(pair => pair.bridges?.strokes?.some(op => op.recipe)),
