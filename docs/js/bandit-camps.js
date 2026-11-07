@@ -347,6 +347,20 @@
     }
   }
 
+  function senseTargets(scene) {
+    if (!scene || !deps?.getCurrentArea) return [];
+    const zoneId = deps.getCurrentArea(); // Limits collection to the active camp registry, never cached off-zone props.
+    const meshes = _banditCampMeshes.get(zoneId); // Existing prop mesh owners; no scene-wide traversal or duplicate geometry.
+    if (!meshes) return [];
+    const roots = []; // Living camp tents and fires that Perception can tint as a recognizable landmark.
+    for (const record of _banditCampInstances.get(zoneId) || []) for (const prop of record.props || []) {
+      if (prop.destroyed || (prop.type !== 'tent' && prop.key !== 'campfire')) continue;
+      const root = meshes.get(prop.id)?.mesh;
+      if (root?.parent === scene && root.visible !== false) roots.push(root);
+    }
+    return roots;
+  }
+
   function removeBanditCampProp(zoneId, propId) {
     const meshes = _banditCampMeshes.get(zoneId);
     const entry = meshes?.get(propId);
@@ -1418,6 +1432,7 @@
     _simpleHydra: { campInstances: _banditCampInstances, update: updateSimpleHydra, spawnBandit: spawnSimpleHydraBandit, rankFor: simpleHydraRank, flaskerCountForGrunts }, // Test seam: executes the camp reinforcement lifecycle without a full zone.
     isCampCleared: isBanditCampCleared,
     updateCampBanners: updateBanditCampBanners,
+    senseTargets, // Active bandit-camp tents/fires for the Perception landmark glow.
     companionPerceptionRangePx: _companionPerceptionRangePx,
     updateCompanionPerception,
     forgetDenPerception,
