@@ -314,6 +314,7 @@
       }
     }
     window.HobunjiNuhonganSpecies?.hydrateOnboardingSpeciesTable?.(SPECIES_DATA);
+    window.HobunjiLongoranSpecies?.hydrateOnboardingSpeciesTable?.(SPECIES_DATA); // Returning players can reopen Longoran grooming after the creator's one-shot bootstrap retired.
     const spec = SPECIES_DATA[key];
     if (spec) return spec;
     const authored = configured[key];
