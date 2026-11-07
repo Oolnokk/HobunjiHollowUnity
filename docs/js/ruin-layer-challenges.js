@@ -241,6 +241,7 @@
       const dark=body('puzzle-cave-fire-darkness-'+id,
         new THREE.BoxGeometry(5.05,3.65,.025),basic(0x050404),cx,y+1.82,caveGateZ+.21);
       dark.userData.puzzleCaveBackdrop=true;
+      dark.visible=false; // An actual carved cave is behind the door, not an opaque dungeon-portal rectangle.
       gate.userData.puzzleCaveDoor=true;
       rec.door=gate;rec.backdrop=dark;rec.sconces=[];rec.doorRise=0;
       const gateY=gate.position.y; // Slab-only rise leaves the black cave entrance fixed and both sconces attached to the wall.
@@ -262,7 +263,7 @@
         if(!rec.solved||rec.disposed)return;
         rec.doorRise=Math.min(1,rec.doorRise+Math.max(0,Number(dt)||0)/.95);
         gate.position.y=gateY+3.5*rec.doorRise;
-        dark.visible=rec.doorRise<.96; // Once the door opens, the opaque black wall must not hide the revealed reward chest.
+        dark.visible=false; // Never cover the physical treasure alcove with a black portal plane.
       };
     }else if(kind==='timedMelody'){
       // Cliff-door score: visible Scratchbone notation on a stone gate, no audible example.
