@@ -240,7 +240,7 @@ assert.deepStrictEqual(impactCalls, [
 async function testDecodedFinisherTiming() {
   const starts = []; // Actual WebAudio BufferSource.start calls and playback rates for consecutive audio scheduling.
   const gains = []; // Real GainNode values show both slashes actually receive 80% of the authored sound level.
-  const renderRequests = // Exact independent WSOLA pitches and tempo passed to the shared renderer.
+  const renderRequests = []; // Exact independent WSOLA pitches and tempo passed to the shared renderer.
   const decoded = { duration: 0.9, numberOfChannels: 1, sampleRate: 44100, length: 39690, getChannelData: () => new Float32Array(39690) }; // Minimal valid decoded recording for the live audio owner.
   let audioContext = null; // Exposes the running test context clock to timing assertions.
   class FakeContext {
@@ -296,4 +296,3 @@ async function testDecodedFinisherTiming() {
 
 testDecodedFinisherTiming().then(() => console.log('combat SFX wiring: ok'))
   .catch(error => { console.error(error); process.exitCode = 1; }); // CI must fail rather than hide async WebAudio assertions.
-
