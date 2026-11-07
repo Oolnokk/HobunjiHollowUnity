@@ -28,10 +28,14 @@
     const id='find-blocks-'+String(context.seed);
     const cx=Math.floor(room.x+room.w*.5)+.5,cz=Math.floor(room.z+room.d*.5)+.5; // Grid-centered origin shared by the four stages and plates.
     const offset=Math.max(4,Math.min(5,Math.floor(Math.min(room.w,room.d)*.29))); // Leaves walkable perimeter around every source.
-    const ceiling=Math.max(floorY+4,Number(context.ceilingY)||floorY+4.2); // Existing V50 ceiling height controls both suspended sources.
+    const roof=Number(context.ceilingY); // The actual V50 ceiling, not a raised artificial anchor that could hide a hanging target above the stone.
+    const ceiling=Number.isFinite(roof)?roof:floorY+3.5;
+    if(ceiling-floorY<2.65)throw new Error('Find the Blocks needs at least 2.65 units of ceiling clearance.');
+    const stairRise=Math.min(STAIR_RISE,(ceiling-floorY-BLOCK_SIZE-.22)/7); // Seven actual walkable steps end below the ceiling with space for the block.
+    const initialPillarHeight=Math.min(3.35,ceiling-floorY-BLOCK_SIZE-.22); // The pillar is as tall as the chamber permits without clipping its carried block.
     const variant=['melody','projectiles','witchBomb'][(Number(context.seed)>>>0)%3]; // Only the tall pillar's unlocking mechanism rotates between seeds.
     const blocks=[],plates=[],targets=[],controls=[],disposers=[],burnIds=[],chips=[]; // Session-local ownership; no world save or drops.
-    let disposed=false,solved=false,sinking=false,pillarHeight=3.35,pillarBroken=false,pillarLowered=false;
+    let disposed=false,solved=false,sinking=false,pillarHeight=initialPillarHeight,pillarBroken=false,pillarLowered=false;
     let melody=null,iceLayer=null,iceMelt=0,bombTube=null,hitCount=0; // Driven by tick, never by artificial completion switches.
     const fire=root.DungeonFire,bombs=root.HronalWitchBombs;
     const alive=()=>!disposed&&isActive();
@@ -160,7 +164,7 @@
       block.iceRoot=iceRoot;return block;
     }
     function climbingSource(){
-      const x=cx-offset,z=cz+offset,top=floorY+2.52;
+      const x=cx-offset,z=cz+offset,top=floorY+stairRise*7;
       const block=makeBlock('climb',x,z,top,true);
       block.mesh.userData.findBlocksCanDrop=true; // Allows one supported block to be pushed off a ledge without bypassing other V50 courses.
       // A narrow winding walkable route, not invisible stairs or an interaction that teleports the player.
@@ -170,7 +174,7 @@
         [x+2,z-1],[x+2,z],[x+1,z]
       ];
       path.forEach(([sx,sz],i)=>{
-        const topY=floorY+STAIR_RISE*(i+1);
+        const topY=floorY+stairRise*(i+1);
         cube('find-blocks-winding-step-'+i,sx,sz,floorY,.92,topY-floorY,.92,COLOR.stone);
         support('winding-step-'+i,sx,sz,.92,.92,topY);
       });
@@ -192,7 +196,7 @@
       };
       if(variant==='melody'){
         const challenge=root.RuinLayerChallenges?.compose?.({
-          THREE,parent:group,room:{x:cx+.2,z:cz+.4,w:3,d:3},y:floorY,
+          THREE,parent:group,room:{x:cx+1.5,z:cz-4.5,w:3,d:3},y:floorY, // Away from all four block plates and their pushing approaches.
           id:id+'-pillar-song',kind:'melodyEcho',mapId:MAP_ID,
           isActive:alive,onSolved:triggerSink,
           getPlayerPosition:kit.playerWorld,
@@ -307,7 +311,7 @@
           pillarHeight=Math.max(0,pillarHeight-step*1.45);
           const pillar=blocks[3].pillar;
           if(pillar){
-            pillar.scale.y=Math.max(.001,pillarHeight/3.35);
+            pillar.scale.y=Math.max(.001,pillarHeight/initialPillarHeight);
             pillar.position.y=floorY+pillarHeight*.5;
           }
           blocks[3].mesh.position.y=floorY+pillarHeight+BLOCK_SIZE*.5;
@@ -359,7 +363,7 @@
         if(weighted===4)openGate();
         if(solved)gate.position.y=Math.min(gateStart+3.2,gate.position.y+step*3.6);
       },
-      snapshot(){return {id,variant,solved,weighted:plates.filter(p=>p.filled).length,
+      snapshot(){return {id,variant,solved,ceilingY:ceiling,stairRise,initialPillarHeight,weighted:plates.filter(p=>p.filled).length,
         blocks:blocks.map(b=>({name:b.name,phase:b.phase,x:b.mesh.position.x,z:b.mesh.position.z,
           y:b.mesh.position.y,available:b.mesh.userData.findBlocksAvailable})),
         targets:targets.map(t=>({id:t.id,hit:t.active})),pillarHeight,
