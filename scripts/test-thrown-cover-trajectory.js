@@ -54,6 +54,20 @@ state.groundRise=true;
 result=resolver.resolve(origin,desired,opts);
 assert.equal(result.blocked,true,'an abrupt terrain rise clips the trajectory');
 state.groundRise=false;
+window.DevRandomRuin = { shaftSegmentHit:(start,end,_radius,intersect)=> {
+  if (Math.max(start.x,end.x) < 2.9 || Math.min(start.x,end.x) > 3.3) return null;
+  const box = {box:{min:{x:2.9,y:0,z:0},max:{x:3.3,y:4,z:1}}};
+  return intersect(start,end,box)?.enter ?? null;
+} };
+result = resolver.resolve(origin,desired,opts);
+assert.equal(result.blocked,true,'the ranged shaft voxel blocker also cuts off physical throws');
+assert.equal(result.kind,'shaft-cover');
+delete window.DevRandomRuin;
+window.DynamicSurfaces = { sampleSupport:(x,_z)=>x>=2.9&&x<=3.3?{y:2.25}:null };
+result = resolver.resolve(origin,desired,opts);
+assert.equal(result.blocked,true,'elevated support floors intercept the throw arc');
+assert.equal(result.kind,'raised-floor-cover');
+delete window.DynamicSurfaces;
 
 const blockedStep = resolver.sweep({x:2.8,y:1,z:.5},{x:3.6,y:.9,z:.5},{
   ...opts,deps:{...opts.deps,canOccupyAt:(x)=>x/64 < 3.1},
