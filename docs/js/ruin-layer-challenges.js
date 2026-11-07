@@ -409,6 +409,16 @@
         t.phase=i*Math.PI;t.speed=1.2+i*.35;
       }
     }
+    if(kind==='timedMelody'||kind==='fireSconces'){
+      // The playable cave gate occupies a genuine rough-hewn hole in a single
+      // roof-height rock wall. The slab rises independently; after opening the
+      // exposed jambs/lintel remain stone, not clipped boulders or a black card.
+      const surround=root.CavernOreRocks?.carveStoneGate?.(group,{
+        x:cx,y,z:caveGateZ+.42,openingWidth:4.78,openingHeight:3.55,
+        sideThickness:1.24,roofHeight:9,wallDepth:.30,
+      }); // Slightly behind the slab so sconces and score glyphs remain visible in front.
+      if(surround){owned.push(surround);rec.rockSurround=surround;}
+    }
     if(options.authoredCliffDoor && (kind==='timedMelody'||kind==='fireSconces')){
       // Use the real authored, lightly rockified cliff gate (frame, darkness,
       // stone slab and 0.95-second slab motion). No interactive puzzle metadata
