@@ -210,8 +210,9 @@
       }
     };
     for(const record of columns.values())refreshFaces(record);
-    const rotateAll=()=>{ // Every pillar's climb faces quarter-turn on beats 2, 3 and 4.
+    const rotateAll=()=>{ // All existing A-column rotation mechanisms tick together on beats 2, 3 and 4.
       for(const pillar of columns.values()){
+        if(pillar.name!=='A')continue; // B/C/D retain their original fixed orientations and climb paths.
         pillar.rotation=(pillar.rotation+1)%4;
         pillar.rotationTarget=pillar.rotation;
         refreshFaces(pillar);pillar.updateShape();
