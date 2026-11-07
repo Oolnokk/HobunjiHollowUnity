@@ -413,9 +413,11 @@
   function tick(dt) {
     const player = deps?.player, state = player?._freeJump;
     if (!state) return false;
+    if (state.phase === 'rope' && player.dodging && window.HangingRopes?.releaseActiveRope?.() === true) return true; // Dodge dismount uses the same release trajectory as Jump; never snap a rider to the floor.
     if (state.area !== deps.getCurrentArea() || player.health <= 0 || player.prone ||
       player.climbing || player.onBranch || player.onCliffBalcony || player.onClimbSurface ||
-      player.dodging || player.lunging || player.knockbackT > 0) {
+      (player.dodging && state.source !== 'rope swing' && state.source !== 'ruin rope swing') ||
+      player.lunging || player.knockbackT > 0) { // Dodge is the rope-release input, not a reason to erase its ballistic flight.
       reset(player, 'jump interrupted/area changed');
       return false; // Let the native action/movement handler proceed in this frame.
     }
