@@ -40,7 +40,7 @@ async function main(){
       &&!!window.AreaFootprintBlockers?.blocksBox &&!!window.PersistentGroundFire
       &&!!window.CaveSiteSystem?.tickPuzzleRuntime &&!!window.PuzzleCaveEntrances,
       null,{timeout:120000});
-    const result=await page.evaluate(()=>{
+    const result=await page.evaluate(async()=>{
       const THREE=window.THREE;
       if(!THREE?.Group||!window.RuinLayerChallenges?.compose)throw Error('Real Three/ruin composer missing');
       const group=new THREE.Group(); // Detached 3D test scene never interferes with the saved player's world.
@@ -55,6 +55,20 @@ async function main(){
       const state={phase:'fire',solved:0,lit:0};
       const hot=new Set(); // Sconce contact is driven by actual authored coordinates, not a hard-coded gate location.
       let fire=null,music=null;
+      const waitFor=async(check,label)=>{
+        for(let count=0;count<120;count++){ // Asset/font availability remains bounded on mobile CI.
+          if(check())return;
+          await new Promise(resolve=>setTimeout(resolve,50));
+        }
+        throw Error('Timed out waiting for '+label);
+      };
+      const assertAuthoredGate=async(challenge,kind)=>{
+        await waitFor(()=>challenge.authoredGate || challenge.disposed,kind+' authored cliffGate model');
+        if(!challenge.authoredGate)throw Error(kind+' authored gate was disposed before it loaded');
+        const darkness=challenge.authoredGate.userData?.meshById?.get?.('cliff_gate_darkness');
+        if(!darkness || darkness.visible)throw Error(kind+' authored cliff_gate_darkness was not hidden');
+        if(challenge.door.visible)throw Error(kind+' authored gate did not replace the placeholder slab');
+      };
       try{
         fire=window.RuinLayerChallenges.compose({
           THREE,parent:group,room,id:'browser-fire-test',kind:'fireSconces',area,y:0,authoredCliffDoor:true,
@@ -75,6 +89,7 @@ async function main(){
         if(fire.rockSurround.material!==caveShell.material||!fire.rockSurround.userData.caveSharedWallMaterial)
           throw Error('Carved rock wall did not inherit the exact surrounding cave-shell material');
         if(fire.backdrop.visible)throw Error('Unwanted black fire-door plane still covers the cave interior');
+        await assertAuthoredGate(fire,'fire'); // Verify the actual asynchronously built black plane, not only its hidden placeholder.
         fire.dispose();fire=null;
         if(collision.providerIds().length!==countBefore)throw Error('Fire cave leaked collision provider on disposal');
 
@@ -96,6 +111,22 @@ async function main(){
         if(music.plate.userData.puzzleCavePlateTexture!=='carved_smooth.png'||
           music.plate.userData.puzzleCaveTankanText!=="hao'uun")
           throw Error('Melody plate is missing authored carved_smooth material or Tankan hao\'uun inscription');
+        await waitFor(()=>music.plate.userData.puzzleCaveTankanReady||music.plate.userData.puzzleCaveTankanError,
+          'Tankan glyph canvas and actual furniture font');
+        if(music.plate.userData.puzzleCaveTankanError)
+          throw Error('Real Tankan lettering failed: '+music.plate.userData.puzzleCaveTankanError);
+        const label=music.plate.children.find(child=>child.name==='puzzle-cave-tankan-hao-uun');
+        const canvas=label?.material?.map?.image;
+        if(!label?.visible||!canvas?.getContext)
+          throw Error('The Tankan inscription exists only as metadata; no rendered lettering is visible');
+        const pixels=canvas.getContext('2d',{willReadFrequently:true}).getImageData(0,0,canvas.width,canvas.height).data;
+        let visiblePixels=0;
+        for(let i=3;i<pixels.length;i+=4)if(pixels[i]>0)visiblePixels++;
+        if(!visiblePixels)throw Error('The Tankan font loaded but the inscription canvas is blank');
+        await waitFor(()=>music.plate.material?.map?.image?.width>0,
+          'carved_smooth.png plate texture');
+        if(music.plate.material.map.userData?.furnitureTexture!=='carved_smooth.png')
+          throw Error('Plate does not use the furniture material texture pipeline');
         if(music.glyphs.length!==music.song.notes.length||
           !(music.inscription?.group.visible||music.scorePanel?.visible))
           throw Error('The full glowing Scratchbone clue did not appear on the fixed wall while standing on the plate');
@@ -114,11 +145,12 @@ async function main(){
         music.animate(1);
         if(collision.blocksBox(area,gateX,gateZ,.18))throw Error('Raised melody slab still blocks player');
         if(!collision.blocksBox(area,room.x+room.w-.65,gateZ,.18))throw Error('Right rock flank bypasses melody puzzle');
+        await assertAuthoredGate(music,'melody'); // The actual loaded gate must still have no black plane after the solve.
         music.dispose();music=null;
         group.remove(caveShell);caveShell.geometry.dispose();caveShell.material.dispose();
         if(collision.providerIds().length!==countBefore||group.children.length!==0)
           throw Error('Composed cave mechanisms leaked scene geometry or collision providers');
-        return {passed:true,automaticInstrumentSessions:opened,songsSolved:state.solved,sconces:state.lit,bpm:songBpm};
+        return {passed:true,automaticInstrumentSessions:opened,songsSolved:state.solved,sconces:state.lit,bpm:songBpm,tankanPixels:visiblePixels};
       }finally{
         fire?.dispose?.();music?.dispose?.();
       }
