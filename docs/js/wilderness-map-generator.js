@@ -174,7 +174,7 @@
       plateauPonds: 8,
       plateauStreams: 10,
       rivers: 2,
-      riverOutlet: null, // Optional named boundary destination used by the late river painter; other biomes keep random river exits.
+      riverOutlet: 'none', // Optional named boundary destination used by the late river painter; other biomes keep random river exits.
       pathAnchors: 4,
       // See findPath's randomBias term — multiplier on how strongly the A*
       // path search prefers meandering over a straight line to its target.
