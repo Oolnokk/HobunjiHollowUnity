@@ -141,7 +141,7 @@ function world() {
 // A released ruin swing must also catch ordinary puzzle-room ropes, not only
 // specially tagged rope-chain links. It must never recatch the released rope.
 {
-  const start=ruinSource.indexOf('  function catchAirborneRope(f) {');
+  const start=ruinSource.indexOf('  function catchAirborneRope(f, from = null) {');
   const end=ruinSource.indexOf('\n\n  function createLavaMaterial() {',start);
   assert(start>=0&&end>start,'the ruin shares one airborne catch routine');
   const rope={id:'another-ordinary-rope',attached:false,burden:null};
