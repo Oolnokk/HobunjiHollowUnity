@@ -18,6 +18,7 @@
     ['nativeStackedObelisk','V50 stacked obelisk','Turn the marked pieces to line up the glyphs.'],
     ['nativeLinkedCubePillars','V50 linked cube pillars','Turn the marked cubes and watch which other cubes move with them.'],
     ['nativePushBlock','V50 stone push-block course','Hold movement into a flat face to slide the block. Follow the grooves to the plate.'],
+    ['findBlocks','Find the Blocks','Recover four stone blocks from fire, ice, a climbing path and a tall pillar; slide each onto one of four plates.'],
   ]); // Used by both the mobile selector and the generation validator.
   const MECHANISMS=Object.freeze([
     ['stoneDoor','Rising stone door','Interact beside the slab to raise or lower it.'],
