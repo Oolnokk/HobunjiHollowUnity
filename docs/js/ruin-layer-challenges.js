@@ -57,6 +57,7 @@
             addControl:control=>options.addControl?.(control),
             removeControl:control=>options.removeControl?.(control),
             registerSurface:surface=>DS.registerSurface({...surface,scope}),
+            registerBlocker:blocker=>DS.registerBlocker({...blocker,scope}), // Every pillar, blocker and closed gate collides only at its authored wing elevation.
             registerProjectileTarget:target=>{targets.push(target);return target;},
             disposeObject:object=>{
               object.parent?.remove(object);
