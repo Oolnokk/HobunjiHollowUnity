@@ -545,8 +545,7 @@
     if (data.type === 'puzzle-note' && playerSession?.instrumentMode === 'puzzle' &&
         Number.isInteger(data.noteIndex) && data.noteIndex >= 0 && data.noteIndex < (window.KurrayaPuzzle?.NOTE_CODES?.length ?? 8)) {
       const detail = {noteIndex:data.noteIndex,area:playerSession.area,instrumentKey:playerSession.instrumentKey}; // The active player's normal instrument publishes notes; ruin listeners never receive example playback or NPC notes.
-      window.dispatchEvent(new CustomEvent('hobunji-kurraya-puzzle-note',{detail}));
-      animatePlayerNote(); // Puzzle notes are real sounded notes too: play the currently equipped instrument's authored note action.
+      window.dispatchEvent(new CustomEvent('hobunji-kurraya-puzzle-note',{detail})); // The iframe separately reports its sounded-note event after audio actually plays; that one alone animates.
     }
     if (data.type === 'puzzle-echo-result' && playerSession?.instrumentMode === 'puzzle' &&
         playerSession.echoChallenge?.id === data.id) {
