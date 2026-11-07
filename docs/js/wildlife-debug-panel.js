@@ -94,6 +94,7 @@
     const plan = cave.currentPlan; // Interior-only details come from the same generated plan used by actual cave mechanics.
     return `<div style="padding:8px 10px;margin-bottom:8px;border:1px solid rgba(196,151,84,.3);border-radius:6px;font-size:12px">
       <div style="font-weight:600">Cave Geometry</div>
+      <div>Ordinary caves: <b>${cave.caveCount}</b> · independent Puzzle Caves: <b>${cave.puzzleCaveCount||0}</b> (cliff ${cave.outdoorPuzzleCaveCount||0}, behind rock ${cave.rockPuzzleCaveCount||0})</div>
       <div>${deps.esc(cave.latestChange)}</div>
       ${plan ? `<div>Solid rim: ${plan.outerRimTileCount} tiles · wall height: ${plan.wallHeightScale}× · embedded ruin tunnel: ${plan.ruinEntrance ? 'yes' : 'none'}</div>` : ''}
     </div>`;
