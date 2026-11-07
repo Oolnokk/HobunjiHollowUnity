@@ -122,8 +122,8 @@
           const defence=stage>=3&&stage<=challengeCount&&rng()<.24; // Only later wing stages may reserve a full authored statue-defense arena.
           const rw=defence?18:(dir.dx?integer(rng,11,19):integer(rng,9,15));
           const rd=defence?18:(dir.dz?integer(rng,11,19):integer(rng,9,15));
-          const gap=integer(rng,7,15); // Variable-length hall, not a snapped room-grid separation.
-          const offset=integer(rng,-5,5),depth=Math.floor((dir.dx?rw:rd)/2);
+          const gap=integer(rng,3,6); // Short walk between consecutive puzzle rooms; no empty approach needs the old 7–15 cells.
+          const offset=integer(rng,-2,2),depth=Math.floor((dir.dx?rw:rd)/2); // Small lateral bends retain variety without stretching the empty corridor.
           const rx=previous.x+dir.dx*(gap+depth+1)+lateral.dx*offset;
           const rz=previous.z+dir.dz*(gap+depth+1)+lateral.dz*offset;
           const isGoal=stage===challengeCount+1;
