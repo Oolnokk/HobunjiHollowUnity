@@ -28,6 +28,10 @@
     "nuhongan": {
       "male": 0.5,
       "female": 0.47
+    },
+    "longoran": {
+      "male": 0.5,
+      "female": 0.47
     }
   }
 }
