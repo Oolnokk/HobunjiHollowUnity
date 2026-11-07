@@ -198,6 +198,9 @@ for(const map of puzzleCaves){
   assert.equal(map.creatureSpawns.length,0,'Puzzle Cave contains no inherited Den-Mother spawns');
   const treasure=map.cavePuzzleTreasure; // The earned loot has a tangible authored chest even when it is initially concealed.
   assert(treasure&&floorKeys.has(treasure.col+','+treasure.row),'puzzle chest is on an actual carved floor tile');
+  const gateZ=puzzle.room.row+9-2.8; // Same chamber gate depth used by the live puzzle compositor.
+  assert(treasure.row+.5-gateZ>1.05,'the treasure is beyond the player's front-of-door interaction reach');
+  assert(treasure.row+.5-gateZ<2,'the opened passage leads to a nearby, walkable reward alcove');
   assert(map.caveProps.some(prop=>prop.id===treasure.id&&prop.key==='ruinDungeonChestT2'),
     'both puzzle types build the ordinary authored bronze treasure chest');
   if(puzzle.kind==='fireSconces'){
@@ -459,6 +462,9 @@ assert.equal(census.denCount, expectedAnimalDens, 'wildlife diagnostics retain t
   Cave.__test.runtimeStateBySignature.set(rewardProfile.signature,saved); // Simulate the persisted just-solved cave without side-stepping the real interaction.
   deps.getCurrentArea=()=>rewardMap.id;
   deps.player.x=(tile.col+.5)*deps.TILE;
+  deps.player.y=(rewardMap.cavePuzzle.room.row+9-2.8-.2)*deps.TILE;
+  assert.equal(Cave.objectAt(rewardMap.id,tile.col,tile.row),null,
+    'the chest cannot be claimed through the closed stone wall from its front side, even on a saved solved map');
   deps.player.y=(tile.row+.5)*deps.TILE;
   const chest=Cave.objectAt(rewardMap.id,tile.col,tile.row);
   assert.equal(chest?.getButtons()?.[0]?.action,'obj_claim_puzzle_treasure','the visible puzzle chest has a standard aimed action');
