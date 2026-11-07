@@ -35,7 +35,8 @@ const THREE={
 const source=fs.readFileSync(path.join(__dirname,'../docs/js/dev-ruin-find-blocks.js'),'utf8');
 new vm.Script(source,{filename:'dev-ruin-find-blocks.js'}); // Catch syntax errors before running any behavioral checks.
 
-function test(seed){
+function test(seed,size=24){
+  const center=Math.floor(size*.5)+.5,offset=Math.max(4,Math.min(5,Math.floor(size*.29))); // Exercise both generous lab rooms and minimum-sized 18x18 shaft rooms.
   const fireTargets=[],projectileTargets=[],breakablePillars=[],registeredBlocks=[],surfaces=[],cleared=[],barriers=[]; // Retain the actual authored obstruction centers for a push-route audit.
   const soloGroup=new Object3D(); // Parent scene has the same lifetime as one Puzzle Lab reroll.
   const subpuzzles=[]; // Every nested melody/glyph/rail challenge must be solved and disposed through its real callback seam.
@@ -52,8 +53,8 @@ function test(seed){
     },
     DynamicSurfaces:{
       sampleSupport(x,z){
-        // The test's 24x24 room centers at 12.5: the raised source begins at (7.5,17.5).
-        return x>=7.2&&x<=8.6&&z>=16&&z<=19?{y:2.52}:null;
+        // The elevated source support follows the same per-room offset as the real winding dais.
+        return x>=center-offset-.3&&x<=center-offset+1.1&&z>=center+offset-1.5&&z<=center+offset+1.5?{y:2.52}:null;
       }
     },
     DevRandomRuinFurniturePieces:{build(){return null;}},
@@ -86,7 +87,7 @@ function test(seed){
     playerWorld:()=>({x:0,y:0,z:0}),deps:{showToast(){}}
   };
   const room=env.DevRuinFindBlocks.create({
-    THREE,kit,context:{seed,ceilingY:5},room:{x:0,z:0,w:24,d:24},y:0,
+    THREE,kit,context:{seed,ceilingY:5},room:{x:0,z:0,w:size,d:size},y:0,
     isActive:()=>true,onSolved:()=>solved++
   });
   assert.equal(room.blocks.length,4);
@@ -137,7 +138,7 @@ function test(seed){
     assert(room.snapshot().pillarHeight<.1,'Solving the native pillar challenge sinks the stone');
   }else if(room.variant==='projectiles'){
     assert.equal(projectileTargets.length,3,'Projectile variant registers three ranged targets');
-    const posts=[[13.5,15.5],[15.5,13.5],[17.5,13.5]]; // The three solid blocker pillars frame the central room.
+    const posts=[[center+1,center+3],[center+3,center+1],[center+5,center+1]]; // The three solid blocker pillars frame the central room.
     projectileTargets.forEach((target,i)=>{
       const [px,pz]=posts[i],glyph=target.hitMesh.position;
       assert(Math.max(Math.abs(glyph.x-px),Math.abs(glyph.z-pz))>.475,
@@ -154,7 +155,7 @@ function test(seed){
   }
   assert.equal(room.solved,false,'Release subpuzzles never bypass the final four plates');
   const free=(x,z)=>{
-    if(x<.5||x>23.5||z<.5||z>23.5)return false;
+    if(x<.5||x>size-.5||z<.5||z>size-.5)return false;
     return !barriers.some(barrier=>{
       if(barrier.enabled?.()===false)return false;
       return Math.abs(x-barrier.box.cx)<barrier.box.halfX+.41
@@ -199,7 +200,7 @@ function test(seed){
   // V50 ceiling heights vary with generated wall profiles; none of the four blocks may breach a short roof.
   const lowRoof=3.05;
   const tight=env.DevRuinFindBlocks.create({
-    THREE,kit,context:{seed,ceilingY:lowRoof},room:{x:0,z:0,w:24,d:24},y:0,
+    THREE,kit,context:{seed,ceilingY:lowRoof},room:{x:0,z:0,w:size,d:size},y:0,
     isActive:()=>true,onSolved:()=>{}
   });
   assert(tight.snapshot().stairRise<.36,'The climbing route compresses safely when the ceiling is low');
@@ -209,6 +210,7 @@ function test(seed){
   assert.equal(state.controls.length,0,'A short-roof reroll must also release every control');
   return room.variant+'/'+room.netVariant;
 }
-const combinations=new Set(Array.from({length:16},(_,seed)=>test(seed)));
+const combinations=new Set(Array.from({length:16},(_,seed)=>test(seed,24)));
 assert.equal(combinations.size,16,'Four independent pillar triggers and four independent net triggers must generate sixteen stable combinations');
+for(let seed=0;seed<16;seed++)test(seed,18); // Minimum-sized production rooms must preserve four distinct pushable paths.
 console.log('PASS Find the Blocks: 16 native mechanism combinations, 4 blocks/plates, real fire/ice/ledge, reachable push paths, scoped cleanup');
