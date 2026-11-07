@@ -353,10 +353,15 @@
     const meshes = _banditCampMeshes.get(zoneId); // Existing prop mesh owners; no scene-wide traversal or duplicate geometry.
     if (!meshes) return [];
     const roots = []; // Living camp tents and fires that Perception can tint as a recognizable landmark.
-    for (const record of _banditCampInstances.get(zoneId) || []) for (const prop of record.props || []) {
-      if (prop.destroyed || (prop.type !== 'tent' && prop.key !== 'campfire')) continue;
-      const root = meshes.get(prop.id)?.mesh;
-      if (root?.parent === scene && root.visible !== false) roots.push(root);
+    for (const record of _banditCampInstances.get(zoneId) || []) {
+      const site = record.instance?.site; // Exact temporary-locale camp footprint; every tent shares its center for the 24-tile visibility boundary.
+      const anchor = site && Number.isFinite(Number(site.x)) && Number.isFinite(Number(site.y))
+        ? { x: Number(site.x) + (Number(site.w) || 1) / 2, z: Number(site.y) + (Number(site.h) || 1) / 2 } : null;
+      for (const prop of record.props || []) {
+        if (prop.destroyed || (prop.type !== 'tent' && prop.key !== 'campfire')) continue;
+        const root = meshes.get(prop.id)?.mesh;
+        if (root?.parent === scene && root.visible !== false) roots.push(anchor ? { root, anchor } : root);
+      }
     }
     return roots;
   }
