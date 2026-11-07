@@ -270,5 +270,36 @@
     return { ok, message: ok ? 'PASS: deterministic geometry, ground anchoring, selected/hidden stone supports, sharp opaque stone shells and reversible crystal growth.' : 'FAIL: seeded geometry, anchoring, selected/hidden stone supports, stone shells or reversible growth.' };
   }
 
-  window.IceStalagmiteCoverage = { build, setGrowth, selfTest, MAX_SPIKES }; // Shared by gameplay, furniture author, and mobile diagnostics.
+  // Ceiling icicles use the furniture editor's exact upright growth geometry.
+  // Turning the finished authored layer upside down makes the ceiling its floor;
+  // the attached burden/hit box remains independent of this visual-only skin.
+  function buildCeiling(T, parent, { width = 1, depth = 1, height = 1.7, recipe } = {}) {
+    if (!T?.Group || !T?.Mesh || !T?.BoxGeometry || !T?.MeshBasicMaterial || !parent?.add ||
+        recipe?.kind !== 'iceStalagmites') return null;
+    const w = clamp(Number(width) || 1, .12, 8); // Ceiling ice source footprint, used only to seed the authored geometry.
+    const d = clamp(Number(depth) || 1, .12, 8); // Same footprint in the perpendicular direction.
+    const h = clamp(Number(height) || 1.7, .3, 8); // Inverted upright furniture height, measured down from the ceiling.
+    const source = new T.Group(); // Temporary furniture proxy; never added to gameplay or collision.
+    const geometry = new T.BoxGeometry(w, h, d); // Supplies actual lower-mesh bounds to the Furniture Editor ice builder.
+    const material = new T.MeshBasicMaterial(); // Unrendered temporary part, disposed immediately after geometry extraction.
+    const part = new T.Mesh(geometry, material); // Authored part identity is required by collectSources().
+    part.userData.authoredPartId = 'ceiling_ice_surface';
+    part.position.y = h * .5;
+    source.add(part);
+    let layer = null; // The ordinary IceStalagmiteCoverage.build owns all spike geometry, colors and growth history.
+    try { layer = build(T, source, recipe); }
+    finally { geometry.dispose(); material.dispose(); }
+    if (!layer?.userData?.surfaceGrowthStats?.spikes) return null;
+    const inverted = new T.Group(); // Scene owner for the upside-down layer; rotation is visual-only.
+    inverted.name = 'Surface ceiling icicles';
+    inverted.rotation.x = Math.PI;
+    inverted.userData.dungeonCeilingIce = true;
+    inverted.userData.devRuinFootprintIgnore = true;
+    layer.traverse(node => { node.userData.devRuinFootprintIgnore = true; });
+    inverted.add(layer);
+    parent.add(inverted);
+    return { root: inverted, layer }; // Callers animate layer with setGrowth() and discard the owner on reroll.
+  }
+
+  window.IceStalagmiteCoverage = { build, buildCeiling, setGrowth, selfTest, MAX_SPIKES }; // Shared by gameplay, furniture author, and mobile diagnostics.
 })();

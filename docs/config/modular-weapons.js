@@ -26,12 +26,12 @@ window.MODULAR_WEAPON_CONFIG = {
       "mount": {
         "type": "blade",
         "start": {
-          "x": 188,
-          "y": 558
+          "x": 184,
+          "y": 552
         },
         "end": {
-          "x": 188,
-          "y": 447
+          "x": 184,
+          "y": 487
         }
       },
       "editorOnly": false
@@ -48,8 +48,8 @@ window.MODULAR_WEAPON_CONFIG = {
           "y": 623
         },
         "end": {
-          "x": 207,
-          "y": 543
+          "x": 209,
+          "y": 558
         }
       }
     },
@@ -83,7 +83,7 @@ window.MODULAR_WEAPON_CONFIG = {
         },
         "end": {
           "x": 209,
-          "y": 787
+          "y": 801
         }
       }
     },
@@ -100,7 +100,7 @@ window.MODULAR_WEAPON_CONFIG = {
         },
         "end": {
           "x": 200,
-          "y": 584
+          "y": 599
         }
       }
     },
@@ -117,7 +117,7 @@ window.MODULAR_WEAPON_CONFIG = {
         },
         "end": {
           "x": 196,
-          "y": 629
+          "y": 644
         }
       }
     },
@@ -182,12 +182,12 @@ window.MODULAR_WEAPON_CONFIG = {
       "mount": {
         "type": "blade",
         "start": {
-          "x": 207,
-          "y": 319
+          "x": 193.7686592344786,
+          "y": 313.0526330990026
         },
         "end": {
-          "x": 207,
-          "y": 239
+          "x": 192.22762058461228,
+          "y": 248.07090335994735
         }
       },
       "mountNote": "Straight original eye line (not a rotated tang); the Pick-Shovel haft now has an additional centered, perpendicular tang at this location."
@@ -205,7 +205,7 @@ window.MODULAR_WEAPON_CONFIG = {
         },
         "end": {
           "x": 195,
-          "y": 776
+          "y": 791
         }
       },
       "mountNote": "Tang mount: shovel bowl must remain clear of the haft."
@@ -223,7 +223,7 @@ window.MODULAR_WEAPON_CONFIG = {
         },
         "end": {
           "x": 187,
-          "y": 328
+          "y": 343
         }
       }
     },
@@ -257,7 +257,7 @@ window.MODULAR_WEAPON_CONFIG = {
         },
         "end": {
           "x": 239,
-          "y": 778
+          "y": 793
         }
       },
       "editorOnly": false
@@ -322,8 +322,6 @@ window.MODULAR_WEAPON_CONFIG = {
       "sprite": "assets/toolsprites/modular_pieces/weaponshaft_b'shuakauitl.png",
       "overrides": {
         "dagger-sword": {
-          "scaleX": 0.5,
-          "scaleY": 0.9,
           "layerOrder": "haft-over-head",
           "bridges": {
             "strokes": [
@@ -1921,8 +1919,8 @@ window.MODULAR_WEAPON_CONFIG = {
           "disallow": false
         },
         "dagger": {
-          "scaleX": 0.5,
-          "scaleY": 0.9,
+          "scaleX": 0.85,
+          "scaleY": 0.95,
           "layerOrder": "haft-over-head",
           "bridges": {
             "strokes": [
@@ -1961,8 +1959,9 @@ window.MODULAR_WEAPON_CONFIG = {
           "layerOrder": "head-over-haft"
         },
         "fishing-spear": {
-          "scaleX": 0.6,
-          "scaleY": 1.2,
+          "scaleX": 0.85,
+          "scaleY": 1.25,
+          "y": 30,
           "layerOrder": "haft-over-head",
           "bridges": {
             "strokes": [
@@ -2056,7 +2055,8 @@ window.MODULAR_WEAPON_CONFIG = {
           "disallow": true
         },
         "pick-shovel-pick": {
-          "scaleX": 0.5,
+          "scaleX": 0.75,
+          "scaleY": 1.25,
           "flipX": true,
           "flipY": true,
           "layerOrder": "head-over-haft",
@@ -2090,7 +2090,7 @@ window.MODULAR_WEAPON_CONFIG = {
             "shade": 0.3,
             "seed": 1
           },
-          "disallow": true
+          "disallow": false
         },
         "pickshovel-scoop": {
           "scaleX": 0.4,
@@ -2237,8 +2237,8 @@ window.MODULAR_WEAPON_CONFIG = {
             "y": 966.3136175245061
           },
           "end": {
-            "x": 221.7599119115615,
-            "y": 941.6863824754939
+            "x": 217.81993393367108,
+            "y": 944.7647868566205
           }
         },
         {
@@ -2248,13 +2248,21 @@ window.MODULAR_WEAPON_CONFIG = {
             "y": 278.83626571238403
           },
           "end": {
-            "x": 158.12411992422858,
-            "y": 303.16373428761597
+            "x": 162.09308994317144,
+            "y": 300.12280071571195
           }
         }
       ],
       "maxAttachments": 8,
-      "editorOnly": false
+      "editorOnly": false,
+      "rigRegions": [],
+      "shaftArtTransform": {
+        "scaleX": 1,
+        "scaleY": 1,
+        "x": 0,
+        "y": 0,
+        "enabled": false
+      }
     },
     "dagger-sword": {
       "label": "Dagger Sword",
@@ -2918,7 +2926,7 @@ window.MODULAR_WEAPON_CONFIG = {
           "scaleY": 1.15,
           "y": 15,
           "rotation": 1,
-          "layerOrder": "haft-over-head"
+          "layerOrder": "head-over-haft"
         },
         "hatchet": {
           "scaleY": 0.866,
@@ -2930,22 +2938,20 @@ window.MODULAR_WEAPON_CONFIG = {
           "disallow": true
         },
         "pick-shovel-pick": {
-          "scaleX": 0.9,
-          "scaleY": 1.5,
+          "scaleY": 1.75,
           "flipY": true,
           "x": 5,
-          "y": -15,
-          "rotation": 3,
+          "y": 10,
           "layerOrder": "head-over-haft"
         },
         "pickshovel-scoop": {
-          "scaleX": 0.5,
-          "scaleY": 2,
+          "scaleX": 0.75,
+          "scaleY": 1.5,
           "y": -30,
           "layerOrder": "haft-over-head"
         },
         "plains-blade": {
-          "scaleY": 0.7,
+          "scaleY": 0.6,
           "layerOrder": "haft-over-head",
           "bridges": {
             "strokes": [
@@ -3135,7 +3141,15 @@ window.MODULAR_WEAPON_CONFIG = {
           }
         }
       ],
-      "editorOnly": true
+      "editorOnly": true,
+      "rigRegions": [],
+      "shaftArtTransform": {
+        "scaleX": 1,
+        "scaleY": 1,
+        "x": 0,
+        "y": 0,
+        "enabled": false
+      }
     },
     "dagger": {
       "label": "Dagger",
@@ -3143,8 +3157,6 @@ window.MODULAR_WEAPON_CONFIG = {
       "sprite": "assets/toolsprites/modular_pieces/weaponshaft_dagger.png",
       "overrides": {
         "dagger-sword": {
-          "x": -5,
-          "y": 30,
           "layerOrder": "haft-over-head",
           "animation": "thrust"
         },
@@ -3165,21 +3177,15 @@ window.MODULAR_WEAPON_CONFIG = {
           "disallow": true
         },
         "fishing-spear": {
-          "scaleX": 0.9,
-          "scaleY": 1.25,
+          "scaleY": 1.75,
           "layerOrder": "haft-over-head",
           "animation": "thrust"
         },
         "harlyao-broadsword": {
-          "scaleY": 0.75,
           "layerOrder": "haft-over-head",
           "animation": "thrust"
         },
         "harlyao-longsword": {
-          "scaleX": 1.2,
-          "scaleY": 0.7,
-          "x": -3,
-          "y": 30,
           "layerOrder": "haft-over-head",
           "animation": "thrust"
         },
@@ -3207,23 +3213,19 @@ window.MODULAR_WEAPON_CONFIG = {
           "animation": "thrust"
         },
         "pick-shovel-pick": {
-          "scaleX": 1.1,
-          "scaleY": 1.2,
+          "scaleY": 1.6,
           "flipY": true,
-          "x": 7,
           "layerOrder": "head-over-haft",
           "animation": "thrust"
         },
         "pickshovel-scoop": {
-          "scaleX": 0.65,
-          "scaleY": 1.3,
-          "y": -2,
+          "scaleX": 0.75,
+          "scaleY": 1.6,
           "layerOrder": "haft-over-head",
           "animation": "thrust"
         },
         "plains-blade": {
-          "scaleX": 0.9,
-          "scaleY": 0.55,
+          "scaleY": 0.65,
           "layerOrder": "haft-over-head"
         },
         "porakaneki-greatclub": {
@@ -3272,15 +3274,23 @@ window.MODULAR_WEAPON_CONFIG = {
           "type": "tang",
           "start": {
             "x": 211.5,
-            "y": 617
+            "y": 637
           },
           "end": {
             "x": 211.5,
-            "y": 537
+            "y": 587
           }
         }
       ],
-      "maxAttachments": 8
+      "maxAttachments": 8,
+      "rigRegions": [],
+      "shaftArtTransform": {
+        "scaleX": 1,
+        "scaleY": 1,
+        "x": 0,
+        "y": 0,
+        "enabled": false
+      }
     },
     "fishing-mace": {
       "label": "Fishing Mace",
@@ -3290,36 +3300,7 @@ window.MODULAR_WEAPON_CONFIG = {
         "dagger-sword": {
           "x": 5,
           "y": 30,
-          "layerOrder": "haft-over-head",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 170.5,
-                  "y0": 762.5,
-                  "x1": 227,
-                  "y1": 873
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 60.00000000000006,
-                  "y0": 592.5000000000002,
-                  "x1": 367.99999999999994,
-                  "y1": 1655.4999999999998
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "layerOrder": "haft-over-head"
         },
         "dagger": {
           "scaleX": 0.7,
@@ -3327,36 +3308,7 @@ window.MODULAR_WEAPON_CONFIG = {
           "x": 35,
           "y": -15,
           "rotation": -90,
-          "layerOrder": "haft-over-head",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 170.5,
-                  "y0": 762.5,
-                  "x1": 227,
-                  "y1": 873
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 60.00000000000006,
-                  "y0": 592.5000000000002,
-                  "x1": 367.99999999999994,
-                  "y1": 1655.4999999999998
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "layerOrder": "haft-over-head"
         },
         "fishing-mace": {
           "x": 5,
@@ -3368,36 +3320,7 @@ window.MODULAR_WEAPON_CONFIG = {
           "scaleX": 1.25,
           "x": 5,
           "y": 30,
-          "layerOrder": "haft-over-head",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 170.5,
-                  "y0": 762.5,
-                  "x1": 227,
-                  "y1": 873
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 60.00000000000006,
-                  "y0": 592.5000000000002,
-                  "x1": 367.99999999999994,
-                  "y1": 1655.4999999999998
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "layerOrder": "haft-over-head"
         },
         "harlyao-broadsword": {
           "scaleX": 1.05,
@@ -3405,36 +3328,7 @@ window.MODULAR_WEAPON_CONFIG = {
           "x": 35,
           "y": -40,
           "rotation": -90,
-          "layerOrder": "haft-over-head",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 170.5,
-                  "y0": 762.5,
-                  "x1": 227,
-                  "y1": 873
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 60.00000000000006,
-                  "y0": 592.5000000000002,
-                  "x1": 367.99999999999994,
-                  "y1": 1655.4999999999998
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "layerOrder": "haft-over-head"
         },
         "harlyao-longsword": {
           "scaleX": 1.05,
@@ -3442,36 +3336,7 @@ window.MODULAR_WEAPON_CONFIG = {
           "x": 40,
           "y": -35,
           "rotation": -90,
-          "layerOrder": "haft-over-head",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 170.5,
-                  "y0": 762.5,
-                  "x1": 227,
-                  "y1": 873
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 60.00000000000006,
-                  "y0": 592.5000000000002,
-                  "x1": 367.99999999999994,
-                  "y1": 1655.4999999999998
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "layerOrder": "haft-over-head"
         },
         "hatchet": {
           "x": 5,
@@ -3494,70 +3359,12 @@ window.MODULAR_WEAPON_CONFIG = {
           "x": 35,
           "y": -25,
           "rotation": -90,
-          "layerOrder": "head-over-haft",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 170.5,
-                  "y0": 762.5,
-                  "x1": 227,
-                  "y1": 873
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 60.00000000000006,
-                  "y0": 592.5000000000002,
-                  "x1": 367.99999999999994,
-                  "y1": 1655.4999999999998
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "layerOrder": "head-over-haft"
         },
         "pickshovel-scoop": {
           "x": 5,
           "y": 30,
-          "layerOrder": "haft-over-head",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 170.5,
-                  "y0": 762.5,
-                  "x1": 227,
-                  "y1": 873
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 60.00000000000006,
-                  "y0": 592.5000000000002,
-                  "x1": 367.99999999999994,
-                  "y1": 1655.4999999999998
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "layerOrder": "haft-over-head"
         },
         "plains-blade": {
           "scaleX": 1.1,
@@ -3565,36 +3372,7 @@ window.MODULAR_WEAPON_CONFIG = {
           "x": -65,
           "y": -30,
           "rotation": -90,
-          "layerOrder": "haft-over-head",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 170.5,
-                  "y0": 762.5,
-                  "x1": 227,
-                  "y1": 873
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 60.00000000000006,
-                  "y0": 592.5000000000002,
-                  "x1": 367.99999999999994,
-                  "y1": 1655.4999999999998
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "layerOrder": "haft-over-head"
         },
         "porakaneki-greatclub": {
           "scaleY": 0.85,
@@ -3605,36 +3383,7 @@ window.MODULAR_WEAPON_CONFIG = {
         "war-cleaver": {
           "x": 5,
           "y": 30,
-          "layerOrder": "haft-over-head",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 170.5,
-                  "y0": 762.5,
-                  "x1": 227,
-                  "y1": 873
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 60.00000000000006,
-                  "y0": 592.5000000000002,
-                  "x1": 367.99999999999994,
-                  "y1": 1655.4999999999998
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "layerOrder": "haft-over-head"
         },
         "warhammer": {
           "x": 5,
@@ -3676,7 +3425,15 @@ window.MODULAR_WEAPON_CONFIG = {
           }
         }
       ],
-      "maxAttachments": 8
+      "maxAttachments": 8,
+      "rigRegions": [],
+      "shaftArtTransform": {
+        "scaleX": 1,
+        "scaleY": 1,
+        "x": 0,
+        "y": 0,
+        "enabled": false
+      }
     },
     "fishing-spear": {
       "label": "Fishing Spear",
@@ -3728,14 +3485,12 @@ window.MODULAR_WEAPON_CONFIG = {
           "layerOrder": "head-over-haft"
         },
         "pick-shovel-pick": {
-          "scaleY": 1.2,
           "flipY": true,
-          "x": 10,
           "layerOrder": "head-over-haft",
           "animation": "thrust"
         },
         "pickshovel-scoop": {
-          "scaleX": 0.8,
+          "scaleX": 0.9,
           "layerOrder": "haft-over-head"
         },
         "plains-blade": {
@@ -3778,16 +3533,24 @@ window.MODULAR_WEAPON_CONFIG = {
         {
           "type": "tang",
           "start": {
-            "x": 199,
-            "y": 834
+            "x": 204,
+            "y": 896
           },
           "end": {
-            "x": 199,
-            "y": 754
+            "x": 204,
+            "y": 826
           }
         }
       ],
-      "maxAttachments": 8
+      "maxAttachments": 8,
+      "rigRegions": [],
+      "shaftArtTransform": {
+        "scaleX": 1,
+        "scaleY": 1,
+        "x": 0,
+        "y": 0,
+        "enabled": false
+      }
     },
     "harlyao-broadsword": {
       "label": "Harlyao Broadsword",
@@ -3795,7 +3558,6 @@ window.MODULAR_WEAPON_CONFIG = {
       "sprite": "assets/toolsprites/modular_pieces/weaponshaft_harlyao_broadsword.png",
       "overrides": {
         "dagger-sword": {
-          "scaleY": 0.787,
           "layerOrder": "haft-over-head"
         },
         "fishing-mace": {
@@ -3803,8 +3565,8 @@ window.MODULAR_WEAPON_CONFIG = {
           "disallow": true
         },
         "fishing-spear": {
-          "scaleX": 0.9,
           "scaleY": 1.5,
+          "y": 45,
           "layerOrder": "haft-over-head"
         },
         "harlyao-broadsword": {
@@ -3827,19 +3589,17 @@ window.MODULAR_WEAPON_CONFIG = {
           "layerOrder": "head-over-haft"
         },
         "pick-shovel-pick": {
-          "scaleY": 2,
+          "flipX": true,
           "flipY": true,
-          "x": 5,
-          "y": 10,
-          "layerOrder": "head-over-haft"
+          "layerOrder": "haft-over-head"
         },
         "pickshovel-scoop": {
+          "scaleX": 0.6,
           "layerOrder": "haft-over-head",
           "disallow": true
         },
         "plains-blade": {
-          "scaleY": 0.65,
-          "x": -3,
+          "scaleY": 0.6,
           "layerOrder": "haft-over-head"
         },
         "porakaneki-greatclub": {
@@ -3867,6 +3627,7 @@ window.MODULAR_WEAPON_CONFIG = {
           "layerOrder": "head-over-haft"
         },
         "dagger": {
+          "scaleY": 0.85,
           "layerOrder": "haft-over-head"
         },
         "harlyao-longsword": {
@@ -3877,16 +3638,24 @@ window.MODULAR_WEAPON_CONFIG = {
         {
           "type": "tang",
           "start": {
-            "x": 200.5,
-            "y": 655
+            "x": 193.5,
+            "y": 662
           },
           "end": {
-            "x": 200.5,
-            "y": 575
+            "x": 193.5,
+            "y": 597
           }
         }
       ],
-      "maxAttachments": 8
+      "maxAttachments": 8,
+      "rigRegions": [],
+      "shaftArtTransform": {
+        "scaleX": 1,
+        "scaleY": 1,
+        "x": 0,
+        "y": 0,
+        "enabled": false
+      }
     },
     "harlyao-longsword": {
       "label": "Harlyao Longsword",
@@ -4008,7 +3777,15 @@ window.MODULAR_WEAPON_CONFIG = {
           }
         }
       ],
-      "maxAttachments": 8
+      "maxAttachments": 8,
+      "rigRegions": [],
+      "shaftArtTransform": {
+        "scaleX": 1,
+        "scaleY": 1,
+        "x": 0,
+        "y": 0,
+        "enabled": false
+      }
     },
     "war-cleaver": {
       "label": "War Cleaver",
@@ -9395,7 +9172,15 @@ window.MODULAR_WEAPON_CONFIG = {
         }
       ],
       "maxAttachments": 8,
-      "editorOnly": true
+      "editorOnly": true,
+      "rigRegions": [],
+      "shaftArtTransform": {
+        "scaleX": 1,
+        "scaleY": 1,
+        "x": 0,
+        "y": 0,
+        "enabled": false
+      }
     },
     "warhammer": {
       "label": "Warhammer",
@@ -9405,36 +9190,7 @@ window.MODULAR_WEAPON_CONFIG = {
         "dagger-sword": {
           "x": 12,
           "y": 5,
-          "layerOrder": "haft-over-head",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 183.5,
-                  "y0": 908.5,
-                  "x1": 240,
-                  "y1": 1019
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 73.00000000000006,
-                  "y0": 738.5000000000002,
-                  "x1": 380.99999999999994,
-                  "y1": 1801.4999999999998
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "layerOrder": "haft-over-head"
         },
         "dagger": {
           "scaleX": 0.9,
@@ -9442,36 +9198,7 @@ window.MODULAR_WEAPON_CONFIG = {
           "x": 40,
           "y": -90,
           "rotation": -90,
-          "layerOrder": "haft-over-head",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 183.5,
-                  "y0": 908.5,
-                  "x1": 240,
-                  "y1": 1019
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 73.00000000000006,
-                  "y0": 738.5000000000002,
-                  "x1": 380.99999999999994,
-                  "y1": 1801.4999999999998
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "layerOrder": "haft-over-head"
         },
         "fishing-mace": {
           "scaleX": 1.1,
@@ -9484,36 +9211,7 @@ window.MODULAR_WEAPON_CONFIG = {
           "x": -40,
           "y": -90,
           "rotation": -90,
-          "layerOrder": "haft-over-head",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 183.5,
-                  "y0": 908.5,
-                  "x1": 240,
-                  "y1": 1019
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 73.00000000000006,
-                  "y0": 738.5000000000002,
-                  "x1": 380.99999999999994,
-                  "y1": 1801.4999999999998
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "layerOrder": "haft-over-head"
         },
         "harlyao-broadsword": {
           "scaleX": 1.35,
@@ -9521,70 +9219,12 @@ window.MODULAR_WEAPON_CONFIG = {
           "x": 25,
           "y": -100,
           "rotation": -90,
-          "layerOrder": "haft-over-head",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 183.5,
-                  "y0": 908.5,
-                  "x1": 240,
-                  "y1": 1019
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 73.00000000000006,
-                  "y0": 738.5000000000002,
-                  "x1": 380.99999999999994,
-                  "y1": 1801.4999999999998
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "layerOrder": "haft-over-head"
         },
         "harlyao-longsword": {
           "scaleX": 1.65,
           "x": 5,
-          "layerOrder": "haft-over-head",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 183.5,
-                  "y0": 908.5,
-                  "x1": 240,
-                  "y1": 1019
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 73.00000000000006,
-                  "y0": 738.5000000000002,
-                  "x1": 380.99999999999994,
-                  "y1": 1801.4999999999998
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "layerOrder": "haft-over-head"
         },
         "hatchet": {
           "scaleX": 1.2,
@@ -9610,104 +9250,17 @@ window.MODULAR_WEAPON_CONFIG = {
           "x": 40,
           "y": -75,
           "rotation": -90,
-          "layerOrder": "head-over-haft",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 183.5,
-                  "y0": 908.5,
-                  "x1": 240,
-                  "y1": 1019
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 73.00000000000006,
-                  "y0": 738.5000000000002,
-                  "x1": 380.99999999999994,
-                  "y1": 1801.4999999999998
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "layerOrder": "head-over-haft"
         },
         "pickshovel-scoop": {
           "x": 5,
-          "layerOrder": "haft-over-head",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 183.5,
-                  "y0": 908.5,
-                  "x1": 240,
-                  "y1": 1019
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 73.00000000000006,
-                  "y0": 738.5000000000002,
-                  "x1": 380.99999999999994,
-                  "y1": 1801.4999999999998
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "layerOrder": "haft-over-head"
         },
         "plains-blade": {
           "scaleX": 1.2,
           "scaleY": 0.75,
           "x": 5,
-          "layerOrder": "haft-over-head",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 183.5,
-                  "y0": 908.5,
-                  "x1": 240,
-                  "y1": 1019
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 73.00000000000006,
-                  "y0": 738.5000000000002,
-                  "x1": 380.99999999999994,
-                  "y1": 1801.4999999999998
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "layerOrder": "haft-over-head"
         },
         "porakaneki-greatclub": {
           "scaleX": 1.5,
@@ -9718,36 +9271,7 @@ window.MODULAR_WEAPON_CONFIG = {
         "war-cleaver": {
           "scaleX": 1.3,
           "x": 5,
-          "layerOrder": "haft-over-head",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 183.5,
-                  "y0": 908.5,
-                  "x1": 240,
-                  "y1": 1019
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 73.00000000000006,
-                  "y0": 738.5000000000002,
-                  "x1": 380.99999999999994,
-                  "y1": 1801.4999999999998
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "layerOrder": "haft-over-head"
         },
         "warhammer": {
           "scaleX": 1.65,
@@ -9789,7 +9313,15 @@ window.MODULAR_WEAPON_CONFIG = {
           }
         }
       ],
-      "maxAttachments": 8
+      "maxAttachments": 8,
+      "rigRegions": [],
+      "shaftArtTransform": {
+        "scaleX": 1,
+        "scaleY": 1,
+        "x": 0,
+        "y": 0,
+        "enabled": false
+      }
     },
     "bgungku": {
       "label": "B'gungku (donor not yet mapped)",
@@ -9800,167 +9332,22 @@ window.MODULAR_WEAPON_CONFIG = {
           "layerOrder": "head-over-haft"
         },
         "dagger": {
-          "layerOrder": "haft-over-head",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 202.5,
-                  "y0": 514.5,
-                  "x1": 259,
-                  "y1": 625
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 92.00000000000006,
-                  "y0": 344.5000000000001,
-                  "x1": 399.99999999999994,
-                  "y1": 1407.4999999999995
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "layerOrder": "haft-over-head"
         },
         "dagger-sword": {
-          "layerOrder": "haft-over-head",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 202.5,
-                  "y0": 514.5,
-                  "x1": 259,
-                  "y1": 625
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 92.00000000000006,
-                  "y0": 344.5000000000001,
-                  "x1": 399.99999999999994,
-                  "y1": 1407.4999999999995
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "layerOrder": "haft-over-head"
         },
         "fishing-mace": {
           "layerOrder": "head-over-haft"
         },
         "fishing-spear": {
-          "layerOrder": "haft-over-head",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 202.5,
-                  "y0": 514.5,
-                  "x1": 259,
-                  "y1": 625
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 92.00000000000006,
-                  "y0": 344.5000000000001,
-                  "x1": 399.99999999999994,
-                  "y1": 1407.4999999999995
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "layerOrder": "haft-over-head"
         },
         "harlyao-broadsword": {
-          "layerOrder": "haft-over-head",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 202.5,
-                  "y0": 514.5,
-                  "x1": 259,
-                  "y1": 625
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 92.00000000000006,
-                  "y0": 344.5000000000001,
-                  "x1": 399.99999999999994,
-                  "y1": 1407.4999999999995
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "layerOrder": "haft-over-head"
         },
         "harlyao-longsword": {
-          "layerOrder": "haft-over-head",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 202.5,
-                  "y0": 514.5,
-                  "x1": 259,
-                  "y1": 625
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 92.00000000000006,
-                  "y0": 344.5000000000001,
-                  "x1": 399.99999999999994,
-                  "y1": 1407.4999999999995
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "layerOrder": "haft-over-head"
         },
         "hatchet": {
           "layerOrder": "head-over-haft"
@@ -9972,135 +9359,19 @@ window.MODULAR_WEAPON_CONFIG = {
           "layerOrder": "head-over-haft"
         },
         "pick-shovel-pick": {
-          "layerOrder": "head-over-haft",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 202.5,
-                  "y0": 514.5,
-                  "x1": 259,
-                  "y1": 625
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 92.00000000000006,
-                  "y0": 344.5000000000001,
-                  "x1": 399.99999999999994,
-                  "y1": 1407.4999999999995
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "layerOrder": "head-over-haft"
         },
         "pickshovel-scoop": {
-          "layerOrder": "haft-over-head",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 202.5,
-                  "y0": 514.5,
-                  "x1": 259,
-                  "y1": 625
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 92.00000000000006,
-                  "y0": 344.5000000000001,
-                  "x1": 399.99999999999994,
-                  "y1": 1407.4999999999995
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "layerOrder": "haft-over-head"
         },
         "plains-blade": {
-          "layerOrder": "haft-over-head",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 202.5,
-                  "y0": 514.5,
-                  "x1": 259,
-                  "y1": 625
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 92.00000000000006,
-                  "y0": 344.5000000000001,
-                  "x1": 399.99999999999994,
-                  "y1": 1407.4999999999995
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "layerOrder": "haft-over-head"
         },
         "porakaneki-greatclub": {
           "layerOrder": "head-over-haft"
         },
         "war-cleaver": {
-          "layerOrder": "haft-over-head",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 202.5,
-                  "y0": 514.5,
-                  "x1": 259,
-                  "y1": 625
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 92.00000000000006,
-                  "y0": 344.5000000000001,
-                  "x1": 399.99999999999994,
-                  "y1": 1407.4999999999995
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "layerOrder": "haft-over-head"
         },
         "warhammer": {
           "layerOrder": "head-over-haft"
@@ -10134,7 +9405,15 @@ window.MODULAR_WEAPON_CONFIG = {
           }
         }
       ],
-      "maxAttachments": 8
+      "maxAttachments": 8,
+      "rigRegions": [],
+      "shaftArtTransform": {
+        "scaleX": 1,
+        "scaleY": 1,
+        "x": 0,
+        "y": 0,
+        "enabled": false
+      }
     },
     "hatchet": {
       "label": "Hatchet",
@@ -10149,167 +9428,22 @@ window.MODULAR_WEAPON_CONFIG = {
           "layerOrder": "head-over-haft"
         },
         "dagger": {
-          "layerOrder": "haft-over-head",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 183.5,
-                  "y0": 916.5,
-                  "x1": 240,
-                  "y1": 1027
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 73.00000000000006,
-                  "y0": 746.5000000000002,
-                  "x1": 380.99999999999994,
-                  "y1": 1809.4999999999998
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "layerOrder": "haft-over-head"
         },
         "dagger-sword": {
-          "layerOrder": "haft-over-head",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 183.5,
-                  "y0": 916.5,
-                  "x1": 240,
-                  "y1": 1027
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 73.00000000000006,
-                  "y0": 746.5000000000002,
-                  "x1": 380.99999999999994,
-                  "y1": 1809.4999999999998
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "layerOrder": "haft-over-head"
         },
         "fishing-mace": {
           "layerOrder": "head-over-haft"
         },
         "fishing-spear": {
-          "layerOrder": "haft-over-head",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 183.5,
-                  "y0": 916.5,
-                  "x1": 240,
-                  "y1": 1027
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 73.00000000000006,
-                  "y0": 746.5000000000002,
-                  "x1": 380.99999999999994,
-                  "y1": 1809.4999999999998
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "layerOrder": "haft-over-head"
         },
         "harlyao-broadsword": {
-          "layerOrder": "haft-over-head",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 183.5,
-                  "y0": 916.5,
-                  "x1": 240,
-                  "y1": 1027
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 73.00000000000006,
-                  "y0": 746.5000000000002,
-                  "x1": 380.99999999999994,
-                  "y1": 1809.4999999999998
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "layerOrder": "haft-over-head"
         },
         "harlyao-longsword": {
-          "layerOrder": "haft-over-head",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 183.5,
-                  "y0": 916.5,
-                  "x1": 240,
-                  "y1": 1027
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 73.00000000000006,
-                  "y0": 746.5000000000002,
-                  "x1": 380.99999999999994,
-                  "y1": 1809.4999999999998
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "layerOrder": "haft-over-head"
         },
         "hoe": {
           "layerOrder": "head-over-haft"
@@ -10318,135 +9452,19 @@ window.MODULAR_WEAPON_CONFIG = {
           "layerOrder": "head-over-haft"
         },
         "pick-shovel-pick": {
-          "layerOrder": "head-over-haft",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 183.5,
-                  "y0": 916.5,
-                  "x1": 240,
-                  "y1": 1027
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 73.00000000000006,
-                  "y0": 746.5000000000002,
-                  "x1": 380.99999999999994,
-                  "y1": 1809.4999999999998
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "layerOrder": "head-over-haft"
         },
         "pickshovel-scoop": {
-          "layerOrder": "haft-over-head",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 183.5,
-                  "y0": 916.5,
-                  "x1": 240,
-                  "y1": 1027
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 73.00000000000006,
-                  "y0": 746.5000000000002,
-                  "x1": 380.99999999999994,
-                  "y1": 1809.4999999999998
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "layerOrder": "haft-over-head"
         },
         "plains-blade": {
-          "layerOrder": "haft-over-head",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 183.5,
-                  "y0": 916.5,
-                  "x1": 240,
-                  "y1": 1027
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 73.00000000000006,
-                  "y0": 746.5000000000002,
-                  "x1": 380.99999999999994,
-                  "y1": 1809.4999999999998
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "layerOrder": "haft-over-head"
         },
         "porakaneki-greatclub": {
           "layerOrder": "head-over-haft"
         },
         "war-cleaver": {
-          "layerOrder": "haft-over-head",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 183.5,
-                  "y0": 916.5,
-                  "x1": 240,
-                  "y1": 1027
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 73.00000000000006,
-                  "y0": 746.5000000000002,
-                  "x1": 380.99999999999994,
-                  "y1": 1809.4999999999998
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "layerOrder": "haft-over-head"
         },
         "warhammer": {
           "layerOrder": "head-over-haft"
@@ -10480,7 +9498,15 @@ window.MODULAR_WEAPON_CONFIG = {
           }
         }
       ],
-      "maxAttachments": 8
+      "maxAttachments": 8,
+      "rigRegions": [],
+      "shaftArtTransform": {
+        "scaleX": 1,
+        "scaleY": 1,
+        "x": 0,
+        "y": 0,
+        "enabled": false
+      }
     },
     "hoe": {
       "label": "Hoe",
@@ -10495,167 +9521,22 @@ window.MODULAR_WEAPON_CONFIG = {
           "layerOrder": "head-over-haft"
         },
         "dagger": {
-          "layerOrder": "haft-over-head",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 164.5,
-                  "y0": 1082.5,
-                  "x1": 221,
-                  "y1": 1193
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 54.00000000000006,
-                  "y0": 912.5000000000002,
-                  "x1": 361.99999999999994,
-                  "y1": 1975.4999999999998
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "layerOrder": "haft-over-head"
         },
         "dagger-sword": {
-          "layerOrder": "haft-over-head",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 164.5,
-                  "y0": 1082.5,
-                  "x1": 221,
-                  "y1": 1193
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 54.00000000000006,
-                  "y0": 912.5000000000002,
-                  "x1": 361.99999999999994,
-                  "y1": 1975.4999999999998
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "layerOrder": "haft-over-head"
         },
         "fishing-mace": {
           "layerOrder": "head-over-haft"
         },
         "fishing-spear": {
-          "layerOrder": "haft-over-head",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 164.5,
-                  "y0": 1082.5,
-                  "x1": 221,
-                  "y1": 1193
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 54.00000000000006,
-                  "y0": 912.5000000000002,
-                  "x1": 361.99999999999994,
-                  "y1": 1975.4999999999998
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "layerOrder": "haft-over-head"
         },
         "harlyao-broadsword": {
-          "layerOrder": "haft-over-head",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 164.5,
-                  "y0": 1082.5,
-                  "x1": 221,
-                  "y1": 1193
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 54.00000000000006,
-                  "y0": 912.5000000000002,
-                  "x1": 361.99999999999994,
-                  "y1": 1975.4999999999998
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "layerOrder": "haft-over-head"
         },
         "harlyao-longsword": {
-          "layerOrder": "haft-over-head",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 164.5,
-                  "y0": 1082.5,
-                  "x1": 221,
-                  "y1": 1193
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 54.00000000000006,
-                  "y0": 912.5000000000002,
-                  "x1": 361.99999999999994,
-                  "y1": 1975.4999999999998
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "layerOrder": "haft-over-head"
         },
         "hatchet": {
           "layerOrder": "head-over-haft"
@@ -10664,135 +9545,19 @@ window.MODULAR_WEAPON_CONFIG = {
           "layerOrder": "head-over-haft"
         },
         "pick-shovel-pick": {
-          "layerOrder": "head-over-haft",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 164.5,
-                  "y0": 1082.5,
-                  "x1": 221,
-                  "y1": 1193
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 54.00000000000006,
-                  "y0": 912.5000000000002,
-                  "x1": 361.99999999999994,
-                  "y1": 1975.4999999999998
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "layerOrder": "head-over-haft"
         },
         "pickshovel-scoop": {
-          "layerOrder": "haft-over-head",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 164.5,
-                  "y0": 1082.5,
-                  "x1": 221,
-                  "y1": 1193
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 54.00000000000006,
-                  "y0": 912.5000000000002,
-                  "x1": 361.99999999999994,
-                  "y1": 1975.4999999999998
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "layerOrder": "haft-over-head"
         },
         "plains-blade": {
-          "layerOrder": "haft-over-head",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 164.5,
-                  "y0": 1082.5,
-                  "x1": 221,
-                  "y1": 1193
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 54.00000000000006,
-                  "y0": 912.5000000000002,
-                  "x1": 361.99999999999994,
-                  "y1": 1975.4999999999998
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "layerOrder": "haft-over-head"
         },
         "porakaneki-greatclub": {
           "layerOrder": "head-over-haft"
         },
         "war-cleaver": {
-          "layerOrder": "haft-over-head",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 164.5,
-                  "y0": 1082.5,
-                  "x1": 221,
-                  "y1": 1193
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 54.00000000000006,
-                  "y0": 912.5000000000002,
-                  "x1": 361.99999999999994,
-                  "y1": 1975.4999999999998
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "layerOrder": "haft-over-head"
         },
         "warhammer": {
           "layerOrder": "head-over-haft"
@@ -10826,7 +9591,15 @@ window.MODULAR_WEAPON_CONFIG = {
           }
         }
       ],
-      "maxAttachments": 8
+      "maxAttachments": 8,
+      "rigRegions": [],
+      "shaftArtTransform": {
+        "scaleX": 1,
+        "scaleY": 1,
+        "x": 0,
+        "y": 0,
+        "enabled": false
+      }
     },
     "kylie": {
       "label": "Kylie",
@@ -10841,26 +9614,1343 @@ window.MODULAR_WEAPON_CONFIG = {
           "layerOrder": "head-over-haft"
         },
         "dagger": {
-          "layerOrder": "haft-over-head",
+          "layerOrder": "head-over-haft",
           "bridges": {
             "strokes": [
               {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 338.7881062280972,
-                  "y0": 908.9415575926496,
-                  "x1": 398.33130614420867,
-                  "y1": 1025.3933025613278
-                }
+                "r": 16,
+                "points": [
+                  [
+                    384,
+                    978
+                  ],
+                  [
+                    380.5,
+                    964
+                  ],
+                  [
+                    377,
+                    957
+                  ],
+                  [
+                    370,
+                    953.5
+                  ],
+                  [
+                    363,
+                    946.5
+                  ],
+                  [
+                    359.5,
+                    939.5
+                  ],
+                  [
+                    356,
+                    932.5
+                  ],
+                  [
+                    359.5,
+                    932.5
+                  ]
+                ]
               },
               {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 222.33636125941896,
-                  "y0": 729.7850268716061,
-                  "x1": 546.9258404481329,
-                  "y1": 1850.0402748508363
-                }
+                "r": 16,
+                "points": [
+                  [
+                    380.5,
+                    943
+                  ],
+                  [
+                    373.5,
+                    936
+                  ],
+                  [
+                    373.5,
+                    932.5
+                  ]
+                ]
+              },
+              {
+                "r": 16,
+                "points": [
+                  [
+                    359.5,
+                    925.5
+                  ],
+                  [
+                    366.5,
+                    929
+                  ],
+                  [
+                    377,
+                    939.5
+                  ],
+                  [
+                    377,
+                    946.5
+                  ],
+                  [
+                    377,
+                    953.5
+                  ],
+                  [
+                    377,
+                    960.5
+                  ],
+                  [
+                    373.5,
+                    967.5
+                  ],
+                  [
+                    370,
+                    971
+                  ]
+                ]
+              },
+              {
+                "r": 16,
+                "tool": "revert",
+                "strength": 0.5,
+                "seed": 1590462046,
+                "points": [
+                  [
+                    363,
+                    960.5
+                  ],
+                  [
+                    363,
+                    957
+                  ],
+                  [
+                    363,
+                    953.5
+                  ],
+                  [
+                    363,
+                    939.5
+                  ],
+                  [
+                    363,
+                    929
+                  ],
+                  [
+                    363,
+                    925.5
+                  ],
+                  [
+                    363,
+                    922
+                  ],
+                  [
+                    363,
+                    918.5
+                  ],
+                  [
+                    363,
+                    915
+                  ],
+                  [
+                    363,
+                    904.5
+                  ]
+                ]
+              },
+              {
+                "r": 16,
+                "tool": "revert",
+                "strength": 0.5,
+                "seed": 1495861833,
+                "points": [
+                  [
+                    352.5,
+                    950
+                  ],
+                  [
+                    356,
+                    950
+                  ],
+                  [
+                    359.5,
+                    950
+                  ],
+                  [
+                    359.5,
+                    957
+                  ],
+                  [
+                    363,
+                    967.5
+                  ],
+                  [
+                    366.5,
+                    974.5
+                  ],
+                  [
+                    366.5,
+                    978
+                  ],
+                  [
+                    366.5,
+                    981.5
+                  ],
+                  [
+                    366.5,
+                    985
+                  ],
+                  [
+                    366.5,
+                    995.5
+                  ],
+                  [
+                    366.5,
+                    1002.5
+                  ],
+                  [
+                    363,
+                    1006
+                  ]
+                ]
+              },
+              {
+                "r": 16,
+                "tool": "revert",
+                "strength": 0.5,
+                "seed": 489695249,
+                "points": [
+                  [
+                    380.5,
+                    953.5
+                  ],
+                  [
+                    377,
+                    953.5
+                  ],
+                  [
+                    377,
+                    957
+                  ],
+                  [
+                    380.5,
+                    960.5
+                  ],
+                  [
+                    384,
+                    971
+                  ],
+                  [
+                    384,
+                    981.5
+                  ],
+                  [
+                    384,
+                    988.5
+                  ],
+                  [
+                    384,
+                    995.5
+                  ],
+                  [
+                    384,
+                    1006
+                  ],
+                  [
+                    384,
+                    1009.5
+                  ],
+                  [
+                    384,
+                    1016.5
+                  ]
+                ]
+              },
+              {
+                "r": 16,
+                "tool": "revert",
+                "strength": 0.5,
+                "seed": 1766503070,
+                "points": [
+                  [
+                    384,
+                    943
+                  ],
+                  [
+                    394.5,
+                    953.5
+                  ],
+                  [
+                    394.5,
+                    957
+                  ],
+                  [
+                    394.5,
+                    960.5
+                  ],
+                  [
+                    394.5,
+                    967.5
+                  ],
+                  [
+                    398,
+                    978
+                  ],
+                  [
+                    408.5,
+                    995.5
+                  ],
+                  [
+                    408.5,
+                    1002.5
+                  ],
+                  [
+                    408.5,
+                    1006
+                  ],
+                  [
+                    408.5,
+                    1002.5
+                  ],
+                  [
+                    401.5,
+                    995.5
+                  ],
+                  [
+                    398,
+                    985
+                  ],
+                  [
+                    398,
+                    974.5
+                  ],
+                  [
+                    398,
+                    971
+                  ],
+                  [
+                    398,
+                    967.5
+                  ],
+                  [
+                    394.5,
+                    960.5
+                  ],
+                  [
+                    394.5,
+                    957
+                  ],
+                  [
+                    394.5,
+                    953.5
+                  ]
+                ]
+              },
+              {
+                "r": 16,
+                "tool": "revert",
+                "strength": 0.5,
+                "seed": 891492203,
+                "points": [
+                  [
+                    412,
+                    925.5
+                  ],
+                  [
+                    408.5,
+                    925.5
+                  ],
+                  [
+                    408.5,
+                    929
+                  ],
+                  [
+                    408.5,
+                    936
+                  ],
+                  [
+                    405,
+                    950
+                  ],
+                  [
+                    405,
+                    960.5
+                  ],
+                  [
+                    401.5,
+                    964
+                  ],
+                  [
+                    401.5,
+                    967.5
+                  ],
+                  [
+                    401.5,
+                    971
+                  ],
+                  [
+                    398,
+                    974.5
+                  ],
+                  [
+                    394.5,
+                    978
+                  ],
+                  [
+                    398,
+                    981.5
+                  ],
+                  [
+                    401.5,
+                    985
+                  ],
+                  [
+                    412,
+                    985
+                  ],
+                  [
+                    422.5,
+                    988.5
+                  ],
+                  [
+                    422.5,
+                    992
+                  ],
+                  [
+                    422.5,
+                    995.5
+                  ],
+                  [
+                    422.5,
+                    999
+                  ],
+                  [
+                    419,
+                    1002.5
+                  ],
+                  [
+                    419,
+                    1006
+                  ],
+                  [
+                    415.5,
+                    1006
+                  ],
+                  [
+                    412,
+                    1009.5
+                  ],
+                  [
+                    408.5,
+                    1013
+                  ],
+                  [
+                    401.5,
+                    1016.5
+                  ],
+                  [
+                    401.5,
+                    1013
+                  ],
+                  [
+                    401.5,
+                    1006
+                  ],
+                  [
+                    401.5,
+                    1002.5
+                  ],
+                  [
+                    398,
+                    999
+                  ],
+                  [
+                    394.5,
+                    992
+                  ],
+                  [
+                    391,
+                    981.5
+                  ],
+                  [
+                    387.5,
+                    978
+                  ],
+                  [
+                    384,
+                    967.5
+                  ],
+                  [
+                    384,
+                    964
+                  ],
+                  [
+                    380.5,
+                    960.5
+                  ],
+                  [
+                    380.5,
+                    957
+                  ]
+                ]
+              },
+              {
+                "r": 16,
+                "tool": "revert",
+                "strength": 0.5,
+                "seed": 470678232,
+                "points": [
+                  [
+                    384,
+                    978
+                  ],
+                  [
+                    384,
+                    981.5
+                  ],
+                  [
+                    384,
+                    985
+                  ],
+                  [
+                    387.5,
+                    988.5
+                  ],
+                  [
+                    394.5,
+                    992
+                  ],
+                  [
+                    394.5,
+                    995.5
+                  ],
+                  [
+                    398,
+                    999
+                  ],
+                  [
+                    394.5,
+                    995.5
+                  ],
+                  [
+                    391,
+                    995.5
+                  ],
+                  [
+                    391,
+                    988.5
+                  ],
+                  [
+                    387.5,
+                    985
+                  ],
+                  [
+                    387.5,
+                    981.5
+                  ],
+                  [
+                    387.5,
+                    971
+                  ],
+                  [
+                    387.5,
+                    957
+                  ],
+                  [
+                    387.5,
+                    943
+                  ],
+                  [
+                    384,
+                    925.5
+                  ],
+                  [
+                    380.5,
+                    911.5
+                  ],
+                  [
+                    380.5,
+                    932.5
+                  ],
+                  [
+                    380.5,
+                    946.5
+                  ],
+                  [
+                    384,
+                    960.5
+                  ],
+                  [
+                    384,
+                    971
+                  ],
+                  [
+                    384,
+                    981.5
+                  ],
+                  [
+                    384,
+                    988.5
+                  ],
+                  [
+                    384,
+                    992
+                  ],
+                  [
+                    387.5,
+                    992
+                  ],
+                  [
+                    391,
+                    992
+                  ],
+                  [
+                    394.5,
+                    992
+                  ]
+                ]
+              },
+              {
+                "r": 16,
+                "tool": "revert",
+                "strength": 0.5,
+                "seed": 11528634,
+                "points": [
+                  [
+                    387.5,
+                    939.5
+                  ],
+                  [
+                    384,
+                    939.5
+                  ],
+                  [
+                    384,
+                    943
+                  ],
+                  [
+                    384,
+                    950
+                  ],
+                  [
+                    384,
+                    957
+                  ],
+                  [
+                    384,
+                    967.5
+                  ],
+                  [
+                    384,
+                    974.5
+                  ],
+                  [
+                    384,
+                    978
+                  ],
+                  [
+                    391,
+                    981.5
+                  ],
+                  [
+                    391,
+                    985
+                  ],
+                  [
+                    394.5,
+                    988.5
+                  ],
+                  [
+                    398,
+                    988.5
+                  ],
+                  [
+                    398,
+                    992
+                  ],
+                  [
+                    401.5,
+                    999
+                  ],
+                  [
+                    408.5,
+                    1002.5
+                  ],
+                  [
+                    408.5,
+                    1006
+                  ],
+                  [
+                    412,
+                    1009.5
+                  ],
+                  [
+                    408.5,
+                    1006
+                  ],
+                  [
+                    401.5,
+                    995.5
+                  ],
+                  [
+                    398,
+                    995.5
+                  ],
+                  [
+                    398,
+                    992
+                  ],
+                  [
+                    398,
+                    988.5
+                  ],
+                  [
+                    394.5,
+                    988.5
+                  ],
+                  [
+                    394.5,
+                    985
+                  ],
+                  [
+                    394.5,
+                    978
+                  ],
+                  [
+                    391,
+                    953.5
+                  ],
+                  [
+                    387.5,
+                    950
+                  ],
+                  [
+                    387.5,
+                    946.5
+                  ],
+                  [
+                    387.5,
+                    943
+                  ],
+                  [
+                    387.5,
+                    939.5
+                  ],
+                  [
+                    387.5,
+                    936
+                  ],
+                  [
+                    387.5,
+                    932.5
+                  ]
+                ]
+              },
+              {
+                "r": 16,
+                "tool": "revert",
+                "strength": 0.5,
+                "seed": 2025975724,
+                "points": [
+                  [
+                    387.5,
+                    925.5
+                  ],
+                  [
+                    387.5,
+                    936
+                  ],
+                  [
+                    387.5,
+                    943
+                  ],
+                  [
+                    387.5,
+                    946.5
+                  ],
+                  [
+                    387.5,
+                    957
+                  ],
+                  [
+                    387.5,
+                    971
+                  ],
+                  [
+                    387.5,
+                    974.5
+                  ],
+                  [
+                    391,
+                    978
+                  ],
+                  [
+                    391,
+                    981.5
+                  ],
+                  [
+                    394.5,
+                    981.5
+                  ],
+                  [
+                    394.5,
+                    957
+                  ],
+                  [
+                    387.5,
+                    929
+                  ],
+                  [
+                    387.5,
+                    922
+                  ],
+                  [
+                    387.5,
+                    918.5
+                  ],
+                  [
+                    387.5,
+                    922
+                  ],
+                  [
+                    391,
+                    922
+                  ],
+                  [
+                    394.5,
+                    925.5
+                  ],
+                  [
+                    398,
+                    922
+                  ],
+                  [
+                    398,
+                    918.5
+                  ]
+                ]
+              },
+              {
+                "r": 16,
+                "tool": "revert",
+                "strength": 0.5,
+                "seed": 455471752,
+                "points": [
+                  [
+                    408.5,
+                    971
+                  ],
+                  [
+                    408.5,
+                    974.5
+                  ],
+                  [
+                    405,
+                    974.5
+                  ],
+                  [
+                    401.5,
+                    978
+                  ],
+                  [
+                    398,
+                    985
+                  ],
+                  [
+                    394.5,
+                    988.5
+                  ],
+                  [
+                    394.5,
+                    992
+                  ],
+                  [
+                    391,
+                    992
+                  ],
+                  [
+                    391,
+                    985
+                  ],
+                  [
+                    391,
+                    974.5
+                  ],
+                  [
+                    391,
+                    960.5
+                  ],
+                  [
+                    391,
+                    957
+                  ],
+                  [
+                    391,
+                    950
+                  ],
+                  [
+                    391,
+                    943
+                  ],
+                  [
+                    398,
+                    929
+                  ],
+                  [
+                    408.5,
+                    901
+                  ],
+                  [
+                    419,
+                    869.5
+                  ],
+                  [
+                    419,
+                    849
+                  ],
+                  [
+                    419,
+                    855.5
+                  ],
+                  [
+                    415.5,
+                    873
+                  ],
+                  [
+                    408.5,
+                    897.5
+                  ],
+                  [
+                    401.5,
+                    929
+                  ],
+                  [
+                    394.5,
+                    957
+                  ],
+                  [
+                    384,
+                    988.5
+                  ],
+                  [
+                    373.5,
+                    1016.5
+                  ],
+                  [
+                    366.5,
+                    1034
+                  ],
+                  [
+                    359.5,
+                    1048
+                  ],
+                  [
+                    363,
+                    1048
+                  ],
+                  [
+                    398,
+                    1023.5
+                  ],
+                  [
+                    433,
+                    995.5
+                  ],
+                  [
+                    454,
+                    971
+                  ],
+                  [
+                    461,
+                    953.5
+                  ],
+                  [
+                    461,
+                    943
+                  ],
+                  [
+                    450.5,
+                    915
+                  ],
+                  [
+                    433,
+                    880
+                  ],
+                  [
+                    415.5,
+                    845.5
+                  ],
+                  [
+                    415.5,
+                    842
+                  ],
+                  [
+                    412,
+                    859
+                  ],
+                  [
+                    405,
+                    887
+                  ],
+                  [
+                    401.5,
+                    897.5
+                  ],
+                  [
+                    394.5,
+                    922
+                  ],
+                  [
+                    384,
+                    967.5
+                  ],
+                  [
+                    380.5,
+                    988.5
+                  ],
+                  [
+                    387.5,
+                    988.5
+                  ],
+                  [
+                    398,
+                    981.5
+                  ],
+                  [
+                    412,
+                    967.5
+                  ],
+                  [
+                    433,
+                    936
+                  ],
+                  [
+                    447,
+                    911.5
+                  ],
+                  [
+                    457.5,
+                    901
+                  ]
+                ]
+              },
+              {
+                "r": 16,
+                "tool": "revert",
+                "strength": 0.85,
+                "seed": 1971041094,
+                "points": [
+                  [
+                    366.5,
+                    967.5
+                  ],
+                  [
+                    352.5,
+                    988.5
+                  ],
+                  [
+                    352.5,
+                    995.5
+                  ],
+                  [
+                    349,
+                    1002.5
+                  ],
+                  [
+                    352.5,
+                    1002.5
+                  ],
+                  [
+                    359.5,
+                    999
+                  ],
+                  [
+                    363,
+                    999
+                  ],
+                  [
+                    363,
+                    992
+                  ],
+                  [
+                    363,
+                    985
+                  ],
+                  [
+                    359.5,
+                    971
+                  ],
+                  [
+                    359.5,
+                    964
+                  ],
+                  [
+                    359.5,
+                    960.5
+                  ],
+                  [
+                    359.5,
+                    957
+                  ],
+                  [
+                    359.5,
+                    953.5
+                  ],
+                  [
+                    359.5,
+                    946.5
+                  ],
+                  [
+                    356,
+                    932.5
+                  ],
+                  [
+                    352.5,
+                    911.5
+                  ],
+                  [
+                    352.5,
+                    901
+                  ],
+                  [
+                    356,
+                    901
+                  ],
+                  [
+                    359.5,
+                    904.5
+                  ],
+                  [
+                    359.5,
+                    908
+                  ],
+                  [
+                    356,
+                    918.5
+                  ],
+                  [
+                    352.5,
+                    929
+                  ],
+                  [
+                    349,
+                    939.5
+                  ],
+                  [
+                    345.5,
+                    953.5
+                  ],
+                  [
+                    345.5,
+                    974.5
+                  ],
+                  [
+                    352.5,
+                    988.5
+                  ],
+                  [
+                    352.5,
+                    995.5
+                  ],
+                  [
+                    356,
+                    999
+                  ],
+                  [
+                    356,
+                    1002.5
+                  ],
+                  [
+                    359.5,
+                    1002.5
+                  ],
+                  [
+                    363,
+                    1002.5
+                  ],
+                  [
+                    370,
+                    1002.5
+                  ],
+                  [
+                    373.5,
+                    1002.5
+                  ],
+                  [
+                    377,
+                    1002.5
+                  ],
+                  [
+                    377,
+                    999
+                  ],
+                  [
+                    380.5,
+                    992
+                  ],
+                  [
+                    380.5,
+                    988.5
+                  ],
+                  [
+                    380.5,
+                    978
+                  ],
+                  [
+                    380.5,
+                    967.5
+                  ],
+                  [
+                    377,
+                    953.5
+                  ],
+                  [
+                    373.5,
+                    950
+                  ],
+                  [
+                    370,
+                    943
+                  ],
+                  [
+                    363,
+                    922
+                  ],
+                  [
+                    356,
+                    904.5
+                  ],
+                  [
+                    356,
+                    897.5
+                  ],
+                  [
+                    356,
+                    890.5
+                  ],
+                  [
+                    356,
+                    887
+                  ],
+                  [
+                    359.5,
+                    887
+                  ],
+                  [
+                    363,
+                    894
+                  ],
+                  [
+                    366.5,
+                    901
+                  ],
+                  [
+                    370,
+                    911.5
+                  ],
+                  [
+                    370,
+                    925.5
+                  ],
+                  [
+                    373.5,
+                    943
+                  ],
+                  [
+                    373.5,
+                    960.5
+                  ],
+                  [
+                    377,
+                    974.5
+                  ],
+                  [
+                    377,
+                    978
+                  ],
+                  [
+                    377,
+                    981.5
+                  ],
+                  [
+                    380.5,
+                    988.5
+                  ],
+                  [
+                    391,
+                    1002.5
+                  ],
+                  [
+                    394.5,
+                    1006
+                  ],
+                  [
+                    394.5,
+                    1009.5
+                  ],
+                  [
+                    394.5,
+                    1006
+                  ],
+                  [
+                    394.5,
+                    999
+                  ],
+                  [
+                    398,
+                    992
+                  ],
+                  [
+                    401.5,
+                    985
+                  ],
+                  [
+                    401.5,
+                    974.5
+                  ],
+                  [
+                    401.5,
+                    971
+                  ],
+                  [
+                    401.5,
+                    964
+                  ],
+                  [
+                    398,
+                    950
+                  ],
+                  [
+                    394.5,
+                    946.5
+                  ],
+                  [
+                    394.5,
+                    943
+                  ],
+                  [
+                    394.5,
+                    936
+                  ],
+                  [
+                    394.5,
+                    925.5
+                  ],
+                  [
+                    394.5,
+                    908
+                  ],
+                  [
+                    394.5,
+                    887
+                  ],
+                  [
+                    394.5,
+                    869.5
+                  ],
+                  [
+                    394.5,
+                    866
+                  ]
+                ]
               }
             ],
             "outline": 10,
@@ -10873,25 +10963,16 @@ window.MODULAR_WEAPON_CONFIG = {
           }
         },
         "dagger-sword": {
-          "layerOrder": "haft-over-head",
+          "layerOrder": "head-over-haft",
           "bridges": {
             "strokes": [
               {
-                "recipe": "recipe-1",
+                "recipe": "fuse",
                 "box": {
-                  "x0": 338.7881062280972,
-                  "y0": 908.9415575926496,
-                  "x1": 398.33130614420867,
-                  "y1": 1025.3933025613278
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 222.33636125941896,
-                  "y0": 729.7850268716061,
-                  "x1": 546.9258404481329,
-                  "y1": 1850.0402748508363
+                  "x0": 125.5,
+                  "y0": 879.5,
+                  "x1": 709.5,
+                  "y1": 1034
                 }
               }
             ],
@@ -10909,100 +10990,14 @@ window.MODULAR_WEAPON_CONFIG = {
           "layerOrder": "head-over-haft"
         },
         "fishing-spear": {
-          "layerOrder": "haft-over-head",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 338.7881062280972,
-                  "y0": 908.9415575926496,
-                  "x1": 398.33130614420867,
-                  "y1": 1025.3933025613278
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 222.33636125941896,
-                  "y0": 729.7850268716061,
-                  "x1": 546.9258404481329,
-                  "y1": 1850.0402748508363
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "flipX": true,
+          "layerOrder": "haft-over-head"
         },
         "harlyao-broadsword": {
-          "layerOrder": "head-over-haft",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 338.7881062280972,
-                  "y0": 908.9415575926496,
-                  "x1": 398.33130614420867,
-                  "y1": 1025.3933025613278
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 222.33636125941896,
-                  "y0": 729.7850268716061,
-                  "x1": 546.9258404481329,
-                  "y1": 1850.0402748508363
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "layerOrder": "head-over-haft"
         },
         "harlyao-longsword": {
-          "layerOrder": "head-over-haft",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 338.7881062280972,
-                  "y0": 908.9415575926496,
-                  "x1": 398.33130614420867,
-                  "y1": 1025.3933025613278
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 222.33636125941896,
-                  "y0": 729.7850268716061,
-                  "x1": 546.9258404481329,
-                  "y1": 1850.0402748508363
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "layerOrder": "head-over-haft"
         },
         "hatchet": {
           "layerOrder": "head-over-haft"
@@ -11011,135 +11006,24 @@ window.MODULAR_WEAPON_CONFIG = {
           "layerOrder": "head-over-haft"
         },
         "pick-shovel-pick": {
-          "layerOrder": "head-over-haft",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 338.7881062280972,
-                  "y0": 908.9415575926496,
-                  "x1": 398.33130614420867,
-                  "y1": 1025.3933025613278
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 222.33636125941896,
-                  "y0": 729.7850268716061,
-                  "x1": 546.9258404481329,
-                  "y1": 1850.0402748508363
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "flipX": true,
+          "flipY": true,
+          "layerOrder": "head-over-haft"
         },
         "pickshovel-scoop": {
-          "layerOrder": "haft-over-head",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 338.7881062280972,
-                  "y0": 908.9415575926496,
-                  "x1": 398.33130614420867,
-                  "y1": 1025.3933025613278
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 222.33636125941896,
-                  "y0": 729.7850268716061,
-                  "x1": 546.9258404481329,
-                  "y1": 1850.0402748508363
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "scaleX": 0.5,
+          "layerOrder": "head-over-haft"
         },
         "plains-blade": {
-          "layerOrder": "haft-over-head",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 338.7881062280972,
-                  "y0": 908.9415575926496,
-                  "x1": 398.33130614420867,
-                  "y1": 1025.3933025613278
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 222.33636125941896,
-                  "y0": 729.7850268716061,
-                  "x1": 546.9258404481329,
-                  "y1": 1850.0402748508363
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "scaleY": 0.35,
+          "layerOrder": "haft-over-head"
         },
         "porakaneki-greatclub": {
           "layerOrder": "head-over-haft"
         },
         "war-cleaver": {
-          "layerOrder": "haft-over-head",
-          "bridges": {
-            "strokes": [
-              {
-                "recipe": "recipe-1",
-                "box": {
-                  "x0": 338.7881062280972,
-                  "y0": 908.9415575926496,
-                  "x1": 398.33130614420867,
-                  "y1": 1025.3933025613278
-                }
-              },
-              {
-                "recipe": "tanged-head---sleeved-shaft",
-                "box": {
-                  "x0": 222.33636125941896,
-                  "y0": 729.7850268716061,
-                  "x1": 546.9258404481329,
-                  "y1": 1850.0402748508363
-                }
-              }
-            ],
-            "outline": 10,
-            "light": [
-              0,
-              -1
-            ],
-            "shade": 0.3,
-            "seed": 1
-          }
+          "flipX": true,
+          "layerOrder": "head-over-haft"
         },
         "warhammer": {
           "layerOrder": "head-over-haft"
@@ -11159,23 +11043,31 @@ window.MODULAR_WEAPON_CONFIG = {
             "y": 955.1734838398783
           },
           "end": {
-            "x": 311.3429622335276,
-            "y": 953.3378664626867
+            "x": 323.93113469337436,
+            "y": 952.9351361306217
           }
         },
         {
           "type": "tang",
           "start": {
-            "x": 378.31953952612565,
-            "y": 945.0718928356596
+            "x": 383.5215944260208,
+            "y": 957.4694550683187
           },
           "end": {
-            "x": 346.68046047387435,
-            "y": 972.9281071643404
+            "x": 333.6535957820315,
+            "y": 961.1002554267906
           }
         }
       ],
-      "maxAttachments": 8
+      "maxAttachments": 8,
+      "rigRegions": [],
+      "shaftArtTransform": {
+        "scaleX": 1,
+        "scaleY": 1,
+        "x": 0,
+        "y": 0,
+        "enabled": false
+      }
     },
     "pick-shovel": {
       "label": "Pick-Shovel",
@@ -11493,7 +11385,15 @@ window.MODULAR_WEAPON_CONFIG = {
         }
       ],
       "maxAttachments": 8,
-      "mountNotes": "Pick end uses an eye, scoop end uses a tang. Both original matching pairs remain explicitly disallowed for re-forging."
+      "mountNotes": "Pick end uses an eye, scoop end uses a tang. Both original matching pairs remain explicitly disallowed for re-forging.",
+      "rigRegions": [],
+      "shaftArtTransform": {
+        "scaleX": 1,
+        "scaleY": 1,
+        "x": 0,
+        "y": 0,
+        "enabled": false
+      }
     },
     "plains-sword": {
       "label": "Plains Sword",
@@ -11567,7 +11467,1977 @@ window.MODULAR_WEAPON_CONFIG = {
           }
         }
       ],
-      "maxAttachments": 8
+      "maxAttachments": 8,
+      "rigRegions": [],
+      "shaftArtTransform": {
+        "scaleX": 1,
+        "scaleY": 1,
+        "x": 0,
+        "y": 0,
+        "enabled": false
+      }
+    },
+    "hachutuTorchStaff": {
+      "label": "Hachutu Torch-Staff",
+      "sourceShape": "hachutuTorchStaff",
+      "sprite": "assets/toolsprites/hachutu_torch-staff.png",
+      "overrides": {
+        "dagger-sword": {
+          "scaleX": 0.5,
+          "scaleY": 0.9,
+          "layerOrder": "haft-over-head",
+          "bridges": {
+            "strokes": [
+              {
+                "junction": "band",
+                "x": 185,
+                "y": 246.5,
+                "rotation": 0,
+                "scale": 0.6
+              },
+              {
+                "junction": "band",
+                "x": 187,
+                "y": 281,
+                "rotation": 0,
+                "scale": 0.6
+              },
+              {
+                "junction": "band",
+                "x": 193,
+                "y": 987.5,
+                "rotation": 0,
+                "scale": 0.6
+              },
+              {
+                "junction": "band",
+                "x": 192.5,
+                "y": 945.5,
+                "rotation": 0,
+                "scale": 0.6
+              },
+              {
+                "r": 16,
+                "smudge": true,
+                "points": [
+                  [
+                    191,
+                    945
+                  ],
+                  [
+                    190,
+                    945
+                  ],
+                  [
+                    188.5,
+                    944.5
+                  ],
+                  [
+                    187,
+                    944
+                  ],
+                  [
+                    185.5,
+                    944
+                  ],
+                  [
+                    184.5,
+                    944
+                  ],
+                  [
+                    184,
+                    945
+                  ],
+                  [
+                    185.5,
+                    950
+                  ],
+                  [
+                    189,
+                    959.5
+                  ],
+                  [
+                    192.5,
+                    971
+                  ],
+                  [
+                    193,
+                    974.5
+                  ],
+                  [
+                    193.5,
+                    978
+                  ],
+                  [
+                    194.5,
+                    983
+                  ],
+                  [
+                    194.5,
+                    984
+                  ]
+                ]
+              },
+              {
+                "r": 16,
+                "smudge": true,
+                "points": [
+                  [
+                    210.5,
+                    943
+                  ],
+                  [
+                    210,
+                    944
+                  ],
+                  [
+                    209.5,
+                    945
+                  ],
+                  [
+                    209.5,
+                    946.5
+                  ],
+                  [
+                    209,
+                    948.5
+                  ],
+                  [
+                    209,
+                    954
+                  ],
+                  [
+                    209,
+                    962
+                  ],
+                  [
+                    209.5,
+                    966.5
+                  ],
+                  [
+                    210.5,
+                    969.5
+                  ],
+                  [
+                    211,
+                    971
+                  ]
+                ]
+              },
+              {
+                "r": 16,
+                "smudge": true,
+                "points": [
+                  [
+                    190,
+                    964.5
+                  ],
+                  [
+                    188.5,
+                    965.5
+                  ],
+                  [
+                    187.5,
+                    965.5
+                  ],
+                  [
+                    186,
+                    966
+                  ],
+                  [
+                    185,
+                    966
+                  ],
+                  [
+                    183.5,
+                    966.5
+                  ],
+                  [
+                    182.5,
+                    967
+                  ],
+                  [
+                    181.5,
+                    967
+                  ],
+                  [
+                    181.5,
+                    966
+                  ],
+                  [
+                    181.5,
+                    967
+                  ],
+                  [
+                    181.5,
+                    969
+                  ],
+                  [
+                    181.5,
+                    970.5
+                  ],
+                  [
+                    182,
+                    972
+                  ],
+                  [
+                    182,
+                    972.5
+                  ]
+                ]
+              },
+              {
+                "r": 16,
+                "smudge": true,
+                "points": [
+                  [
+                    189,
+                    255
+                  ],
+                  [
+                    188,
+                    256
+                  ],
+                  [
+                    187,
+                    257.5
+                  ],
+                  [
+                    187,
+                    259.5
+                  ],
+                  [
+                    187.5,
+                    262
+                  ],
+                  [
+                    188,
+                    264
+                  ],
+                  [
+                    188.5,
+                    265.5
+                  ]
+                ]
+              },
+              {
+                "r": 16,
+                "smudge": true,
+                "points": [
+                  [
+                    181.5,
+                    242
+                  ],
+                  [
+                    180.5,
+                    242
+                  ],
+                  [
+                    179.5,
+                    243
+                  ],
+                  [
+                    178,
+                    244.5
+                  ],
+                  [
+                    177.5,
+                    245.5
+                  ],
+                  [
+                    177,
+                    246.5
+                  ],
+                  [
+                    176.5,
+                    248
+                  ],
+                  [
+                    176,
+                    249.5
+                  ],
+                  [
+                    176,
+                    252
+                  ],
+                  [
+                    176,
+                    254.5
+                  ],
+                  [
+                    176,
+                    256.5
+                  ],
+                  [
+                    176.5,
+                    259
+                  ],
+                  [
+                    177,
+                    261
+                  ],
+                  [
+                    178,
+                    262
+                  ]
+                ]
+              },
+              {
+                "r": 16,
+                "smudge": true,
+                "points": [
+                  [
+                    194,
+                    242
+                  ],
+                  [
+                    194,
+                    244
+                  ],
+                  [
+                    193.5,
+                    246
+                  ],
+                  [
+                    193.5,
+                    248
+                  ],
+                  [
+                    193.5,
+                    250.5
+                  ],
+                  [
+                    193.5,
+                    253
+                  ],
+                  [
+                    193.5,
+                    255
+                  ],
+                  [
+                    194,
+                    257
+                  ],
+                  [
+                    194.5,
+                    259
+                  ],
+                  [
+                    195,
+                    261
+                  ],
+                  [
+                    195.5,
+                    262.5
+                  ],
+                  [
+                    196.5,
+                    264.5
+                  ],
+                  [
+                    196.5,
+                    265.5
+                  ],
+                  [
+                    197.5,
+                    268
+                  ],
+                  [
+                    197.5,
+                    270
+                  ],
+                  [
+                    198.5,
+                    273
+                  ]
+                ]
+              },
+              {
+                "r": 16,
+                "smudge": true,
+                "points": [
+                  [
+                    173.5,
+                    252.5
+                  ],
+                  [
+                    172.5,
+                    254.5
+                  ],
+                  [
+                    171.5,
+                    256
+                  ],
+                  [
+                    171,
+                    257.5
+                  ],
+                  [
+                    171,
+                    258.5
+                  ],
+                  [
+                    171,
+                    259.5
+                  ],
+                  [
+                    170.5,
+                    260.5
+                  ],
+                  [
+                    170.5,
+                    262
+                  ],
+                  [
+                    171,
+                    263
+                  ],
+                  [
+                    171,
+                    265.5
+                  ],
+                  [
+                    172,
+                    267.5
+                  ],
+                  [
+                    173,
+                    271.5
+                  ],
+                  [
+                    175,
+                    278.5
+                  ],
+                  [
+                    175.5,
+                    282
+                  ],
+                  [
+                    176,
+                    285
+                  ],
+                  [
+                    176,
+                    289.5
+                  ]
+                ]
+              },
+              {
+                "r": 16,
+                "tool": "clean",
+                "strength": 0.5,
+                "seed": 1452641045,
+                "smoothing": 2,
+                "speck": 40,
+                "points": [
+                  [
+                    191,
+                    960.5
+                  ],
+                  [
+                    191,
+                    959.5
+                  ],
+                  [
+                    190,
+                    958.5
+                  ],
+                  [
+                    189,
+                    958
+                  ],
+                  [
+                    188,
+                    957.5
+                  ],
+                  [
+                    187,
+                    957
+                  ],
+                  [
+                    186,
+                    957.5
+                  ],
+                  [
+                    186,
+                    958.5
+                  ],
+                  [
+                    186,
+                    960
+                  ],
+                  [
+                    186.5,
+                    962.5
+                  ],
+                  [
+                    188,
+                    967
+                  ],
+                  [
+                    192.5,
+                    973.5
+                  ],
+                  [
+                    198,
+                    978
+                  ],
+                  [
+                    200,
+                    979
+                  ]
+                ]
+              },
+              {
+                "r": 16,
+                "tool": "clean",
+                "strength": 0.5,
+                "seed": 1022056883,
+                "smoothing": 2,
+                "speck": 40,
+                "points": [
+                  [
+                    200.5,
+                    946
+                  ],
+                  [
+                    199.5,
+                    945.5
+                  ],
+                  [
+                    198.5,
+                    946
+                  ],
+                  [
+                    198,
+                    947
+                  ],
+                  [
+                    197.5,
+                    948.5
+                  ],
+                  [
+                    197.5,
+                    950.5
+                  ],
+                  [
+                    197.5,
+                    953
+                  ],
+                  [
+                    197.5,
+                    956
+                  ],
+                  [
+                    197.5,
+                    958.5
+                  ],
+                  [
+                    198,
+                    961
+                  ],
+                  [
+                    198.5,
+                    963.5
+                  ],
+                  [
+                    199,
+                    965
+                  ],
+                  [
+                    199.5,
+                    966.5
+                  ],
+                  [
+                    200,
+                    967.5
+                  ]
+                ]
+              },
+              {
+                "r": 16,
+                "tool": "clean",
+                "strength": 0.5,
+                "seed": 1635777470,
+                "smoothing": 2,
+                "speck": 40,
+                "points": [
+                  [
+                    196.5,
+                    948
+                  ],
+                  [
+                    195.5,
+                    947.5
+                  ],
+                  [
+                    193.5,
+                    946.5
+                  ],
+                  [
+                    192.5,
+                    946.5
+                  ],
+                  [
+                    191,
+                    946
+                  ],
+                  [
+                    190,
+                    946.5
+                  ],
+                  [
+                    190,
+                    948.5
+                  ],
+                  [
+                    190.5,
+                    950.5
+                  ],
+                  [
+                    190.5,
+                    952
+                  ],
+                  [
+                    191,
+                    955
+                  ],
+                  [
+                    192,
+                    962
+                  ],
+                  [
+                    193,
+                    968
+                  ],
+                  [
+                    193,
+                    972
+                  ],
+                  [
+                    193.5,
+                    976.5
+                  ],
+                  [
+                    195,
+                    981.5
+                  ],
+                  [
+                    196.5,
+                    986.5
+                  ],
+                  [
+                    197.5,
+                    991.5
+                  ],
+                  [
+                    199,
+                    995
+                  ],
+                  [
+                    200.5,
+                    998
+                  ],
+                  [
+                    201.5,
+                    997.5
+                  ]
+                ]
+              },
+              {
+                "r": 16,
+                "tool": "clean",
+                "strength": 0.5,
+                "seed": 110972221,
+                "smoothing": 2,
+                "speck": 40,
+                "points": [
+                  [
+                    199.5,
+                    937
+                  ],
+                  [
+                    198.5,
+                    938
+                  ],
+                  [
+                    197.5,
+                    940
+                  ],
+                  [
+                    197.5,
+                    941.5
+                  ],
+                  [
+                    197.5,
+                    943
+                  ],
+                  [
+                    197,
+                    949
+                  ],
+                  [
+                    196.5,
+                    957
+                  ],
+                  [
+                    196.5,
+                    962.5
+                  ],
+                  [
+                    197.5,
+                    967
+                  ],
+                  [
+                    199.5,
+                    971
+                  ],
+                  [
+                    203,
+                    975
+                  ],
+                  [
+                    207,
+                    979
+                  ],
+                  [
+                    212,
+                    983
+                  ],
+                  [
+                    216,
+                    988
+                  ],
+                  [
+                    218,
+                    990.5
+                  ]
+                ]
+              },
+              {
+                "r": 16,
+                "tool": "clean",
+                "strength": 0.5,
+                "seed": 851379683,
+                "smoothing": 2,
+                "speck": 40,
+                "points": [
+                  [
+                    161,
+                    255.5
+                  ],
+                  [
+                    159.5,
+                    256
+                  ],
+                  [
+                    158.5,
+                    257
+                  ],
+                  [
+                    157.5,
+                    257.5
+                  ],
+                  [
+                    157,
+                    258.5
+                  ],
+                  [
+                    157,
+                    261
+                  ],
+                  [
+                    159,
+                    268.5
+                  ],
+                  [
+                    164,
+                    279.5
+                  ],
+                  [
+                    168.5,
+                    290.5
+                  ],
+                  [
+                    173,
+                    300.5
+                  ],
+                  [
+                    177.5,
+                    309.5
+                  ],
+                  [
+                    181.5,
+                    317
+                  ],
+                  [
+                    184.5,
+                    323.5
+                  ],
+                  [
+                    188,
+                    329
+                  ],
+                  [
+                    193,
+                    334
+                  ],
+                  [
+                    199,
+                    337.5
+                  ]
+                ]
+              },
+              {
+                "r": 16,
+                "tool": "clean",
+                "strength": 0.5,
+                "seed": 1301440956,
+                "smoothing": 2,
+                "speck": 40,
+                "points": [
+                  [
+                    207.5,
+                    281
+                  ],
+                  [
+                    207,
+                    279.5
+                  ],
+                  [
+                    204.5,
+                    275.5
+                  ],
+                  [
+                    199.5,
+                    267.5
+                  ],
+                  [
+                    195,
+                    258
+                  ],
+                  [
+                    193,
+                    249
+                  ],
+                  [
+                    191.5,
+                    239
+                  ],
+                  [
+                    190.5,
+                    228
+                  ],
+                  [
+                    190.5,
+                    216
+                  ],
+                  [
+                    191,
+                    204
+                  ],
+                  [
+                    192,
+                    191.5
+                  ],
+                  [
+                    193,
+                    185
+                  ]
+                ]
+              },
+              {
+                "r": 16,
+                "tool": "clean",
+                "strength": 0.5,
+                "seed": 2119810200,
+                "smoothing": 2,
+                "speck": 40,
+                "points": [
+                  [
+                    199,
+                    905
+                  ],
+                  [
+                    198,
+                    905
+                  ],
+                  [
+                    198.5,
+                    906
+                  ],
+                  [
+                    200,
+                    910.5
+                  ],
+                  [
+                    202.5,
+                    922.5
+                  ],
+                  [
+                    203.5,
+                    937.5
+                  ],
+                  [
+                    203,
+                    952
+                  ],
+                  [
+                    203,
+                    967
+                  ],
+                  [
+                    204,
+                    979.5
+                  ],
+                  [
+                    206.5,
+                    991
+                  ],
+                  [
+                    210.5,
+                    1002
+                  ],
+                  [
+                    215.5,
+                    1013
+                  ],
+                  [
+                    220,
+                    1025.5
+                  ],
+                  [
+                    224.5,
+                    1039
+                  ],
+                  [
+                    229,
+                    1054.5
+                  ],
+                  [
+                    231.5,
+                    1063
+                  ]
+                ]
+              },
+              {
+                "r": 16,
+                "tool": "revert",
+                "strength": 0.5,
+                "seed": 1331096737,
+                "points": [
+                  [
+                    157.5,
+                    1012
+                  ],
+                  [
+                    156.5,
+                    1012
+                  ],
+                  [
+                    155.5,
+                    1012
+                  ],
+                  [
+                    154.5,
+                    1011.5
+                  ],
+                  [
+                    153.5,
+                    1009
+                  ],
+                  [
+                    152,
+                    1002
+                  ],
+                  [
+                    150,
+                    991
+                  ],
+                  [
+                    147.5,
+                    979
+                  ],
+                  [
+                    143.5,
+                    964.5
+                  ],
+                  [
+                    135,
+                    939.5
+                  ],
+                  [
+                    127.5,
+                    913.5
+                  ],
+                  [
+                    124,
+                    891
+                  ],
+                  [
+                    123.5,
+                    872.5
+                  ],
+                  [
+                    124.5,
+                    859
+                  ],
+                  [
+                    125.5,
+                    846.5
+                  ],
+                  [
+                    129,
+                    832
+                  ]
+                ]
+              },
+              {
+                "r": 16,
+                "tool": "revert",
+                "strength": 0.5,
+                "seed": 1679125940,
+                "points": [
+                  [
+                    172,
+                    997.5
+                  ],
+                  [
+                    170.5,
+                    997.5
+                  ],
+                  [
+                    169.5,
+                    998
+                  ],
+                  [
+                    168,
+                    998.5
+                  ],
+                  [
+                    166.5,
+                    999.5
+                  ],
+                  [
+                    165.5,
+                    999.5
+                  ],
+                  [
+                    164.5,
+                    996.5
+                  ],
+                  [
+                    163.5,
+                    989.5
+                  ],
+                  [
+                    163,
+                    980
+                  ],
+                  [
+                    162,
+                    972.5
+                  ],
+                  [
+                    161,
+                    966.5
+                  ],
+                  [
+                    160,
+                    959
+                  ],
+                  [
+                    158.5,
+                    951
+                  ],
+                  [
+                    157.5,
+                    943
+                  ],
+                  [
+                    156,
+                    935
+                  ],
+                  [
+                    154,
+                    927
+                  ],
+                  [
+                    152.5,
+                    920
+                  ],
+                  [
+                    151,
+                    914
+                  ],
+                  [
+                    149.5,
+                    909.5
+                  ],
+                  [
+                    149,
+                    904.5
+                  ],
+                  [
+                    149,
+                    899.5
+                  ],
+                  [
+                    149.5,
+                    895
+                  ],
+                  [
+                    149.5,
+                    891.5
+                  ],
+                  [
+                    150,
+                    889
+                  ],
+                  [
+                    150.5,
+                    887.5
+                  ],
+                  [
+                    151,
+                    886.5
+                  ],
+                  [
+                    152.5,
+                    898
+                  ],
+                  [
+                    156.5,
+                    940
+                  ],
+                  [
+                    158.5,
+                    994
+                  ],
+                  [
+                    155.5,
+                    1032
+                  ],
+                  [
+                    151.5,
+                    1060
+                  ],
+                  [
+                    149.5,
+                    1083.5
+                  ],
+                  [
+                    150,
+                    1104.5
+                  ],
+                  [
+                    152.5,
+                    1122.5
+                  ],
+                  [
+                    156,
+                    1134.5
+                  ],
+                  [
+                    160,
+                    1143.5
+                  ],
+                  [
+                    164,
+                    1151.5
+                  ],
+                  [
+                    168.5,
+                    1156.5
+                  ],
+                  [
+                    171,
+                    1158.5
+                  ]
+                ]
+              },
+              {
+                "r": 33,
+                "smudge": true,
+                "points": [
+                  [
+                    207.5,
+                    277
+                  ],
+                  [
+                    209,
+                    278
+                  ],
+                  [
+                    210.5,
+                    278
+                  ]
+                ]
+              },
+              {
+                "r": 19,
+                "smudge": true,
+                "points": [
+                  [
+                    221.5,
+                    256.5
+                  ],
+                  [
+                    220,
+                    256
+                  ],
+                  [
+                    218,
+                    256
+                  ],
+                  [
+                    216.5,
+                    256
+                  ],
+                  [
+                    215,
+                    256.5
+                  ],
+                  [
+                    213,
+                    257
+                  ],
+                  [
+                    211.5,
+                    257
+                  ],
+                  [
+                    209.5,
+                    257.5
+                  ],
+                  [
+                    207.5,
+                    257.5
+                  ],
+                  [
+                    206,
+                    257.5
+                  ],
+                  [
+                    204.5,
+                    257.5
+                  ],
+                  [
+                    204,
+                    257.5
+                  ]
+                ]
+              },
+              {
+                "r": 19,
+                "smudge": true,
+                "points": [
+                  [
+                    224.5,
+                    276
+                  ],
+                  [
+                    223.5,
+                    276
+                  ],
+                  [
+                    222.5,
+                    276.5
+                  ],
+                  [
+                    221.5,
+                    276.5
+                  ],
+                  [
+                    220.5,
+                    276.5
+                  ],
+                  [
+                    219.5,
+                    277
+                  ],
+                  [
+                    217.5,
+                    277.5
+                  ],
+                  [
+                    216,
+                    278
+                  ],
+                  [
+                    214.5,
+                    278.5
+                  ],
+                  [
+                    213,
+                    279
+                  ],
+                  [
+                    211.5,
+                    279
+                  ],
+                  [
+                    209.5,
+                    279
+                  ],
+                  [
+                    208,
+                    279
+                  ],
+                  [
+                    206.5,
+                    278.5
+                  ],
+                  [
+                    205,
+                    278
+                  ],
+                  [
+                    203.5,
+                    277
+                  ],
+                  [
+                    202,
+                    276.5
+                  ]
+                ]
+              },
+              {
+                "r": 19,
+                "tool": "revert",
+                "strength": 1,
+                "seed": 578351608,
+                "points": [
+                  [
+                    270,
+                    272
+                  ],
+                  [
+                    269,
+                    271.5
+                  ],
+                  [
+                    268,
+                    271.5
+                  ],
+                  [
+                    266.5,
+                    271
+                  ],
+                  [
+                    265.5,
+                    271
+                  ],
+                  [
+                    263.5,
+                    271
+                  ],
+                  [
+                    262.5,
+                    271.5
+                  ],
+                  [
+                    260.5,
+                    271.5
+                  ],
+                  [
+                    258,
+                    271.5
+                  ],
+                  [
+                    256,
+                    271.5
+                  ],
+                  [
+                    254,
+                    271.5
+                  ],
+                  [
+                    251.5,
+                    271.5
+                  ],
+                  [
+                    249.5,
+                    271
+                  ],
+                  [
+                    248,
+                    271
+                  ],
+                  [
+                    246.5,
+                    271
+                  ],
+                  [
+                    245,
+                    271
+                  ],
+                  [
+                    244,
+                    271
+                  ],
+                  [
+                    240.5,
+                    271.5
+                  ],
+                  [
+                    238.5,
+                    272
+                  ],
+                  [
+                    236,
+                    272.5
+                  ],
+                  [
+                    234,
+                    273
+                  ]
+                ]
+              },
+              {
+                "r": 19,
+                "tool": "revert",
+                "strength": 1,
+                "seed": 1729773348,
+                "points": [
+                  [
+                    255,
+                    265.5
+                  ],
+                  [
+                    253.5,
+                    265
+                  ],
+                  [
+                    252.5,
+                    264.5
+                  ],
+                  [
+                    251.5,
+                    264
+                  ],
+                  [
+                    250.5,
+                    264
+                  ],
+                  [
+                    249,
+                    263
+                  ],
+                  [
+                    247.5,
+                    263
+                  ],
+                  [
+                    246,
+                    262.5
+                  ],
+                  [
+                    245,
+                    262.5
+                  ],
+                  [
+                    243,
+                    263
+                  ],
+                  [
+                    242,
+                    263
+                  ],
+                  [
+                    240.5,
+                    264
+                  ],
+                  [
+                    239,
+                    264.5
+                  ],
+                  [
+                    237.5,
+                    265.5
+                  ],
+                  [
+                    236,
+                    266
+                  ],
+                  [
+                    234.5,
+                    266.5
+                  ],
+                  [
+                    233.5,
+                    267
+                  ],
+                  [
+                    231.5,
+                    268
+                  ],
+                  [
+                    229,
+                    269.5
+                  ],
+                  [
+                    229.5,
+                    270
+                  ]
+                ]
+              },
+              {
+                "r": 19,
+                "tool": "revert",
+                "strength": 1,
+                "seed": 1617825640,
+                "points": [
+                  [
+                    247.5,
+                    265
+                  ],
+                  [
+                    246.5,
+                    264.5
+                  ],
+                  [
+                    245.5,
+                    264
+                  ],
+                  [
+                    244.5,
+                    263.5
+                  ],
+                  [
+                    243.5,
+                    263.5
+                  ],
+                  [
+                    242,
+                    264
+                  ],
+                  [
+                    240.5,
+                    264
+                  ],
+                  [
+                    239.5,
+                    264.5
+                  ],
+                  [
+                    237.5,
+                    265.5
+                  ],
+                  [
+                    236,
+                    266
+                  ],
+                  [
+                    234.5,
+                    266.5
+                  ],
+                  [
+                    233,
+                    267
+                  ],
+                  [
+                    231.5,
+                    267.5
+                  ],
+                  [
+                    230,
+                    267.5
+                  ],
+                  [
+                    229,
+                    267.5
+                  ],
+                  [
+                    227.5,
+                    268
+                  ],
+                  [
+                    225.5,
+                    269
+                  ],
+                  [
+                    223.5,
+                    269.5
+                  ],
+                  [
+                    222,
+                    270
+                  ],
+                  [
+                    222,
+                    271
+                  ]
+                ]
+              }
+            ],
+            "outline": 10,
+            "light": [
+              0,
+              -1
+            ],
+            "shade": 0.3,
+            "seed": 1
+          },
+          "disallow": false
+        },
+        "dagger": {
+          "scaleX": 0.5,
+          "scaleY": 0.9,
+          "layerOrder": "haft-over-head",
+          "bridges": {
+            "strokes": [
+              {
+                "recipe": "recipe-1",
+                "box": {
+                  "x0": 160.49999999999997,
+                  "y0": 208.5,
+                  "x1": 223.00000000000003,
+                  "y1": 323
+                }
+              },
+              {
+                "recipe": "recipe-1",
+                "box": {
+                  "x0": 159.49999999999997,
+                  "y0": 941,
+                  "x1": 226.00000000000003,
+                  "y1": 1046.5
+                }
+              }
+            ],
+            "outline": 10,
+            "light": [
+              0,
+              -1
+            ],
+            "shade": 0.3,
+            "seed": 1
+          },
+          "disallow": true
+        },
+        "fishing-mace": {
+          "scaleX": 0.5,
+          "scaleY": 0.9,
+          "layerOrder": "head-over-haft"
+        },
+        "fishing-spear": {
+          "scaleX": 0.6,
+          "scaleY": 1.2,
+          "layerOrder": "haft-over-head",
+          "bridges": {
+            "strokes": [
+              {
+                "recipe": "tanged-head---sleeved-shaft",
+                "box": {
+                  "x0": 41,
+                  "y0": 73.5,
+                  "x1": 349,
+                  "y1": 1136.5
+                }
+              }
+            ],
+            "outline": 10,
+            "light": [
+              0,
+              -1
+            ],
+            "shade": 0.3,
+            "seed": 1
+          },
+          "disallow": true
+        },
+        "harlyao-broadsword": {
+          "scaleX": 0.6,
+          "layerOrder": "head-over-haft",
+          "bridges": {
+            "strokes": [
+              {
+                "recipe": "tanged-head---sleeved-shaft",
+                "box": {
+                  "x0": 39.5,
+                  "y0": 86,
+                  "x1": 347.5,
+                  "y1": 1119.5
+                }
+              }
+            ],
+            "outline": 10,
+            "light": [
+              0,
+              -1
+            ],
+            "shade": 0.3,
+            "seed": 1
+          },
+          "disallow": true
+        },
+        "harlyao-longsword": {
+          "scaleX": 0.8,
+          "layerOrder": "head-over-haft",
+          "bridges": {
+            "strokes": [
+              {
+                "recipe": "recipe-3",
+                "box": {
+                  "x0": 55,
+                  "y0": 129,
+                  "x1": 257.5,
+                  "y1": 1084.5
+                }
+              }
+            ],
+            "outline": 10,
+            "light": [
+              0,
+              -1
+            ],
+            "shade": 0.3,
+            "seed": 1
+          },
+          "disallow": true
+        },
+        "hatchet": {
+          "scaleX": 0.6,
+          "scaleY": 0.9,
+          "x": -5,
+          "y": 30,
+          "layerOrder": "head-over-haft"
+        },
+        "hoe": {
+          "scaleX": 0.5,
+          "scaleY": 0.9,
+          "layerOrder": "head-over-haft",
+          "disallow": true
+        },
+        "kylie": {
+          "scaleX": 0.5,
+          "scaleY": 0.9,
+          "layerOrder": "head-over-haft",
+          "disallow": true
+        },
+        "pick-shovel-pick": {
+          "scaleX": 0.5,
+          "flipX": true,
+          "flipY": true,
+          "layerOrder": "head-over-haft",
+          "bridges": {
+            "strokes": [
+              {
+                "recipe": "recipe-1",
+                "box": {
+                  "x0": 166.5,
+                  "y0": 915.5,
+                  "x1": 223,
+                  "y1": 1026
+                }
+              },
+              {
+                "recipe": "recipe-1",
+                "box": {
+                  "x0": 159.5,
+                  "y0": 223,
+                  "x1": 216,
+                  "y1": 333.5
+                },
+                "flipX": true
+              }
+            ],
+            "outline": 10,
+            "light": [
+              0,
+              -1
+            ],
+            "shade": 0.3,
+            "seed": 1
+          },
+          "disallow": true
+        },
+        "pickshovel-scoop": {
+          "scaleX": 0.4,
+          "scaleY": 1.4,
+          "layerOrder": "haft-over-head",
+          "bridges": {
+            "strokes": [
+              {
+                "recipe": "recipe-3",
+                "box": {
+                  "x0": 55,
+                  "y0": 129,
+                  "x1": 257.5,
+                  "y1": 1084.5
+                }
+              }
+            ],
+            "outline": 10,
+            "light": [
+              0,
+              -1
+            ],
+            "shade": 0.3,
+            "seed": 1
+          },
+          "disallow": true
+        },
+        "plains-blade": {
+          "scaleX": 0.75,
+          "scaleY": 0.5,
+          "layerOrder": "haft-over-head",
+          "bridges": {
+            "strokes": [
+              {
+                "recipe": "recipe-3",
+                "box": {
+                  "x0": 55,
+                  "y0": 129,
+                  "x1": 257.5,
+                  "y1": 1084.5
+                }
+              }
+            ],
+            "outline": 10,
+            "light": [
+              0,
+              -1
+            ],
+            "shade": 0.3,
+            "seed": 1
+          },
+          "disallow": true
+        },
+        "porakaneki-greatclub": {
+          "scaleX": 0.8,
+          "scaleY": 0.45,
+          "x": 5,
+          "y": -20,
+          "layerOrder": "head-over-haft"
+        },
+        "war-cleaver": {
+          "scaleX": 0.85,
+          "y": -45,
+          "layerOrder": "haft-over-head",
+          "bridges": {
+            "strokes": [
+              {
+                "recipe": "recipe-4",
+                "box": {
+                  "x0": 30.5,
+                  "y0": 120,
+                  "x1": 280.5,
+                  "y1": 525
+                },
+                "flipX": true
+              },
+              {
+                "recipe": "recipe-4",
+                "box": {
+                  "x0": 96.5,
+                  "y0": 764.5,
+                  "x1": 346.5,
+                  "y1": 1137
+                }
+              }
+            ],
+            "outline": 10,
+            "light": [
+              0,
+              -1
+            ],
+            "shade": 0.3,
+            "seed": 1
+          }
+        },
+        "warhammer": {
+          "scaleX": 0.55,
+          "scaleY": 1.9,
+          "x": 7,
+          "y": 15,
+          "layerOrder": "head-over-haft"
+        },
+        "work-hammer": {
+          "scaleX": 0.375,
+          "scaleY": 2,
+          "y": -35,
+          "rotation": 1,
+          "layerOrder": "head-over-haft"
+        },
+        "bshuakauitl": {
+          "scaleX": 0.5,
+          "scaleY": 0.9,
+          "layerOrder": "head-over-haft",
+          "disallow": true
+        }
+      },
+      "mounts": [
+        {
+          "type": "eye",
+          "start": {
+            "x": 188.78363094484274,
+            "y": 1002.7014180723676
+          },
+          "end": {
+            "x": 187.43604165403195,
+            "y": 925.7132111631059
+          }
+        },
+        {
+          "type": "eye",
+          "start": {
+            "x": 198,
+            "y": 229
+          },
+          "end": {
+            "x": 198,
+            "y": 309
+          }
+        },
+        {
+          "type": "tang",
+          "start": {
+            "x": 190.2400880884385,
+            "y": 966.3136175245061
+          },
+          "end": {
+            "x": 221.7599119115615,
+            "y": 941.6863824754939
+          }
+        },
+        {
+          "type": "tang",
+          "start": {
+            "x": 189.87588007577142,
+            "y": 278.83626571238403
+          },
+          "end": {
+            "x": 158.12411992422858,
+            "y": 303.16373428761597
+          }
+        }
+      ],
+      "maxAttachments": 8,
+      "editorOnly": false,
+      "duplicateFrom": "bshuakauitl",
+      "duplicateTransform": {
+        "scaleX": 1,
+        "scaleY": 1,
+        "x": 0,
+        "y": 0
+      },
+      "fireAssembly": "hachutuTorchStaff",
+      "rigRegions": [],
+      "shaftArtTransform": {
+        "scaleX": 1,
+        "scaleY": 1,
+        "x": 0,
+        "y": 0,
+        "enabled": false
+      },
+      "attachmentRigTransform": {
+        "scaleX": 1,
+        "scaleY": 1,
+        "x": 0,
+        "y": 0
+      }
     }
   },
   "recipes": {
@@ -16075,23 +17945,1362 @@ window.MODULAR_WEAPON_CONFIG = {
           "len": 40.000000000000014
         }
       }
+    },
+    "fuse": {
+      "box": {
+        "x0": 83.5,
+        "y0": 862.5,
+        "x1": 800.5,
+        "y1": 1023.5
+      },
+      "ops": [
+        {
+          "r": 16,
+          "points": [
+            [
+              384,
+              978
+            ],
+            [
+              380.5,
+              964
+            ],
+            [
+              377,
+              957
+            ],
+            [
+              370,
+              953.5
+            ],
+            [
+              363,
+              946.5
+            ],
+            [
+              359.5,
+              939.5
+            ],
+            [
+              356,
+              932.5
+            ],
+            [
+              359.5,
+              932.5
+            ]
+          ]
+        },
+        {
+          "r": 16,
+          "points": [
+            [
+              380.5,
+              943
+            ],
+            [
+              373.5,
+              936
+            ],
+            [
+              373.5,
+              932.5
+            ]
+          ]
+        },
+        {
+          "r": 16,
+          "points": [
+            [
+              359.5,
+              925.5
+            ],
+            [
+              366.5,
+              929
+            ],
+            [
+              377,
+              939.5
+            ],
+            [
+              377,
+              946.5
+            ],
+            [
+              377,
+              953.5
+            ],
+            [
+              377,
+              960.5
+            ],
+            [
+              373.5,
+              967.5
+            ],
+            [
+              370,
+              971
+            ]
+          ]
+        },
+        {
+          "r": 16,
+          "tool": "revert",
+          "strength": 0.5,
+          "seed": 1590462046,
+          "points": [
+            [
+              363,
+              960.5
+            ],
+            [
+              363,
+              957
+            ],
+            [
+              363,
+              953.5
+            ],
+            [
+              363,
+              939.5
+            ],
+            [
+              363,
+              929
+            ],
+            [
+              363,
+              925.5
+            ],
+            [
+              363,
+              922
+            ],
+            [
+              363,
+              918.5
+            ],
+            [
+              363,
+              915
+            ],
+            [
+              363,
+              904.5
+            ]
+          ]
+        },
+        {
+          "r": 16,
+          "tool": "revert",
+          "strength": 0.5,
+          "seed": 1495861833,
+          "points": [
+            [
+              352.5,
+              950
+            ],
+            [
+              356,
+              950
+            ],
+            [
+              359.5,
+              950
+            ],
+            [
+              359.5,
+              957
+            ],
+            [
+              363,
+              967.5
+            ],
+            [
+              366.5,
+              974.5
+            ],
+            [
+              366.5,
+              978
+            ],
+            [
+              366.5,
+              981.5
+            ],
+            [
+              366.5,
+              985
+            ],
+            [
+              366.5,
+              995.5
+            ],
+            [
+              366.5,
+              1002.5
+            ],
+            [
+              363,
+              1006
+            ]
+          ]
+        },
+        {
+          "r": 16,
+          "tool": "revert",
+          "strength": 0.5,
+          "seed": 489695249,
+          "points": [
+            [
+              380.5,
+              953.5
+            ],
+            [
+              377,
+              953.5
+            ],
+            [
+              377,
+              957
+            ],
+            [
+              380.5,
+              960.5
+            ],
+            [
+              384,
+              971
+            ],
+            [
+              384,
+              981.5
+            ],
+            [
+              384,
+              988.5
+            ],
+            [
+              384,
+              995.5
+            ],
+            [
+              384,
+              1006
+            ],
+            [
+              384,
+              1009.5
+            ],
+            [
+              384,
+              1016.5
+            ]
+          ]
+        },
+        {
+          "r": 16,
+          "tool": "revert",
+          "strength": 0.5,
+          "seed": 1766503070,
+          "points": [
+            [
+              384,
+              943
+            ],
+            [
+              394.5,
+              953.5
+            ],
+            [
+              394.5,
+              957
+            ],
+            [
+              394.5,
+              960.5
+            ],
+            [
+              394.5,
+              967.5
+            ],
+            [
+              398,
+              978
+            ],
+            [
+              408.5,
+              995.5
+            ],
+            [
+              408.5,
+              1002.5
+            ],
+            [
+              408.5,
+              1006
+            ],
+            [
+              408.5,
+              1002.5
+            ],
+            [
+              401.5,
+              995.5
+            ],
+            [
+              398,
+              985
+            ],
+            [
+              398,
+              974.5
+            ],
+            [
+              398,
+              971
+            ],
+            [
+              398,
+              967.5
+            ],
+            [
+              394.5,
+              960.5
+            ],
+            [
+              394.5,
+              957
+            ],
+            [
+              394.5,
+              953.5
+            ]
+          ]
+        },
+        {
+          "r": 16,
+          "tool": "revert",
+          "strength": 0.5,
+          "seed": 891492203,
+          "points": [
+            [
+              412,
+              925.5
+            ],
+            [
+              408.5,
+              925.5
+            ],
+            [
+              408.5,
+              929
+            ],
+            [
+              408.5,
+              936
+            ],
+            [
+              405,
+              950
+            ],
+            [
+              405,
+              960.5
+            ],
+            [
+              401.5,
+              964
+            ],
+            [
+              401.5,
+              967.5
+            ],
+            [
+              401.5,
+              971
+            ],
+            [
+              398,
+              974.5
+            ],
+            [
+              394.5,
+              978
+            ],
+            [
+              398,
+              981.5
+            ],
+            [
+              401.5,
+              985
+            ],
+            [
+              412,
+              985
+            ],
+            [
+              422.5,
+              988.5
+            ],
+            [
+              422.5,
+              992
+            ],
+            [
+              422.5,
+              995.5
+            ],
+            [
+              422.5,
+              999
+            ],
+            [
+              419,
+              1002.5
+            ],
+            [
+              419,
+              1006
+            ],
+            [
+              415.5,
+              1006
+            ],
+            [
+              412,
+              1009.5
+            ],
+            [
+              408.5,
+              1013
+            ],
+            [
+              401.5,
+              1016.5
+            ],
+            [
+              401.5,
+              1013
+            ],
+            [
+              401.5,
+              1006
+            ],
+            [
+              401.5,
+              1002.5
+            ],
+            [
+              398,
+              999
+            ],
+            [
+              394.5,
+              992
+            ],
+            [
+              391,
+              981.5
+            ],
+            [
+              387.5,
+              978
+            ],
+            [
+              384,
+              967.5
+            ],
+            [
+              384,
+              964
+            ],
+            [
+              380.5,
+              960.5
+            ],
+            [
+              380.5,
+              957
+            ]
+          ]
+        },
+        {
+          "r": 16,
+          "tool": "revert",
+          "strength": 0.5,
+          "seed": 470678232,
+          "points": [
+            [
+              384,
+              978
+            ],
+            [
+              384,
+              981.5
+            ],
+            [
+              384,
+              985
+            ],
+            [
+              387.5,
+              988.5
+            ],
+            [
+              394.5,
+              992
+            ],
+            [
+              394.5,
+              995.5
+            ],
+            [
+              398,
+              999
+            ],
+            [
+              394.5,
+              995.5
+            ],
+            [
+              391,
+              995.5
+            ],
+            [
+              391,
+              988.5
+            ],
+            [
+              387.5,
+              985
+            ],
+            [
+              387.5,
+              981.5
+            ],
+            [
+              387.5,
+              971
+            ],
+            [
+              387.5,
+              957
+            ],
+            [
+              387.5,
+              943
+            ],
+            [
+              384,
+              925.5
+            ],
+            [
+              380.5,
+              911.5
+            ],
+            [
+              380.5,
+              932.5
+            ],
+            [
+              380.5,
+              946.5
+            ],
+            [
+              384,
+              960.5
+            ],
+            [
+              384,
+              971
+            ],
+            [
+              384,
+              981.5
+            ],
+            [
+              384,
+              988.5
+            ],
+            [
+              384,
+              992
+            ],
+            [
+              387.5,
+              992
+            ],
+            [
+              391,
+              992
+            ],
+            [
+              394.5,
+              992
+            ]
+          ]
+        },
+        {
+          "r": 16,
+          "tool": "revert",
+          "strength": 0.5,
+          "seed": 11528634,
+          "points": [
+            [
+              387.5,
+              939.5
+            ],
+            [
+              384,
+              939.5
+            ],
+            [
+              384,
+              943
+            ],
+            [
+              384,
+              950
+            ],
+            [
+              384,
+              957
+            ],
+            [
+              384,
+              967.5
+            ],
+            [
+              384,
+              974.5
+            ],
+            [
+              384,
+              978
+            ],
+            [
+              391,
+              981.5
+            ],
+            [
+              391,
+              985
+            ],
+            [
+              394.5,
+              988.5
+            ],
+            [
+              398,
+              988.5
+            ],
+            [
+              398,
+              992
+            ],
+            [
+              401.5,
+              999
+            ],
+            [
+              408.5,
+              1002.5
+            ],
+            [
+              408.5,
+              1006
+            ],
+            [
+              412,
+              1009.5
+            ],
+            [
+              408.5,
+              1006
+            ],
+            [
+              401.5,
+              995.5
+            ],
+            [
+              398,
+              995.5
+            ],
+            [
+              398,
+              992
+            ],
+            [
+              398,
+              988.5
+            ],
+            [
+              394.5,
+              988.5
+            ],
+            [
+              394.5,
+              985
+            ],
+            [
+              394.5,
+              978
+            ],
+            [
+              391,
+              953.5
+            ],
+            [
+              387.5,
+              950
+            ],
+            [
+              387.5,
+              946.5
+            ],
+            [
+              387.5,
+              943
+            ],
+            [
+              387.5,
+              939.5
+            ],
+            [
+              387.5,
+              936
+            ],
+            [
+              387.5,
+              932.5
+            ]
+          ]
+        },
+        {
+          "r": 16,
+          "tool": "revert",
+          "strength": 0.5,
+          "seed": 2025975724,
+          "points": [
+            [
+              387.5,
+              925.5
+            ],
+            [
+              387.5,
+              936
+            ],
+            [
+              387.5,
+              943
+            ],
+            [
+              387.5,
+              946.5
+            ],
+            [
+              387.5,
+              957
+            ],
+            [
+              387.5,
+              971
+            ],
+            [
+              387.5,
+              974.5
+            ],
+            [
+              391,
+              978
+            ],
+            [
+              391,
+              981.5
+            ],
+            [
+              394.5,
+              981.5
+            ],
+            [
+              394.5,
+              957
+            ],
+            [
+              387.5,
+              929
+            ],
+            [
+              387.5,
+              922
+            ],
+            [
+              387.5,
+              918.5
+            ],
+            [
+              387.5,
+              922
+            ],
+            [
+              391,
+              922
+            ],
+            [
+              394.5,
+              925.5
+            ],
+            [
+              398,
+              922
+            ],
+            [
+              398,
+              918.5
+            ]
+          ]
+        },
+        {
+          "r": 16,
+          "tool": "revert",
+          "strength": 0.5,
+          "seed": 455471752,
+          "points": [
+            [
+              408.5,
+              971
+            ],
+            [
+              408.5,
+              974.5
+            ],
+            [
+              405,
+              974.5
+            ],
+            [
+              401.5,
+              978
+            ],
+            [
+              398,
+              985
+            ],
+            [
+              394.5,
+              988.5
+            ],
+            [
+              394.5,
+              992
+            ],
+            [
+              391,
+              992
+            ],
+            [
+              391,
+              985
+            ],
+            [
+              391,
+              974.5
+            ],
+            [
+              391,
+              960.5
+            ],
+            [
+              391,
+              957
+            ],
+            [
+              391,
+              950
+            ],
+            [
+              391,
+              943
+            ],
+            [
+              398,
+              929
+            ],
+            [
+              408.5,
+              901
+            ],
+            [
+              419,
+              869.5
+            ],
+            [
+              419,
+              849
+            ],
+            [
+              419,
+              855.5
+            ],
+            [
+              415.5,
+              873
+            ],
+            [
+              408.5,
+              897.5
+            ],
+            [
+              401.5,
+              929
+            ],
+            [
+              394.5,
+              957
+            ],
+            [
+              384,
+              988.5
+            ],
+            [
+              373.5,
+              1016.5
+            ],
+            [
+              366.5,
+              1034
+            ],
+            [
+              359.5,
+              1048
+            ],
+            [
+              363,
+              1048
+            ],
+            [
+              398,
+              1023.5
+            ],
+            [
+              433,
+              995.5
+            ],
+            [
+              454,
+              971
+            ],
+            [
+              461,
+              953.5
+            ],
+            [
+              461,
+              943
+            ],
+            [
+              450.5,
+              915
+            ],
+            [
+              433,
+              880
+            ],
+            [
+              415.5,
+              845.5
+            ],
+            [
+              415.5,
+              842
+            ],
+            [
+              412,
+              859
+            ],
+            [
+              405,
+              887
+            ],
+            [
+              401.5,
+              897.5
+            ],
+            [
+              394.5,
+              922
+            ],
+            [
+              384,
+              967.5
+            ],
+            [
+              380.5,
+              988.5
+            ],
+            [
+              387.5,
+              988.5
+            ],
+            [
+              398,
+              981.5
+            ],
+            [
+              412,
+              967.5
+            ],
+            [
+              433,
+              936
+            ],
+            [
+              447,
+              911.5
+            ],
+            [
+              457.5,
+              901
+            ]
+          ]
+        },
+        {
+          "r": 16,
+          "tool": "revert",
+          "strength": 0.85,
+          "seed": 1971041094,
+          "points": [
+            [
+              366.5,
+              967.5
+            ],
+            [
+              352.5,
+              988.5
+            ],
+            [
+              352.5,
+              995.5
+            ],
+            [
+              349,
+              1002.5
+            ],
+            [
+              352.5,
+              1002.5
+            ],
+            [
+              359.5,
+              999
+            ],
+            [
+              363,
+              999
+            ],
+            [
+              363,
+              992
+            ],
+            [
+              363,
+              985
+            ],
+            [
+              359.5,
+              971
+            ],
+            [
+              359.5,
+              964
+            ],
+            [
+              359.5,
+              960.5
+            ],
+            [
+              359.5,
+              957
+            ],
+            [
+              359.5,
+              953.5
+            ],
+            [
+              359.5,
+              946.5
+            ],
+            [
+              356,
+              932.5
+            ],
+            [
+              352.5,
+              911.5
+            ],
+            [
+              352.5,
+              901
+            ],
+            [
+              356,
+              901
+            ],
+            [
+              359.5,
+              904.5
+            ],
+            [
+              359.5,
+              908
+            ],
+            [
+              356,
+              918.5
+            ],
+            [
+              352.5,
+              929
+            ],
+            [
+              349,
+              939.5
+            ],
+            [
+              345.5,
+              953.5
+            ],
+            [
+              345.5,
+              974.5
+            ],
+            [
+              352.5,
+              988.5
+            ],
+            [
+              352.5,
+              995.5
+            ],
+            [
+              356,
+              999
+            ],
+            [
+              356,
+              1002.5
+            ],
+            [
+              359.5,
+              1002.5
+            ],
+            [
+              363,
+              1002.5
+            ],
+            [
+              370,
+              1002.5
+            ],
+            [
+              373.5,
+              1002.5
+            ],
+            [
+              377,
+              1002.5
+            ],
+            [
+              377,
+              999
+            ],
+            [
+              380.5,
+              992
+            ],
+            [
+              380.5,
+              988.5
+            ],
+            [
+              380.5,
+              978
+            ],
+            [
+              380.5,
+              967.5
+            ],
+            [
+              377,
+              953.5
+            ],
+            [
+              373.5,
+              950
+            ],
+            [
+              370,
+              943
+            ],
+            [
+              363,
+              922
+            ],
+            [
+              356,
+              904.5
+            ],
+            [
+              356,
+              897.5
+            ],
+            [
+              356,
+              890.5
+            ],
+            [
+              356,
+              887
+            ],
+            [
+              359.5,
+              887
+            ],
+            [
+              363,
+              894
+            ],
+            [
+              366.5,
+              901
+            ],
+            [
+              370,
+              911.5
+            ],
+            [
+              370,
+              925.5
+            ],
+            [
+              373.5,
+              943
+            ],
+            [
+              373.5,
+              960.5
+            ],
+            [
+              377,
+              974.5
+            ],
+            [
+              377,
+              978
+            ],
+            [
+              377,
+              981.5
+            ],
+            [
+              380.5,
+              988.5
+            ],
+            [
+              391,
+              1002.5
+            ],
+            [
+              394.5,
+              1006
+            ],
+            [
+              394.5,
+              1009.5
+            ],
+            [
+              394.5,
+              1006
+            ],
+            [
+              394.5,
+              999
+            ],
+            [
+              398,
+              992
+            ],
+            [
+              401.5,
+              985
+            ],
+            [
+              401.5,
+              974.5
+            ],
+            [
+              401.5,
+              971
+            ],
+            [
+              401.5,
+              964
+            ],
+            [
+              398,
+              950
+            ],
+            [
+              394.5,
+              946.5
+            ],
+            [
+              394.5,
+              943
+            ],
+            [
+              394.5,
+              936
+            ],
+            [
+              394.5,
+              925.5
+            ],
+            [
+              394.5,
+              908
+            ],
+            [
+              394.5,
+              887
+            ],
+            [
+              394.5,
+              869.5
+            ],
+            [
+              394.5,
+              866
+            ]
+          ]
+        }
+      ],
+      "anchor": {
+        "rank": 0,
+        "count": 1,
+        "mount": {
+          "x": 358.58759510402615,
+          "y": 959.2848552475546,
+          "ax": -0.9973599728797863,
+          "ay": 0.07261600716943811,
+          "len": 49.99999999999995
+        }
+      }
     }
   }
 };
-
-// Reusable shaft duplication: clone the complete B'shuakauitl mount/pair preset,
-// then substitute the entire Torch-Staff sprite and its independently animated fire.
-// Other shafts can be duplicated using the Foundry's "Duplicate shaft" editor action.
-(function (config) {
-  const source = config.shafts.bshuakauitl; // Canonical donor for the four eye/tang mounts and seven allowed head families.
-  if (!source) return;
-  const staff = JSON.parse(JSON.stringify(source)); // Copy, rather than alias, mount lines and fitting overrides.
-  staff.label = 'Hachutu Torch-Staff';
-  staff.sourceShape = 'hachutuTorchStaff'; // Own melee stats/grips; no B'shuakauitl blowgun behavior.
-  staff.sprite = 'assets/toolsprites/hachutu_torch-staff.png';
-  staff.duplicateFrom = 'bshuakauitl'; // Editor provenance; the copied pair settings remain independently editable.
-  staff.duplicateTransform = { scaleX: 1, scaleY: 1, x: 0, y: 0 }; // Legacy-compatible attachment-rig transform; shaft artwork and fire are outside the rig.
-  staff.fireAssembly = 'hachutuTorchStaff'; // Shared layered weapon emitter follows this modular shaft at runtime.
-  staff.editorOnly = false;
-  config.shafts.hachutuTorchStaff = staff;
-})(window.MODULAR_WEAPON_CONFIG);

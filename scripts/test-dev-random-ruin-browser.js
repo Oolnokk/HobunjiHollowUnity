@@ -193,21 +193,32 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
   const glyphVisuals = await page.evaluate(async () => {
     const scene=window.GridTileAccessors.getActiveScene();
     const roots=[];
+    const inVisibleScene=object=>{ // Exclude authored glyphs on inactive native V50 floors.
+      for(let node=object;node;node=node.parent)if(node.visible===false)return false;
+      return true;
+    };
     scene?.traverse?.(object=>{
-      if(object.userData?.activatorType!=='glyphObelisk')return;
+      if(object.userData?.activatorType!=='glyphObelisk'||!inVisibleScene(object))return;
       let nested=false;
       object.traverse?.(child=>{ if(child!==object && child.userData?.activatorType==='glyphObelisk') nested=true; });
       if(!nested)roots.push(object);
     });
     const summarize=root=>{
       let decalMeshes=0;
-      root.traverse?.(child=>{ if(child.userData?.furnitureDecal)decalMeshes++; });
+      const authoredGlowDecals=[]; // Live authored plaque meshes are the authoritative visible rune, not legacy V50 material flags.
+      root.traverse?.(child=>{
+        if(child.userData?.furnitureDecal)decalMeshes++;
+        if(child.isMesh&&child.userData?.furnitureDecal&&child.userData?.decalGlow&&inVisibleScene(child)){
+          authoredGlowDecals.push({ color:child.material?.color?.getHexString?.()||null,
+            glow:true, source:child.userData?.decalSourceType||null });
+        }
+      });
       return {
         id:root.id,
         profile:root.userData?.obeliskProfile||root.userData?.targetProfile||null,
         concealed:root.userData?.concealedStoneFinish===true,
         decalAssets:[...(root.userData?.decalAssets||[])],
-        decalMeshes,
+        decalMeshes,authoredGlowDecals,
         decalMaterials:(root.userData?.decalMaterials||[]).map(material=>({
           color:material.color?.getHexString?.()||null,
           opacity:Number(material.opacity),
@@ -232,7 +243,8 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
   assert.equal(glyphVisuals.activated,true,'projectile glyph diagnostic must enter the same authoritative active state as a real projectile hit: '+JSON.stringify(glyphVisuals));
   assert.ok(glyphVisuals.before.every(glyph=>glyph.concealed===false&&glyph.decalAssets.length>0&&glyph.decalMeshes>0&&glyph.decalMaterials.length>0),'every projectile glyph target must visibly carry authored face decals: '+JSON.stringify(glyphVisuals));
   assert.ok((glyphVisuals.proxyBefore?.glyphDecalSourceCount||0)>0,'native game-realm glyph sources must include authored decal planes: '+JSON.stringify(glyphVisuals.proxyBefore));
-  assert.ok(glyphVisuals.after?.decalMaterials?.some(material=>material.glow&&material.blending===glyphVisuals.additive&&isStruckGlyphColor(material.color)),'activated glyph must visibly glow green (DECAL_ACTIVE in dev-random-ruin-glyph-circuits.js, possibly mid hit-flash toward white) through its unlit decal material: '+JSON.stringify(glyphVisuals.after));
+  assert.ok(glyphVisuals.after?.authoredGlowDecals?.some(decal=>decal.glow&&isStruckGlyphColor(decal.color)),
+    'activated glyph must show green or brief hit-flash white on a visible authored plaque decal (FurnitureDecalRuntime drives the glow, not the retired V50 additive-blending flag): '+JSON.stringify(glyphVisuals.after));
   assert.ok((glyphVisuals.proxyAfter?.glowingGlyphDecalSourceCount||0)>0,'activated glyph glow must remain visible on the native game-realm source: '+JSON.stringify(glyphVisuals.proxyAfter));
 
   assert.equal(constrained.solvability?.ok, true, JSON.stringify(constrained));

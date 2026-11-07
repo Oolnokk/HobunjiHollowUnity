@@ -275,14 +275,22 @@
           && window.__hobunjiGameStarted === true
           && delta > 0
           && delta <= MAX_NATURAL_TIME_WRITE;
-        const passageOwnsClock = !!_timePassageKind && !!_timePassageUi
-          && (_timePassageUi.backdrop.classList.contains('open') || _timePassageUi.iris.style.display === 'block'); // Used to freeze drift while choosing/transitioning without blocking explicit rollover writes.
         value = isNaturalFrameWrite
-          ? (passageOwnsClock ? value : value + delta * NATURAL_TIME_WRITE_SCALE * devTimeSpeed)
+          ? value + delta * naturalClockScale()
           : numeric;
       },
     });
     _timeScaleInstalled = true;
+  }
+
+  function naturalClockScale() {
+    const passageOwnsClock = !!_timePassageKind && !!_timePassageUi
+      && (_timePassageUi.backdrop.classList.contains('open') || _timePassageUi.iris.style.display === 'block'); // Shared by natural calendar writes and clock-driven simulation rates.
+    return passageOwnsClock ? 0 : NATURAL_TIME_WRITE_SCALE * devTimeSpeed;
+  }
+
+  function getNaturalGameHoursPerSecond() {
+    return (getHour(1) - getHour(0)) / BASE_DAY_LENGTH_SECONDS * naturalClockScale();
   }
 
   function setTime01Raw(value) {
@@ -699,7 +707,7 @@
         const override = window.WeatherFX?.getDebugWeatherOwner?.() === 'dev-companion' ? window.WeatherFX.getDebugWeather() : null;
         return {
           summary: `${formatClockTime()} · ${band || '?'} · ${currentWeekdayName()} · ${currentSeason()?.name || '?'} · ${deps.calendar.weather}${override ? ' (forced)' : ''}`,
-          rows: [['Clock speed', `${devTimeSpeed}× normal (calendar only; reload resets to 1×)`]],
+          rows: [['Clock speed', `${devTimeSpeed}× normal (clock and water; reload resets to 1×)`]],
           note: _devAdvanceBusy ? 'Advancing time…' : 'Skips run the real hour-by-hour time passage (crops, schedules, day rollover).',
           actions: [
             ...[0, 0.25, 0.5, 1, 2, 5, 10, 30, 60].map(speed => ({ id: 'speed', label: speed === 0 ? 'Paused' : `${speed}×`, args: { speed }, active: devTimeSpeed === speed, group: 'Clock speed' })),
@@ -1069,7 +1077,8 @@
       modalKind: _timePassageKind,
       selectedHours: _selectedPassageHours,
       passageRunning: _passageRunning, passageCancelled: _passageCancelled, elapsedHours: _passageElapsedHours,
-      latestChange: 'Cancel stops time at the displayed hour and keeps the passage lock until the iris opens.',
+      naturalGameHoursPerSecond: getNaturalGameHoursPerSecond(), // Mobile time diagnostics expose the exact rate consumed by water simulation.
+      latestChange: 'Natural calendar and water simulation share clock speed and Sleep/Wait clock locks.',
       preview: deps ? formatCalendarDateTimeFull(target.day, target.time01) : null,
       seatedWaitReady: isSeatedReady(),
       sleepTargetReady: !!findSleepActionButton(),
@@ -1098,6 +1107,7 @@
     init,
     isInitialized,
     getHour,
+    getNaturalGameHoursPerSecond,
     dayOfYear,
     yearNumber, // Civil year cycle (1-based, rolls on Firstrise 1); drives the AoT era number.
     tothalCycle, // Monthly 1-based Tothal generation cycle used by every wilderness reshuffle.

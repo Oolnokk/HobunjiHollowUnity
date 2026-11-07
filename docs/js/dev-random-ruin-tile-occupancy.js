@@ -22,10 +22,8 @@
   const nativeRenderMapPanel = WildernessMap.renderMapPanel.bind(WildernessMap);
 
   const keyFor = (col, row) => `${col},${row}`;
-  const sortedKeys = keys => [...keys].sort((a, b) => {
-    const [ac, ar] = a.split(',').map(Number), [bc, br] = b.split(',').map(Number);
-    return ar - br || ac - bc;
-  });
+  const sortedKeys = keys => [...keys].map(k => { const i = k.indexOf(','); return [k, +k.slice(0, i), +k.slice(i + 1)]; })
+    .sort((a, b) => a[2] - b[2] || a[1] - b[1]).map(e => e[0]); // Parse each key once, not per comparison.
 
   function worldBox(object) {
     if (!object) return null;
@@ -294,10 +292,19 @@
   }
 
   function pushBlockBox(model, block) {
-    const pose = model.slidingPushBlocks.get(block); // Cached until the actual block transform moves.
+    const pose = model.slidingPushBlocks.get(block); // Cached until the block or any ancestor actually moves.
     if (!pose) return null;
+    if (!block.parent) return null; // Not mounted in the scene yet (or discarded): its world box is meaningless and must never collide.
     const {x, y, z} = block.position;
-    if (x !== pose.x || y !== pose.y || z !== pose.z) Object.assign(pose, {x, y, z, box:worldBox(block)});
+    let px = 0, py = 0, pz = 0;
+    const parent = block.parent;
+    parent.updateWorldMatrix?.(true, false);
+    const pe = parent.matrixWorld?.elements;
+    if (pe) { px = pe[12]; py = pe[13]; pz = pe[14]; }
+    if (x !== pose.x || y !== pose.y || z !== pose.z || parent !== pose.parent
+      || px !== pose.px || py !== pose.py || pz !== pose.pz || !pose.box) {
+      Object.assign(pose, {x, y, z, parent, px, py, pz, box:worldBox(block)}); // Re-measure when the parent moved or the first box predated mounting.
+    }
     return pose.box;
   }
 
@@ -501,6 +508,14 @@
       revision:0,
       refresh:() => rebuild(model),
       blocksAt:(x, z, radius = 0, options = {}) => blocksAt(model, x, z, radius, options),
+      // Lab-only movable blocks join the same runtime collision map as V50-authored push blocks.
+      registerSlidingPushBlock:block=>{
+        if(!block?.isObject3D||!block.userData?.previewMotion||block.userData.previewMotion.type!=='pushPuzzleBlock')return false;
+        block.userData.__devRuinOccupancySource ||= 'push:'+block.id; // Used by swept pushes to ignore only their own collider.
+        if(!model.slidingPushBlocks.has(block))model.slidingPushBlocks.set(block,{});
+        return true;
+      },
+      unregisterSlidingPushBlock:block=>model.slidingPushBlocks.delete(block), // Used when a compound chamber is discarded independently of the whole V50 ruin.
       pushBlockBox:block => pushBlockBox(model, block),
       snapshot:() => snapshot(model),
       scanSolids:(root, tag) => model.footprints.scan(root, tag),
@@ -561,6 +576,8 @@
     getSnapshot:() => snapshot(),
     refresh:() => activeModel?.refresh?.() || false,
     blocksAt:(x,z,radius=.22,options={}) => activeModel?.blocksAt?.(x,z,radius,options) === true, // Traversal modules use the exact same generated occupancy that is stamped into the ordinary interior grid.
+    registerSlidingPushBlock:block=>activeModel?.registerSlidingPushBlock?.(block)===true, // Late-built lab blocks move with the native V50 pusher and still block player/world movement.
+    unregisterSlidingPushBlock:block=>activeModel?.unregisterSlidingPushBlock?.(block)===true, // A discarded room must not leave a ghost block collider in the active map.
     scanSolids:(root, tag = 'dynamic-scan') => activeModel?.scanSolids?.(root, tag) || 0, // Later-built puzzle modules add their visible solids to the same footprint set.
     clearSolids:tag => activeModel?.clearSolids?.(tag),
     addSolidBox:(id, box, enabled = null, tag = 'dynamic') => activeModel?.addSolidBox?.(id, box, enabled, tag) || null,

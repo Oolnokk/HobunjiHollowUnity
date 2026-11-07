@@ -6,12 +6,13 @@
   const SCAN_PERIOD_S = 1.4; // Finds dev-spawned birds without checking every creature on every rendered frame.
   const RETRY_DELAY_MS = 10000; // An absent sprite or GLB cannot initiate a failing fetch every frame.
   const tracked = new Map(); // Live adults only; stale area and removed Set members are disposed on the next reconciliation.
+  const captivePoses = new WeakMap(); // The original actor group and quaternion are restored when its Tzatzul releases it.
   let deps = null; // WildlifeSpawn's live hostile collection and optional camera dependency.
   let scanT = 0; // Timer for bounded active-area scans rather than per-frame global searches.
   let area = null; // Last map id, used to immediately clear attachments across scene transitions.
   let seconds = 0; // Shared wing flap clock; prevents one Date.now call per bird.
   const debug = { scans: 0, mounts: 0, unmounts: 0, loadFailures: 0, lastError: null,
-    lastBird: null, lastPose: null }; // Plain serializable diagnostics for mobile.
+    lastBird: null, lastPose: null, captiveRestores: 0, tintRestores: 0, refreshedPlanes: 0 }; // Plain serializable diagnostics for mobile.
   const now = () => typeof performance !== 'undefined' ? performance.now() : Date.now();
   const kind = actor => actor?.creatureKey || actor?.def?.id || actor?.def?.key;
   function stableIndex(actor) {
@@ -26,6 +27,21 @@
       if (record.node?.parent === state.group) record.node.visible = record.visible;
     } // Never restore visibility on disposed or reparented creature planes.
     state.originals.length = 0;
+  }
+  function rememberCaptive(prey, group = prey?.avatarRef?.group) {
+    if (!prey || !group?.quaternion?.clone) return false;
+    if (captivePoses.get(prey)?.group === group) return true;
+    captivePoses.set(prey, { group, quaternion: group.quaternion.clone() }); // A promoted/rebuilt avatar gets its own uncaptured baseline.
+    return true;
+  }
+  function restoreCaptive(prey) {
+    const pose = prey && captivePoses.get(prey);
+    if (!pose) return false;
+    captivePoses.delete(prey); // Never reuse a previous capture's rotation on the next abduction.
+    if (prey.avatarRef?.group !== pose.group || !pose.group?.quaternion?.copy) return false;
+    pose.group.quaternion.copy(pose.quaternion); // Position is resolved by native ground movement; do not teleport a fallen actor to its old rendered coordinates.
+    debug.captiveRestores++;
+    return true;
   }
   function release(actor, reason = 'removed') {
     const state = tracked.get(actor);
@@ -57,8 +73,16 @@
         : actor._animalAttack || ['chase','patrol-chase','fleeing-low-health'].includes(actor.state) ? 'flap' : 'perched';
     // Ordinary avatar code can re-enable its canonical sprite after a genotype
     // animation or visual promotion. Keep it hidden only while our rig exists.
-    for (const { node } of state.originals) if (node?.parent === state.group) node.visible = false;
+    const known = new Set(state.originals.map(record => record.node)); // Damage/genotype refresh can replace a native plane without replacing the whole avatar group.
+    for (const node of portraitPlanes(actor, state.group)) {
+      if (!known.has(node)) {
+        state.originals.push({ node, visible: node.visible });
+        debug.refreshedPlanes++;
+      }
+      node.visible = false; // Never let an untinted native replacement draw on top of this bird's individually colored rig.
+    }
     if (state.rig.root?.parent === state.group) {
+      state.rig.root.visible = !actor.tzatzulInNest; // Parents inside their cave are absent from the exterior renderer.
       // On a few zone-load paths a creature mounts before an active Camera is
       // injected. Always choose one authored pose, or flying/perched/wing
       // sprites all overlap until the next camera transition.
@@ -73,7 +97,8 @@
       }; // Cheap game-space viewpoint; no additional scene camera or RAF.
       try {
         state.rig.update(camera?.getWorldPosition ? camera : fallback,
-          pose, seconds, !!actor.tzatzulCarrying);
+          pose, seconds, !!actor.tzatzulCarrying, window.CreatureBlink?.isShut?.(actor) === true);
+        if (!(Number(actor.hitFlashT) > 0) && state.rig.restoreTint?.()) debug.tintRestores++; // Preserve hit flashes, then recover the bird's individual tint.
         state.rig.root.rotation.z = pose !== 'perched' ? Number(actor.tzatzulDivePitchRad) || 0 : 0; // Pitch the authored body/head into its 3D swoop; restore level glide and perch poses.
       } catch (error) { debug.lastError = String(error); }
     }
@@ -198,6 +223,7 @@
     group.parent.updateWorldMatrix(true, false);
     payload.inverse.copy(group.parent.matrixWorld).invert();
     payload.matrix.multiplyMatrices(payload.inverse, payload.object.matrixWorld);
+    rememberCaptive(prey, group); // A visual streamed in after capture must still save the upright baseline before tilting.
     payload.matrix.decompose(group.position, group.quaternion, group.scale);
     group.scale.copy(payload.scale);
     group.updateWorldMatrix(false, true);
@@ -208,5 +234,5 @@
       liveRigs: [...tracked.values()].filter(state => !!state.rig).length,
       loading: [...tracked.values()].filter(state => state.loading).length };
   }
-  window.TzatzulLiveVisuals = Object.freeze({ init, tick, snapshot, release, alignCaptive });
+  window.TzatzulLiveVisuals = Object.freeze({ init, tick, snapshot, release, alignCaptive, rememberCaptive, restoreCaptive });
 })();

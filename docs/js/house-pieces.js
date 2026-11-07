@@ -32,9 +32,11 @@
     ['StructurePreload', 'structure-preload.js?v=20260812a'],
     // Shared distance-hysteresis/tick-rate-accumulator math reused by the two LOD modules below and by game.js's NPC walker distance LOD -- must load before both.
     ['EntityDistanceLod', 'entity-distance-lod.js?v=20260919b'],
+    // View-direction counterpart: hostile leg/hand procedural animation pauses while the actor is behind or beside the camera.
+    ['OffscreenRigLod', 'offscreen-rig-lod.js?v=20261107a'],
     ['WildernessSimulationLOD', 'wilderness-simulation-lod.js?v=20261009hcee431b'],
     // Wildlife's own visibility/render-cost LOD (distance-hidden avatar/shadow/ring HUD), sibling to the bandit-sleep LOD just above.
-    ['WildlifeVisualLod', 'wildlife-visual-lod.js?v=20261107h7bdc402'],
+    ['WildlifeVisualLod', 'wildlife-visual-lod.js?v=20261107hc60a80a'],
     // Adds the Harlyao-zone second darkness pass, then re-clears lantern/furniture-light masks. Terror later supplies the cached stack darkness/radius modifiers read by this adapter.
     ['HarlyaoNightMarchAtmosphere', 'harlyao-night-march-atmosphere.js?v=20261104habd63f8'],
     // Reusable solid-color translucent/emissive character treatment plus one cheap WeatherFX lantern-style glow provider per formation/object group.
@@ -44,7 +46,7 @@
     // Porakaneki temporary locales can clear ordinary procedural shrub/rock clutter and relax only their own placement margins when dense wilderness would otherwise prevent any camp from existing.
     ['PorakanekiCampPlacementPolicy', 'porakaneki-camp-placement-policy.js?v=20261105h58f3c87'],
     // Porakaneki camp network: distance/hysteresis LOD, shared den-to-den hunting parties, planner-owned destinations, shared hostile-loop locomotion/rendering, and seasonal chief migration.
-    ['PorakanekiCamps', 'porakaneki-camps-runtime.js?v=20261031cohorts1'],
+    ['PorakanekiCamps', 'porakaneki-camps-runtime.js?v=20261107nearbySocial2'],
     // Keeps neutral Porakaneki off companion target lists, classifies self-defense vs initiated kills, applies Omgurku rivalry favor, and composes the faction rename into NPC database loads.
     ['PorakanekiFactionRules', 'porakaneki-faction-rules.js?v=20261104faction-luau1'],
     // Map-only locale proxies: chief camp is always known; each little camp gets its own independent discovery identity through the existing wilderness-map fog/discovery system.
@@ -79,7 +81,7 @@
     ['BuildingGrassSuppression', 'building-grass-suppression.js?v=20261031farmworkGrass1'],
     ['PlayerHouseElevation', 'player-house-elevation.js?v=20260823b'],
     ['FarmBuildingElevationParity', 'farm-building-elevation-parity.js?v=20260920furniture1'],
-    ['HousePieces', 'house-pieces-core.js?v=20261102roofjoin1'],
+    ['HousePieces', 'house-pieces-core.js?v=20261107ha23d22f'],
     [null, 'house-pieces-registry-stability.js?v=20261022he201668'],
     [null, 'house-pieces-elevation-bootstrap.js?v=20260823a'],
   ];

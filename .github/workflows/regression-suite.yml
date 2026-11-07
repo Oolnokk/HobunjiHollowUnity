@@ -73,6 +73,8 @@ jobs:
         run: node scripts/test-farmwork-controller-browser.js
       - name: Controller mastery inventory browser regression
         run: node scripts/test-controller-mastery-inventory-browser.js
+      - name: Modular weapon editor Kylie cleanup mobile browser regression
+        run: node scripts/test-modular-editor-ui-browser.js
       - name: Multi-sprite weapon 3D browser smoke
         run: node scripts/test-multi-sprite-weapon-browser.js
 

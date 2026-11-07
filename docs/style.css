@@ -1591,6 +1591,68 @@
     .id-count { font-size: 12px; color: var(--accent); font-family: 'KhymeryyanRomanLetters+Numbers', 'Pixelify Sans', monospace; }
     .id-count.empty { color: var(--danger); }
 
+    /* ── Five-row reward readout (after world-space loot/XP popups) ── */
+    #rewardReadout {
+      position: fixed;
+      top: max(72px, calc(var(--oy) + 56px), calc(env(safe-area-inset-top) + 56px));
+      left: max(8px, calc(env(safe-area-inset-left) + 8px));
+      width: min(244px, 40vw);
+      z-index: 24;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      pointer-events: none; /* Never steals mobile movement or camera touch input. */
+      font-family: var(--gameplay-font-family);
+      text-shadow: 0 1px 3px #000, 0 0 5px rgba(0,0,0,.85);
+    }
+    #rewardReadout[hidden] { display: none; }
+    .reward-readout-heading {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 0 5px;
+      color: #e5dab9;
+      text-transform: uppercase;
+      letter-spacing: .1em;
+      font-size: 10px;
+      font-weight: 900;
+    }
+    .reward-readout-waiting {
+      font-size: 9px;
+      letter-spacing: 0;
+      text-transform: none;
+      color: #bfbdaf;
+      white-space: nowrap;
+    }
+    .reward-readout-rows {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .reward-readout-row {
+      padding: 5px 8px;
+      border-left: 2px solid currentColor;
+      border-radius: 0 5px 5px 0;
+      background: rgba(8, 18, 13, .8);
+      font-size: clamp(11px, 1.9vmin, 13px);
+      font-weight: 850;
+      line-height: 1.3;
+      overflow-wrap: anywhere; /* Long authored item names remain legible instead of being clipped. */
+      animation: reward-readout-enter .18s ease-out both;
+    }
+    @keyframes reward-readout-enter {
+      from { opacity: 0; transform: translateX(-7px); }
+      to { opacity: 1; transform: translateX(0); }
+    }
+    @media (max-width: 620px) {
+      #rewardReadout { width: min(210px, 45vw); }
+      .reward-readout-row { padding: 4px 6px; font-size: 11px; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .reward-readout-row { animation: none; }
+    }
+
     /* ── Toast notification ──────────────────────────────────── */
     #toast {
       position: fixed;

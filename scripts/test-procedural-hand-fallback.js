@@ -116,7 +116,7 @@ const right = [...idleCalls].reverse().find(call => call.side === 'right')?.pose
 assert(left && right, 'walking fallback must animate both unowned sides');
 assert(Math.sign(left.position.z) === -Math.sign(right.position.z), 'left and right hands must swing in opposite directions');
 
-assert.match(source, /owners\.right = 'primary-grip'/, 'primary grip ownership must override right-hand fallback');
+assert.match(source, /owners\.right = freeHand\?\.influence > 0\.0001 \? 'avatar-local-free-right-hand' : 'primary-grip'/, 'ordinary primary grips own the right hand unless an active avatar-local free-hand pose owns it');
 assert.match(source, /owners\.left = 'secondary-grip'/, 'secondary grip ownership must override left-hand fallback');
 assert.match(source, /applyFallbackSide\(record, 'left'\)/, 'a one-handed grip must leave the other hand on fallback motion');
 assert.match(shoulderSource, /socket\.position\.x = shoulder\.x/, 'a free hand must hang at the resolved shoulder X');

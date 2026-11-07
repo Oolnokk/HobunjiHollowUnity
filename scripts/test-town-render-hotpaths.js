@@ -484,7 +484,7 @@ assert.match(heldRender, /setGroundElevationFilter\(groundMeshes, group\.elevati
   'the ground shader receives the owning actor surface height for each replay group');
 assert.match(heldRender, /const tintOverlay = lastBaseStencilBits >= 1 && hasOverlappingHeldCover\(renderer, camera, overlayMeshes, tintCovers\)/,
   'overlap checks cover both feet and held objects without tint when stencil is unavailable');
-assert.match(heldRender, /replaySelectiveHeldOverlay\(this, scene, camera, held, feet, ground, topFaceGround, tintCovers, originalCameraMask\)/,
+assert.match(heldRender, /replaySelectiveHeldOverlay\(this, scene, camera, visibleHeld, visibleFeet, ground, topFaceGround, tintCovers, originalCameraMask\)/,
   'the shared overlay receives registered water and slush covers as well as the actual feet');
 
 // Shell outlines inherit the same selective ground-x-ray policy as their
@@ -539,8 +539,9 @@ assert.ok(shellGroundFilterAt >= 0 && shellGroundFilterAt < shellDepthAt
   && shellDepthAt < shellDepthDrawAt && shellDepthDrawAt < shellOnlyAt
   && shellOnlyAt < shellOutlineDrawAt && shellOutlineDrawAt < shellRestoreAt && shellRestoreAt < shellDepthRestoreAt,
   'shell replay filters only same-elevation ground, draws the matching shells, then restores full scene depth');
-assert.ok(heldRender.includes('const xrayMeshes = [...new Set([...held, ...feet])].filter(mesh => hasLayer(mesh, SHELL_LAYER))'),
-  'all existing held/foot ground-x-ray participants share shell visibility parity');
+assert.ok(heldRender.includes('const shellCandidates = [...new Set([...held, ...feet])].filter(mesh => hasLayer(mesh, SHELL_LAYER))')
+  && heldRender.includes('const xrayMeshes = filterOffscreenReplayMeshes(camera, shellCandidates)'),
+  'all held/foot ground-x-ray participants retain shell parity before conservative camera culling');
 assert.ok(pixelProbe.includes('shellXray=${heldRenderDebug.shellXrayPasses ?? 0}/${heldRenderDebug.shellXrayMeshes ?? 0}'),
   'mobile Pixel Probe reports shell x-ray replay activity');
 assert.ok(heldRender.includes('replayShellOutlineXray(this, scene, camera, xrayMeshes, ground, topFaceGround, scissored)'),

@@ -25,6 +25,8 @@
     'needlegrain', 'heftroot', 'garlink', 'ongyums', 'redberries', 'blueberries',
     'yellowberries', 'whiteberries', 'blackberries', 'blackMustard', 'greenMustard',
   ]); // Existing farm crops remain the species boundary for uncomplicated crossbreeding.
+  const MUSHTARD_LABELS = Object.freeze({ blackMustard: 'Black Mushtard', greenMustard: 'Green Mushtard' }); // Player-facing names only; unchanged species IDs preserve existing saves and recipes.
+  const mushtardDisplayText = value => String(value).replace(/mustard/gi, match => match === match.toUpperCase() ? 'MUSHTARD' : match[0] === 'M' ? 'Mushtard' : 'mushtard'); // Keeps mobile pack labels' original capitalization while changing only visible text.
   const NATIVE_COLORS = Object.freeze({
     needlegrain: 0xd4c526, heftroot: 0xf0d15a, garlink: 0xf2ead0, ongyums: 0xe09a4b,
     redberries: 0xff4f62, blueberries: 0x5f80ff, yellowberries: 0xffe86a,
@@ -141,6 +143,21 @@
     inventoryItems = deps.inventoryItems || inventoryItems;
     storageGetter = deps.loadStorage || storageGetter;
     if (!cropData) return;
+    for (const [family, label] of Object.entries(MUSHTARD_LABELS)) {
+      const base = cropData[family]; // Native crop definition provides farm brushes and inherited variety labels.
+      if (!base) continue;
+      base.label = label;
+      if (itemDefs?.[family]) itemDefs[family].label = label; // Harvested native produce shown in the pack.
+      const nativeSeedKey = base.seedKey; // Uses the original seed ID, singular or plural, without save migration.
+      if (nativeSeedKey && itemDefs?.[nativeSeedKey]) {
+        itemDefs[nativeSeedKey].label = mushtardDisplayText(itemDefs[nativeSeedKey].label || label + ' Seeds');
+      }
+      for (const item of inventoryItems || []) {
+        if (item?.key === family || item?.key === nativeSeedKey) {
+          item.label = mushtardDisplayText(item.label || label); // Keep already-populated mobile pack choices consistent.
+        }
+      }
+    }
     for (const family of FAMILIES) if (cropData[family]) for (let region = 1; region < REGIONS.length; region++)
       register(family, String(region).repeat(6)); // Every seed offer has a definition before traders roll stock.
     hydrate(inventory);
@@ -219,10 +236,22 @@
     const parent = genesFor(key); // Seed maker preview and regression tests use the same display color.
     return parent ? phenotype(parent.family, parent.genes, parent.colorHex)?.color ?? null : null;
   }
+  function seedColorOf(key) {
+    const id = String(key || ''); // Used to resolve seed-pack pigment without guessing from an icon or localized display label.
+    const cultivar = fromItemKey(id); // Includes serialized, multi-generation blends and pre-pigment six-digit cultivars.
+    if (cultivar && id.endsWith('Seeds')) return colorOf(id);
+    const family = FAMILIES.find(name => {
+      const nativeKey = cropData?.[name]?.seedKey; // Canonical crop registry handles irregular plural/singular native seed IDs.
+      return id === nativeKey || id === name + 'Seeds'
+        || (name.endsWith('berries') && id === name.slice(0, -3) + 'ySeeds')
+        || (name.endsWith('Mustard') && id === name + 'Seed');
+    });
+    return family ? NATIVE_COLORS[family] : null; // Same ripe pigment used by native planted/harvested vegetables.
+  }
   function blendedColor(firstKey, secondKey) {
     const a = produceFamily(firstKey), b = produceFamily(secondKey); // Incompatible crop species cannot mix.
     return a && a === b ? mixHex(colorOf(firstKey), colorOf(secondKey)) : null;
   }
-  window.CropVarieties = Object.freeze({ REGIONS, FAMILIES, attach, ensure, hydrate, registered, refreshBrushes, offers, produceFamily, breed, details, colorOf, blendedColor,
+  window.CropVarieties = Object.freeze({ REGIONS, FAMILIES, attach, ensure, hydrate, registered, refreshBrushes, offers, produceFamily, breed, details, colorOf, seedColorOf, blendedColor,
     get lastChange() { return lastChange; } }); // Exposed for mobile production diagnostics and regression tests.
 })();

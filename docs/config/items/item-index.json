@@ -49,19 +49,19 @@
   },
   "blackMustard": {
     "key": "blackMustard",
-    "label": "Black Mustard",
+    "label": "Black Mushtard",
     "icon": "⚫",
     "cat": "crop"
   },
   "blackMustardPaste": {
     "key": "blackMustardPaste",
-    "label": "Black Mustard Paste",
+    "label": "Black Mushtard Paste",
     "icon": "🧄",
     "cat": "ingredient"
   },
   "blackMustardSeed": {
     "key": "blackMustardSeed",
-    "label": "Black Mustard Seed",
+    "label": "Black Mushtard Seed",
     "icon": "⚫",
     "cat": "seed"
   },
@@ -925,19 +925,19 @@
   },
   "greenMustard": {
     "key": "greenMustard",
-    "label": "Green Mustard",
+    "label": "Green Mushtard",
     "icon": "🥬",
     "cat": "crop"
   },
   "greenMustardPaste": {
     "key": "greenMustardPaste",
-    "label": "Green Mustard Paste",
+    "label": "Green Mushtard Paste",
     "icon": "🧄",
     "cat": "ingredient"
   },
   "greenMustardSeed": {
     "key": "greenMustardSeed",
-    "label": "Green Mustard Seed",
+    "label": "Green Mushtard Seed",
     "icon": "🥬",
     "cat": "seed"
   },
@@ -1023,6 +1023,18 @@
     "key": "mixedBerryJam",
     "label": "Mixed Berry Jam",
     "icon": "🍯",
+    "cat": "ingredient"
+  },
+  "mootHide": {
+    "key": "mootHide",
+    "label": "Moot Hide",
+    "icon": "🟫",
+    "cat": "material"
+  },
+  "mootMeat": {
+    "key": "mootMeat",
+    "label": "Moot Meat",
+    "icon": "🥩",
     "cat": "ingredient"
   },
   "mulch": {

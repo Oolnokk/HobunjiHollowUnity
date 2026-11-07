@@ -36,6 +36,7 @@ function makeWorld(config) {
       CratePiles: { releaseZone: id => holderCalls.push({ module: 'crates', id }) },
       PorakanekiCampPlacementPolicy: { forgetZone: id => holderCalls.push({ module: 'camps', id }) },
       Shattercasks: { releaseZone: id => holderCalls.push({ module: 'shattercasks', id }) },
+      TzatzulCliffSites: { releaseArea: id => holderCalls.push({ module: 'tzatzul-spires', id }) },
       WorldPopupText: { releaseScene: scene => holderCalls.push({ module: 'popups', scene, clearedAtCall: !!scene.cleared }) },
       BanditCamps: { forgetZoneState: id => forgotten.push(id) } },
     setTimeout: fn => { timers.push(fn); return timers.length; },
@@ -189,6 +190,26 @@ const bandit = (area, extra = {}) => ({ areaId: area, def: {}, isBandit: true, h
   assert.doesNotMatch(w.logs.join('\n'), /kept map_a/);
 }
 {
+  // Bandits parked by js/wilderness-simulation-lod.js get a synthetic areaId, so they used to be invisible to the zone
+  // cache: not pinning, not released, and each kept `scene` (the whole evicted zone) alive through hostileObjects.
+  const w = makeWorld({});
+  w.visit('map_a'); w.visit('map_b'); w.visit('map_c');
+  const sleeper = bandit('__wilderness_lod_sleep__:map_a', { _wildernessLodSleeping: true, _wildernessLodAreaId: 'map_a', state: 'idle' });
+  const awake = bandit('map_a', { state: 'idle' });
+  w.hostiles.add(sleeper); w.hostiles.add(awake);
+  assert.equal(w.api.zoneEvictionBlocker('map_a'), 'resident rig', 'a sleeping bandit still belongs to its zone');
+  w.api.trimZoneCache();
+  assert.deepEqual(w.disposed, ['map_a'], 'a zone whose bandits are asleep is still evictable');
+  assert.ok(w.despawned.includes(sleeper) && w.despawned.includes(awake), 'the sleeper is despawned with the rest');
+  assert.ok(!w.hostiles.has(sleeper), 'so nothing in hostileObjects points at the evicted scene');
+  // A zone that stays built keeps its sleepers.
+  const w2 = makeWorld({});
+  w2.visit('map_a'); w2.visit('map_b'); w2.visit('map_c');
+  const keep = bandit('__wilderness_lod_sleep__:map_c', { _wildernessLodSleeping: true, _wildernessLodAreaId: 'map_c' });
+  w2.hostiles.add(keep); w2.api.trimZoneCache();
+  assert.ok(w2.hostiles.has(keep) && w2.despawned.length === 0, 'sleepers of the current zone are untouched');
+}
+{
   // The current zone and the one that stays built keep their bandits.
   const w = makeWorld({});
   w.visit('map_a'); w.visit('map_b'); w.visit('map_c');
@@ -310,7 +331,7 @@ for (const [label, extra, store] of [
   assert.deepEqual(w.campfireReleases, ['map_a'], 'the saved campfire releases only its visual');
   assert.equal(scene.cleared, true, 'the old scene is emptied so no stale mesh can keep it reachable');
   // Modules that kept strong references to the old scene or grid (found in a heap snapshot) are told, for the evicted zone only.
-  assert.deepEqual(w.holderCalls.map(c => c.module).sort(), ['camps', 'crates', 'held', 'popups', 'shattercasks'], 'each holder is released once');
+  assert.deepEqual(w.holderCalls.map(c => c.module).sort(), ['camps', 'crates', 'held', 'popups', 'shattercasks', 'tzatzul-spires'], 'each holder is released once');
   assert.equal(w.holderCalls.find(c => c.module === 'popups').scene, scene, 'popups anchored in the evicted scene are released');
   assert.equal(w.holderCalls.find(c => c.module === 'shattercasks').id, 'map_a');
   const held = w.holderCalls.find(c => c.module === 'held');

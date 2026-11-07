@@ -255,6 +255,19 @@
     const gripping = new THREE.Mesh(new THREE.PlaneGeometry(perched.geometry.parameters.width, 1), perched.material);
     gripping.visible = false;
     pitch.add(gripping);
+    const eyeMaterial = images.eyes && images.blink ? material('eyes', { depthWrite: false }) : null; // Optional for other flying species and the existing author preview.
+    const eyeOpenTexture = eyeMaterial?.map || null; // The authored eye pixels share the full 1617x1000 body canvas.
+    const eyeShutTexture = eyeMaterial ? png.makeCanvasTexture(THREE, images.blink, 'flying-animal-eyes-blink') : null; // The same mesh blinks without rebuilding geometry.
+    const eyeFlying = eyeMaterial ? new THREE.Mesh(flying.geometry, eyeMaterial) : null; // Each eye plane reuses its body's mesh geometry.
+    const eyePerched = eyeMaterial ? new THREE.Mesh(perched.geometry, eyeMaterial) : null;
+    const eyeGripping = eyeMaterial ? new THREE.Mesh(gripping.geometry, eyeMaterial) : null;
+    for (const eye of [eyeFlying, eyePerched, eyeGripping]) {
+      if (!eye) continue;
+      eye.position.z = .004; // A tiny camera-facing offset prevents the eye PNG from z-fighting the body.
+      eye.visible = false;
+      eye.userData.flyingAnimalEyeOverlay = true; // The mother's palette must never multiply the eye texture.
+      pitch.add(eye);
+    }
     function setPerchSpline(authored) {
       const geometry = perched.geometry; // Deform the existing mesh without reloading any PNGs.
       const { position, uv } = geometry.attributes;
@@ -315,12 +328,19 @@
       return window.PerpRotation.perpClamp(state, 0, perps, radius * DEG).effectiveTarget;
     }
 
-    function update(camera, pose, seconds, carrying = false) {
+    function update(camera, pose, seconds, carrying = false, blinkShut = false) {
       const grounded = pose === 'perched'; // Perched preview retains only the usual yaw deadzone.
       wings.visible = !grounded;
       flying.visible = !grounded && !carrying;
       gripping.visible = !grounded && carrying;
       perched.visible = grounded;
+      if (eyeMaterial) {
+        eyeFlying.visible = !grounded && !carrying;
+        eyePerched.visible = grounded;
+        eyeGripping.visible = !grounded && carrying;
+        const eyeTexture = blinkShut ? eyeShutTexture : eyeOpenTexture; // Reuse CreatureBlink's individual timer instead of creating a second blink clock.
+        if (eyeMaterial.map !== eyeTexture) { eyeMaterial.map = eyeTexture; eyeMaterial.needsUpdate = true; }
+      }
       camera.getWorldPosition(view);
       root.worldToLocal(view);
       if (Math.hypot(view.x, view.z) > 1e-6) yaw.rotation.y = correct(yawState, Math.atan2(view.x, view.z), rig.yawDeadzone);
@@ -339,6 +359,11 @@
         mesh.material.dispose();
       }
       gripping.geometry.dispose(); // The perched mesh owns the shared material.
+      if (eyeMaterial) {
+        eyeOpenTexture.dispose();
+        eyeShutTexture.dispose();
+        eyeMaterial.dispose(); // Eye meshes share the body geometries; do not dispose those a second time.
+      }
       wings.skeleton.dispose();
     }
 

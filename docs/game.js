@@ -729,8 +729,8 @@
         yellowberries: { emoji: '🟡', seedKey: 'yellowberrySeeds',   cropKey: 'yellowberries', growDays: 4, idealMin: 0.25, idealMax: 0.60, label: 'yellowberries', needsAdjacentDitch: true, tags: ['Berry', 'Ditch-loving'] },
         whiteberries:  { emoji: '⚪', seedKey: 'whiteberrySeeds',    cropKey: 'whiteberries',  growDays: 4, idealMin: 0.40, idealMax: 0.75, label: 'whiteberries',  needsAdjacentDitch: true, tags: ['Berry', 'Ditch-loving'] },
         blackberries:  { emoji: '⚫', seedKey: 'blackberrySeeds',    cropKey: 'blackberries',  growDays: 4, idealMin: 0.45, idealMax: 0.80, label: 'blackberries',  needsAdjacentDitch: true, tags: ['Berry', 'Ditch-loving'] },
-        blackMustard:  { emoji: '⚫', seedKey: 'blackMustardSeed',   cropKey: 'blackMustard',  growDays: 3, idealMin: 0.15, idealMax: 0.40, label: 'black mustard', tags: ['Mustard', 'Hot'] },
-        greenMustard:  { emoji: '🥬', seedKey: 'greenMustardSeed',   cropKey: 'greenMustard',  growDays: 3, idealMin: 0.30, idealMax: 0.65, label: 'green mustard', tags: ['Mustard', 'Fresh'] },
+        blackMustard:  { emoji: '⚫', seedKey: 'blackMustardSeed',   cropKey: 'blackMustard',  growDays: 3, idealMin: 0.15, idealMax: 0.40, label: 'black mushtard', tags: ['Mushtard', 'Hot'] },
+        greenMustard:  { emoji: '🥬', seedKey: 'greenMustardSeed',   cropKey: 'greenMustard',  growDays: 3, idealMin: 0.30, idealMax: 0.65, label: 'green mushtard', tags: ['Mushtard', 'Fresh'] },
       };
 
       // Each tool gets at most 3 actions — the action bar only has 3 tool-
@@ -825,6 +825,10 @@
         // (no stamina cost, no terrain collision) rendered as a chain of
         // staggered hops rather than a continuous slide; climbSurfaceY/
         // climbHopBounce are consumed by updatePlayerMesh for the vertical rise.
+        physicalFeetY: null, // Jump's physical foot elevation, used by the renderer and height-aware traversal.
+        heightAboveGround: 0, // Actual distance above the local terrain, including raised furniture support.
+        jumpHeightAboveGround: 0, // Debug-compatible alias consumed by the jump system.
+        _freeJump: null, // Transient airborne/elevated-support motion, never part of save data.
         climbing: false, climbElapsed: 0, climbHopCount: 0,
         climbStartX: 0, climbStartY: 0, climbEndX: 0, climbEndY: 0,
         climbSurfaceStartY: 0, climbSurfaceEndY: 0, climbSurfaceY: 0, climbHopBounce: 0,
@@ -2442,7 +2446,7 @@
       const PROCESSING_FURNITURE_DEFS = {
         pestle: {
           itemKey: 'pestleFurniture', icon: '🥣', name: 'Pestle Station', method: 'mashing', color: 0x9a6a3a,
-          desc: 'Placeable processor for mashing: berries into jam, mustard seed into paste, and starchy crops into mash.'
+          desc: 'Placeable processor for mashing: berries into jam, mushtard seed into paste, and starchy crops into mash.'
         },
         squeezer: {
           itemKey: 'squeezerFurniture', icon: '🧃', name: window.HobunjiFoodProcessing?.SQUEEZING_VAT?.name || 'Squeezing Vat', method: 'squeezing', color: 0x4f9eb8,
@@ -2450,7 +2454,7 @@
         },
         handMill: {
           itemKey: 'handMillFurniture', icon: '⚙️', name: 'Hand Mill', method: 'grinding', color: 0x8f8a78,
-          desc: 'Placeable processor for grinding: needlegrain/heftroot into flour and mustard seed into powder.'
+          desc: 'Placeable processor for grinding: needlegrain/heftroot into flour and mushtard seed into powder.'
         },
         teaGrinder: {
           itemKey: 'teaGrinderFurniture', icon: '🍵', name: 'Tea Grinder', method: 'teaGrinding', specialMode: 'teaGrinder', questOnly: true, color: 0x617a4b,
@@ -2745,8 +2749,8 @@
         // Berry seeds are intentionally not sold — all 5 varieties grow wild
         // across the wilderness zones instead (see WILD_BERRY_ZONES) and
         // have a small chance to yield a seed when foraged.
-        { key: 'blackMustardSeed',   icon: '⚫', name: 'Black Mustard Seed',  desc: 'Hot mustard crop. Ideal water 15–40%.', price: 14, gives: { blackMustardSeed: 2 } },
-        { key: 'greenMustardSeed',   icon: '🥬', name: 'Green Mustard Seed',  desc: 'Fresh mustard crop. Ideal water 30–65%.', price: 14, gives: { greenMustardSeed: 2 } },
+        { key: 'blackMustardSeed',   icon: '⚫', name: 'Black Mushtard Seed',  desc: 'Hot mushtard crop. Ideal water 15–40%.', price: 14, gives: { blackMustardSeed: 2 } },
+        { key: 'greenMustardSeed',   icon: '🥬', name: 'Green Mushtard Seed',  desc: 'Fresh mushtard crop. Ideal water 30–65%.', price: 14, gives: { greenMustardSeed: 2 } },
         { key: 'mulchBag',           icon: '🍂', name: 'Mulch Bag',           desc: 'Boosts soil recovery and gives clearing material.', price: 3, gives: { mulch: 5 } },
         // Furniture (processing stations and decorative pieces) is no longer
         // mail-order-able — see FURNITURE_BLUEPRINT_CATALOG. Blueprints are
@@ -3311,9 +3315,9 @@
           && c < obj.col + bounds.fw && r < obj.row + bounds.fd;
       }
 
-      function furnitureBlocksMovementAt(area, x, z) {
-        if (window.AreaFootprintBlockers?.blocksPoint(area, x, z)) return true;
-        if (window.FurnitureTableSystem?.blocksBox(area, x, z)) return true; // Exterior and locale furniture share the normal NPC/player movement authority.
+      function furnitureBlocksMovementAt(area, x, z, worldY = null) {
+        if (window.AreaFootprintBlockers?.blocksBox(area, x, z, 0, worldY)) return true;
+        if (window.FurnitureTableSystem?.blocksBox(area, x, z, 0, worldY)) return true; // Exterior and locale furniture share the normal NPC/player movement authority.
         if (_isZoneArea(area) && window.FoliageFurnitureRuntime?.blocksPoint(area, x, z)) return true;
         if (interiorFurnitureObjects.some(obj => obj.area === area && decorativeFurnitureBlocksPoint(obj, x, z))) return true;
         if (area === 'interior' && _derivedHearthMeshes.some(h => {
@@ -6622,9 +6626,11 @@
         // (unlike a plane, no extra ±PI/2 twist) so the legs track whichever
         // dead-zone behavior currently governs the sprite instead of the
         // prism's own free-tracking groupRot.
-        if (c.avatarRef.legsPivot) { c.avatarRef.legsPivot.rotation.y = planeDelta; c.avatarRef.syncHandFrame?.(); } // Hands share the legs' yaw frame so free hands rest on the lateral axis.
+        // Behind-the-camera actors skip the procedural leg solve and hand-frame sync until they re-enter view; js/offscreen-rig-lod.js.
+        const rigInView = window.OffscreenRigLod.shouldAnimate(c, tx, ty + 0.8, tz, dt, Math.hypot(player.x - c.x, player.y - c.y) / TILE);
+        if (c.avatarRef.legsPivot) { c.avatarRef.legsPivot.rotation.y = planeDelta; if (rigInView) c.avatarRef.syncHandFrame?.(); } // Hands share the legs' yaw frame so free hands rest on the lateral axis.
         if (c.avatarRef.bodySinkActor && (Number(c.health) || 0) <= 0) window.ActorBodySink?.release(c.avatarRef.bodySinkActor); // A corpse stands back up; js/actor-body-sink.js.
-        if (c.avatarRef.legs) c.avatarRef.legs.update(dt, Math.hypot(c.vx || 0, c.vy || 0) / TILE, false, undefined, {
+        if (c.avatarRef.legs && rigInView) c.avatarRef.legs.update(dt, Math.hypot(c.vx || 0, c.vy || 0) / TILE, false, undefined, {
           combat: c.state === 'chase' || c.state === 'searching' || !!c._banditAction,
           lunging: !!c._banditLunging,
           airborne: (c._banditLungeHopCurrent || 0) > 0.03 || !!c._knockbackLedgeAir || !!c._knockbackLedgeFall,
@@ -7035,6 +7041,7 @@
         }
         window.WildlifeFoodWeb?.tickParticles?.(dt); // Integrates scene-owned dig clods even when their owner is out of visual range.
         const foodWebCtx = { zoneId: currentArea, tile: TILE, canOccupyAt, moveCreatureToward }; // Shared across the actor batch to avoid per-animal allocation.
+        window.OffscreenRigLod.beginFrame(camera); // One frustum per frame for the behind-camera rig skip in updateCreatureMesh.
         window.WildlifeVisualLod.beginFrame(); // Caps calm character-rig promotions during an entry burst; combatants always wake immediately.
         releasePreviousAreaCreatureTextures();
         currentHostilesFrame.length = 0;
@@ -7752,6 +7759,29 @@
       const FOLLOW_FAR_PX  = TILE * 2.2;
       const FOLLOW_NEAR_PX = TILE * 1.1;
       const ALERT_RANGE_PX = TILE * 4.5;
+
+      // Resolve a moving owner's *walkable landing*, not their midair position.
+      // CreatureCliffClimb.navigate owns actual cliff travel and its collision rules.
+      function companionFollowGoal(c, master) {
+        const hasLanding = !!master.climbing && Number.isFinite(master.climbEndX) && Number.isFinite(master.climbEndY); // Used to target the owner's landing during a scripted climb.
+        const x = hasLanding ? master.climbEndX : master.x; // Ground destination passed to travelCreatureToward.
+        const y = hasLanding ? master.climbEndY : master.y; // Ground destination passed to travelCreatureToward.
+        const followGrid = _isZoneArea(currentArea) ? (c.areaGrid || window.GridTileAccessors.getActiveGrid()) : null; // Used only for wilderness elevation comparisons.
+        const hereTile = followGrid?.[Math.floor(c.y / TILE)]?.[Math.floor(c.x / TILE)]; // Companion's current elevation for the route decision.
+        const goalTile = followGrid?.[Math.floor(y / TILE)]?.[Math.floor(x / TILE)]; // Destination elevation for the route decision.
+        const differentTier = !!hereTile && !!goalTile && !hereTile.incline && !goalTile.incline
+          && (hereTile.elevTier || 0) !== (goalTile.elevTier || 0); // Prevents a nearby companion idling below its owner.
+        const routeNetwork = followGrid && window.CliffRouteNetwork?.forArea?.(currentArea); // Existing cached network differentiates disconnected platforms at the SAME elevation.
+        const fromComponent = routeNetwork && window.CliffRouteNetwork.componentAt(routeNetwork, Math.floor(c.x / TILE), Math.floor(c.y / TILE)); // Companion's walkable connected component.
+        const toComponent = routeNetwork && window.CliffRouteNetwork.componentAt(routeNetwork, Math.floor(x / TILE), Math.floor(y / TILE)); // Owner/landing's walkable connected component.
+        const separatePlatforms = Number.isInteger(fromComponent) && fromComponent >= 0
+          && Number.isInteger(toComponent) && toComponent >= 0 && fromComponent !== toComponent; // Forces route finding even when two plateaus share a height tier.
+        return {
+          x, y,
+          distance: Math.hypot(x - c.x, y - c.y),
+          routeRequired: differentTier || separatePlatforms || !!c._cliffClimb || !!c._cliffRouteTravel, // In-progress hops must finish before ordinary wandering or attacks resume.
+        };
+      }
 
       // Shared ground truth for where a mount saddle, shoulder-pet grip,
       // character posterior (seat), and character shoulder-perch actually sit
@@ -8738,28 +8768,6 @@
           // field existed (e.g. a save mid-load) doesn't go masterless.
           const master = c.master || player;
 
-          if (master.climbing) {
-            _clearCompanionTreasureCue(c, dt, 'master climbing');
-            _clearCompanionWatchIdle(c, 'master climbing');
-            // Teleport-and-stick: an untagged companion can't path through an
-            // incline tile on its own (see CREATURE_DB canClimb / moveCreatureToward),
-            // so for the duration of the climb it just clings to its master's
-            // back instead of trying to follow normally.
-            const backAngle = master.angle + Math.PI;
-            c.x = master.x + Math.cos(backAngle) * TILE * 0.35;
-            c.y = master.y + Math.sin(backAngle) * TILE * 0.35;
-            c.facing = master.angle;
-            c.vx = 0; c.vy = 0;
-            updateCreatureMesh(c, dt, c.facing);
-            updateCreatureAnimFrame(c, dt, false);
-            // Pin to the master's actual climb-blended height rather than the
-            // incline tile's raw (unblended) surface — see updatePlayerMesh.
-            // (Only the real player has a climb-blended playerMesh height;
-            // a non-player master would need its own mesh reference here.)
-            c.avatarRef.group.position.y = playerMesh.position.y + c.halfHeight * 0.5;
-            continue;
-          }
-
           // A mount is driven entirely by updateMountRide/updateMountedMovement
           // (see the V-key/D-pad-down call-in/dismiss flow) — it never runs
           // the fight/wander companion AI at all, so skip it here.
@@ -8875,6 +8883,17 @@
 
           const dxp = master.x - c.x, dyp = master.y - c.y;
           const distToMaster = Math.hypot(dxp, dyp);
+          const followGoal = companionFollowGoal(c, master); // Shared walking/cliff-route destination for ordinary companions.
+          c._companionGroundFollow = {
+            mode: master.climbing ? 'owner-climbing' : followGoal.routeRequired ? 'cliff-route' : 'ground',
+            distancePx: Math.round(followGoal.distance),
+            destinationX: Math.round(followGoal.x), destinationY: Math.round(followGoal.y),
+            routeActive: !!c._cliffClimb || !!c._cliffRouteTravel,
+          }; // Included in the existing mobile-friendly CompanionCombatResponse diagnostics.
+          if (master.climbing && c.stableRole === 'companion') {
+            if (c.treasureCue) _clearCompanionTreasureCue(c, dt, 'owner climbing');
+            if (c.watchPlayerIdle) _clearCompanionWatchIdle(c, 'owner climbing');
+          }
           const isBanditCompanion = c.banditCompanion === true; // Used to invert only a Beastmaster pet's target faction while retaining companion movement.
           const playerNearBanditMaster = Math.hypot(player.x - master.x, player.y - master.y) <= ALERT_RANGE_PX; // Used to give the enemy pet the same master-centered alert rule as a player companion.
           let target = isBanditCompanion && player.health > 0 && playerNearBanditMaster ? player : null;
@@ -8987,6 +9006,12 @@
             } else if (c.knockbackT <= 0) {
               if (!beginKnockbackLedgeFall(c)) window.KnockbackCollisionImpact?.cancel?.(c);
             }
+          } else if (c._cliffClimb || c._cliffRouteTravel) {
+            // A crossing already in progress owns the animal's physical position.
+            // Finish it before any newly acquired combat target can trigger a
+            // melee animation or backup movement while hanging off a cliff.
+            moving = travelCreatureToward(c, followGoal.x, followGoal.y, def.chaseSpeed, dt);
+            aimAngle = c.facing;
           } else if (target) {
             const dist = Math.hypot(target.x - c.x, target.y - c.y);
             aimAngle = Math.atan2(target.y - c.y, target.x - c.x);
@@ -9071,9 +9096,15 @@
             moving = cueMotion.moving;
             runInPlace = cueMotion.runInPlace;
             aimAngle = cueMotion.aimAngle;
-          } else if (distToMaster > FOLLOW_FAR_PX) {
-            moving = travelCreatureToward(c, master.x, master.y, def.chaseSpeed, dt);
-            aimAngle = Math.atan2(dyp, dxp);
+          } else if (master.climbing || followGoal.routeRequired || distToMaster > FOLLOW_FAR_PX) {
+            // A climbing owner is not a carrier: chase the walkable destination via
+            // the shared cliff-route network, or wait on the ground once nearby.
+            if (followGoal.routeRequired || followGoal.distance > (master.climbing ? FOLLOW_NEAR_PX : FOLLOW_FAR_PX)) {
+              moving = travelCreatureToward(c, followGoal.x, followGoal.y, def.chaseSpeed, dt);
+              if (moving) aimAngle = Math.atan2(c.vy, c.vx);
+            } else {
+              c.vx = 0; c.vy = 0;
+            }
           } else if (!isBanditCompanion && _isPlayerFocusedOnHead(c)) {
             // The player is staring right at its head — hold position and
             // let them approach instead of drifting back out to the donut
@@ -15758,6 +15789,7 @@
         _zoneVegetationMeshes.delete(mapId);
         _zoneMineableRockMeshes.delete(mapId);
         _zoneGrassMeshes.delete(mapId);
+        window.ZonePlateauMesa?.releaseZone?.(mapId); // Its render batches (and the hidden source meshes behind them) were kept in a module-level map forever.
         _zoneMesaMeshGroups.delete(mapId);
         window.CliffElevatedSurfaces?.clear?.(mapId); // Release only this wilderness area's stacked support scope on unload.
         window.CliffRouteNetwork?.releaseArea?.(mapId); // Drop transient scene/route references; saved balcony rewards survive.
@@ -15792,7 +15824,11 @@
       }
       function zoneResidents(mapId) {
         const residents = [];
-        for (const set of [hostileObjects, corpseObjects]) for (const c of set) if ((c.areaId || c.zoneId) === mapId) residents.push(c);
+        // A bandit parked by js/wilderness-simulation-lod.js carries a synthetic areaId ("__wilderness_lod_sleep__:<zone>") so
+        // the hostile update skips it; its real zone is _wildernessLodAreaId. Matching only areaId made sleepers invisible here:
+        // they neither pinned the zone nor were released with it, and each one kept `scene` (so the whole evicted zone's render
+        // lists and geometry) alive through hostileObjects. Found with heap snapshots.
+        for (const set of [hostileObjects, corpseObjects]) for (const c of set) if (((c._wildernessLodSleeping && c._wildernessLodAreaId) || c.areaId || c.zoneId) === mapId) residents.push(c);
         return residents;
       }
       // Ordinary creatures (wildlife and ambient hostiles) are rebuilt from their
@@ -15881,6 +15917,7 @@
         window.PorakanekiCampPlacementPolicy?.forgetZone?.(mapId);
         window.Shattercasks?.releaseZone?.(mapId);
         window.WorldPopupText?.releaseScene?.(zi.scene);
+        window.TzatzulCliffSites?.releaseArea?.(mapId); // Nest spires keep the scene they were drawn into until the next area change; make eviction not depend on that.
         zi.scene.clear(); // One stale reference to a mesh would otherwise keep the whole old zone reachable through its parent chain.
         window.__farmLog?.(`[zone-cache] evicted ${mapId} (${freed.materials} materials, ${freed.textures} textures released)`, 'perf');
         return true;
@@ -16695,6 +16732,9 @@
         const routeNet = window.CliffRouteNetwork?.forArea?.(currentArea); // Reuse rendered Y-layer state rather than the underlying single-height grid.
         const shelf = window.CliffRouteNetwork?.shelfAt?.(routeNet, player.onCliffBalcony);
         if (!shelf || !shelf.footprint.some(f => f.c === col && f.r === row)) return null;
+        // A clustered herb patch belongs to one walkable mini-cliff tile, even on long ledges.
+        if (shelf.reward === 'herbCluster' && shelf.herbTile &&
+          (shelf.herbTile.c !== col || shelf.herbTile.r !== row)) return null;
         const state = window.CliffRouteNetwork.getRewardState(currentArea, shelf.id);
         if (state.claimed) return null;
         const areaAtCreation = currentArea; // Asynchronous lockpicking validates the original area/ledge before paying.
@@ -16718,7 +16758,29 @@
             }
             window.SkillSystem?.award?.('mining', window.SkillSystem?.XP_GAINS?.rock || 8, 'mined cliff ore');
             window.HobunjiActivityEvents?.emit('rock_broken', { area: currentArea });
-          } else {
+          } else if (shelf.reward === 'herbCluster') {
+            const reagentKey = shelf.reagentKey; // Chosen from this area's native plants by the cliff renderer.
+            const reagent = window.AlchemySystem?.REAGENT_DEFS?.[reagentKey]; // Shared reagent definition used by ordinary gathering.
+            if (!reagent) return { ok: false, message: 'These herbs cannot be identified yet.' };
+            const pickCount = 5; // One cluster represents five normal herb picks for yield, perks, and XP.
+            const bonusChance = window.SkillSystem?.bonusYieldChance?.('foraging') || 0; // Extra-yield chance from the ordinary Foraging perks and buffs.
+            const doubleRank = window.PerkSystem?.rank?.('foraging', 'doubleForageables') || 0; // Normal Double Forageables perk applies to every pick.
+            let amount = 0; // Total yield from five independent bonus rolls before accepting the harvest.
+            for (let pick = 0; pick < pickCount; pick++) {
+              amount += (1 + (rnd() < bonusChance ? 1 : 0)) * (doubleRank > 0 ? 2 : 1);
+            }
+            const previous = inventory[reagentKey] || 0; // Current stack before adding the whole cluster's reward.
+            if (previous + amount > window.InventoryStacks.MAX_TOTAL) {
+              return { ok: false, message: 'Not enough inventory space for all five herb picks.' }; // Never consume a cluster while discarding its herbs.
+            }
+            inventory[reagentKey] = previous + amount;
+            rewards.push(amount + ' ' + (reagent.label || reagentKey));
+            for (let pick = 0; pick < pickCount; pick++) {
+              window.SkillSystem?.award?.('foraging', window.SkillSystem?.XP_GAINS?.forage || 4, 'picked cliff herb cluster');
+              window.HobunjiActivityEvents?.emit('herb_picked', { area: currentArea, source: 'miniCliff' });
+            }
+            window.AudioSystem?.playObjectSfx?.(window.AudioSystem?.objectSfxConfig?.()?.harvest);
+          } else if (shelf.reward === 'buriedTreasure') {
             const metalLoot = window.WildTreasure?.rollTreasureMetalBarLoot?.() || {}; // Existing wilderness buried-chest metal picker.
             for (const [itemKey, amount] of Object.entries(metalLoot)) {
               inventory[itemKey] = Math.min(window.InventoryStacks.MAX_TOTAL, (inventory[itemKey] || 0) + amount);
@@ -16735,8 +16797,14 @@
         };
         return {
           id: shelf.id + '-resource', col, row, type: 'cliff_balcony_resource',
-          label: shelf.reward === 'oreRock' ? 'Ore Rock' : 'Buried Cliff Chest',
+          label: shelf.reward === 'oreRock' ? 'Ore Rock'
+            : shelf.reward === 'herbCluster' ? 'Herb Cluster' : 'Buried Cliff Chest',
           getButtons() {
+            if (shelf.reward === 'herbCluster') return [{
+              icon: '🌿', label: 'Pick the mini-cliff herb cluster',
+              action: 'obj_balcony_pick', inputAction: 'action1', worldInteraction: true,
+              style: 'primary', allowed: true,
+            }];
             if (shelf.reward === 'oreRock') return [{
               icon: '⛏️', label: 'Mine the balcony ore rock',
               action: 'obj_balcony_mine', inputAction: 'action1', worldInteraction: true,
@@ -16759,13 +16827,14 @@
               if (activeTool !== 'pick' || heldMode !== 'tool') return { ok: false, message: 'Equip a pick to mine this rock.' };
               return award();
             }
-            if (action === 'obj_balcony_dig' && shelf.reward !== 'oreRock' && !state.revealed) {
+            if (action === 'obj_balcony_pick' && shelf.reward === 'herbCluster') return award(); // Direct picking, no shovel.
+            if (action === 'obj_balcony_dig' && shelf.reward === 'buriedTreasure' && !state.revealed) {
               if (activeTool !== 'shovel' || heldMode !== 'tool') return { ok: false, message: 'Equip a shovel to dig here.' };
               window.CliffRouteNetwork.setRewardStage(currentArea, shelf.id, 'revealed');
               awardToolUseMasteryXp('shovel');
               return { ok: true, zoneVisualsUpdated: true, message: 'The dirt breaks away, revealing a buried chest.' };
             }
-            if (action === 'obj_balcony_open' && shelf.reward !== 'oreRock' && state.revealed) {
+            if (action === 'obj_balcony_open' && shelf.reward === 'buriedTreasure' && state.revealed) {
               const valid = () => isAvailable() && window.CliffRouteNetwork.getRewardState(currentArea, shelf.id).revealed;
               const started = window.ChestLockpicking?.open?.({
                 id: shelf.id, title: 'Cliff Chest', tier: 1, valid,
@@ -16901,8 +16970,8 @@
         { key: 'yellowberrySeeds',   icon: '🟡', label: 'YELLOWBERRY SEEDS', max: 99, seedFor: 'yellowberries' },
         { key: 'whiteberrySeeds',    icon: '⚪', label: 'WHITEBERRY SEEDS',  max: 99, seedFor: 'whiteberries' },
         { key: 'blackberrySeeds',    icon: '⚫', label: 'BLACKBERRY SEEDS',  max: 99, seedFor: 'blackberries' },
-        { key: 'blackMustardSeed',   icon: '⚫', label: 'BLACK MUSTARD SEED', max: 99, seedFor: 'blackMustard' },
-        { key: 'greenMustardSeed',   icon: '🥬', label: 'GREEN MUSTARD SEED', max: 99, seedFor: 'greenMustard' },
+        { key: 'blackMustardSeed',   icon: '⚫', label: 'BLACK MUSHTARD SEED', max: 99, seedFor: 'blackMustard' },
+        { key: 'greenMustardSeed',   icon: '🥬', label: 'GREEN MUSHTARD SEED', max: 99, seedFor: 'greenMustard' },
         { key: 'needlegrain',        icon: '🌾', label: 'NEEDLEGRAIN',       max: 99 },
         { key: 'heftroot',           icon: '🟡', label: 'HEFTROOT',          max: 99 },
         { key: 'garlink',            icon: '🧄', label: 'GARLINK',           max: 99 },
@@ -16912,8 +16981,8 @@
         { key: 'yellowberries',      icon: '🟡', label: 'YELLOWBERRIES',     max: 99 },
         { key: 'whiteberries',       icon: '⚪', label: 'WHITEBERRIES',      max: 99 },
         { key: 'blackberries',       icon: '⚫', label: 'BLACKBERRIES',      max: 99 },
-        { key: 'blackMustard',       icon: '⚫', label: 'BLACK MUSTARD',     max: 99 },
-        { key: 'greenMustard',       icon: '🥬', label: 'GREEN MUSTARD',     max: 99 },
+        { key: 'blackMustard',       icon: '⚫', label: 'BLACK MUSHTARD',     max: 99 },
+        { key: 'greenMustard',       icon: '🥬', label: 'GREEN MUSHTARD',     max: 99 },
         { key: 'mulch',              icon: '🍂', label: 'MULCH',            max: 99 },
         { key: 'garWolfMeat',        icon: '🥩', label: 'GAR-WOLF MEAT',    max: 99 },
         { key: 'garWolfHide',        icon: '🟫', label: 'GAR-WOLF HIDE',    max: 99 },
@@ -16953,8 +17022,8 @@
         yellowberrySeeds: { icon: '🟡', label: 'Yellowberry Seeds', cat: 'seed', sellPrice: 0, tags: ['Seed', 'Berry'], desc: 'Plants yellowberries. Berries grow best when any adjacent tile is a ditch; ideal water 25–60%.' },
         whiteberrySeeds: { icon: '⚪', label: 'Whiteberry Seeds', cat: 'seed', sellPrice: 0, tags: ['Seed', 'Berry'], desc: 'Plants whiteberries. Berries grow best when any adjacent tile is a ditch; ideal water 40–75%.' },
         blackberrySeeds: { icon: '⚫', label: 'Blackberry Seeds', cat: 'seed', sellPrice: 0, tags: ['Seed', 'Berry'], desc: 'Plants blackberries. Berries grow best when any adjacent tile is a ditch; ideal water 45–80%.' },
-        blackMustardSeed: { icon: '⚫', label: 'Black Mustard Seed', cat: 'seed', sellPrice: 0, tags: ['Seed', 'Mustard'], desc: 'Plants black mustard. Hot mustard crop; ideal water 15–40%.' },
-        greenMustardSeed: { icon: '🥬', label: 'Green Mustard Seed', cat: 'seed', sellPrice: 0, tags: ['Seed', 'Mustard'], desc: 'Plants green mustard. Fresh mustard crop; ideal water 30–65%.' },
+        blackMustardSeed: { icon: '⚫', label: 'Black Mushtard Seed', cat: 'seed', sellPrice: 0, tags: ['Seed', 'Mushtard'], desc: 'Plants black mushtard. Hot mushtard crop; ideal water 15–40%.' },
+        greenMustardSeed: { icon: '🥬', label: 'Green Mushtard Seed', cat: 'seed', sellPrice: 0, tags: ['Seed', 'Mushtard'], desc: 'Plants green mushtard. Fresh mushtard crop; ideal water 30–65%.' },
         needlegrain: { icon: '🌾', label: 'Needlegrain', cat: 'crop', sellPrice: CROP_SELL_PRICES.needlegrain, tags: ['Crop', 'Sellable', 'Grain'], desc: 'Dry-default grain crop from the cooking system.' },
         heftroot: { icon: '🟡', label: 'Heftroot', cat: 'crop', sellPrice: CROP_SELL_PRICES.heftroot, tags: ['Crop', 'Sellable', 'Root'], desc: 'Starchy root crop used for heftroot flour and yellow noodles.' },
         garlink: { icon: '🧄', label: 'Garlink', cat: 'crop', sellPrice: CROP_SELL_PRICES.garlink, tags: ['Crop', 'Sellable', 'Pungent'], desc: 'Pungent vegetable and broth base.' },
@@ -16964,8 +17033,8 @@
         yellowberries: { icon: '🟡', label: 'Yellowberries', cat: 'crop', sellPrice: CROP_SELL_PRICES.yellowberries, tags: ['Crop', 'Sellable', 'Berry'], desc: 'Berry crop. Grows well beside adjacent ditches.' },
         whiteberries: { icon: '⚪', label: 'Whiteberries', cat: 'crop', sellPrice: CROP_SELL_PRICES.whiteberries, tags: ['Crop', 'Sellable', 'Berry'], desc: 'Mild berry crop. Grows well beside adjacent ditches.' },
         blackberries: { icon: '⚫', label: 'Blackberries', cat: 'crop', sellPrice: CROP_SELL_PRICES.blackberries, tags: ['Crop', 'Sellable', 'Berry'], desc: 'Dark berry crop. Grows well beside adjacent ditches.' },
-        blackMustard: { icon: '⚫', label: 'Black Mustard', cat: 'crop', sellPrice: CROP_SELL_PRICES.blackMustard, tags: ['Crop', 'Sellable', 'Mustard'], desc: 'Hot mustard crop. Can be processed into pungent paste later.' },
-        greenMustard: { icon: '🥬', label: 'Green Mustard', cat: 'crop', sellPrice: CROP_SELL_PRICES.greenMustard, tags: ['Crop', 'Sellable', 'Mustard'], desc: 'Fresh mustard crop. Can be processed into pungent paste later.' },
+        blackMustard: { icon: '⚫', label: 'Black Mushtard', cat: 'crop', sellPrice: CROP_SELL_PRICES.blackMustard, tags: ['Crop', 'Sellable', 'Mushtard'], desc: 'Hot mushtard crop. Can be processed into pungent paste later.' },
+        greenMustard: { icon: '🥬', label: 'Green Mushtard', cat: 'crop', sellPrice: CROP_SELL_PRICES.greenMustard, tags: ['Crop', 'Sellable', 'Mushtard'], desc: 'Fresh mushtard crop. Can be processed into pungent paste later.' },
         mulch: { icon: '🍂', label: 'Mulch', cat: 'material', sellPrice: 2, tags: ['Material', 'Organic'], desc: 'Organic matter from cleared vegetation. Useful by-product of land clearing.' },
         soursapFruitFlesh: { icon: '🍈', label: 'Soursap Fruit Flesh', cat: 'crop', sellPrice: 10, tags: ['Fruit', 'Food', 'Foraged', 'Sellable'], desc: 'Sticky, sour pulp collected from a Soursap Fruit after its impact burst. The intact fruit is a physical burden, not an inventory stack.' },
         // Instrument metadata pairs with TOOL_ITEM_DEFS for permanent gear assignment.
@@ -18841,6 +18910,7 @@
 
         const _fsPrevX = player.x, _fsPrevY = player.y;
 
+        if (window.PlayerJump?.tick?.(dt)) return; // Free-jump movement owns its physical elevation without impersonating a wall climb.
         if (player.climbing) {
           window.ClimbSystem.updateClimb(dt);
           return;
@@ -19237,6 +19307,32 @@
             && tileSpeedAt(wx + radius, wy - radius, tileWorldY) !== null
             && tileSpeedAt(wx - radius, wy + radius, tileWorldY) !== null
             && tileSpeedAt(wx + radius, wy + radius, tileWorldY) !== null;
+      }
+
+      function canPlayerOccupyAtHeight(wx, wy, feetY) {
+        if (!Number.isFinite(feetY)) return canPlayerOccupy(wx, wy);
+        const radius = PLAYER_RADIUS * 0.72; // Physical free-jump footprint matches normal walking.
+        if (window.InteriorDoorTiles?.blocksBox(currentArea, wx / TILE, wy / TILE, radius / TILE)) return false;
+        // Projectile-height occupancy skips some legacy 2D-only colliders.
+        // Check those at each player-collider corner, separately from the
+        // providers that already understand furniture and footprint height.
+        const grid = window.GridTileAccessors.getActiveGrid();
+        for (const [dx, dy] of [[-radius, -radius], [radius, -radius], [-radius, radius], [radius, radius]]) {
+          const x = (wx + dx) / TILE, z = (wy + dy) / TILE;
+          if (grid[Math.floor(z)]?.[Math.floor(x)]?._banditTentCollisionId) return false;
+          if (furnitureBlocksMovementAt(currentArea, x, z, feetY + 0.05)) return false;
+        }
+        const footprintY = feetY + 0.05; // Native footprint providers sample the actual foot height, not the projectile's radius-offset value.
+        // A narrow blocker can touch the middle of the player footprint while
+        // missing all four sampled corners. Test the FULL box at real feet Y.
+        // canOccupyAt checks tile cover separately with a projectile underside
+        // offset and must not be the sole authority for narrow 3D furniture.
+        if (window.AreaFootprintBlockers?.blocksBox(currentArea, wx / TILE, wy / TILE, radius / TILE, footprintY)) return false;
+        if (window.FurnitureTableSystem?.blocksBox(currentArea, wx / TILE, wy / TILE, radius / TILE, footprintY)) return false;
+        // canOccupyAt subtracts its collision radius from worldY to form a
+        // projectile's underside. Offset by that same radius so the player's
+        // actual feet, not a point below them, clear the top of a low rock.
+        return canOccupyAt(wx, wy, radius, footprintY + radius / TILE);
       }
 
       function canPlayerOccupy(wx, wy) {
@@ -21053,6 +21149,10 @@
               }
             }
           }
+          const geometryY = projectile && !tile.mapBoundary
+            ? window.ZonePlateauMesa?.surfaceYAt?.(currentArea, wx / TILE, wy / TILE) : null; // Airborne actors and shots use the visible displaced cliff skin.
+          if (Number.isFinite(geometryY)) cliffTopY = geometryY;
+          else if (projectile && !tile.mapBoundary && window.ZonePlateauMesa?.hasTerrain?.(currentArea)) cliffTopY = -Infinity;
           const intersectsCliff = !projectile || worldY <= cliffTopY + 0.01;
           if (tile.incline && intersectsCliff) return null;
           // Preserve the original escape exception for an actor already on
@@ -25432,6 +25532,7 @@
         const ordinaryStandY = player.onBranch ? player.branchSurfaceY
           : player.onCliffBalcony ? player._cliffBalconyY
           : player.onClimbSurface ? player.wallClimbY
+          : player._freeJump ? player.physicalFeetY // Jump is an independently grounded/airborne motion, not a scripted climb.
           : player.climbing ? player.climbSurfaceY
           : Number.isFinite(ruinStandY) ? ruinStandY
           : (_isZoneArea(currentArea) ? surfaceYAtWorld(currentArea, wx, wz) : tileSurfaceYInArea(tile, currentArea));
@@ -26138,6 +26239,15 @@
         wildlifeDistanceInput.addEventListener('change', () => {
           window.WildlifeVisualLod.setWakeRadius(wildlifeDistanceInput.value);
           wildlifeDistanceInput.value = window.WildlifeVisualLod.wakeRadius();
+          if (wildlifeCombatDistanceInput) wildlifeCombatDistanceInput.value = window.WildlifeVisualLod.combatReleaseRadius(); // The fighting radius is floored by the calm radii.
+        });
+      }
+      const wildlifeCombatDistanceInput = document.getElementById('settingWildlifeCombatDistance'); // Separate distance at which fighting animals return to data.
+      if (wildlifeCombatDistanceInput) {
+        wildlifeCombatDistanceInput.value = window.WildlifeVisualLod.combatReleaseRadius();
+        wildlifeCombatDistanceInput.addEventListener('change', () => {
+          window.WildlifeVisualLod.setCombatReleaseRadius(wildlifeCombatDistanceInput.value);
+          wildlifeCombatDistanceInput.value = window.WildlifeVisualLod.combatReleaseRadius();
         });
       }
 
@@ -26519,7 +26629,7 @@
           // Water sim cadence (1/8 game-hour ticks + the farm/town area gate)
           // now lives in js/water-system.js's tickSimulation.
           window.WaterSystem.tickSimulation(dt, currentArea, {
-            gameHoursPerSecond: (NIGHT_HOUR - MORNING_HOUR) / DAY_LENGTH_SECONDS,
+            gameHoursPerSecond: window.CalendarSystem.getNaturalGameHoursPerSecond(),
             onFarmTick: tickWorldObjects,
             onTick: () => window.WeatherFX.spawnRipples(),
           });
@@ -32332,6 +32442,14 @@
         getPlayerInteractionRay: currentPlayerInteractionRay,
         worldSurfaceY: (x, y) => activeSurfaceYAtWorld(x / TILE, y / TILE),
         getMovementInput: climbMovementInput,
+        getBaseMoveSpeedTiles: () => MOVE_SPEED / TILE, // Jump travel reuses normal walking distance per second, not a separate hard-coded pace.
+        canStartFreeJump: () => gameStarted && !paused && !dialogueOpen && !sitInteraction &&
+          !window.Fishing?.state?.active && !window.MusicMinigame?.state?.active &&
+          !window.BedLiePose?.isActive?.() && !window.FarmAnimals?.isHarvesting?.() &&
+          !window.PlayerSocialPoses?.active, // Actions/minigames that own the player must not secretly queue a jump.
+        canPlayerOccupy, // Normal grounded movement authority.
+        canPlayerOccupyAtHeight, // Jump uses native world collision at the physical foot height.
+        furnitureBlocksMovementAt, // Allows only finite-height cover to be jumped; otherwise retains normal furniture collision.
       });
 
       // Climbable wall surfaces (js/climb-surfaces.js): attach on a forward dodge via
@@ -32340,7 +32458,7 @@
         player,
         TILE,
         getMovementInput: climbMovementInput,
-        getFeetY: () => window.DevRandomRuin?.getPlayerSupportY?.() ?? activeSurfaceYAtWorld(player.x / TILE, player.y / TILE),
+        getFeetY: () => player._freeJump?.feetY ?? window.DevRandomRuin?.getPlayerSupportY?.() ?? activeSurfaceYAtWorld(player.x / TILE, player.y / TILE),
         canStandAt: (x, z, y) => !!window.DynamicSurfaces?.sampleSupport?.(x, z, { minY: y - 0.3, maxY: y + 0.3, pad: 0.02 }), // A mantle needs a registered walkable surface at the top.
         setFacingAngle: (v) => { facingAngle = v; },
         setTargetAimAngle: (v) => { targetAimAngle = v; },

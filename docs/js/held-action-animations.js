@@ -229,7 +229,58 @@
     },
     "gripMode": "palm-parallel"
   }; // Authored loaded/fire animation; independent from Drink.
-  window.HeldActionAnimations = Object.freeze({ blowgunReady, drink, heldItemSmall, heldItemLarge, throwFlask, weaponThrowSpin, weaponThrowSpearSpin, counterShield });
+  // The two instruments are non-damaging gameplay actions. Each real sounded
+  // note runs its own Neutral → Windup → Note → Return path, including rapid
+  // retriggers; both the editor and KurrayaInstrument sample these same poses.
+  const fluteNeutralNotePose = { // Exact user-authored Neutral; reused independently for the note's three edit phases.
+    headRelative: true,
+    x: 0.01, y: 0, z: 0, pitch: -108, yaw: 0, bodyYaw: 0, roll: 4,
+    scale: 1.3, bodySink: 0,
+    shoulderAim: { grip: true, palmNormal: false },
+    secondaryGrip: { enabled: false, percent: 50, primaryPercent: 50 },
+    dualWield: { enabled: false },
+    elbows: { right: { x: 0, y: -0.15, z: 0.1 } },
+  };
+  const copyFluteNotePose = () => JSON.parse(JSON.stringify(fluteNeutralNotePose)); // Each editable phase owns its own grip and elbow objects.
+  const FLUTE_STRIKE_BODY_SINK_PCT = 10; // Strike-only, editor-adjustable percent of height; player leg/body composer applies it live.
+  const flutePlayNote = {
+    version: 1, kind: 'hobunji_held_action_animation', name: 'Flute — Play Note',
+    style: 'ranged', sequence: 'attack', headRelative: true,
+    durationS: 0.32, windupFrac: 0.18, strikeFrac: 0.34, holdFrac: 0.62,
+    gripMode: 'palm-parallel',
+    poses: {
+      neutral: copyFluteNotePose(),
+      windup: copyFluteNotePose(), // Identical to Neutral: no unwanted lift or pipe rotation.
+      strike: { ...copyFluteNotePose(), bodySink: FLUTE_STRIKE_BODY_SINK_PCT }, // Only the body's downward bend distinguishes the sounded note.
+    },
+  };
+  const kurrayaSharedNotePose = { // Note phases share a position and grip relationship; roll, elbows, hand height and body sink are authored separately.
+    x: 0.27, y: 0.08, z: 0.03, pitch: 0, yaw: 0, bodyYaw: 0,
+    headRelative: false,
+    shoulderAim: { grip: false, palmNormal: false },
+    secondaryGrip: { enabled: true, percent: 50, primaryPercent: 50 },
+    dualWield: { enabled: false },
+    elbows: { left: { x: 0.155, y: -0.195, z: 0 } },
+    rightHand: { enabled: true, x: -0.13, y: 0.07, z: 0.085, roll: 52 },
+  };
+  const copyKurrayaNotePose = () => JSON.parse(JSON.stringify(kurrayaSharedNotePose)); // Each editable phase has independent nested hand, elbow and grip fields.
+  const kurrayaPlayNote = {
+    version: 1, kind: 'hobunji_held_action_animation', name: 'Kurraya — Play Note',
+    actionId: 'kurraya_play_note', style: 'thrust', sequence: 'attack',
+    durationS: 0.32, windupFrac: 0.18, strikeFrac: 0.34, holdFrac: 0.62,
+    headRelative: false, toolEndFlip: false, gripMode: 'palm-parallel',
+    poses: {
+      neutral: { ...copyKurrayaNotePose(), roll: 7, scale: 0.85, bodySink: 0 }, // Latest authored rest posture; Windup deliberately rolls a further -2°.
+      windup: { ...copyKurrayaNotePose(), roll: 5 },
+      strike: {
+        ...copyKurrayaNotePose(), roll: 11,
+        elbows: { left: { x: 0.155, y: -0.15, z: 0.02 }, right: { x: -0.17, y: -0.28, z: 0.11 } },
+        rightHand: { enabled: true, x: -0.13, y: 0.1, z: 0.085, roll: 52 },
+        bodySink: 3, // Same body/leg stance sink channel used by the flute, but much subtler.
+      },
+    },
+  };
+  window.HeldActionAnimations = Object.freeze({ blowgunReady, drink, heldItemSmall, heldItemLarge, throwFlask, weaponThrowSpin, weaponThrowSpearSpin, counterShield, flutePlayNote, kurrayaPlayNote });
 
   // Shared direct-hand bootstrap. There are no arm bones, IK, reach clamps, or
   // rotating arm sprites. Shoulder coordinates are either manually authored in
@@ -314,7 +365,7 @@
     new URL('config/hand-shoulder-points.js?v=20260818b', docsBase).href,
     new URL('config/hand-shoulder-pose-profiles.js?v=20260920localhinge1', docsBase).href,
     new URL('js/procedural-hand-foot-material-roles.js?v=20260821e', docsBase).href,
-    new URL('js/hand-tool-grips.js?v=20261101offhandrace1', docsBase).href,
+    new URL('js/hand-tool-grips.js?v=20261107kurrayaGripOptIn1', docsBase).href,
     new URL('js/hand-tool-grip-authored-overrides.js?v=20261022hbc21c80', docsBase).href, // Must follow hand-tool-grips.js: migrates authored spear/bshuakauitl grips onto its live data.
     new URL('js/dual-wield-weapon-visuals.js?v=20261031h84160bf', docsBase).href,
     new URL('js/hand-grip-modes.js?v=20261005h2e47f31', docsBase).href,
@@ -327,7 +378,7 @@
     new URL('js/attachment-rig-latest-authored-snapshot.js?v=20261102maoskelrear1', docsBase).href,
     new URL('js/procedural-hand-scale-free-world.js?v=20261017h3921033', docsBase).href,
     new URL('js/procedural-hand-shoulder-aim.js?v=20261031h6987021', docsBase).href,
-    new URL('js/procedural-hand-frame-driver.js?v=20261103witchBombHands1', docsBase).href,
+    new URL('js/procedural-hand-frame-driver.js?v=20261107kurrayaAudit2', docsBase).href,
   ];
   if (isAttackEditor) {
     // The editor starts its first avatar rebuild immediately after these parser-time
@@ -346,7 +397,7 @@
   } else if (!isAnimationAuthor && !isEnemyLoadoutEditor) {
     handScripts.push(new URL('js/procedural-hand-grip-runtime.js?v=20260918throwcharge3', docsBase).href);
     handScripts.push(new URL('js/weapon-idle-body-yaw-runtime.js?v=20260915perf1', docsBase).href);
-    handScripts.push(new URL('js/weapon-stance-drop-runtime.js?v=20261030a', docsBase).href);
+    handScripts.push(new URL('js/weapon-stance-drop-runtime.js?v=20261107kurrayaNoteSink2', docsBase).href);
     handScripts.push(new URL('js/crossbow-strike-audio-trim.js?v=20260818a', docsBase).href);
     handScripts.push(new URL('js/weapon-png-scale.js?v=20260902c', docsBase).href);
     handScripts.push(new URL('js/hand-pixel-probe-diagnostics.js?v=20261101handdrift2', docsBase).href);

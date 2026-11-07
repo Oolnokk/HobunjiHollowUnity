@@ -5,7 +5,7 @@
   // Seasonal vegetation must patch THREE's texture/material constructors before
   // terrain and foliage assets start loading. Keep it parser-synchronous.
   (function loadSeasonalVegetationTintEarly() {
-    const src = 'js/seasonal-vegetation-tint.js?v=20260901d';
+    const src = 'js/seasonal-vegetation-tint.js?v=20261107h7a87107';
     if (window.SeasonalVegetationTint || document.querySelector('script[data-seasonal-vegetation-tint]')) return;
     if (document.readyState === 'loading') {
       document.write(`<script src="${src}" data-seasonal-vegetation-tint="1"><\/script>`);

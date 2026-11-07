@@ -233,6 +233,18 @@
     return hit ? { kind: 'climbSurface', surface: hit.surface, start: () => grab(hit) } : null;
   }
 
+  function tryAirGrab(pos, direction) {
+    if (!deps || deps.player.onClimbSurface || deps.player.climbing || deps.player.onBranch) return false;
+    const hit = findGrabTarget(pos, Math.atan2(direction.z, direction.x), { reach: 0.32 }); // Catch only a nearby wall being approached.
+    if (!hit) return false;
+    window.PlayerJump?.reset?.();
+    const session = attach(hit.surface, pos); // Preserve airborne feet height instead of the ground below the jumper.
+    deps.player.onClimbSurface = session;
+    deps.player.vx = 0; deps.player.vy = 0;
+    applyPose(session);
+    return true;
+  }
+
   function grab(hit) {
     const p = deps.player, session = attach(hit.surface, playerPos());
     p.onClimbSurface = session; p.wallClimbY = session.v;
@@ -316,7 +328,7 @@
   return Object.freeze({
     DEFAULTS, init, registerStyle, getStyle, listStyles, register, registerGrid, remove, clearScope, list,
     findGrabTarget, attach, step, topExitPoint, sideExitPoint, buildVisual,
-    worldClimbProvider, grab, release, updatePlayer,
+    worldClimbProvider, tryAirGrab, grab, release, updatePlayer,
     isAttached: () => !!deps?.player?.onClimbSurface,
     debugSnapshot: () => ({
       initialized: !!deps, surfaces: surfaces.size, attached: !!deps?.player?.onClimbSurface,

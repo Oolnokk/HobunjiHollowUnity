@@ -91,6 +91,17 @@
       if (data.mechanismId && data.previewMotion?.type === 'stoneDoor') object.traverse?.(mesh => add(mesh, 'door', object));
       if (data.linkedMechanismId && data.activatorType) object.traverse?.(mesh => add(mesh, 'activator', object));
     });
+    // Glyph plaques can be mounted in upper native V50 roots rather than the base root.
+    // Count only their visible authored glow decals: inactive upper floors have
+    // hidden glyphs that must not inflate the current floor's rendered sources.
+    activeScene()?.traverse?.(object => {
+      if (object.userData?.activatorType !== 'glyphObelisk') return;
+      object.traverse?.(mesh => {
+        if (mesh.userData?.furnitureDecal !== true || !mesh.userData?.decalGlow) return;
+        if (!sourceHierarchyVisible(mesh, activeScene())) return;
+        add(mesh, 'activator', object);
+      });
+    });
     return [...candidates.values()];
   }
 
@@ -155,8 +166,15 @@
         return materials.length > 0 && materials.every(material => material instanceof THREE.Material);
       }).length,
       litSourceMaterials: allMaterials.filter(isLitMaterial).length,
-      glyphDecalSourceCount: activators.filter(source => sourceMaterials(source.mesh).some(material => !!material?.userData?.decalImagePath)).length,
-      glowingGlyphDecalSourceCount: activators.filter(source => sourceMaterials(source.mesh).some(material => material?.userData?.devRuinGlyphGlow === true || material?.blending === THREE.AdditiveBlending)).length,
+      glyphDecalSourceCount: activators.filter(source => source.mesh.userData?.furnitureDecal === true && !!source.mesh.userData?.decalGlow).length,
+      glowingGlyphDecalSourceCount: activators.filter(source => {
+        if (!source.mesh.userData?.decalGlow) return false;
+        for (let node = source.mesh.parent; node; node = node.parent) {
+          if (Number(node.userData?.decalGlowProgress) > 0) return true;
+          if (node.userData?.ruinFurnitureKey === 'ruinGlyphTarget') break;
+        }
+        return false;
+      }).length,
       renderProxyCount: 0,
       totalProxyCount: 0,
       proxyRootAttached: false,

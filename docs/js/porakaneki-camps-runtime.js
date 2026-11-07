@@ -30,6 +30,7 @@
   const PROVOKE_SECONDS = 45; // Temporary same-camp self-defense window after an assault without permanent Favor loss.
   const DORMANT_ENTITY_RELEASE_S = 3; // Grace period before a hidden off-radius/sleeping hunter's real entity is torn down.
   const MIN_HUNTING_CAMPS_PER_ZONE = 1; // Hard ecology floor: every wilderness zone keeps at least one ordinary hunting camp per tribe.
+  const GIFT_REACH_TILES = 2; // Maximum player-to-hunter range for the interaction-only gifting proxy; matches the action bar's lookup radius.
 
   let combatDeps = null; // Captured from BanditCombat.init; movement/scenes/terrain/tools/hostileObjects. Shared by every tribe.
   let schedulingDeps = null; // Captured from NpcScheduling.init; live named-chief walkers. Shared by every tribe.
@@ -986,19 +987,35 @@
     for (const camp of activeCamps(zoneState)) ensureCampMeshes(camp);
   }
 
+  function senseTargets(scene) {
+    const zoneState = currentZoneState(); // Same active area as this tribe's loaded camp props.
+    if (!scene || !zoneState || combatDeps?.zoneScenes?.get?.(zoneState.zoneId)?.scene !== scene) return [];
+    const roots = []; // Actual tents and fires, shared with the runtime's camp lifecycle and both tribes.
+    for (const camp of activeCamps(zoneState)) {
+      const anchor = Number.isFinite(camp.center?.col) && Number.isFinite(camp.center?.row)
+        ? { x: camp.center.col, z: camp.center.row } : null; // The shared camp footprint center prevents uneven visibility across its different tents.
+      for (const prop of camp.props || []) {
+        if (prop.destroyed || (prop.type !== 'tent' && prop.key !== BONFIRE_KEY && prop.key !== 'campfire')) continue;
+        const root = camp.propMeshes.get(prop.id)?.mesh;
+        if (root?.parent === scene && root.visible !== false) roots.push(anchor ? { root, anchor } : root);
+      }
+    }
+    return roots;
+  }
+
   function tentCenters(camp) {
     return (camp?.props || []).filter(prop => prop.type === 'tent').map(prop => ({ col: prop.x + (prop.w || 1) * 0.5, row: prop.y + (prop.h || 1) * 0.5 }));
   }
 
-  function getNearbyGiftWalker(x, z, radius = 2) {
-    if (window.NpcRapport?.canGiftToday?.(CHIEF_ID) === false) return null;
+  function getNearbyGiftWalker(x, z, radius = GIFT_REACH_TILES) {
+    if (!Number.isFinite(x) || !Number.isFinite(z) || window.NpcRapport?.canGiftToday?.(CHIEF_ID) === false) return null;
     let closest = null; // Reuses cached hunter proxies so the action bar does not refresh every frame.
-    let distance = radius; // The nearest named NPC already limits this search radius.
+    let distance = Math.max(0, Math.min(GIFT_REACH_TILES, num(radius, GIFT_REACH_TILES))); // Neither an external caller nor a stale action may reach beyond two tiles.
     for (const camp of activeCamps(currentZoneState())) for (const hunter of camp.hunters) {
       const entity = hunter.entity; // Only living, visible, neutral residents can accept a gift.
       if (!entity || entity.health <= 0 || entity._porakanekiPlannerControlled !== true || entity._chunkCombatTarget || !entity.avatarRef?.group?.visible || entity.areaId !== currentArea()) continue;
       const nextDistance = Math.hypot(entity.x / combatDeps.TILE - x, entity.y / combatDeps.TILE - z); // Matches named NPC interaction distances.
-      if (nextDistance >= distance) continue;
+      if (nextDistance > distance || (closest && nextDistance === distance)) continue; // A hunter exactly two tiles away is still in reach; ties keep the prior proxy stable.
       distance = nextDistance;
       entity._porakanekiGiftWalker ||= { rec: { ...entity.rosterRecord, id: hunter.id, name: `${LABEL} Hunter`, species: SPECIES_ID }, isTribeHunter: true, tribeId: KEY, isPorakanekiHunter: KEY === 'porakaneki' }; // Cached interaction-only proxy shares the actual hunter root.
       entity._porakanekiGiftWalker.root = entity.avatarRef.group;
@@ -1121,16 +1138,18 @@
     if (text && options.allowToastFallback !== false) combatDeps.showToast?.(text, options.important !== false);
     return false;
   }
-  function speakerHunterFor(camp) {
+  function speakerHunterFor(camp, maxDistanceTiles = Infinity) {
     const player = playerTilePosition();
-    const candidates = (camp?.hunters || []).filter(hunter => {
+    if (!camp || !player || !combatDeps?.TILE) return null;
+    let nearest = null; // Only an actually materialized hunter close enough to the player can deliver a warning.
+    let nearestDistance = maxDistanceTiles;
+    for (const hunter of camp.hunters || []) {
       const entity = hunter?.entity;
-      return entity?.health > 0 && entity.areaId === camp.zoneId && !!entity.avatarRef?.group?.visible;
-    });
-    if (!candidates.length) return null;
-    if (!player) return candidates[0];
-    candidates.sort((a, b) => Math.hypot(a.x - player.col, a.y - player.row) - Math.hypot(b.x - player.col, b.y - player.row));
-    return candidates[0];
+      if (!(entity?.health > 0) || entity.areaId !== camp.zoneId || !entity.avatarRef?.group?.visible) continue;
+      const distance = Math.hypot(entity.x / combatDeps.TILE - player.col, entity.y / combatDeps.TILE - player.row); // Live combat coordinates, not a possibly stale abstract planner position.
+      if (distance <= nearestDistance) { nearest = hunter; nearestDistance = distance; }
+    }
+    return nearest;
   }
   function resetCampWarning(camp) {
     if (!camp) return;
@@ -1155,6 +1174,7 @@
     }
     for (const camp of camps) if (camp !== nearest) resetCampWarning(camp);
     if (!nearest || nearestDistance > num(rep.warningRadiusTiles, 10)) { resetCampWarning(nearest); return; }
+    const warningSpeakerReach = rep.warningSpeakerRadiusTiles == null ? Infinity : Math.max(0, num(rep.warningSpeakerRadiusTiles, 0)); // Porakaneki require a speaker within two tiles; other tribes retain their prior speaker rules.
 
     // A warning is not considered delivered until a real materialized hunter
     // successfully owns an Ambient Dialogue bubble. This avoids the old race
@@ -1162,7 +1182,7 @@
     // one-shot flag, and permanently degraded the warning to a HUD toast.
     if (!nearest.warningInitialShown) {
       const text = chooseLine(rep.initialWarnings);
-      const speaker = speakerHunterFor(nearest);
+      const speaker = speakerHunterFor(nearest, warningSpeakerReach);
       if (text && speaker && speakOverheadFromHunter(speaker, text, { tone: 'warning', important: false, allowToastFallback: false })) {
         nearest.warningInitialShown = true;
         nearest.warningEnteredAtMs = nowMs();
@@ -1171,13 +1191,16 @@
     }
     if (!nearest.warningEscalated && nowMs() - nearest.warningEnteredAtMs >= num(rep.warningStaySeconds, 10) * 1000) {
       const text = chooseLine(rep.escalationWarnings);
-      const speaker = speakerHunterFor(nearest);
+      const speaker = speakerHunterFor(nearest, warningSpeakerReach);
       if (text && speaker && speakOverheadFromHunter(speaker, text, { tone: 'warning', important: false, allowToastFallback: false })) nearest.warningEscalated = true;
     }
   }
 
+  function friendlyGreetingAllowed() {
+    return favor() >= num(cfg?.reputation?.greetingFavorThreshold, 1) || (KEY === 'porakaneki' && peacefulRapport()); // Temporary friendly Rapport should not leave a neutral Porakaneki silently neither greeting nor warning.
+  }
   function maybeChiefGreeting() {
-    if (favor() < num(cfg?.reputation?.greetingFavorThreshold, 1) || currentArea() !== state.chiefZoneId) return;
+    if (!friendlyGreetingAllowed() || currentArea() !== state.chiefZoneId) return;
     const walker = chiefWalker();
     if (!walker?.root || walker.area !== currentArea() || !combatDeps?.player) return;
     const distance = Math.hypot(walker.root.position.x - combatDeps.player.x / combatDeps.TILE, walker.root.position.z - combatDeps.player.y / combatDeps.TILE);
@@ -1185,10 +1208,11 @@
     const marker = `${KEY}_chief_greet_day_${gameDay()}`;
     const relation = relationshipState();
     if (!relation || memoryHas(relation, marker)) return;
-    pushMemory(relation, marker);
     const text = chooseLine(cfg?.reputation?.greetingLines) || `The ${LABEL} chief greets you.`;
-    speakOverheadFromWalker(walker, text, { tone: 'greeting' });
-    state.greetings += 1;
+    if (speakOverheadFromWalker(walker, text, { tone: 'greeting', allowToastFallback: false })) {
+      pushMemory(relation, marker); // Do not consume the once-per-day greeting before AmbientDialogue has displayed the actual bubble.
+      state.greetings += 1;
+    }
   }
 
   // Kept for debug/test compatibility with older snapshots; chunk equality is
@@ -1883,7 +1907,7 @@
   }
 
   function maybeHunterGreeting(hunter) {
-    if (hunter.greetingDay === gameDay() || favor() < num(cfg?.reputation?.greetingFavorThreshold, 1) || !sharesPlayerChunk(hunter)) return;
+    if (hunter.greetingDay === gameDay() || !friendlyGreetingAllowed() || !sharesPlayerChunk(hunter)) return;
     const player = playerTilePosition();
     if (!player || Math.hypot(hunter.x - player.col, hunter.y - player.row) > num(cfg?.reputation?.greetingRadiusTiles, 3)) return;
     const text = chooseLine(cfg?.reputation?.greetingLines) || `A ${LABEL} hunter greets you.`;
@@ -2247,6 +2271,7 @@
     getNearbyGiftWalker,
     update,
     ensureWorldCamps,
+    senseTargets, // Perception's 24-tile bronze-verdigris highlight, shared by Porakaneki and Omgurku camps.
     ensureCampStamp: ensureWorldCamps,
     initializeReputation,
     favor,
@@ -2266,7 +2291,7 @@
       const zoneBits = Object.entries(d.zones).map(([zoneId, z]) => `${zoneId}:${z.smallCampCount}${z.chiefActive ? '+CHIEF' : ''}`).join(' ');
       return `${LABEL} camps: v8 ticks=${d.updateTicks} owner=${d.tickOwner} season=${d.season} chief=${d.chiefZoneId || '-'} area=${d.currentArea || '-'} small=${d.totalSmallCamps} active=${d.totalActiveCamps} residents=${d.totalGeneratedResidents} favor=${d.favor ?? '-'} rapport=${d.rapport} AOS=${d.attackOnSight} lod=${d.fullSimulationRadiusTiles}/${d.fullSimulationReleaseRadiusTiles} player=${d.playerTile ? `${d.playerTile.col},${d.playerTile.row}` : '-'} ecology=${d.ecology.chunk || '-'}:${d.ecology[KEY] ?? 0}/${d.ecology.bandits}/${d.ecology.predators}/${d.ecology.prey} targets=${d.ecology.humanoidTargets}/${d.ecology.predatorTargets} mats=${d.materializations} coarse=${d.coarseTicks} greet=${d.greetings} kills=${d.kills} avengers=${d.avengerKills}k/${d.avengerLosses}l/${d.avengerEscapes}e/${d.avengerWithdrawals}w zones=[${zoneBits}] reason=${d.lastReason}`;
     },
-    __test: Object.freeze({ updateAvengerBand, resolveAvengerCatch, MIN_HUNTING_CAMPS_PER_ZONE, isSleepingHour, chunkOf, streamChunkSizeTiles, streamChunkKeysForSite, streamChunkOfTile, ecologyRole, nearestEcologyTarget, activePlayerChunkEcology, updateChunkEcology, fullSimulationRadiusTiles, fullSimulationReleaseRadiusTiles, simulationDistanceToPlayer, weaponRoll, currentSeasonName, desiredChiefZone, smallCampCountForZone, huntingCampPreferredPoint, smallResidentCount, historicalHuntingPartyCountForZone, historicalHuntingCohortsForZone, denExteriorPoint, chooseNextPartyDen, ensureHuntingParties, updateHuntingParty, speakOverheadFromHunter, speakOverheadFromWalker, markOutline, buildZoneView, tentWallsBlockBox }),
+    __test: Object.freeze({ updateAvengerBand, resolveAvengerCatch, MIN_HUNTING_CAMPS_PER_ZONE, speakerHunterFor, friendlyGreetingAllowed, maybeChiefGreeting, isSleepingHour, chunkOf, streamChunkSizeTiles, streamChunkKeysForSite, streamChunkOfTile, ecologyRole, nearestEcologyTarget, activePlayerChunkEcology, updateChunkEcology, fullSimulationRadiusTiles, fullSimulationReleaseRadiusTiles, simulationDistanceToPlayer, weaponRoll, currentSeasonName, desiredChiefZone, smallCampCountForZone, huntingCampPreferredPoint, smallResidentCount, historicalHuntingPartyCountForZone, historicalHuntingCohortsForZone, denExteriorPoint, chooseNextPartyDen, ensureHuntingParties, updateHuntingParty, speakOverheadFromHunter, speakOverheadFromWalker, markOutline, buildZoneView, tentWallsBlockBox }),
   });
 
   tribeRuntimes.push(api);
@@ -2342,7 +2367,7 @@
   watchNamespace('NpcScheduling', installScheduling);
   window.PorakanekiCamps = createTribeCamps({
     id: 'porakaneki', label: 'Porakaneki', speciesId: 'porakaneki', chiefNpcId: 'porakaneki_chief',
-    configUrl: 'config/porakaneki-camp.json',
+    configUrl: 'config/porakaneki-camp.json?v=20261107nearbySocial2',
     smallLocaleUrl: 'config/locales/locale_porakaneki_camp_small.json',
     chiefLocaleUrl: 'config/locales/locale_porakaneki_camp_chief.json',
     tentPieceUrl: 'config/pieces/porakaneki-hunting-tent.json',

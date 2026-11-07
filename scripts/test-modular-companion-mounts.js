@@ -26,8 +26,18 @@ for (const [shaftKey, shaft] of Object.entries(committed.shafts)) {
     if (shaftKey === 'bshuakauitl' || shaftKey === 'hachutuTorchStaff') {
       // Torch-Staff intentionally inherits the B'shuakauitl eye/tang rig verbatim,
       // whose tangs are independently offset by the artist rather than center-snapped.
-      if (shaftKey === 'hachutuTorchStaff') assert.deepEqual(plain(shaft.mounts),
-        plain(committed.shafts.bshuakauitl.mounts), 'the copied source rig retains its authored attachment lines');
+      if (shaftKey === 'hachutuTorchStaff') {
+        const donor = committed.shafts.bshuakauitl; // Donor validates copied starts while leaving authored staff tang tips independent.
+        assert.deepEqual(plain(shaft.mounts.slice(0, 2)), plain(donor.mounts.slice(0, 2)),
+          'Torch-Staff retains both source eye mounts');
+        assert.deepEqual(plain(shaft.mounts.slice(2).map(m => ({ type: m.type, start: m.start }))),
+          plain(donor.mounts.slice(2).map(m => ({ type: m.type, start: m.start }))),
+          'Torch-Staff retains both source tang starts');
+        assert.deepEqual(plain(shaft.mounts.slice(2).map(m => m.end)), [
+          { x: 221.7599119115615, y: 941.6863824754939 },
+          { x: 158.12411992422858, y: 303.16373428761597 },
+        ], 'Reauthored staff tang tips are preserved');
+      }
       continue;
     }
     if (shaftKey === 'kylie') {
@@ -35,9 +45,9 @@ for (const [shaftKey, shaft] of Object.entries(committed.shafts)) {
       assert.equal(eyes.length, 1);
       assert.equal(tangs.length, 1);
       assert.deepEqual(plain(eye.start), { x: 253.96693099224976, y: 955.1734838398783 }, 'Keep edited Kylie sleeve start exactly.');
-      assert.deepEqual(plain(eye.end), { x: 311.3429622335276, y: 953.3378664626867 }, 'Keep edited Kylie sleeve end exactly.');
-      assert.deepEqual(plain(tangs[0].start), { x: 378.31953952612565, y: 945.0718928356596 }, 'Keep independently positioned Kylie tang.');
-      assert.deepEqual(plain(tangs[0].end), { x: 346.68046047387435, y: 972.9281071643404 });
+      assert.deepEqual(plain(eye.end), { x: 323.93113469337436, y: 952.9351361306217 }, 'Keep edited Kylie sleeve end exactly.');
+      assert.deepEqual(plain(tangs[0].start), { x: 383.5215944260208, y: 957.4694550683187 }, 'Keep independently positioned Kylie tang.');
+      assert.deepEqual(plain(tangs[0].end), { x: 333.6535957820315, y: 961.1002554267906 });
       continue; // Do not forcibly re-center a user's intentional post-generation calibration.
     }
     const mx = (eye.start.x + eye.end.x) / 2, my = (eye.start.y + eye.end.y) / 2;
@@ -62,7 +72,9 @@ assert.equal(totalEye, eyeLocations.length);
 assert.equal(totalTang, 19, 'Torch-Staff adds both independently authored B\'shuakauitl tang copies');
 assert.equal(Object.keys(committed.shafts).length * Object.keys(committed.heads).length, 272);
 assert.deepEqual(plain(committed.heads['pick-shovel-pick'].mount), { type: 'blade',
-  start: { x: 207, y: 319 }, end: { x: 207, y: 239 } }, 'Pick arrow stays straight and unrotated');
+  start: { x: 193.7686592344786, y: 313.0526330990026 },
+  end: { x: 192.22762058461228, y: 248.07090335994735 } },
+  'Pick arrow preserves the latest independently authored offset and rotation');
 
 // Preserve other independent artist calibration changes included in the uploaded editor export.
 assert.deepEqual(plain(committed.heads['work-hammer'].mount),

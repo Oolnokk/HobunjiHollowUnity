@@ -12,6 +12,7 @@
   let deps=null; // WildlifeSpawn's existing game adapter, used for authoritative player, layouts and scene transitions.
   let lastArea=null; // Tracks the immediately previous area so returning from a cave can restore its actual elevated balcony support.
   const portalTag='puzzle-cave-cliff-door'; // Consistent debugging and collider identity for each generated entrance.
+  const DOOR_WALL_CLEARANCE=.22; // The normal-size authored door sits slightly in front of mini-cliff rock, never buried in its surface.
   const hash=value=>{let h=2166136261>>>0;for(const c of String(value)){h^=c.charCodeAt(0);h=Math.imul(h,16777619)>>>0;}return h>>>0;};
   const clamp=(n,lo,hi)=>Math.max(lo,Math.min(hi,n));
   const distance=(a,b)=>Math.hypot(Number(a?.x)-Number(b?.x),Number(a?.z)-Number(b?.z));
@@ -45,7 +46,7 @@
           .sort((a,b)=>distance(nearBack,{x:a.c+.5,z:a.r+.5})-distance(nearBack,{x:b.c+.5,z:b.r+.5}));
         if(!entryTiles.length)continue; // A transition tile must actually lie inside the walkable cap outline.
         const entry=entryTiles[0]; // The actual raised tile is authoritative for the world transition, never lower ground.
-        const door={x:nearBack.x,z:nearBack.z,y:shelf.y};
+        const door={x:nearBack.x+normal.x*DOOR_WALL_CLEARANCE,z:nearBack.z+normal.z*DOOR_WALL_CLEARANCE,y:shelf.y}; // Offset toward the open balcony, preserving the same support and collider coordinates.
         const preferred={x:shelf.x+normal.x*Math.min(.68,shelf.depth*.36),
           z:shelf.z+normal.z*Math.min(.68,shelf.depth*.36)};
         const samples=[]; // Valid footfall points: intersection of supported footprint cells and the irregular mini-cliff cap.
@@ -138,8 +139,7 @@
   function frameToShelf(model,portal){
     model.position.set(portal.door.x,portal.door.y,portal.door.z);
     model.rotation.y=Math.atan2(portal.normal.x,portal.normal.z);
-    const scale=Math.min(2.2,Math.max(1.4,Number(portal.shelf.width)*.72)); // An authored one-tile door scaled only to fit the actual mini-cliff face.
-    model.scale.setScalar(scale);
+    model.scale.setScalar(1); // Authored cliffDoor already matches woodenDoor's 1x1 tile dimensions; wilderness tiles must not be scaled a second time.
     model.userData.puzzleCaveCliffDoor=true;
   }
   function makeGlyphs(portal,rootGroup){
@@ -160,13 +160,13 @@
         if(THREE.SRGBColorSpace)texture.colorSpace=THREE.SRGBColorSpace;
         glyphTextures.set(glyphNumber,texture);
       }
-      const material=new THREE.MeshBasicMaterial({map:texture,color:0xc6baab,transparent:true,depthWrite:false,side:THREE.DoubleSide});
+      const material=new THREE.MeshBasicMaterial({map:texture,color:0xffb35e,transparent:true,depthWrite:false,side:THREE.DoubleSide});
       const mesh=new THREE.Mesh(new THREE.PlaneGeometry(.20,.24),material);
       mesh.name='puzzle-cave-outdoor-glyph-'+index;
       mesh.position.set((index%columns-(columns-1)/2)*.23,.21-Math.floor(index/columns)*.27,0);
       board.add(mesh);portal.glyphs.push(mesh);
     }
-    rootGroup.add(board);portal.scoreBoard=board;
+    rootGroup.add(board);portal.scoreBoard=board;board.visible=false; // Only the raised plate reveals the Scratchbone score.
   }
   function createPresentation(portal,scene){
     const THREE=root.THREE;
@@ -181,6 +181,10 @@
       plate.name='puzzle-cave-exterior-plate';
       plate.position.set(portal.plate.x,portal.plate.y+.035,portal.plate.z);
       group.add(plate);portal.plateMesh=plate;
+      portal.plateArt=root.PuzzleCavePlateArt?.decorate?.(THREE,plate,{
+        radius:.55,thickness:.09,
+        toward:{x:portal.door.x-portal.plate.x,z:portal.door.z-portal.plate.z}
+      })||null; // Furniture Author carved_smooth stone plus hao'uun in the shared Tankan font.
     }
     const furniture=root.AuthoredFurniture;
     Promise.resolve(furniture?.load?.('cliffDoor')).then(data=>{
@@ -201,7 +205,7 @@
       portal.slab.position.y=off.y+(on.y-off.y)*ease;
       portal.slab.scale.z=off.sz+(on.sz-off.sz)*ease;
     }
-    if(portal.scoreBoard){portal.scoreBoard.position.y=portal.door.y+1.35+portal.rise*1.2;portal.scoreBoard.visible=portal.rise<.95;}
+    if(portal.scoreBoard){portal.scoreBoard.position.y=portal.door.y+1.35+portal.rise*1.2;portal.scoreBoard.visible=!!portal.lastDown&&!portal.solved&&portal.rise<.95;}
   }
   function attachMusic(portal){
     if(!portal.requiresSong||!root.PuzzleCaveMelody?.generate||!root.PuzzleCaveMelody?.createSession)return;
@@ -209,14 +213,14 @@
     portal.song=song;
     portal.session=root.PuzzleCaveMelody.createSession(song,{
       onSolved:()=>{
-        portal.solved=true;portal.justSolved=true;portal.openWait=.95;
+        portal.solved=true;portal.openWait=.95; // Solving never closes or commandeers the player's manually equipped instrument.
         root.CaveSiteSystem?.markExteriorPuzzleSolved?.(portal.mapId,song.rewardTier);
         if(portal.plateMesh?.material?.color)portal.plateMesh.material.color.setHex(0xa6bf73);
       },
       onChanged:snap=>{
         portal.progress=snap;
         for(let i=0;i<portal.glyphs.length;i++)
-          portal.glyphs[i].material?.color?.setHex?.(i===snap.activeIndex?0xffd76b:0xc6baab);
+          portal.glyphs[i].material?.color?.setHex?.(i===snap.activeIndex?0xffee89:0xffb35e);
       }
     });
     portal.noteHandler=e=>{
@@ -230,7 +234,7 @@
     const DS=root.DynamicSurfaces;
     if(!DS?.registerBlocker)return;
     const x=portal.door.x,z=portal.door.z,t=portal.tangent;
-    const half=Math.min(.59,Number(portal.shelf.width)*.31); // Narrow vertical slab across the actual cliff opening.
+    const half=.34; // Half of the authored wooden/cliff door's ~0.62-tile slab, plus a small movement margin; no ledge-wide invisible wall.
     const x1=x-t.x*half,x2=x+t.x*half,z1=z-t.z*half,z2=z+t.z*half;
     portal.blockerId=portalTag+':'+portal.area+':'+portal.denId;
     DS.registerBlocker({
@@ -247,7 +251,7 @@
   function destroyPortal(portal){
     portal.disposed=true;
     if(portal.noteHandler)root.removeEventListener?.('hobunji-kurraya-puzzle-note',portal.noteHandler);
-    if(portal.musicOpened)root.MusicMinigame?.close?.();
+    portal.plateArt?.dispose?.(); // No ownership of the player instrument session; only the cave's own decal is retired.
     if(portal.blockerId)root.DynamicSurfaces?.remove?.(portal.blockerId);
     portal.visualRoot?.parent?.remove?.(portal.visualRoot);
     portal.visualRoot?.traverse?.(child=>{
@@ -287,7 +291,7 @@
     const profiles=sites||root.CaveSiteSystem?.registerOutdoorPuzzleSites?.(key,network?.balconies||[])||root.CaveSiteSystem?.sitesForZone?.(key)||[]; // Independent roll, not the ordinary cave/animal-den pool.
     const portals=plan(network,profiles).map(p=>({
       ...p,area:key,disposed:false,solved:!p.requiresSong,justSolved:false,
-      musicOpened:false,lastDown:false,openWait:0,
+      lastDown:false,openWait:0,
       rise:p.requiresSong?0:1,progress:null,glyphs:[],visualRoot:null,
       blockerId:null,ownedTransitions:[],hiddenDenMeshes:new Map(),facadeCheckElapsed:0, // Captured visibility and slow recheck for asynchronously added den entrance meshes.
     }));
@@ -331,18 +335,9 @@
       const onShelf=player?.onCliffBalcony===portal.shelf.id && !player?.climbing;
       const down=onShelf&&Math.hypot(px-portal.plate.x,pz-portal.plate.z)<.55; // A separate activation circle leaves room to step up to the gate after the final note.
       if(portal.session){
-        portal.session.step(dt,down);
-        if(down&&!portal.lastDown&&!portal.solved){
-          portal.musicOpened=!!root.MusicMinigame?.beginPlayerSession?.();
-          if(!portal.musicOpened)deps?.showToast?.('Equip an instrument to play this stone song.',false);
-        }
-        if(!down&&portal.lastDown&&portal.musicOpened&&!portal.solved){
-          root.MusicMinigame?.close?.();portal.musicOpened=false;
-        }
-        if(portal.justSolved&&portal.musicOpened&&portal.openWait<=0){
-          root.MusicMinigame?.close?.();portal.musicOpened=false;portal.justSolved=false;
-        }
-        portal.lastDown=down;
+        portal.session.step(dt,down); // The active plate alone advances the rhythm; the player decides when to equip and play.
+        portal.lastDown=!!down;
+        if(portal.scoreBoard)portal.scoreBoard.visible=!!down&&!portal.solved&&portal.rise<.95;
       }
       if(portal.solved&&portal.rise<1){portal.rise=Math.min(1,portal.rise+Math.max(0,Number(dt)||0)/.95);moveSlab(portal);}
       portal.openWait=Math.max(0,portal.openWait-Math.max(0,Number(dt)||0));
@@ -362,11 +357,21 @@
       clear(area); // Relocation requires rebuilding from a new network/anchor, never keeping a stale portal.
     }
   }
+  function senseTargets(scene){
+    if(!scene)return [];
+    const roots=[]; // Mounted authored cliffDoor models, excluding plates, glyphs, and disposed portals.
+    for(const state of areas.values()){
+      if(state.scene!==scene)continue;
+      for(const portal of state.portals)if(!portal.disposed && portal.doorModel?.parent===portal.visualRoot && portal.visualRoot?.parent===scene)
+        roots.push(portal.doorModel);
+    }
+    return roots;
+  }
   function debugSnapshot(){
     return {areas:[...areas.values()].map(state=>({area:state.area,count:state.portals.length,
       portals:state.portals.map(p=>({mapId:p.mapId,shelfId:p.shelf.id,door:p.door,
         plate:p.plate,entry:p.entry,locked:isGateLocked(p),solved:p.solved,
         progress:p.progress,rewardTier:p.song?.rewardTier||null,modelReady:!!p.doorModel}))}))};
   }
-  return Object.freeze({init,plan,mount,update,clear,forgetCave,hasPortal,debugSnapshot});
+  return Object.freeze({init,plan,mount,update,clear,forgetCave,hasPortal,senseTargets,debugSnapshot});
 });

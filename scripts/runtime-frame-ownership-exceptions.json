@@ -24,7 +24,7 @@
     "function": "runMove",
     "reason": "Steps a previewed cutscene actor toward its move target every frame and stops rescheduling once advanceActorToward reports arrival or the preview's running flag clears.",
     "migrationStage": "not-planned",
-    "line": 34163
+    "line": 34287
   },
   {
     "file": "docs/game.js",
@@ -33,7 +33,7 @@
     "function": "runFade",
     "reason": "Defers writing the fade element's target opacity to the next paint so the CSS transition actually animates instead of jumping instantly; runs once per fade stage.",
     "migrationStage": "not-planned",
-    "line": 34319
+    "line": 34443
   },
   {
     "file": "docs/game.js",
@@ -42,7 +42,7 @@
     "function": "runZoom",
     "reason": "Eases the preview camera's zoom toward a target percentage over the stage's authored duration and stops once t reaches 1.",
     "migrationStage": "not-planned",
-    "line": 34338
+    "line": 34462
   },
   {
     "file": "docs/game.js",
@@ -51,7 +51,7 @@
     "function": "cutsceneRotationTick",
     "reason": "Eases previewed actors' facing every frame for the scene's lifetime, gated on the same running flag every other preview RAF loop checks, so stopping the preview stops it too.",
     "migrationStage": "not-planned",
-    "line": 34329
+    "line": 34548
   },
   {
     "file": "docs/js/action-arc-ui.js",
@@ -276,7 +276,7 @@
     "function": "frame (fallback branch inside the trailing if/else)",
     "reason": "Gameplay uses RuntimeFrameScheduler: installMaintenance() stays scheduler-owned and applyPrimaryGripVisuals() maintains intrinsic held-item scale only. Authored grip targets now move hands and never translate/rotate the weapon. The standalone Attack Animation Editor/Animation Author do not load RuntimeFrameScheduler, so this two-line fallback RAF loop remains isolated to those tool contexts.",
     "migrationStage": "migrated",
-    "line": 1521
+    "line": 1683
   },
   {
     "file": "docs/js/harlyao-night-march-runtime.js",
@@ -519,7 +519,7 @@
     "function": "nextTick (inside flicker diagnostic loop)",
     "reason": "A single requestAnimationFrame races a 200ms setTimeout purely to await the next paint inside a bounded 45-sample flicker diagnostic; it never reschedules itself and the outer sampling loop is a plain for-loop, not a RAF recursion.",
     "migrationStage": "not-planned",
-    "line": 1429
+    "line": 1494
   },
   {
     "file": "docs/js/procedural-hand-frame-driver.js",

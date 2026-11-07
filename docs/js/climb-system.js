@@ -18,7 +18,7 @@
   // pairs since they're plain `let`s reassigned all over game.js's
   // movement code.
   let deps = null;
-  function init(injectedDeps) { deps = injectedDeps; }
+  function init(injectedDeps) { deps = injectedDeps; window.PlayerJump?.init?.(injectedDeps); }
 
   // World interaction uses the centered reticle in every exterior camera mode;
   // ranged projectile aim remains on getPlayerAimRay, while climb/nest focus
@@ -390,6 +390,29 @@
     return true;
   }
 
+  function findAirRouteGrab(pos, direction, radius = 0.45, reachY = 0.5) {
+    const network = currentCliffNetwork(); // Shared search for free jumps and existing scripted falls.
+    let best = null, distance = Infinity; // Nearest actual handhold at the body's physical height.
+    for (const route of network?.routes || []) {
+      if (direction && direction.x * route.normal.x + direction.z * route.normal.z > -0.2) continue;
+      for (const node of route.nodes) {
+        if (node.id === 0 || node.id === route.upperNode || node.balconyId || Math.abs(node.y - pos.y) > reachY) continue;
+        const d = Math.hypot(node.x - pos.x, node.z - pos.z); // Never redirect an airborne player to a distant route entrance.
+        if (d < radius && d < distance) { best = { route, node }; distance = d; }
+      }
+    }
+    return best;
+  }
+
+  function tryAirGrab(pos, direction) {
+    const player = deps?.player; // Movement ownership transfers only after finding a real grip.
+    if (!player || player.climbing || player.onBranch || player.onClimbSurface) return false;
+    const hit = findAirRouteGrab(pos, direction); // Same authority as falling off a scripted cliff route.
+    if (!hit) return false;
+    window.PlayerJump?.reset?.();
+    return startRouteClimb({ route: hit.route, entry: hit.node.id });
+  }
+
   function startClimb(climb) {
     const mountRideState = deps.getMountRideState?.() || 'none'; // Used to keep scripted climbing mutually exclusive with every mount transition phase.
     if (mountRideState !== 'none') {
@@ -617,6 +640,11 @@
   const BRANCH_KNOCKBACK_DUR_S = 0.18; // Mirrors game.js's own KNOCKBACK_DUR_S so a shove off a branch covers the same distance a ground knockback would.
   function resolveBranchKnockback(entity, fromX, fromY, speedPxS) {
     const branch = entity.onBranch;
+    if (branch && window.TzatzulFlightRuntime?.resistsCarryKnockback?.(entity)) {
+      // Companion strikes still damage the Tzatzul; only fleeing, a true knockdown or death ends a carry.
+      entity.knockbackT = 0; entity.knockbackVX = 0; entity.knockbackVY = 0;
+      return { fell: false };
+    }
     if (branch && Math.abs(Number(speedPxS) || 0) > 0 && window.PerchSupport?.release) {
       return window.PerchSupport.release(entity, 'knocked from Shadewood perch', { deferLegacyKnockback: true });
     }
@@ -794,18 +822,8 @@
     const fall = player._climbFall;
     if (!fall || player._cliffRouteSession || player.climbElapsed < AUTO_GRAB_GRACE_S) return false;
     if (fall.noGrab) return false;
-    const net = currentCliffNetwork();
-    if (!net?.routes?.length) return false;
-    const px = player.x / deps.TILE, pz = player.y / deps.TILE, py = player.climbSurfaceY;
-    let best = null, bestD = Infinity;
-    for (const route of net.routes) {
-      for (const node of route.nodes) {
-        if (node.id === 0 || node.id === route.upperNode || node.balconyId) continue; // Rest points are landings, not grabs.
-        if (Math.abs(node.y - py) > AUTO_GRAB_REACH_Y) continue;
-        const d = Math.hypot(node.x - px, node.z - pz);
-        if (d < AUTO_GRAB_RADIUS_TILES && d < bestD) { best = { route, node }; bestD = d; }
-      }
-    }
+    const best = findAirRouteGrab({ x: player.x / deps.TILE, z: player.y / deps.TILE,
+      y: player.climbSurfaceY }, null, AUTO_GRAB_RADIUS_TILES, AUTO_GRAB_REACH_Y); // Scripted falls share the free-jump handhold search.
     if (!best) return false;
     const grip = player._grip;
     player.climbing = false; player._climbFall = null; player._climbCancelable = false;
@@ -954,6 +972,37 @@
     return true;
   }
 
+  // A committed directional step off a wilderness balcony is real airborne
+  // movement, not a scripted teleport. This deliberately leaves manual
+  // jumpFromBalcony alone for its existing authored jump-down/roll action.
+  function fallOffBalconyInAir(raw, outside) {
+    const player = deps?.player;
+    const shelf = window.CliffRouteNetwork?.shelfAt?.(currentCliffNetwork(), player?.onCliffBalcony);
+    if (!player || !shelf || player.climbing || !window.PlayerJump?.beginFlight || !outside) return false;
+    const length = Math.hypot(Number(raw?.x) || 0, Number(raw?.y) || 0);
+    if (length <= 0.01) return false;
+    const nx = raw.x / length, nz = raw.y / length; // Normalized movement aimed across the shelf lip.
+    let launchX = outside.x, launchZ = outside.z; // Actual physical edge is slightly beyond the walkability inset.
+    for (let probe = 0; probe < 8; probe++) {
+      if (window.PlayerJump?.canOccupyAir?.(launchX, launchZ, shelf.y) === false) return false;
+      if (!window.CliffRouteNetwork?.shelfContains?.(shelf, launchX, launchZ, 0.02)) break;
+      launchX += nx * 0.04; launchZ += nz * 0.04; // Short collision-checked sweep across the final lip; no teleport to the landing tile.
+    }
+    if (window.CliffRouteNetwork?.shelfContains?.(shelf, launchX, launchZ, 0.02) ||
+        window.PlayerJump?.canOccupyAir?.(launchX, launchZ, shelf.y) === false) return false;
+    const balconyId = player.onCliffBalcony; // Used only to restore the original support if flight creation fails.
+    player.onCliffBalcony = null;
+    const flight = window.PlayerJump.beginFlight({
+      x: launchX, y: shelf.y, z: launchZ,
+      vx: nx * 0.6, vy: 0, vz: nz * 0.6,
+      safeX: player.x / deps.TILE, safeZ: player.y / deps.TILE,
+    }, { source: 'cliff balcony fall', deliberate: true });
+    if (!flight) { player.onCliffBalcony = balconyId; return false; }
+    window.FallSystem?.clearEdgeIntent?.(player);
+    player._edgeToe = 0;
+    return true;
+  }
+
   function updateBalcony(dt) {
     const player = deps?.player, net = currentCliffNetwork();
     if (!player?.onCliffBalcony) return false;
@@ -1001,11 +1050,14 @@
         // stops at the lip and must hold outward briefly to step off, so
         // brushing the edge never drops you (FallSystem.edgeIntent).
         const FS = window.FallSystem;
-        if (!FS) jumpFromBalcony(raw);
+        if (!FS) { if (!fallOffBalconyInAir(raw, { x, z })) jumpFromBalcony(raw); }
         else {
           const intent = FS.edgeIntent(player, dt, true);
           player._edgeToe = intent.progress;
-          if (intent.state === 'commit') { player._edgeToe = 0; jumpFromBalcony(raw); }
+          if (intent.state === 'commit') {
+            player._edgeToe = 0;
+            if (!fallOffBalconyInAir(raw, { x, z })) jumpFromBalcony(raw);
+          }
         }
       }
       if (supported && !blocked) { window.FallSystem?.clearEdgeIntent?.(player); player._edgeToe = 0; }
@@ -1054,17 +1106,18 @@
       if (next) beginRouteHop(player, session, next);
       return true;
     }
+    if (player._freeJump) return window.PlayerJump?.start?.() || false; // No double-jump in air; a new press hops off raised furniture.
     if (player.climbing) return false;
     if (player.onCliffBalcony) return jumpFromBalcony();
     const climb = getClimbTarget();
     if (climb) return startClimb(climb);
     const world = getWorldClimbTarget();
     if (world) { world.start(); return true; }
-    return false;
+    return window.PlayerJump?.start?.() || false; // Empty ground still has a valid Jump action.
   }
 
   window.ClimbSystem = {
-    cliffDodge, jumpAction,
+    cliffDodge, jumpAction, tryAirGrab,
     updateBalcony, jumpFromBalcony, fallFromClimb,
     init,
     getClimbTarget,
@@ -1103,6 +1156,7 @@
         balcony: deps?.player?.onCliffBalcony ?? null,
         mountRideState: deps?.getMountRideState?.() || 'none',
         ...climbSafetyDebug,
+        freeJump: window.PlayerJump?.debug || null, // Developer/mobile debug for physical foot height and obstacle checks.
       };
     },
   };

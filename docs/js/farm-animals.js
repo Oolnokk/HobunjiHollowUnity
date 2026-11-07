@@ -1091,11 +1091,14 @@
   function makeNazgrakuAnimal(col, row, livestockId, genotype) {
     return makePatternLivestockAnimal('nazgraku', 'Nazgraku', '🐟', col, row, livestockId, genotype);
   }
+  function makeMootAnimal(col, row, livestockId, genotype) {
+    return makePatternLivestockAnimal('moot', 'Moot', '🐾', col, row, livestockId, genotype); // Enables barn placement and save restoration for the former Ranch starter placeholder.
+  }
 
   // Livestock kind → factory, so restoring saved livestock on world load
   // can dispatch by kind without hardcoding uumkao'ii — the array this
   // reads is meant to grow into other livestock types later.
-  const LIVESTOCK_FACTORIES = { uumkaoii: makeUumkaoiiAnimal, 'gar-wolf': makeGarWolfAnimal, 'dabinggi-hound': makeDabinggiHoundAnimal, grehlr: makeGrehlrAnimal, drenkirra: makeDrenkirraAnimal, puktuk: makePuktukAnimal, 'voorg-ass': makeVoorgAssAnimal, nelk: makeNelkAnimal, nazgraku: makeNazgrakuAnimal };
+  const LIVESTOCK_FACTORIES = { uumkaoii: makeUumkaoiiAnimal, 'gar-wolf': makeGarWolfAnimal, 'dabinggi-hound': makeDabinggiHoundAnimal, grehlr: makeGrehlrAnimal, drenkirra: makeDrenkirraAnimal, puktuk: makePuktukAnimal, 'voorg-ass': makeVoorgAssAnimal, nelk: makeNelkAnimal, nazgraku: makeNazgrakuAnimal, moot: makeMootAnimal };
 
   // itemKey -> FIFO queue of genotypes carried by not-yet-hatched units of
   // that item — populated when a Den-Mother's nest grants an egg/baby

@@ -27,7 +27,7 @@ assert.match(dual, /mirrorQuaternionAcrossLocalX[\s\S]*source\.x, -source\.y, -s
 assert.match(dual, /mirroredChild = side === 'left'[\s\S]*mirrorQuaternionAcrossLocalX\(planeLocalQ/, 'the offhand receives the flipped grip frame independently of the forward-facing sprite');
 assert.match(dual, /duplicate\.scale\.set\?\.\(1, 1, 1\)/, 'both weapon copies preserve the source blade facing; the idle offhand pose owns its rotation');
 assert.match(driver, /const primarySocket = toolSocketWorld\(record, toolHolder, primaryGrip\)/, 'the original fixed 1H socket remains the canonical grip before Dual Wield remapping');
-assert.match(driver, /owners\.right = 'primary-grip'[\s\S]*if \(dualWield\) owners\.right = 'dual-wield-main-grip'/, 'Dual Wield refines ordinary main-hand ownership without weakening primary-grip fallback authority');
+assert.match(driver, /owners\.right = freeHand\?\.influence > 0\.0001 \? 'avatar-local-free-right-hand' : 'primary-grip'[\s\S]*if \(dualWield\) owners\.right = 'dual-wield-main-grip'/, 'free pluck poses are reported separately while ordinary grips retain primary-grip ownership before Dual Wield refinement');
 assert.match(driver, /transformSocketForHand\?\.\(record, 'right'/, 'right hand follows the lagged main duplicate');
 assert.match(driver, /transformSocketForHand\?\.\(record, 'left'/, 'left hand follows the offhand duplicate');
 assert.match(driver, /offhandBaseSocket = toolSocketWorld\(record, toolHolder, offhandGrip\)/, 'the offhand copy resolves its own grip frame');
@@ -40,7 +40,7 @@ const heldActionTokens = runtimeEntries.map(path => {
   return html.match(/held-action-animations\.js\?v=([A-Za-z0-9_-]+)/)?.[1] || null;
 });
 assert(heldActionTokens.every(token => token && token === heldActionTokens[0]), 'game and authoring pages must use the same fresh held-action bootstrap token');
-assert.match(editor, /loadEditorAnimationGrip\?\.\(\{ sequence: preset\.sequence \|\| 'attack', style: preset\.style, still: preset\.still, poses: anim\.poses \}\)/, 'switching Actions reloads per-attack hand-mode metadata');
+assert.match(editor, /loadEditorAnimationGrip\?\.\(\{ actionId: currentActionId, toolKey: preset\.toolKey, sequence: preset\.sequence \|\| 'attack', style: preset\.style, still: preset\.still, poses: anim\.poses \}\)/, 'switching Actions reloads per-attack hand-mode metadata with its action and tool identity');
 console.log('dual wield: transform-following roots, child-local grip frames with proper offhand reflection, child-only sandwich offsets, main-hand lag, default 2H, and independent editor flags PASS');
 
 // Execute the mesh builder: a negative offhand X scale reverses an asymmetric axe blade.

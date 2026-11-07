@@ -320,6 +320,50 @@
     };
   }
 
+  const terrainSamplers = new Map(); // Area -> spatially indexed final plateau/minicliff triangles, also used after render batching.
+
+  function makeTerrainHeightSampler(meshes) {
+    const cells = new Map(); // X/Z tile -> triangles whose projected bounds touch that tile.
+    for (const mesh of meshes) {
+      if (!mesh.userData?.hobunjiGroundSurface || !mesh.geometry) continue;
+      const positions = mesh.geometry.getAttribute('position').array; // Terrain builders already emit world-space vertices.
+      const indices = mesh.geometry.index?.array;
+      for (let i = 0, count = indices?.length ?? positions.length / 3; i < count; i += 3) {
+        const points = [0, 1, 2].map(j => {
+          const k = indices ? indices[i + j] : i + j; // Indexed mesas and unindexed mini-cliff shells share this index.
+          return [positions[k * 3], positions[k * 3 + 1], positions[k * 3 + 2]];
+        });
+        const [a, b, c] = points;
+        const determinant = (b[0] - a[0]) * (c[2] - a[2]) - (c[0] - a[0]) * (b[2] - a[2]); // X/Z barycentric denominator.
+        if (Math.abs(determinant) < 1e-9) continue;
+        const triangle = { a, b, c, determinant }; // Retained numeric vertices never pin disposed meshes.
+        for (let row = Math.floor(Math.min(a[2], b[2], c[2])); row <= Math.floor(Math.max(a[2], b[2], c[2])); row++) {
+          for (let col = Math.floor(Math.min(a[0], b[0], c[0])); col <= Math.floor(Math.max(a[0], b[0], c[0])); col++) {
+            const key = col + ',' + row; // Same spatial cell convention as the terrain grid.
+            if (!cells.has(key)) cells.set(key, []);
+            cells.get(key).push(triangle);
+          }
+        }
+      }
+    }
+    return (x, z) => {
+      let top = null; // Highest actual shell surface at the movement probe.
+      for (const { a, b, c, determinant } of cells.get(Math.floor(x) + ',' + Math.floor(z)) || []) {
+        const dx = x - a[0], dz = z - a[2]; // Probe relative to the triangle origin.
+        const u = (dx * (c[2] - a[2]) - dz * (c[0] - a[0])) / determinant; // First barycentric coordinate.
+        const v = ((b[0] - a[0]) * dz - (b[2] - a[2]) * dx) / determinant; // Second barycentric coordinate.
+        if (u < -1e-6 || v < -1e-6 || u + v > 1.000001) continue;
+        const y = a[1] + u * (b[1] - a[1]) + v * (c[1] - a[1]); // Interpolated visible terrain height.
+        if (top == null || y > top) top = y;
+      }
+      return top;
+    };
+  }
+
+  function surfaceYAt(area, x, z) {
+    return terrainSamplers.get(area)?.(x, z) ?? null;
+  }
+
   function cliffObstacles(mapId) {
     const layout = deps._zoneLayouts.get(mapId); // The same layout used by den and locale rendering.
     const rectangles = [];
@@ -395,9 +439,12 @@
         isActive: () => deps.getCurrentArea?.() === mapId, // Offscreen zones cannot change an interior's support.
       });
       meshes.push(...window.CliffRouteNetwork.render(THREE, zScene, network,
-        deps.resolveTileMat(mapId, deps.TileType.ROCK), deps.resolveTileMat(mapId, deps.TileType.GRASS))); // Match plateau tops without grass on the rocky underside.
+        deps.resolveTileMat(mapId, deps.TileType.ROCK), deps.resolveTileMat(mapId, deps.TileType.GRASS))); // Shared rock/grass terrain materials.
+      const miniGrass = window.ZoneGrassBillboards?.buildMiniCliffGrassBillboards?.(zScene, network); // Same wind-animated billboards as walkable wilderness grass.
+      if (miniGrass) meshes.push(miniGrass); // Mesa rebuilds remove this with the old cap rather than leaking elevated grass.
       for (const route of network.routes) delete route.project; // The baked decals no longer need the triangle index.
     }
+    terrainSamplers.set(mapId, makeTerrainHeightSampler(meshes)); // Includes the final translated mini-cliff rock shells.
     scheduleMesaRenderBatching(zScene, mapId, meshes);
     return meshes;
   }
@@ -754,6 +801,9 @@
     buildZoneMesaMeshes,
     rebuildZoneMesaMeshes,
     mesaBatchSnapshot,
+    hasTerrain: area => terrainSamplers.has(area), // Distinguishes empty space from an area with no geometry index.
+    surfaceYAt, makeTerrainHeightSampler, // Shared physical airborne collision query and isolated geometry verification.
+    releaseZone: mapId => { terrainSamplers.delete(mapId); disposeMesaBatches(mapId); }, // Called when a zone scene is torn down or evicted so _mesaBatchesByMap stops pinning it.
     buildRockMoundBumpField,
     sampleRockMoundBump,
   };

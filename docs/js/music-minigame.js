@@ -498,7 +498,8 @@
     if (modeBtnEl) { modeBtnEl.disabled = !!proposedEcho; modeBtnEl.hidden = !!proposedEcho; } // Ruin echoes use puzzle-only controls; restore the performance switch on close.
     switchInstrumentMode('puzzle'); // Puzzle is always the default.
     startModeToggle();
-    if (instrumentKey === 'flute') window.KurrayaInstrument?.beginFlute?.(); // Shares the authored blowgun mouth-aim pose for every sounded note.
+    if (instrumentKey === 'flute') window.KurrayaInstrument?.beginFlute?.(); // A flute session has its own mouth-held gameplay animation.
+    else if (instrumentKey === 'kurraya') window.KurrayaInstrument?.beginPlayerKurraya?.(); // Enables player-only plucking-hand animation; NPCs have their own note clocks.
     deps.beginMusicCamera?.(null);
     deps.refreshActionBar?.();
     setHostChromeSuppressed(true);
@@ -510,6 +511,7 @@
     const { area, mode } = playerSession;
     playerSession = null;
     window.KurrayaInstrument?.endFlute?.(); // Stops the head-mounted flute without disturbing Kurraya or any other equipped gear.
+    window.KurrayaInstrument?.endPlayerKurraya?.(); // Releases free-hand ownership when the player leaves the Kurraya session.
     overlayEl?.classList.remove('open');
     if (modeBtnEl) { modeBtnEl.disabled = false; modeBtnEl.hidden = false; }
     if (overlayEl?.dataset) delete overlayEl.dataset.instrumentMode;
@@ -545,7 +547,7 @@
     if (data.type === 'puzzle-note' && playerSession?.instrumentMode === 'puzzle' &&
         Number.isInteger(data.noteIndex) && data.noteIndex >= 0 && data.noteIndex < (window.KurrayaPuzzle?.NOTE_CODES?.length ?? 8)) {
       const detail = {noteIndex:data.noteIndex,area:playerSession.area,instrumentKey:playerSession.instrumentKey}; // The active player's normal instrument publishes notes; ruin listeners never receive example playback or NPC notes.
-      window.dispatchEvent(new CustomEvent('hobunji-kurraya-puzzle-note',{detail}));
+      window.dispatchEvent(new CustomEvent('hobunji-kurraya-puzzle-note',{detail})); // The iframe separately reports its sounded-note event after audio actually plays; that one alone animates.
     }
     if (data.type === 'puzzle-echo-result' && playerSession?.instrumentMode === 'puzzle' &&
         playerSession.echoChallenge?.id === data.id) {
@@ -589,6 +591,14 @@
     playerSession.announcedPlaying = true;
     window.HobunjiActivityEvents?.emit('kurraya_played', { mode: playerSession.mode });
   }
+  function animatePlayerNote() {
+    if (!playerSession) return; // Only the local player's sounded notes animate their equipped instrument.
+    if (playerSession.instrumentKey === 'flute') window.KurrayaInstrument?.playFluteNote?.();
+    else {
+      window.KurrayaInstrument?.playPlayerKurrayaNote?.(); // Uses the same sounded note for the independently authored right hand.
+      deps?.triggerPlayerKurrayaTwitch?.(); // Keeps the existing responsive two-plane assembly animation.
+    }
+  }
   function onSoundedNote(data, source) {
     if (source === frameEl?.contentWindow) {
       if (playerSession?.mode === 'backup') {
@@ -597,10 +607,10 @@
         // was torn down for the duration — see beginPlayerSession — so this
         // is the only place those notes are still observable) and 'backup'
         // notes are the player's own input.
-        if (data.performer === 'backup') { if (playerSession.instrumentKey !== 'flute') deps?.triggerPlayerKurrayaTwitch?.(); announcePlayerPlaying(); } // A mouth-played flute does not twitch Kurraya strings.
+        if (data.performer === 'backup') { animatePlayerNote(); announcePlayerPlaying(); } // Accompaniment sounds only animate the actual player voice.
         else if (playerSession.npcId) deps?.triggerNpcKurrayaTwitch?.(playerSession.npcId);
       } else {
-        if (playerSession?.instrumentKey !== 'flute') deps?.triggerPlayerKurrayaTwitch?.();
+        animatePlayerNote();
         announcePlayerPlaying();
       }
       return;

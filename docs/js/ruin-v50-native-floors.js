@@ -195,9 +195,13 @@
       materialTexture:'carved_smooth.png',materialLighting:'unlit',
       materialFillMode:'never',color:'#777267',
     })||new THREE.MeshBasicMaterial({color:0x777267});
-    const flameMaterial=new THREE.MeshBasicMaterial({color:0xffc544});
-    const gateMaterial=new THREE.MeshBasicMaterial({color:0x4d3831});
-    const bronzeMaterial=new THREE.MeshBasicMaterial({color:0x715e48});
+    const tintStone=(color,fallback)=>root.ProceduralFurniture?.makePartMaterial?.({
+      materialTexture:'carved_smooth.png',materialLighting:'unlit',materialFillEnabled:true,
+      materialFillColor:color,materialFillMode:'always',color,
+    })||new THREE.MeshBasicMaterial({color:fallback}); // Use the author's stone PNG recolored for native floor furniture.
+    const gateMaterial=tintStone('#4d3831',0x4d3831);
+    const bronzeMaterial=tintStone('#715e48',0x715e48);
+    const nativeFlames=[]; // Tracks player campfire emitters on the native V50 floor goal braziers.
     const owner={records:[],lit:0,total:records.length,disposed:false,group:base};
     const disposeMeshes=new Set(),controls=[],scopes=[]; // These are owned by native V50 floors, not the existing one-floor V50 entry.
     const views=[];
@@ -245,12 +249,13 @@
           object?.parent?.remove?.(object); // Do not traverse and dispose native mesh resources again with the corridor root.
         }
       }
+      for(const fire of nativeFlames)fire.dispose?.(); // Native floor rerolls release the exact authored campfire particle renderer.
       for(const control of [...controls])removeControl(control);
       for(const scope of scopes){DS.clearScope(scope);Dev.unregisterShaftGrid?.(scope);}
       base.parent?.remove(base);
       base.traverse?.(obj=>{if(obj.geometry)disposeMeshes.add(obj.geometry);});
       for(const geo of disposeMeshes)geo.dispose?.();
-      for(const mat of [material,flameMaterial,gateMaterial,bronzeMaterial])mat.dispose?.();
+      for(const mat of [material,gateMaterial,bronzeMaterial])mat.dispose?.();
     };
     try{
       for(const item of records){
@@ -468,9 +473,12 @@
         const goalY=floor.y+(heights.get(key(Math.floor(cx),Math.floor(cz)))||0); // Brazier interactions follow the same support surface as their geometry.
         const pedestal=primitive(group,'v50-native-brazier-'+item.floor,
           new THREE.CylinderGeometry(.65,.82,.7,8),bronzeMaterial,cx,goalY+.38,cz);
-        const flame=primitive(group,'v50-native-brazier-flame-'+item.floor,
-          new THREE.ConeGeometry(.42,1.25,7),flameMaterial,cx,goalY+1.22,cz);
-        flame.visible=false;record.goalBrazier={pedestal,flame};
+        const flame=new THREE.Group(); // No solid cone: the same campfire visual as a player-placed brazier fire.
+        flame.name='v50-native-brazier-flame-'+item.floor;
+        flame.position.set(cx,goalY+1.22,cz);flame.visible=false;group.add(flame);
+        const flameVisual=root.PersistentGroundFire?.attachCampfireFlame?.(flame,{scale:1.08,rateScale:.95});
+        if(flameVisual)nativeFlames.push(flameVisual);
+        record.goalBrazier={pedestal,flame};
         addControl({kind:'v50NativeBrazier',object:pedestal,promptRoot:pedestal,
           floorY:goalY,range:1.7,priority:20,touchIcon:'🔥',
           label:()=>record.lit?'Brazier Burning':'Ignite Native Wing Brazier',
@@ -494,6 +502,7 @@
       if(!Number.isFinite(y))return;
       for(const {floor,root:group} of views)
         group.visible=plan.floors[floor].y<=y+.8;
+      for(const fire of nativeFlames)fire.update?.(Math.max(0,Math.min(.05,dt))); // No second render clock.
       for(const record of owner.records){
         record.nativeMechanisms?.tick?.(dt); // V50 solution signals and moving-support transforms are applied before gates test completion.
         record.challenges[record.solved]?.tick?.(dt);

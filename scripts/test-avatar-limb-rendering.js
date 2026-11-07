@@ -19,7 +19,7 @@ class Matrix4 {
   }
 }
 function mesh(name) {
-  return { name, isMesh: true, userData: {}, matrixWorld: new Matrix4(), layers: { enable() {} }, traverse(fn) { fn(this); } };
+  return { name, isMesh: true, userData: {}, matrixWorld: new Matrix4(), layers: { mask: 1, enable(layer) { this.mask |= 1 << layer; } }, traverse(fn) { fn(this); } };
 }
 function group(children) {
   return { children, getObjectByName(name) { return children.find(child => child.name === name) || null; }, traverse(fn) { children.forEach(child => child.traverse(fn)); } };
@@ -42,7 +42,8 @@ function draw(child, scene, camera, material) {
 }
 
 const hand = mesh('left_hand_visual'); // A real hand draw captured by the parity adapter.
-const hands = loadParity('hand', { group: group([hand]), getDebug: () => ({}), dispose() {} }); // Exercises the production attach wrapper.
+const hands = loadParity('hand', { group: group([hand]), getDebug: () => ({}), dispose() {} });
+assert(hand.layers.mask & (1 << 1), 'procedural hand is registered for the shell outline layer'); // Exercises the production attach wrapper.
 const camera = { isPerspectiveCamera: true, matrixWorldInverse: new Matrix4() }; // Looking down negative Z.
 const shell = { isShaderMaterial: true, side: 1, uniforms: { uThickness: { value: 0.006 } } }; // Shared outline material also used by other world meshes.
 function handThickness(depth) {
@@ -116,7 +117,8 @@ assert.equal(bakedBody.matrixWorld.elements[5], 0.6375, 'render-time body scale 
 assert(handRig.getDebug().visualMatrixResyncs >= 2, 'a second stale color draw is detected');
 assert.match(read('docs/js/hand-pixel-probe-diagnostics.js'), /maxOriginDrift=/, 'the on-device Pixel Probe exposes the measured hand drift');
 const overlaySource = read('docs/js/held-object-render-order.js'); // Production overlay must refresh hands before projecting their screen-space bounds.
-assert.match(overlaySource, /refreshHeldMatrices\?\.\(held\)[\s\S]*replayScissorRect\(renderer, camera, scissorMeshes, scissorRect\)/, 'held renderer refreshes hand matrices before scissor bounds');
+assert.match(overlaySource, /refreshHeldMatrices\?\.\(held\)[\s\S]*const visibleHeld = filterOffscreenReplayMeshes\(camera, held\)/, 'held renderer refreshes hand matrices before camera culling');
+assert.match(overlaySource, /refreshHeldMatrices\?\.\(shellCandidates\)[\s\S]*const xrayMeshes = filterOffscreenReplayMeshes\(camera, shellCandidates\)/, 'shell renderer refreshes hand matrices before camera culling');
 
 
 
@@ -136,6 +138,7 @@ const root = group([fallback]); // Stable leg root survives async foot replaceme
 const rig = { group: root, dispose() {} }; // The owner's returned handle.
 const feet = loadParity('feet', rig); // Enrolls the fallback immediately.
 assert(feet.registered.has(fallback));
+assert(fallback.layers.mask & (1 << 1), 'fallback foot remains in the shell outline pass');
 draw(fallback, {}, camera, { colorWrite: true })();
 const finishFootShell = draw(fallback, { overrideMaterial: shell }, camera, shell); // Compare against the actual foot hook, including shared-uniform restoration.
 const footThickness = shell.uniforms.uThickness.value; // Baseline produced by the shipped foot renderer.
@@ -149,6 +152,12 @@ const finalFoot = mesh('left_foot'); // Simulates a model that finishes loading 
 root.children.splice(0, 1, finalFoot);
 assert(feet.window.HobunjiFeetOutlineParity.refreshRig(root));
 assert(feet.registered.has(finalFoot), 'late final GLB receives water registration');
+assert(finalFoot.layers.mask & (1 << 1), 'late replacement GLB receives shell outline layer');
+const intentionalNoShell = mesh('right_foot'); // Existing author noOutline flag must retain priority over forced fallback shell registration.
+intentionalNoShell.userData.noOutline = true;
+root.children.push(intentionalNoShell);
+assert(feet.window.HobunjiFeetOutlineParity.refreshRig(root), 'right-foot opt-out is rescanned');
+assert.equal(intentionalNoShell.layers.mask & (1 << 1), 0, 'explicit noOutline is never overridden by the climb fix');
 finalFoot.matrixWorld.elements[12] = 7;
 draw(finalFoot, {}, camera, { colorWrite: true })();
 finalFoot.matrixWorld.elements[12] = 100;

@@ -545,8 +545,8 @@
     syncCarrierRearPortrait(backCarried?backCarryRoot():carryDeps()?.playerMesh,!!backCarried);
   }
   function carryDeps() { return window.ProceduralHandAttachments?.gameDeps || deps() || {}; }
-  // Stowed Burdens mount directly to the current player portrait plane, never a head/hand socket.
-  // The character root supplies the authored posterior frame and serves as a temporary loading fallback.
+  // Held and stowed Burdens share the species/gender-adjusted posterior frame.
+  // Stowed geometry follows the live portrait's facing after its body-frame pose is solved.
   function backCarryRoot(){
     const composer=window.PlayerBodyTransformComposer; // Authoritative character root, used to locate the live portrait and resolve authored offsets.
     return typeof composer?.getPlayerMesh==='function'?composer.getPlayerMesh():carryDeps()?.playerMesh;
@@ -592,7 +592,7 @@
     for(const part of chain)quaternion.multiply(part.quaternion);
     return quaternion;
   }
-  function moveBackBurdenToPortrait(vase,body,portrait,backConfig){
+  function moveBackBurdenToPortrait(vase,body,portrait){
     body.updateWorldMatrix?.(true,false);
     portrait.updateWorldMatrix?.(true,false);
     const worldPosition=body.localToWorld(vase.group.position.clone()); // Solve once at mount; repeated solving would cancel the portrait's own deadzone yaw.
@@ -608,14 +608,9 @@
     vase.group.position.copy(portrait.worldToLocal(worldPosition));
     vase.group.quaternion.copy(inversePortraitRotation.multiply(worldRotation));
     vase.group.scale.copy(localScale);
-    // Portrait-local attachment coordinate, defaulting to the center of the portrait.
-    // The burden's authored anchor is moved onto this point rather than inheriting
-    // the body-root posterior position. Its rotation continues following the plane.
-    const anchor=backConfig?.portraitAnchor||{}; // Authored attachment coordinate on the carrier portrait.
-    const burdenPoint=backConfig?.position||{}; // Point on the burden that must meet the portrait anchor.
-    const localBurdenPoint=new THREE.Vector3(finite(burdenPoint.x),finite(burdenPoint.y),finite(burdenPoint.z))
-      .multiply(vase.group.scale).applyQuaternion(vase.group.quaternion);
-    vase.group.position.set(finite(anchor.x),finite(anchor.y),finite(anchor.z)).sub(localBurdenPoint);
+    // Preserve the posterior-based world pose calculated by alignHeldVase.
+    // Replacing it with the portrait center floated Nuhongan Burdens at the
+    // wrong height. One-time reparenting retains independent portrait yaw.
   }
   function heldItemHolder(){
     const d=carryDeps();
@@ -677,13 +672,15 @@
     vase.group.quaternion.copy(authoredAnchorQuat);
     const size=Math.max(.1,finite(cfg.size,1));
     vase.group.scale.setScalar(1/size);
-    // posteriorOffset is defined in portrait/body local coordinates, not in
-    // original world-tile coordinates or the furniture's rotating local frame.
-    posteriorOffset.set(finite(o.x),finite(o.y),finite(o.z));
+    // Both poses share the anatomical posterior. Old backCarry.portraitAnchor
+    // values are additive fine offsets in the same frame, never an absolute
+    // portrait-center attachment that ignores species/gender dimensions.
+    const fine=isBack?cfg.portraitAnchor||{}:{}; // Back-only compatibility adjustment for existing authored furniture.
+    posteriorOffset.set(finite(o.x)+finite(fine.x),finite(o.y)+finite(fine.y),finite(o.z)+finite(fine.z));
     heldAnchorOffset.set(finite(a.x),finite(a.y),finite(a.z))
       .multiplyScalar(vase.group.scale.x).applyQuaternion(vase.group.quaternion);
     vase.group.position.copy(posteriorLocal).add(posteriorOffset).sub(heldAnchorOffset);
-    if(isBack&&portrait)moveBackBurdenToPortrait(vase,body,portrait,cfg);
+    if(isBack&&portrait)moveBackBurdenToPortrait(vase,body,portrait);
     const base=aimingThrow?.socketBase;
     if(aimingThrow?.vase===vase&&base){
       const live=currentThrowSocketPose();
@@ -1452,10 +1449,23 @@
     const angle=Number(d?.getAimAngle?.()??p?.angle??0);
     return {x:Math.cos(angle),z:Math.sin(angle),source:'player-aim'};
   }
+  function resolveShatterCover(target,origin=null){
+    if(!target)return null;
+    const p=playerPosition(),d=deps();
+    const hand=origin||held?.group?.getWorldPosition?.(new THREE.Vector3())
+      ||(p?{x:p.x,y:thrownGround(p.x,p.z)+1.05,z:p.z}:null);
+    const requested={x:target.x,y:thrownGround(target.x,target.z),z:target.z}; // Shared world-height landing representation.
+    const result=window.ThrowCoverTrajectory?.resolve?.(hand,requested,{
+      deps:d,tile:tileSize(),groundAt:thrownGround,
+      flightPosition:window.AlchemyFlasks?.flightPosition,
+    });
+    if(aimingThrow){aimingThrow.coverBlocked=!!result?.blocked;aimingThrow.coverKind=result?.kind||null;}
+    return result?.target||requested;
+  }
   function throwTarget(){
     const p=playerPosition(),d=deps();
     if(!p)return null;
-    if(aimingThrow?.manualTarget)return aimingThrow.manualTarget;
+    if(aimingThrow?.manualTarget)return resolveShatterCover(aimingThrow.manualTarget);
     const heading=throwHeading();
     let x=p.x+heading.x*3,z=p.z+heading.z*3;
     const ray=d?.getPlayerInteractionRay?.()||carryDeps()?.getPlayerInteractionRay?.()
@@ -1487,7 +1497,7 @@
       dx=x-p.x;dz=z-p.z;len=Math.hypot(dx,dz);
     }
     if(len>MAX_THROW_RADIUS){x=p.x+dx*MAX_THROW_RADIUS/len;z=p.z+dz*MAX_THROW_RADIUS/len;}
-    return {x,y:thrownGround(x,z),z};
+    return resolveShatterCover({x,y:thrownGround(x,z),z});
   }
   function showThrowRing(target){
     if(!target||!THREE.RingGeometry||!THREE.MeshBasicMaterial)return;
@@ -1501,6 +1511,7 @@
       throwRing.rotation.x=-Math.PI/2;
       throwRing.renderOrder=40;
       throwRing.name='shattercask_ground_projected_throw_reticle';
+      window.ThrowCoverTrajectory?.attachOutline?.(throwRing,THREE); // Same black splash boundary as alchemy flasks.
     }
     const active=scene();if(!active)return;
     if(throwRing.parent!==active)active.add(throwRing);
@@ -1521,6 +1532,7 @@
         positions.needsUpdate=true;
         throwRing.geometry.computeBoundingSphere?.();
       }
+      window.ThrowCoverTrajectory?.projectOutline?.(throwRing,previewRadius,groundY,thrownGround); // Both rings drape over elevated terrain.
       Object.assign(throwRing.userData,{targetX:target.x,targetZ:target.z,groundY,radius:previewRadius});
     }
     throwRing.visible=true;
@@ -1539,8 +1551,8 @@
     const vx=right.x*dx-forward.x*dy,vz=right.z*dx-forward.z*dy;
     const length=Math.hypot(vx,vz)||1;
     const x=p.x+vx/length*range,z=p.z+vz/length*range;
-    aimingThrow.manualTarget={x,y:thrownGround(x,z),z};
-    aimingThrow.target=aimingThrow.manualTarget;
+    aimingThrow.manualTarget={x,y:thrownGround(x,z),z}; // Store raw drag aim; cover can change before release.
+    aimingThrow.target=resolveShatterCover(aimingThrow.manualTarget);
     showThrowRing(aimingThrow.target);
   }
   function startShatterAim(){
@@ -1580,6 +1592,7 @@
       target={x:origin.x+heading.x*distance,z:origin.z+heading.z*distance};
       target.y=thrownGround(target.x,target.z);
     }
+    target=resolveShatterCover(target,origin); // Live release socket and current cover own the final physical impact point.
     const active=records.get(c.mapId)?.scene||scene();
     if(!active)return false;
     if(c.kind==='shattercask') c._flaskmasterSource = {power:flaskmasterFactor('shatterPower'),radius:flaskmasterFactor('shatterRadius'),rootId:c.id,origin:'player-throw'}; // Capture launch-time bonus before the equipment can change in flight.
@@ -1610,6 +1623,7 @@
     }
     if(flight){
       const f=flight,c=f.vase;
+      const before=Math.min(1,f.t/f.duration); // Preserve progress so live cover follows the entire thrown arc on slow frames.
       f.t+=dt;
       const ratio=Math.min(1,f.t/f.duration);
       if(window.AlchemyFlasks?.flightPosition)
@@ -1620,7 +1634,18 @@
           f.origin.y+(f.target.y-f.origin.y)*ratio+arc,
           f.origin.z+(f.target.z-f.origin.z)*ratio);
       }
+      const coverHit=window.ThrowCoverTrajectory?.sweepFlight?.(f.origin,f.target,before,ratio,{
+        deps:deps(),tile:tileSize(),groundAt:thrownGround,
+        flightPosition:window.AlchemyFlasks?.flightPosition,
+      }); // Same ballistic arc as the ground preview, even after a long frame.
       c.group.rotation.set(f.t*8,0,f.t*5);
+      if(coverHit){
+        c.group.position.set(coverHit.x,thrownGround(coverHit.x,coverHit.z)+.12,coverHit.z); // Impact on the near side, never on the far side of cover.
+        flight=null;
+        detonate(c,'throw-cover-impact');
+        if(!c.exploded){c.flying=false;refreshMeshBounds(c);}
+        return;
+      }
       // There is no heldHandTarget after launch: hands stay on the player.
       if(ratio>=1) {
         flight=null;
@@ -1942,6 +1967,12 @@
     pileHistory.get(mapId).set(id,{col,row,kind,woodKey,oreKey,x,z}); // Persist once after the full blast, not once per pile.
   }
   function destroyTerrain(mapId,rec,x,z) {
+    // A blast may remove dozens of adjacent cave-wall tiles: regenerate their fused
+    // geometry once after the complete destruction pass, not after every tile.
+    const batch=window.CavernOreRocks?.withBatchedCuts;
+    return batch ? batch(()=>destroyTerrainTiles(mapId,rec,x,z)) : destroyTerrainTiles(mapId,rec,x,z);
+  }
+  function destroyTerrainTiles(mapId,rec,x,z) {
     const g=grid(),types=deps()?.TileType || {};
     if(!g)return 0;
     let count=0;
@@ -2005,6 +2036,11 @@
     }
   }
   function restoreSceneHistory(mapId,rec) {
+    // Restoring a saved rubble field must likewise avoid a full rock-wall re-mesh for every removed cell.
+    const batch=window.CavernOreRocks?.withBatchedCuts;
+    return batch ? batch(()=>restoreSceneHistoryTiles(mapId,rec)) : restoreSceneHistoryTiles(mapId,rec);
+  }
+  function restoreSceneHistoryTiles(mapId,rec) {
     const savedTerrain=terrainHistory.get(mapId),savedPiles=pileHistory.get(mapId),savedFruit=looseFruitHistory.get(mapId);
     if(!savedTerrain?.size&&!savedPiles?.size&&!savedFruit?.size)return;
     const g=grid(),types=deps()?.TileType||{},chunks=new Map();
@@ -2562,7 +2598,7 @@
     contextButtons,collectAimedPile,promptButtons,RUBBLE_YIELD,
     startShatterAim,releaseShatterAim,cancelShatterAim,detonate,heldHandTarget,
     projectileHit,hitProjectile,senseTargets,sweepMelee,tick,attachRuntime,
-    debugSnapshot:()=>({lastEvent,lastBlastAttribution,latestChange:'Stowed Burdens mount on the portrait plane; Flaskmaster tracks player-owned throws, melee hits and ranged Shattercask chains.',backCarryMount:backCarried?{parent:backCarried.group?.parent?.name||backCarried.group?.parent?.type||null,portraitAttached:!!backCarryPortrait(backCarryRoot())&&backCarried.group?.parent===backCarryPortrait(backCarryRoot()),rootFallback:backCarried.group?.parent===backCarryRoot(),collision:'carrier-hitbox'}:null,crates:window.CratePiles?.debugSnapshot?.()||null,backCarried:backCarriedInfo(),fruitCarryProfile:fruitCarryTemplate===FRUIT_CARRY_FALLBACK?'fallback':'authored',area:area(),held:held?.id||null,emittingVases:[...allActive().values()].filter(v=>v.emitters?.length).length,
+    debugSnapshot:()=>({lastEvent,lastBlastAttribution,latestChange:'Stowed Burdens use the held pose species-adjusted posterior frame before following portrait facing.',backCarryMount:backCarried?{parent:backCarried.group?.parent?.name||backCarried.group?.parent?.type||null,portraitAttached:!!backCarryPortrait(backCarryRoot())&&backCarried.group?.parent===backCarryPortrait(backCarryRoot()),rootFallback:backCarried.group?.parent===backCarryRoot(),collision:'carrier-hitbox'}:null,crates:window.CratePiles?.debugSnapshot?.()||null,backCarried:backCarriedInfo(),fruitCarryProfile:fruitCarryTemplate===FRUIT_CARRY_FALLBACK?'fallback':'authored',area:area(),held:held?.id||null,emittingVases:[...allActive().values()].filter(v=>v.emitters?.length).length,
       vases:[...allActive().values()].map(v=>({id:v.id,kind:v.kind,col:v.col,row:v.row,carried:v.carried,hanging:!!v.hanging,flying:!!v.flying,plinthAttached:!!v.plinthAttached,hangingMechanismId:v.hangingMechanismId||null})),
       fruitFalls:[...fallingFruits.values()].map(f=>({id:f.fruit.id,y:f.fruit.group.position.y,cause:f.cause})),
       downwardBurdenFalls:[...downwardFalls.values()].map(f=>({id:f.burden.id,y:f.burden.group.position.y,velocity:+f.velocity.toFixed(2),cause:f.cause})),
@@ -2580,9 +2616,9 @@
         activePileDrawCalls:records.get(area())?.pileVisuals.size||0,
         activeDebrisInstances:[...(records.get(area())?.pileVisuals.values()||[])].reduce((sum,state)=>sum+state.mesh.count,0),
         cachedPlacementAreas:placementCache.size},
-      throwPreview:{visible:!!throwRing?.visible,radius:RADIUS,terrainProjected:!!throwRing?.userData.environmentGroundProjection},
+      throwPreview:{visible:!!throwRing?.visible,radius:RADIUS,terrainProjected:!!throwRing?.userData.environmentGroundProjection,blackOutline:!!throwRing?.userData?.throwCoverOutline},
       throwAim:aimingThrow?{phase:aimingThrow.phase,target:aimingThrow.target,manual:!!aimingThrow.manualTarget,
-        heading:throwHeading(),sharedPose:aimingThrow.sharedPose}:null,
+        heading:throwHeading(),sharedPose:aimingThrow.sharedPose,coverBlocked:!!aimingThrow.coverBlocked,coverKind:aimingThrow.coverKind||null}:null,
       throwFlight:flight?{origin:{x:flight.origin.x,y:flight.origin.y,z:flight.origin.z},target:flight.target,
         progress:flight.t/flight.duration,distance:flight.distanceTiles}:null,
       interactionClaim:window.WorldActionInputClaims?.claimFor?.('interact')?.ownerId||null}),

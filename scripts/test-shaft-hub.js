@@ -12,6 +12,16 @@ const Connector=require('../docs/js/ruin-shaft-connector.js');
 const Playable=require('../docs/js/ruin-layer-playable.js');
 globalThis.RuinWallFaces=require('../docs/js/ruin-wall-faces.js'); // The wings and shaft build their stone from merged faces when this is loaded, as index.html loads it.
 const Challenges=require('../docs/js/ruin-layer-challenges.js'); // Canonical projectile and plate stage logic. // Tests mounted stone wings, challenge gates and braziers.
+const NetworkChallenges={...Challenges,compose(options){ // Only the network-progression test substitutes the compound room: its real 16 variants and native push state have separate focused runtime tests.
+  if(options.kind!=='findBlocks')return Challenges.compose(options);
+  const stage={id:options.id,kind:'findBlocks',ready:true,linked:true,solved:false, // Solved state is consumed by the REAL network gate and brazier code.
+    tick(){},animate(){},dispose(){},
+    simulateCompletion(){
+      if(stage.solved||!options.isActive())return;
+      stage.solved=true;options.onSolved(stage);
+    }};
+  return stage;
+}};
 const NativeV50=require('../docs/js/ruin-v50-native-floors.js'); // Actual V50 story layout and pre-reserved footprint enforcement.
 
 const runtime=fs.readFileSync('docs/js/dev-random-ruin-interior-map.js','utf8');
@@ -39,7 +49,23 @@ for(const file of ['ruin-layer-plan.js','ruin-shaft-corridor.js','ruin-shaft-con
     const trial=Plan.compose({...options,plinthTrial:true});
     assert(trial.ok,trial.checks.filter(check=>!check.ok).map(check=>check.name).join(', '));
     assert.equal(trial.totalWings,baseline.totalWings);
+    for(const plan of [baseline,trial])for(const floor of plan.floors)for(const wing of floor.wings){
+      // A normal approach no longer spends 7–15 empty cells between rooms;
+      // the puzzle/defence chambers and their gate-to-room connectivity stay unchanged.
+      assert(wing.corridors.every(hall=>hall.length<=10),`overlong empty wing hallway on seed ${seed}: ${wing.id}`);
+    }
     assert.equal(trial.totalBraziers,baseline.totalBraziers);
+    for(const floor of baseline.floors){
+      const blocks=floor.rooms.filter(room=>room.challenge==='findBlocks');
+      assert(blocks.length>=1,'Every generated dungeon story has at least one Find the Blocks chamber');
+      assert(blocks.length<=3,'Short wings should not repeat the same compound challenge excessively');
+      assert(blocks.every(room=>room.w>=18&&room.d>=18),'Block puzzles have genuine 18x18 push-space footprints');
+      for(const wing of floor.wings){
+        const kinds=wing.rooms.map(room=>room.challenge);
+        assert(!kinds.some((kind,i)=>kind==='findBlocks'&&kinds[i-1]==='findBlocks'),
+          'Block puzzles must not be consecutive in the same wing');
+      }
+    }
     const floor=trial.floors.find(f=>f.rooms.some(room=>room.id===trial.trialRoomId));
     const wing=floor.wings.find(w=>w.rooms.some(room=>room.id===trial.trialRoomId));
     const stage=wing.rooms.findIndex(room=>room.id===trial.trialRoomId);
@@ -52,7 +78,7 @@ for(const file of ['ruin-layer-plan.js','ruin-shaft-corridor.js','ruin-shaft-con
     stages.add(stage);
     floors.add(floor.floor);
   }
-  assert.equal(stages.size,4);
+  assert.equal(stages.size,2,'trial room may appear in either of the two short branch puzzle slots');
   assert(floors.size>1);
 }
 
@@ -67,6 +93,8 @@ for(const file of ['ruin-layer-plan.js','ruin-shaft-corridor.js','ruin-shaft-con
     for(const floor of plan.floors){
       if(floor.floor===0){assert(!floor.nativePort);continue;}
       floors++;
+      assert.equal(floor.wings.length,3,'all three free upper-story shaft exits house short independent wings');
+      assert.equal(floor.braziers.length,3,'each upper-story custom wing adds a required fire');
       const port=floor.nativePort,area=port.reservation;
       assert(area&&area.w===180&&area.d===180,'native floor allocation must exist before V50 runs');
       assert(!floor.wings.some(w=>w.side==='E'),'reserved east portal is exclusively native V50');
@@ -90,6 +118,67 @@ for(const file of ['ruin-layer-plan.js','ruin-shaft-corridor.js','ruin-shaft-con
     }
   }
   assert(floors>=2000,'exercise real multi-story native V50 reservations');
+}
+
+// The entry door and native V50 room each keep their exclusive side; all other
+// exits become independent braziers instead of extending an existing wing.
+for(let seed=1;seed<=100;seed++){
+  const plan=Plan.compose({seed,nativeV50:true,groundEntranceSide:'W'});
+  assert(plan.ok,'reserved entrance plan must remain valid');
+  for(const floor of plan.floors){
+    assert.equal(floor.wings.length,3,'three free wall exits must be occupied');
+    assert.equal(floor.braziers.length,3,'each free exit must end at its own brazier');
+    const sides=new Set(floor.wings.map(wing=>wing.side));
+    assert(!sides.has(floor.floor===0?'W':'E'),'a reserved portal must not be reused');
+    assert(floor.wings.every(wing=>wing.rooms.length<=3),'a long challenge sequence must not survive inside a wing');
+    assert(floor.wings.some(wing=>wing.rooms.slice(0,-1).some(room=>
+      ['glyphObelisk','ceilingRailTargets'].includes(room.challenge))),
+      'each story retains a real ranged puzzle while distributing rooms');
+  }
+  assert.equal(plan.totalBraziers+plan.nativeFloorCount,plan.floorCount*4-1,
+    'Great Door must require a fire from each free shaft exit and each reserved native V50 floor');
+}
+
+// The sanctum's Great Door belongs to the shared shaft wall, not a V50
+// challenge-room wall. It is a teleport destination so it must be accessible
+// from floor-zero stone without stealing any of that story's four exits.
+{
+  const sanctum=fs.readFileSync('docs/js/dev-random-ruin-sanctum.js','utf8'); // Assert the real composer consumes the shaft's validated door site.
+  const interior=fs.readFileSync('docs/js/dev-random-ruin-interior-map.js','utf8'); // The public runtime exposes the same site without private globals.
+  assert(sanctum.includes('context.shaftHub===true')&&sanctum.includes('getShaftSanctumDoorSite'),
+    'normal ruins mount the Great Door at the main shaft instead of choosing a V50 wall');
+  assert(sanctum.includes('teleport(s.entry)')&&sanctum.includes('teleport(door.front)'),
+    'entering the distant sanctum and returning both use the canonical fade teleport');
+  assert(interior.includes('getShaftSanctumDoorSite:()=>ruin?.shaftSanctumDoorSite||null'),
+    'public ruin API exposes the checked shaft wall site');
+  for(let seed=1;seed<=160;seed++){
+    const plan=Plan.compose({seed,anchorX:320,anchorZ:320,nativeV50:true,
+      groundEntranceSide:['N','E','S','W'][seed%4]});
+    assert(plan.ok,'valid four-sided plan for door '+seed);
+    const portals=plan.floors.flatMap(f=>[
+      ...f.wings.map(w=>({floor:f.floor,side:w.side})),
+      ...(f.nativePort?[{floor:f.floor,side:f.nativePort.side}]:[]),
+    ]);
+    const hub=H.compose({seed,shaft:plan.options.shaftSize,wall:plan.options.shaftWall,
+      floors:plan.floorCount,spacing:plan.options.floorHeight,portals,
+      entranceSide:plan.options.groundEntranceSide,traversal:plan.options.shaftTraversal,
+      originX:plan.shaft.anchor.x-Math.floor((plan.options.shaftSize+plan.options.shaftWall*2)/2),
+      originZ:plan.shaft.anchor.z-Math.floor((plan.options.shaftSize+plan.options.shaftWall*2)/2)});
+    assert(hub.ok,'the actual obelisk shaft and its wall exits must be traversable');
+    const site=Connector.sanctumDoorSite(hub);
+    assert(site?.shaft===true,'a safe, shaft-mounted final door must exist for every seed and entrance side');
+    assert.equal(site.floorY,hub.grid.levelToY(0),'sanctum door is mounted on the shared shaft ground story');
+    const front={x:site.x+site.normal.x*1.8,z:site.z+site.normal.z*1.8};
+    const behind={x:site.x-site.normal.x*.4,z:site.z-site.normal.z*.4};
+    const g=hub.grid;
+    assert(g.canStand(g.xToCol(front.x),g.zToRow(front.z),0),'reachable walkable stone is in front of the door');
+    assert(g.isSolid(g.xToCol(behind.x),g.zToRow(behind.z),0),'the Great Door is set against solid shaft masonry');
+    assert(hub.wingPortals.filter(p=>p.floor===0&&p.side===site.side).every(p=>{
+      const pAcross=site.normal.z?p.col:p.row;
+      const across=site.normal.z?g.xToCol(site.x):g.zToRow(site.z);
+      return Math.abs(pAcross-across)>=7;
+    }),'the Great Door must not overlap an existing shaft portal');
+  }
 }
 
 // Native V50 rope flights pass *plain* CellGrid3D axis-aligned boxes
@@ -133,7 +222,7 @@ for(const file of ['ruin-layer-plan.js','ruin-shaft-corridor.js','ruin-shaft-con
 }
 
 // Every floor is an independent ordinary 2D plan, with one shared, grid-snapped,
-// wide octagonal anchor, 1..4 wings, multiple challenges and one brazier per wing.
+// wide octagonal anchor, every unused shaft exit, 1–2 challenges and a required fire per branch.
 let plannedWings=0;
 for(let seed=1;seed<=1000;seed++){
   const plan=Plan.compose({seed});
@@ -143,16 +232,24 @@ for(let seed=1;seed<=1000;seed++){
   assert.equal(plan.shaft.shape,'octagon');
   for(const floor of plan.floors){
     assert.deepEqual(floor.anchor,plan.shaft.anchor,'shaft position shared across all 2D floors');
-    assert(floor.wings.length>=1&&floor.wings.length<=4);
+    assert.equal(floor.wings.length,4,'all four available hub exits become short puzzle branches');
     assert.equal(floor.wings.length,floor.braziers.length);
+    assert.equal(new Set(floor.wings.map(wing=>wing.side)).size,4,'one separate fire route emerges from every shaft exit');
     for(const wing of floor.wings){
       plannedWings++;
-      assert(wing.rooms.filter(r=>!!r.challenge).length>=2,'multiple challenge rooms before brazier');
+      assert(wing.rooms.filter(r=>!!r.challenge).length>=1 && wing.rooms.filter(r=>!!r.challenge).length<=2,
+        'every shaft exit has only one or two puzzle chambers before its fire');
       assert.equal(wing.rooms.filter(r=>r.kind==='brazier-chamber').length,1,'exactly one brazier endpoint');
       assert.equal(wing.corridors.length,wing.rooms.length,'hallway per progression stage');
-    assert.equal(wing.rooms[0].challenge,'pressurePlate','every wing starts with a functional stone plate');
-    assert(['glyphObelisk','ceilingRailTargets'].includes(wing.rooms[1].challenge),
-      'every wing includes a real ranged-target room, never a fake labelled placeholder');
+      if(wing.rooms.length===3){
+        assert(['pressurePlate','findBlocks'].includes(wing.rooms[0].challenge),
+          'a two-puzzle wing begins with a real stone plate or the full four-block compound puzzle');
+        assert(['glyphObelisk','ceilingRailTargets','findBlocks'].includes(wing.rooms[1].challenge),
+          'its second chamber uses the ranged family or Find the Blocks without skipping a progression gate');
+        assert(!(wing.rooms[0].challenge==='findBlocks'&&wing.rooms[1].challenge==='findBlocks'),
+          'consecutive large block puzzles would make a short wing repetitive');
+      }else assert(Plan.DEFAULTS.minChallenges===1 && wing.rooms[0].challenge,
+        'single-puzzle branches still require an implemented mechanism');
       assert(wing.corridors.every(h=>h.length>0&&h.rects.length>=1),'variable-length halls must have footprint');
       if(seed<=80){
         // Regression: even-sized rooms once had an invisible one-cell gap at
@@ -268,7 +365,7 @@ for(const start of [{x:20,z:1},{x:1,z:25},{x:100,z:30},{x:32,z:100}]){
 // Real connector wiring using lightweight Three/occupancy doubles.
 // No real browser is required to prove the returned floor tiles meet both ends.
 class Group {
-  constructor(){this.children=[];this.parent=null;this.userData={}}
+  constructor(){this.children=[];this.parent=null;this.userData={};this.position={x:0,y:0,z:0,set(x,y,z){this.x=x;this.y=y;this.z=z;}};} // Flame emitter groups are positioned just like real Three.Group objects.
   add(node){this.children.push(node);node.parent=this}
   remove(node){this.children=this.children.filter(n=>n!==node);node.parent=null}
   traverse(fn){fn(this);for(const n of this.children)n.traverse?n.traverse(fn):fn(n)}
@@ -371,25 +468,33 @@ const Defense={create:options=>({
   const music={beginPlayerSession:arg=>{started.push(arg);return true;}};
   let floor=4,player={x:27,z:29},done=0;
   const melody=Challenges.compose({THREE,parent:new Group(),room:{x:20,z:22,w:14,d:14},
-    id:'melody-test',kind:'melodyEcho',y:4,isActive:()=>true,
+    id:'melody-test',kind:'melodyEcho',area:'test-area',y:4,isActive:()=>true,
     getPlayerPosition:()=>player,getPlayerY:()=>floor,
     music,events,onSolved:()=>done++});
   assert.equal(melody.notes.length,Challenges.melodyFor('melody-test').length);
   assert(melody.notes.every(n=>Number.isInteger(n)&&n>=0&&n<8));
   melody.tick(.05);
-  assert.equal(started.length,1,'stepping onto bronze plate plays one existing flute echo session');
+  assert.equal(started.length,0,'standing on the plate never equips or locks the instrument');
   for(let i=0;i<10;i++)melody.tick(.05);
-  assert.equal(started.length,1,'standing still does not restart the melody');
-  handlers.get('hobunji-ruin-melody-result')({detail:{id:'someone-else',solved:true}});
-  handlers.get('hobunji-ruin-melody-result')({detail:{id:'melody-test',solved:false}});
-  assert.equal(done,0,'wrong and unrelated melodies do not complete a room');
-  player={x:20,z:22};melody.tick(.05);player={x:27,z:29};melody.tick(.05);
-  assert.equal(started.length,2,'stepping off and on replays this fixed note sequence');
-  assert.deepEqual(started[0].echoChallenge.notes,started[1].echoChallenge.notes);
-  floor=0;melody.tick(.05);assert.equal(started.length,2,'lower story cannot trigger this floor plate');
-  floor=4;handlers.get('hobunji-ruin-melody-result')({detail:{id:'melody-test',solved:true}});
-  assert(melody.solved&&done===1,'real instrument success opens the gate once');
-  melody.dispose();assert(!handlers.size,'melody result event listener removed on ruin exit');
+  assert.equal(melody.attempts,1,'standing still does not retrigger the plate');
+  const note=(noteIndex,area='test-area')=>handlers.get('hobunji-kurraya-puzzle-note')({detail:{noteIndex,area}}); // Exercise the actual ordinary instrument event bridge.
+  assert(!handlers.has('hobunji-ruin-melody-result'),'legacy minigame results cannot bypass manual note recognition');
+  for(const value of [undefined,-1,8,NaN])note(value);
+  assert.equal(melody.heardNotes.length,0,'invalid input never advances the melody');
+  floor=0;for(const value of melody.notes)note(value);
+  assert.equal(done,0,'notes from another story cannot solve the room');
+  floor=4;for(const value of melody.notes)note(value,'other-map');
+  assert.equal(done,0,'notes from another map cannot solve the room');
+  player={x:20,z:22};melody.tick(.05);
+  assert.equal(started.length,0,'leaving the plate never needs an automatic music session');
+  note((melody.notes[0]+1)%8);
+  for(const value of melody.notes.slice(0,-1))note(value);
+  assert.equal(done,0,'a partial phrase cannot solve the room');
+  note(melody.notes.at(-1));
+  assert(melody.solved&&done===1,'manual notes solve the phrase even after stepping off the clue plate');
+  for(const value of melody.notes)note(value);
+  assert.equal(done,1,'completion fires only once');
+  melody.dispose();assert(!handlers.size,'ordinary note listener removed on ruin exit');
 }
 
 // Real projectile challenges share the canonical ranged-hit bus; a stale
@@ -454,7 +559,7 @@ for(const side of ['north','east','south','west']){
   const preplanned=Plan.compose({seed:23,anchorX:320,anchorZ:320,shaftTraversal:'buttress'}); // Deliberately differs from the old post-generation anchor.
   const connected=Connector.connect({rec,ruin,seed:23,meta,preplanned,THREE,makeTile,DynamicSurfaces:DS,
     ShaftHub:H,ClimbSurfaces:climb,DevRandomRuin:dev,TileOccupancy:occupancy,
-    RuinLayerPlan:Plan,RuinShaftCorridor:Corridor,RuinLayerPlayable:Playable,RuinLayerChallenges:Challenges,RuinLayerDefense:Defense,CellGrid3D:G,
+    RuinLayerPlan:Plan,RuinShaftCorridor:Corridor,RuinLayerPlayable:Playable,RuinLayerChallenges:NetworkChallenges,RuinLayerDefense:Defense,CellGrid3D:G,
     getPlayerPosition:()=>({x:player.x,z:player.z}),getPlayerY:()=>player.y});
   assert(connected.hub.ok,'integrated octagonal room passed reachability');
   // The shaft's stone is merged stretch-to-fit faces in one masonry group (so decorateRuin can engrave the walls),
@@ -539,7 +644,7 @@ for(const side of ['north','east','south','west']){
     else if(remaining.kind==='melodyEcho')remaining.onMelodyResult({id:remaining.id,solved:true}); // Canonical flute completion event.
     else if(remaining.kind==='dungeonFire')remaining.fireRecord.onBurn(); // Canonical fire-contact callback; not a normal arrow hit.
     else if(remaining.kind==='ropeChain'){player={...remaining.ropeSpec.exit};network.tick(.05);} // Same bank condition as native rope traversal.
-    else if(remaining.kind==='statueDefense')remaining.simulateCompletion(); // Separate authored integration test validates plinth completion.
+    else if(remaining.kind==='statueDefense'||remaining.kind==='findBlocks')remaining.simulateCompletion(); // Separate authored integration test validates plinth completion.
     else for(let i=0;i<remaining.targetCount;i++)remaining.simulateHit(i); // Dispatch actual projectile onHit callbacks.
     assert(remaining.solved,'the puzzle family must truly unlock its gate: '+remaining.kind);
   }
@@ -562,7 +667,7 @@ for(const side of ['north','east','south','west']){
         else if(challenge.kind==='ropeChain'){
           network.tick(.05); // Registers the authored ropes into the active native V50 state.
           player={...challenge.ropeSpec.exit};network.tick(.05);
-        }else if(challenge.kind==='statueDefense')challenge.simulateCompletion();
+        }else if(challenge.kind==='statueDefense'||challenge.kind==='findBlocks')challenge.simulateCompletion();
         else for(let j=0;j<challenge.targetCount;j++)challenge.simulateHit(j);
         assert(challenge.solved,'every authored challenge can progress: '+challenge.id);
       }
@@ -615,7 +720,7 @@ for(const side of ['north','east','south','west']){
   const placed=Connector.connect({rec,ruin,seed:0,meta:{rooms:[{name:'vault'}]},
     THREE,makeTile,DynamicSurfaces:ds,ShaftHub:H,ClimbSurfaces:climb,
     DevRandomRuin:dev,RuinLayerPlan:Plan,RuinShaftCorridor:Corridor,
-    RuinLayerPlayable:Playable,RuinLayerChallenges:Challenges,RuinLayerDefense:Defense,CellGrid3D:G,getPlayerPosition:()=>({x:6,z:27}),getPlayerY:()=>0});
+    RuinLayerPlayable:Playable,RuinLayerChallenges:NetworkChallenges,RuinLayerDefense:Defense,CellGrid3D:G,getPlayerPosition:()=>({x:6,z:27}),getPlayerY:()=>0});
   assert(placed.route.ok&&placed.route.path[0].x===6&&placed.route.path[0].z===28,
     'fixed story vault extends physically through its actual southern doorway');
   assert(rec.floorSet.has('6,28')&&ruin.shaftConnection.physical);

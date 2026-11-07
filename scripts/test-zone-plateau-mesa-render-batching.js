@@ -140,5 +140,11 @@ function triangleSoup(meshes) {
   await new Promise(resolve => setTimeout(resolve, 5));
   assert.strictEqual(staleScene.children.filter(o => o.userData.plateauMesaRenderBatch).length, 0, 'unregistered builds are not batched');
 
+  // Tearing a zone down (or evicting it from the zone cache) releases its batch registry entry, which used to be kept for the whole session.
+  assert.ok(api.mesaBatchSnapshot().zones[mapId], 'a built zone is registered');
+  api.releaseZone(mapId);
+  assert.strictEqual(api.mesaBatchSnapshot().zones[mapId], undefined, 'releaseZone drops the evicted zone from the batch registry');
+  assert.ok(!scene.children.some(o => o.userData.plateauMesaRenderBatch), 'and removes its render batches');
+
   console.log('PASS plateau mesa render batching');
 })().catch(error => { console.error(error); process.exit(1); });

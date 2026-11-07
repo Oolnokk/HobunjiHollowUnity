@@ -21,13 +21,25 @@ assert.equal(torchShaft.sourceShape, 'hachutuTorchStaff');
 assert.equal(torchShaft.fireAssembly, 'hachutuTorchStaff', 'both live flames belong to the complete modular shaft');
 assert.equal(torchShaft.sprite, 'assets/toolsprites/hachutu_torch-staff.png');
 assert.equal(torchShaft.duplicateFrom, 'bshuakauitl');
-assert.deepEqual(plain(torchShaft.mounts), plain(blowgunShaft.mounts), 'all four B\'shuakauitl arrows copied without swapping ends');
+// Preserve the imported source lines while allowing the explicitly reauthored staff tang tips.
+assert.deepEqual(plain(torchShaft.mounts.map(m => ({ type: m.type, start: m.start }))),
+  plain(blowgunShaft.mounts.map(m => ({ type: m.type, start: m.start }))),
+  'Torch-Staff retains all donor mount types and starts');
+assert.deepEqual(plain(torchShaft.mounts.slice(0, 2)), plain(blowgunShaft.mounts.slice(0, 2)),
+  'Both inherited eye mounts retain their complete donor geometry');
+assert.deepEqual(plain(torchShaft.mounts.slice(2).map(m => m.end)), [
+  { x: 221.7599119115615, y: 941.6863824754939 },
+  { x: 158.12411992422858, y: 303.16373428761597 },
+], 'Independently calibrated Torch-Staff tang tips survive authored import');
 assert.notStrictEqual(torchShaft.mounts, blowgunShaft.mounts, 'duplicate mounts remain independent of their donor');
 assert.deepEqual(Object.keys(torchShaft.overrides).sort(), Object.keys(blowgunShaft.overrides).sort(),
   'all B\'shuakauitl pair fitting/exclusion rules are preserved');
 const originalCompatible = Object.keys(api.getConfig().heads).filter(key => !api.isDisallowed('bshuakauitl', key)); // One truth set, including retired-head restrictions.
 const staffCompatible = Object.keys(api.getConfig().heads).filter(key => !api.isDisallowed('hachutuTorchStaff', key));
-assert.deepEqual(staffCompatible, originalCompatible, 'staff accepts exactly the same heads as B\'shuakauitl');
+assert.deepEqual(staffCompatible, originalCompatible.filter(key => key !== 'pick-shovel-pick'),
+  'Torch-Staff retains the donor head choices except its authored pick-shovel-pick exclusion');
+assert.equal(api.isDisallowed('hachutuTorchStaff', 'pick-shovel-pick'), true,
+  'The committed Torch-Staff override intentionally excludes pick-shovel-pick');
 const copyDraft = plain(api.getConfig()); // Rig-only transform moves sleeve/tang points and attached head geometry while leaving shaft sprite and fire fixed.
 copyDraft.shafts.hachutuTorchStaff.attachmentRigTransform = { scaleX: 1.5, scaleY: 0.75, x: 25, y: -40 };
 api.replace(copyDraft);
@@ -108,9 +120,14 @@ assert.equal(api.settings('warhammer', 'harlyao-longsword').scaleX, 1.65, 'Keep 
 assert.equal(api.settings('dagger', 'warhammer').y, 45, 'Keep original haft correction for each head pairing');
 const broadShaft = api.getConfig().shafts['harlyao-broadsword']; // Baseline Harlyao sword shaft used for the default longsword proportion.
 const longShaft = api.getConfig().shafts['harlyao-longsword']; // Explicit per-head overrides may intentionally diverge from this default relation.
-assert.deepEqual(plain(longShaft.mounts), plain(broadShaft.mounts));
-assert(Math.abs(api.settings('harlyao-longsword', 'dagger').scaleX - api.settings('harlyao-broadsword', 'dagger').scaleX * .9) < 1e-6);
-assert(Math.abs(api.settings('harlyao-longsword', 'dagger').scaleY - api.settings('harlyao-broadsword', 'dagger').scaleY * 1.1) < 1e-6);
+assert.deepEqual(plain(broadShaft.mounts), [
+  { type: 'tang', start: { x: 193.5, y: 662 }, end: { x: 193.5, y: 597 } },
+], 'Broadsword retains its original independently authored tang');
+assert.deepEqual(plain(longShaft.mounts), [
+  { type: 'tang', start: { x: 200.5, y: 655 }, end: { x: 200.5, y: 575 } },
+], 'Longsword retains its separately imported tang instead of inheriting broadsword geometry');
+assert.equal(api.settings('harlyao-longsword', 'dagger').scaleX, 0.9);
+assert.equal(api.settings('harlyao-longsword', 'dagger').scaleY, 1.1);
 assert.equal(longShaft.defaults, undefined, 'No global shaft correction settings remain.');
 const draft = plain(api.getConfig()); // Sparse overrides, including explicit false/zero, must remain distinct from inheritance.
 draft.shafts.dagger.overrides.warhammer = { scaleX: 1.2, scaleY: .8, flipX: false, flipY: false, x: 0, y: 10, rotation: 0, animation: 'thrust', disallow: true };
