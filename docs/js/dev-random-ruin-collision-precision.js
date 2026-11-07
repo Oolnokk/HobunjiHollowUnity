@@ -72,6 +72,7 @@
       lines.push(`Tiles: redBlocked=${data.counts.blocked} greenActivators=${data.counts.causes} blueMechanisms=${data.counts.effects}`);
       if (render) lines.push(`Native puzzle render: doors=${render.visibleDoorSources}/${render.sourceDoorMeshes} arches=${render.visibleDoorArchSources}/${render.sourceDoorArchMeshes} normalized=${render.normalizedDoorAssemblies} activators=${render.visibleActivatorSources}/${render.sourceActivatorMeshes} culled=${render.frustumCulledSources}/${render.nativeSourceMeshCount} proxies=${render.totalProxyCount}`);
       lines.push(`Player: ${data.player ? `${data.player.x.toFixed(3)},${data.player.z.toFixed(3)}` : 'unavailable'} tile=${data.playerTile || 'unknown'} sources=${data.blockedAtPlayer.join(',') || 'none'}`);
+      try{lines.push('Voxel collision: '+JSON.stringify(window.DevRandomRuin?.debugPlayerCollision?.()||null));}catch(error){lines.push('Voxel collision: error '+error.message);}
       lines.push(`Nearby red tiles: ${data.nearby.length ? data.nearby.map(entry => `${entry.tile}[${entry.sources.join(',')}]`).join(' | ') : 'none within 2 tiles'}`);
     }
     report.textContent = text + lines.join('\n');
