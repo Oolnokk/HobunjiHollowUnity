@@ -235,7 +235,7 @@
         input.value = String(line[endpoint][axis]);
         input.onchange = () => {
           const value = Number(input.value);
-          if (!Number.isFinite(value)) { render(); return; }
+          if (!input.value.trim() || !Number.isFinite(value)) { render(); return; } // Empty mobile coordinate fields are not zero.
           line[endpoint][axis] = Math.max(0, Math.min(axis === 'x' ? 450 : 1204, value));
           save();
         };
@@ -294,10 +294,138 @@
       'Selected '+region.label+' — '+selectedHeads+' head mount(s), '+countOps+' bridge/recipe steps. Draw another rectangle or edit its X/Y controls.'
       :'Draw a rectangle on the assembled preview to create a region.');
   }
+  // The actual saved pair operations, not the expanded pixels, are the removable units.
+  function describeElement(op, index) {
+    const number = '#' + (index + 1); // Stable human-readable position in this pair's operation sequence.
+    if (op.recipe) return number + ' Recipe box: ' + op.recipe + (op.box
+      ? ' (' + Math.round(op.box.x1 - op.box.x0) + ' × ' + Math.round(op.box.y1 - op.box.y0) + ' px)' : '');
+    if (op.junction) return number + ' Junction: ' + op.junction;
+    if (op.revertPoint) return number + ' Revert checkpoint';
+    if (op.shading) return number + ' Separate shading';
+    if (op.clean) return number + ' Clean outline pass';
+    if (op.style) return number + ' Style cleanup pass';
+    if (op.even) return number + ' Outline smoothing pass';
+    if (op.smudge) return number + ' Smudge stroke';
+    if (op.tool) return number + ' ' + op.tool + ' stroke';
+    return number + ' Bridge stroke' + (op.points?.length ? ' (' + op.points.length + ' points)' : '');
+  }
+  function recipeBoxCount(shaft) {
+    return Object.values(shaft.overrides || {}).reduce((total, pair) =>
+      total + (pair.bridges?.strokes || []).filter(op => op.recipe).length, 0);
+  }
+  function elementRow(root, label, buttons) {
+    const row = document.createElement('div'), description = document.createElement('span'); // Touch-friendly element with contextual actions.
+    row.className = 'assembly-element-row'; description.className = 'assembly-element-description';
+    description.textContent = label; row.appendChild(description);
+    for (const [title, onClick] of buttons) {
+      const button = document.createElement('button'); // Each action is scoped to the visible row, never the whole sprite.
+      button.type = 'button'; button.textContent = title; button.onclick = onClick; row.appendChild(button);
+    }
+    root.appendChild(row);
+  }
+  function removePairOperation(index) {
+    const pair = chosenShaft().overrides[byId('head').value]; // Only this head–haft pair's operation history.
+    if (!pair?.bridges?.strokes?.[index]) return;
+    pair.bridges.strokes.splice(index, 1);
+    if (!pair.bridges.strokes.length) pair.bridges = null; // Explicitly empty to avoid restoring the committed default.
+    recipeSel = -1; save();
+    byId('assembly-status').textContent = 'Removed one element from this combination. Use Undo to restore it.';
+  }
+  function selectRecipeElement(index) {
+    recipeSel = index; // The selected placed box is shared with the existing drag-to-resize recipe UI.
+    byId('pair-bridge-on').checked = true;
+    byId('pair-brush-mode').value = 'recipe';
+    byId('recipe-controls').hidden = false; byId('pair-junction-controls').hidden = true;
+    syncRecipeControls(); drawBridgeOverlay();
+    byId('recipe-controls').scrollIntoView({ block: 'nearest' }); // Find controls on a narrow mobile screen.
+    byId('assembly-status').textContent = 'Recipe selected. Drag its edges on the assembled preview, or remove its row.';
+  }
+  function syncElementList() {
+    const shaft = chosenShaft(), head = chosenHead(), headKey = byId('head').value; // Current assembly inventory.
+    const mounts = byId('assembly-mount-elements'), ops = byId('assembly-operation-elements');
+    const required = head.mount.type === 'blade' ? 'tang' : 'eye'; // Exactly the same rule as runtime primitive matching.
+    const strokes = shaft.overrides[headKey]?.bridges?.strokes || []; // Saved operations before recipe expansion.
+    mounts.replaceChildren(); ops.replaceChildren();
+    for (const [index, mount] of shaft.mounts.entries()) {
+      const used = mount.type === required;
+      elementRow(mounts, 'Mount ' + (index + 1) + ': ' + (mount.type === 'eye' ? 'eye / sleeve' : 'tang')
+        + (used ? ' — draws this head' : ' — not used by this head'), [
+        ['Select line', () => { mountIndex = index; render(); byId('socket').scrollIntoView({ block: 'nearest' }); }],
+        ['Remove mount', () => {
+          if (chosenShaft().mounts.length <= 1) {
+            byId('assembly-status').textContent = 'At least one mount is required on each haft.'; return;
+          }
+          if (!window.confirm('Remove mount ' + (index + 1) + ' from ' + shaft.label
+            + '? This affects EVERY head on this haft, not just the current combination.')) return;
+          shaft.mounts.splice(index, 1); mountIndex = Math.min(index, shaft.mounts.length - 1); save();
+          byId('assembly-status').textContent = 'Mount removed from this haft. Use Undo to restore it.';
+        }]
+      ]);
+    }
+    for (const [index, op] of strokes.entries()) {
+      const actions = []; // Saved recipe boxes additionally expose the existing placement editor.
+      if (op.recipe) actions.push(['Edit box', () => selectRecipeElement(index)]);
+      actions.push(['Remove', () => removePairOperation(index)]);
+      elementRow(ops, describeElement(op, index), actions);
+    }
+    if (!strokes.length) {
+      const hint = document.createElement('p'); // Empty state makes untouched art distinguishable from missing controls.
+      hint.textContent = 'No saved bridge, junction, recipe or cleanup operations on this pair.';
+      ops.appendChild(hint);
+    }
+    const placed = strokes.filter(op => op.recipe).length, total = recipeBoxCount(shaft); // Per-pair and per-haft cleanup scopes.
+    byId('assembly-summary').textContent = shaft.mounts.filter(m => m.type === required).length
+      + ' matching head primitive(s) · ' + strokes.length + ' saved operation(s), including '
+      + placed + ' recipe box(es) on this pair.';
+    byId('assembly-clear-pair-recipes').disabled = placed === 0;
+    byId('assembly-clear-haft-recipes').disabled = total === 0;
+    byId('assembly-haft-recipe-count').textContent = total + ' recipe placement(s) across all heads on ' + shaft.label + '.';
+    const legacy = window.ModularWeaponRecipeProvenance?.find(data) || []; // Device draft may predate the published cleanup.
+    const legacyShafts = [...new Set(legacy.map(entry => entry.shaftKey))]; // Explain the independent scope of legacy cleanup.
+    byId('assembly-legacy-summary').textContent = legacy.length
+      ? 'Found ' + legacy.length + ' unchanged copied 29 October placement(s) in this browser draft across '
+        + legacyShafts.map(key => data.shafts[key]?.label || key).join(', ')
+        + '. Edited recipe boxes and manually authored work are excluded.'
+      : 'No unchanged 29 October single-ended bulk recipe placements in this draft.';
+    byId('assembly-prune-legacy').disabled = legacy.length === 0;
+  }
+  function clearRecipeElements(allHeads) {
+    const shaft = chosenShaft(), headKey = byId('head').value; // Destructive scope stays explicit.
+    const pairs = allHeads ? Object.entries(shaft.overrides || {}) : [[headKey, shaft.overrides[headKey]]];
+    const count = pairs.reduce((sum, [, pair]) => sum + (pair?.bridges?.strokes || []).filter(op => op.recipe).length, 0);
+    if (!count) return;
+    const scope = allHeads ? 'ALL head combinations on ' + shaft.label : shaft.label + ' + ' + chosenHead().label;
+    if (!window.confirm('Remove ' + count + ' placed recipe box(es) from ' + scope
+      + '? Other junctions, brush strokes, mounting lines and saved recipe definitions will remain. Undo can restore this.')) return;
+    for (const [, pair] of pairs) {
+      if (!pair?.bridges?.strokes) continue;
+      pair.bridges.strokes = pair.bridges.strokes.filter(op => !op.recipe);
+      if (!pair.bridges.strokes.length) pair.bridges = null; // Record explicit deletion, not missing override data.
+    }
+    recipeSel = -1; save();
+    byId('assembly-status').textContent = 'Removed ' + count + ' recipe placement(s) from ' + scope + '. Use Undo to restore them.';
+  }
+  byId('assembly-clear-pair-recipes').onclick = () => clearRecipeElements(false);
+  byId('assembly-clear-haft-recipes').onclick = () => clearRecipeElements(true);
+  byId('assembly-prune-legacy').onclick = () => {
+    const helper = window.ModularWeaponRecipeProvenance; // Exact legacy signature cleanup, not a blanket recipe reset.
+    const matches = helper?.find(data) || [];
+    if (!matches.length) {
+      byId('assembly-status').textContent = 'No unchanged bulk imports to remove from this draft.'; return;
+    }
+    if (!window.confirm('Remove ' + matches.length
+      + ' unchanged 29 October bulk recipe placements from the single-ended hafts in this browser draft?'
+      + ' Individually edited boxes, mounting geometry, other brush work, and shared recipes remain.'
+      + ' This is one Undo step.')) return;
+    const removed = helper.clean(data);
+    recipeSel = -1; save();
+    byId('assembly-status').textContent = 'Removed ' + removed.length
+      + ' legacy bulk placements. Other authored work is preserved. Use Undo to restore them.';
+  };
   function render() {
     const shaft = chosenShaft(), head = chosenHead(), headKey = byId('head').value; // Active authoring context.
     const pairKey = byId('shaft').value + '|' + headKey;
-    if (pairKey !== pendingKey) { pendingStrokes = []; pendingKey = pairKey; syncBridgeControls(); }
+    if (pairKey !== pendingKey) { pendingStrokes = []; recipeSel = -1; pendingKey = pairKey; syncBridgeControls(); } // Never carry a recipe selection to another head.
     mountIndex = Math.min(mountIndex, shaft.mounts.length - 1);
     byId('socket').replaceChildren();
     shaft.mounts.forEach((mount, index) => {
@@ -369,6 +497,7 @@
       cell.appendChild(input); row.append(title, cell); byId('fields').appendChild(row);
     }
     syncRecipeControls();
+    syncElementList(); // Mount primitives, recipe placements and brush operations are now individually discoverable.
     preview();
   }
   function pointFor(canvas, event) {
@@ -1007,7 +1136,17 @@
   }
   function recipePointerUp(event) {
     const d = recipeDrag; recipeDrag = null;
-    if (event.type === 'pointercancel') { if (d.target === 'draft' && d.mode === 'new') recipeDraft = null; drawBridgeOverlay(); return; }
+    if (event.type === 'pointercancel') {
+      clearTimeout(redoTimer); // Cancelled touch must not replay an incomplete recipe-box edit.
+      if (d.target === 'draft') recipeDraft = d.mode === 'new' ? null : { ...d.orig };
+      else {
+        const op = selectedOp();
+        if (op) op.box = { ...d.orig }; // Roll back the saved box in memory, without recording history.
+        api.replace(data); // Invalidate any preview composed while the cancelled drag was active.
+        preview();
+      }
+      drawBridgeOverlay(); return;
+    }
     if (d.target === 'draft') {
       if (recipeDraft && (recipeDraft.x1 - recipeDraft.x0 < 8 || recipeDraft.y1 - recipeDraft.y0 < 8)) recipeDraft = null; // A click, not a box.
       else recipeStatus('Box drawn (' + Math.round(recipeDraft.x1 - recipeDraft.x0) + '×' + Math.round(recipeDraft.y1 - recipeDraft.y0) + '). Name it and Save recipe, or drag its edges to adjust.');
@@ -1079,23 +1218,36 @@
   function placeOnAllEligible() {
     const name = byId('recipe-list').value, recipe = data.recipes?.[name];
     if (!recipe) { recipeStatus('Save a recipe first.'); return; }
-    const skip = byId('recipe-skip-existing').checked; let placed = 0, skipped = 0, noEnd = 0; const done = [];
-    recipeStatus('Placing "' + name + '"…');
+    const audit = window.ModularWeaponRecipeProvenance; // Shared safeguard against single-ended haft bulk placements.
+    if (!audit) { recipeStatus('Recipe provenance helper unavailable; bulk placement cancelled safely.'); return; }
+    const skip = byId('recipe-skip-existing').checked, planned = []; // Stage the entire change before confirmation.
+    let skipped = 0, noEnd = 0;
     for (const [shaftKey, shaft] of Object.entries(data.shafts)) {
-      if (!shaft.mounts.some(m => m.type === 'eye')) continue; // Only hafts authored for eye-type heads.
+      if (!audit.isMultiEndedSleeveHaft(shaft)) continue; // Only physically separated blade mounts, not eye+tang at a single joint.
       for (const [headKey, head] of Object.entries(data.heads)) {
-        if (head.mount.type !== 'blade' || api.isDisallowed(shaftKey, headKey)) continue; // Tang heads this haft allows.
+        if (head.mount.type !== 'blade' || api.isDisallowed(shaftKey, headKey)) continue;
         const pair = shaft.overrides[headKey];
-        // Skipped: this recipe is already there, or (when asked) the pair has hand-made bridge work. Other recipes' boxes don't count.
-        if (pair?.bridges?.strokes?.some(op => op.recipe === name) || (skip && pair?.bridges?.strokes?.some(op => !op.recipe))) { skipped++; continue; }
+        if (pair?.bridges?.strokes?.some(op => op.recipe === name)
+          || (skip && pair?.bridges?.strokes?.some(op => !op.recipe))) { skipped++; continue; }
         const mounts = mountFrames(shaftKey, headKey);
         if (!mounts.length) { noEnd++; continue; }
-        addPlacedOp(shaftKey, headKey, newPlacedOp(name, defaultRecipeBox(recipe, mounts))); placed++; done.push(shaftKey + ' + ' + headKey);
+        planned.push({ shaftKey, headKey, box: defaultRecipeBox(recipe, mounts) });
       }
     }
+    if (!planned.length) {
+      recipeStatus('No new multi-ended head/haft pairs need this recipe. Single-ended hafts are intentionally excluded.'); return;
+    }
+    const shafts = [...new Set(planned.map(p => p.shaftKey))]; // Names are shown before any mass edit.
+    const summary = 'Place "' + name + '" on ' + planned.length + ' head/haft pairs across '
+      + shafts.map(key => data.shafts[key].label).join(', ')
+      + '? Single-ended hafts (including Kylie) are excluded. Use Undo to revert the whole operation.';
+    if (!window.confirm(summary)) { recipeStatus('Bulk recipe placement cancelled; nothing changed.'); return; }
+    for (const { shaftKey, headKey, box } of planned)
+      addPlacedOp(shaftKey, headKey, newPlacedOp(name, box));
     save(); syncRecipeControls();
-    recipeStatus('Placed "' + name + '" on ' + placed + ' pair(s)' + (skipped ? ', skipped ' + skipped + ' that already have it or have hand-made bridge work' : '') + (noEnd ? ', ' + noEnd + ' had no mount to attach to' : '') +
-      '. Open any pair to rescale its box. ' + (done.length ? 'First few: ' + done.slice(0, 4).join('; ') + '.' : ''));
+    recipeStatus('Placed "' + name + '" on ' + planned.length + ' pair(s) in ' + shafts.length
+      + ' multi-ended haft(s)' + (skipped ? ', skipped ' + skipped + ' already edited' : '')
+      + (noEnd ? ', ' + noEnd + ' had no mount' : '') + '. Undo restores the previous draft.');
   }
   function deleteRecipe() {
     const name = byId('recipe-list').value; if (!data.recipes?.[name]) return;

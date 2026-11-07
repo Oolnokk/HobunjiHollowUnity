@@ -358,9 +358,9 @@
     const incoming = data.schema === SCHEMA ? data : convertLegacy(data, reference); // Preserve old editor drafts and imported v1 exports.
     const next = JSON.parse(JSON.stringify(reference));
     for (const [key, raw] of Object.entries(incoming.shafts || {})) {
-      if (Object.hasOwn(next.shafts, key)) continue;
+      if (Object.hasOwn(next.shafts, key) || Object.hasOwn(Object.prototype, key)) continue; // Imported clones cannot turn reserved prototype names into valid part IDs.
       if (!/^[a-z][a-zA-Z0-9_-]{1,63}$/.test(key) || Object.keys(next.shafts).length >= 60) continue;
-      const donor = next.shafts[raw?.duplicateFrom]; // Only allow new shaft keys based on an already-approved donor, never arbitrary untrusted definitions.
+      const donor = Object.hasOwn(next.shafts, raw?.duplicateFrom) ? next.shafts[raw.duplicateFrom] : null; // Reject inherited keys as donors just as decode() rejects inherited part IDs.
       if (!donor || !/^[a-zA-Z0-9_./'-]+\.(?:png|webp)$/i.test(raw?.sprite || '')) continue;
       next.shafts[key] = { ...JSON.parse(JSON.stringify(donor)), label: String(raw.label || key).slice(0,96),
         sprite: raw.sprite, sourceShape: donor.sourceShape, duplicateFrom: raw.duplicateFrom };
@@ -414,7 +414,8 @@
   }
   function decode(key) {
     const match = /^modular:([^:]+):([^:]+):([^:]+)$/.exec(String(key || '')); // Stable keys survive ordinary gear save/restore.
-    return match && config.shafts[match[1]] && config.heads[match[2]] ? { shaft: match[1], head: match[2], metal: match[3] } : null;
+    return match && Object.hasOwn(config.shafts, match[1]) && Object.hasOwn(config.heads, match[2])
+      ? { shaft: match[1], head: match[2], metal: match[3] } : null; // Inherited prototype fields are not catalog parts.
   }
   function itemKey(shaft, head, metal) { return `modular:${shaft}:${head}:${metal}`; }
   function sourceShape(key) {
@@ -423,7 +424,7 @@
   }
   function settings(shaft, head) { return { ...NEUTRAL, ...(config.shafts[shaft]?.overrides[head] || {}) }; } // Only selected combination's corrections.
   function isDisallowed(shaft, head) {
-    return !config.shafts?.[shaft] || !config.heads?.[head] ||
+    return !Object.hasOwn(config.shafts, shaft) || !Object.hasOwn(config.heads, head) ||
       config.heads[head].craftDisabled === true || // Retired heads still render on saved gear, but cannot form new forgeable pairs.
       !matchingMounts(config.shafts[shaft], config.heads[head]).length ||
       config.shafts[shaft].overrides[head]?.disallow === true;
