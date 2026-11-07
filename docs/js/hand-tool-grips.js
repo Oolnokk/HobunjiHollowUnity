@@ -386,13 +386,18 @@
     const phases = ['neutral', 'windup', 'strike'].map(key => poses?.[key]?.rightHand || null);
     if (!phases.some(p => p?.enabled === true)) return null; // Legacy animations retain ordinary weapon-bound primary hand positioning.
     const t = clamp01(progress);
+    const authored = phases.map((p, i) => p?.enabled === true ? p : (() => { // Inactive phases borrow the nearest authored free target; only influence becomes zero.
+      const near = phases.flatMap((q, j) => q?.enabled === true ? [{ pose: q, distance: Math.abs(i-j) }] : []);
+      near.sort((a,b) => a.distance - b.distance);
+      return near[0]?.pose || p;
+    })()); // Prevent a transition into Free Right Hand from pulling the fingertips toward (0,0,0) before the authored point.
     const wf = clamp01(timing?.windupFrac ?? 0.18), sf = Math.max(wf, clamp01(timing?.strikeFrac ?? 0.34));
     const hf = Math.max(sf, clamp01(timing?.holdFrac ?? 0.62));
     const lerp = (a, b, k) => a + (b - a) * clamp01(k);
     const sample = key => {
-      const n = key === 'influence' ? Number(phases[0]?.enabled === true) : numberOrZero(phases[0]?.[key]);
-      const w = key === 'influence' ? Number(phases[1]?.enabled === true) : numberOrZero(phases[1]?.[key]);
-      const strike = key === 'influence' ? Number(phases[2]?.enabled === true) : numberOrZero(phases[2]?.[key]);
+      const n = key === 'influence' ? Number(phases[0]?.enabled === true) : numberOrZero(authored[0]?.[key]);
+      const w = key === 'influence' ? Number(phases[1]?.enabled === true) : numberOrZero(authored[1]?.[key]);
+      const strike = key === 'influence' ? Number(phases[2]?.enabled === true) : numberOrZero(authored[2]?.[key]);
       if (sequence === 'load') return t <= wf ? lerp(n, w, t / Math.max(wf, 1e-6)) : lerp(w, n, (t - wf) / Math.max(1 - wf, 1e-6));
       if (sequence === 'fire') return t <= sf ? lerp(n, strike, t / Math.max(sf, 1e-6)) : t <= hf ? strike : lerp(strike, n, (t - hf) / Math.max(1 - hf, 1e-6));
       return t <= wf ? lerp(n, w, t / Math.max(wf, 1e-6))
