@@ -9,20 +9,21 @@ const path=require('node:path');
 const source=fs.readFileSync(path.join(__dirname,'../docs/js/ruin-layer-challenges.js'),'utf8'); // Test the shipped challenge dispatcher, not a copied adapter.
 new vm.Script(source,{filename:'ruin-layer-challenges.js'});
 let inMap=false,stageActive=true,ready=false,created=0,disposed=0,solved=0,links=0;
-const registered=[],released=[],controls=[],surfaces=[]; // Assert no hooks, controls or raised supports survive a finished ruin.
+const registered=[],released=[],controls=[],surfaces=[],blockers=[]; // Audit the scoped raised supports and elevated blocker registrations.
 let puzzleOptions=null;
 const bus={
   hasActiveRuinState:()=>inMap,
   registerExternalProjectileTarget(target){registered.push(target);return ()=>released.push(target);}
 };
 const game={getOccupancySnapshot:()=>ready?{count:1}:null};
-const DS={registerSurface:record=>surfaces.push(record),clearScope:scope=>released.push(scope)};
+const DS={registerSurface:record=>surfaces.push(record),registerBlocker:record=>blockers.push(record),clearScope:scope=>released.push(scope)};
 const env={
   DevRandomRuinSimplePuzzles:bus,DevRandomRuin:game,DynamicSurfaces:DS,
   DevRuinFindBlocks:{
     create(options){
       created++;puzzleOptions=options;
       options.kit.registerSurface({id:'find-blocks-test-platform',topY:2});
+      options.kit.registerBlocker({id:'find-blocks-test-stone',bounds:{minX:1,maxX:2,minZ:1,maxZ:2}});
       const control={kind:'findBlocksTest'}; // The real compound room registers and releases its controls as one owned unit.
       options.kit.addControl(control);
       options.kit.registerProjectileTarget({id:'findBlocksTestTarget'});
@@ -56,6 +57,8 @@ assert.equal(challenge.ready,true);
 assert.equal(challenge.linked,true);
 assert.equal(registered.length,1,'The native projectile registry owns nested moving targets');
 assert.equal(surfaces.length,1,'Raised supports are scoped to this wing');
+assert.equal(blockers.length,1,'Pillars route through the layered dungeon collision service');
+assert.equal(blockers[0].scope,surfaces[0].scope,'Per-floor pillar obstacles share the raised support teardown scope');
 assert.equal(controls.length,1,'Native puzzle controls use the normal interaction resolver');
 assert.equal(puzzleOptions.showGate,false,'The existing wing gate must not be duplicated');
 assert.equal(challenge.snapshot().weighted,2,'Mobile diagnostics reflect actual block progress');
