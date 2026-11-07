@@ -316,13 +316,9 @@
       // generic projectile hit. A fire flask or a Flame Shattercask will work.
       const gate=body('puzzle-cave-fire-door-'+id,
         new THREE.BoxGeometry(4.7,3.4,.32),stone,cx,y+1.75,caveGateZ);
-      const dark=body('puzzle-cave-fire-darkness-'+id,
-        new THREE.BoxGeometry(5.05,3.65,.025),basic(0x050404),cx,y+1.82,caveGateZ+.21);
-      dark.userData.puzzleCaveBackdrop=true;
-      dark.visible=false; // An actual carved cave is behind the door, not an opaque dungeon-portal rectangle.
       gate.userData.puzzleCaveDoor=true;
-      rec.door=gate;rec.backdrop=dark;rec.sconces=[];rec.doorRise=0;
-      const gateY=gate.position.y; // Slab-only rise leaves the black cave entrance fixed and both sconces attached to the wall.
+      rec.door=gate;rec.backdrop=null;rec.sconces=[];rec.doorRise=0; // The reward alcove is rendered through the actual opening.
+      const gateY=gate.position.y; // Only the physical slab rises; the sconces remain on the stone wall.
       for(const [index,direction] of [-1,1].entries()){
         const px=cx+direction*2.55,pz=caveGateZ-.15; // Lit sconce vessels sit just in front of the shifted door and remain reachable by ground fire.
         const bracket=body('stone-sconce-'+id+'-'+index,
@@ -341,7 +337,6 @@
         if(!rec.solved||rec.disposed)return;
         rec.doorRise=Math.min(1,rec.doorRise+Math.max(0,Number(dt)||0)/.95);
         gate.position.y=gateY+3.5*rec.doorRise;
-        dark.visible=false; // Never cover the physical treasure alcove with a black portal plane.
       };
     }else if(kind==='timedMelody'){
       // Cliff-door score: visible Scratchbone notation on a stone gate, no audible example.
@@ -357,18 +352,14 @@
       })||null; // Furniture-textured stone, inscribed with hao'uun in the Tankan author font.
       const gate=body('puzzle-cave-stone-door-'+id,
         new THREE.BoxGeometry(4.7,3.4,.32),stone,cx,y+1.75,caveGateZ);
-      const backdrop=body('puzzle-cave-door-darkness-'+id,
-        new THREE.BoxGeometry(5.05,3.65,.025),basic(0x050404),cx,y+1.82,caveGateZ+.21);
-      gate.userData.puzzleCaveDoor=true;backdrop.userData.puzzleCaveBackdrop=true;
-      backdrop.visible=false; // The puzzle already lives in a carved cave: a black portal card is not an interior wall.
-      rec.door=gate;rec.backdrop=backdrop;rec.glyphs=[];rec.scorePanel=null;rec.inscription=null;
+      gate.userData.puzzleCaveDoor=true;
+      rec.door=gate;rec.backdrop=null;rec.glyphs=[];rec.scorePanel=null;rec.inscription=null; // Walk-through gate: no fake portal mesh.
       // The inscription is placed on an unmoving stone flank after its fused wall has been constructed.
-      const baseY=gate.position.y; // Door opening lifts the same slab and its inscriptions, leaving the black aperture fixed.
+      const baseY=gate.position.y; // Door opening lifts the slab and its inscriptions, exposing the real cave.
       rec.animate=dt=>{
         if(!rec.solved)return;
         rec.doorRise=Math.min(1,(rec.doorRise||0)+Math.max(0,Number(dt)||0)/.85);
         gate.position.y=baseY+3.6*rec.doorRise;
-        backdrop.visible=false; // No black plane before or after opening, including during the authored model's async load.
       };
       rec.session=composer.createSession(song,{
         onSolved:()=>{
@@ -532,13 +523,14 @@
       }
     }
     if(options.authoredCliffDoor && (kind==='timedMelody'||kind==='fireSconces')){
-      // Use the real authored, lightly rockified cliff gate (frame, darkness,
-      // stone slab and 0.95-second slab motion). No interactive puzzle metadata
+      // Use the real authored, lightly rockified cliff gate (frame, stone slab,
+      // and 0.95-second slab motion). No black backdrop or interactive puzzle metadata
       // is registered on this visual; only this encounter's judge can open it.
       const furniture=root.AuthoredFurniture;
       Promise.resolve(furniture?.load?.('cliffGate')).then(data=>{
         if(rec.disposed||!data||!furniture?.buildGroup||!rec.door?.parent)return;
-        const model=furniture.buildGroup({...data,puzzle:null}); // Disable direct-interaction bypass on the puzzle-locked gate.
+        const cleanGate={...data,parts:(data.parts||[]).filter(part=>part.id!=='cliff_gate_darkness'),puzzle:null}; // No black backing even if a stale authored asset is cached.
+        const model=furniture.buildGroup(cleanGate); // Disable direct-interaction bypass on the puzzle-locked gate.
         const slab=model.userData?.meshById?.get?.('cliff_gate_slab');
         const motion=data.puzzle?.motion?.parts?.cliff_gate_slab;
         if(!slab||!motion)return;
@@ -547,18 +539,13 @@
         model.scale.setScalar(3); // The wide authored gate becomes a legible multi-glyph puzzle-door rather than a tiny prop.
         group.add(model);
         rec.authoredGate=model;
-        rec.door.visible=false; // The modeled slab/frame/darkness replace the placeholder when the JSON is ready.
-        const darkness=group.children.find(node=>node.userData?.puzzleCaveBackdrop);
-        if(darkness)darkness.visible=false; // The authored passage is a real treasure alcove, not a painted black card.
+        rec.door.visible=false; // The modeled slab/frame replace the placeholder when the JSON is ready.
         const off=motion.off,on=motion.on;
-        const authoredDark=model.userData?.meshById?.get?.('cliff_gate_darkness')||null; // This decorative portal plane is inappropriate inside a real carved cave.
-        if(authoredDark)authoredDark.visible=false; // Hide it even while the physical stone slab remains locked.
         const updateAuthoredDoor=()=>{
           const progress=Math.max(0,Math.min(1,Number(rec.doorRise)||0));
           const ease=progress*progress*(3-2*progress);
           slab.position.y=off.y+(on.y-off.y)*ease;
           slab.scale.z=off.sz+(on.sz-off.sz)*ease;
-          if(authoredDark)authoredDark.visible=false; // A late async animation must never bring the black rectangle back.
         };
         const priorAnimation=rec.animate;
         rec.animate=dt=>{priorAnimation?.(dt);updateAuthoredDoor();};
