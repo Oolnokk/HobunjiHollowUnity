@@ -101,7 +101,8 @@ const previewState = {
 const preview = {
   state:previewState,
   FRETTED_PLUCK_MODES:{'arp-forward-8':{kind:'arp',division:2},direct:{kind:'direct',division:1}},
-  demoAutomaticPattern:event => ({melodyMidi:60 + event.noteIndex * 10,steps:[0,1,2,3].map(offset => ({type:'note',midi:60 + event.noteIndex * 10 + offset,velocity:1})),label:'roll'}),
+  demoAutomaticPattern:event => ({melodyMidi:60 + event.noteIndex * 10,fret:{noteIndex:event.noteIndex},steps:[0,1,2,3].map(offset => ({type:'note',midi:60 + event.noteIndex * 10 + offset,velocity:1})),label:'roll'}),
+  automaticPatternSteps:(midi,fret) => ({steps:[0,1,2,3].map(offset => ({type:'note',midi:midi + offset,velocity:1})),label:'roll'}),
   gameTime: () => 0,
   setTimeout: (fn,delay) => {previewTimers.push({fn,delay});return previewTimers.length;},
   playAuditoryOnlyMidi: midi => {previewNotes.push(midi);},
@@ -122,6 +123,8 @@ assert.equal(previewTimers.length,8,'Single Note must never acquire an automatic
 const frameSource = extractFunction('updateGameFrame');
 assert.doesNotMatch(frameSource,/restartActiveFrettedPluck\(/,'harmony changes must not restart an existing arpeggio');
 const pulseSource = extractFunction('playFrettedPluckPulse',true);
+assert.match(pulseSource,/sharedTransportData\(pulseTarget\)[\s\S]*?automaticPatternSteps\(fretMidi,fret,state\.pluckInputMode,pulseClock\)/,
+  'ahead-of-time arpeggios must voice the next pulse against its future harmony chord');
 assert.ok(pulseSource.indexOf('state.pluckTimer = setTimeout') < pulseSource.indexOf('await playAuditoryOnlyMidi'),
   'the next timed pulse must be armed before asynchronous Web Audio initialization');
 assert.match(engine,/if \(!usesAutomaticPluckInput\(\)\) interruptAutoReleaseTail\(/,
