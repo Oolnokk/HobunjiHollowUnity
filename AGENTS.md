@@ -32,6 +32,10 @@ Drawn from the commit history (~9k commits) and the periodic review-fix commits.
 
 Before finishing: `node --check` the files you touched, `node scripts/check-cache-busts.js --fix`, then `node scripts/run-tests.js`.
 
+## Performance work
+
+Before investigating a lag, memory or "slow after fights" report, read [`docs/architecture/performance-investigation-log.md`](docs/architecture/performance-investigation-log.md). It records the causes already found and fixed (bandit/tribe corpse rigs that never go away, zones that could never be evicted), the suspects that were measured and ruled out (character data, wilderness terrain, outline toggles in an empty scene), the measurement traps that produced wrong conclusions, and the leads that are real but not yet fixed. Add to it when you rule something in or out.
+
 ## Runtime frame ownership
 
 Before adding, removing, or migrating permanent `requestAnimationFrame` work, read [`docs/architecture/runtime-frame-scheduler.md`](docs/architecture/runtime-frame-scheduler.md). It defines which work belongs to `gameLoop`, `RuntimeFrameScheduler`, Three.js render hooks, timers/events, or an isolated animation context. Feature modules register their own scheduler callbacks; do not add feature-specific behavior to the scheduler itself.

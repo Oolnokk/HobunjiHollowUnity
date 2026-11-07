@@ -45,8 +45,82 @@ function flipCanvasX(source){
   ctx.translate(out.width,0);ctx.scale(-1,1);ctx.drawImage(source,0,0);
   return out;
 }
+function canonicalPreviewSlot(slot){
+  return({hood:'hood',hat:'hat',torso:'torsoCosmetic',overwear:'armCosmetic',pauldron:'pauldron'})[slot]||null;
+}
+function canonicalPreviewSourceLayers(garment,source,options){
+  const variant=`${E.sourceSpecies.value}_${E.sourceGender.value}`;
+  const metadata=options.variantLayers?.[variant]||options.layers||[];
+  const sprites=(source?._layers||[]).filter(layer=>!layer.path?.includes('behindImage'));
+  if(metadata.length!==sprites.length)throw new Error(`Game portrait metadata mismatch: ${garment.id} has ${metadata.length} source materials but the fit editor loaded ${sprites.length}. Cannot promise runtime parity.`);
+  return sprites.map((sprite,i)=>({sprite,meta:metadata[i]})); // The source catalog and portrait extractor iterate the same authored parts in insertion order.
+}
+function canonicalPreviewGarmentOption(garment,source,options,overrides,opacity,previewTag){
+  const sourceLayers=canonicalPreviewSourceLayers(garment,source,options);
+  const variant=`${E.species.value}_${E.gender.value}`;
+  const targetMetadata=options.variantLayers?.[variant]||sourceLayers.map(pair=>pair.meta); // New species variants use donor metadata until their exported config is installed.
+  if(targetMetadata.length!==sourceLayers.length)throw new Error(`Game portrait has ${targetMetadata.length} target layers but ${sourceLayers.length} donor layers for ${garment.id}.`);
+  const layers=sourceLayers.map(({sprite,meta},i)=>{
+    const target=targetMetadata[i];
+    if(target.pos!==meta.pos||target.paletteColorKey!==meta.paletteColorKey)
+      throw new Error(`Cannot align ${garment.id} material ${i} with the game's target layer order/role.`);
+    const key=`${target.url}#fit-${previewTag}-${i}`; // Keep exact original URL text for the game's hood/hat rear replacement rules.
+    const warped=warpGarment(fittedSourceCanvasForLayer(sprite),warpGridForMode(),R.body.width,R.body.height);
+    const canvas=document.createElement('canvas');canvas.width=warped.width;canvas.height=warped.height;
+    const ctx=canvas.getContext('2d',{alpha:true});ctx.globalAlpha=opacity;ctx.drawImage(warped,0,0);
+    canvas.naturalWidth=canvas.width;canvas.naturalHeight=canvas.height; // The portrait renderer reads natural dimensions from image sources.
+    overrides.set(key,canvas);
+    const result={...target,url:key};
+    const behindSprite=source?._layers?.find(item=>item.name===sprite.name+'.behindImage');
+    if(behindSprite){
+      const behindKey=`${target.behindUrl||meta.behindUrl||target.url}#fit-behind-${previewTag}-${i}`;
+      const rear=warpGarment(behindSprite.canvas,warpGridForMode(),R.body.width,R.body.height);
+      const rearCanvas=document.createElement('canvas');rearCanvas.width=rear.width;rearCanvas.height=rear.height;
+      const rearCtx=rearCanvas.getContext('2d',{alpha:true});rearCtx.globalAlpha=opacity;rearCtx.drawImage(rear,0,0);
+      rearCanvas.naturalWidth=rearCanvas.width;rearCanvas.naturalHeight=rearCanvas.height;
+      overrides.set(behindKey,rearCanvas);
+      result.behindUrl=behindKey; // Only explicit exported behindImage art is warped; generic game replacements remain unchanged.
+    }
+    return result;
+  });
+  return layers;
+}
+async function canonicalFittedGarmentPortrait(runtime){
+  const garment=garmentRecord(),slot=canonicalPreviewSlot(garment?.slot);
+  if(!slot||mode==='body'||routedPatchIsBody())return null;
+  const cosmetics=R.three.cosmetics;
+  const option=cosmetics?.optionCache?.get(garment.id)
+    ||[...(cosmetics?.optionCache?.values?.()||[])].find(entry=>entry?.id===garment.id);
+  if(!option)throw new Error(`Cannot find ${garment.id} in the game's loaded portrait options; runtime parity is unavailable.`);
+  const showFitted=E.showGarment.checked&&!!R.cloth;
+  const showAuthored=E.showAuthored.checked&&!!R.authoredTargetCloth;
+  if(!showFitted&&!showAuthored)return null;
+  const overrides=new Map(); // Per-build raster overrides, never entered into the game's shared image cache.
+  const previewTag=R.three.buildGeneration;
+  const fitted=showFitted?canonicalPreviewGarmentOption(garment,R.cloth,option,overrides,+E.opacity.value,previewTag):[];
+  const targetVariant=`${E.species.value}_${E.gender.value}`;
+  const authored=showAuthored?option.variantLayers?.[targetVariant]||[]:[];
+  if(showAuthored&&!authored.length)throw new Error(`No authored ${garment.id} target layers for the canonical runtime comparison.`);
+  const group={...option,onlyExactSpeciesVariant:true,
+    variantLayers:{...option.variantLayers,[targetVariant]:[...fitted,...authored]}};
+  const profile={...runtime.profile,[slot]:group}; // Game owns tint selection, front/back layer order, head overlap, and special rear image replacement.
+  const colorRng=window.NpcAvatarPreview?.seededRng?.(`clothing-fit-preview:${E.species.value}:${E.gender.value}:${garment.id}`);
+  window.ensurePortraitClothingPaletteColors?.(profile,colorRng); // Newly equipped garments get the same complete base/trim palette slots as regular NPC gear.
+  const size=runtime.front.width;
+  const front=Object.assign(document.createElement('canvas'),{width:size,height:size});
+  const back=Object.assign(document.createElement('canvas'),{width:size,height:size});
+  const options={seatId:'clothing-fit-runtime',forceEyesOpen:true,layerImageOverrides:overrides,
+    layerImageOverrideVersion:previewTag};
+  await window.NpcAvatarPreview.renderProfileToCanvas(front,profile,options);
+  await window.NpcAvatarPreview.renderProfileToCanvas(back,profile,{...options,portraitView:'behind'});
+  return{...runtime,profile,frontComposed:front,backComposed:back,canonicalGarmentPreview:true};
+}
 async function composeRuntimePortrait(){
   const runtime=await runtimePortraitSet();
+  if(R.cloth?._layers&&R.three?.cosmetics&&!R.patchWorkflow?.active){
+    const canonical=await canonicalFittedGarmentPortrait(runtime);
+    if(canonical)return canonical; // Both textures come from renderProfileToCanvas, the same portrait renderer as gameplay.
+  }
   const front=Object.assign(document.createElement('canvas'),{width:runtime.front.width,height:runtime.front.height});
   const back=Object.assign(document.createElement('canvas'),{width:runtime.back.width,height:runtime.back.height});
   const fctx=front.getContext('2d',{alpha:true}),bctx=back.getContext('2d',{alpha:true});

@@ -49,7 +49,7 @@ async function updateThreePreview(){
   try{
     await withThreePreviewDeadline(ensureRigRuntime(),60000,'3D module loading');
     if(buildId!==R.three.buildGeneration)return;
-    E.threeStatus.textContent='Rendering runtime portrait + cloud mask…';
+    E.threeStatus.textContent='Rendering runtime portrait…';
 
     const avatar=await withThreePreviewDeadline(composeRuntimePortrait(),35000,'3D avatar rendering');
     if(buildId!==R.three.buildGeneration)return;
@@ -133,7 +133,11 @@ async function updateThreePreview(){
       gender:E.gender.value
     };
     render(false); // Paint the synchronized 2D texture without scheduling a recursive 3D rebuild.
-    E.threeStatus.textContent=`Target: ${E.species.value} ${E.gender.value} • Source: ${E.sourceSpecies.value} ${E.sourceGender.value} • Runtime rig: portrait + neck + ${handState} + feet + ${cloud} + garment preset B${R.three.extendedGroup?' + extended overlay':''}.`;
+    const garmentParity=avatar.canonicalGarmentPreview?'canonical game clothing renderer'
+      :R.patchWorkflow.active?'custom patch overlay (approximate garment layering)'
+      :mode==='body'?'canonical bare-body portrait'
+      :R.cloth?'manual garment fallback (not runtime-parity verified)':'canonical bare-body portrait'; // Mobile diagnostics must distinguish exact rendering from fallback.
+    E.threeStatus.textContent=`Target: ${E.species.value} ${E.gender.value} • Source: ${E.sourceSpecies.value} ${E.sourceGender.value} • Runtime rig: portrait + neck + ${handState} + feet + ${cloud} + garment preset B • ${garmentParity}${R.three.extendedGroup?' + extended overlay':''}.`;
   }catch(error){
     if(buildId!==R.three.buildGeneration)return;
     try{pendingFeet?.dispose?.()}catch{}

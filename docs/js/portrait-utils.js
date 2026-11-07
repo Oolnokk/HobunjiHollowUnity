@@ -1411,6 +1411,19 @@ function _behindFlippedLayer(layer) {
   return { ...layer, xformPreset: null, ax: preset.ax, ay: preset.ay, sx: -preset.sx, sy: preset.sy };
 }
 
+function _isFurLinedHood(hood) {
+  const hoodIds = [hood?.id, hood?.originalId].filter(Boolean).join(' '); // Includes custom loom-made instance IDs.
+  return _textMatchesAny(hoodIds, ['fur-lined-hood']);
+}
+
+function _placeFurLinedTrimBehindRearHood(layers, hood) {
+  if (!_isFurLinedHood(hood)) return;
+  const trimIndex = layers.findIndex(({ layer }) => layer?.paletteColorKey === 'B'); // Finds fur trim in the resolved hood stack.
+  if (trimIndex < 1) return;
+  const [trim] = layers.splice(trimIndex, 1); // Put fur under the opaque finehood-back without changing other hood styles.
+  layers.unshift(trim);
+}
+
 function _cloneBehindLayer(layer, group, gender) {
   if (!layer) return layer;
   const url = _getBehindLayerUrl(layer, group, gender);
@@ -1442,7 +1455,10 @@ function resolveLayerTintSlot(key, baseTintSlot) {
 async function renderProfile(canvas, profile, renderOptions = {}) {
   const { fighter, hair, hairFront, hairBack, hairSide, hairSideL, hood, mask, eyes, upperFace, facialHair, pauldron, hat, torsoCosmetic, armCosmetic } = profile;
   const bodyColors = profile.bodyColors || {};
-  const imageForTint = typeof renderOptions?.imageForTint === 'function' ? renderOptions.imageForTint : _imageForTint; // Used by every portrait layer draw in this render; weaving injects a render-local resolver so concurrent async portraits cannot share transient pattern state.
+  const layerImageOverrides=renderOptions?.layerImageOverrides instanceof Map?renderOptions.layerImageOverrides:null; // Per-render fitting images never enter the shared portrait image cache.
+  const imageForTint = typeof renderOptions?.imageForTint === 'function' ? renderOptions.imageForTint
+    :layerImageOverrides ?(image,key,tint)=>_imageForTint(image,layerImageOverrides.has(key)?`${key}|fit-preview:${renderOptions.layerImageOverrideVersion||0}`:key,tint)
+    :_imageForTint; // Keep the canonical tint resolver for gameplay and preserve the weaving system's per-render override.
   const omitHeadSpriteAndCosmetics = renderOptions?.omitHeadSpriteAndCosmetics === true;
   const headCosmeticsOnly = renderOptions?.headCosmeticsOnly === true; // Front-view alpha source for the 'mask' head gate: the head sprite plus every head-slot cosmetic, without arms, torso, clothing or pauldrons.
   const skipHeadSprite = renderOptions?.skipHeadSprite === true; // Headless characters (Imlao): the head sprite is simply not drawn, so everything it would have hidden shows through.
@@ -1664,6 +1680,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
     headUrl = _getBehindHeadUrl(speciesId, gender) || headUrl;
     if (!profile?.bodyColors?.__hobunjiWovenClothing?.some(item=>item?.slot==='hood' && item?.furHood)
         && resolveOptionLayers(hood, resolvedFighter).some(layer => layer.pos === 'back')) hoodLayers.length = 0; // Preserve other hoods' rear silhouette logic; fur stacks supply their own explicit rear order.
+    _placeFurLinedTrimBehindRearHood(hoodLayers, hood); // The front trim becomes a narrow rear edge behind the Fine Hood shell.
     const useBehindLayers = (layerList) => {
       for (const entry of layerList) {
         entry.layer = _cloneBehindLayer(entry.layer, entry.group, gender);
@@ -1740,9 +1757,9 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
   let imgMap;
   // Fast synchronous path: all images already resolved in cache — avoid async overhead.
   const _allUrls = [...neededUrls];
-  const _allResolved = _allUrls.every(url => IMG_CACHE.get(url) instanceof Image);
+  const _allResolved = _allUrls.every(url => layerImageOverrides?.has(url) || IMG_CACHE.get(url) instanceof Image);
   if (_allResolved) {
-    imgMap = new Map(_allUrls.map(url => [url, IMG_CACHE.get(url)]));
+    imgMap = new Map(_allUrls.map(url => [url, layerImageOverrides?.get(url) || IMG_CACHE.get(url)]));
   } else {
     // Load every layer independently — a missing/404ing sprite (e.g. a
     // species/gender combo whose art isn't drawn yet) should just omit that
@@ -1750,7 +1767,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
     // expected path, this starts drawing it with no further code changes.
     const settled = await Promise.allSettled(
       _allUrls.map(async (url) => {
-        try { return [url, await loadImg(url)]; }
+        try { return [url, layerImageOverrides?.get(url) || await loadImg(url)]; }
         catch (error) {
           if (url === headUrl) {
             for (const fallbackUrl of (resolvedFighter?.headFallbackUrls || fighter?.headFallbackUrls || [])) {
@@ -1968,7 +1985,21 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
       torsoClothing: () => drawBreathingLayers(torsoClothingLayers),
       overwear:      () => drawBreathingLayers(overwearLayers),
       hatUnder:      () => drawEmoteLayers(hatUnderLayers),
-      hood:          () => { drawBreathingLayers(hoodBackLayers); drawBreathingLayers(hoodLayers); },
+      hood:          () => {
+        drawBreathingLayers(hoodBackLayers);
+        const rearTrim = _isFurLinedHood(hood) && hoodLayers[0]?.layer?.paletteColorKey === 'B' ? hoodLayers[0] : null; // Only the Fur-lined Hood uses its front trim as rear fur fringe.
+        if (!rearTrim) { drawBreathingLayers(hoodLayers); return; }
+        const xf = resolveXform(rearTrim.layer); // Match the rear trim's transformed source rectangle.
+        const height = PORTRAIT_L * xf.sy; // Crop the unrelated topmost 20% of the reused front trim without touching its fringe.
+        const cropTop = PORTRAIT_CH / 2 - xf.ax * PORTRAIT_L - height * 0.30; // Source pixels at y=35/173 and below remain visible.
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(0, cropTop, PORTRAIT_CW, PORTRAIT_CH);
+        ctx.clip();
+        drawBreathingLayers([rearTrim]);
+        ctx.restore();
+        drawBreathingLayers(hoodLayers.slice(1)); // The existing finehood-back shell covers the fur, preserving the intended edge.
+      },
       pauldron:      () => drawEmoteLayers(pauldronLayers),
       hatOver:       () => drawEmoteLayers(hatOverLayers),
       snowgoggles:   () => drawEmoteLayers(behindSnowgogglesLayers),

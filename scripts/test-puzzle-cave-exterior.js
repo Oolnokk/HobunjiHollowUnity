@@ -51,6 +51,7 @@ const grid=Array.from({length:28},()=>Array.from({length:14},(_,col)=>({
 const area='map_test_cliffs',mapId='map_i_den_map_test_cliffs_den1';
 const network=context.CliffRouteNetwork.build(grid,{area,
   tileY:tile=>(tile.elevTier||0)*9,blocked:tile=>!tile||tile.incline||tile.type==='rock'});
+if(!network.balconies.length) console.log('Mini plateau diagnostics', JSON.stringify({routes:network.routes.length, candidates:network.candidateCount, rejectedRoutes:network.rejectedRoutes, base:network.miniBaseStats}));
 assert(network.balconies.length>0,'the real cliff route planner generates a valid mini-cliff');
 const site=index=>({contents:'puzzle_cave',mapId,denId:'den1',signature:'cave-outdoor-'+index,
   mouthAnchor:{x:4,y:9}});
