@@ -47,6 +47,23 @@ for (const [key, color] of [
   assert.equal(ITEM_DEFS[key].spriteMode, 'direct', key + ' uses the shared shade-fill renderer');
 }
 
+const nativeSeedColors = [ // Each current native seed ID must follow the visible vegetable/berry pigment, not an emoji or fallback.
+  ['needlegrainSeeds', 0xd4c526], ['heftrootSeeds', 0xf0d15a], ['garlinkSeeds', 0xf2ead0],
+  ['ongyumsSeeds', 0xe09a4b], ['redberrySeeds', 0xff4f62], ['blueberrySeeds', 0x5f80ff],
+  ['yellowberrySeeds', 0xffe86a], ['whiteberrySeeds', 0xffffff], ['blackberrySeeds', 0x17121f],
+  ['blackMustardSeed', 0x1f1812], ['greenMustardSeed', 0x9bd66b],
+];
+const beforeCropAttach = { window: {} }; // Proves native pouch tint remains correct even if the HUD asks before farm initialization.
+vm.runInNewContext(read('docs/js/crop-varieties.js'), beforeCropAttach);
+for (const [key, color] of nativeSeedColors) {
+  assert.equal(beforeCropAttach.window.CropVarieties.seedColorOf(key), color, key + ' has an early-boot color fallback');
+  assert.equal(genetics.seedColorOf(key), color, key + ' reads the existing ripe crop palette');
+  const definition = { cat: 'seed', label: key }; // Exercises seed metadata with and without pre-registered crop definitions.
+  assert.equal(objects.ensure(key, definition).spriteColor, color, key + ' colors the pouch correctly');
+}
+assert.equal(objects.ensure('grassSeeds', { cat: 'ingredient', label: 'Grass Seeds' }).spriteIcon, 'pouch.png',
+  'non-vegetable seeds still receive a neutral pouch');
+
 const east = genetics.ensure('cv_needlegrain_222222'); // Independent parental varieties with distinctive regional colors.
 const west = genetics.ensure('cv_needlegrain_333333');
 const cross = genetics.breed(east.id, west.id, () => .6); // Deterministic child: no rare mutation.
@@ -62,6 +79,7 @@ assert.equal(genetics.seedColorOf(next.seedKey), next.color);
 for (const key of ['harlyaoCopperCoin', 'harlyaoTinCoin', 'harlyaoBronzeCoin', 'hachutuMoneyBones', 'pebble', 'coralBead']) {
   assert.equal(artFor(key).spriteIcon, 'pouch.png', key + ' is stored as a loose-object pouch');
   assert.equal(artFor(key).spriteColor, undefined, key + ' keeps the untinted authored pouch colors');
+  assert.equal(artFor(key).spriteIcon, 'pouch.png', key + ' retains its pouch across repeated inventory refreshes');
 }
 assert.equal(artFor('gold'), null, 'ordinary money must not be confused with a collectible Harlyao coin');
 assert.equal(artFor('bespokePebble'), null, 'bespoke object art wins over generic small-item detection');
