@@ -437,7 +437,8 @@
        but outputs cooking Tea Blends, so it must load after both systems. -->
   <script src="js/tea-grinder.js?v=20261019h0edeaef"></script>
   <script src="js/persistent-ground-fire.js?v=20261107puzzleFire1"></script><!-- Area-scoped fire patches shared by flasks, Shattercasks and stone sconces. -->
-  <script src="js/alchemy-flasks.js?v=20261106hbd5b51f"></script>
+  <script src="js/throw-cover-trajectory.js?v=20261107cover1"></script> <!-- Shared height-aware thrown-item cover and black outlined AoE preview. -->
+<script src="js/alchemy-flasks.js?v=20261107cover1"></script>
   <!-- Dye catalog/ownership (window.DyeSystem) — character creation, the
        redye panel, General Store clothing stock, and treasure loot all
        draw from it. Self-contained aside from deps injected via init(), so
@@ -932,7 +933,7 @@
        dependencies; must load before shattercasks.js, which feeds them. See docs/architecture/ruin-capabilities.md. -->
   <script src="js/world-events.js?v=1"></script>
   <script src="js/targetables.js?v=1"></script>
-  <script src="js/shattercasks.js?v=20261107fusedWall1"></script>
+  <script src="js/shattercasks.js?v=20261107cover1"></script>
   <script src="js/crate-piles.js?v=20261105hf6df591"></script>
   <script src="js/hronal-witch-bombs.js?v=20261106ha49d50c"></script>
   <!-- Hanging ropes: the shared rope swing arithmetic (pure) and the rope component burdens hang from. Needs Shattercasks at
