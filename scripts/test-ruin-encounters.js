@@ -35,7 +35,7 @@ let payload = null;
 const anchor = {};
 const node = { userData: { burdenPlateAnchor: anchor, burdenPlatePayload: null, burdenPlateComplete: false, puzzleProgress: 0 } };
 window.FurniturePuzzleRuntime = { getNode: (m, id) => (m === MAP && id === 'plinth' ? node : null) };
-const seat = (x = 5, z = 5) => { payload = { id: 'statue', exploded: false, group: { parent: anchor, getWorldPosition: v => Object.assign(v, { x, y: 0, z }), position: { x, y: 0, z } } }; node.userData.burdenPlatePayload = payload; };
+const seat = (x = 5, z = 5, y = 0) => { payload = { id: 'statue', exploded: false, group: { parent: anchor, getWorldPosition: v => Object.assign(v, { x, y, z }), position: { x, y, z } } }; node.userData.burdenPlatePayload = payload; };
 const reset = () => { RE.clearScope(MAP); hostileObjects.clear(); made.length = 0; bombs.length = 0; dropped = []; discarded.length = 0; payload = null; Object.assign(node.userData, { burdenPlatePayload: null, burdenPlateComplete: false, puzzleProgress: 0 }); };
 const events = [];
 for (const type of ['encounter:armed', 'encounter:start', 'encounter:spawn', 'encounter:plant', 'encounter:statue-destroyed', 'encounter:success', 'encounter:failed']) window.WorldEvents.on(type, p => events.push(type));
@@ -153,6 +153,60 @@ const run = async (seconds, step = 0.1) => { for (let t = 0; t < seconds - 1e-9;
   payload.group.parent = null; node.userData.burdenPlatePayload = null; await run(0.2);
   const slow = release(); await flush(); await flush();
   assert.equal(enc.enemies.length, 0, 'a late spawn is discarded once the attempt is over');
+
+  // ---- stacked stories use the actual world height, including the sphere's diagonal boundary
+  reset();
+  enc = RE.create({ id: 'vertical', mapId: MAP, objective: { plinthId: 'plinth' }, schedule: [] });
+  seat(5, 5, 32); await run(0.1);
+  window.WorldEvents.emit('blast', { scope: MAP, x: 5, z: 5, y: 0, radius: 2 });
+  assert.equal(discarded.length, 0, 'a blast on another floor cannot destroy the statue');
+  window.WorldEvents.emit('blast', { scope: MAP, x: 6.5, z: 5, y: 30.5, radius: 2 });
+  assert.equal(discarded.length, 0, 'horizontal and vertical distances must combine into the blast radius');
+  window.WorldEvents.emit('blast', { scope: MAP, x: 5, z: 5, y: 30, radius: 2 });
+  assert.equal(discarded.length, 1, 'the same statue remains vulnerable at the radius boundary');
+
+  // ---- a restarted attempt must own its pending count and its entire multi-enemy wave
+  reset();
+  const releases = []; // Controlled asynchronous builds reproduce retries and replacement under asset-loading delays.
+  RE.registerEnemyKind('deferred', { spawn: () => new Promise(resolve => releases.push(() => {
+    const entity = baseEntity({ x: 0, y: 0 }, { kind: 'deferred' }); // Disposed stale entities never join the new attempt.
+    resolve(entity); return entity;
+  })) });
+  enc = RE.create({ id: 'retry', mapId: MAP, maxAlive: 2, objective: { plinthId: 'plinth' }, spawners,
+    schedule: [{ t: 0, kind: 'deferred', count: 3, spawner: 0 }] });
+  seat(); await run(0.2);
+  assert.equal(enc.pending, 1);
+  node.userData.burdenPlatePayload = null; await run(0.1);
+  seat(); await run(0.2);
+  assert.equal(enc.pending, 1, 'the new attempt already has its own pending build');
+  const stale = releases[0](); // Completes the previous attempt while the next attempt is running.
+  await flush(); await flush();
+  assert.equal(enc.pending, 1, 'a stale completion cannot decrement the new attempt count');
+  assert.equal(enc.enemies.length, 0);
+  assert.equal(stale.avatarRef.disposed, true);
+  assert.equal(releases.length, 2, 'the discarded wave must not request its remaining enemies');
+  releases[1](); await flush(); await flush();
+  assert.equal(enc.enemies.length, 1);
+  assert.equal(enc.pending, 1, 'the active wave can request its second enemy');
+  releases[2](); await flush(); await flush();
+  assert.equal(enc.enemies.length, 2);
+  assert.equal(enc.pending, 0);
+  assert.equal(releases.length, 3, 'the active wave respects maxAlive');
+
+  // ---- removing and replacing an encounter with the same ID also invalidates pending builds
+  reset(); releases.length = 0;
+  enc = RE.create({ id: 'replacement', mapId: MAP, objective: { plinthId: 'plinth' }, spawners,
+    schedule: [{ t: 0, kind: 'deferred', count: 2, spawner: 0 }] });
+  seat(); await run(0.2);
+  const replaced = enc; // Retained only to verify the old encounter cannot regain enemies.
+  enc = RE.create({ id: 'replacement', mapId: MAP, objective: { plinthId: 'plinth' }, schedule: [] });
+  await run(0.1);
+  const obsolete = releases[0](); // A reused registry ID must not validate an obsolete encounter object.
+  await flush(); await flush();
+  assert.equal(obsolete.avatarRef.disposed, true);
+  assert.equal(replaced.enemies.length, 0);
+  assert.equal(enc.enemies.length, 0);
+  assert.equal(releases.length, 1);
 
   // ---- scoping / disposal
   assert.equal(RE.clearScope('another'), 0); assert.equal(RE.clearScope(MAP), 1); assert.equal(RE.encounters.length, 0);

@@ -28,6 +28,7 @@
     'dabinggi-hound': '🐕',
     grehlr: '🐈',
     drenkirra: '🦎',
+    moot: '🐾', // Displayed on the Nursery baby list for Moot offspring.
   };
   const SPECIES_LABELS = {
     uumkaoii: "Uumkao'ii",
@@ -35,6 +36,7 @@
     'dabinggi-hound': 'Dabinggi Hound',
     grehlr: 'Grehlr',
     drenkirra: 'Drenkirra',
+    moot: 'Moot', // Keeps the Ranch starter's juvenile name consistent with its adult creature label.
   };
 
   let animalDeps = null; // Captures FarmAnimals' existing injected save/world/permission seam.

@@ -125,4 +125,28 @@ window.BorderTerrain.init({
 });
 window.BorderTerrain.buildTownBorderTerrain();
 assert(scene.items.length >= 8, `expected terrain, cliff, route and water meshes; got ${scene.items.length}`);
+// Northern Cliffs' eastern river mouth must cut through the *exterior* cliff rim,
+// not just the generated playable border. No collision/zone transition is created.
+const outletCols = 28; // Compact simulated live-zone width used to exercise the full border renderer.
+const outletRows = 48; // Enough rows to locate a genuine southeast river mouth.
+const outletGrid = Array.from({ length: outletRows }, () => Array.from({ length: outletCols }, () => ({ type: 'grass', elevTier: 0 }))); // In-memory final zGrid passed to the real wilderness border renderer.
+for (let row = 36; row <= 40; row++) outletGrid[row][outletCols - 1] = { type: 'river', elevTier: 0 };
+const northernRimScene = { items: [], add(mesh) { this.items.push(mesh); } }; // Captures the rendered exterior terrain and decorative river surface.
+Border.buildZoneBorderTerrain(northernRimScene, outletCols, outletRows, 'map_northern_cliffs', 0, outletGrid);
+const mouthRibbon = northernRimScene.items.find(item => item.name === 'map_northern_cliffs_southeast_mire_water_continuation'); // Validates the water remains visually present past the playable boundary.
+assert(mouthRibbon, 'Northern Cliffs river should continue beyond the east border through scenic terrain');
+assert.equal(mouthRibbon.userData.nonTraversableRiverOutlet, true, 'scenic continuation must not become a traversal feature');
+const borderWidth = 18, borderVertices = borderWidth * 2; // Matches buildZoneBorderTerrain's vertex-space border depth.
+const gridWidth = outletCols * 2 + borderVertices * 2 + 1; // Matches the actual exterior heightfield vertex layout.
+const sampleGi = borderVertices + (outletCols + 8) * 2; // A point eight tiles beyond the east playable boundary.
+const sampleGj = borderVertices + Math.round(38.5 * 2); // Center of the exported river-mouth run.
+const rimGround = northernRimScene.items[0].geometry.attributes.position.array; // Exterior ground mesh is the renderer's first attached mesh.
+assert(rimGround[(sampleGj * gridWidth + sampleGi) * 3 + 1] < -0.55,
+  'the southeastern scenic cliff rim must be physically cut below the water surface');
+
+const otherRimScene = { items: [], add(mesh) { this.items.push(mesh); } }; // Control proves other biomes cannot inherit the Mire scenery opening.
+Border.buildZoneBorderTerrain(otherRimScene, outletCols, outletRows, 'map_western_slope', 0, outletGrid);
+assert(!otherRimScene.items.some(item => item.userData.nonTraversableRiverOutlet),
+  'the southern/eastern landscape elsewhere should remain unchanged');
+
 console.log(`PASS background scenery: ${attachments.length} attachments; ${scene.items.length} generated town meshes; cloud entrance ${cloudEntrance.widthCells} tiles at ${cloudEntrance.center}; dense layout ${denseLayout.length} trees.`);

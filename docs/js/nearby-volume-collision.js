@@ -471,6 +471,23 @@
     };
   }
 
+  // Read-only walking/jumping cover query. It intentionally uses the same
+  // authored/procedural furniture bounds as projectiles, even when combat is
+  // inactive or projectile collision is disabled by the player's settings.
+  function movementCoverNear(x, z, radius = 0.2) {
+    if (!deps || !Number.isFinite(x) || !Number.isFinite(z)) return [];
+    if (deps.getActiveScene?.() !== cachedScene) rebuild();
+    return querySegmentCandidates({ x, z }, { x, z }, Math.max(0, radius))
+      .filter(candidate => {
+        if (candidate.node?.visible === false || !candidate.node?.parent) return false;
+        if (candidate.shape === 'aabb') {
+          return Math.abs(candidate.x - x) <= candidate.halfX + radius
+            && Math.abs(candidate.z - z) <= candidate.halfZ + radius;
+        }
+        return Math.hypot(candidate.x - x, candidate.z - z) <= candidate.radius + radius;
+      });
+  }
+
   function debugVolumes(x, z, radius = 8) {
     if (!deps || !options.enabled || !options.projectiles) return [];
     const scene = deps.getActiveScene?.(); // Debugging can inspect cover outside combat without enabling gameplay collision.
@@ -510,6 +527,7 @@
     segmentSightHit: (start, end, radiusWorld = 0) => segmentHit(start, end, radiusWorld, true), // NPC perception must retain semantic cover even when projectile collision is disabled or combat has not started.
     debugSnapshot,
     debugVolumes,
+    movementCoverNear, // Reuses the exact cover heights for ordinary jump clearance and landings.
     constants: { SPATIAL_CELL_TILES, TREE_HALF_TILE, HEAD_CACHE_MS },
   };
 })();
