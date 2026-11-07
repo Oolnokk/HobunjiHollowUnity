@@ -436,15 +436,22 @@
     if (!assembly?.parent) return null;
     return { holder: assembly.parent, toolKey: 'kurraya', gripContext: 'melee' }; // Parent is the real held-tool transform; grip points are item-local, not in the tilted decorative plane group.
   }
+  function playerNoteProgress() {
+    const note = window.HeldActionAnimations?.kurrayaPlayNote;
+    if (!playerKurrayaNote.active || !note || playerKurrayaNote.startedAt === null) return 0;
+    const duration = Math.max(50, (Number(note.durationS) || 0.32) * 1000);
+    const elapsed = performance.now() - playerKurrayaNote.startedAt;
+    return elapsed >= 0 && elapsed < duration ? elapsed / duration : 0; // At rest or after the tail returns to Neutral.
+  }
   function playerRightHandPose() {
     if (!playerKurrayaNote.active) return null;
     const note = window.HeldActionAnimations?.kurrayaPlayNote;
-    const sampler = window.HobunjiHandToolGrips?.sampleFreeRightHand;
-    if (!note?.poses || !sampler) return null;
-    const elapsed = playerKurrayaNote.startedAt === null ? Infinity : performance.now() - playerKurrayaNote.startedAt;
-    const durationMs = Math.max(50, (Number(note.durationS) || 0.32) * 1000);
-    const progress = elapsed < durationMs ? Math.max(0, elapsed / durationMs) : 0; // Outside a note, restore the independently authored Neutral.
-    return sampler(note.poses, note, progress, note.sequence);
+    return window.HobunjiHandToolGrips?.sampleFreeRightHand?.(note?.poses, note, playerNoteProgress(), note?.sequence) || null;
+  }
+  function playerGripAnimationState() {
+    if (!playerKurrayaNote.active) return null;
+    const note = window.HeldActionAnimations?.kurrayaPlayNote;
+    return window.HobunjiHandToolGrips?.animationGripAt?.(playerNoteProgress(), note, note?.poses, note?.sequence, 'kurraya') || null; // Real note timeline drives 2H percentages, not the previous weapon swing.
   }
   const fluteState = {active:false,root:null,texture:null,frame:null,loads:0,failures:0,lastError:'',noteStartedAt:null,noteCount:0}; // Persistent, mobile-readable flute mount state.
   let fluteUpdaterInstalled = false; // Prevents repeat init() calls from accumulating per-frame callbacks.
@@ -611,7 +618,7 @@
   }
 
   window.KurrayaInstrument = { init, buildAssembly, newTwitchState, triggerTwitch, updateTwitch,
-    beginPlayerKurraya, playPlayerKurrayaNote, endPlayerKurraya, playerRightHandPose, playerKurrayaHandTarget,
+    beginPlayerKurraya, playPlayerKurrayaNote, endPlayerKurraya, playerRightHandPose, playerGripAnimationState, playerKurrayaHandTarget,
     beginFlute, playFluteNote, endFlute, fluteHandTarget, notePoseAt, fluteDiagnostics, prepareFluteCanvas,
     kurrayaHandDiagnostics: () => ({ active: playerKurrayaNote.active, noteCount: playerKurrayaNote.noteCount, notePlaying: playerKurrayaNote.startedAt !== null && performance.now() - playerKurrayaNote.startedAt < Math.max(50,(Number(window.HeldActionAnimations?.kurrayaPlayNote?.durationS)||0.32)*1000) }),
   };
