@@ -46,7 +46,7 @@ async function main(){
       const group=new THREE.Group(); // Detached 3D test scene never interferes with the saved player's world.
       const area='puzzle_cave_browser_test';
       const room={x:3,z:5,w:9,d:9};
-      const gateX=room.x+room.w/2,gateZ=room.z+room.d-1.05;
+      const gateX=room.x+room.w/2,gateZ=room.z+room.d-1.28; // Door and its collision are both shifted toward the playable cave.
       const collision=window.AreaFootprintBlockers;
       const countBefore=collision.providerIds().length; // Ensure the test frees only its own colliders, not cached game systems.
       const state={phase:'fire',solved:0,lit:0};
