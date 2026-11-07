@@ -131,6 +131,7 @@ for (const [name,content] of [['flask',flaskSource],['burden',burdenSource]]) {
 class Vector3Lite {
   constructor(x=0,y=0,z=0) { this.x=x; this.y=y; this.z=z; }
   set(x,y,z) { this.x=x;this.y=y;this.z=z;return this; }
+  copy(other) { this.x=other.x;this.y=other.y;this.z=other.z;return this; }
   setScalar(value) { this.x=value;this.y=value;this.z=value;return this; }
 }
 class Object3DLite {
