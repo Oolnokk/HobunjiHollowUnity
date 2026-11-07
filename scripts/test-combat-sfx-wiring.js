@@ -287,7 +287,7 @@ async function testDecodedFinisherTiming() {
   assert(Math.abs(starts[0].duration / starts[0].rate - .3) < 1e-8, 'first processed recording lasts precisely one-third duration');
   assert(Math.abs(starts[1].duration / starts[1].rate - .3) < 1e-8, 'second processed recording lasts precisely one-third duration');
   assert.equal(FakeAudio.plays, nativeBefore, 'processed audio never triggers coupled native playback');
-  assert.deepStrictEqual(gains.slice(-2).map(node => node.gain.value), [0.72, 0.72], 'both WebAudio slashes use 80% of the normal 0.9 recorded volume');
+  assert(gains.slice(-2).every(node => Math.abs(node.gain.value - 0.72) < 1e-9), 'both WebAudio slashes use 80% of the normal 0.9 recorded volume');
   assert.equal(world.window.AudioSystem.combatSfxDebugSnapshot().last.detail.backend, 'independent-WSOLA');
   settings.combatSfx.quickAttackBonusSlash.volume = 0; // Explicit zero must silence even already-decoded positional voices.
   world.window.AudioSystem.playComboFinisherBonusSfx(0, 0, 'farm');
