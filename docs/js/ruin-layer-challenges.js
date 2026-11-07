@@ -423,7 +423,9 @@
         // Standalone puzzle fixtures may omit the shared decal module. Keep the same glowing vertical score and plate-gated reveal.
         const board=new THREE.Group();
         board.name='puzzle-cave-fallback-score';board.position.set(scoreFace.x,scoreFace.y,scoreFace.z);
-        board.rotation.y=scoreFace.yaw;board.visible=false;group.add(board);rec.scorePanel=board;
+        if(board.rotation)board.rotation.y=scoreFace.yaw;
+        else board.rotation={y:scoreFace.yaw}; // Headless Group stubs lack Euler rotation; the rendered THREE.Group has it.
+        board.visible=false;group.add(board);rec.scorePanel=board;
         const columns=Math.min(6,notes.length),rows=Math.ceil(notes.length/6);
         notes.forEach((index,i)=>{
           const number=index+1;
