@@ -14,6 +14,8 @@ const catalog = game.FARM_SPECIALIZATIONS_CONFIG.buildings; // Real carpenter/fa
 assert.equal(catalog.seedMakerSmall.price, 150);
 assert.equal(catalog.seedMakerSmall.daysPerInput, 2);
 assert.equal(catalog.seedMakerSmall.yield, 2);
+assert.equal(catalog.seedMakerSmall.modelKey, 'compostBinSmall', 'seed maker reuses the crate visual without changing recipe base keys');
+assert.equal(catalog.windmillSmall.base, 'handMill', 'existing processing recipe base is untouched');
 assert.ok(game.FARM_SPECIALIZATIONS_CONFIG.specializations.grower.buildings.includes('seedMakerSmall'));
 
 const cropData = { // Canonical crop data supplied by game.js in production.
@@ -168,5 +170,5 @@ assert.match(fs.readFileSync('docs/js/farm-production.js', 'utf8'), /Blended off
 assert.match(fs.readFileSync('docs/js/crop-sprite-art.js', 'utf8'), /hobunjiCropVarietyColor/, 'authored garlink\/ongyums sprite bridge carries hybrid pigment');
 assert.match(fs.readFileSync('docs/js/vegetation-crop-rendering.js', 'utf8'), /hobunjiCropBaseKey/, 'renderer identifies hybrid plants by species, not their new hue');
 new vm.Script(fs.readFileSync('docs/js/vegetation-crop-rendering.js', 'utf8'), { filename: 'docs/js/vegetation-crop-rendering.js' }); // Compile-check for duplicate let/const declarations without a Three.js scene.
-assert.match(fs.readFileSync('docs/js/farm-production.js', 'utf8'), /AuthoredFurniture\.load\(definition\.base \|\| entry\.key\)/);
+assert.match(fs.readFileSync('docs/js/farm-production.js', 'utf8'), /AuthoredFurniture\.load\(definition\.modelKey \|\| entry\.key\)/);
 console.log('crop-varieties: ok (regional climates, inheritance, processing, seeds, planting, persistence)');
