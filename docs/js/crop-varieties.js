@@ -78,7 +78,10 @@
     const growth = (REGIONS[genes[4]].growth + REGIONS[genes[5]].growth) / 2;
     const seasonGrowth = Object.fromEntries(Object.keys(REGIONS[0].season).map(season =>
       [season, (REGIONS[genes[4]].season[season] + REGIONS[genes[5]].season[season]) / 2])); // Climate genes influence cold/dry/wet-season performance separately from water needs.
-    const region = code === '000000' ? REGIONS[0].label : genes.every(gene => gene === genes[0]) ? REGIONS[genes[0]].label : 'Crossbred';
+    const pureRegion = genes.every(gene => gene === genes[0]); // Color-mixed plants should not be mislabeled as a pure regional import.
+    const originalColor = mixHex(tintedColor(NATIVE_COLORS[family], COLOR_FILTERS[genes[0]]), tintedColor(NATIVE_COLORS[family], COLOR_FILTERS[genes[1]]));
+    const region = colorHex != null && color !== originalColor ? 'Crossbred'
+      : code === '000000' ? REGIONS[0].label : pureRegion ? REGIONS[genes[0]].label : 'Crossbred';
     return { family, genes: code, color, effects, idealMin: min, idealMax: max, growDays: Math.max(1, Math.round(Number(base.growDays || 3) * growth * 10) / 10), seasonGrowth, region };
   }
   function register(family, code, colorHex = null) {
@@ -148,6 +151,7 @@
     hydrate(inventory);
     let storage = {}; // Both bag and farm storage are valid sources for delegated farm planting.
     try { storage = storageGetter?.() || {}; } catch (_) { /* Early boot may not have farm storage yet. */ }
+    hydrate(storage); // Seeds kept only in Farm Storage must reappear after loading a saved world.
     return [...known].filter(id => !ownedOnly || (Number(inventory?.[seedKey(id)]) || 0) > 0 || (Number(storage[seedKey(id)]) || 0) > 0)
       .map(id => ({ id, seedKey: seedKey(id), label: cropData?.[id]?.label || id }));
   }
