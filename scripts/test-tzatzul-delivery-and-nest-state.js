@@ -113,5 +113,18 @@ W.TzatzulNestEncounter.update(.1);
   const restored=W.TzatzulNestEncounter.ensure(nestId);
   assert.equal(restored.mother,null,'reloading a cleared nest cannot resurrect its miniboss');
   assert.equal(restored.hatchlings.length,1,'surviving hatchling adds remain independent of mother defeat');
+  const full=JSON.parse(JSON.stringify(W.TzatzulNestEncounter.serialize())); // Restore test data rather than mutating persistent live victims.
+  const originalVictim=full.nests[0].victims[0]; // Saved first corpse remains the inventory-bearing example.
+  W.TzatzulNestEncounter.restore({version:1,nests:[{
+    ...full.nests[0],victims:Array.from({length:8},()=>({...originalVictim}))
+  }]});
+  const ninth=deps.makeCreatureEntity('bandit',128,128,{isBandit:true}); // Subsequent meals feed hatchlings without unlimited corpse buildup.
+  living.add(ninth);
+  assert(W.TzatzulNestEncounter.storeVictim(ninth,bird,true),'the ninth visible delivery still feeds hatchlings');
+  assert(!living.has(ninth)&&ninth.health===0,'overflow meal is consumed and removed from the outdoor world');
+  assert.equal(W.TzatzulNestEncounter.debugSnapshot().overflowMeals,1,'extra meals are counted in mobile diagnostics');
+  assert.equal(W.TzatzulNestEncounter.serialize().nests[0].victims.length,8,'the existing hoard stays capped at eight searchable remains');
+  W.TzatzulNestEncounter.restore(full); // Leave original persisted state intact for follow-on tests.
+
   console.log('Tzatzul rendered-only prey delivery, native eggs, player abduction and persistent nest state PASS');
 })().catch(error=>{console.error(error);process.exitCode=1;});
