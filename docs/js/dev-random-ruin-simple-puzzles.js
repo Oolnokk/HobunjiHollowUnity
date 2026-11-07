@@ -992,7 +992,7 @@
   // the air-only chain ropes. Only airborne movement calls this; walking past
   // a rope still requires the existing interaction prompt.
   function catchAirborneRope(f) {
-    if (!state || !inRuin() || state.flight || state.activeRope || !f) return false;
+    if (!state || !inRuin() || (state.flight && state.flight !== f) || state.activeRope || !f) return false; // Accept the current rope-release flight as well as an ordinary PlayerJump approach.
     for (const rope of state.ropes) {
       if (rope.attached || rope.burden || rope.id === f.ropeId || !ropeCatchPoint(rope, f)) continue;
       return catchRopeInFlight(rope, f);
@@ -2390,10 +2390,7 @@
     }else if(platformBlocksAt(next.x,next.z,next.y)){
       f.y=next.y;f.vx=0;f.vz=0; // Hit a rope platform's side below its top: drop down its face instead of passing into it.
     }else{f.x=next.x;f.z=next.z;f.y=next.y;}
-    for(const rope of state.ropes){ // Rope-to-rope: flying into an air-only rope's hanging length grabs it. Ordinary ropes idle over their launch deck, where catching one on landing would skip that deck's plate/chest.
-      if((!rope.airOnly&&!rope.ropeChainHallId)||rope.attached||rope.id===f.ropeId)continue; // Endpoint ropes remain catchable from the air in either direction.
-      if(ropeCatchPoint(rope,f)){catchRopeInFlight(rope,f);return;}
-    }
+    if(catchAirborneRope(f))return; // A released swing is still airborne: any free rope on its swept route can be caught, not only explicitly air-only rope chains.
     const chain=ropeChainPitAt(f.x,f.z,f.y);
     // The player must die BEFORE sampling floors lower down the same X/Z:
     // a missed upper-story catch could otherwise land on a lower deck and
