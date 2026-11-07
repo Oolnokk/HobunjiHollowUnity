@@ -409,6 +409,7 @@
 
   function clearState() {
     if (!state) return;
+    if (deps?.player?._freeJump && deps.player._freeJump === state.flight) window.PlayerJump?.reset?.(); // Do not carry a rope flight into a rerolled map.
     for (const composer of composers) { try { composer.clear?.(); } catch (error) { console.warn('[Random Test Ruin] composer clear failed', error); } }
     state.singleRoomChallenge?.dispose?.(); // Release all projectile hooks, rope mounts, flute listeners and statue encounter state before disposing the room.
     restoreRopeEquipment();
@@ -832,8 +833,9 @@
   function releaseRope(rope) {
     if (!rope?.attached) return false;
     const bob = updateRopeVisual(rope);
-    state.flight = { ...RopeCore.releaseFlight(rope, bob), ropeId:rope.id,
+    const flight = { ...RopeCore.releaseFlight(rope, bob), ropeId:rope.id,
       layerRopeChain:rope.externalRopeChain===true }; // Preserve 3D gate collision authority after rope release.
+    state.flight = window.PlayerJump?.beginFlight?.(flight, { external:true, source:'ruin rope swing', ropeId:rope.id }) || flight; // Shared physical airborne state; the ruin retains the layered collision integrator.
     rope.attached = false;
     rope.braking = false;
     state.activeRope = null;
@@ -977,12 +979,25 @@
     RopeCore.catchFromFlight(rope,f);
     rope.attached=true;rope.braking=false;rope.airCatchCount++;
     state.flight=null;
+    window.PlayerJump?.reset?.(); // A successful catch transfers airborne movement ownership to the pendulum.
     state.activeRope=rope;
     holsterRopeEquipment();
     rope.lastSafeBob=clonePoint(updateRopeVisual(rope));
     setPlayerWorld(rope.lastSafeBob,true,false);
     deps?.showToast?.('Caught the next rope!',true);
     return true;
+  }
+
+  // Ordinary jumps and unscripted falls may catch ANY free rope, not merely
+  // the air-only chain ropes. Only airborne movement calls this; walking past
+  // a rope still requires the existing interaction prompt.
+  function catchAirborneRope(f) {
+    if (!state || !inRuin() || state.flight || state.activeRope || !f) return false;
+    for (const rope of state.ropes) {
+      if (rope.attached || rope.burden || rope.id === f.ropeId || !ropeCatchPoint(rope, f)) continue;
+      return catchRopeInFlight(rope, f);
+    }
+    return false;
   }
 
   function createLavaMaterial() {
@@ -1799,6 +1814,7 @@
     if(deps.player.staggered)deps.player.staggered={active:false,direction:null,endsAt:0};
     deps.player.invulnUntil=performance.now()+CHECKPOINT_INVULN_MS;
     setPlayerWorld(checkpoint.point,true,true);
+    if (deps.player._freeJump?.external) window.PlayerJump?.reset?.();
     state.flight=null;
     if(state.activeRope){state.activeRope.attached=false;state.activeRope.braking=false;}
     state.activeRope=null;
@@ -2366,7 +2382,8 @@
     const f=state.flight;
     if(!f)return;
     f.vy-=ROPE_GRAVITY*dt;
-    const next={x:f.x+f.vx*dt,z:f.z+f.vz*dt,y:f.y+f.vy*dt};
+    const control=window.PlayerJump?.airControl?.(0.6)||{x:0,z:0}; // Steering while falling never discards the original rope release momentum.
+    const next={x:f.x+(f.vx+control.x)*dt,z:f.z+(f.vz+control.z)*dt,y:f.y+f.vy*dt};
     const sweep=sweptRopePoint(f,next);
     if(sweep.blocked){
       f.x=sweep.last.x;f.z=sweep.last.z;f.y=next.y;f.vx=0;f.vz=0; // Hit the same normal-interior solid that ordinary knockback/walking sees; stop horizontal flight and fall in place instead of tunnelling through it.
@@ -2390,6 +2407,11 @@
       f.y=Number(support.y);
       setPlayerWorld(f,true,true);
       state.flight=null;
+      if (deps?.player?._freeJump === f) {
+        window.FallSystem?.land?.(deps.player, { dropWorld:Math.max(0,f.launchGround-f.y), deliberate:true, source:'ruin rope landing' });
+        window.PlayerJump?.reset?.();
+        window.DevRandomRuin?.acceptFreeJumpLanding?.(f.y);
+      }
       state.lastPlayerWorld=clonePoint(f);
       return;
     }
@@ -2398,6 +2420,7 @@
       return;
     }
     setPlayerWorld(f,true,false);
+    window.PlayerJump?.syncExternalFlight?.(f); // Same physical foot height consumed by the normal jump renderer.
   }
 
   function updateRopeHazards(now) {
@@ -2427,7 +2450,7 @@
       if(rope.attached)updateAttachedRope(rope,dt);
       else updateIdleRope(rope,dt);
     }
-    updateRopeHazards(now); // No proximity auto-grab: walking near a hanging rope caught players unintentionally; ropes are taken only through the 'Grab Rope' prompt.
+    updateRopeHazards(now); // Ground proximity still uses a prompt; PlayerJump invokes catchAirborneRope only while airborne.
   }
 
   function updateBadge(force=false) {
@@ -2715,7 +2738,8 @@
     hasActiveRuinState:()=>!!state&&inRuin()&&state.root===window.DevRandomRuin?.getRuntimeContext?.()?.root, // External fire/ranged challenges must not bind to an old generation.
     isNoClimbSurface:id=>!!state?.noClimbSurfaceIds?.has(String(id)),
     ownsPlayerMotion:()=>!!(state?.activeRope||state?.flight),
-    releaseActiveRope:()=>state?.activeRope?releaseRope(state.activeRope):false, // Called by the canonical Dodge context action so every input device shares one release path.
+    releaseActiveRope:()=>state?.activeRope?releaseRope(state.activeRope):window.HangingRopes?.releaseActiveRope?.()===true, // The native Dodge action also dismounts outdoor ropes.
+    catchAirborneRope, // Called by PlayerJump after a physical airborne approach, including jumps into generated ruin ropes.
     respawnAtCheckpoint,
     isInstantDeathPit:(x,z)=>!!ropeChainPitAt(Number(x),Number(z),playerWorld()?.y), // Consumed by the canonical ruin floor reconciliation before its ordinary footing-fall path.
     instantRopeChainDeath,
