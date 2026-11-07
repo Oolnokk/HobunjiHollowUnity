@@ -14,7 +14,7 @@ const scene=new Group(),furniture=new Group();scene.add(furniture);furniture.pos
 const counts=[],burdens=[],damage=[],loot=[];
 const window={THREE,GridTileAccessors:{getCurrentArea:()=>'wild',getActiveScene:()=>scene},
  Combat:{deps:{TILE:64,getCurrentArea:()=>'wild',player:{x:224,y:352},showToast(){}}},
- AuthoredFurniture:{setRuntimeValues:(g,v)=>counts.push(v.crateCount),load:async()=>({key:'looseCrate',carryable:{}}),buildGroup:()=>new Group()},
+ AuthoredFurniture:{setRuntimeValues:(g,v)=>counts.push(v.crateCount),load:async key=>key==='looseCrate'?JSON.parse(read('docs/config/furniture-authored/looseCrate.json')):null,buildGroup:()=>new Group()},
  Shattercasks:{registerBurden(o){o.scene.add(o.group);const b={...o,exploded:false};burdens.push(b);return b;},
  pickUp:()=>true,discardBurden:b=>{b.exploded=true;b.group.parent?.remove(b.group);return true;},
  applyBlast:(...args)=>damage.push(args),grantBurdenLoot:items=>{loot.push(items);return ['ok'];}},
@@ -29,6 +29,23 @@ const pool=JSON.parse(read('docs/config/loot/loot-pools.json')).pools.crateJunk.
 assert.equal(authored.parts.length,3);
 assert.deepEqual(authored.runtimeVariants.states.map(s=>s.hiddenPartIds.length),[0,1,2,3]);
 assert.deepEqual(single.carryable.handTargets,bomb.carryable.handTargets);
+assert.deepEqual(single.carryable.backCarry,{
+ position:{x:0,y:-.186,z:-.256},rotation:{x:0,y:180,z:0},
+ posteriorOffset:{x:0,y:-.02,z:0},size:1,portraitAnchor:{x:0,y:0,z:0},
+},'authored crate back stow matches the supplied JSON exactly');
+assert.equal(single.carryable.billboardAnchor.position.y,-.333,'original held anchor remains intact');
+assert.ok(Math.abs(single.carryable.backCarry.position.y-single.carryable.billboardAnchor.position.y-.147)<1e-9,
+ 'independent back-stow contact point is 0.147 higher than the held point');
+assert.equal(single.recognizedSurfaces.length,6,'retain six crate surface mappings from the Furniture Author');
+assert.deepEqual(single.recognizedSurfaces.flatMap(surface=>surface.faceIndices),Array.from({length:12},(_,i)=>i),
+ 'each crate face is represented once, without duplicated surface faces');
+assert.ok(single.recognizedSurfaces.every(surface=>
+ single.surfaceSettings[surface.id]?.texture?.name==='crate_side.png'),
+ 'authored crate face textures all use the supplied crate-side image');
+assert.deepEqual(single.elevation.measured,{sizeX:.525,sizeY:.364,sizeZ:.516,minY:-.014,maxY:.35,cellsW:1,cellsD:1,cellsH:1},
+ 'retain author-measured crate elevation');
+assert.equal(single.carryable.enemyHoldAnchor.scale,.82,'preserve the gameplay enemy carry profile');
+assert.equal(single.carryable.explodeOnHit,false,'crate is not an explosive despite using shared Burden code');
 const runtime=read('docs/js/authored-furniture-runtime.js'); // Real authored state visibility, not a copied implementation.
 const begin=runtime.indexOf('function setRuntimeValues('),end=runtime.indexOf('\n  function seatCount(',begin);
 assert.ok(begin>0&&end>begin,'authored runtime exposes state-value setter');
@@ -49,6 +66,8 @@ const pile=window.CratePiles.registerPile({mapId:'wild',id:'camp',group:furnitur
 (async()=>{
  assert.equal(await window.CratePiles.takeCrate(pile),true);
  assert.equal(pile.count,2);assert.equal(burdens[0].kind,'looseCrate');
+ assert.deepEqual(burdens[0].data.carryable.backCarry,single.carryable.backCarry,
+  'wild crate pile pickup passes the supplied back-stow anchor to the real Burden runtime');
  assert.equal(window.CratePiles.shatterBurden(burdens[0],'thrown'),true);
  assert.equal(damage[0][3].footingDamage,90);assert.equal(damage[0][3].radius,1);
  assert.equal(damage[0][3].footingDamageMultiplier,0,'crate health damage must not double-count footing damage');

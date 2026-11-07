@@ -204,10 +204,11 @@ assert(author.includes('posteriorAnchorForModel(model') &&
   author.includes('carry_reference_posterior') &&
   author.includes('carry_reference_attachment') &&
   author.includes('carryPosteriorZ') &&
-  author.includes('tempOffset.copy(mountPoint)') &&
-  author.includes("const mountPoint=isBack?") &&
-  author.includes('carryPortraitAnchorRow'),
-  'editor preserves the held posterior preview and gives back-stowed burdens a separate portrait-coordinate mount');
+  author.includes('tempOffset.copy(mountPoint).add(attachmentOffset)') &&
+  author.includes('const mountPoint=previewPosterior') &&
+  author.includes('carryPortraitAnchorRow') &&
+  author.includes("el('carryPosterior'+axis).disabled=false"),
+  'editor preserves independent held/back offsets in the same species-adjusted posterior frame');
 assert(author.includes('state.carryable.handTargets[id].rotation') &&
   author.includes("handLocalEuler.setFromQuaternion(handAbsolute,'XYZ')") &&
   author.includes("new THREE.AxesHelper(.095)") &&
