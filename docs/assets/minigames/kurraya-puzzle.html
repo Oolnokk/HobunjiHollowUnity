@@ -159,7 +159,7 @@ button:focus-visible { outline: 2px solid #f3e6c8; outline-offset: 2px }
         await sampler.play(music.pitchFor(note,tuning)); // The same configured eight-note tuning is used for both examples and player input.
         await delay(510);
         if (challenge !== echoChallenge || generation !== echoGeneration) return false; // An older replay must never stop the newer replay's voice.
-        sampler.stop();
+        if (!isFlute) sampler.stop(); // Flute example notes ring until the following note interrupts them; the last note can finish naturally.
         await delay(110);
       }
       if (challenge !== echoChallenge || generation !== echoGeneration) return false;
