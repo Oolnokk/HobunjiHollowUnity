@@ -1343,6 +1343,7 @@
   const NOTE_GLYPHS = ['X','A','B','Y'];
   const ROMAN_DEGREES = ['I','II','III','IV','V','VI','VII'];
   const STRUM_NOTE_DELAY_MS = 22; // Spaces the six virtual strings during right-stick chord sweeps.
+  const AUTO_PICK_COMPAT_VOICES = 8; // Eight primed mobile media channels keep successive automatic plucks from stealing the same sample tail.
   const PULSE_LOOKAHEAD_MS = 90; // Fires automatic pluck-continuation timers this much early so the precise Web Audio start() call (not the jitter-prone JS timer) governs exactly when each pulse actually sounds.
   const TRANSPORT_AUDIO_LOOKAHEAD_MS = PULSE_LOOKAHEAD_MS; // Keeps the metronome/footstep and chord-root pad on the same ahead-of-time audio grid as automatic Kurraya notes.
   const HARMONY_REGISTER_OFFSET = -12; // Keeps left-stick arpeggios and right-stick chord strums one octave below direct notes.
@@ -1500,6 +1501,7 @@
     pluckStep:0, // Advances through the current chord-melody fingerpicking pattern.
     pluckNextPulseAt:0, // Holds the absolute performance-time target for the next beat-corrected automatic pluck.
     pluckLegatoHandoffs:0, // Counts seamless melody/held-fret changes in the mobile instrument debug display.
+    autoPickCompatChannelIndex:0, // Rotates prepared mobile sample channels across note and strum attacks to preserve polyphonic tails.
     autoReleaseTail:null, // Keeps every tapped automatic pattern alive through the current beat boundary after release.
     nextSlowArpDirection:'forward', // Alternates the base-rate arpeggio between forward and reverse rolls on successive melody inputs.
     lastPluckTapErrorMs:null, // Exposes the latest immediate melody attack's signed offset from its nearest intended beat.
@@ -2684,7 +2686,7 @@
     state.pluckStep = gridStep; // Keeps roll voices aligned to the shared subdivision that will actually sound next.
     state.pluckNextPulseAt = nextTarget;
     clearTimeout(state.pluckTimer);
-    state.pluckTimer = setTimeout(() => { state.pluckTimer = null; void playFrettedPluckPulse(generation); }, Math.max(0,nextTarget - nowMs() - PULSE_LOOKAHEAD_MS));
+    state.pluckTimer = setTimeout(() => { state.pluckTimer = null; void playFrettedPluckPulse(generation); }, automaticPulseTimerDelay(nextTarget));
     const remainingBeforeBeat = Math.max(0,division - gridStep);
     return {delay:Math.max(0,nextTarget - currentTime),nextStep:gridStep,beatAnchorAt:timing.beatAnchorAt,beatStopAt:fret.beatStopAt,remainingBeforeBeat,totalTapAttacks:1 + remainingBeforeBeat};
   }
@@ -3856,6 +3858,15 @@
     }
   }
 
+  function nextAutomaticMediaChannel() {
+    const channelIndex = state.autoPickCompatChannelIndex++ % AUTO_PICK_COMPAT_VOICES; // Each attack advances independently of melody or pattern changes.
+    return `touch-left-fretted-pluck-${channelIndex}`;
+  }
+
+  function automaticPulseTimerDelay(targetAt) {
+    return Math.max(0,targetAt - nowMs() - (canUseCompatibilitySampler() ? 0 : PULSE_LOOKAHEAD_MS)); // Media elements cannot schedule a future start; Web Audio can.
+  }
+
   function pluckIntervalMs(mode) {
     const definition = FRETTED_PLUCK_MODES[mode];
     const bpm = clamp(state.game.active ? state.bpm : state.harmonyBpm, 40, 240);
@@ -3922,7 +3933,7 @@
       }
       if (state.autoReleaseTail && nextTarget >= state.autoReleaseTail.stopAt - 2) nextTarget = state.autoReleaseTail.stopAt; // Silent cleanup at the boundary, unless another melody arrives before it.
       state.pluckNextPulseAt = nextTarget;
-      state.pluckTimer = setTimeout(() => { state.pluckTimer = null; void playFrettedPluckPulse(generation); }, Math.max(0,nextTarget - nowMs() - PULSE_LOOKAHEAD_MS));
+      state.pluckTimer = setTimeout(() => { state.pluckTimer = null; void playFrettedPluckPulse(generation); }, automaticPulseTimerDelay(nextTarget));
     }
     try {
       if (!state.paused) {
@@ -3932,7 +3943,8 @@
           return voice;
         };
         if (step?.type === 'note') {
-          const voice = gateVoice(await playAuditoryOnlyMidi(step.midi,voiceKey,0.78 * (step.velocity || 1),'touch-left-fretted-pluck',true,pulseTarget));
+          const gestureChannel = canUseCompatibilitySampler() ? nextAutomaticMediaChannel() : null; // A fresh prepared voice leaves the previous pluck ringing.
+          const voice = gateVoice(await playAuditoryOnlyMidi(step.midi,voiceKey,0.78 * (step.velocity || 1),gestureChannel,true,pulseTarget));
           if (voice) refs.transportStatus.innerHTML = `<strong>${automaticPluckLabel()} · ${pattern.label}:</strong> ${patternIndex === 0 ? 'auditory melody return' : 'auditory chord voice'} ${midiName(step.midi)} · automatic continuation only · ${currentHarmonyData().chordName}`;
         } else if (step?.type === 'strum' || step?.type === 'boom') {
           const voicing = step.type === 'boom' ? melodyTopStrumMidis(fretMidi,'boom',pulseClock) : melodyTopStrumMidis(fretMidi,step.voicing || 'full',pulseClock);
@@ -3942,7 +3954,8 @@
             const stringWhenMs = pulseTarget + stringDelay;
             setTimeout(async () => {
               if (generation !== state.pluckGeneration || state.paused) return;
-              const voice = await playAuditoryOnlyMidi(midi,`${voiceKey}:${stringIndex}`,0.42 * (step.velocity || 1),null,true,stringWhenMs);
+              const gestureChannel = canUseCompatibilitySampler() ? nextAutomaticMediaChannel() : null;
+              const voice = await playAuditoryOnlyMidi(midi,`${voiceKey}:${stringIndex}`,0.42 * (step.velocity || 1),gestureChannel,true,stringWhenMs);
               gateVoice(voice);
             },stringDelay);
           });
@@ -3990,7 +4003,7 @@
       state.lastInput = `${automaticPluckLabel(mode)} armed without melody from ${source}`;
       return;
     }
-    primeGestureMediaChannel('touch-left-fretted-pluck');
+    primeGestureMediaPool('touch-left-fretted-pluck',AUTO_PICK_COMPAT_VOICES); // A latched melody played with media fallback requires pre-authorized, independently ringing voices.
     const scheduled = scheduleFrettedPluckContinuation(generation,fret);
     refs.transportStatus.innerHTML = `<strong>${automaticPluckLabel(mode)}${isLatchedAutoBankLayout() ? ' latched' : ' engaged'}.</strong> The immediate melody attack is followed by ${scheduled?.remainingBeforeBeat ?? 0} remaining subdivision${scheduled?.remainingBeforeBeat === 1 ? '' : 's'} before the next beat.`;
   }
@@ -4192,6 +4205,7 @@
       state.frettedSources.set(sourceId,fret);
       state.lastInput = `${isFrettedPluckLayout() ? 'fret' : 'auto-pick melody'} ${NOTE_GLYPHS[noteIndex]} ${midiName(noteMidi(noteIndex,modeOffsetSnapshot))} from ${sourceId}`;
       if (state.pluckInputMode) {
+        primeGestureMediaPool('touch-left-fretted-pluck',AUTO_PICK_COMPAT_VOICES); // The human note press authorizes the entire mobile polyphony pool.
         void playImmediateAutomaticMelody(fret,sourceId); // The real press is heard and scored now; only the continuation is quantized.
         if (!retainFrettedPluckPulse(`new melody ${NOTE_GLYPHS[noteIndex]} from ${sourceId}`)) restartActiveFrettedPluck();
       } else if (isLatchedAutoBankLayout()) void triggerNote(noteIndex, sourceId, modeOffsetSnapshot); // Centered stick preserves the ordinary one-shot five-bank behavior.
