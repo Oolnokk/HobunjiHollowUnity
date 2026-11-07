@@ -24,6 +24,7 @@
        docs/tools/dev-companion window. Loaded before every config-fetching
        module so its fetch() wrapper can log each config/JSON access. -->
   <script src="js/dev-companion-bridge.js?v=20261019handoff1"></script>
+  <script src="js/dev-companion-appearance.js?v=20261107devcloth3"></script>
   <script src="https://unpkg.com/three@0.128.0/examples/js/controls/TransformControls.js"></script>
   <script src="js/GLTFLoader.js?v=20260712d"></script>
   <script src="js/WallBuilder.js?v=20261013hd467097"></script>
@@ -409,7 +410,7 @@
   <script src="js/bounty-board.js?v=20261008h416634c"></script>
   <!-- Loads docs/config/combat/attack-values.json and overrides every
        combat-*.js module's hardcoded defaults with it. -->
-  <script src="js/combat/combat-config-loader.js?v=20261107cultivarColor3"></script>
+  <script src="js/combat/combat-config-loader.js?v=20261107devcloth3"></script>
   <!-- Shared timed-effect HUD, skill progression, food processing rules, and
        hearth cooking. These modules own their state/UI and expose narrow
        adapters to game.js. -->
@@ -838,7 +839,7 @@
        window.EquipmentPanel directly (including at top-level, in
        window.__climbDebug) and calls window.EquipmentPanel.init(...)
        during its own setup. -->
-  <script src="js/equipment-panel.js?v=20261105-stack999"></script>
+  <script src="js/equipment-panel.js?v=20261107devcloth3"></script>
   <!-- Per-map terrain tile texture overrides (window.TerrainTileMaterials:
        resolveTileMat/resolveCliffMat/loadTerrainTileTexture) — must load
        before game.js, which calls window.TerrainTileMaterials.init(...) near
