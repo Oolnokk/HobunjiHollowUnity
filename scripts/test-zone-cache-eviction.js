@@ -189,6 +189,26 @@ const bandit = (area, extra = {}) => ({ areaId: area, def: {}, isBandit: true, h
   assert.doesNotMatch(w.logs.join('\n'), /kept map_a/);
 }
 {
+  // Bandits parked by js/wilderness-simulation-lod.js get a synthetic areaId, so they used to be invisible to the zone
+  // cache: not pinning, not released, and each kept `scene` (the whole evicted zone) alive through hostileObjects.
+  const w = makeWorld({});
+  w.visit('map_a'); w.visit('map_b'); w.visit('map_c');
+  const sleeper = bandit('__wilderness_lod_sleep__:map_a', { _wildernessLodSleeping: true, _wildernessLodAreaId: 'map_a', state: 'idle' });
+  const awake = bandit('map_a', { state: 'idle' });
+  w.hostiles.add(sleeper); w.hostiles.add(awake);
+  assert.equal(w.api.zoneEvictionBlocker('map_a'), 'resident rig', 'a sleeping bandit still belongs to its zone');
+  w.api.trimZoneCache();
+  assert.deepEqual(w.disposed, ['map_a'], 'a zone whose bandits are asleep is still evictable');
+  assert.ok(w.despawned.includes(sleeper) && w.despawned.includes(awake), 'the sleeper is despawned with the rest');
+  assert.ok(!w.hostiles.has(sleeper), 'so nothing in hostileObjects points at the evicted scene');
+  // A zone that stays built keeps its sleepers.
+  const w2 = makeWorld({});
+  w2.visit('map_a'); w2.visit('map_b'); w2.visit('map_c');
+  const keep = bandit('__wilderness_lod_sleep__:map_c', { _wildernessLodSleeping: true, _wildernessLodAreaId: 'map_c' });
+  w2.hostiles.add(keep); w2.api.trimZoneCache();
+  assert.ok(w2.hostiles.has(keep) && w2.despawned.length === 0, 'sleepers of the current zone are untouched');
+}
+{
   // The current zone and the one that stays built keep their bandits.
   const w = makeWorld({});
   w.visit('map_a'); w.visit('map_b'); w.visit('map_c');
