@@ -54,8 +54,12 @@ async function main(){
   const small=new Mesh(new Geometry(.55,.09),new Material());
   const large=new Mesh(new Geometry(1.18,.15),new Material());
   const a=art.decorate(THREE,small,{radius:.55,thickness:.09});
-  const b=art.decorate(THREE,large,{radius:1.18,thickness:.15});
+  const b=art.decorate(THREE,large,{radius:1.18,thickness:.15,toward:{x:1,z:0}});
   assert(a&&b);
+  assert.equal(small.children[0].rotation.order,'YXZ','Tankan surface normal must stay upward after yaw');
+  assert.equal(small.children[0].rotation.z,Math.PI,'text must face away from the approaching player');
+  assert(Math.abs(large.children[0].rotation.y-Math.PI/2)<1e-10,
+    'an eastward doorway must turn the writing a full quarter-turn, not a diagonal');
   assert.deepEqual(requests.map(p=>p.materialTexture),['carved_smooth.png','carved_smooth.png']);
   assert.equal(small.userData.puzzleCaveTankanText,"hao'uun");
   assert.equal(large.userData.puzzleCavePlateTexture,'carved_smooth.png');
