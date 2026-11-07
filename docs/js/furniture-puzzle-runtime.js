@@ -385,6 +385,8 @@
     const started = performance.now();
     const revision = (object.userData.puzzleAnimationRevision || 0) + 1;
     object.userData.puzzleAnimationRevision = revision;
+    if(puzzle.role==='mechanism'&&Math.abs(from-target)>.00001)
+      window.RuinInteractionAudio?.mechanism?.(object); // One recorded stone movement per physical animated transition.
     if (duration <= 0 || Math.abs(from - target) < .00001) {
       applyMechanism(object, target);
       onComplete?.();
@@ -433,6 +435,8 @@
     const graph = maps.get(String(mapId));
     const activator = graph?.nodes.get(String(activatorId));
     if (!graph || activator?.userData?.furniturePuzzle?.role !== 'activator') return false;
+    if(['pressurePlate','burdenPlate','keyStatue'].includes(activator.userData.furniturePuzzle.behavior))
+      window.RuinInteractionAudio?.watchPlate?.(activator,!!active); // Real press/release edges only, never every wiring sync.
     activator.userData.puzzleActive = !!active;
     window.FurnitureDecalRuntime?.setGlowState?.(activator, active ? 1 : 0);
     for (const wire of graph.wiring.filter(record => record.fromId === String(activatorId))) {
