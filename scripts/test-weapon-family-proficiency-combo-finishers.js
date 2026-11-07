@@ -82,6 +82,8 @@ function testSpecialFinishers() {
   const pending = []; // Staged actions are resolved by the test on demand.
   let damage = []; // Per-target outgoing damage and flags from the production combo executor.
   let sfx = 0; // Counts special-finisher confirmation cues, independently of ordinary weapon impacts.
+  const bleedoutRequests = []; // Captures finisher instant-effect strength for comparison with the Quick Attack baseline.
+  const debuffRequests = []; // Captures timed-debuff power, including knockdown's duration multiplier.
   const lungeStops = []; // Checks that special reach cannot stop movement on an unqualified bystander.
   const target = id => ({ id, def: { label: id }, x: 10, y: 0, health: 500, areaId: 'test' });
   const a = target('a'), b = target('b'), player = { x: 0, y: 0, angle: 0 };
@@ -94,8 +96,9 @@ function testSpecialFinishers() {
   runtime.__hobunjiPlayerProfile = profile;
   runtime.AttackPoseTemplates = { poseFor: () => null };
   runtime.ResourceSystem = { spendStamina() {}, getExhaustionSpeed: () => 1, getProneAttackMultiplier: () => 1,
-    bleedOut() { return { consumed: 0 }; }, applyTimedDebuff() { return { durationS: 1 }; } };
-  runtime.AudioSystem = { playQuickAttackBonusSfx() { sfx++; } };
+    bleedOut(_target, amount) { bleedoutRequests.push(amount); return { consumed: 0 }; },
+    applyTimedDebuff(_target, id, durationS, options) { debuffRequests.push({ id, durationS, power: options.power }); return { durationS }; } };
+  runtime.AudioSystem = { playComboFinisherBonusSfx() { sfx++; } };
   runtime.EnchantmentSystem = { getMasteryPowerMultiplier: () => 1 };
   runtime.CombatAttackEvents = { prepare: input => ({ ...input, modifiers: { damage: 1, affliction: 1, footingDamage: 1, knockback: 1, lunge: 1 } }),
     scaleAfflictions: source => source, hit() {} };
@@ -104,7 +107,7 @@ function testSpecialFinishers() {
     playerMeleeThreat: () => ({ source: 'test' }),
     beginStagedAction(spec) { pending.push(spec); return spec; } };
   runtime.Combat.deps = { player, TILE: 64, currentWeaponKey: () => weapon, currentWeaponDamageType: () => 'sharp',
-    toolMasteryLevel: () => 5, weaponDamageTypeForTool: () => 'sharp', spendMotesOfProwess: () => true,
+    toolMasteryLevel: () => 5, weaponDamageTypeForTool: tool => tool === 'warhammer' ? 'blunt' : 'sharp', spendMotesOfProwess: () => true,
     weaponAbility: () => ({ damage: 20, rangePx: 100, knockbackPxS: 400 }), hostileObjects: new Set([a,b]),
     getCurrentArea: () => 'test', getPlayerMeleeAimPitch: () => 0, clearVegetationInAttackCone: () => 0,
     beginCombatLunge(_distance, _duration, _start, geometry) { lungeStops.push(geometry); }, // Observe the actual movement owner's stop cone.
@@ -143,7 +146,8 @@ function testSpecialFinishers() {
   tap('swingCombo', [a], 1000.5);
   tap('swingCombo', [a,b], 1001);
   assert.deepEqual(damage.slice(-2).map(h => [h.target,h.amount,h.special]), [['a',41,true],['b',27,false]], 'special bonuses apply per enemy; Cleave stays normal on non-qualifying targets');
-  assert.ok('bleedingHealth' in damage[2].afflictions);
+  assert.equal(damage[2].afflictions.bleedingHealth, 0.5, 'qualified finisher gets half the Quick Attack affliction burst (base 0.5 × bonus 2 × half)');
+  assert.equal(bleedoutRequests[0], 6, 'qualified finisher Bleedout is half the equivalent Quick Attack amount (6 × 2 × half)');
   assert.ok(!('bleedingHealth' in damage[3].afflictions), 'special afflictions do not leak to other targets');
   assert.equal(sfx, 1, 'one special impact produces one distinct confirmation sound');
   const reachOptionIndex = tree[2].findIndex(o => o.stat?.rangeMul === 0.12); // Uses the original Extended Reach effect from the scroll catalog.
@@ -152,6 +156,12 @@ function testSpecialFinishers() {
   items.inventory[reachScroll] = 1;
   assert.ok(progression.readMasteryItem(reachScroll));
   assert.ok(progression.choose(weapon, 'swingComboFinisher', 3, reachOptionIndex));
+  const exposeIndex = tree[3].findIndex(o => o.quickBonusDebuff?.id === 'exposed'); // Fourth-rank scroll gives a stackable duration debuff for comparing bonus power.
+  assert.ok(exposeIndex >= 2);
+  const exposeScroll = progression.itemKey('sharp', 4, tree[3][exposeIndex].effectId, 'scroll');
+  items.inventory[exposeScroll] = 1;
+  assert.ok(progression.readMasteryItem(exposeScroll));
+  assert.ok(progression.choose(weapon, 'swingComboFinisher', 4, exposeIndex));
   reset();
   tap('swingCombo', [a], 1016);
   tap('swingCombo', [a], 1016.5);
@@ -160,7 +170,9 @@ function testSpecialFinishers() {
   tap('swingCombo', [a,b], 1017);
   delete a.requiredRangePx;
   delete b.requiredRangePx;
-  assert.deepEqual(damage.map(h => [h.target, h.special]), [['a', false],['a', false],['a', true]], 'special reach is target-qualified rather than a blanket cone enlargement');
+  assert.deepEqual(damage.map(h => [h.target, h.special]), [['a', false],['a', false],['a', true]], 'half-strength special reach is target-qualified rather than a blanket cone enlargement');
+  assert.equal(debuffRequests.at(-1).id, 'exposed');
+  assert.equal(debuffRequests.at(-1).power, 1, 'finisher debuff severity is half the Quick Attack x2 bonus');
   assert.ok(Math.abs(lungeStops.at(-1).rangePx - 69) < 1e-9, 'lunge stopping must use Cleave’s normal reach, not a bonus radius that includes unqualified enemies');
   reset();
   tap('swingCombo', [a], 1003);
@@ -191,6 +203,21 @@ function testSpecialFinishers() {
   assert.equal(damage.at(-1).special, true, 'the thrusting combo also has a condition-qualified special finisher');
   assert.equal(runtime.Combat.comboData.lastSpecialFinisher.comboId, 'pokeCombo');
   assert.equal(runtime.Combat.comboData.lastSpecialFinisher.specialProcs, 1, 'the in-game mobile diagnostic exposes the earned proc');
+  // Preview a blunt mastery unlock without modifying the saved character; Knockdown's "power" scales its duration.
+  weapon = 'warhammer'; // Selects the blunt weapon tree for the next three strikes.
+  const bluntTree = progression.getTree('swingComboFinisher', 'blunt'); // Reuses Quick Attack's existing blunt-only knockdown option.
+  const knockdownIndex = bluntTree[0].findIndex(o => o.quickBonusDebuff?.id === 'knockdown');
+  assert.ok(knockdownIndex >= 0);
+  const knockdownPreview = progression.beginPreview(weapon, 'swingComboFinisher', 1, knockdownIndex, { demonstration: true });
+  assert.ok(knockdownPreview);
+  reset();
+  tap('swingCombo', [a], 1023);
+  tap('swingCombo', [a], 1023.5);
+  tap('swingCombo', [a], 1024);
+  assert.equal(debuffRequests.at(-1).id, 'knockdown');
+  assert.equal(debuffRequests.at(-1).power, 0.5, 'finisher knockdown lasts half as long as the same Quick Attack bonus');
+  progression.endPreview(knockdownPreview);
+  weapon = 'hatchet'; // Restores the original weapon before the cancellation/re-entry checks.
   // The production Combat.beginStagedAction may synchronously cancel a player action
   // when CharacterActionLocks reports tools/actions locked. Such cancellations
   // must not strand a busy combo action or credit an opener that never struck.
