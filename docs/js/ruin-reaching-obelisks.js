@@ -198,16 +198,19 @@
     // The climb registrations keep their normalized references, so a moving
     // pillar can carry climbable faces without unregister/re-register churn.
     const refreshFaces=record=>{
-      for(const entry of record.worldFaces){CS.remove(entry.id);entry.visual?.parent?.remove(entry.visual);
-        entry.visual?.traverse(n=>{n.geometry?.dispose();if(n.material&&!materials.includes(n.material))n.material.dispose();});}
-      record.worldFaces=[];
+      const prior=record.worldFaces,updated=[]; // Preserve the old normalized face objects so active climbs follow a rotating pillar instead of ghost grips.
       for(const [i,face] of climbFaces(record,Math.round(record.y),record.rotation).entries()){
-        const id=scope+'-climb-'+record.id+'-'+i;
-        const normalized=CS.register({...face,id,scope});
+        const id=scope+'-climb-'+record.id+'-'+i,old=prior[i];
+        old?.visual?.parent?.remove(old.visual);
+        old?.visual?.traverse(n=>{n.geometry?.dispose();if(n.material&&!materials.includes(n.material))n.material.dispose();});
+        const normalized=old&&CS.retarget?CS.retarget(id,{...face,scope}):CS.register({...face,id,scope});
         const visual=CS.buildVisual?.(THREE,normalized);
-        if(visual){visual.name=id;group.add(visual);} // buildVisual is already in world coordinates.
-        record.worldFaces.push({id,surface:normalized,visual});
+        if(visual){visual.name=id;group.add(visual);} // Updated visuals show exactly the grip geometry that the live player session follows.
+        updated.push({id,surface:normalized,visual});
       }
+      for(const old of prior.slice(updated.length)){CS.remove(old.id);old.visual?.parent?.remove(old.visual);
+        old.visual?.traverse(n=>{n.geometry?.dispose();if(n.material&&!materials.includes(n.material))n.material.dispose();});}
+      record.worldFaces=updated;
     };
     for(const record of columns.values())refreshFaces(record);
     const rotateAll=()=>{ // All existing A-column rotation mechanisms tick together on beats 2, 3 and 4.
@@ -253,8 +256,10 @@
           pillar.updateShape();
           const delta=pillar.y-oldY;
           // Preserve each registered climb surface while a platform carries the player vertically.
-          for(const entry of pillar.worldFaces){entry.surface.y0+=delta;entry.surface.y1+=delta;
-            if(entry.visual)entry.visual.position.y+=delta;}
+          for(const entry of pillar.worldFaces){
+            if(!CS.shift?.(entry.id,delta)){entry.surface.y0+=delta;entry.surface.y1+=delta;}
+            if(entry.visual)entry.visual.position.y+=delta; // Visuals, live climb sessions, and stone move at the same height.
+          }
         }
       }
     };
