@@ -625,6 +625,7 @@
       if(kind==='pressurePlate'&&isActive()&&!rec.solved){
         const standing=player&&Number.isFinite(currentY)&&Math.abs(currentY-y)<.75
           &&Math.hypot(player.x-cx,player.z-cz)<1.15;
+        root.RuinInteractionAudio?.watchPlate?.(rec.plate,!!standing); // Audible weight-on/weight-off without replaying during the hold timer.
         rec.elapsed=standing?rec.elapsed+Math.min(.05,Math.max(0,dt)):0;
         if(rec.elapsed>=rec.requiredSeconds){rec.plate.material=hit;complete();}
       }
@@ -633,6 +634,7 @@
         for(const sconce of rec.sconces){
           if(sconce.lit||!fireZones?.intersects?.(options.area,sconce.x,sconce.z,.16))continue;
           sconce.lit=true;sconce.flame.visible=true; // Lights persist after the ground patch burns out.
+          root.RuinInteractionAudio?.igniteTorch?.(); // Play the large recorded ignition at the actual flame transition.
           options.onSconceLit?.(rec,sconce);
         }
         if(rec.sconces.every(sconce=>sconce.lit))complete();
@@ -643,13 +645,14 @@
         rec.session.step(dt,down);
         rec.inscription?.setVisible?.(down);
         if(rec.scorePanel)rec.scorePanel.visible=!!down;
-        if(down&&!rec.lastDown)rec.attempts++; // The plate only reveals the score; equipping/playing the instrument is the player's choice.
+        if(down&&!rec.lastDown){rec.attempts++;root.RuinInteractionAudio?.activator?.(rec.plate);}
+        // The plate only reveals the score; equipping/playing the instrument is the player's choice.
         rec.lastDown=!!down;
       }
       if(kind==='melodyEcho'){
         const down=!rec.solved&&isActive()&&player&&Number.isFinite(currentY)&&Math.abs(currentY-y)<.75
           &&Math.abs(player.x-cx)<.58&&Math.abs(player.z-cz)<.58;
-        if(down&&!rec.lastDown)rec.attempts++;
+        if(down&&!rec.lastDown){rec.attempts++;root.RuinInteractionAudio?.activator?.(rec.plate);}
         rec.inscription?.setVisible?.(down);
         for(const glyph of rec.glyphs)glyph.visible=!!down;
         rec.lastDown=!!down;
