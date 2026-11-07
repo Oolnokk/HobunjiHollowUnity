@@ -416,6 +416,25 @@
     group.rotation[axis]=twitchState.base+Math.sin((elapsed/1000)*twitchState.frequency+twitchState.phase)*twitchState.amplitude*envelope;
   }
 
+  const playerKurrayaNote = { active: false, startedAt: null, noteCount: 0 }; // Player-only sounded-note clock; NPC twitches never move the player's plucking hand.
+  function beginPlayerKurraya() { playerKurrayaNote.active = true; playerKurrayaNote.startedAt = null; }
+  function playPlayerKurrayaNote() {
+    if (!playerKurrayaNote.active) return false;
+    playerKurrayaNote.startedAt = performance.now(); // Reset hand keyframes on each sounded player note.
+    playerKurrayaNote.noteCount++;
+    return true;
+  }
+  function endPlayerKurraya() { playerKurrayaNote.active = false; playerKurrayaNote.startedAt = null; }
+  function playerRightHandPose() {
+    if (!playerKurrayaNote.active) return null;
+    const note = window.HeldActionAnimations?.kurrayaPlayNote;
+    const sampler = window.HobunjiHandToolGrips?.sampleFreeRightHand;
+    if (!note?.poses || !sampler) return null;
+    const elapsed = playerKurrayaNote.startedAt === null ? Infinity : performance.now() - playerKurrayaNote.startedAt;
+    const durationMs = Math.max(50, (Number(note.durationS) || 0.32) * 1000);
+    const progress = elapsed < durationMs ? Math.max(0, elapsed / durationMs) : 0; // Outside a note, restore the independently authored Neutral.
+    return sampler(note.poses, note, progress, note.sequence);
+  }
   const fluteState = {active:false,root:null,texture:null,frame:null,loads:0,failures:0,lastError:'',noteStartedAt:null,noteCount:0}; // Persistent, mobile-readable flute mount state.
   let fluteUpdaterInstalled = false; // Prevents repeat init() calls from accumulating per-frame callbacks.
   function installFluteUpdater() {
@@ -580,5 +599,9 @@
     return {active:fluteState.active,mounted:!!fluteState.root?.parent,visible:!!fluteState.root?.visible,ready:!!fluteState.root?.children.length,loads:fluteState.loads,failures:fluteState.failures,noteCount:fluteState.noteCount,noteActive:fluteState.noteStartedAt!==null,error:fluteState.lastError};
   }
 
-  window.KurrayaInstrument = { init, buildAssembly, newTwitchState, triggerTwitch, updateTwitch, beginFlute, playFluteNote, endFlute, fluteHandTarget, notePoseAt, fluteDiagnostics, prepareFluteCanvas };
+  window.KurrayaInstrument = { init, buildAssembly, newTwitchState, triggerTwitch, updateTwitch,
+    beginPlayerKurraya, playPlayerKurrayaNote, endPlayerKurraya, playerRightHandPose,
+    beginFlute, playFluteNote, endFlute, fluteHandTarget, notePoseAt, fluteDiagnostics, prepareFluteCanvas,
+    kurrayaHandDiagnostics: () => ({ active: playerKurrayaNote.active, noteCount: playerKurrayaNote.noteCount, notePlaying: playerKurrayaNote.startedAt !== null && performance.now() - playerKurrayaNote.startedAt < Math.max(50,(Number(window.HeldActionAnimations?.kurrayaPlayNote?.durationS)||0.32)*1000) }),
+  };
 })();
