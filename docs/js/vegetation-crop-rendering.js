@@ -492,6 +492,21 @@
     return null;
   }
 
+  function _tintVarietyFoliage(group, color) {
+    if (color == null) return; // Native crops retain shared foliage materials.
+    const tint = new THREE.Color(color); // The inherited seed color is a target for leaves and grain heads.
+    group.traverse(child => {
+      if (!child.isMesh || !child.material) return;
+      const recolor = material => {
+        if (!material?.clone || !material.color) return material;
+        const copy = material.clone(); // Never mutate shared materials belonging to ordinary crops.
+        copy.color.lerp(tint, .46); // Keep anatomical contrast while showing the cultivar pigment.
+        return copy;
+      };
+      child.material = Array.isArray(child.material) ? child.material.map(recolor) : recolor(child.material);
+    });
+  }
+
   function updateCropMeshes() {
     _ensureCropList();
     const grid = deps.getGrid();
@@ -514,7 +529,8 @@
         const growth = Math.min(tile.cropAge / data.growDays, 1.0);
         const surfY  = deps.tileSurfaceY(tile.type) + tile.water * deps.WATER_UNIT;
 
-        if (FOLIAGE_CROPS.has(tile.crop)) {
+        const family = data.baseCrop || tile.crop; // Varied needlegrain/heftroot keep their species' detailed procedural foliage.
+        if (FOLIAGE_CROPS.has(family)) {
           // ── Procedural foliage mesh ──────────────────────────────
           const bucket = _growthBucket(growth);
           if (cropMeshes[i] && cropGrowthBucket[i] !== bucket) {
@@ -523,8 +539,9 @@
             cropMeshes[i] = null;
           }
           if (!cropMeshes[i]) {
-            const group = _buildFoliageMesh(tile.crop, growth, col, row);
+            const group = _buildFoliageMesh(family, growth, col, row);
             if (group) {
+              _tintVarietyFoliage(group, data.varietyColor); // Only cultivar clones receive the inherited tint.
               deps.scene.add(group);
               deps.markOutline(group);
               cropMeshes[i]       = group;
@@ -790,9 +807,12 @@
   function buildStandaloneCropMesh(crop, growth, ready, col, row) {
     const g = Math.max(0, Math.min(1, growth));
     const size = CROP_MIN_SCALE + (CROP_MAX_SCALE - CROP_MIN_SCALE) * g;
-    if (FOLIAGE_CROPS.has(crop)) {
-      const group = _buildFoliageMesh(crop, g, col, row);
+    const variety = window.CropVarieties?.ensure?.(crop); // Saved NPC crops use the same genotype/color as the farm.
+    const family = variety?.family || crop;
+    if (FOLIAGE_CROPS.has(family)) {
+      const group = _buildFoliageMesh(family, g, col, row);
       if (!group) return null;
+      _tintVarietyFoliage(group, variety?.color);
       group.scale.setScalar(size);
       return { mesh: group, lift: 0.01 };
     }
