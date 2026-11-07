@@ -77,7 +77,8 @@
       const maxR = Math.floor(Math.max(...outline.map(p => p[2])));
       if (minC < 0 || minR < 0 || maxC >= cols || maxR >= rows) { failures.push({ projection, reason:'outside-map' }); continue; }
       const footprint = []; // Parent-owned body tiles; used for validation, never registered as walkable.
-      const boundaryCells = []; // Shared unwalkable stone boundary strip, if the source cliff has one.
+      const boundaryCells = []; // Overlapped unwalkable stone cells, where the parent face is painted.
+      const sharedBoundaryTiles = []; // Parent-side tile edges actually facing lower ground or stone, not incidental interior rock.
       let samples = 0, inParent = 0, inRock = 0; // Fraction of *area*, not merely intersecting tile count.
       for (let r = minR; r <= maxR; r++) for (let col = minC; col <= maxC; col++) {
         if (!miniCliffTouchesCell(original, outline, col, r)) continue;
@@ -86,7 +87,20 @@
           !!tile && Number.isFinite(surface(tile, opts)) && surface(tile, opts) > shelf.y + 0.2;
         const boundary = !!tile && (tile.incline || tile.type === 'rock' || tile.type === 'wall') &&
           !opts.isBoundary?.(tile);
-        if (parent) footprint.push({ c: col, r, elevation: groundY, parentElevation: surface(tile, opts) }); // Keep the owning plateau's real surface without retaining generation callbacks.
+        if (parent) {
+          footprint.push({ c: col, r, elevation: groundY, parentElevation: surface(tile, opts) }); // Validate against the original parent's real height.
+          const onParentCliff = DIRS.some(dir => {
+            const nc = col + dir.x, nr = r + dir.z;
+            if (nc < 0 || nr < 0 || nc >= cols || nr >= rows ||
+                components[nr * cols + nc] === candidate.bComp) return false;
+            const neighbor = grid[nr]?.[nc];
+            if (!neighbor || opts.isBoundary?.(neighbor)) return false;
+            return neighbor.incline || neighbor.type === 'rock' || neighbor.type === 'wall' ||
+              (Number.isFinite(surface(neighbor, opts)) && surface(neighbor, opts) <= candidate.y0 + 0.5);
+          });
+          if (onParentCliff && shelfContains(original, col + 0.5, r + 0.5))
+            sharedBoundaryTiles.push({ c: col, r }); // A shared parent face, not a barely touched polygon corner.
+        }
         if (boundary) boundaryCells.push({ c: col, r, elevation: groundY });
         for (const dx of [0.25, 0.5, 0.75]) for (const dz of [0.25, 0.5, 0.75]) {
           if (!shelfContains(original, col + dx, r + dz)) continue;
@@ -103,6 +117,12 @@
           embedded:(inParent+inRock) / Math.max(1,samples) });
         continue;
       }
+      const requiredBoundary = Math.max(1, Math.ceil(shelf.width * 0.30)); // Short pillars need one shared face; a long noodle needs several.
+      if (sharedBoundaryTiles.length < requiredBoundary) {
+        failures.push({ projection, reason:'insufficient-shared-boundary', shared:sharedBoundaryTiles.length,
+          required:requiredBoundary });
+        continue;
+      }
       if (candidate.walls > 0 && !boundaryCells.length) {
         failures.push({ projection, reason:'missing-wall-seam', parent:inParent / samples });
         continue; // Share actual unwalkable face tiles when painted.
@@ -110,7 +130,7 @@
       debug.miniBasesAccepted = (debug.miniBasesAccepted||0)+1; // Live generator diagnostics for quality audits.
       return {
         x: original.x, z: original.z, y: groundY, elevation: groundY,
-        footprint, boundaryCells, parentComponent: candidate.bComp,
+        footprint, boundaryCells, sharedBoundaryTiles, parentComponent: candidate.bComp,
         hasPaintedBoundary: candidate.walls > 0, // Direct tier jumps have no unwalkable rock tiles to share.
         projectionTiles: projection, parentCoverage: inParent / samples,
         embeddedCoverage: (inParent + inRock) / samples,
@@ -439,7 +459,8 @@
         !(s.y < cell.parentElevation) ||
         !(cell.elevation <= s.base.y + 0.001)) ||
         !Number.isInteger(s.base?.projectionTiles) || s.base.projectionTiles < 1 || s.base.projectionTiles > 3 ||
-        s.base.parentCoverage < 0.54 || s.base.embeddedCoverage < 0.72) // The original body must remain mostly buried in its parent.
+        s.base.parentCoverage < 0.54 || s.base.embeddedCoverage < 0.72 ||
+        (s.base.sharedBoundaryTiles?.length || 0) < Math.max(1, Math.ceil(s.width * 0.30))) // The original body must remain mostly buried in its parent.
       .map(s => s.id);
     return {
       ok: !unreachablePlateaus.length && !unreachableBalconies.length && !invalidHops.length && !invalidEmbeddedBases.length,
