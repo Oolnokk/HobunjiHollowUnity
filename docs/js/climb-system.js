@@ -18,7 +18,7 @@
   // pairs since they're plain `let`s reassigned all over game.js's
   // movement code.
   let deps = null;
-  function init(injectedDeps) { deps = injectedDeps; }
+  function init(injectedDeps) { deps = injectedDeps; window.PlayerJump?.init?.(injectedDeps); }
 
   // World interaction uses the centered reticle in every exterior camera mode;
   // ranged projectile aim remains on getPlayerAimRay, while climb/nest focus
@@ -1054,13 +1054,14 @@
       if (next) beginRouteHop(player, session, next);
       return true;
     }
+    if (player._freeJump) return window.PlayerJump?.start?.() || false; // No double-jump in air; a new press hops off raised furniture.
     if (player.climbing) return false;
     if (player.onCliffBalcony) return jumpFromBalcony();
     const climb = getClimbTarget();
     if (climb) return startClimb(climb);
     const world = getWorldClimbTarget();
     if (world) { world.start(); return true; }
-    return false;
+    return window.PlayerJump?.start?.() || false; // Empty ground still has a valid Jump action.
   }
 
   window.ClimbSystem = {
@@ -1103,6 +1104,7 @@
         balcony: deps?.player?.onCliffBalcony ?? null,
         mountRideState: deps?.getMountRideState?.() || 'none',
         ...climbSafetyDebug,
+        freeJump: window.PlayerJump?.debug || null, // Developer/mobile debug for physical foot height and obstacle checks.
       };
     },
   };
