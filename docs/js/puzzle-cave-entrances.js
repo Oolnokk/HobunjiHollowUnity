@@ -181,7 +181,10 @@
       plate.name='puzzle-cave-exterior-plate';
       plate.position.set(portal.plate.x,portal.plate.y+.035,portal.plate.z);
       group.add(plate);portal.plateMesh=plate;
-      portal.plateArt=root.PuzzleCavePlateArt?.decorate?.(THREE,plate,{radius:.55,thickness:.09})||null; // Furniture Author carved_smooth stone plus hao'uun in the shared Tankan font.
+      portal.plateArt=root.PuzzleCavePlateArt?.decorate?.(THREE,plate,{
+        radius:.55,thickness:.09,
+        toward:{x:portal.door.x-portal.plate.x,z:portal.door.z-portal.plate.z}
+      })||null; // Furniture Author carved_smooth stone plus hao'uun in the shared Tankan font.
     }
     const furniture=root.AuthoredFurniture;
     Promise.resolve(furniture?.load?.('cliffDoor')).then(data=>{
