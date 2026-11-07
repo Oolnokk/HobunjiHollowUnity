@@ -52,7 +52,7 @@ const T = {
   Vector3:class {constructor(x=0,y=0,z=0){Object.assign(this,{x,y,z});}},
   Quaternion:class {}, DoubleSide:2, DynamicDrawUsage:1,
 };
-const scene = { objects:[], add(obj){this.objects.push(obj);} };
+const scene = { objects:[], add(obj){this.objects.push(obj);obj.parent=this;} }; // Scene attachment is authoritative for the perception provider.
 const area='test-mini-cliff-herb';
 const shelf = (id,x,reward)=>({
   id,x,z:5.5,y:7, width:2,depth:1, tangent:{x:1,z:0}, normal:{x:0,z:1},
@@ -90,6 +90,7 @@ assert(herbs && herbs.children.length===6,'herb reward is visibly clustered into
 assert.equal(herbs.position.y,herb.y+0.016,'herbs grow from the mini-cliff lid');
 assert.equal(herb.herbTile.c,4,'cluster belongs to one mini-cliff tile');
 assert.equal(herb.herbTile.r,5,'cluster belongs to one mini-cliff row');
+assert(routes.senseTargets(scene).includes(herbs),'unpicked herb cluster is available to the 12-tile perception provider');
 for (const plant of herbs.children) {
   assert.equal(Math.floor(herbs.position.x+plant.position.x),4,'every herb stalk stays on the selected tile');
   assert.equal(Math.floor(herbs.position.z+plant.position.z),5,'no herb stalk spills into a neighboring tile');
@@ -97,8 +98,10 @@ for (const plant of herbs.children) {
 assert.equal(chest.reagentKey,undefined,'buried chests remain separate rewards');
 routes.setRewardStage(area,herb.id,'claimed');
 assert.equal(herbs.visible,false,'harvesting hides all six plants immediately');
+assert(!routes.senseTargets(scene).includes(herbs),'harvested cluster is removed from perception without a scene rebuild');
 routes.restoreRewards({[area]:{[herb.id]:{claimed:false,revealed:false}}});
 assert.equal(herbs.visible,true,'load restores an unpicked herb reward');
+assert(routes.senseTargets(scene).includes(herbs),'unclaimed restored herbs become discoverable again');
 routes.restoreRewards({[area]:{[herb.id]:{claimed:true,revealed:true}}});
 assert.equal(herbs.visible,false,'load never respawns a picked herb reward');
 routes.restoreRewards({});
