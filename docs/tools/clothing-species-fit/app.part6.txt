@@ -17,7 +17,7 @@
           portrait.configBase=new URL('config/',docs).href;
         }
       }
-      if(path==='js/portrait-utils.js')installCanonicalCloudMaskScale();
+      // portrait-utils owns canonical masking; the retired full-portrait patch must not run.
     }
 
     const required=[
@@ -79,16 +79,14 @@ function blankRuntimeNpc(){
 async function runtimePortraitSet(){
   await ensureRigRuntime();
   const profileKey=runtimeProfileKey();
-  const mask=currentMaskTransform();
-  const cacheKey=`${profileKey}::mask:${Number(mask.scaleX).toFixed(4)}:${Number(mask.scaleY).toFixed(4)}:${Number(mask.translateY).toFixed(4)}`;
+  const cacheKey=profileKey; // The retired cloud-mask sliders do not affect the game portrait raster.
   if(R.three.portraitCache.has(cacheKey))return R.three.portraitCache.get(cacheKey);
 
   const promise=(async()=>{
     const npc=blankRuntimeNpc();
     let profile=window.NpcAvatarPreview.buildProfileFromNpcExport(npc);
     if(!profile){
-      // Keep the random/profile seed independent of mask sliders so changing the
-      // mask never changes body colours or any other appearance choice.
+      // Keep the appearance seed stable across preview-only adjustments.
       profile=window.NpcAvatarPreview.randomProfile(`clothing-fit:${profileKey}`,{
         speciesId:E.species.value,gender:E.gender.value
       });
@@ -113,8 +111,7 @@ async function runtimePortraitSet(){
       back,profile,{seatId:'clothing-fit-runtime',portraitView:'behind',forceEyesOpen:true}
     );
 
-    // Keep the neck/head-only texture on the ordinary runtime path. The cloud
-    // mask belongs to the body portrait and should not be authored by these sliders.
+    // Keep neck/head-only textures on the canonical runtime path, without legacy masking.
     await window.NpcAvatarPreview.renderProfileToCanvas(
       head,profile,{seatId:'clothing-fit-runtime',onlyHeadSprite:true,forceEyesOpen:true}
     );

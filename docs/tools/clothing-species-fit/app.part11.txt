@@ -11,8 +11,11 @@
   let transform;
   try{transform=JSON.parse(readLine('base transform'))}catch{throw new Error('Could not parse the base transform JSON.');}
   for(const key of ['scaleX','scaleY','translateX','translateY']){
-    if(!Number.isFinite(Number(transform?.[key])))throw new Error(`The base transform is missing a valid ${key}.`);
+    if(transform?.[key]==null||String(transform[key]).trim()===''||!Number.isFinite(Number(transform[key])))
+      throw new Error(`The base transform is missing a valid ${key}.`);
   }
+  if(Number(transform.scaleX)<=0||Number(transform.scaleY)<=0)
+    throw new Error('This report has a zero/negative base scale, collapsing the garment grid. Reset or re-enter the base scale and copy fresh diagnostics before importing.');
 
   const section=text.split('source→target points:')[1]?.split('recent log:')[0];
   if(!section)throw new Error('The report is missing its source→target point list.');

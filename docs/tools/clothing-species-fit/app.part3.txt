@@ -23,6 +23,13 @@ function targetKey(species,gender){
 function ensureTargetData(species,gender){
   const key=targetKey(species,gender);
   if(!A.baseTransforms[key])A.baseTransforms[key]=defaultTransform();
+  const transform=A.baseTransforms[key]; // Validates persisted calibration before preview or export uses it.
+  const invalidScales=['scaleX','scaleY'].filter(axis=>!Number.isFinite(Number(transform[axis]))||Number(transform[axis])<=0);
+  if(invalidScales.length){
+    for(const axis of invalidScales)transform[axis]=1;
+    R.logs.unshift(`[${new Date().toLocaleTimeString()}] Recovered invalid base ${invalidScales.join('/')} for ${key}; local grid offsets preserved.`);
+    R.logs=R.logs.slice(0,40); // Surface an automatic repair inside mobile diagnostics without recursive redraws.
+  }
   if(!A.localOffsets[key]||A.localOffsets[key].length!==SOURCE_GRID.length)A.localOffsets[key]=zeroOffsets();
   return key;
 }

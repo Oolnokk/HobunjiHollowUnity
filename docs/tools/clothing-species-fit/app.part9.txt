@@ -49,7 +49,7 @@ async function updateThreePreview(){
   try{
     await withThreePreviewDeadline(ensureRigRuntime(),60000,'3D module loading');
     if(buildId!==R.three.buildGeneration)return;
-    E.threeStatus.textContent='Rendering runtime portrait + cloud mask…';
+    E.threeStatus.textContent='Rendering runtime portrait…';
 
     const avatar=await withThreePreviewDeadline(composeRuntimePortrait(),35000,'3D avatar rendering');
     if(buildId!==R.three.buildGeneration)return;
