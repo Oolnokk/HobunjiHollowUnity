@@ -163,6 +163,7 @@ let previewElapsedMs = 0; // Simulated song elapsed time controls late timer exe
 let previewStrum = false; // Reuses the same actual callback for both single notes and multi-string chord strokes.
 const previewScope = {
   state:previewState,
+  STRUM_NOTE_DELAY_MS:9, // Inject the shared strum brush spacing into the isolated preview scheduler.
   FRETTED_PLUCK_MODES:{'arp-forward-reverse-16':{kind:'arp',division:4}},
   demoAutomaticPattern:()=>({melodyMidi:60,fret:{},steps:[{type:'note',midi:60}],label:'wave'}),
   automaticPatternSteps:(midi,fret,mode,clock)=>({
