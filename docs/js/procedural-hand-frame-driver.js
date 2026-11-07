@@ -190,6 +190,7 @@
   // toolHolder, so the player's hands used to fall back to free-hand idle while holding them.
   function heldItemTarget(record) {
     if (inAttackEditor()) return null;
+    if (playerKurrayaActive(record) || global.KurrayaInstrument?.fluteDiagnostics?.().active && record?.rig?.parent === gameDeps?.playerMesh) return null; // A music session owns both hands before generic held bags/burdens can take them.
     const authoredHostileItem = record?.avatarRoot?.userData?.proceduralHeldItemTarget; // Enemy-carried physical Burdens use the same authored two-hand grip as player carryables.
     if (authoredHostileItem?.holder?.parent) return authoredHostileItem;
     if (record?.avatarRoot?.userData?.proceduralHandToolHolder) return null;
