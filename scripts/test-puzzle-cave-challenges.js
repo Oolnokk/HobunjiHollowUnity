@@ -120,7 +120,7 @@ assert(timedCollider.enabled(),'the music gate starts physically locked');
 assert(areaFootprints.blocksBox(area,gateX,gateZ,.18),'the stone-song gate blocks real player movement until solved');
 assert.equal(events.count('hobunji-kurraya-puzzle-note'),1,'only real instrument notes reach the score');
 timed.tick(0);
-assert.equal(playing,0,'the pressure plate must not open or equip the player's instrument');
+assert.equal(playing,0,"the pressure plate must not open or equip the player's instrument");
 assert(timed.scorePanel?.visible||timed.inscription?.group.visible,'the glowing Scratchbone score appears while on the plate');
 const firstNote=timed.song.notes[0].index;
 events.dispatch('hobunji-kurraya-puzzle-note',{area:'wrong_map',noteIndex:firstNote});
