@@ -15,6 +15,7 @@
   const SIZE=4; // Every obelisk is a four-cell-wide solid rectangular column with a four-cell mantle top.
   const DEATH_DEPTH=8; // Pit bottom sits below the entire ground-story gallery.
   const TRAVERSAL='reachingObelisks';
+  const activeMounts=new Set(); // Sense Mode queries only living shaft obelisk runtimes, never unrelated projectile puzzles.
   const SIDES={N:{inX:0,inZ:1,tX:1,tZ:0},E:{inX:-1,inZ:0,tX:0,tZ:1},
     S:{inX:0,inZ:-1,tX:-1,tZ:0},W:{inX:1,inZ:0,tX:0,tZ:-1}};
   const clamp=(n,a,b)=>Math.max(a,Math.min(b,n));
@@ -26,6 +27,10 @@
   const random=seed=>{let s=(seed>>>0)||1;return()=>{s=(s+0x6d2b79f5)>>>0;let t=s;t=Math.imul(t^(t>>>15),t|1);t^=t+Math.imul(t^(t>>>7),t|61);return((t^(t>>>14))>>>0)/4294967296;}};
   const inside=(p,x,z,pad=0)=>Math.abs(x-p.x)<=SIZE/2+pad&&Math.abs(z-p.z)<=SIZE/2+pad;
   const gap=(a,b)=>Math.max(0,Math.hypot(a.x-b.x,a.z-b.z)-SIZE);
+  const faceToward=(from,to)=>{ // Projectile switches sit on a real outer face, not inside the stone when the approach is diagonal.
+    const dx=to.x-from.x,dz=to.z-from.z;
+    return Math.abs(dx)>=Math.abs(dz)?{x:Math.sign(dx),z:0}:{x:0,z:Math.sign(dz)};
+  };
   // Per story: A starts lowered against the upper gallery; D's strand becomes
   // usable when A's plate rotates its climb faces. C sees B's back-mounted
   // target, whereas an archer on A faces the target's hidden (rear) side.
@@ -77,9 +82,9 @@
       }
       const plate={id:'obelisk-f'+story+'-rotate-A',pillarId:a.id,story,holdSeconds:.45,rotates:90};
       const switchA={id:'obelisk-f'+story+'-raise-A',pillarId:b.id,controls:a.id,
-        story,face:'towardC',normal:{x:Math.sign(c.x-b.x),z:Math.sign(c.z-b.z)}};
+        story,face:'towardC',normal:faceToward(b,c)};
       const switchB={id:'obelisk-f'+story+'-raise-B',pillarId:c.id,controls:b.id,
-        story,face:'towardD',normal:{x:Math.sign(d.x-c.x),z:Math.sign(d.z-c.z)}};
+        story,face:'towardD',normal:faceToward(c,d)};
       plates.push(plate);targets.push(switchA,switchB);
       routes.push({story,side,entryY:base,exitY:landing,
         states:['A lowered: climb from the gallery onto its plate','A rotated: descend through D to C','C: shoot B target from its visible face',
@@ -227,6 +232,7 @@
       const rune=mesh(new THREE.BoxGeometry(.75,.75,.75),red,target.id,pillar.holder);
       rune.position.set(offset.x,-1.3,offset.z);
       rune.userData.devRuinProjectileTarget=true; rune.userData.devRuinFootprintIgnore=true;
+      rune.userData.shaftObeliskSwitch=true; // Identifies just the two traversal switches per ascent for Sense Mode and mobile debugging.
       const state={id:target.id,object:rune,hitMesh:rune,active:false,
         hittable:()=>{
           const pos=getPlayerPosition?.(),y=Number(getPlayerY?.());
@@ -242,7 +248,7 @@
           rune.material=state.active?green:red;
           deps.onStateChange?.();return true;
         },
-        controls:controls.id,pillarId:pillar.id};
+        controls:controls.id,pillarId:pillar.id,pillarY:()=>pillar.y-1.3}; // Keeps Sense Mode on the current story without creating a new world-position cache.
       states.set(state.id,state);
     }
     const link=()=>{
@@ -297,8 +303,10 @@
       }
       return best;
     };
+    const senseMount={group,states,getPlayerY,spacing:base.spacing}; // The provider filters switches to the player's current vertical traversal stage.
+    activeMounts.add(senseMount);
     const dispose=()=>{
-      if(disposed)return;disposed=true;
+      if(disposed)return;disposed=true;activeMounts.delete(senseMount);
       for(const remove of links)remove();
       DS.clearScope(scope);CS.clearScope(scope);
       group.parent?.remove(group);
@@ -313,5 +321,20 @@
         activated:[...states.values()].filter(t=>t.active).length,rotated:[...plateStates.values()].filter(p=>p.triggered).length,
         moving:[...columns.values()].filter(p=>Math.abs(p.y-p.desiredY)>.01).length,pit:tradition,gravity:GRAVITY,fallPerTile:plan.physics.fallPerTile})};
   }
-  return Object.freeze({TRAVERSAL,GRAVITY,UNBUFFED_SPEED,SIZE,DEATH_DEPTH,fallDistanceForTiles,catchDepthForGap,climbFaces,compose,verify,mount,traditionOf});
+  function senseTargets(scene){
+    const visible=[]; // Only live mounted shaft switches in this scene and near the current story are Sense Mode candidates.
+    for(const mount of activeMounts){
+      let ancestor=mount.group;
+      while(ancestor?.parent)ancestor=ancestor.parent;
+      if(ancestor!==scene||!mount.group.parent)continue;
+      const playerY=Number(mount.getPlayerY?.());
+      for(const state of mount.states.values()){
+        const pillarY=state.pillarY?.()??state.object.getWorldPosition(new (root.THREE?.Vector3||mount.group.position.constructor)()).y;
+        if(Number.isFinite(playerY)&&Math.abs(pillarY-playerY)>mount.spacing*.55)continue;
+        if(state.object?.parent)visible.push(state.object);
+      }
+    }
+    return visible;
+  }
+  return Object.freeze({TRAVERSAL,GRAVITY,UNBUFFED_SPEED,SIZE,DEATH_DEPTH,fallDistanceForTiles,catchDepthForGap,climbFaces,compose,verify,mount,traditionOf,senseTargets});
 });
