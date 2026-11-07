@@ -127,6 +127,15 @@ DOM nodes stay flat across eight visits (3 / 2 / ~24.7 k). The structural defect
 offline, behind a blocking proxy or on a slow network, which is why they were fixed anyway. If you measure DOM growth
 here again, allow `unpkg.com` first.
 
+**Re-checked after main's Tzatzul nest/cliff-spire work (#1453) was merged in.** `TzatzulCliffSites` (bird-only spires in
+`map_northern_cliffs` and `map_western_slope`) keeps the zone's scene in its `areas` map and only released it on the next
+area change, so `evictZoneScene` now calls `TzatzulCliffSites.releaseArea(mapId)` itself. Its perches (`PerchSupport`),
+`TzatzulLiveVisuals` and the flight runtime already drop their zone state on area change. Nest caves are building scenes,
+not zone scenes: `TzatzulNestEncounter` keeps small per-cave records and carried victims for the session on purpose, bounded
+by the four nests. The same eight-visit snapshot run on the merged build showed no Tzatzul objects among the survivors
+(49 MB survived, forced-GC heap +161 MB over eight visits), but a bird may not have spawned during those visits, so this
+is a code review plus a clean run, not proof that a spawned bird leaks nothing.
+
 **Still held after the fixes (not fixed; each is a few MB, listed by shortest retaining path):**
 
 - `__hobunjiGameRenderer > clearDepth > ... setup > o` (~10 MB): three.js `WebGLBindingStates` entries keyed by geometry id.
