@@ -63,11 +63,12 @@ class FakeAudio {
     this.networkState = 1;
     this.paused = true;
     this.ended = false;
+    this.preservesPitch = true; // Modern native media supports tempo changes without automatically raising pitch.
   }
   load() { FakeAudio.loads++; FakeAudio.loadsByUrl.set(this.src, (FakeAudio.loadsByUrl.get(this.src) || 0) + 1); }
   pause() { this.paused = true; }
-  addEventListener(name, listener) { (this.listeners ||= {})[name] = listener; } // Enables real ended-event sequencing tests for the two native finisher clips.
-  finish() { this.ended = true; this.paused = true; this.listeners?.ended?.(); } // Simulates a full clip without a timer or browser media device.
+  addEventListener(name, listener) { ((this.listeners ||= {})[name] ||= []).push(listener); } // Preserve both cleanup and next-part listeners, as real browser media events do.
+  finish() { this.ended = true; this.paused = true; for (const listener of this.listeners?.ended || []) listener(); } // Simulates a full clip without a timer or browser media device.
   play() { FakeAudio.plays++; FakeAudio.lastPlayed = this; this.paused = false; return Promise.resolve(); }
 }
 
@@ -143,18 +144,41 @@ const firstSlash = FakeAudio.lastPlayed; // The first finisher recording starts 
 assert.equal(FakeAudio.plays, beforeSlash + 1, 'the second slash must not overlap the first');
 assert.equal(firstSlash.src, 'anime-slash.wav');
 assert(Math.abs(firstSlash.volume - 0.9 * 0.8) < 1e-9, 'both finisher clips are 80% of the authored slash volume');
-assert(Math.abs(firstSlash.playbackRate - 3 * 2 ** (-5 / 12)) < 1e-9, 'native fallback keeps the -5 semitone transposition');
+assert.equal(firstSlash.playbackRate, 3, 'pitch-preserving native fallback prioritizes one-third duration rather than incorrectly raising pitch by 14 semitones');
+assert.equal(firstSlash.preservesPitch, true);
 firstSlash.finish();
 const secondSlash = FakeAudio.lastPlayed; // Fired by the real ended handler, not a guessed timer.
 assert.equal(FakeAudio.plays, beforeSlash + 2);
 assert(Math.abs(secondSlash.volume - 0.9 * 0.8) < 1e-9);
-assert(Math.abs(secondSlash.playbackRate - 3 * 2 ** (-6 / 12)) < 1e-9, 'native fallback keeps the -6 semitone transposition');
+assert.equal(secondSlash.playbackRate, 3, 'second native fallback cue preserves its one-third duration');
+assert.equal(secondSlash.preservesPitch, true);
 const finisherDebug = context.window.AudioSystem.combatSfxDebugSnapshot().last; // Copyable without mobile devtools.
 assert.equal(finisherDebug.key, 'comboFinisherDoubleSlash');
-assert.equal(finisherDebug.detail.backend, 'native-coupled-fallback');
-assert.equal(finisherDebug.detail.tempo, 3);
+assert.equal(finisherDebug.detail.backend, 'native-limited-fallback');
+assert.equal(finisherDebug.detail.requestedTempo, 3);
 assert.equal(finisherDebug.detail.volumeScale, 0.8);
-assert.deepStrictEqual([...finisherDebug.detail.semitones], [-5, -6]);
+assert.deepStrictEqual([...finisherDebug.detail.requestedSemitones], [-5, -6]);
+assert.deepStrictEqual([...finisherDebug.detail.actualPitchModes], ['original-pitch-fast', 'original-pitch-fast'], 'mobile debug must disclose a native pitch-preserving fallback cannot independently lower the notes');
+assert.deepStrictEqual([...finisherDebug.detail.actualPlaybackRates], [3, 3], 'mobile debug reports actual rather than requested playback rates');
+
+// Old native implementations without preservesPitch instead keep the requested lowered notes (without achieving triple tempo).
+class LegacyAudio extends FakeAudio {
+  constructor(url) { super(url); delete this.preservesPitch; } // No browser-specific pitch-preservation flag exists.
+}
+context.Audio = LegacyAudio; // VM global constructor switches only for this compatibility case.
+const oldNativeStart = FakeAudio.plays; // Counts two more independently-triggered native sounds.
+context.window.AudioSystem.playComboFinisherBonusSfx(0, 0, 'farm');
+const oldFirst = FakeAudio.lastPlayed;
+assert(Math.abs(oldFirst.playbackRate - 2 ** (-5 / 12)) < 1e-9, 'legacy fallback lowers the first sound rather than accidentally pitching it upward');
+assert.equal(FakeAudio.plays, oldNativeStart + 1);
+oldFirst.finish();
+const oldSecond = FakeAudio.lastPlayed;
+assert(Math.abs(oldSecond.playbackRate - 2 ** (-6 / 12)) < 1e-9, 'legacy fallback lowers the second sound');
+assert.equal(FakeAudio.plays, oldNativeStart + 2);
+const oldDebug = context.window.AudioSystem.combatSfxDebugSnapshot().last;
+assert.deepStrictEqual([...oldDebug.detail.actualPitchModes], ['lower-pitch-slow', 'lower-pitch-slow']);
+assert.deepStrictEqual([...oldDebug.detail.actualPlaybackRates], [2 ** (-5 / 12), 2 ** (-6 / 12)]);
+context.Audio = FakeAudio; // Restore the normal test backend.
 assert.match(audio, /startAt \+ clips\[0\]\.durationS/, 'decoded Web Audio must schedule the second slash exactly at the first clip end');
 assert.match(audio, /tempo: COMBO_FINISHER_SLASH_TEMPO, pitchSemitones/, 'independent DSP must receive triple tempo and each requested lowered pitch');
 assert.match(combo, /playComboFinisherBonusSfx/, 'only combo specials call the new semantic cue');
