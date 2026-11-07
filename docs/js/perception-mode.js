@@ -12,7 +12,8 @@
 //     drawn by WorldPopupText.syncInfoLists in the loot-list style but on
 //     the opposite side;
 //   • the player (and their mount) moves at half speed (speedMultiplier()).
-// Range is limited (RANGE_TILES); there is no cooldown.
+// Ordinary objects use RANGE_TILES. Cave/camp landmarks and cliff-door/herb
+// landmarks have independent discovery ranges; there is no cooldown.
 //
 // Wired from game.js with one init(deps) call; game.js calls renderOverlay()
 // from renderWorldPasses and update() from gameLoop. Sources are read through
@@ -21,7 +22,8 @@
   'use strict';
 
   const LAYER = 25; // Unused elsewhere (see the layer list in outline-render-performance.js / held-object-render-order.js).
-  const RANGE_TILES = 14; // Highlight radius around the player.
+  const RANGE_TILES = 14; // Highlight radius for ordinary actors and interactables.
+  const LANDMARK_RANGE_TILES = Object.freeze({ caves: 24, camps: 24, cliffDoors: 12, herbClusters: 12 }); // Distinct radii used by collectTargets for discoverable wilderness features.
   const INFO_RANGE_TILES = 6; // Info lists only for close objects, so a full farm doesn't drown in text.
   const MAX_INFO_LISTS = 10;
   const REFRESH_MS = 150; // Target re-collection cadence; the render pass itself runs every frame.
@@ -33,6 +35,7 @@
     neutral: '#ffd43a',
     interact: '#3dff6e',
     friendly: '#ffffff',
+    landmark: '#6ab69e', // Bronze verdigris: shared perception silhouette for caves, camps, cliff doors, and mini-cliff herbs.
     farmSelected: '#35dcff', // Farmwork uses the same mask/glow with its own color language.
     farmAssignable: '#b58aff',
   });
@@ -113,7 +116,8 @@
   }
 
   function sourceMap(material) {
-    return material?.map || material?.uniforms?.map?.value || material?.uniforms?.tMap?.value || material?.uniforms?.uMap?.value || null;
+    return material?.map || material?.uniforms?.map?.value || material?.uniforms?.tMap?.value || material?.uniforms?.uMap?.value
+      || material?.uniforms?.uGrassTex?.value || null; // ReagentPlants' leaf silhouettes are custom grass shaders; preserve their texture alpha in the glow.
   }
 
   function maskMaterialFor(source, category, skinned) {
@@ -182,16 +186,35 @@
     }
     const seenRoots = new Set();
     const rejected = { noRoot: 0, offScene: 0, outOfRange: 0 }; // Diagnostics only (debugSnapshot).
-    const consider = (root, category, extra) => {
+    const consider = (root, category, extra, rangeTiles = RANGE_TILES, anchor = null) => {
       if (!root) { rejected.noRoot++; return; }
       if (seenRoots.has(root)) return;
       if (sceneOf(root) !== scene) { rejected.offScene++; return; }
-      const p = worldPos(root);
+      const p = Number.isFinite(anchor?.x) && Number.isFinite(anchor?.z) ? anchor : worldPos(root); // Camp sites use their actual center rather than each individual tent's position.
       const dist = Math.hypot(p.x - player.x, p.z - player.z);
-      if (dist > RANGE_TILES) { rejected.outOfRange++; return; }
+      if (dist > rangeTiles) { rejected.outOfRange++; return; }
       seenRoots.add(root);
       out.push({ root, category, dist, ...extra });
     };
+
+    // Scene-owned landmark roots are authoritative: no guesswork from terrain proximity,
+    // and no lingering glow for retired cave facades, claimed herbs or unloaded camps.
+    const denEntrances = scene.children?.find(root => root.name === 'animalDenEntrances'); // Direct scene child in ZoneDenTotemFeatures: avoid a full-scene traversal every 150 ms.
+    const landmarkSources = { // Each owner supplies only mounted, meaningful feature geometry.
+      caves: (denEntrances?.children || []).filter(root => root.userData?.denCaveEntrance || root.userData?.localeCave),
+      camps: [
+        ...(window.BanditCamps?.senseTargets?.(scene) || []),
+        ...(window.PorakanekiCamps?.senseTargets?.(scene) || []),
+        ...(window.OmgurkuCamps?.senseTargets?.(scene) || []),
+      ],
+      cliffDoors: window.PuzzleCaveEntrances?.senseTargets?.(scene) || [],
+      herbClusters: window.CliffRouteNetwork?.senseTargets?.(scene) || [],
+    };
+    lastStats.landmarkSources = Object.fromEntries(Object.entries(landmarkSources).map(([kind, roots]) => [kind, roots.length])); // Mobile diagnostics for each source, before distance filtering.
+    for (const [kind, roots] of Object.entries(landmarkSources)) for (const entry of roots) {
+      const root = entry?.root || entry; // Camps supply a mesh plus its shared site center; caves, doors and herbs supply just a mesh.
+      consider(root, 'landmark', undefined, LANDMARK_RANGE_TILES[kind], entry?.anchor); // Landmarks take priority over any overlapping generic interactable.
+    }
 
     const sources = deps.getSources();
     const count = list => (list ? (list.size ?? list.length ?? 0) : 0);
@@ -516,9 +539,11 @@
     renderOverlay,
     COLORS,
     RANGE_TILES,
+    LANDMARK_RANGE_TILES,
     debugSnapshot: () => ({
       active,
       ...lastStats,
+      landmarkRanges: LANDMARK_RANGE_TILES, // Inspect effective cave/camp/door/herb ranges from the mobile debug companion.
       byCategory: targets.reduce((acc, t) => { acc[t.category] = (acc[t.category] || 0) + 1; return acc; }, {}),
     }),
     // Dev/test only: reads back the last silhouette mask and counts covered texels by colour.

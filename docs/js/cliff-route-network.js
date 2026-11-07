@@ -596,6 +596,15 @@
     return rewardMeshesByArea.get(area)?.get(id)?.find(handle => handle.kind === 'herbCluster')?.object || null;
   }
 
+  function senseTargets(scene) {
+    if (!scene) return [];
+    const roots = []; // Unpicked mini-cliff herb groups attached to this scene; retirement/harvesting removes them automatically.
+    for (const areaRewards of rewardMeshesByArea.values()) for (const handles of areaRewards.values())
+      for (const handle of handles) if (handle.kind === 'herbCluster' && handle.object?.visible && handle.object.parent === scene)
+        roots.push(handle.object);
+    return roots;
+  }
+
   function setRewardStage(area, id, stage) {
     const state = getRewardState(area, id);
     if (stage === 'revealed') state.revealed = true;
@@ -878,7 +887,7 @@
   }
   return Object.freeze({
     build, forGrid, verifyReachability, componentAt, crossing, toward, nextHop, shelfContains, shelfAt, highestBelow, render, overlapsClimb,
-    getRewardState, herbRewardMesh, setRewardStage, serializeRewards, restoreRewards, releaseArea,
+    getRewardState, herbRewardMesh, senseTargets, setRewardStage, serializeRewards, restoreRewards, releaseArea,
     forArea: area => activeByArea.get(area) || null,
     debugSnapshot: () => ({ ...debug, areas: [...activeByArea.entries()].map(([area,n]) => ({
       area, routes: n.routes.length, balconies: n.balconies.length,

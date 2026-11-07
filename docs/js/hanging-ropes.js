@@ -44,6 +44,7 @@
   };
   const ropes = new Map(); // id -> rope
   let serial = 0, ropeGeometry = null, ropeMaterial = null;
+  let playerRope = null; // Outdoor-only active rider; adopted ruin ropes retain their own traversal controller.
   let scratchDir = null, scratchUp = null, scratchA = null, scratchB = null;
 
   const area = () => String(window.GridTileAccessors?.getCurrentArea?.() || window.Combat?.deps?.getCurrentArea?.() || '');
@@ -127,6 +128,7 @@
   function removeRope(id) {
     const rope = typeof id === 'string' ? ropes.get(id) : id;
     if (!rope) return false;
+    if (playerRope === rope) releaseActiveRope(); // A removed anchor must not strand a rider in the air.
     detachInternal(rope, 'removed');
     rope.disposed = true;
     if (!rope.external) {
@@ -211,6 +213,71 @@
     return true;
   }
 
+  // ---------------------------------------------------------------- outdoor player traversal
+  // Ruin-owned ropes use their own layered collision and hazard checks. A normal
+  // furniture rope outside ruins uses this same RopeCore pendulum and PlayerJump
+  // supplies the physical airborne state, rendering and ballistic dismount.
+  function ropeCatches(rope, f) {
+    const bob = rope.bob || RC.bobAt(rope), a = rope.anchor;
+    const dx = bob.x - a.x, dy = bob.y - a.y, dz = bob.z - a.z;
+    const len2 = dx * dx + dy * dy + dz * dz;
+    if (len2 < 1e-6) return false;
+    const t = Math.max(0, Math.min(1, ((f.x - a.x) * dx + (f.y - a.y) * dy + (f.z - a.z) * dz) / len2));
+    if (t * Math.sqrt(len2) < RC.MIN_LENGTH - 0.05) return false;
+    return Math.hypot(f.x - a.x - dx * t, f.y - a.y - dy * t, f.z - a.z - dz * t) <= RC.AIR_CATCH_RADIUS;
+  }
+  function catchAirborneRope(f) {
+    if (!f || playerRope || !window.PlayerJump?.beginRopeRide) return false;
+    const player = window.Combat?.deps?.player;
+    if (!player?._freeJump || player._freeJump.phase !== 'air') return false;
+    for (const rope of ropes.values()) {
+      if (rope.mapId !== area() || rope.external || rope.disposed || rope.burden || rope.attached ||
+          rope.id === f.ropeId || !ropeCatches(rope, f)) continue;
+      RC.catchFromFlight(rope, f); // Velocity is converted to the same pendulum angular momentum as a ruin rope catch.
+      rope.bob = RC.bobAt(rope);
+      rope.lastSafeBob = RC.clonePoint(rope.bob);
+      if (!window.PlayerJump.beginRopeRide(rope)) return false;
+      rope.attached = true;
+      playerRope = rope;
+      updateVisual(rope);
+      window.Combat?.deps?.showToast?.('Caught the rope — move to swing; Jump to let go.', true);
+      return true;
+    }
+    return false;
+  }
+  function releaseActiveRope() {
+    const rope = playerRope;
+    if (!rope) return false;
+    const flight = RC.releaseFlight(rope, rope.bob || RC.bobAt(rope));
+    const airborne = window.PlayerJump?.beginFlight?.(flight, { source: 'rope swing', ropeId: rope.id });
+    if (!airborne) return false;
+    rope.attached = false;
+    rope.braking = false;
+    playerRope = null;
+    return true;
+  }
+  function tickPlayerRope(rope, dt) {
+    const player = window.Combat?.deps?.player;
+    if (rope.mapId !== area() || player?._freeJump?.phase !== 'rope' ||
+        player._freeJump.ropeId !== rope.id) {
+      rope.attached = false;
+      playerRope = null;
+      return;
+    }
+    const nativeHit = sweepBlocked(rope); // Shared world obstacle sweep; never swing through buildings or furniture.
+    const blocked = (from, to) => !!nativeHit?.(from, to) ||
+      window.PlayerJump?.canOccupyAir?.(to.x, to.z, to.y) === false;
+    const input = { strength: player.inputStrength, x: player.inputX, z: player.inputY };
+    for (let remaining = dt; remaining > 1e-6;) {
+      const step = Math.min(remaining, CONFIG.maxStep);
+      RC.stepAttached(rope, RC.intent(rope, input), step, blocked);
+      remaining -= step;
+    }
+    rope.lastSafeBob = RC.clonePoint(rope.bob);
+    updateVisual(rope);
+    window.PlayerJump?.setRopeRidePoint?.(rope.bob);
+  }
+
   // ---------------------------------------------------------------- strike
   // Adds a strike (direction away from the attacker, speed in units/s) to the rope's planar swing. A rope at
   // rest takes the strike direction as its swing plane; a rope already swinging keeps its plane and gains the
@@ -274,14 +341,27 @@
   function tick(dt = 0) {
     if (!ropes.size) return;
     const step = Math.min(0.1, Math.max(0, num(dt, 0))), mapId = area();
-    for (const rope of ropes.values()) if (rope.burden && rope.mapId === mapId && !rope.disposed) advance(rope, step);
+    for (const rope of ropes.values()) {
+      if (rope.mapId !== mapId || rope.disposed) continue;
+      if (rope === playerRope) { tickPlayerRope(rope, step); continue; }
+      if (rope.burden) { advance(rope, step); continue; }
+      if (!rope.external && (Math.abs(rope.angle) > 0.001 || Math.abs(rope.omega) > 0.001)) {
+        const blocked = sweepBlocked(rope);
+        RC.stepIdle(rope, step, blocked); // An empty rope still swings back after its rider jumps off.
+        rope.lastSafeBob = RC.clonePoint(rope.bob);
+        updateVisual(rope);
+      }
+    }
+    if (playerRope && playerRope.mapId !== mapId) {
+      playerRope.attached = false; playerRope = null;
+    }
   }
 
   const configure = overrides => { Object.assign(CONFIG, overrides || {}); return { ...CONFIG }; };
   const debugSnapshot = () => ({
-    config: { ...CONFIG },
+    config: { ...CONFIG }, activePlayerRope: playerRope?.id || null,
     ropes: [...ropes.values()].map(r => ({ id: r.id, mapId: r.mapId, external: !!r.external, burden: r.burden?.id || null, armed: r.armed, angle: +r.angle.toFixed(3), omega: +r.omega.toFixed(3) })),
   });
 
-  window.HangingRopes = Object.freeze({ installed: true, CONFIG, strikeSpeed, registerRope, adoptRope, removeRope, clearScope, attach, detach, canAttach, findHook, tryHang, onStruck, applyStrike, tick, configure, debugSnapshot, get ropes() { return [...ropes.values()]; } });
+  window.HangingRopes = Object.freeze({ installed: true, CONFIG, strikeSpeed, registerRope, adoptRope, removeRope, clearScope, attach, detach, canAttach, findHook, tryHang, onStruck, applyStrike, catchAirborneRope, releaseActiveRope, tick, configure, debugSnapshot, get ropes() { return [...ropes.values()]; } });
 })();
