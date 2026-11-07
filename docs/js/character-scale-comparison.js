@@ -197,6 +197,7 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
 #${PANEL_ID} output{text-align:right;color:var(--accent);font-weight:850;font-variant-numeric:tabular-nums}
 #${PANEL_ID} .scaleActions{display:flex;gap:7px;flex-wrap:wrap}
 #${PANEL_ID} .scaleStatus{font-size:10px;color:var(--muted)}
+#${PANEL_ID} #maaFullScaleChoose{min-height:44px;width:100%;min-width:0}
 #${PANEL_ID} .longoranTuning{display:grid;gap:8px;border-top:1px solid rgba(255,255,255,.18);padding-top:10px}
 #${PANEL_ID} .longoranTuning[hidden]{display:none!important}
 #${PANEL_ID} .longoranTuning h3{margin:0;font-size:13px}
@@ -247,7 +248,8 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
           <input id="maaLongoranNum${axis}" type="number" min="${min}" max="${max}" step="${step}" value="${value}" aria-label="${label} exact value">${unit}
         </div>`; // Same range+numeric mobile authoring pattern as the full-character scale inputs.
       panel.innerHTML = `
-        <div class="scaleHead"><b>Full character scale</b><span id="maaFullScaleSelected" class="scaleSelected">Tap a character</span><span id="maaFullScaleNpc" class="pill">—</span></div>
+        <div class="scaleHead"><b>Full character scale</b><span id="maaFullScaleSelected" class="scaleSelected">Choose a character</span><span id="maaFullScaleNpc" class="pill">—</span></div>
+        <div class="scaleRow"><label for="maaFullScaleChoose">Species and gender</label><select id="maaFullScaleChoose" aria-label="Select species and gender"></select></div>
         ${scaleRow('X', 'Width', 10, 400, 0.5, 100, 'Body width scale')}
         ${scaleRow('Y', 'Height', 10, 400, 0.5, 100, 'Body height scale')}
         ${scaleRow('Head', 'Head', 10, 400, 0.5, 100, 'Head scale')}
@@ -274,6 +276,10 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
         <div id="maaFullScaleStatus" class="scaleStatus">Preview-only lineup: hands and feet use the Rig Coordinates runtime; no lineup actor is saved into Rig or Multi mode. Head scale/offset are compensated at the neck rig, so stretching width/height never distorts head proportions. Age is per-NPC and composes with Head Y offset for a hunched-over look.</div>`;
       workspace.appendChild(panel);
       panel.querySelector('#maaFullScaleReset').addEventListener('click', resetAllToRepoDefaults);
+      panel.querySelector('#maaFullScaleChoose').addEventListener('change', event => {
+        const entry = entries.find(item => item.key === event.target.value);
+        if (entry) select(entry); // Mobile-friendly direct access when the entire lineup is too small to tap accurately.
+      });
       for (const axis of ['X', 'Y', 'Head', 'OffsetY']) {
         const range = panel.querySelector(`#maaFullScaleRange${axis}`);
         const number = panel.querySelector(`#maaFullScaleNum${axis}`);
@@ -372,6 +378,8 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
     if (!entry) return;
     if (selected && selected !== entry) stopWalkPreview(); // Do not leave the previous avatar pitched or mid-stride.
     selected = entry;
+    const chooser = document.getElementById('maaFullScaleChoose'); // Keeps dropdown and 3D canvas selection pointing to the same profile.
+    if (chooser && chooser.value !== entry.key) chooser.value = entry.key;
     const scale = window.HobunjiCharacterRigScale?.scaleFor?.(entry.species, entry.gender, entry.profile) || { x: 1, y: 1, head: 1, offsetY: 0 };
     document.getElementById('maaFullScaleSelected').textContent = `${prettySpecies(entry.species)} · ${entry.gender}`;
     document.getElementById('maaFullScaleNpc').textContent = entry.npc?.name || entry.npc?.id || 'Repository NPC';
@@ -861,6 +869,16 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
     if (!entries.length) throw new Error('No repository character previews could be built.');
 
     chair = await buildChair();
+    const chooser = document.getElementById('maaFullScaleChoose'); // Populated from the exact previews that finished building, not guessed species registry entries.
+    if (chooser) {
+      chooser.replaceChildren();
+      for (const entry of entries) {
+        const option = document.createElement('option');
+        option.value = entry.key;
+        option.textContent = `${prettySpecies(entry.species)} · ${entry.gender}`;
+        chooser.appendChild(option);
+      }
+    }
     layout();
     window.ProceduralHandFrameDriver?.syncNow?.();
     select(entries[0]);
@@ -915,7 +933,7 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
       building = false;
       active = true;
       chrome();
-      status('Tap/click any character to select its own species/gender scale. Hands and feet use the Rig Coordinates preview runtime.');
+      status('Choose a species/gender above or tap a character. Longoran exposes editable spine and gait with a walking preview.');
     } catch (error) {
       console.warn('[full-character-scale]', error);
       building = false;
