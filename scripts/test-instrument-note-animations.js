@@ -305,52 +305,43 @@ assert(grips.includes("phase === 'neutral' && !editorKurrayaNeutralAllowed()"),'
 assert(editor.includes("actionId: currentActionId, toolKey: preset.toolKey"),'action switching must pass authoritative Kurraya identity to grip loader');
 assert(editor.includes("actionId: currentActionId, toolKey: currentAction().toolKey"),'undo/restore must pass authoritative Kurraya identity to grip loader');
 
-const exportedKurrayaAxis = { // Exact authored JSON, not inferred by the test or a guessed placeholder.
-  enabled:true,
-  start:{x:0.4229580686978533,y:0.13525912280456098,z:-0.015},
-  end:{x:-0.2939021690442711,y:-0.09932862507652179,z:0.06094914739001003},
-};
-const exportedMainSpan={enabled:true,startZ:0.9719,endZ:0.3333};
-const exportedOffhandSpan={enabled:true,startZ:0.6456,endZ:-0.5429};
-assert.equal(JSON.stringify(gripsApi.defaultData.tools.kurraya.customGripAxis),JSON.stringify(exportedKurrayaAxis),
-  'the shipped Nut→Bridge preview must start enabled at the exact exported coordinates');
-assert.equal(JSON.stringify(gripsApi.defaultData.tools.kurraya.primaryGripSpan),JSON.stringify(exportedMainSpan),
-  'Kurraya must sample the authored primary span');
-assert.equal(JSON.stringify(gripsApi.defaultData.tools.kurraya.secondaryGripSpan),JSON.stringify(exportedOffhandSpan),
-  'Kurraya must sample the authored secondary span');
-const oldKurrayaDraft = JSON.parse(JSON.stringify(gripsApi.defaultData)); // Simulates the prior localStorage draft that masked the axis with disabled dummy endpoints.
-delete oldKurrayaDraft.kurrayaNutBridgePreset;
-oldKurrayaDraft.tools.kurraya.customGripAxis={enabled:false,start:{x:0,y:0,z:0},end:{x:0,y:0,z:0.5}};
-oldKurrayaDraft.tools.kurraya.primaryGripSpan={enabled:false,startZ:0,endZ:0.5};
-oldKurrayaDraft.tools.kurraya.secondaryGripSpan={enabled:false,startZ:0,endZ:0.5};
-oldKurrayaDraft.tools.kurraya.primaryGrip.position={x:0.17,y:-0.08,z:0.02}; // Non-axis hand authoring must survive upgrading the saved draft.
-oldKurrayaDraft.tools.hatchet.toolScale=1.43;
-gripLocalStorage.setItem('hobunji.handToolGrips.v1',JSON.stringify(oldKurrayaDraft));
-assert.equal(gripsApi.loadLocal(),true,'the editor must upgrade real localStorage drafts on reload');
-assert.equal(JSON.stringify(gripsApi.data.tools.kurraya.customGripAxis),JSON.stringify(exportedKurrayaAxis),
-  'old disabled Kurraya axis should migrate to the exported geometry');
-assert.equal(JSON.stringify(gripsApi.data.tools.kurraya.primaryGripSpan),JSON.stringify(exportedMainSpan));
-assert.equal(JSON.stringify(gripsApi.data.tools.kurraya.secondaryGripSpan),JSON.stringify(exportedOffhandSpan));
-assert.equal(gripsApi.data.tools.kurraya.primaryGrip.position.x,0.17,'hand target XYZ remains authored');
-assert.equal(gripsApi.data.tools.hatchet.toolScale,1.43,'unrelated weapon calibration is never reset');
-gripsApi.mutate(draft=>{draft.tools.kurraya.customGripAxis.enabled=false;});
-gripsApi.saveLocal(); // Editing and reloading after the one-time upgrade must not silently reactivate a deliberately disabled custom axis.
+assert.equal(gripsApi.defaultData.tools.kurraya.customGripAxis.enabled,false,
+  'Nut/Bridge geometry remains opt-in until an artist enables the custom axis');
+assert.equal(gripsApi.defaultData.tools.kurraya.primaryGripSpan.enabled,false,
+  'main-hand 2H range must not be enabled as a workaround for an unchecked checkbox');
+assert.equal(gripsApi.defaultData.tools.kurraya.secondaryGripSpan.enabled,false,
+  'offhand 2H range stays independently opt-in');
+const disabledKurrayaDraft = JSON.parse(JSON.stringify(gripsApi.defaultData)); // Simulates the original deliberately unchecked editor grip profile.
+disabledKurrayaDraft.kurrayaNutBridgePreset='kurraya-nut-bridge-20261107-v1'; // An already-migrated browser may still carry the obsolete marker.
+disabledKurrayaDraft.tools.kurraya.customGripAxis={enabled:false,start:{x:0.12,y:-0.06,z:0.01},end:{x:-0.4,y:0.2,z:0.04}};
+disabledKurrayaDraft.tools.kurraya.primaryGripSpan={enabled:false,startZ:0.9719,endZ:0.3333};
+disabledKurrayaDraft.tools.kurraya.secondaryGripSpan={enabled:false,startZ:0.6456,endZ:-0.5429};
+disabledKurrayaDraft.tools.kurraya.primaryGrip.position={x:0.17,y:-0.08,z:0.02};
+disabledKurrayaDraft.tools.hatchet.toolScale=1.43;
+gripLocalStorage.setItem('hobunji.handToolGrips.v1',JSON.stringify(disabledKurrayaDraft));
+assert.equal(gripsApi.loadLocal(),true,'the editor must read real localStorage drafts');
+assert.equal(JSON.stringify(gripsApi.data.tools.kurraya.customGripAxis),JSON.stringify(disabledKurrayaDraft.tools.kurraya.customGripAxis),
+  'loading a stored disabled custom axis must never turn it on or change its endpoints');
+assert.equal(JSON.stringify(gripsApi.data.tools.kurraya.primaryGripSpan),JSON.stringify(disabledKurrayaDraft.tools.kurraya.primaryGripSpan),
+  'loading an unchecked main-hand 2H range must preserve the unchecked flag and measurements');
+assert.equal(JSON.stringify(gripsApi.data.tools.kurraya.secondaryGripSpan),JSON.stringify(disabledKurrayaDraft.tools.kurraya.secondaryGripSpan),
+  'loading an unchecked offhand range must preserve its independently authored settings');
+assert.equal(gripsApi.data.tools.kurraya.primaryGrip.position.x,0.17);
+assert.equal(gripsApi.data.tools.hatchet.toolScale,1.43);
+gripsApi.saveLocal();
 assert.equal(gripsApi.loadLocal(),true);
-assert.equal(gripsApi.customGripAxisForTool('kurraya').enabled,false,
-  'an artist can still switch the migrated axis off later without it being automatically reenabled');
-const preexistingCustom = JSON.parse(JSON.stringify(gripsApi.defaultData));
-delete preexistingCustom.kurrayaNutBridgePreset;
-preexistingCustom.tools.kurraya.customGripAxis={enabled:true,start:{x:0.1,y:0.2,z:0},end:{x:0.2,y:0.5,z:0.1}};
-preexistingCustom.tools.kurraya.primaryGripSpan={enabled:true,startZ:0.06,endZ:0.17};
-preexistingCustom.tools.kurraya.secondaryGripSpan={enabled:true,startZ:0.15,endZ:-0.2};
-const keepCustom = JSON.parse(JSON.stringify(preexistingCustom.tools.kurraya));
-gripsApi.replace(preexistingCustom);
-assert.equal(JSON.stringify(gripsApi.data.tools.kurraya.customGripAxis),JSON.stringify(keepCustom.customGripAxis),
-  'a previously enabled user-authored axis is more authoritative than the shipped default');
-assert.equal(JSON.stringify(gripsApi.data.tools.kurraya.primaryGripSpan),JSON.stringify(keepCustom.primaryGripSpan),
-  'existing enabled grip ranges must not be reset');
-assert.equal(JSON.stringify(gripsApi.data.tools.kurraya.secondaryGripSpan),JSON.stringify(keepCustom.secondaryGripSpan));
-gripsApi.replace(gripsApi.defaultData); // Return to canonical values before testing independent rotation migrations.
+assert.equal(gripsApi.data.tools.kurraya.primaryGripSpan.enabled,false,
+  'saving and reloading a disabled main-hand range must not reenable it');
+const authoredKurrayaDraft = JSON.parse(JSON.stringify(gripsApi.defaultData)); // Artist-enabled Nut/Bridge geometry remains usable without a migration.
+authoredKurrayaDraft.tools.kurraya.customGripAxis={enabled:true,start:{x:0.1,y:0.2,z:0},end:{x:0.2,y:0.5,z:0.1}};
+authoredKurrayaDraft.tools.kurraya.primaryGripSpan={enabled:true,startZ:0.06,endZ:0.17};
+authoredKurrayaDraft.tools.kurraya.secondaryGripSpan={enabled:true,startZ:0.15,endZ:-0.2};
+const keepAuthoredKurraya = JSON.parse(JSON.stringify(authoredKurrayaDraft.tools.kurraya)); // Guards every artist-controlled axis and span value.
+gripsApi.replace(authoredKurrayaDraft);
+for (const field of ['customGripAxis','primaryGripSpan','secondaryGripSpan'])
+  assert.equal(JSON.stringify(gripsApi.data.tools.kurraya[field]),JSON.stringify(keepAuthoredKurraya[field]),
+    'explicitly authored Kurraya '+field+' must be kept');
+gripsApi.replace(gripsApi.defaultData); // Restore reference values before the independent rotation migration tests.
 const authoredRotations = [ // Only these three hand rotations differ from shipped defaults in the supplied full export.
   ['kurraya','primaryGrip',{pitch:-135,yaw:3,roll:0}],
   ['flute','primaryGrip',{pitch:90,yaw:-90,roll:0}],
@@ -465,7 +456,9 @@ assert(editor.includes('syncGripAxisMarkers(); // An async tool-sprite replaceme
 assert(editor.includes('for (const node of [...Object.values(gripAxisMarkers), gripAxisLine]) node.renderOrder = 10000'),
   'the preview Nut/Bridge markers must render above the instrument sprites');
 assert(editor.includes('debug: () => ({ // Mobile-readable preview truth'), 'the live preview must expose its marker state without developer tools');
-assert(grips.includes("id=\"handRestoreKurrayaAxis\""), 'mobile users need a dedicated one-tap Kurraya Nut/Bridge restore control');
+assert(!grips.includes('handRestoreKurrayaAxis'),'the mistaken Kurraya range auto-recovery control must not remain');
+assert(grips.includes('const disabledRangeNames ='),'editor must explain unchecked 2H ranges without automatically enabling them');
+assert(!grips.includes('resetKurrayaNutBridge'),'saved Kurraya ranges must not be forcibly migrated');
 assert(grips.includes("const previewAxis = global.HobunjiAttackEditorGripAxis?.debug?.()"),
   'the visible editor status must distinguish stored axis data from hidden preview graphics');
 assert(grips.includes("if (inAttackEditor()) global.HobunjiAttackEditorGripAxis?.refresh?.()"),
