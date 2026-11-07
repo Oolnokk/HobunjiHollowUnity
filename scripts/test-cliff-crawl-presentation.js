@@ -135,12 +135,13 @@ const rig = {
   },
   useIdlePose() { returnedToIdle++; },
 };
+let parentWorldYaw = new Q(); // Simulates a rotated ancestor, so cliff alignment is tested in true world space.
 const mesh = {
   isObject3D: true, visible: true, position: new Vec(), quaternion: new Q(),
-  parent: { worldToLocal: value => value }, children: [item, stowed],
+  parent: { worldToLocal: value => value, getWorldQuaternion: q => q.copy(parentWorldYaw) }, children: [item, stowed],
   traverse(visit) { visit({ userData: { proceduralHandRig: rig } }); },
   getWorldPosition(value) { return value.copy(this.position); },
-  getWorldQuaternion(q) { return q.copy(this.quaternion); },
+  getWorldQuaternion(q) { return q.copy(parentWorldYaw).multiply(this.quaternion); },
   updateWorldMatrix() {},
 };
 let footPoseCount = 0; // Counts direct IK foot solver calls.
@@ -286,5 +287,37 @@ const downhill = { ...lateral, player: { ...lateral.player,
   climbSurfaceStartY: 2, climbSurfaceEndY: 0.8 } };
 const downhillContact = contacts.surfaceContact(downhill, normal, 'left', 'foot', 1);
 assert(downhillContact.y < 2, 'downward climbing contacts move down the face using the same solver');
+
+// A sprite viewed from any cardinal cliff must be tangent to the stone even
+// when its inherited facing differs. This also verifies we restore both the
+// rotation and the original front/back side after each scoped render.
+const climbNormalBefore = { ...route.normal }; // Restore the authored test route once the rotation matrix is exercised.
+const worldY = new Vec(0, 1, 0); // Yaw axis shared by the avatar and its runtime parent.
+for (const [nx, nz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+  route.normal = { x: nx, z: nz };
+  for (const parentAngle of [0, Math.PI / 3]) {
+    for (const bodyAngle of [0, Math.PI / 4, Math.PI, -Math.PI / 2]) {
+      parentWorldYaw.setFromAxisAngle(worldY, parentAngle);
+      mesh.quaternion.setFromAxisAngle(worldY, bodyAngle);
+      const previous = mesh.quaternion.clone(); // The render hook must never permanently modify gameplay facing.
+      const posed = draw();
+      const worldFace = new Vec(0, 0, 1).applyQuaternion(mesh.getWorldQuaternion(new Q()));
+      const worldBodyUp = worldY.clone().applyQuaternion(mesh.getWorldQuaternion(new Q()));
+      assert(Math.abs(worldFace.x * nx + worldFace.z * nz) > 0.97,
+        'front/back portrait normal must align with every cliff face and parent yaw');
+      assert(worldBodyUp.y > 0.98, 'cliff pitch should leave the portrait standing upright');
+      assert(Number.isFinite(posed.debug.cliffCrawl.portraitYawCorrectionDeg),
+        'mobile diagnostics expose the chosen world-space portrait correction');
+      restore(posed.undo);
+      for (const component of ['x', 'y', 'z', 'w']) {
+        assert(Math.abs(mesh.quaternion[component] - previous[component]) < 1e-10,
+          'temporary crawl rotation must restore the prior gameplay quaternion');
+      }
+    }
+  }
+}
+route.normal = climbNormalBefore;
+parentWorldYaw = new Q();
+mesh.quaternion = new Q();
 
 console.log('cliff crawl presentation: all targeted checks passed');
