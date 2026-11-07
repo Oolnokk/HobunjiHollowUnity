@@ -81,7 +81,9 @@
     const plateMat=tintedStone('#8c735b',0x8c735b);
     const gateMat=tintedStone('#4f3b32',0x4f3b32);
     const brazierMat=tintedStone('#665346',0x665346);
-    const materials=[material,plateMat,gateMat,brazierMat]; // Disposed together with the geometry and owned interactive controls.
+    const ceilingMat=material.clone?.()||new THREE.MeshBasicMaterial({color:0x777267}); // Per-wing roof uses the same carved stone, but requires its own single-sided material.
+    ceilingMat.side=THREE.FrontSide;ceilingMat.needsUpdate=true; // Downward faces are visible from the chamber, not over the overhead player's camera.
+    const materials=[material,plateMat,gateMat,brazierMat,ceilingMat]; // Disposed together with the geometry and owned interactive controls.
     const wingFlameVisuals=[]; // Owns the player's campfire particle emitters for every ignited wing brazier.
     const states=[],gridScopes=[],added=new Set(),surfaces=[]; // Runtime gate/puzzle records, registered voxel scopes, map floor keys and terrain rectangles.
     const ownedControls=new Set(); // Every wing brazier, fire-source and authored puzzle control is released on reroll or failed setup.
@@ -93,7 +95,7 @@
     const floorRoots=new Map(); // Each story owns a presentation group so overhead floors do not conceal the player below.
     let activeRoot=group; // Mesh batching writes into the currently composed story's subscene.
     const owner={group,states,disposed:false,complete:false,lit:0,total:plan.totalBraziers,
-      nativeTotal:plan.nativeFloorCount||0,nativeLit:0,geometryCount:0}; // The Great Door requires BOTH composed wings and real V50 floor braziers. // Exposed to mobile diagnostics.
+      nativeTotal:plan.nativeFloorCount||0,nativeLit:0,geometryCount:0,ceilingMeshes:0}; // Ceiling count confirms roof generation in the mobile ruin diagnostics. // The Great Door requires BOTH composed wings and real V50 floor braziers. // Exposed to mobile diagnostics.
     owner.updateCompletion=()=>{
       owner.complete=owner.lit+owner.nativeLit===owner.total+owner.nativeTotal;
       ruin.shaftNetworkComplete=owner.complete;
@@ -173,6 +175,25 @@
       }
       add(wingName+'-walls',Faces.buildEdgeWallQuads(pieces.filter(piece=>!featured.has(piece)),wallOptions));
     }
+    function addCeiling(wingName,y,cells){
+      if(!cells.length)return;
+      const Faces=root.RuinWallFaces; // The roof follows the entire room/corridor footprint, including floorless rope pits.
+      if(Faces){
+        let minX=Infinity,minZ=Infinity,maxX=-Infinity,maxZ=-Infinity;
+        for(const [x,z] of cells){minX=Math.min(minX,x);maxX=Math.max(maxX,x);minZ=Math.min(minZ,z);maxZ=Math.max(maxZ,z);}
+        const width=maxX-minX+1,depth=maxZ-minZ+1,mask=new Uint8Array(width*depth);
+        for(const [x,z] of cells)mask[(z-minZ)*width+x-minX]=1;
+        const rects=Faces.mergeMask(mask,width,depth).map(r=>({axis:'y',side:-1,plane:0,a0:r.i0,a1:r.i1,b0:r.j0,b1:r.j1}));
+        const data=Faces.buildQuads(rects,{origin:{x:minX,y:y+WALL_HEIGHT,z:minZ},size:{x:1,y:1,z:1},patch:PATCH});
+        const roof=new THREE.Mesh(Faces.toGeometry(THREE,data),ceilingMat);
+        roof.name=wingName+'-ceiling';roof.userData.devRandomRuinCeiling=true;roof.userData.devRuinFootprintIgnore=true;
+        activeRoot.add(roof);owner.geometryCount++;owner.ceilingMeshes++;
+      }else{
+        const plane=new THREE.PlaneGeometry(1,1);plane.rotateX(Math.PI/2); // Same downward-only face as the main V50 ceiling.
+        instance(wingName+'-ceiling',plane,cells,ceilingMat,([x,z])=>({x:x+.5,y:y+WALL_HEIGHT,z:z+.5}));
+        owner.ceilingMeshes++;
+      }
+    }
     function setGate(record,blocked){
       if(!record?.gate)return;
       for(const [x,z] of record.gate.tiles){
@@ -232,6 +253,7 @@
           if(!tiles.has(key(x,z+1))&&!(key(x,z)===entryKey&&side.dz===-1))wallsX.push([x+.5,z+1,-1]);
         }
         const wingName='floor'+floor.floor+'-'+wing.side;
+        addCeiling(wingName,floor.y,walkCells); // Room and corridor roofs are visual only; the actual projectile/airborne collision keeps the verified open-grid rules.
         if(root.RuinWallFaces)masonry(wingName,floor.y,supportedCells,wallsX,wallsZ);
         else{ // Loaded without the face mesher: the original one-unit boxes.
           instance(wingName+'-floor',new THREE.BoxGeometry(1,.12,1),supportedCells,material,([x,z])=>({x:x+.5,y:floor.y-.06,z:z+.5}));
@@ -368,6 +390,7 @@
       challengeKinds:states.flatMap(r=>r.challenges.map(c=>c.kind)),
       projectileTargetsLinked:states.reduce((n,r)=>n+r.challenges.filter(c=>c.linked).length,0),
       floorlessCells:states.reduce((n,r)=>n+r.voidCells,0),
+      ceilingMeshes:owner.ceilingMeshes, // Explicit mobile check: every mounted wing has a downward-facing stone roof.
       ropeChainsLinked:states.reduce((n,r)=>n+r.challenges.filter(c=>c.ropeLinked).length,0),
       defenseRoomsReady:states.reduce((n,r)=>n+r.challenges.filter(c=>c.kind==='statueDefense'&&c.ready).length,0),
       defenseErrors:states.flatMap(r=>r.challenges.filter(c=>c.kind==='statueDefense'&&c.error)
