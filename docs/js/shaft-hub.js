@@ -197,8 +197,40 @@
       originX:o.originX,originZ:o.originZ,baseY:o.baseY,balconySides}):null;
     if(o.traversal==='reachingObelisks'&&!obelisks?.ok)
       throw new Error('The selected reaching-obelisk traversal is missing or unsolvable.');
+    const docks=[]; // Each story has a stone landing connected to its gallery; the preceding stage's A pillar is the known jumping-off point.
+    if(obelisks){
+      for(let floor=0;floor<o.floors;floor++){
+        const story=Math.max(0,floor-1),pillar=obelisks.pillars.find(p=>p.story===story&&p.name==='A');
+        const other=obelisks.pillars.find(p=>p.story===story&&p.name==='D');
+        if(!pillar||!other)throw new Error('Shaft dock has no audited approach pillar for floor '+floor);
+        const direction={N:[0,1],E:[-1,0],S:[0,-1],W:[1,0]}[pillar.side];
+        const tangent={N:[1,0],E:[0,1],S:[-1,0],W:[0,-1]}[pillar.side];
+        const opposite=(other.x-pillar.x)*tangent[0]+(other.z-pillar.z)*tangent[1]>0?-1:1; // Dock sits clear of the separate D column.
+        const center={c:grid.xToCol(pillar.x),r:grid.zToRow(pillar.z)};
+        const cells=[],tip=[]; // Three-wide continuous dock, reaching beside but never into the obelisk's moving stone.
+        for(let step=-7;step<=2;step++)for(let width=-1;width<=1;width++){
+          const worldSign=opposite*(tangent[0]||tangent[1]); // Grid cells span [c,c+1), so the negative world side needs one extra cell of clearance.
+          const lateral=opposite*(worldSign<0?5:4)+width;
+          const c=center.c+direction[0]*step+tangent[0]*lateral;
+          const r=center.r+direction[1]*step+tangent[1]*lateral;
+          if(c<o.wall||r<o.wall||c>=o.wall+o.shaft||r>=o.wall+o.shaft)
+            throw new Error('Shaft dock escaped the interior gallery');
+          if(floor>0)grid.set(c,r,floor*o.spacing-1,KIND.SOLID); // Floor zero has implicit bedrock; its dock requires a visible top and explicit support instead.
+          cells.push({col:c,row:r});
+          if(step>=0)tip.push({col:c,row:r});
+        }
+        const bounds=tip.reduce((b,c)=>({minX:Math.min(b.minX,grid.colToX(c.col)),maxX:Math.max(b.maxX,grid.colToX(c.col+1)),
+          minZ:Math.min(b.minZ,grid.rowToZ(c.row)),maxZ:Math.max(b.maxZ,grid.rowToZ(c.row+1))}),
+          {minX:Infinity,minZ:Infinity,maxX:-Infinity,maxZ:-Infinity});
+        const apart=(loA,hiA,loB,hiB)=>Math.max(0,loB-hiA,loA-hiB);
+        const jumpGap=Math.hypot(apart(pillar.x-2,pillar.x+2,bounds.minX,bounds.maxX),
+          apart(pillar.z-2,pillar.z+2,bounds.minZ,bounds.maxZ));
+        docks.push({floor,level:floor*o.spacing,side:pillar.side,approachPillarId:pillar.id,
+          pillarHighY:pillar.highY,cells,tip,jumpGap,dropY:pillar.highY-floor*o.spacing}); // Data is consumed by layout proof, floor-zero mask, and in-game debug.
+      }
+    }
     const surfaces = grid.collectClimbSurfaces();
-    const result = { ok: false, options: o, grid, cols, rows, levels, balconies, doors, entrance, wingPortals, surfaces, obelisks, checks: [],
+    const result = { ok: false, options: o, grid, cols, rows, levels, balconies, doors, entrance, wingPortals, surfaces, obelisks, docks, checks: [],
       stories: Array.from({length:o.balconies+1},(_,floor)=>({floor,level:floor*o.spacing,balconies:balconies.filter(b=>b.level===floor*o.spacing),gallery:(ringCellsByLevel.find(r=>r.floor===floor)?.cells||[]).filter(c=>grid.canStand(c.col,c.row,floor*o.spacing))})) }; // Level map for a subsequent wing composer.
     result.checks = verify(result);
     result.ok = result.checks.every(c => c.ok);
@@ -247,7 +279,32 @@
     const reach = result.obelisks?.ok
       ?{has:(c,r,l)=>grid.canStand(c,r,l)&&l>=0&&l<=o.spacing*(o.floors-1)} // Verified state/flight graph replaces continuous climb edges.
       :reachable(result);
-    if(result.obelisks)add('obeliskTraversalVerified',result.obelisks.ok&&result.obelisks.routes.length===o.floors-1);
+    if(result.obelisks){
+      add('obeliskTraversalVerified',result.obelisks.ok&&result.obelisks.routes.length===o.floors-1);
+      add('dock-on-every-floor',result.docks.length===o.floors);
+      for(const dock of result.docks){
+        add('dock'+dock.floor+'-walkable',dock.cells.every(c=>grid.canStand(c.col,c.row,dock.level,2)),
+          'the dock is an actual supported floor with two levels of headroom');
+        add('dock'+dock.floor+'-jump-range',dock.jumpGap>0&&dock.jumpGap<=2,
+          'pillar to dock has a 1–2-tile horizontal gap rather than an impossible leap');
+        if(dock.floor>0)add('dock'+dock.floor+'-safe-descent',dock.dropY>=.75&&dock.dropY<=2,
+          'the raised preceding-stage A pillar is only 1.25 units above the destination');
+        const valid=new Set(dock.cells.map(c=>c.col+','+c.row));
+        const g=result.grid,start=dock.tip[0],queue=[start],seen=new Set([start.col+','+start.row]);
+        for(let i=0;i<queue.length;i++){
+          const c=queue[i];for(const [dc,dr] of [[1,0],[-1,0],[0,1],[0,-1]]){
+            const x=c.col+dc,z=c.row+dr,k=x+','+z;
+            if(seen.has(k)||!g.canStand(x,z,dock.level,2))continue;
+            if(dock.floor===0&&!valid.has(k)&&
+              (x>=o.wall+5&&x<o.wall+o.shaft-5&&z>=o.wall+5&&z<o.wall+o.shaft-5))continue; // Never prove a path by walking across the invisible death pit.
+            seen.add(k);queue.push({col:x,row:z});
+          }
+        }
+        const goal=dock.floor>0?result.balconies[dock.floor-1].cells:[{col:entrance.inside.c,row:entrance.inside.r}]; // Entrance stores c/r; balconies store col/row.
+        add('dock'+dock.floor+'-connected',goal.some(c=>seen.has(c.col+','+c.row)),
+          'the dock is continuously walkable to its corresponding gallery or ground entrance');
+      }
+    }
     add('entranceOpen', grid.floorLevelAt(entrance.inside.c, entrance.inside.r, 0) === 0, 'the ground entrance leads onto the shaft floor');
     add('spacing', o.spacing >= 3, `balcony floors are ${o.spacing} apart (2 cells of headroom needed above each)`);
     for (const b of balconies) {
@@ -319,9 +376,10 @@
     part('shaft-hub-walls', sides.filter(rect => !isFeature(rect)));
     part('shaft-hub-ledges', faces.filter(rect => rect.axis === 'y')); // Balcony tops, undersides and the roof: stretched like the walls.
     const floorMask = new Uint8Array(grid.cols * grid.rows); // No rectangular floor visible under the clipped octagon.
+    const groundDocks=new Set((result.docks.find(d=>d.floor===0)?.cells||[]).map(c=>c.col+','+c.row)); // The ground dock is the sole intentional stone platform extending over the death basin.
     const lo=result.options.wall,hi=lo+result.options.shaft-1,cut=Math.floor(result.options.shaft*.19);
     for(let r=0;r<grid.rows;r++) for(let c=0;c<grid.cols;c++)
-      if(grid.canStand(c,r,0)&&!(result.obelisks&&Math.abs(c-(lo+hi)/2)<(result.options.shaft-10)/2&&Math.abs(r-(lo+hi)/2)<(result.options.shaft-10)/2)&&(!result.options.octagon||inOctagon(c,r,lo,hi,cut)||result.entrance.side==='N'&&c===result.entrance.col&&r<lo||result.entrance.side==='S'&&c===result.entrance.col&&r>hi||result.entrance.side==='W'&&r===result.entrance.row&&c<lo||result.entrance.side==='E'&&r===result.entrance.row&&c>hi)) floorMask[r*grid.cols+c]=1;
+      if(grid.canStand(c,r,0)&&(!(result.obelisks&&Math.abs(c-(lo+hi)/2)<(result.options.shaft-10)/2&&Math.abs(r-(lo+hi)/2)<(result.options.shaft-10)/2)||groundDocks.has(c+','+r))&&(!result.options.octagon||inOctagon(c,r,lo,hi,cut)||result.entrance.side==='N'&&c===result.entrance.col&&r<lo||result.entrance.side==='S'&&c===result.entrance.col&&r>hi||result.entrance.side==='W'&&r===result.entrance.row&&c<lo||result.entrance.side==='E'&&r===result.entrance.row&&c>hi)) floorMask[r*grid.cols+c]=1;
     part('shaft-hub-octagonal-floor', Faces.mergeMask(floorMask, grid.cols, grid.rows).map(rect => ({ axis:'y', side:1, plane:0, a0:rect.i0, a1:rect.i1, b0:rect.j0, b1:rect.j1 })));
     if (climb?.buildVisual) for (const surface of result.surfaces) shell.add(climb.buildVisual(THREE,surface));
     return shell;
@@ -333,12 +391,13 @@
   function registerGroupedSupport(result, DS, scope) {
     const {grid,options:o}=result;
     const exteriorCut=o.octagon?Math.floor(o.shaft*.19)+o.wall:0;
+    const groundDocks=new Set((result.docks.find(d=>d.floor===0)?.cells||[]).map(c=>c.col+','+c.row)); // Only authored ground docks gain support within the pit.
     const levelRows=new Map(); // Level -> row -> sorted columns, shared by the rectangle sweep.
     for(const cell of grid.standingSurfaces({clearance:2})){
       if(cell.level>=grid.levels-1)continue; // No invisible standing surface on the roof.
       if(o.octagon&&!inOctagon(cell.col,cell.row,0,grid.cols-1,exteriorCut))continue;
       if(result.obelisks&&cell.level===0&&Math.abs(cell.col-(o.wall+(o.shaft-1)/2))<(o.shaft-10)/2
-        &&Math.abs(cell.row-(o.wall+(o.shaft-1)/2))<(o.shaft-10)/2)continue; // No implicit support inside the fatal basin.
+        &&Math.abs(cell.row-(o.wall+(o.shaft-1)/2))<(o.shaft-10)/2&&!groundDocks.has(cell.col+','+cell.row))continue; // No implicit support inside the fatal basin.
       let rows=levelRows.get(cell.level);
       if(!rows){rows=new Map();levelRows.set(cell.level,rows);}
       let columns=rows.get(cell.row);
