@@ -174,6 +174,44 @@
     return heights;
   }
 
+  function buildNativeCeiling(THREE,meta,place,storyY,material,connectorTiles=[]){
+    const cells=new Set(); // Shared floor/room footprint prevents holes above sunken chambers and omitted support tiles.
+    const addCell=(c,r)=>{
+      const x0=place.originX+c*place.cs,z0=place.originZ+r*place.cs;
+      for(let x=Math.floor(x0);x<Math.ceil(x0+place.cs-1e-6);x++)
+        for(let z=Math.floor(z0);z<Math.ceil(z0+place.cs-1e-6);z++)cells.add(key(x,z));
+    };
+    for(const [c,r] of meta.floorCells||[])if(Number.isFinite(c)&&Number.isFinite(r))addCell(c,r);
+    for(const room of meta.rooms||[]){
+      if(![room.col,room.row,room.w,room.h].every(Number.isFinite)||room.w<1||room.h<1||room.w>128||room.h>128)continue;
+      for(let c=room.col;c<room.col+room.w;c++)for(let z=room.row;z<room.row+room.h;z++)addCell(c,z);
+    }
+    for(const [x,z] of connectorTiles)if(Number.isFinite(x)&&Number.isFinite(z))cells.add(key(x,z)); // Roof the physical shaft-to-native corridor as well as the V50 rooms.
+    if(!cells.size)return null;
+    const y=storyY+(Number(meta.floorSurfaceY)||0)+(Number(meta.wallHeight)||3); // Match the main V50 ceiling datum instead of the moving plateau height.
+    let minX=Infinity,maxX=-Infinity,minZ=Infinity,maxZ=-Infinity; // Bound the merged roof without spreading tens of thousands of coordinates onto the call stack.
+    for(const cell of cells){const [x,z]=cell.split(',').map(Number);
+      minX=Math.min(minX,x);maxX=Math.max(maxX,x);minZ=Math.min(minZ,z);maxZ=Math.max(maxZ,z);
+    }
+    const width=maxX-minX+1,depth=maxZ-minZ+1;
+    const Faces=root.RuinWallFaces;
+    let roof;
+    if(Faces){
+      const mask=new Uint8Array(width*depth);
+      for(const k of cells){const [x,z]=k.split(',').map(Number);mask[(z-minZ)*width+x-minX]=1;}
+      const quads=Faces.mergeMask(mask,width,depth).map(r=>({axis:'y',side:-1,plane:0,a0:r.i0,a1:r.i1,b0:r.j0,b1:r.j1}));
+      const geometry=Faces.toGeometry(THREE,Faces.buildQuads(quads,{origin:{x:minX,y,z:minZ},size:{x:1,y:1,z:1},patch:{h:6,v:6}}));
+      roof=new THREE.Mesh(geometry,material);
+    }else{
+      const geometry=new THREE.PlaneGeometry(1,1);geometry.rotateX(Math.PI/2);
+      roof=new THREE.InstancedMesh(geometry,material,cells.size);
+      const matrix=new THREE.Matrix4();let i=0;
+      for(const k of cells){const [x,z]=k.split(',').map(Number);roof.setMatrixAt(i++,matrix.makeTranslation(x+.5,y,z+.5));}
+      roof.instanceMatrix.needsUpdate=true;
+    }
+    roof.name='native-v50-textured-ceiling';roof.userData={...roof.userData,devRandomRuinCeiling:true,devRuinFootprintIgnore:true,ceilingCells:cells.size};
+    return roof;
+  }
   function mount(options={}){
     const {ruin,rec,plan,hub,records,makeTile,getPlayerPosition,getPlayerY}=options;
     const THREE=options.THREE||root.THREE,DS=options.DynamicSurfaces||root.DynamicSurfaces;
@@ -201,8 +239,10 @@
     })||new THREE.MeshBasicMaterial({color:fallback}); // Use the author's stone PNG recolored for native floor furniture.
     const gateMaterial=tintStone('#4d3831',0x4d3831);
     const bronzeMaterial=tintStone('#715e48',0x715e48);
+    const ceilingMaterial=material.clone?.()||new THREE.MeshBasicMaterial({color:0x777267}); // Stone-textured underside, never an overhead opaque lid.
+    ceilingMaterial.side=THREE.FrontSide;ceilingMaterial.needsUpdate=true; // Match the entry-floor ceiling's downward-facing/front-only treatment.
     const nativeFlames=[]; // Tracks player campfire emitters on the native V50 floor goal braziers.
-    const owner={records:[],lit:0,total:records.length,disposed:false,group:base};
+    const owner={records:[],lit:0,total:records.length,disposed:false,group:base,ceilingMeshes:0}; // Exposes native ceiling coverage to mobile debug.
     const disposeMeshes=new Set(),controls=[],scopes=[]; // These are owned by native V50 floors, not the existing one-floor V50 entry.
     const views=[];
     function addControl(control){ruin.controls.push(control);controls.push(control);}
@@ -255,7 +295,7 @@
       base.parent?.remove(base);
       base.traverse?.(obj=>{if(obj.geometry)disposeMeshes.add(obj.geometry);});
       for(const geo of disposeMeshes)geo.dispose?.();
-      for(const mat of [material,gateMaterial,bronzeMaterial])mat.dispose?.();
+      for(const mat of [material,gateMaterial,bronzeMaterial,ceilingMaterial])mat.dispose?.();
     };
     try{
       for(const item of records){
@@ -304,6 +344,8 @@
         nativeRoot.position.set(place.originX+place.width/2,floor.y,
           place.originZ+place.depth/2);
         group.add(nativeRoot);
+        const ceiling=buildNativeCeiling(THREE,meta,place,floor.y,ceilingMaterial,route.tiles); // V50 snapshot roots and their connector lack the entrance map's roof.
+        if(ceiling){group.add(ceiling);owner.ceilingMeshes++;}
         if(particles){
           particles.scale.x*=options.tileScale||2;particles.scale.z*=options.tileScale||2;
           particles.position.set(nativeRoot.position.x,nativeRoot.position.y,nativeRoot.position.z); // Snapshot emitters were authored in V50 preview coordinates; align them to the same upper-story placement as their original host meshes.
@@ -316,8 +358,9 @@
           if(!Number.isFinite(localY))throw new Error('V50 emitted an invalid native plateau height');
           minLocalY=Math.min(minLocalY,localY);maxLocalY=Math.max(maxLocalY,localY);
         }
+        const corridorWallHeight=Math.max(2.24,Number(meta.wallHeight)||3); // Native connector walls must meet the same V50 ceiling as the offshoot rooms.
         const gridBaseY=floor.y+Math.floor(minLocalY); // V50 plateaus may lie above OR below the story datum.
-        const gridLevels=Math.max(3,Math.ceil(floor.y+maxLocalY+2.5-gridBaseY));
+        const gridLevels=Math.max(3,Math.ceil(floor.y+maxLocalY+Math.max(2.5,corridorWallHeight)-gridBaseY));
         if(gridLevels>12)throw new Error('Native V50 plateau exceeds the supported story collision envelope');
         const grid=CG.create({originX:xmin-1,originZ:zmin-1,
           baseY:gridBaseY,cols:xmax-xmin+3,rows:zmax-zmin+3,levels:gridLevels});
@@ -338,7 +381,7 @@
             if(all.has(neighbor))adjacent.push(heights.get(neighbor)??0);
           }
           const wallBottom=floor.y+Math.min(0,...adjacent);
-          const wallTop=floor.y+Math.max(0,...adjacent)+2.24;
+          const wallTop=floor.y+Math.max(0,...adjacent)+corridorWallHeight;
           grid.fillBox(col,row,grid.yToLevel(wallBottom+.01),
             col,row,grid.yToLevel(wallTop-.01),CG.KIND.SOLID);
         }
@@ -385,14 +428,14 @@
           if(!positions.length)return;
           const wall=new THREE.InstancedMesh(geometry,material,positions.length);
           wall.name=name;
-          positions.forEach(([x,z],i)=>wall.setMatrixAt(i,matrix.makeTranslation(x,floor.y+1.12,z)));
+          positions.forEach(([x,z],i)=>wall.setMatrixAt(i,matrix.makeTranslation(x,floor.y+corridorWallHeight/2,z)));
           wall.instanceMatrix.needsUpdate=true;
           group.add(wall);
         };
         wallBatch('native-v50-corridor-north-south-'+item.floor,
-          routeX,new THREE.BoxGeometry(1,2.24,.12));
+          routeX,new THREE.BoxGeometry(1,corridorWallHeight,.12));
         wallBatch('native-v50-corridor-east-west-'+item.floor,
-          routeZ,new THREE.BoxGeometry(.12,2.24,1));
+          routeZ,new THREE.BoxGeometry(.12,corridorWallHeight,1));
         const record={floor:item.floor,group,nativeRoot,particles,analysis,place,grid,meta,
           route,routeWallSegments:routeX.length+routeZ.length, // Retain exact V50 floor topology for developer-mode automated reachability checks; no second generated model.
 
@@ -511,6 +554,7 @@
     };
     owner.getState=()=>({
       floors:owner.records.length,rooms:owner.records.reduce((n,r)=>n+r.analysis.rooms,0),
+      ceilingMeshes:owner.ceilingMeshes, // Each generated native V50 story now receives its own real carved stone ceiling.
       hallways:owner.records.reduce((n,r)=>n+r.analysis.hallways,0),
       totalBraziers:owner.total,lit:owner.lit,
       stagesSolved:owner.records.reduce((n,r)=>n+r.solved,0),
@@ -528,5 +572,5 @@
     });
     return owner;
   }
-  return Object.freeze({analyze,doorwayCells,nativeSeed,generateFloors,layoutPlacement,nativeRoom,cellProjection,mount,isNativeGrid:grid=>nativeGridOwnership.has(grid)});
+  return Object.freeze({analyze,doorwayCells,nativeSeed,generateFloors,layoutPlacement,nativeRoom,cellProjection,buildNativeCeiling,mount,isNativeGrid:grid=>nativeGridOwnership.has(grid)});
 });
