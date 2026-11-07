@@ -209,7 +209,8 @@
         const center={c:grid.xToCol(pillar.x),r:grid.zToRow(pillar.z)};
         const cells=[],tip=[]; // Three-wide continuous dock, reaching beside but never into the obelisk's moving stone.
         for(let step=-7;step<=2;step++)for(let width=-1;width<=1;width++){
-          const lateral=opposite*4+width;
+          const worldSign=opposite*(tangent[0]||tangent[1]); // Grid cells span [c,c+1), so the negative world side needs one extra cell of clearance.
+          const lateral=opposite*(worldSign<0?5:4)+width;
           const c=center.c+direction[0]*step+tangent[0]*lateral;
           const r=center.r+direction[1]*step+tangent[1]*lateral;
           if(c<o.wall||r<o.wall||c>=o.wall+o.shaft||r>=o.wall+o.shaft)
@@ -299,7 +300,7 @@
             seen.add(k);queue.push({col:x,row:z});
           }
         }
-        const goal=dock.floor>0?result.balconies[dock.floor-1].cells:[entrance.inside];
+        const goal=dock.floor>0?result.balconies[dock.floor-1].cells:[{col:entrance.inside.c,row:entrance.inside.r}]; // Entrance stores c/r; balconies store col/row.
         add('dock'+dock.floor+'-connected',goal.some(c=>seen.has(c.col+','+c.row)),
           'the dock is continuously walkable to its corresponding gallery or ground entrance');
       }
