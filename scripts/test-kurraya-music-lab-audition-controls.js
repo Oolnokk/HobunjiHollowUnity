@@ -84,6 +84,77 @@ assert.equal(seven.beatGrouping.join('+'),'2+2+3','seven-eight accent pattern mu
 assert.equal(seven.totalSongBeats,56,'sixteen seven-eight melody bars must span 56 quarter notes');
 assert.equal(seven.events[1].time-seven.events[0].time,1750,'seven-eight melody must stretch exactly 7/6 from original bar length');
 
+const choiceStart = engine.indexOf('  const KURRAYA_LAB_PATTERN_CHOICES = Object.freeze([');
+const choiceEnd = engine.indexOf('  const KURRAYA_LAB_METERS = Object.freeze([',choiceStart);
+assert.ok(choiceStart > 0 && choiceEnd > choiceStart,'the Lab must own a separate, curated pattern vocabulary');
+const patternState = {game:{labAdaptiveAutoPick:true}};
+const patternScope = {
+  state:patternState,
+  smartArpeggioMidis:(midi,direction) => direction === 'reverse' ? [midi,midi-3,midi-5,midi-7] : [midi,midi+2,midi+4,midi+7],
+  melodyTopStrumMidis:midi => [midi-12,midi-8,midi-5,midi-1,midi],
+  automaticPatternDefinition:mode => ({
+    kind:mode === 'direct' ? 'direct' : mode === 'tremolo-8' ? 'tremolo' : mode === 'strum-alternating-8' ? 'strum' : 'arp',
+    arpStyle:mode === 'arp-alternating-8' ? 'alternating' : 'forward'
+  }),
+  assignSlowArpDirection:fret => {
+    if(!fret.slowRollDirection) fret.slowRollDirection='forward';
+    return fret.slowRollDirection;
+  }
+};
+vm.runInNewContext(engine.slice(choiceStart,choiceEnd) + '\n' + sourceOf('automaticPatternSteps')
+  + '\nthis.figures=KURRAYA_LAB_PATTERN_CHOICES;this.pattern=automaticPatternSteps;',patternScope);
+assert.equal(patternScope.figures.length,8,'the Lab should offer a small set of eight broad figures');
+assert.equal(patternScope.figures.map(figure=>figure.label).join('|'),
+  'Single Note|Rise|Fall|Wave|Alternate|Weave|Pulse|Chord Strokes',
+  'the Lab should use descriptive shape names rather than people or genres');
+for(const [signature,barUnits] of [['2/4',2],['3/4',3],['4/4',4],['5/4',5],['6/8',3],['7/8',3.5],['9/8',4.5],['12/8',6]]) {
+  const meter = meterContext.meter(signature.split('/').map(Number));
+  const clock = {meter};
+  const slotCount = Math.round(barUnits * 2);
+  const figures = patternScope.figures.map(choice => ({id:choice.id,...patternScope.pattern(60,{},choice.id,clock)}));
+  for(const figure of figures) {
+    assert.equal(figure.steps.length,slotCount,signature+' '+figure.id+' must fill one entire bar rather than replay an old fixed-length figure');
+    assert.ok(figure.steps.every(step => ['note','strum','boom','rest'].includes(step.type)),
+      signature+' '+figure.id+' must use only real engine step types');
+  }
+  const rise = figures.find(figure=>figure.id==='arp-forward-8').steps;
+  const fall = figures.find(figure=>figure.id==='arp-reverse-8').steps;
+  const wave = figures.find(figure=>figure.id==='arp-forward-reverse-16').steps;
+  assert.ok(rise.at(-1).midi > rise[0].midi,signature+' rising figure should reach a higher voice');
+  assert.ok(fall.at(-1).midi < fall[0].midi,signature+' falling figure should reach a lower voice');
+  assert.equal(wave[0].midi,wave.at(-1).midi,signature+' wave should return to its first voice at the bar end');
+  const chord = figures.find(figure=>figure.id==='strum-alternating-8').steps;
+  const accentSlots = meter.groupStarts.map(beat=>Math.round(beat*meter.quarterUnitsPerBeat*2));
+  for(const accent of accentSlots.slice(1)) {
+    assert.equal(chord[accent].type,'strum',signature+' must strum at each extra grouped accent');
+    assert.ok(rise[accent].velocity > rise[accent-1].velocity,signature+' must accent each beat group in the rising arpeggio');
+  }
+}
+patternState.game.labAdaptiveAutoPick=false;
+const legacyPattern=patternScope.pattern(60,{},'arp-forward-8',{meter:meterContext.meter([7,8])});
+assert.equal(legacyPattern.steps.length,4,'the existing gameplay figure must remain unchanged when the Lab is not active');
+
+const previewState = {
+  game:{active:true,demoActive:true,demoMode:'arp-forward-reverse-16',labAdaptiveAutoPick:true,
+    quarterBeatMs:500,beatMs:250,countInMs:0,endAt:1800,
+    events:[{time:0,inputType:'button',state:'pending'},{time:1500,inputType:'button',state:'pending'}]},
+  demoGeneration:1,demoTimers:new Set(),paused:false,previewCounter:0
+};
+const previewTimers = [];
+const previewScope = {
+  state:previewState,
+  FRETTED_PLUCK_MODES:{'arp-forward-reverse-16':{kind:'arp',division:4}},
+  demoAutomaticPattern:()=>({melodyMidi:60,fret:{},steps:[{type:'note',midi:60}],label:'wave'}),
+  automaticPatternSteps:()=>({steps:[{type:'note',midi:60}],label:'wave'}),
+  setTimeout:(callback,delay)=>{previewTimers.push({callback,delay});return previewTimers.length;},
+  gameTime:()=>0,playAuditoryOnlyMidi:()=>{}
+};
+vm.runInNewContext(sourceOf('scheduleSuccessfulPreviewContinuation') +
+  '\nthis.schedule = scheduleSuccessfulPreviewContinuation;',previewScope);
+previewScope.schedule(previewState.game.events[0],0);
+assert.equal(previewTimers.map(item=>item.delay).join(','),'250,500,750,1000,1250',
+  'the Lab wave must use the selected meter-aware eighth-note pulse grid, not its former fixed sixteenths');
+
 const engineVersion = /lyre-performance\.html\?v=([A-Za-z0-9_-]+)/; // Matches any bumped cache token.
 assert.equal(host.match(engineVersion)?.[1],lab.match(engineVersion)?.[1],'gameplay and Music Lab must use the same engine revision');
 assert.match(engine,/startSong\(state\.selectedSong,\{demoMode:state\.songAuditionPattern,labMeterOverride/,'song audition must use the selected Auto Pick pattern and chosen meter');
