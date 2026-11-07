@@ -66,7 +66,12 @@
       newMesh(name,new THREE.BoxGeometry(w,h,d),mat(color,emissive,surface),x,bottom+h*.5,z,parent);
     const cylinder=(name,x,z,bottom,rad,h,color)=>
       newMesh(name,new THREE.CylinderGeometry(rad,rad,h,12),mat(color),x,bottom+h*.5,z);
-    const solid=(name,x,z,halfX,halfZ,enabled=()=>alive())=>{
+    const stonePresent=()=>{
+      if(disposed)return false;
+      const height=Number(game.getPlayerGroundSupportY?.()); // Unqualified blocker probes must not project an upper-story column into an inactive lower story.
+      return !kit.registerBlocker||!Number.isFinite(height)||Math.abs(height-floorY)<4.5;
+    }; // Structural stone remains physically present even after its associated stage is solved.
+    const solid=(name,x,z,halfX,halfZ,enabled=stonePresent)=>{
       if(kit.registerBlocker){
         // Stacked wing stories need height-aware obstacles. V50's ordinary footprint registry samples only the entry level.
         kit.registerBlocker({
