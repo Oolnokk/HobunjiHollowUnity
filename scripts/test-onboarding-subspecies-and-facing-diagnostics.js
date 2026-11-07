@@ -23,23 +23,29 @@ class Element {
 let current = 'tletingan'; // Simulates onboarding-core's authoritative current identity.
 let coreClicks = 0; // Detects missing or duplicate state transitions.
 const family = new Element(); // Top-level Slagothim family indicator.
-const cores = Object.fromEntries(['tletingan', 'nuhongan'].map(id => [id, { classList: { contains: () => current === id }, click() { current = id; coreClicks++; } }])); // Real core selection stand-ins.
+const cores = Object.fromEntries(['tletingan', 'nuhongan', 'longoran'].map(id => [id, { classList: { contains: () => current === id }, click() { current = id; coreClicks++; } }])); // Real core selection stand-ins.
 const group = { parentElement: { querySelector: () => null }, querySelector(selector) { return selector.includes('ob-family') ? family : cores[selector.match(/="([^"]+)"/)?.[1]]; }, after(details) { this.details = details; } }; // The rebuilt panel is nested beneath the creator card.
-const context = { document: { createElement: () => new Element() }, activeCoreSpecies: () => current, LORE: { slagothim: { label: 'Slagothim', text: '' }, tletingan: { label: 'Tletingan', text: '' }, nuhongan: { label: 'Nuhongan', text: '' } }, speciesDescriptionHtml: entry => entry?.label || '' }; // Only external dependencies of the UI owner.
+const context = { document: { createElement: () => new Element() }, activeCoreSpecies: () => current, LORE: { slagothim: { label: 'Slagothim', text: '' }, tletingan: { label: 'Tletingan', text: '' }, nuhongan: { label: 'Nuhongan', text: '' }, longoran: { label: 'Longoran', text: '' } }, speciesDescriptionHtml: entry => entry?.label || '' }; // Only external dependencies of the UI owner.
 vm.createContext(context);
 vm.runInContext('let familyOpen = false;\n' + source.slice(source.indexOf('  function renderSpeciesDetails('), source.indexOf('  function enhanceSpeciesWorkflow(')), context);
 const render = () => { context.renderSpeciesDetails({}, group, cores.tletingan); return group.details.child; }; // Runs the actual family renderer after each core state transition.
 let panel = render(); // First Tletingan panel must already contain an enabled Nuhongan choice.
 assert.equal(panel.buttons.find(button => button.dataset.obSubspecies === 'nuhongan').disabled, false);
+assert.equal(panel.buttons.find(button => button.dataset.obSubspecies === 'longoran').disabled, false, 'Longoran must be a live core identity');
+panel.buttons.find(button => button.dataset.obSubspecies === 'longoran').click();
+assert.equal(current, 'longoran');
+assert.equal(coreClicks, 1);
+panel = render();
+assert.equal(panel.buttons.find(button => button.dataset.obSubspecies === 'longoran').active, true);
 panel.buttons.find(button => button.dataset.obSubspecies === 'nuhongan').click();
 assert.equal(current, 'nuhongan');
-assert.equal(coreClicks, 1);
+assert.equal(coreClicks, 2);
 panel = render();
 assert.equal(family.active, true);
 assert.equal(panel.buttons.find(button => button.dataset.obSubspecies === 'nuhongan').active, true);
 panel.buttons.find(button => button.dataset.obSubspecies === 'tletingan').click();
 assert.equal(current, 'tletingan');
-assert.equal(coreClicks, 2);
+assert.equal(coreClicks, 3);
 for (let index = 0; index < 3; index++) assert.equal(render().buttons.find(button => button.dataset.obSubspecies === 'nuhongan').disabled, false);
 delete cores.nuhongan;
 assert.equal(render().buttons.find(button => button.dataset.obSubspecies === 'nuhongan').disabled, true, 'missing core species must not create a clickable dead end');
