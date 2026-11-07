@@ -1541,7 +1541,10 @@
     if (!cfgEntry?.url) return;
     const spatial = combatAudioSpatial({ x, y, areaId }, { earshotTiles: 9 }); // Identical earshot/panning to an ordinary Quick Attack bonus.
     if (spatial.gain <= 0.002) return;
-    const volume = Math.max(0, Math.min(1, Number(cfgEntry.volume) || 0.8)) * Math.max(0, Number(audioCfg.sfxVolume ?? 1))
+    const configuredVolume = Number(cfgEntry.volume); // Respect an explicitly muted slash asset as well as ordinary authored levels.
+    const baseVolume = Number.isFinite(configuredVolume) ? Math.max(0, Math.min(1, configuredVolume)) : 0.8; // Matches the existing default for absent SFX volume.
+    const configuredSfxVolume = Number(audioCfg.sfxVolume ?? 1); // Runtime master SFX mix, validated before multiplying the positional gain.
+    const volume = baseVolume * (Number.isFinite(configuredSfxVolume) ? Math.max(0, configuredSfxVolume) : 1)
       * spatial.gain * COMBO_FINISHER_SLASH_VOLUME; // Both hits use 80% of the normal slash volume, preserving distance attenuation.
     if (volume <= 0.002) return;
     const entry = combatDecodedByUrl.get(cfgEntry.url); // Reads the shared preload cache, not a second fetch/decode pipeline.
