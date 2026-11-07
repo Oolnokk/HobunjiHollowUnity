@@ -601,8 +601,8 @@
   <script src="js/perch-support.js?v=20261105perchAudit7"></script> <!-- Point/line perches and shared branch-fall release on prone, death, or knockback. -->
   <script src="js/cliff-route-network.js?v=20261107miniherbs2"></script> <!-- Shared graph for selected exterior handholds, balcony terrain and wildlife routes. -->
   <script src="js/fall-system.js?v=20261107fall1"></script>
-  <script src="js/player-jump.js?v=20261107jump-checked3"></script> <!-- Free jumping and real cover-elevation traversal, initialized by ClimbSystem. -->
-  <script src="js/climb-system.js?v=20261107h06a749b"></script>
+  <script src="js/player-jump.js?v=20261107h6ae6aee"></script> <!-- Free jumping and real cover-elevation traversal, initialized by ClimbSystem. -->
+  <script src="js/climb-system.js?v=20261107hbfb14c4"></script>
   <script src="js/cliff-crawl-presentation.js?v=20261107cliffParallel1"></script> <!-- Surface-relative limb crawl and temporary hiding of hand-held equipment; ruins/trees stay on their existing animations. -->
   <script src="js/creature-cliff-climb.js?v=20261104cliffAudit1"></script>
   <!-- Cubic 3D cell grid (window.CellGrid3D): the tile grid plus a level axis.
@@ -613,7 +613,7 @@
   <script src="js/cliff-elevated-surfaces.js?v=20261106miniplateau1"></script> <!-- Wilderness balconies reuse CellGrid3D and scoped DynamicSurfaces; terrain heightfield stays intact. -->
   <!-- Climbable wall surfaces (window.ClimbSurfaces): attach + move along a wall.
        Needs ClimbSystem (registered as a world-climb provider by game.js). -->
-  <script src="js/climb-surfaces.js?v=20261105reachCorners1"></script>
+  <script src="js/climb-surfaces.js?v=20261107h6994405"></script>
   <script src="js/ruin-wall-faces.js?v=20261106walls1"></script> <!-- Merged stretch-to-fit wall faces; shaft-hub.js builds its stone from them. -->
   <script src="js/ruin-reaching-obelisks.js?v=20261105reach-obelisk1"></script> <!-- Complete stateful vertical traversal, after CellGrid3D and the climb pipeline. -->
   <script src="js/shaft-hub.js?v=20261106h0b61a44"></script>
@@ -901,7 +901,7 @@
        window.ZonePlateauMesa.buildPlateauMesa(...) lazily, whenever a
        zone with tiered plateaus is first built or a plateau-top tile
        changes at runtime — never synchronously during initial boot. -->
-  <script src="js/zone-plateau-mesa.js?v=20261107miniherbs2"></script>
+  <script src="js/zone-plateau-mesa.js?v=20261107hc81ce6b"></script>
   <script src="js/wilderness-bedrock.js?v=20261027a"></script>
   <!-- One world-UV texture-backed mesh per water surface group. Dynamic
        flood/trench meshes are rebuilt only when the water simulation ticks;
@@ -2997,7 +2997,7 @@
   <script src="js/delvers-vault-signal.js?v=20261031storyVault1"></script>
   <script src="js/bed-lie-pose.js?v=20261102mattressxray2"></script> <!-- Surface-aligned sleep presentation; game.js injects the live player and calendar. -->
   <script src="js/lunge-targeting.js?v=1"></script>
-  <script src="game.js?v=20261107miniherbs2"></script>
+  <script src="game.js?v=20261107h7172ef6"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261029hguild2"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->
