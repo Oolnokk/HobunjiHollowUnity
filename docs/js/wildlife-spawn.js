@@ -126,9 +126,11 @@
     ensureVoorgAssRuntimeRegistration(injectedDeps);
     window.MootRegistration?.register?.(injectedDeps); // Independent Northern Cliffs grazing groups and usable Ranch starter; no den insertion.
     window.TzatzulRegistration?.register?.(injectedDeps); // Species registration is synchronous, like Voorg-Ass; actual nesting is separate.
+    window.SkeeriRuins?.register?.(injectedDeps); // The shared wildlife creature factory also recognizes ruin-only Skeeri species.
     window.TzatzulLiveVisuals?.init?.(injectedDeps);
     window.TzatzulRegistration?.registerPeck?.(); // Ensure the authored hatchling attack exists after Combat initialization.
     window.TzatzulFlightRuntime?.init?.(injectedDeps); // Shared wildlife population and movement owner.
+    window.SkeeriRuins?.init?.(injectedDeps); // No extra RAF: the existing wildlife tick owns Skeeri flight.
     window.TzatzulNestEncounter?.init?.(injectedDeps); // Indoor boss encounter uses the same hostile roster and wildlife tick. // The canonical wildlife update tick will own bird-rig promotion, animation and disposal.
     deps = injectedDeps;
     installDenTurnoverDeathHook();
@@ -1808,6 +1810,7 @@
     if (currentArea !== lastTurnoverArea) { lastTurnoverArea = currentArea; processDueCaves(); }
     if (deps.getCutscenePreviewActive()) return;
     window.TzatzulLiveVisuals?.tick?.(dt, currentArea);
+    window.SkeeriRuins?.update?.(dt); // Advances only mounted ruin Skeeri; ordinary zones remain untouched.
     window.TzatzulFlightRuntime?.update?.(dt); // Reuses the same tick, not an additional RAF or scan.
     window.TzatzulNestEncounter?.update?.(dt); // Only the active authored nest cave is evaluated; no second RAF. // Actual dev-spawned Tzatzul get their authored body/wing rig in the existing update loop, even outside wilderness zones.
     denCheckTimer -= dt;
