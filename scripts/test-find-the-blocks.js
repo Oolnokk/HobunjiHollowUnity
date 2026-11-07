@@ -149,6 +149,17 @@ function test(seed){
   assert.equal(state.controls.length,0,'No ghost interaction controls remain after reroll');
   assert(cleared.includes('find-the-blocks'),'Custom blocker footprints are released');
   assert.equal(cleared.filter(id=>id.endsWith('-net')||id.endsWith('-ice')).length,2,'Both flame targets are unregistered');
+  // V50 ceiling heights vary with generated wall profiles; none of the four blocks may breach a short roof.
+  const lowRoof=3.05;
+  const tight=env.DevRuinFindBlocks.create({
+    THREE,kit,context:{seed,ceilingY:lowRoof},room:{x:0,z:0,w:24,d:24},y:0,
+    isActive:()=>true,onSolved:()=>{}
+  });
+  assert(tight.snapshot().stairRise<.36,'The climbing route compresses safely when the ceiling is low');
+  for(const block of tight.blocks)
+    assert(block.mesh.position.y+.41<=lowRoof-.17,'No block may clip through a real V50 ceiling: '+block.name);
+  tight.dispose();
+  assert.equal(state.controls.length,0,'A short-roof reroll must also release every control');
   return room.variant;
 }
 assert.deepEqual([0,1,2].map(test),['melody','projectiles','witchBomb']);
