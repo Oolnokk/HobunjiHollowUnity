@@ -49,6 +49,9 @@ const sandbox = {
   isLatchedAutoBankLayout: () => true,
   playImmediateAutomaticMelody: fret => { attacks.push(fret.noteIndex); },
   primeAutomaticMediaChannels: () => {}, // Input transport test stubs out mobile audio activation; the pool itself is tested below.
+  pluckIntervalMs: () => 250, // A held-note handoff at 500ms already has its next eighth note due at 750ms.
+  nextAutomaticSubdivisionAt: () => 750, // Restoring the normal queue should not be necessary for this on-grid tail.
+  armAutomaticPulseAt: () => { throw new Error('The existing 750ms note must not be rescheduled'); },
   restartActiveFrettedPluck: () => { restarts.push(state.pluckStep); },
   triggerNote: () => {},
   releaseNote: (index, sourceId) => state.noteSources[index].delete(sourceId),
@@ -132,6 +135,59 @@ assert.match(engine,/if \(!usesAutomaticPluckInput\(\)\) interruptAutoReleaseTai
   'changing melody bank must not prematurely cancel the running automatic figure');
 assert.match(host,/lyre-performance\.html\?v=[A-Za-z0-9_-]+/,
   'gameplay must use the revised instrument iframe cache key');
+
+// Exercise the real tail timer scheduler: interrupted or missing timers must not silence the remaining beat.
+let tailNow = 300; // Controlled transport timestamp used to reproduce a lost pulse timer and later re-entry.
+const armedTailTimers = []; // Records the actual subdivision targets and deadlines without starting browser timers.
+const tailState = {
+  pluckInputMode:'arp-forward-8', pluckGeneration:6, pluckStep:7, pluckLegatoHandoffs:0,
+  pluckTimer:null, pluckNextPulseAt:0, autoReleaseTail:null
+};
+const tailHarness = {
+  state:tailState,
+  nowMs:() => tailNow,
+  PULSE_LOOKAHEAD_MS:90,
+  pluckIntervalMs:() => 125,
+  sharedTransportData:()=>({performanceElapsedMs:tailNow}),
+  nextSharedBeatAt:()=>1000,
+  automaticPulseTimerDelay:at => Math.max(0,at - tailNow - 90),
+  setTimeout:(callback,delay) => {armedTailTimers.push({callback,delay});return armedTailTimers.length;},
+  clearTimeout:() => {},
+  playFrettedPluckPulse:()=>{},
+  automaticPluckLabel:()=> 'Forward Roll',
+  noteMidi:()=>60,
+  midiName:()=> 'C4',
+  refs:{transportStatus:{}},
+  log:()=>{}
+};
+vm.runInNewContext([
+  extractFunction('nextAutomaticSubdivisionAt'),
+  extractFunction('armAutomaticPulseAt'),
+  extractFunction('beginAutoReleaseTail'),
+  extractFunction('retainFrettedPluckPulse')
+].join('\n') + '\nthis.releaseTail = beginAutoReleaseTail; this.handoff = retainFrettedPluckPulse; this.arm = armAutomaticPulseAt;',tailHarness);
+assert.ok(tailHarness.releaseTail({noteIndex:0,modeOffset:0,beatStopAt:1000},'test-source'));
+assert.equal(tailState.pluckNextPulseAt,375,'missing tail timer must recover the next 125ms grid tick rather than wait silently until 1000ms');
+assert.equal(armedTailTimers[0].delay,0,'WebAudio may schedule the recovered 375ms note immediately for precise playback');
+assert.equal(tailState.pluckStep,7,'recovering a release tail must retain the current arpeggio step');
+
+tailNow = 500;
+tailState.pluckNextPulseAt = 1000; // Simulate an already-scheduled silent cleanup with no remaining attacks.
+tailState.pluckTimer = 88;
+assert.ok(tailHarness.handoff('new melody while cleanup is pending'));
+assert.equal(tailState.autoReleaseTail,null,'the new melody must cancel the previous note’s release boundary');
+assert.equal(tailState.pluckNextPulseAt,625,'a resumed roll must replace a stranded cleanup timer with the next beat subdivision');
+assert.equal(tailState.pluckGeneration,6,'resuming the beat must not restart the arpeggio generation');
+assert.equal(tailState.pluckStep,7,'resuming the beat must not rewind the pattern');
+assert.equal(tailState.pluckLegatoHandoffs,1,'recovery must remain visible in Mobile Debug');
+
+tailNow = 930;
+tailState.pluckTimer = null;
+tailState.pluckNextPulseAt = 0;
+tailState.autoReleaseTail = {stopAt:1000};
+tailHarness.arm(1000);
+assert.equal(armedTailTimers.at(-1).delay,70,'a silent cleanup must remain available until the actual 1000ms boundary');
+assert.equal(tailState.pluckNextPulseAt,1000,'a silent cleanup should never create an extra early note');
 
 const compatibilityState = {
   sampleObjectUrl:'test-audio', playbackEngine:'compat',sampleImported:true,
