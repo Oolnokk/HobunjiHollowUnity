@@ -62,7 +62,7 @@ assert(!immune.tzatzulCapturedBy,'a rejected body hit cannot abduct an immune ta
 // Frequent ensureZone calls used to reset the hunt clock before REST_SECONDS elapsed.
 W.PerchSupport.attach(bird,perch);bird._tzFlight.phase='perched';bird._tzFlight.elapsed=0;bird._tzFlight.rest=5;
 for(let i=0;i<55;i++){W.TzatzulFlightRuntime.ensureZone(zone);W.TzatzulFlightRuntime.update(.1);}
-assert(W.TzatzulFlightRuntime.debugSnapshot().swoops>=2,'repeated zone census must allow natural hunting');
+assert(W.TzatzulFlightRuntime.debugSnapshot().scouts>0,'repeated zone census cannot suppress the active scouting cycle');
 W.PerchSupport.attach(bird,perch);player.x=256;player.y=256;
 assert(W.TzatzulFlightRuntime.__test.capture(bird,player));
 W.TzatzulFlightRuntime.__test.releaseCaptive(player,'returned to roost');
