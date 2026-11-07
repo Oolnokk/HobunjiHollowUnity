@@ -545,8 +545,8 @@
     syncCarrierRearPortrait(backCarried?backCarryRoot():carryDeps()?.playerMesh,!!backCarried);
   }
   function carryDeps() { return window.ProceduralHandAttachments?.gameDeps || deps() || {}; }
-  // Stowed Burdens mount directly to the current player portrait plane, never a head/hand socket.
-  // The character root supplies the authored posterior frame and serves as a temporary loading fallback.
+  // Held and stowed Burdens share the species/gender-adjusted posterior frame.
+  // Stowed geometry follows the live portrait's facing after its body-frame pose is solved.
   function backCarryRoot(){
     const composer=window.PlayerBodyTransformComposer; // Authoritative character root, used to locate the live portrait and resolve authored offsets.
     return typeof composer?.getPlayerMesh==='function'?composer.getPlayerMesh():carryDeps()?.playerMesh;
@@ -592,7 +592,7 @@
     for(const part of chain)quaternion.multiply(part.quaternion);
     return quaternion;
   }
-  function moveBackBurdenToPortrait(vase,body,portrait,backConfig){
+  function moveBackBurdenToPortrait(vase,body,portrait){
     body.updateWorldMatrix?.(true,false);
     portrait.updateWorldMatrix?.(true,false);
     const worldPosition=body.localToWorld(vase.group.position.clone()); // Solve once at mount; repeated solving would cancel the portrait's own deadzone yaw.
@@ -608,14 +608,9 @@
     vase.group.position.copy(portrait.worldToLocal(worldPosition));
     vase.group.quaternion.copy(inversePortraitRotation.multiply(worldRotation));
     vase.group.scale.copy(localScale);
-    // Portrait-local attachment coordinate, defaulting to the center of the portrait.
-    // The burden's authored anchor is moved onto this point rather than inheriting
-    // the body-root posterior position. Its rotation continues following the plane.
-    const anchor=backConfig?.portraitAnchor||{}; // Authored attachment coordinate on the carrier portrait.
-    const burdenPoint=backConfig?.position||{}; // Point on the burden that must meet the portrait anchor.
-    const localBurdenPoint=new THREE.Vector3(finite(burdenPoint.x),finite(burdenPoint.y),finite(burdenPoint.z))
-      .multiply(vase.group.scale).applyQuaternion(vase.group.quaternion);
-    vase.group.position.set(finite(anchor.x),finite(anchor.y),finite(anchor.z)).sub(localBurdenPoint);
+    // Preserve the posterior-based world pose calculated by alignHeldVase.
+    // Replacing it with the portrait center floated Nuhongan Burdens at the
+    // wrong height. One-time reparenting retains independent portrait yaw.
   }
   function heldItemHolder(){
     const d=carryDeps();
@@ -677,13 +672,15 @@
     vase.group.quaternion.copy(authoredAnchorQuat);
     const size=Math.max(.1,finite(cfg.size,1));
     vase.group.scale.setScalar(1/size);
-    // posteriorOffset is defined in portrait/body local coordinates, not in
-    // original world-tile coordinates or the furniture's rotating local frame.
-    posteriorOffset.set(finite(o.x),finite(o.y),finite(o.z));
+    // Both poses share the anatomical posterior. Old backCarry.portraitAnchor
+    // values are additive fine offsets in the same frame, never an absolute
+    // portrait-center attachment that ignores species/gender dimensions.
+    const fine=isBack?cfg.portraitAnchor||{}:{}; // Back-only compatibility adjustment for existing authored furniture.
+    posteriorOffset.set(finite(o.x)+finite(fine.x),finite(o.y)+finite(fine.y),finite(o.z)+finite(fine.z));
     heldAnchorOffset.set(finite(a.x),finite(a.y),finite(a.z))
       .multiplyScalar(vase.group.scale.x).applyQuaternion(vase.group.quaternion);
     vase.group.position.copy(posteriorLocal).add(posteriorOffset).sub(heldAnchorOffset);
-    if(isBack&&portrait)moveBackBurdenToPortrait(vase,body,portrait,cfg);
+    if(isBack&&portrait)moveBackBurdenToPortrait(vase,body,portrait);
     const base=aimingThrow?.socketBase;
     if(aimingThrow?.vase===vase&&base){
       const live=currentThrowSocketPose();
@@ -2573,7 +2570,7 @@
     contextButtons,collectAimedPile,promptButtons,RUBBLE_YIELD,
     startShatterAim,releaseShatterAim,cancelShatterAim,detonate,heldHandTarget,
     projectileHit,hitProjectile,senseTargets,sweepMelee,tick,attachRuntime,
-    debugSnapshot:()=>({lastEvent,lastBlastAttribution,latestChange:'Stowed Burdens mount on the portrait plane; Flaskmaster tracks player-owned throws, melee hits and ranged Shattercask chains.',backCarryMount:backCarried?{parent:backCarried.group?.parent?.name||backCarried.group?.parent?.type||null,portraitAttached:!!backCarryPortrait(backCarryRoot())&&backCarried.group?.parent===backCarryPortrait(backCarryRoot()),rootFallback:backCarried.group?.parent===backCarryRoot(),collision:'carrier-hitbox'}:null,crates:window.CratePiles?.debugSnapshot?.()||null,backCarried:backCarriedInfo(),fruitCarryProfile:fruitCarryTemplate===FRUIT_CARRY_FALLBACK?'fallback':'authored',area:area(),held:held?.id||null,emittingVases:[...allActive().values()].filter(v=>v.emitters?.length).length,
+    debugSnapshot:()=>({lastEvent,lastBlastAttribution,latestChange:'Stowed Burdens use the held pose species-adjusted posterior frame before following portrait facing.',backCarryMount:backCarried?{parent:backCarried.group?.parent?.name||backCarried.group?.parent?.type||null,portraitAttached:!!backCarryPortrait(backCarryRoot())&&backCarried.group?.parent===backCarryPortrait(backCarryRoot()),rootFallback:backCarried.group?.parent===backCarryRoot(),collision:'carrier-hitbox'}:null,crates:window.CratePiles?.debugSnapshot?.()||null,backCarried:backCarriedInfo(),fruitCarryProfile:fruitCarryTemplate===FRUIT_CARRY_FALLBACK?'fallback':'authored',area:area(),held:held?.id||null,emittingVases:[...allActive().values()].filter(v=>v.emitters?.length).length,
       vases:[...allActive().values()].map(v=>({id:v.id,kind:v.kind,col:v.col,row:v.row,carried:v.carried,hanging:!!v.hanging,flying:!!v.flying,plinthAttached:!!v.plinthAttached,hangingMechanismId:v.hangingMechanismId||null})),
       fruitFalls:[...fallingFruits.values()].map(f=>({id:f.fruit.id,y:f.fruit.group.position.y,cause:f.cause})),
       downwardBurdenFalls:[...downwardFalls.values()].map(f=>({id:f.burden.id,y:f.burden.group.position.y,velocity:+f.velocity.toFixed(2),cause:f.cause})),
