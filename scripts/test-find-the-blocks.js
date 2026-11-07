@@ -60,6 +60,16 @@ function test(seed,size=24){
       }
     },
     DevRandomRuinFurniturePieces:{build(){return null;}},
+    DungeonRopeArt:{
+      createNetFrustum(){const net=new Object3D();net.userData.ropeAtlas='rope_long.png';return net;}
+    }, // Test uses the shared rope atlas instead of a primitive net fallback.
+    DungeonDoorIceCoverage:{scaledRecipe(){return {kind:'iceStalagmites',count:16,density:1};}},
+    IceStalagmiteCoverage:{
+      buildCeiling(_THREE,parent){
+        const layer=new Object3D();parent.add(layer);return {layer};
+      }, // The authored ceiling builder already inverts its own spikes.
+      setGrowth(layer,growth){layer.userData.growth=growth;}
+    },
     DungeonFire:{
       registerTarget(target){fireTargets.push(target);return target.id;},
       unregisterTarget(id){cleared.push(id);},
@@ -82,6 +92,13 @@ function test(seed,size=24){
     },
     RuinLayerChallenges:{
       compose(options){
+        if(options.id.endsWith('-pillar-unlock')&&options.kind==='melodyEcho'){
+          assert.equal(options.mapId,'map_i_dev_random_ruin','manual notes stay scoped to the owning ruin');
+          assert.equal(options.melodySurfaces?.length,2,'pillar notes can use either upright stone face');
+          const plateX=options.room.x+options.room.w/2,plateZ=options.room.z+options.room.d/2; // The note faces must point back toward this authored plate.
+          for(const surface of options.melodySurfaces)
+            assert(Math.sin(surface.yaw)*(plateX-surface.x)+Math.cos(surface.yaw)*(plateZ-surface.z)>0,'inscription face should look toward the plate');
+        }
         const challenge={kind:options.kind,id:options.id,tick(){},animate(){},dispose(){cleared.push('challenge:'+options.id);},solve:options.onSolved};
         subpuzzles.push(challenge);
         return challenge;
