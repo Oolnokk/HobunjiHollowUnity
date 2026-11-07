@@ -31,6 +31,8 @@ for(let seed=1;seed<=110;seed++){
   assert(plan.ok,'obelisk solution '+seed+' '+fail(plan.checks));
   assert.equal(plan.pillars.length,(layout.floorCount-1)*4,'four physical columns per climb stage');
   assert.equal(plan.targets.length,(layout.floorCount-1)*2,'two genuine ranged switches per story');
+  assert(plan.targets.every(target=>Math.abs(target.normal.x)+Math.abs(target.normal.z)===1),
+    'every switch sits on an exterior cardinal pillar face, never buried inside diagonal stone');
   assert.equal(plan.plates.length,layout.floorCount-1,'rotating pillar is keyed to a pressure plate');
   assert.equal(plan.pit.bottomY,options.baseY===undefined?-8:options.baseY-8,'death plane is below the entry floor');
   for(const route of plan.routes){
@@ -102,6 +104,18 @@ try{
   assert.equal(rt.tradition,'tothal');assert(icePieces>=1000,'ice is generated across the whole pit, not just the corners');
   assert.equal(surfaces.size,plan.pillars.length);assert(climbs.size>10);
   rt.tick(.05);assert.equal(projectileTargets.size,plan.targets.length,'all ranged targets are attached to the canonical bus');
+  assert.equal(Obelisks.senseTargets(parent).length,2,'Sense Mode sees only the two switches on the accessible shaft story');
+  assert.deepEqual(Obelisks.senseTargets(new Group()),[],'unrelated scenes never inherit shaft highlights');
+  for(const target of rt.targets.values()){
+    const pillar=rt.columns.get(target.pillarId),node=target.object;
+    assert(node.userData.shaftObeliskSwitch,'only ascent switches are classified for sense highlighting');
+    assert(Math.max(Math.abs(node.position.x),Math.abs(node.position.z))>2,
+      'glyph marker must protrude outside its four-cell stone pillar');
+    assert(pillar,'every switch has a mounted stone housing');
+  }
+  playerY=16;
+  assert.equal(Obelisks.senseTargets(parent).length,2,'Sense Mode advances to the next story without outlining the story beneath');
+  playerY=0;
   const a=rt.columns.get('obelisk-f0-A'),b=rt.columns.get('obelisk-f0-B');
   const button=[...rt.targets.values()].find(t=>t.controls===a.id);
   assert(button&&!button.active);
@@ -123,6 +137,7 @@ try{
   assert.equal(rt.isDeathAt(rt.plan.pillars[0].x,rt.plan.pillars[0].z,-8),true);
   assert.equal(rt.isDeathAt(rt.plan.pillars[0].x,rt.plan.pillars[0].z,8),false);
   rt.dispose();
+  assert.deepEqual(Obelisks.senseTargets(parent),[],'disposed shaft switches never glow in a later dungeon');
   assert(!parent.children.length&&!projectileTargets.size&&!surfaces.size&&!climbs.size,
     'reroll removes all shaft meshes, targets, dynamic supports and climb faces');
 }finally{globalThis.IceStalagmiteCoverage=savedIce;}
@@ -138,4 +153,4 @@ const scriptAt=name=>index.search(new RegExp('<script[^>]+src="js/'+name.replace
 assert(scriptAt('ruin-reaching-obelisks.js')>=0&&scriptAt('ruin-reaching-obelisks.js')<scriptAt('shaft-hub.js'),
   'the browser loads the obelisk module before its shaft consumers');
 assert.match(bootstrap, /dev-random-ruin-interior-map\.js\?v=[A-Za-z0-9_-]+/, 'the fall runtime is loaded with a cache-bust token');
-console.log('ok test-reaching-obelisks: 110 seeds, ballistic catch proofs, 24 full shaft checks, moving platforms, switch LOS, ice covers, pressure plate and cleanup');
+console.log('ok test-reaching-obelisks: 110 seeds, physical switch faces, per-story Sense Mode isolation, ballistic catches, moving platforms and cleanup');
