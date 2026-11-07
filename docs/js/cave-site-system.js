@@ -205,6 +205,10 @@
       && shelf.normal && shelf.tangent
     ).slice().sort((a,b) => String(a.id).localeCompare(String(b.id)));
     const rng = makeRng(key + ':puzzle-cliffs:' + currentStateIdentity()); // Same saved world/cycle rolls identical independent gates.
+    for(let index=candidates.length-1;index>0;index--) {
+      const other=Math.floor(rng()*(index+1)); // Stable Fisher-Yates scatter, so the 24-door cap does not cluster in the first grid row.
+      [candidates[index],candidates[other]]=[candidates[other],candidates[index]];
+    }
     const selected = candidates.filter(() => rng() < OUTDOOR_PUZZLE_DENSITY).slice(0, MAX_OUTDOOR_PUZZLE_CAVES);
     for(const shelf of candidates) {
       if(selected.length >= Math.min(MIN_OUTDOOR_PUZZLE_CAVES, candidates.length, MAX_OUTDOOR_PUZZLE_CAVES)) break;
@@ -223,11 +227,20 @@
     return clone(sites);
   }
 
-  function registerRockPuzzleSite(parent, tile) {
+  function registerRockPuzzleSite(parent, tile = null) {
     const denId = 'puzzle_rock_' + hashSeed(parent.signature).toString(36); // One separate secret cavern per ordinary parent cave.
+    const state = stateFor(parent); // Persist the reciprocal tile for loading directly inside a previously discovered secret cave.
+    const remembered = state.rockPuzzleDoorReturn || null;
+    const back = tile || remembered || {col:0,row:0}; // A reserved profile is harmless until the parent actually has a valid mined wall.
     const site = puzzleProfile(parent.zoneId, denId, parent.signature + ':puzzle-rock',
-      'independent_rock', {parentMapId:parent.mapId,returnCol:tile.col,returnRow:tile.row});
-    rockPuzzleSitesByParent.set(parent.mapId,site);
+      'independent_rock', {parentMapId:parent.mapId,returnCol:back.col,returnRow:back.row});
+    if(tile) {
+      rockPuzzleSitesByParent.set(parent.mapId,site);
+      if(!remembered || remembered.col!==tile.col || remembered.row!==tile.row) {
+        state.rockPuzzleDoorReturn = {col:tile.col,row:tile.row};
+        persistState(true); // Saved player can return to the real hidden doorway after reloading inside the side cave.
+      }
+    } else if(remembered) rockPuzzleSitesByParent.set(parent.mapId,site);
     sitesByMapId.set(site.mapId,site);
     return site;
   }
@@ -261,6 +274,7 @@
       sitesByMapId.set(profile.mapId, profile);
     }
     sitesByZone.set(key, profiles);
+    for(const profile of profiles) if(profile.contents!==TYPES.PUZZLE_CAVE) registerRockPuzzleSite(profile); // Reserve recoverable identities without counting unopened/invalid secret doors.
     return profiles;
   }
 
@@ -998,13 +1012,16 @@
       if(candidates.length) {
         const tile = candidates[0]; // First safe supported far-side floor tile, adjacent to the mined-through chamber.
         const child = registerRockPuzzleSite(profile,tile); // Dedicated puzzle map; ordinary cave loot and occupancy remain untouched.
+        const nearestRock = wall.slice().sort((a,b) =>
+          ((a.col-tile.col)**2+(a.row-tile.row)**2)-((b.col-tile.col)**2+(b.row-tile.row)**2))[0]; // Model faces the mineable barrier rather than an arbitrary compass direction.
+        const facing = nearestRock ? Math.atan2(nearestRock.col-tile.col,nearestRock.row-tile.row)*180/Math.PI : 0;
         plan.puzzleDoor = {id:'rock-puzzle-door-'+child.denId,col:tile.col,row:tile.row,targetMapId:child.mapId};
         mapData.exits.push({
           id:plan.puzzleDoor.id,label:'Hidden Stone Door',tiles:[[tile.col,tile.row]],
           targetMap:child.mapId,spawnCol:0,spawnRow:0,generateDoor:false,
         }); // Native building-to-building transitions, not NPC triggers or cave replacements.
         addProp(mapData,{id:plan.puzzleDoor.id,key:'cliffDoor',col:tile.col,row:tile.row,
-          scaleX:0.65,scaleZ:0.65,alwaysOpen:true});
+          rotY:facing,scaleX:0.65,scaleZ:0.65,alwaysOpen:true});
         blockedKeys.add(tileKey(tile.col,tile.row));
       }
     }
