@@ -109,7 +109,7 @@ while (water outline, terrain geometry) because those allocate a lot of data tha
 
 **Numbers.** Surviving objects created in visits 1-4 and alive after visit 8: 130 MB before the fixes below, 67 MB after
 (about 60% of what is left is `ArrayBuffer` data of geometries and textures). Forced-GC `performance.memory` after
-eight visits: +334 MB before, +199 MB after. Per-visit growth after the fixes is noisy, 8-17 MB.
+eight visits: +334 MB before, +199 MB after. Second-pass growth after the fixes is about 4 MB per visit (see below).
 
 **Holders found (all kept an evicted zone's data reachable):**
 
@@ -127,16 +127,39 @@ DOM nodes stay flat across eight visits (3 / 2 / ~24.7 k). The structural defect
 offline, behind a blocking proxy or on a slow network, which is why they were fixed anyway. If you measure DOM growth
 here again, allow `unpkg.com` first.
 
-**Still held after the fixes (not fixed; each is a few MB, listed by shortest retaining path):**
+**Re-checked after main's Tzatzul nest/cliff-spire work (#1453) was merged in.** `TzatzulCliffSites` (bird-only spires in
+`map_northern_cliffs` and `map_western_slope`) keeps the zone's scene in its `areas` map and only released it on the next
+area change, so `evictZoneScene` now calls `TzatzulCliffSites.releaseArea(mapId)` itself. Its perches (`PerchSupport`),
+`TzatzulLiveVisuals` and the flight runtime already drop their zone state on area change. Nest caves are building scenes,
+not zone scenes: `TzatzulNestEncounter` keeps small per-cave records and carried victims for the session on purpose, bounded
+by the four nests. The same eight-visit snapshot run on the merged build showed no Tzatzul objects among the survivors
+(49 MB survived, forced-GC heap +161 MB over eight visits), but a bird may not have spawned during those visits, so this
+is a code review plus a clean run, not proof that a spawned bird leaks nothing.
 
-- `__hobunjiGameRenderer > clearDepth > ... setup > o` (~10 MB): three.js `WebGLBindingStates` entries keyed by geometry id.
-  A state is released by the geometry's `dispose` event, so these are geometries that left a scene without `dispose()`.
-  Not yet identified which.
-- `HobunjiDualWieldWeaponVisuals > syncNow > carriedPoses > userData > proceduralHandParent` (~7 MB).
-- `_nestContentStates` (den nest content) holds `scene` and `grid` (~5 MB).
-- `bandit-camps.js` `_banditZoneViews` tiles (~2 MB); `MergedWaterRenderer` `domainCache` (~2 MB);
-  `enemySightOccluderMeshes` (~3 MB).
-- Some of the "alive" set is legitimately shared and cached (textures, shared materials, JIT code) rather than leaked.
+**What is left is small and bounded (second pass over the same zones).** The "survivors" lists above are dominated by
+things that are created on a zone's *first* visit and then stay, so they overstate creep: per-zone caches such as
+`_banditZoneViews`, `PorakanekiCampPlacementPolicy` grid refs, the water `domainCache`, tree variant templates and
+the zone currently kept built. The test for real creep is the second pass. Snapshots after visit 4 and after visit 8 are
+both in the same zone (eastern mire), so everything that differs is growth: self size 499.1 -> 515.7 MB (+16.6 MB over
+four visits, about 4 MB per visit, +3%), 7.26 M -> 7.37 M heap nodes, and 11,182 -> 11,357 live `BufferGeometry` objects.
+Before the fixes the first four visits alone left about 350 MB behind (self size 686 MB vs 499 MB after).
+
+An orphan-geometry census confirms it. Scratch instrumentation wrapped `BufferGeometry.prototype.setAttribute` and
+`dispose` to record each geometry's creation stack in a `WeakRef` list, then after two forced GCs listed geometries that
+are alive, never disposed and not reachable from any live scene (`traverse` over town, building and zone scenes). Between
+visit 4 and visit 8 the list is identical except for counts of a few tree-variant templates: the only large entries are
+the current zone's two path-network geometries (held on the zone record, not in the scene) and the camera-occlusion
+chunk geometries, which share the source mesh's position buffer, live on the source geometry (`geometry[INFO]`) and are
+dropped with it. So the ~10 MB of `WebGLBindingStates` entries (`__hobunjiGameRenderer > clearDepth > ... setup > o`)
+seen in the snapshots belong to geometries of the live zone, not to a growing pile of abandoned ones.
+
+**Not fixed, not growing (a few MB each):** `HobunjiDualWieldWeaponVisuals` `carriedPoses` (7 -> 1 MB after the other
+fixes), `_nestContentStates` (den nests hold `scene` and `grid`; gone from the survivors after the sleeping-bandit
+fix, but it keys state by scene, so check it if zones start surviving again), `bandit-camps.js` `_banditZoneViews`
+(one tile grid per zone ever visited, removed only by `forgetZoneBanditState`, so it is bounded by the number of
+zones), `MergedWaterRenderer` `domainCache`, `enemySightOccluderMeshes`. If the heap climbs again, re-run the
+second-pass comparison first: if self size between two snapshots of the same zone grows by more than a few percent,
+something new is leaking; take the `survive` listing and look at the holder paths that do not belong to a per-zone cache.
 
 Scratch-only debug hooks were used for the measurement and are not in the repo; the analyser logic is described above
 (BFS retainer paths over snapshots, id-range to date objects). Hooks that are in the game and useful here:
@@ -158,8 +181,8 @@ Ranked roughly by how much the numbers say they matter. None of these were the "
 5. **Scheduler `checkpoint` ~5.5 ms**: this is only the dispatcher for every `pre-render` subscriber, so it is the sum
    of many modules. The scheduler's `getDebug()` has per-subscriber timings; the real-hardware trace named
    "procedural hand pose sync" (~8.5 ms) as the biggest scheduler entry.
-6. **The heap still grows across zone visits** (about 8-17 MB per visit after the fixes below; was ~25-40). Most of
-   what was left is explained in "Heap growth across zone visits"; the remaining holders are listed there.
+6. **The heap grows slowly across zone visits** (about 4 MB per visit on the second pass after the fixes; was ~25-40).
+   The remaining holders are small and bounded; see "Heap growth across zone visits" before touching it.
 7. **The corpse swap keeps the newest 6 per area and any within 5 tiles of the player** (`keepFull`, `nearTiles`,
    `minSettledS` in `SCRATCHBONES_CONFIG.game.banditCorpseRetire`). Defaults were picked from arena tests; a tribe camp
    of 15 leaves up to 6 full rigs behind. Tune with measurements.

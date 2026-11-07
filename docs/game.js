@@ -15886,6 +15886,7 @@
         window.PorakanekiCampPlacementPolicy?.forgetZone?.(mapId);
         window.Shattercasks?.releaseZone?.(mapId);
         window.WorldPopupText?.releaseScene?.(zi.scene);
+        window.TzatzulCliffSites?.releaseArea?.(mapId); // Nest spires keep the scene they were drawn into until the next area change; make eviction not depend on that.
         zi.scene.clear(); // One stale reference to a mesh would otherwise keep the whole old zone reachable through its parent chain.
         window.__farmLog?.(`[zone-cache] evicted ${mapId} (${freed.materials} materials, ${freed.textures} textures released)`, 'perf');
         return true;

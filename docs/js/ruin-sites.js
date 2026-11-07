@@ -64,10 +64,13 @@
     store.all[store.key] = entry;
     try { localStorage.setItem(STORE_KEY, JSON.stringify(store.all)); } catch (_) {}
   }
-  function entranceState(id) { return state().entrances[id] || { struck:[], open:false, spent:false }; }
+  function normalizeEntrance(saved = {}) {
+    return { open:false, spent:false, ...saved, struck:Array.isArray(saved.struck) ? saved.struck : [] };
+  }
+  function entranceState(id) { return normalizeEntrance(state().entrances[id]); }
   function updateEntrance(id, patch) {
     const entry = state();
-    entry.entrances[id] = { ...(entry.entrances[id] || { struck:[], open:false, spent:false }), ...patch };
+    entry.entrances[id] = { ...normalizeEntrance(entry.entrances[id]), ...patch };
     saveState(entry);
     return entry.entrances[id];
   }
@@ -458,7 +461,7 @@
     for (const site of sitesByZone.get(zoneId) || []) {
       if (entry.entrances[site.id]?.spent || entry.entrances[site.id]?.tracked) continue;
       if (Math.hypot(site.door.x - master.x / tile, site.door.z - master.y / tile) > 18) continue;
-      entry.entrances[site.id] = { ...(entry.entrances[site.id] || {}), tracked:true };
+      entry.entrances[site.id] = { ...normalizeEntrance(entry.entrances[site.id]), tracked:true };
       saveState(entry);
       syncMapMarkers();
       deps?.showToast?.(`${actor.def?.label || 'Your companion'} found a ruin!`, true, true);
