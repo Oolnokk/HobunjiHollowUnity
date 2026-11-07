@@ -371,7 +371,7 @@
       if (!window.FurniturePuzzleRuntime?.setMechanism?.(`ruinSite:${record.site.id}`, 'door', true)) window.FurniturePuzzleRuntime?.applyMechanism?.(record.door, 1);
     }
     deps?.showToast?.('The ruin door grinds open.', true);
-    window.AudioSystem?.playSfx?.('stone_door');
+    window.RuinInteractionAudio?.mechanism?.(record.door,{size:4}); // The previously nonexistent AudioSystem.playSfx route is now a real recorded stone-door cue.
   }
 
   function strike(record, pillar) {
