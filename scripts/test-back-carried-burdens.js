@@ -102,6 +102,18 @@ function testEditorAuthoring() {
   assert.equal(customBack.portraitAnchor.y,.15);
 }
 
+function testCarryableTabBoot() {
+  const html=read('docs/tools/furniture-avatar-author/index.html'); // The static tab must remain visible even when the optional authoring script fails.
+  const author=read('docs/tools/furniture-avatar-author/carryable-objects.js'); // Reuses the built-in tab rather than appending another after boot.
+  assert.match(html,/id="carryModeTab"[^>]*data-left-tab="carry"/,'the Carryable tab is part of the HTML');
+  assert.match(html,/id="tab-carry"[^>]*class="hidden"/,'the Carryable fallback panel exists without JavaScript');
+  assert.match(html,/id="carryAuthorLoadStatus"/,'loading failures have visible mobile-safe diagnostics');
+  assert.match(html,/'avatar','carry','base','io'/,'base mode switches include the Carryable pane');
+  assert.match(html,/carryable-objects\.js\?v=20261107carryTabPermanent1[^>]+onerror=/,'the separate authoring script exposes load errors');
+  assert.match(author,/getElementById\('carryModeTab'\)\|\|document\.createElement\('button'\)/,'authoring reuses the static tab');
+  assert.match(author,/getElementById\('tab-carry'\)\|\|document\.createElement\('div'\)/,'authoring reuses the static panel');
+}
+
 function testRuntime() {
   const scene=new Group(),player={x:4.5*64,y:3.5*64,health:100,angle:0,lastAttackReceivedAt:100};
   const grid=Array.from({length:10},()=>Array.from({length:10},()=>({type:'grass'})));
@@ -390,5 +402,6 @@ function testRuntime() {
 }
 
 testEditorAuthoring();
+testCarryableTabBoot();
 testRuntime();
 console.log('PASS back-carried burdens: live portrait selection, deadzone parenting, carrier collision, transitions, rebuilds, explosions, editor');
