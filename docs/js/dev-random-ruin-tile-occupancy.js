@@ -22,10 +22,8 @@
   const nativeRenderMapPanel = WildernessMap.renderMapPanel.bind(WildernessMap);
 
   const keyFor = (col, row) => `${col},${row}`;
-  const sortedKeys = keys => [...keys].sort((a, b) => {
-    const [ac, ar] = a.split(',').map(Number), [bc, br] = b.split(',').map(Number);
-    return ar - br || ac - bc;
-  });
+  const sortedKeys = keys => [...keys].map(k => { const i = k.indexOf(','); return [k, +k.slice(0, i), +k.slice(i + 1)]; })
+    .sort((a, b) => a[2] - b[2] || a[1] - b[1]).map(e => e[0]); // Parse each key once, not per comparison.
 
   function worldBox(object) {
     if (!object) return null;
