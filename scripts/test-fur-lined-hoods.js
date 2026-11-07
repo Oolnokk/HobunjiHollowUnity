@@ -29,8 +29,7 @@ vm.runInContext(read('docs/js/portrait-utils.js'), portraitContext, { filename: 
 const backRules = portraitContext.window.SCRATCHBONES_CONFIG.game.assets.pngPlaneAvatar.behindView.layerReplacements; // Used to compare each new hood to Fine Hood's existing renderer mapping.
 const liveSimple = portraitContext.portraitOptionFromJson({ id: 'simple_hood' }, simple); // Exercises real Simple Hood layer extraction.
 const liveLined = portraitContext.portraitOptionFromJson({ id: 'fur_lined_hood' }, lined); // Exercises real Fur-lined Hood trim hiding.
-const hiddenFurTrim = backRules.find(rule => rule.idIncludes?.includes('fur-lined-hood') && rule.urlIncludes?.includes('furlinedhood-trim'));
-assert.equal(hiddenFurTrim?.hide, true, 'fur-lined front trim must not appear over the shared Fine Hood rear sprite');
+assert(!backRules.some(rule => rule.idIncludes?.includes('fur-lined-hood') && rule.urlIncludes?.includes('furlinedhood-trim') && rule.hide), 'fur-lined fur trim must be available in the rear view');
 for (const [key, variant] of Object.entries(fine.speciesVariants)) {
   const frontFineUrl = variant.parts.head.layers.front.image.url;
   const fineBackRule = backRules.find(rule => rule.urlIncludes?.some(fragment => frontFineUrl.includes(fragment)) && rule.url?.includes('finehood-back'));
@@ -51,8 +50,19 @@ for (const [key, variant] of Object.entries(fine.speciesVariants)) {
   assert.equal(linedLayers?.length, 2, key + ': Fur-lined Hood must retain base and trim for its front view');
   assert.equal(portraitContext._getBehindLayerUrl(simpleLayers[0], liveSimple, gender), expectedRuntimeBack, key + ': Simple Hood resolver did not select Fine Hood art');
   assert.equal(portraitContext._getBehindLayerUrl(linedLayers[0], liveLined, gender), expectedRuntimeBack, key + ': Fur-lined Hood resolver did not select Fine Hood art');
-  assert.equal(portraitContext._getBehindLayerUrl(linedLayers[1], liveLined, gender), null, key + ': fur trim must disappear on the rear plane');
+  assert.equal(portraitContext._getBehindLayerUrl(linedLayers[1], liveLined, gender), linedLayers[1].url, key + ': fur trim must reuse its existing art on the rear plane');
+  const linedRearLayers = linedLayers.map(layer => ({ layer })); // A rear-only stack allows comparison without mutating the real front-view order.
+  portraitContext._placeFurLinedTrimBehindRearHood(linedRearLayers, liveLined);
+  assert.equal(linedRearLayers[0].layer.paletteColorKey, 'B', key + ': fur trim must render behind the rear hood shell');
+  assert.equal(linedRearLayers[1].layer.paletteColorKey, 'A', key + ': the rear hood shell must cover the trim');
+  assert.equal(portraitContext._getBehindLayerUrl(linedRearLayers[1].layer, liveLined, gender), expectedRuntimeBack, key + ': rear shell mapping changed');
+  assert.equal(linedLayers[0].paletteColorKey, 'A', key + ': front hood base must retain its original first-layer position');
+  assert.equal(linedLayers[1].paletteColorKey, 'B', key + ': front fur trim must retain its original second-layer position');
 }
+
+const trophyHoodLayers = [{layer:{paletteColorKey:'A'}}, {layer:{paletteColorKey:'B'}}]; // Regression control: trophy Fur Hood retains its independent stacking.
+portraitContext._placeFurLinedTrimBehindRearHood(trophyHoodLayers, {id:'fur_hood'});
+assert.deepEqual(trophyHoodLayers.map(entry=>entry.layer.paletteColorKey), ['A','B'], 'trophy Fur Hood rear order must remain untouched');
 
 for (const [key, suffix] of [['tletingan_male', 'tl_m'], ['mashtzarr_male', 'mashtz_m']]) {
   const plain = simple.speciesVariants[key].parts.head.layers;
