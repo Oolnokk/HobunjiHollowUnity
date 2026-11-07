@@ -25,7 +25,7 @@ const audio=sandbox.module.exports;
 const stone=(span)=>({isObject3D:true,worldSize:{x:span,y:span,z:span},scale:{x:1,y:1,z:1}});
 const near=(v,w)=>Math.abs(v-w)<1e-8;
 const door=stone(4),smallDoor=stone(2),largeDoor=stone(8);
-const block=stone(1.2),smallBlock=stone(.6),largeBlock=stone(2.4);
+const block=stone(.82),smallBlock=stone(.41),largeBlock=stone(1.64);
 assert(near(audio.pitchFor('mechanism',door),1),'large ruin door keeps the original recording pitch');
 assert(near(audio.pitchFor('activator',block),1),'standard push block keeps the original recording pitch');
 assert(audio.pitchFor('mechanism',smallDoor)>1,'smaller stone mechanisms sound higher');
