@@ -1334,11 +1334,11 @@ function renderActivePosePanel() {
       };
       numberInput?.addEventListener('input', () => {
         const raw = numberInput.value.trim();
-        if (raw !== '' && Number.isFinite(Number(raw))) {
-          syncPoseCoordinatePair(slider, numberInput, Number(raw), -2, 2);
-        }
+        if (raw !== '' && !Number.isFinite(Number(raw))) return; // A half-typed negative/decimal must not overwrite a valid elbow keyframe.
+        if (raw !== '') syncPoseCoordinatePair(slider, numberInput, Number(raw), -2, 2);
         commitElbow(); // Clearing a numeric elbow may un-author it; the slider never silently recreates it.
       });
+      numberInput?.addEventListener('blur', () => syncPosePanelFromState(editPhase)); // Reconcile precision values with the paired slider once mobile input finishes.
       slider?.addEventListener('input', () => {
         numberInput.value = String(Number(slider.value)); // Sliding an unset elbow explicitly authors its first keyframe.
         commitElbow();
@@ -1382,6 +1382,7 @@ function renderActivePosePanel() {
       window.ProceduralHandFrameDriver?.syncNow?.(); refreshJsonView();
     };
     numeric?.addEventListener('input', () => applyFreeChannel(numeric.value));
+    numeric?.addEventListener('blur', () => syncPosePanelFromState(editPhase)); // Reflect clamped/mobile-entered numbers after editing without disturbing focus.
     slider?.addEventListener('input', () => applyFreeChannel(slider.value, true));
   }
   $('poseCaptureRightGrip').onclick = () => {
