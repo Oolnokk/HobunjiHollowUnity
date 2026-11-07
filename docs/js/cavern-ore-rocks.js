@@ -165,6 +165,12 @@
   function rebuildSeparatorWall(mapId) {
     const wall=separatorWalls.get(mapId);
     if(!wall)return;
+    if(!wall.tiles.size&&!wall.door){
+      wall.mesh?.parent?.remove(wall.mesh);
+      wall.mesh?.geometry?.dispose?.();
+      wall.mesh=null; // Completely mined walls leave no empty render root in Sense Mode or the scene.
+      return;
+    }
     const THREE=window.THREE;
     const geometry=fusedRockGeometry(THREE,wall); // Re-mesh every exposed side after each pickaxe strike or Shattercask tile removal.
     if(!geometry)return;
