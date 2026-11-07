@@ -990,10 +990,14 @@
     const zoneState = currentZoneState(); // Same active area as this tribe's loaded camp props.
     if (!scene || !zoneState || combatDeps?.zoneScenes?.get?.(zoneState.zoneId)?.scene !== scene) return [];
     const roots = []; // Actual tents and fires, shared with the runtime's camp lifecycle and both tribes.
-    for (const camp of activeCamps(zoneState)) for (const prop of camp.props || []) {
-      if (prop.destroyed || (prop.type !== 'tent' && prop.key !== BONFIRE_KEY && prop.key !== 'campfire')) continue;
-      const root = camp.propMeshes.get(prop.id)?.mesh;
-      if (root?.parent === scene && root.visible !== false) roots.push(root);
+    for (const camp of activeCamps(zoneState)) {
+      const anchor = Number.isFinite(camp.center?.col) && Number.isFinite(camp.center?.row)
+        ? { x: camp.center.col, z: camp.center.row } : null; // The shared camp footprint center prevents uneven visibility across its different tents.
+      for (const prop of camp.props || []) {
+        if (prop.destroyed || (prop.type !== 'tent' && prop.key !== BONFIRE_KEY && prop.key !== 'campfire')) continue;
+        const root = camp.propMeshes.get(prop.id)?.mesh;
+        if (root?.parent === scene && root.visible !== false) roots.push(anchor ? { root, anchor } : root);
+      }
     }
     return roots;
   }
