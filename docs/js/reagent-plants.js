@@ -190,6 +190,16 @@
       const tile = candidates.find(t => !objects.has(t.c + ',' + t.r));
       if (!tile) continue; // Never overwrite another real forage object in the lower grid.
       const slot = tile.c + ',' + tile.r;
+      const playerOnShelf = () => {
+        // The map stores only one 2D object per tile; verify the *physical*
+        // elevation before allowing a cluster on an overhang to be picked
+        // from the ground directly below it.
+        const feet = window.PlayerBodyTransformComposer?.getPlayerMesh?.()?.position
+          || window.ProceduralHandAttachments?.gameDeps?.playerMesh?.position;
+        if (!feet) return true; // Headless previews with no avatar still expose the object.
+        return Math.abs(Number(feet.y) - shelf.y) <= 1.2
+          && Math.hypot(Number(feet.x) - shelf.x, Number(feet.z) - shelf.z) <= 1.85;
+      };
       const obj = {
         id: shelf.id, type: 'reagent_plant', miniCliffRewardId: shelf.id,
         col: tile.c, row: tile.r, mesh, reagentKey: shelf.reagentKey,
@@ -197,13 +207,14 @@
         getButtons() {
           const claimed = window.CliffRouteNetwork.getRewardState(mapId, shelf.id).claimed;
           return [{ icon: def.icon, label: 'Pick ' + def.label + ' Cluster',
-            action: 'obj_pick_reagent', style: 'primary', allowed: !claimed }];
+            action: 'obj_pick_reagent', style: 'primary', allowed: !claimed && playerOnShelf() }];
         },
         onAction(action) {
           if (action !== 'obj_pick_reagent') return { ok: false, message: 'Unknown action.' };
           const cliff = window.CliffRouteNetwork;
           if (deps.getCurrentArea?.() !== mapId || cliff.getRewardState(mapId, shelf.id).claimed
             || !cliff.herbRewardMesh(mapId, shelf.id)) return { ok: false, message: 'Those herbs are no longer here.' };
+          if (!playerOnShelf()) return { ok: false, message: 'Climb onto the mini-cliff to pick those herbs.' };
           const bonus = (deps.random || Math.random)() < (deps.bonusYieldChance?.('foraging') || 0) ? 1 : 0;
           const doubled = (window.PerkSystem?.rank('foraging', 'doubleForageables') || 0) > 0 ? 2 : 1;
           const amount = (1 + bonus) * doubled;
