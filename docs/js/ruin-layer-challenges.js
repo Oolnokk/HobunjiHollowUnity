@@ -504,7 +504,7 @@
           bounds,enabled:gateClosed,
           blocksAt:(_x,_z,_h,_r,_radius,query)=>{
             const elevation=Number(query?.y??query?.floorY??query?.worldY);
-            return !Number.isFinite(elevation)||Math.abs(elevation-y)<1.4; // Other elevations do not inherit a ground-level slab.
+            return !Number.isFinite(elevation)||(elevation>=y-.4&&elevation<=y+3.55); // The locked 3.4-tile slab blocks airborne movement below its actual top, not just the first 1.4 tiles.
           },
         });
       }
@@ -512,7 +512,7 @@
         rec.removeFootprintGate=footprint.register(rec.colliderId,{
           area:options.area,enabled:gateClosed,
           blocksBox:(x,z,half,worldY)=>{
-            if(Number.isFinite(worldY)&&Math.abs(worldY-y)>1.4)return false; // Shots above the door can clear it.
+            if(Number.isFinite(worldY)&&(worldY<y-.4||worldY>y+3.55))return false; // Airborne shots clear the slab only above its actual stone top.
             return x+half>=bounds.minX&&x-half<=bounds.maxX
               &&z+half>=bounds.minZ&&z-half<=bounds.maxZ; // The game queries square actor footprints, not point-only dynamic hits.
           },
