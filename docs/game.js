@@ -7757,6 +7757,29 @@
       const FOLLOW_NEAR_PX = TILE * 1.1;
       const ALERT_RANGE_PX = TILE * 4.5;
 
+      // Resolve a moving owner's *walkable landing*, not their midair position.
+      // CreatureCliffClimb.navigate owns actual cliff travel and its collision rules.
+      function companionFollowGoal(c, master) {
+        const hasLanding = !!master.climbing && Number.isFinite(master.climbEndX) && Number.isFinite(master.climbEndY); // Used to target the owner's landing during a scripted climb.
+        const x = hasLanding ? master.climbEndX : master.x; // Ground destination passed to travelCreatureToward.
+        const y = hasLanding ? master.climbEndY : master.y; // Ground destination passed to travelCreatureToward.
+        const followGrid = _isZoneArea(currentArea) ? (c.areaGrid || window.GridTileAccessors.getActiveGrid()) : null; // Used only for wilderness elevation comparisons.
+        const hereTile = followGrid?.[Math.floor(c.y / TILE)]?.[Math.floor(c.x / TILE)]; // Companion's current elevation for the route decision.
+        const goalTile = followGrid?.[Math.floor(y / TILE)]?.[Math.floor(x / TILE)]; // Destination elevation for the route decision.
+        const differentTier = !!hereTile && !!goalTile && !hereTile.incline && !goalTile.incline
+          && (hereTile.elevTier || 0) !== (goalTile.elevTier || 0); // Prevents a nearby companion idling below its owner.
+        const routeNetwork = followGrid && window.CliffRouteNetwork?.forArea?.(currentArea); // Existing cached network differentiates disconnected platforms at the SAME elevation.
+        const fromComponent = routeNetwork && window.CliffRouteNetwork.componentAt(routeNetwork, Math.floor(c.x / TILE), Math.floor(c.y / TILE)); // Companion's walkable connected component.
+        const toComponent = routeNetwork && window.CliffRouteNetwork.componentAt(routeNetwork, Math.floor(x / TILE), Math.floor(y / TILE)); // Owner/landing's walkable connected component.
+        const separatePlatforms = Number.isInteger(fromComponent) && fromComponent >= 0
+          && Number.isInteger(toComponent) && toComponent >= 0 && fromComponent !== toComponent; // Forces route finding even when two plateaus share a height tier.
+        return {
+          x, y,
+          distance: Math.hypot(x - c.x, y - c.y),
+          routeRequired: differentTier || separatePlatforms || !!c._cliffClimb || !!c._cliffRouteTravel, // In-progress hops must finish before ordinary wandering or attacks resume.
+        };
+      }
+
       // Shared ground truth for where a mount saddle, shoulder-pet grip,
       // character posterior (seat), and character shoulder-perch actually sit
       // — hand-authored in docs/tools/animation-author/index.html's Rig
@@ -8742,28 +8765,6 @@
           // field existed (e.g. a save mid-load) doesn't go masterless.
           const master = c.master || player;
 
-          if (master.climbing) {
-            _clearCompanionTreasureCue(c, dt, 'master climbing');
-            _clearCompanionWatchIdle(c, 'master climbing');
-            // Teleport-and-stick: an untagged companion can't path through an
-            // incline tile on its own (see CREATURE_DB canClimb / moveCreatureToward),
-            // so for the duration of the climb it just clings to its master's
-            // back instead of trying to follow normally.
-            const backAngle = master.angle + Math.PI;
-            c.x = master.x + Math.cos(backAngle) * TILE * 0.35;
-            c.y = master.y + Math.sin(backAngle) * TILE * 0.35;
-            c.facing = master.angle;
-            c.vx = 0; c.vy = 0;
-            updateCreatureMesh(c, dt, c.facing);
-            updateCreatureAnimFrame(c, dt, false);
-            // Pin to the master's actual climb-blended height rather than the
-            // incline tile's raw (unblended) surface — see updatePlayerMesh.
-            // (Only the real player has a climb-blended playerMesh height;
-            // a non-player master would need its own mesh reference here.)
-            c.avatarRef.group.position.y = playerMesh.position.y + c.halfHeight * 0.5;
-            continue;
-          }
-
           // A mount is driven entirely by updateMountRide/updateMountedMovement
           // (see the V-key/D-pad-down call-in/dismiss flow) — it never runs
           // the fight/wander companion AI at all, so skip it here.
@@ -8879,6 +8880,17 @@
 
           const dxp = master.x - c.x, dyp = master.y - c.y;
           const distToMaster = Math.hypot(dxp, dyp);
+          const followGoal = companionFollowGoal(c, master); // Shared walking/cliff-route destination for ordinary companions.
+          c._companionGroundFollow = {
+            mode: master.climbing ? 'owner-climbing' : followGoal.routeRequired ? 'cliff-route' : 'ground',
+            distancePx: Math.round(followGoal.distance),
+            destinationX: Math.round(followGoal.x), destinationY: Math.round(followGoal.y),
+            routeActive: !!c._cliffClimb || !!c._cliffRouteTravel,
+          }; // Included in the existing mobile-friendly CompanionCombatResponse diagnostics.
+          if (master.climbing && c.stableRole === 'companion') {
+            if (c.treasureCue) _clearCompanionTreasureCue(c, dt, 'owner climbing');
+            if (c.watchPlayerIdle) _clearCompanionWatchIdle(c, 'owner climbing');
+          }
           const isBanditCompanion = c.banditCompanion === true; // Used to invert only a Beastmaster pet's target faction while retaining companion movement.
           const playerNearBanditMaster = Math.hypot(player.x - master.x, player.y - master.y) <= ALERT_RANGE_PX; // Used to give the enemy pet the same master-centered alert rule as a player companion.
           let target = isBanditCompanion && player.health > 0 && playerNearBanditMaster ? player : null;
@@ -8991,6 +9003,12 @@
             } else if (c.knockbackT <= 0) {
               if (!beginKnockbackLedgeFall(c)) window.KnockbackCollisionImpact?.cancel?.(c);
             }
+          } else if (c._cliffClimb || c._cliffRouteTravel) {
+            // A crossing already in progress owns the animal's physical position.
+            // Finish it before any newly acquired combat target can trigger a
+            // melee animation or backup movement while hanging off a cliff.
+            moving = travelCreatureToward(c, followGoal.x, followGoal.y, def.chaseSpeed, dt);
+            aimAngle = c.facing;
           } else if (target) {
             const dist = Math.hypot(target.x - c.x, target.y - c.y);
             aimAngle = Math.atan2(target.y - c.y, target.x - c.x);
@@ -9075,9 +9093,15 @@
             moving = cueMotion.moving;
             runInPlace = cueMotion.runInPlace;
             aimAngle = cueMotion.aimAngle;
-          } else if (distToMaster > FOLLOW_FAR_PX) {
-            moving = travelCreatureToward(c, master.x, master.y, def.chaseSpeed, dt);
-            aimAngle = Math.atan2(dyp, dxp);
+          } else if (master.climbing || followGoal.routeRequired || distToMaster > FOLLOW_FAR_PX) {
+            // A climbing owner is not a carrier: chase the walkable destination via
+            // the shared cliff-route network, or wait on the ground once nearby.
+            if (followGoal.routeRequired || followGoal.distance > (master.climbing ? FOLLOW_NEAR_PX : FOLLOW_FAR_PX)) {
+              moving = travelCreatureToward(c, followGoal.x, followGoal.y, def.chaseSpeed, dt);
+              if (moving) aimAngle = Math.atan2(c.vy, c.vx);
+            } else {
+              c.vx = 0; c.vy = 0;
+            }
           } else if (!isBanditCompanion && _isPlayerFocusedOnHead(c)) {
             // The player is staring right at its head — hold position and
             // let them approach instead of drifting back out to the donut
