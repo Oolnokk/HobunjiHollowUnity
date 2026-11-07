@@ -237,12 +237,7 @@
     const rocks=rockMaps.get(mapId)||deps?.zoneMineableRockMeshes?.get?.(mapId);
     const id=col+','+row,group=rocks?.get(id);
     if(!group)return false;
-    rocks.delete(id);
-    const wall=separatorWalls.get(mapId);
-    if(group.userData?.caveSeparatorTile&&wall?.tiles.delete(id)){
-      if(batchDepth)pendingRebuilds.add(mapId);
-      else rebuildSeparatorWall(mapId);
-    }
+    rocks.delete(id); // Also triggers the shared tile-index delete hook used by ordinary pickaxe mining.
     group.parent?.remove(group);
     group.traverse(node=>{
       node.geometry?.dispose?.();
@@ -282,6 +277,22 @@
     // forgetZoneDenState) so removeZoneMineableRockVisual never targets an
     // orphaned rock group from a layout that no longer exists.
     const oreRockMeshes = new Map();
+    const deleteTile=oreRockMeshes.delete.bind(oreRockMeshes); // Pickaxe mining removes tiles through this existing indexed-visual map, whereas Shattercasks call removeVisual explicitly.
+    oreRockMeshes.delete=key=>{
+      const group=oreRockMeshes.get(key);
+      if(!deleteTile(key))return false;
+      if(group?.userData?.caveSeparatorTile){
+        const [col,row]=String(key).split(',').map(Number),tile=grid[row]?.[col]; // Same logical tile continues to own collision and projectile cover.
+        if(tile?.caveSeparator)delete tile.projectileCoverHeightTiles; // Never leave a tall, invisible cover column after this rock is mined.
+        const wall=separatorWalls.get(mapId);
+        if(wall?.tiles.delete(key)){
+          if(batchDepth)pendingRebuilds.add(mapId);
+          else rebuildSeparatorWall(mapId);
+        }
+      }
+      group?.parent?.remove?.(group); // Safe whether game.js detached the visual before or after removing its index.
+      return true;
+    };
     forgetMap(mapId); // A fresh cave scene must not retain GPU geometry or mineable registrations from its previous visit.
     rockMaps.set(mapId,oreRockMeshes); // Rebuilt caves replace stale tile indices completely.
     rockScenes.set(mapId,scene);
@@ -306,6 +317,7 @@
         tile.type=deps.TileType.ROCK;tile.rockKind='diggableRockOre';tile.oreKind=rock.oreKind;
         tile.oreKey=deps.oreDefs?.[rock.oreKey||rock.oreKind]?(rock.oreKey||rock.oreKind):null;
         tile.caveSeparator=rock.caveSeparator===true;
+        if(rock.caveSeparator)tile.projectileCoverHeightTiles=separatorWalls.get(mapId)?.height||8; // Tall stone mass must stop midair shots above the old ore-mound cover height.
       }
       const rockGroup=new THREE.Group();
       rockGroup.name='cave_ore_'+rock.col+'_'+rock.row;
