@@ -57,7 +57,7 @@ for(const file of ['ruin-layer-plan.js','ruin-shaft-corridor.js','ruin-shaft-con
     stages.add(stage);
     floors.add(floor.floor);
   }
-  assert.equal(stages.size,4);
+  assert.equal(stages.size,2,'trial room may appear in either of the two short branch puzzle slots');
   assert(floors.size>1);
 }
 
@@ -72,6 +72,8 @@ for(const file of ['ruin-layer-plan.js','ruin-shaft-corridor.js','ruin-shaft-con
     for(const floor of plan.floors){
       if(floor.floor===0){assert(!floor.nativePort);continue;}
       floors++;
+      assert.equal(floor.wings.length,3,'all three free upper-story shaft exits house short independent wings');
+      assert.equal(floor.braziers.length,3,'each upper-story custom wing adds a required fire');
       const port=floor.nativePort,area=port.reservation;
       assert(area&&area.w===180&&area.d===180,'native floor allocation must exist before V50 runs');
       assert(!floor.wings.some(w=>w.side==='E'),'reserved east portal is exclusively native V50');
@@ -95,6 +97,25 @@ for(const file of ['ruin-layer-plan.js','ruin-shaft-corridor.js','ruin-shaft-con
     }
   }
   assert(floors>=2000,'exercise real multi-story native V50 reservations');
+}
+
+// The entry door and native V50 room each keep their exclusive side; all other
+// exits become independent braziers instead of extending an existing wing.
+for(let seed=1;seed<=100;seed++){
+  const plan=Plan.compose({seed,nativeV50:true,groundEntranceSide:'W'});
+  assert(plan.ok,'reserved entrance plan must remain valid');
+  for(const floor of plan.floors){
+    assert.equal(floor.wings.length,3,'three free wall exits must be occupied');
+    assert.equal(floor.braziers.length,3,'each free exit must end at its own brazier');
+    const sides=new Set(floor.wings.map(wing=>wing.side));
+    assert(!sides.has(floor.floor===0?'W':'E'),'a reserved portal must not be reused');
+    assert(floor.wings.every(wing=>wing.rooms.length<=3),'a long challenge sequence must not survive inside a wing');
+    assert(floor.wings.some(wing=>wing.rooms.slice(0,-1).some(room=>
+      ['glyphObelisk','ceilingRailTargets'].includes(room.challenge))),
+      'each story retains a real ranged puzzle while distributing rooms');
+  }
+  assert.equal(plan.totalBraziers+plan.nativeFloorCount,plan.floorCount*4-1,
+    'Great Door must require a fire from each free shaft exit and each reserved native V50 floor');
 }
 
 // Native V50 rope flights pass *plain* CellGrid3D axis-aligned boxes
@@ -138,7 +159,7 @@ for(const file of ['ruin-layer-plan.js','ruin-shaft-corridor.js','ruin-shaft-con
 }
 
 // Every floor is an independent ordinary 2D plan, with one shared, grid-snapped,
-// wide octagonal anchor, 1..4 wings, multiple challenges and one brazier per wing.
+// wide octagonal anchor, every unused shaft exit, 1–2 challenges and a required fire per branch.
 let plannedWings=0;
 for(let seed=1;seed<=1000;seed++){
   const plan=Plan.compose({seed});
@@ -148,16 +169,21 @@ for(let seed=1;seed<=1000;seed++){
   assert.equal(plan.shaft.shape,'octagon');
   for(const floor of plan.floors){
     assert.deepEqual(floor.anchor,plan.shaft.anchor,'shaft position shared across all 2D floors');
-    assert(floor.wings.length>=1&&floor.wings.length<=4);
+    assert.equal(floor.wings.length,4,'all four available hub exits become short puzzle branches');
     assert.equal(floor.wings.length,floor.braziers.length);
+    assert.equal(new Set(floor.wings.map(wing=>wing.side)).size,4,'one separate fire route emerges from every shaft exit');
     for(const wing of floor.wings){
       plannedWings++;
-      assert(wing.rooms.filter(r=>!!r.challenge).length>=2,'multiple challenge rooms before brazier');
+      assert(wing.rooms.filter(r=>!!r.challenge).length>=1 && wing.rooms.filter(r=>!!r.challenge).length<=2,
+        'every shaft exit has only one or two puzzle chambers before its fire');
       assert.equal(wing.rooms.filter(r=>r.kind==='brazier-chamber').length,1,'exactly one brazier endpoint');
       assert.equal(wing.corridors.length,wing.rooms.length,'hallway per progression stage');
-    assert.equal(wing.rooms[0].challenge,'pressurePlate','every wing starts with a functional stone plate');
-    assert(['glyphObelisk','ceilingRailTargets'].includes(wing.rooms[1].challenge),
-      'every wing includes a real ranged-target room, never a fake labelled placeholder');
+      if(wing.rooms.length===3){
+        assert.equal(wing.rooms[0].challenge,'pressurePlate','a two-puzzle wing starts with the real stone plate');
+        assert(['glyphObelisk','ceilingRailTargets'].includes(wing.rooms[1].challenge),
+          'a two-puzzle wing has the real ranged challenge before its brazier');
+      }else assert(Plan.DEFAULTS.minChallenges===1 && wing.rooms[0].challenge,
+        'single-puzzle branches still require an implemented mechanism');
       assert(wing.corridors.every(h=>h.length>0&&h.rects.length>=1),'variable-length halls must have footprint');
       if(seed<=80){
         // Regression: even-sized rooms once had an invisible one-cell gap at
