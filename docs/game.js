@@ -16723,7 +16723,22 @@
             }
             window.SkillSystem?.award?.('mining', window.SkillSystem?.XP_GAINS?.rock || 8, 'mined cliff ore');
             window.HobunjiActivityEvents?.emit('rock_broken', { area: currentArea });
-          } else {
+          } else if (shelf.reward === 'herbCluster') {
+            const reagentKey = shelf.reagentKey; // Chosen from this area's native plants by the cliff renderer.
+            const reagent = window.AlchemySystem?.REAGENT_DEFS?.[reagentKey]; // Shared reagent definition used by ordinary gathering.
+            if (!reagent) return { ok: false, message: 'These herbs cannot be identified yet.' };
+            const bonus = rnd() < (window.SkillSystem?.bonusYieldChance?.('foraging') || 0) ? 1 : 0; // Foraging extra-yield chance.
+            const doubleRank = window.PerkSystem?.rank?.('foraging', 'doubleForageables') || 0; // Matches the ordinary gathering perk.
+            const amount = (1 + bonus) * (doubleRank > 0 ? 2 : 1);
+            const previous = inventory[reagentKey] || 0; // Stack count before applying the inventory capacity below.
+            const granted = Math.min(amount, Math.max(0, window.InventoryStacks.MAX_TOTAL - previous)); // Failed pickups leave the plant intact.
+            if (!granted) return { ok: false, message: 'Your inventory is full.' };
+            inventory[reagentKey] = previous + granted;
+            rewards.push(granted + ' ' + (reagent.label || reagentKey));
+            window.SkillSystem?.award?.('foraging', window.SkillSystem?.XP_GAINS?.forage || 4, 'picked cliff herb cluster');
+            window.HobunjiActivityEvents?.emit('herb_picked', { area: currentArea, source: 'miniCliff' });
+            window.AudioSystem?.playObjectSfx?.(window.AudioSystem?.objectSfxConfig?.()?.harvest);
+          } else if (shelf.reward === 'buriedTreasure') {
             const metalLoot = window.WildTreasure?.rollTreasureMetalBarLoot?.() || {}; // Existing wilderness buried-chest metal picker.
             for (const [itemKey, amount] of Object.entries(metalLoot)) {
               inventory[itemKey] = Math.min(window.InventoryStacks.MAX_TOTAL, (inventory[itemKey] || 0) + amount);
@@ -16740,8 +16755,14 @@
         };
         return {
           id: shelf.id + '-resource', col, row, type: 'cliff_balcony_resource',
-          label: shelf.reward === 'oreRock' ? 'Ore Rock' : 'Buried Cliff Chest',
+          label: shelf.reward === 'oreRock' ? 'Ore Rock'
+            : shelf.reward === 'herbCluster' ? 'Herb Cluster' : 'Buried Cliff Chest',
           getButtons() {
+            if (shelf.reward === 'herbCluster') return [{
+              icon: '🌿', label: 'Pick the mini-cliff herb cluster',
+              action: 'obj_balcony_pick', inputAction: 'action1', worldInteraction: true,
+              style: 'primary', allowed: true,
+            }];
             if (shelf.reward === 'oreRock') return [{
               icon: '⛏️', label: 'Mine the balcony ore rock',
               action: 'obj_balcony_mine', inputAction: 'action1', worldInteraction: true,
@@ -16764,13 +16785,14 @@
               if (activeTool !== 'pick' || heldMode !== 'tool') return { ok: false, message: 'Equip a pick to mine this rock.' };
               return award();
             }
-            if (action === 'obj_balcony_dig' && shelf.reward !== 'oreRock' && !state.revealed) {
+            if (action === 'obj_balcony_pick' && shelf.reward === 'herbCluster') return award(); // Direct picking, no shovel.
+            if (action === 'obj_balcony_dig' && shelf.reward === 'buriedTreasure' && !state.revealed) {
               if (activeTool !== 'shovel' || heldMode !== 'tool') return { ok: false, message: 'Equip a shovel to dig here.' };
               window.CliffRouteNetwork.setRewardStage(currentArea, shelf.id, 'revealed');
               awardToolUseMasteryXp('shovel');
               return { ok: true, zoneVisualsUpdated: true, message: 'The dirt breaks away, revealing a buried chest.' };
             }
-            if (action === 'obj_balcony_open' && shelf.reward !== 'oreRock' && state.revealed) {
+            if (action === 'obj_balcony_open' && shelf.reward === 'buriedTreasure' && state.revealed) {
               const valid = () => isAvailable() && window.CliffRouteNetwork.getRewardState(currentArea, shelf.id).revealed;
               const started = window.ChestLockpicking?.open?.({
                 id: shelf.id, title: 'Cliff Chest', tier: 1, valid,
