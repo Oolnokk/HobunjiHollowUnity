@@ -9,7 +9,6 @@
     liveNorthernCliffs: {
       label: 'LIVE — Northern Cliffs exact',
       settings: window.WildernessMapGenerator?.zoneSettings?.('map_northern_cliffs') || { entrySide:'south', preset:'cliffs', boundaryMode:'followMapHeight', boundaryCliffBoost:5, plateauSteepness:1.75 }, // Match the live cliff relief instead of maintaining a separate lab recipe.
-
     },
     liveSouthernCloudForest: {
       label: 'LIVE — Southern Cloud Forest exact',
@@ -23,7 +22,6 @@
     liveWesternSlope: {
       label: 'LIVE — Western Slope exact',
       settings: window.WildernessMapGenerator?.zoneSettings?.('map_western_slope') || { entrySide:'east', preset:'cliffs', boundaryMode:'entrySideDistantLandscape', boundaryCliffBoost:0, plateauSteepness:1.75 }, // Reuse gameplay steepness for exact Western Slope previews.
-
     },
     liveEasternMire: {
       label: 'LIVE — Eastern Mire exact',
