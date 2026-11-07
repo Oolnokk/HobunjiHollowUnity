@@ -329,7 +329,16 @@
       if (!image || !upload(entry.root, image)) throw new Error('Creature art did not redraw.');
       entry.entity._frameAppliedKey = null; // Farm livestock can restore its locomotion frame on the following tick.
     }
+    const liveRoot = entry.kind === 'player' ? playerRoot()
+      : entry.kind === 'npc' ? entry.entity.root
+      : entry.kind === 'creature' ? entry.entity.avatarRef?.group : entry.root;
+    if (liveRoot?.isObject3D) entry.root = liveRoot; // A full player avatar rebuild can replace the original root while the command awaits.
     const state = settings.get(entry.entity);
+    const saved = initial.get(entry.entity);
+    if (state && saved && entry.kind !== 'creature') {
+      for (const axis of ['x', 'y', 'z'])
+        entry.root.scale[axis] = saved.scale[axis] * state.scale[axis] / 100; // Reapply live sizing after an avatar rebuild resets rig transforms.
+    }
     if (state && (state.tint !== '#ffffff' || state.opacity !== 100)) applyFilters(entry);
     scene()?.updateMatrixWorld?.(true);
   }
