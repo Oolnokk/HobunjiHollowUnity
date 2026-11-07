@@ -22,7 +22,7 @@
   let swingSinkAtMs = -Infinity;
   let swingBodyYawDeg = 0;
   let instrumentNoteKey = null; // Latest sounded musical note, sampled below only while its authored animation is active.
-  let instrumentNoteAtMs = -Infinity; // Timestamp for that independent note; no weapon stance is required for flute playing.
+  let instrumentNoteAtMs = -Infinity; // Timestamp for the flute or Kurraya note; no weapon stance is required while playing.
   const idleYaw = { active: false, yawDeg: 0, reason: '' }; // Reused; refilled by WeaponToolStances.idleBodyYawSnapshot.
 
   function enabled() {
@@ -37,7 +37,7 @@
   }
 
   function beginInstrumentNote(key) {
-    if (key !== 'flute') return false; // Kurraya has no body-sink request and keeps its existing held-assembly animation.
+    if (key !== 'flute' && key !== 'kurraya') return false; // Only authored instrument notes may own this separate leg/body channel.
     instrumentNoteKey = key;
     instrumentNoteAtMs = performance.now();
     return true;
@@ -49,8 +49,8 @@
   }
 
   function instrumentNotePose(now) {
-    if (instrumentNoteKey !== 'flute') return null;
-    const action = global.HeldActionAnimations?.flutePlayNote; // This is the same editable action the flute mouth mount samples.
+    const action = instrumentNoteKey === 'flute' ? global.HeldActionAnimations?.flutePlayNote
+      : instrumentNoteKey === 'kurraya' ? global.HeldActionAnimations?.kurrayaPlayNote : null; // Both instruments sample their own actual exported action.
     const durationMs = Math.max(50, (Number(action?.durationS) || 0) * 1000);
     const elapsedMs = now - instrumentNoteAtMs;
     if (!action || !Number.isFinite(elapsedMs) || elapsedMs < 0 || elapsedMs >= durationMs) return null;
@@ -76,13 +76,13 @@
       const engaged = stances.stanceEngaged();
       const now = performance.now();
       const swinging = engaged && now - swingSinkAtMs < SWING_SAMPLE_FRESH_MS && Number.isFinite(swingSinkPct);
-      const notePose = swinging ? null : instrumentNotePose(now); // Actual combat attacks win; otherwise a sounded flute note takes priority over a carried weapon's idle stance.
+      const notePose = swinging ? null : instrumentNotePose(now); // Actual combat attacks win; either sounded instrument note takes priority over idle stance.
       const playingNote = notePose !== null;
       const pct = swinging ? swingSinkPct
         : playingNote ? Math.max(0, Number(notePose.bodySink) || 0)
         : engaged ? (global.SharedAttackPose?.idleBodySinkPct?.() ?? 0) : 0;
       legs.setStanceYawDeg?.(swinging ? swingBodyYawDeg : playingNote ? (Number(notePose.bodyYaw) || 0) : (stances.idleBodyYawSnapshot?.(idleYaw).yawDeg || 0)); // The leg away from the authored turn leads.
-      legs.setStanceDrop(pct / 100 * (legs.modelHeight || 0), swinging || playingNote); // Both attack and flute notes follow their pose; release remains eased.
+      legs.setStanceDrop(pct / 100 * (legs.modelHeight || 0), swinging || playingNote); // Attacks and both instruments follow authored body sink; leg easing remains intact.
       lastReason = swinging ? 'swing-pose' : playingNote ? 'instrument-note' : engaged ? 'idle-stance' : 'no-stance';
     }
 
