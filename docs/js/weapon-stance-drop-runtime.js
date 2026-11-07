@@ -21,6 +21,8 @@
   let swingSinkPct = NaN;
   let swingSinkAtMs = -Infinity;
   let swingBodyYawDeg = 0;
+  let instrumentNoteKey = null; // Latest sounded musical note, sampled below only while its authored animation is active.
+  let instrumentNoteAtMs = -Infinity; // Timestamp for that independent note; no weapon stance is required for flute playing.
   const idleYaw = { active: false, yawDeg: 0, reason: '' }; // Reused; refilled by WeaponToolStances.idleBodyYawSnapshot.
 
   function enabled() {
@@ -32,6 +34,27 @@
     swingSinkPct = Number(pct);
     swingBodyYawDeg = Number(bodyYawDeg) || 0;
     swingSinkAtMs = performance.now();
+  }
+
+  function beginInstrumentNote(key) {
+    if (key !== 'flute') return false; // Kurraya has no body-sink request and keeps its existing held-assembly animation.
+    instrumentNoteKey = key;
+    instrumentNoteAtMs = performance.now();
+    return true;
+  }
+
+  function endInstrumentNote() {
+    instrumentNoteKey = null;
+    instrumentNoteAtMs = -Infinity; // Exiting a music session must never leave a stale crouch behind.
+  }
+
+  function instrumentNotePose(now) {
+    if (instrumentNoteKey !== 'flute') return null;
+    const action = global.HeldActionAnimations?.flutePlayNote; // This is the same editable action the flute mouth mount samples.
+    const durationMs = Math.max(50, (Number(action?.durationS) || 0) * 1000);
+    const elapsedMs = now - instrumentNoteAtMs;
+    if (!action || !Number.isFinite(elapsedMs) || elapsedMs < 0 || elapsedMs >= durationMs) return null;
+    return global.KurrayaInstrument?.notePoseAt?.(action, elapsedMs / durationMs) || null;
   }
 
   function sync() {
@@ -51,11 +74,16 @@
       lastReason = ownsBody ? 'body-pose-owned' : 'disabled';
     } else {
       const engaged = stances.stanceEngaged();
-      const swinging = engaged && performance.now() - swingSinkAtMs < SWING_SAMPLE_FRESH_MS && Number.isFinite(swingSinkPct);
-      const pct = engaged ? (swinging ? swingSinkPct : (global.SharedAttackPose?.idleBodySinkPct?.() ?? 0)) : 0;
-      legs.setStanceYawDeg?.(swinging ? swingBodyYawDeg : (stances.idleBodyYawSnapshot?.(idleYaw).yawDeg || 0)); // The leg on the side away from the turn leads, and swings about its hip so its foot points forward.
-      legs.setStanceDrop(pct / 100 * (legs.modelHeight || 0), swinging); // A playing swing is followed exactly; entering/leaving the stance is eased by the leg handle.
-      lastReason = swinging ? 'swing-pose' : engaged ? 'idle-stance' : 'no-stance';
+      const now = performance.now();
+      const swinging = engaged && now - swingSinkAtMs < SWING_SAMPLE_FRESH_MS && Number.isFinite(swingSinkPct);
+      const notePose = !engaged ? instrumentNotePose(now) : null; // Music plays outside normal weapon stances, so never compete with a combat swing.
+      const playingNote = notePose !== null;
+      const pct = engaged
+        ? (swinging ? swingSinkPct : (global.SharedAttackPose?.idleBodySinkPct?.() ?? 0))
+        : (playingNote ? Math.max(0, Number(notePose.bodySink) || 0) : 0);
+      legs.setStanceYawDeg?.(swinging ? swingBodyYawDeg : playingNote ? (Number(notePose.bodyYaw) || 0) : (stances.idleBodyYawSnapshot?.(idleYaw).yawDeg || 0)); // The leg away from the authored turn leads.
+      legs.setStanceDrop(pct / 100 * (legs.modelHeight || 0), swinging || playingNote); // Both attack and flute notes follow their pose; release remains eased.
+      lastReason = swinging ? 'swing-pose' : engaged ? 'idle-stance' : playingNote ? 'instrument-note' : 'no-stance';
     }
 
     const applied = ownsBody || !enabled() ? 0 : legs.getStanceDrop();
@@ -74,7 +102,9 @@
   global.WeaponStanceDropRuntime = {
     channel: CHANNEL,
     noteSwingSink,
-    getDebug: () => ({ drop: lastDrop, reason: lastReason, swingSinkPct }),
+    beginInstrumentNote,
+    endInstrumentNote,
+    getDebug: () => ({ drop: lastDrop, reason: lastReason, swingSinkPct, instrumentNoteKey, instrumentNoteActive: instrumentNotePose(performance.now()) !== null }),
   };
 
   global.RuntimeFrameScheduler.register('weapon-stance-drop-sync', sync, {
