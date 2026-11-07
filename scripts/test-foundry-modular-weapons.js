@@ -36,7 +36,10 @@ assert.deepEqual(Object.keys(torchShaft.overrides).sort(), Object.keys(blowgunSh
   'all B\'shuakauitl pair fitting/exclusion rules are preserved');
 const originalCompatible = Object.keys(api.getConfig().heads).filter(key => !api.isDisallowed('bshuakauitl', key)); // One truth set, including retired-head restrictions.
 const staffCompatible = Object.keys(api.getConfig().heads).filter(key => !api.isDisallowed('hachutuTorchStaff', key));
-assert.deepEqual(staffCompatible, originalCompatible, 'staff accepts exactly the same heads as B\'shuakauitl');
+assert.deepEqual(staffCompatible, originalCompatible.filter(key => key !== 'pick-shovel-pick'),
+  'Torch-Staff retains the donor head choices except its authored pick-shovel-pick exclusion');
+assert.equal(api.isDisallowed('hachutuTorchStaff', 'pick-shovel-pick'), true,
+  'The committed Torch-Staff override intentionally excludes pick-shovel-pick');
 const copyDraft = plain(api.getConfig()); // Rig-only transform moves sleeve/tang points and attached head geometry while leaving shaft sprite and fire fixed.
 copyDraft.shafts.hachutuTorchStaff.attachmentRigTransform = { scaleX: 1.5, scaleY: 0.75, x: 25, y: -40 };
 api.replace(copyDraft);
