@@ -1132,6 +1132,8 @@
     savedCaveState = saved && typeof saved === 'object' && typeof saved.identity === 'string' && saved.sites && typeof saved.sites === 'object' ? clone(saved) : null;
     stateIdentity = null; // Next access reloads from the restored payload (or the legacy key).
     runtimeStateBySignature.clear();
+    for(const profiles of sitesByZone.values())for(const profile of profiles)
+      if(profile.contents!==TYPES.PUZZLE_CAVE) registerRockPuzzleSite(profile); // Rebind any already-loaded parent maps to their newly restored reciprocal door state.
   }
   function init(injectedDeps) { saveDeps = injectedDeps || null; }
 
