@@ -498,7 +498,8 @@
     if (modeBtnEl) { modeBtnEl.disabled = !!proposedEcho; modeBtnEl.hidden = !!proposedEcho; } // Ruin echoes use puzzle-only controls; restore the performance switch on close.
     switchInstrumentMode('puzzle'); // Puzzle is always the default.
     startModeToggle();
-    if (instrumentKey === 'flute') window.KurrayaInstrument?.beginFlute?.(); // Shares the authored blowgun mouth-aim pose for every sounded note.
+    if (instrumentKey === 'flute') window.KurrayaInstrument?.beginFlute?.(); // A flute session has its own mouth-held gameplay animation.
+    else if (instrumentKey === 'kurraya') window.KurrayaInstrument?.beginPlayerKurraya?.(); // Enables player-only plucking-hand animation; NPCs have their own note clocks.
     deps.beginMusicCamera?.(null);
     deps.refreshActionBar?.();
     setHostChromeSuppressed(true);
@@ -510,6 +511,7 @@
     const { area, mode } = playerSession;
     playerSession = null;
     window.KurrayaInstrument?.endFlute?.(); // Stops the head-mounted flute without disturbing Kurraya or any other equipped gear.
+    window.KurrayaInstrument?.endPlayerKurraya?.(); // Releases free-hand ownership when the player leaves the Kurraya session.
     overlayEl?.classList.remove('open');
     if (modeBtnEl) { modeBtnEl.disabled = false; modeBtnEl.hidden = false; }
     if (overlayEl?.dataset) delete overlayEl.dataset.instrumentMode;
@@ -592,7 +594,10 @@
   function animatePlayerNote() {
     if (!playerSession) return; // Only the local player's sounded notes animate their equipped instrument.
     if (playerSession.instrumentKey === 'flute') window.KurrayaInstrument?.playFluteNote?.();
-    else deps?.triggerPlayerKurrayaTwitch?.(); // The assembly uses Kurraya — Play Note's independent pose.
+    else {
+      window.KurrayaInstrument?.playPlayerKurrayaNote?.(); // Uses the same sounded note for the independently authored right hand.
+      deps?.triggerPlayerKurrayaTwitch?.(); // Keeps the existing responsive two-plane assembly animation.
+    }
   }
   function onSoundedNote(data, source) {
     if (source === frameEl?.contentWindow) {
