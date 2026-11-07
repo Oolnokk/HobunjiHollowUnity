@@ -1025,6 +1025,18 @@
     "icon": "🍯",
     "cat": "ingredient"
   },
+  "mootHide": {
+    "key": "mootHide",
+    "label": "Moot Hide",
+    "icon": "🟫",
+    "cat": "material"
+  },
+  "mootMeat": {
+    "key": "mootMeat",
+    "label": "Moot Meat",
+    "icon": "🥩",
+    "cat": "ingredient"
+  },
   "mulch": {
     "key": "mulch",
     "label": "Mulch",
