@@ -688,6 +688,7 @@
           if (!buffer?.duration) throw new Error('combat audio decoded an empty clip');
           entry.buffer = buffer; entry.state = 'ready';
           if (entry.url === combatSfxConfig().soursapSplat?.url) prepareSoursapIndependentClip(entry); // Render the splat's independent -12 st / 80% tempo waveform once, ahead of the first impact.
+          if (entry.url === combatSfxConfig().quickAttackBonusSlash?.url) prepareComboFinisherSlashClips(entry); // Pre-render the two pitch-shifted, triple-speed finisher cues before an impact.
         })
         .catch(error => {
           entry.state = 'failed';
@@ -734,6 +735,36 @@
     }).catch(error => {
       combatSpatialLastError = 'soursap independent-pitch rendering: ' + (error?.message || error);
     }).finally(() => { soursapRenderPending = null; });
+  }
+
+  const COMBO_FINISHER_SLASH_TEMPO = 3; // Both finisher cues play in one-third the original duration.
+  const COMBO_FINISHER_SLASH_VOLUME = 0.8; // Relative to the existing anime-slash cue and the global SFX mixer.
+  const COMBO_FINISHER_SLASH_PITCHES = [-5, -6]; // First and second consecutive cues, in semitones.
+  let comboFinisherSlashSource = null; // Tracks the decoded original to invalidate both independently processed clips when the asset changes.
+  let comboFinisherSlashClips = null; // Ready-to-schedule audio; reused across impacts to avoid combat-time DSP.
+  let comboFinisherSlashPending = null; // Prevents duplicate render jobs while the two pitch variants prepare.
+  function prepareComboFinisherSlashClips(entry) {
+    if (!entry?.buffer || !combatPositionalContext) return;
+    const renderer = window.AnimalVoiceIndependentPlayback?.renderDecodedIndependentBuffer; // The existing WSOLA pipeline changes tempo independently of pitch.
+    if (typeof renderer !== 'function') return;
+    if (comboFinisherSlashSource !== entry.buffer) {
+      comboFinisherSlashSource = entry.buffer;
+      comboFinisherSlashClips = null;
+      comboFinisherSlashPending = null;
+    }
+    if (comboFinisherSlashClips || comboFinisherSlashPending) return;
+    const pending = Promise.all(COMBO_FINISHER_SLASH_PITCHES.map(pitchSemitones =>
+      renderer(entry.buffer, combatPositionalContext, {
+        tempo: COMBO_FINISHER_SLASH_TEMPO, pitchSemitones, trimSilence: false, tailPadS: 0, edgeFadeS: 0,
+      }))); // Cache both full-length source waveforms compressed to one-third duration, each with its own lowered pitch.
+    comboFinisherSlashPending = pending;
+    pending.then(clips => {
+      if (comboFinisherSlashSource === entry.buffer) comboFinisherSlashClips = clips;
+    }).catch(error => {
+      combatSpatialLastError = 'combo finisher slash render: ' + (error?.message || error);
+    }).finally(() => {
+      if (comboFinisherSlashPending === pending) comboFinisherSlashPending = null;
+    });
   }
 
   function preloadSpecialCombatSfx() {
@@ -826,7 +857,7 @@
     return { node: null, backend: 'mono-fallback', dispose() {} };
   }
 
-  function playDecodedCombatSfx(cfgEntry, volume, rate, spatial, bufferOverride = null) {
+  function playDecodedCombatSfx(cfgEntry, volume, rate, spatial, bufferOverride = null, startAt = null) {
     const entry = combatDecodedByUrl.get(cfgEntry.url);
     const ctx = combatPositionalContext;
     const playbackBuffer = bufferOverride || entry?.buffer; // Only independently rendered splats replace a clip; all other combat SFX use their cached original.
@@ -864,7 +895,7 @@
         try { wet?.send?.disconnect?.(); } catch (_) {}
       }
       source.onended = cleanup;
-      source.start();
+      source.start(Number.isFinite(startAt) ? Math.max(ctx.currentTime, startAt) : 0); // Optional sample-accurate scheduling keeps two finisher slashes strictly consecutive.
       activePositionalCombat.add(handle);
       combatSpatialBackend = route.backend;
       combatSpatialStarts++;
@@ -1490,6 +1521,50 @@
     playOneShotSfx(cfgEntry, spatial.gain, 1, spatial);
   }
 
+  function playComboFinisherBonusSfx(x, y, areaId) {
+    if (areaId !== deps?.getCurrentArea?.()) return;
+    const audioCfg = gameAudioConfig(); // Matches Quick Attack's global and combat-SFX mute switches.
+    if (audioCfg.enabled === false || combatSfxConfig().enabled === false) return;
+    const cfgEntry = combatSfxConfig().quickAttackBonusSlash; // Same authored anime-slash file, separate finisher treatment.
+    if (!cfgEntry?.url) return;
+    const spatial = combatAudioSpatial({ x, y, areaId }, { earshotTiles: 9 }); // Identical earshot/panning to an ordinary Quick Attack bonus.
+    if (spatial.gain <= 0.002) return;
+    const volume = Math.max(0, Math.min(1, Number(cfgEntry.volume) || 0.8)) * Math.max(0, Number(audioCfg.sfxVolume ?? 1))
+      * spatial.gain * COMBO_FINISHER_SLASH_VOLUME; // Both hits use 80% of the normal slash volume, preserving distance attenuation.
+    if (volume <= 0.002) return;
+    const entry = combatDecodedByUrl.get(cfgEntry.url); // Reads the shared preload cache, not a second fetch/decode pipeline.
+    if (entry?.buffer) prepareComboFinisherSlashClips(entry);
+    else prepareCombatPositionalClip(cfgEntry.url, true);
+    resumeCombatPositionalContext();
+    const clips = comboFinisherSlashSource === entry?.buffer ? comboFinisherSlashClips : null; // No stale render may play after the underlying asset changes.
+    const ctx = combatPositionalContext; // Sample-accurate start times are available only when the Web Audio route is running.
+    if (ctx?.state === 'running' && clips?.length === 2 && clips.every(clip => clip?.buffer && clip.durationS > 0)) {
+      const startAt = ctx.currentTime + 0.005; // Short scheduling lead prevents audible gaps on mobile.
+      const first = playDecodedCombatSfx(cfgEntry, volume, clips[0].playbackRate, spatial, clips[0].buffer, startAt);
+      const second = first && playDecodedCombatSfx(cfgEntry, volume, clips[1].playbackRate, spatial, clips[1].buffer, startAt + clips[0].durationS); // Second starts exactly as the first finishes.
+      if (first && second) {
+        recordCombatSfx('comboFinisherDoubleSlash', cfgEntry, { tempo: COMBO_FINISHER_SLASH_TEMPO, semitones: COMBO_FINISHER_SLASH_PITCHES, volumeScale: COMBO_FINISHER_SLASH_VOLUME, backend: 'independent-WSOLA' });
+        return;
+      }
+      first?.pause?.();
+      second?.pause?.();
+    }
+    if (typeof Audio !== 'function') return;
+    // Emergency mobile fallback while decoding/rendering: preserve lower pitches and ordered playback, but the native rate couples pitch and tempo.
+    const playNativePart = index => {
+      if (gameAudioConfig().enabled === false || combatSfxConfig().enabled === false) return;
+      const snd = trackActiveSfx(new Audio(cfgEntry.url)); // New element per part avoids pool reuse cutting a previous attack short.
+      snd.playbackRate = COMBO_FINISHER_SLASH_TEMPO * Math.pow(2, COMBO_FINISHER_SLASH_PITCHES[index] / 12); // Pitch-correct fallback is a little longer than one-third duration.
+      if ('preservesPitch' in snd) snd.preservesPitch = false;
+      if ('webkitPreservesPitch' in snd) snd.webkitPreservesPitch = false;
+      if ('mozPreservesPitch' in snd) snd.mozPreservesPitch = false;
+      if (index === 0) snd.addEventListener?.('ended', () => playNativePart(1), { once: true }); // True end-to-start sequencing, not two overlapping play() calls.
+      playSfxAudioElement(snd, volume, Number(cfgEntry.gainBoost) || 1);
+    };
+    recordCombatSfx('comboFinisherDoubleSlash', cfgEntry, { tempo: COMBO_FINISHER_SLASH_TEMPO, semitones: COMBO_FINISHER_SLASH_PITCHES, volumeScale: COMBO_FINISHER_SLASH_VOLUME, backend: 'native-coupled-fallback' });
+    playNativePart(0);
+  }
+
   function playSoursapBurstSfx(x, y, areaId) {
     if (areaId !== deps?.getCurrentArea?.() || gameAudioConfig().enabled === false || combatSfxConfig().enabled === false) return;
     const cfgEntry = combatSfxConfig().soursapSplat; // Exactly the Drenkirra pellet recording, but separately transposed and slowed.
@@ -1669,6 +1744,7 @@
     playWeaponSlashSfx,
     playWeaponHitSfx,
     playQuickAttackBonusSfx,
+    playComboFinisherBonusSfx,
     playSoursapBurstSfx,
     playCounterShieldBlockSfx,
     playRangedImpactSfx,
