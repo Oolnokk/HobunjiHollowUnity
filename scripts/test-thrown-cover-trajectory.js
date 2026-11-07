@@ -19,7 +19,7 @@ const window = {
 const context = { window }; // Standalone module does not boot the WebGL/game runtime.
 vm.runInNewContext(source, vm.createContext(context), { filename:'throw-cover-trajectory.js' });
 const resolver = window.ThrowCoverTrajectory;
-assert(resolver?.resolve && resolver?.sweep, 'shared cover module exports its expected APIs');
+assert(resolver?.resolve && resolver?.sweep && resolver?.sweepFlight, 'shared cover module exports its expected APIs');
 const opts = {
   deps: {
     TILE:64,
@@ -37,6 +37,10 @@ assert(Math.abs(result.target.x - desired.x)<0.0001);
 state.coverTop=0.25;
 result=resolver.resolve(origin,desired,opts);
 assert.equal(result.blocked,false,'a low obstacle can be cleared by the physical throw arc');
+state.coverTop=1.3;
+assert(resolver.sweep(origin,desired,opts), 'a straight chord would incorrectly hit mid-height cover');
+assert.equal(resolver.sweepFlight(origin,desired,0,1,opts),null,
+  'a long frame sweeps the curved arc rather than the blocked straight chord');
 state.coverTop=Infinity;
 result=resolver.resolve(origin,desired,opts);
 assert.equal(result.blocked,true,'tall cover blocks even the high arc');
