@@ -358,8 +358,9 @@
           if(!Number.isFinite(localY))throw new Error('V50 emitted an invalid native plateau height');
           minLocalY=Math.min(minLocalY,localY);maxLocalY=Math.max(maxLocalY,localY);
         }
+        const corridorWallHeight=Math.max(2.24,Number(meta.wallHeight)||3); // Native connector walls must meet the same V50 ceiling as the offshoot rooms.
         const gridBaseY=floor.y+Math.floor(minLocalY); // V50 plateaus may lie above OR below the story datum.
-        const gridLevels=Math.max(3,Math.ceil(floor.y+maxLocalY+2.5-gridBaseY));
+        const gridLevels=Math.max(3,Math.ceil(floor.y+maxLocalY+Math.max(2.5,corridorWallHeight)-gridBaseY));
         if(gridLevels>12)throw new Error('Native V50 plateau exceeds the supported story collision envelope');
         const grid=CG.create({originX:xmin-1,originZ:zmin-1,
           baseY:gridBaseY,cols:xmax-xmin+3,rows:zmax-zmin+3,levels:gridLevels});
@@ -380,7 +381,7 @@
             if(all.has(neighbor))adjacent.push(heights.get(neighbor)??0);
           }
           const wallBottom=floor.y+Math.min(0,...adjacent);
-          const wallTop=floor.y+Math.max(0,...adjacent)+2.24;
+          const wallTop=floor.y+Math.max(0,...adjacent)+corridorWallHeight;
           grid.fillBox(col,row,grid.yToLevel(wallBottom+.01),
             col,row,grid.yToLevel(wallTop-.01),CG.KIND.SOLID);
         }
@@ -427,14 +428,14 @@
           if(!positions.length)return;
           const wall=new THREE.InstancedMesh(geometry,material,positions.length);
           wall.name=name;
-          positions.forEach(([x,z],i)=>wall.setMatrixAt(i,matrix.makeTranslation(x,floor.y+1.12,z)));
+          positions.forEach(([x,z],i)=>wall.setMatrixAt(i,matrix.makeTranslation(x,floor.y+corridorWallHeight/2,z)));
           wall.instanceMatrix.needsUpdate=true;
           group.add(wall);
         };
         wallBatch('native-v50-corridor-north-south-'+item.floor,
-          routeX,new THREE.BoxGeometry(1,2.24,.12));
+          routeX,new THREE.BoxGeometry(1,corridorWallHeight,.12));
         wallBatch('native-v50-corridor-east-west-'+item.floor,
-          routeZ,new THREE.BoxGeometry(.12,2.24,1));
+          routeZ,new THREE.BoxGeometry(.12,corridorWallHeight,1));
         const record={floor:item.floor,group,nativeRoot,particles,analysis,place,grid,meta,
           route,routeWallSegments:routeX.length+routeZ.length, // Retain exact V50 floor topology for developer-mode automated reachability checks; no second generated model.
 
