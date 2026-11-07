@@ -10,104 +10,194 @@
 
   const CAVERN_ORE_TINTS = { stone: 0x8a8680, copper: 0xb87333, tinCopper: 0xb66a2e, mushistonite: 0xcd7f32, tin: 0xc8ccd0, lead: 0x6d7375, arsenic: 0xaaa58f, silver: 0xc4c8ce, gold: 0xd8b23a }; // Legacy/debug swatches show metal-bodied rock base hues; materialFor adds separate verdigris markings.
 
-  const separatorCracks = new Map(); // Map id -> scene and live crack set, allowing O(1) removals when one mineable wall rock breaks.
-  const rockMaps = new Map(); // Map id -> live ore mesh index; explosions never traverse the entire cave scene.
-  const rockScenes = new Map(); // Map id -> scene owning the indexed ore meshes, used by Sense Mode to avoid stale caves.
-  const SEPARATOR_ROCK_HEIGHT=2.25; // Visually closes the mineable corridor up to the cave roof, without changing one-rock-per-tile mining rules.
-  function rockNoise(col,row,index,coordinate) {
-    // Stable per-rock/per-vertex displacement: duplicate vertices remain welded after flat-shaded geometry is distorted.
-    const n=Math.sin((col+1)*37.71+(row+1)*83.13+(index+1)*127.19+coordinate*51.77)*43758.5453;
-    return n-Math.floor(n);
+
+  const rockMaps = new Map(); // Per-cave tile -> logical mineable rock group; removing a tile keeps the existing pickaxe/blast contract.
+  const rockScenes = new Map(); // Per-cave scene owner for Sense Mode, so stale caves cannot leak highlights.
+  const separatorWalls = new Map(); // Per-cave fused mesh, still-live diggable tiles and permanent carved puzzle-door openings.
+  const ROCK_SAMPLE_STEP = 0.25; // World units per sculpting sample; fine enough for a visibly carved single-tile opening.
+  const ROCK_EDGES = [[0,1],[0,2],[0,3],[1,2],[1,3],[2,3]];
+  const ROCK_TETRAHEDRA = [[0,5,1,6],[0,1,2,6],[0,2,3,6],[0,3,7,6],[0,7,4,6],[0,4,5,6]];
+  const ROCK_CORNERS = [[0,0,0],[1,0,0],[1,1,0],[0,1,0],[0,0,1],[1,0,1],[1,1,1],[0,1,1]];
+
+  function roundedRectangle(a, b, halfA, halfB, radius) {
+    const x=Math.abs(a)-halfA,y=Math.abs(b)-halfB;
+    return Math.hypot(Math.max(x,0),Math.max(y,0))+Math.min(Math.max(x,y),0)-radius;
   }
-  function separatorRockMass(THREE,rock,material) {
-    if(typeof THREE.IcosahedronGeometry!=='function')return null; // Headless tooling without polyhedron geometry keeps the ordinary rock fallback.
-    const group=new THREE.Group(); // One logical tile becomes a cluster of overlapping faceted boulders, never a rectangular cube.
-    const lobes=[
-      {x:0,y:1.08,z:0,r:.76,sx:.91,sy:1.47,sz:.91},
-      {x:-.25,y:.49,z:.15,r:.49,sx:1.01,sy:.83,sz:.91},
-      {x:.27,y:1.60,z:-.14,r:.47,sx:.85,sy:.95,sz:1.03},
-    ]; // Irregular silhouettes merge visually with neighbouring mineable rocks; each entire tile still breaks as one piece.
-    for(let i=0;i<lobes.length;i++){
-      const shape=lobes[i],geometry=new THREE.IcosahedronGeometry(shape.r,1);
-      const vertices=geometry.getAttribute?.('position'); // Use the existing Three.js buffer vertex contract; keep seam vertices identical.
-      if(vertices){
-        for(let j=0;j<vertices.count;j++){
-          const x=vertices.getX(j),y=vertices.getY(j),z=vertices.getZ(j);
-          const code=Math.round(x*400)+Math.round(y*400)*131+Math.round(z*400)*8191; // Same source corner on split faces gets the same deformation.
-          const wobble=.88+rockNoise(rock.col,rock.row,i,code)*.24;
-          vertices.setXYZ(j,x*wobble,y*wobble,z*wobble);
+
+  function roundedBox(a,b,c,halfA,halfB,halfC,radius) {
+    const x=Math.abs(a)-halfA,y=Math.abs(b)-halfB,z=Math.abs(c)-halfC;
+    return Math.hypot(Math.max(x,0),Math.max(y,0),Math.max(z,0))
+      +Math.min(Math.max(x,y,z),0)-radius;
+  }
+
+  function smoothUnion(a,b,radius) {
+    if(!Number.isFinite(a))return b;
+    const h=Math.max(radius-Math.abs(a-b),0)/radius;
+    return Math.min(a,b)-h*h*radius*.25;
+  }
+
+  function doorOpeningFor(wall, plan) {
+    const door=plan?.puzzleDoor;
+    if(!door||!Number.isFinite(door.col)||!Number.isFinite(door.row))return null;
+    let nearest=null,best=Infinity; // Nearest barrier cell defines the visible stone doorway's normal.
+    for(const tile of wall.tiles.values()){
+      const ds=(door.col-tile.col)**2+(door.row-tile.row)**2;
+      if(ds<best){best=ds;nearest=tile;}
+    }
+    if(!nearest)return null;
+    const nx=door.col-nearest.col,nz=door.row-nearest.row,length=Math.hypot(nx,nz)||1;
+    return {x:door.col+.5,z:door.row+.5,nx:nx/length,nz:nz/length};
+  }
+
+  function rockField(wall,x,y,z) {
+    // One signed solid for the entire barrier: neighboring stones are unioned
+    // BEFORE triangulation. No overlapping icosahedra or exposed intersection seams.
+    let body=Infinity;
+    const col=Math.floor(x),row=Math.floor(z); // Only the immediately surrounding logical tiles can reach this probe.
+    for(let dr=-1;dr<=1;dr++)for(let dc=-1;dc<=1;dc++){
+      if(!wall.tiles.has((col+dc)+','+(row+dr)))continue;
+      const dx=x-(col+dc+.5),dz=z-(row+dr+.5);
+      const side=roundedRectangle(dx,dz,.46,.46,.12); // Slight overlap, with corner rounding and a natural chiseled boundary.
+      const column=Math.max(side,-y-.3,y-wall.height);
+      body=smoothUnion(body,column,.16);
+    }
+    // Deterministic low-frequency stone undulation runs continuously across
+    // tile boundaries. It also appears on fresh mining cuts, never an empty/black plane.
+    if(Number.isFinite(body))body+=.055*Math.sin(x*3.7+y*1.8+Math.sin(z*2.4))
+      *Math.cos(z*3.3-y*1.45)+.03*Math.sin(x*6.1+z*4.5+y*2.8);
+
+    if(wall.door){
+      const door=wall.door,dx=x-door.x,dz=z-door.z;
+      const across=-door.nz*dx+door.nx*dz,depth=door.nx*dx+door.nz*dz;
+      const doorwayRock=roundedBox(across,y-1.47,depth,.66,1.50,.29,.14);
+      body=smoothUnion(body,doorwayRock,.12); // Stone piers and lintel join the same fused surface where they touch.
+      const opening=roundedBox(across,y-.90,depth,.37,1.03,.65,.07);
+      body=Math.max(body,-opening); // Subtract a through-hole, exposing closed, sculpted stone jambs and soffit.
+    }
+    return body;
+  }
+
+  function fusedRockGeometry(THREE,wall) {
+    if(typeof THREE.BufferGeometry!=='function'||typeof THREE.Float32BufferAttribute!=='function')return null;
+    const positions=[],uvs=[]; // Non-indexed triangles deliberately retain the low-poly, fractured stone shading.
+    const step=ROCK_SAMPLE_STEP,bounds=wall.bounds;
+    const nx=Math.ceil((bounds.maxX-bounds.minX)/step)+1;
+    const nz=Math.ceil((bounds.maxZ-bounds.minZ)/step)+1;
+    const ny=Math.ceil((wall.height+1.15)/step)+1;
+    const xs=Array.from({length:nx},(_,i)=>bounds.minX+i*step);
+    const ys=Array.from({length:ny},(_,i)=>-.6+i*step);
+    const zs=Array.from({length:nz},(_,i)=>bounds.minZ+i*step);
+    const samples=new Float32Array(nx*ny*nz); // Cached scalar samples: no duplicate SDF evaluations between adjacent tetrahedra.
+    const at=(i,j,k)=>(k*ny+j)*nx+i;
+    for(let k=0;k<nz;k++)for(let j=0;j<ny;j++)for(let i=0;i<nx;i++)
+      samples[at(i,j,k)]=rockField(wall,xs[i],ys[j],zs[k]);
+    function addTriangle(a,b,c,inside,outside){
+      const ab=[b[0]-a[0],b[1]-a[1],b[2]-a[2]],ac=[c[0]-a[0],c[1]-a[1],c[2]-a[2]];
+      const normal=[ab[1]*ac[2]-ab[2]*ac[1],ab[2]*ac[0]-ab[0]*ac[2],ab[0]*ac[1]-ab[1]*ac[0]];
+      const outward=[outside[0]-inside[0],outside[1]-inside[1],outside[2]-inside[2]];
+      if(normal[0]*outward[0]+normal[1]*outward[1]+normal[2]*outward[2]<0){const temp=b;b=c;c=temp;}
+      const ax=Math.abs(normal[0]),ay=Math.abs(normal[1]),az=Math.abs(normal[2]);
+      for(const p of [a,b,c]){
+        positions.push(p[0],p[1],p[2]);
+        if(ay>=ax&&ay>=az)uvs.push(p[0]*.45,p[2]*.45);
+        else if(ax>az)uvs.push(p[2]*.45,p[1]*.45);
+        else uvs.push(p[0]*.45,p[1]*.45);
+      }
+    }
+    const p=Array.from({length:8},()=>[0,0,0]),v=new Array(8);
+    for(let k=0;k<nz-1;k++)for(let j=0;j<ny-1;j++)for(let i=0;i<nx-1;i++){
+      let hasSolid=false,hasAir=false;
+      for(let c=0;c<8;c++){
+        const offset=ROCK_CORNERS[c],ix=i+offset[0],jy=j+offset[1],kz=k+offset[2];
+        p[c][0]=xs[ix];p[c][1]=ys[jy];p[c][2]=zs[kz];
+        v[c]=samples[at(ix,jy,kz)];
+        if(v[c]<0)hasSolid=true;else hasAir=true;
+      }
+      if(!hasSolid||!hasAir)continue; // Only boundary cubes emit geometry; solid joins have no hidden internal faces.
+      for(const tet of ROCK_TETRAHEDRA){
+        const solid=tet.filter(c=>v[c]<0),air=tet.filter(c=>v[c]>=0);
+        if(!solid.length||!air.length)continue;
+        const inside=[0,0,0],outside=[0,0,0];
+        for(const c of solid)for(let d=0;d<3;d++)inside[d]+=p[c][d]/solid.length;
+        for(const c of air)for(let d=0;d<3;d++)outside[d]+=p[c][d]/air.length;
+        const crosses=[];
+        for(const [ia,ib] of ROCK_EDGES){
+          const a=tet[ia],b=tet[ib];
+          if((v[a]<0)===(v[b]<0))continue;
+          const t=v[a]/(v[a]-v[b]);
+          crosses.push([p[a][0]+(p[b][0]-p[a][0])*t,
+            p[a][1]+(p[b][1]-p[a][1])*t,
+            p[a][2]+(p[b][2]-p[a][2])*t]);
         }
-        vertices.needsUpdate=true;
-        geometry.computeVertexNormals?.();
-      }
-      const mesh=new THREE.Mesh(geometry,material);
-      mesh.name='cave_separator_mineable_rock_mass';
-      mesh.position.set(shape.x,shape.y,shape.z);
-      mesh.scale.set(shape.sx,shape.sy,shape.sz);
-      mesh.rotation.y=rockNoise(rock.col,rock.row,i,19)*Math.PI*2;
-      mesh.castShadow=mesh.receiveShadow=true;
-      mesh.userData.caveSeparatorMass=true; // Debug/Sense Mode can distinguish destructible wall rock from the immutable cavern shell.
-      group.add(mesh);
-    }
-    group.userData.caveSeparatorHeight=SEPARATOR_ROCK_HEIGHT;
-    return group;
-  }
-  function crackRibbons(THREE, col, row) {
-    const group = new THREE.Group(); // Individual fracture faces, separate from the parent rock's solid hitbox.
-    const vertices = []; // Batched ragged ribbons are the non-glowing analogue of Hronal exploding-pillar fissures.
-    const radius = .37;
-    for (let side = 0; side < 4; side++) {
-      const axisX = side >= 2, sign = side % 2 ? -1 : 1;
-      const points = [];
-      for (let i = 0; i < 7; i++) {
-        const h = .10 + i * .098, along = .085 * Math.sin(i*2.31 + col*3 + row*7 + side);
-        points.push({ x:axisX ? sign*radius : along, y:h, z:axisX ? along : sign*radius });
-      }
-      for (let i = 0; i < points.length-1; i++) {
-        const a=points[i],b=points[i+1],d=.014;
-        const offset=axisX ? [0,0,d] : [d,0,0];
-        const leftA=[a.x-offset[0],a.y,a.z-offset[2]],rightA=[a.x+offset[0],a.y,a.z+offset[2]];
-        const leftB=[b.x-offset[0],b.y,b.z-offset[2]],rightB=[b.x+offset[0],b.y,b.z+offset[2]];
-        vertices.push(...leftA,...rightA,...leftB,...rightA,...rightB,...leftB);
+        if(crosses.length===3)addTriangle(crosses[0],crosses[1],crosses[2],inside,outside);
+        else if(crosses.length===4){
+          // Sort the coplanar cuts around the centroid before closing the quad.
+          const centroid=crosses.reduce((a,c)=>[a[0]+c[0]/4,a[1]+c[1]/4,a[2]+c[2]/4],[0,0,0]);
+          const outward=[outside[0]-inside[0],outside[1]-inside[1],outside[2]-inside[2]];
+          const axis=outward.map(Math.abs).indexOf(Math.max(...outward.map(Math.abs)));
+          const u=(axis+1)%3,w=(axis+2)%3;
+          crosses.sort((a,b)=>Math.atan2(a[w]-centroid[w],a[u]-centroid[u])
+            -Math.atan2(b[w]-centroid[w],b[u]-centroid[u]));
+          addTriangle(crosses[0],crosses[1],crosses[2],inside,outside);
+          addTriangle(crosses[0],crosses[2],crosses[3],inside,outside);
+        }
       }
     }
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
-    geometry.computeVertexNormals();
-    const mesh = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({
-      color:0x292a2d, side:THREE.DoubleSide, depthWrite:false,
-      polygonOffset:true, polygonOffsetFactor:-1, polygonOffsetUnits:-2,
-    })); // Matte hairline cracks until Perception Mode's green interaction mask lights them.
-    mesh.name = 'cave_separator_hronal_style_cracks';
-    group.add(mesh);
-    group.userData.caveSeparatorCracks = true;
-    return group;
+    const geometry=new THREE.BufferGeometry();
+    geometry.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));
+    geometry.setAttribute('uv',new THREE.Float32BufferAttribute(uvs,2));
+    geometry.computeVertexNormals?.();
+    geometry.computeBoundingSphere?.();
+    geometry.userData={caveFusedRockTriangles:positions.length/9};
+    return geometry;
   }
+
+  function rebuildSeparatorWall(mapId) {
+    const wall=separatorWalls.get(mapId);
+    if(!wall)return;
+    const THREE=window.THREE;
+    const geometry=fusedRockGeometry(THREE,wall); // Re-mesh every exposed side after each pickaxe strike or Shattercask tile removal.
+    if(!geometry)return;
+    const next=new THREE.Mesh(geometry,wall.material);
+    next.name='cave_separator_fused_sculpted_wall';
+    next.userData.caveSeparatorMass=true;
+    next.userData.caveSeparatorFused=true;
+    next.userData.caveSeparatorHeight=wall.height;
+    next.userData.caveSeparatorLiveTiles=wall.tiles.size; // Mobile scene-inspector reports actual mined openings without devtools.
+    next.userData.caveSeparatorDoorOpening=!!wall.door;
+    next.castShadow=next.receiveShadow=true;
+    window.OreRockTextures.fitRockMesh(next); // Shares existing stone/ore look and its continuous texture ownership.
+    wall.mesh?.parent?.remove(wall.mesh);
+    wall.mesh?.geometry?.dispose?.(); // Retire old triangulation, but keep the shared authored ore material and its texture.
+    wall.mesh=next;
+    wall.scene.add(next);
+    deps.markOutline(next);
+  }
+
   function senseTargets(scene) {
-    // Every intact, diggable ore mound (including a separator's actual rock)
-    // highlights, but the giant surrounding cave shell never does.
-    const roots = []; // Scene-local ore groups; the per-tile index is already maintained by build/removeVisual.
-    for (const [mapId, rocks] of rockMaps) {
-      if (rockScenes.get(mapId) !== scene) continue;
-      for (const group of rocks.values()) if (group.parent === scene) roots.push(group);
+    const roots=[]; // Ordinary ore remains per-tile; a fused separator must be highlighted only once.
+    for(const [mapId,rocks] of rockMaps){
+      if(rockScenes.get(mapId)!==scene)continue;
+      for(const group of rocks.values())if(group.parent===scene&&!group.userData?.caveSeparatorTile)roots.push(group);
+      const wall=separatorWalls.get(mapId);
+      if(wall?.mesh?.parent===scene)roots.push(wall.mesh);
     }
     return roots;
   }
 
   function removeVisual(mapId,col,row) {
-    const rocks = rockMaps.get(mapId) || deps?.zoneMineableRockMeshes?.get?.(mapId);
-    const tileId = col+','+row;
-    const group = rocks?.get(tileId);
-    if (!group) return false;
-    rocks.delete(tileId);
-    const record = separatorCracks.get(mapId);
-    for (const child of group.children) if (child.userData?.caveSeparatorCracks) record?.meshes.delete(child);
+    const rocks=rockMaps.get(mapId)||deps?.zoneMineableRockMeshes?.get?.(mapId);
+    const id=col+','+row,group=rocks?.get(id);
+    if(!group)return false;
+    rocks.delete(id);
+    const wall=separatorWalls.get(mapId);
+    if(group.userData?.caveSeparatorTile&&wall?.tiles.delete(id))rebuildSeparatorWall(mapId);
     group.parent?.remove(group);
-    group.traverse(node => {
+    group.traverse(node=>{
       node.geometry?.dispose?.();
-      if (Array.isArray(node.material)) {
-        for (const material of node.material) if (!material?.userData?.sharedOreRockMaterial) material?.dispose?.();
-      } else if (!node.material?.userData?.sharedOreRockMaterial) node.material?.dispose?.(); // Do not dispose shared ore textures while other rocks still display them.
+      if(Array.isArray(node.material)){
+        for(const material of node.material)if(!material?.userData?.sharedOreRockMaterial)material?.dispose?.();
+      }else if(!node.material?.userData?.sharedOreRockMaterial)node.material?.dispose?.();
     });
     return true;
   }
@@ -123,48 +213,50 @@
     // forgetZoneDenState) so removeZoneMineableRockVisual never targets an
     // orphaned rock group from a layout that no longer exists.
     const oreRockMeshes = new Map();
-    separatorCracks.delete(mapId); // The new scene replaces the old registry without retaining old render roots.
-    rockMaps.set(mapId, oreRockMeshes); // Direct tile lookup for blasting, independent of scene graph size.
-    rockScenes.set(mapId, scene); // Ignore leftover registries from other cave scenes during Sense Mode refresh.
-    const cracks = new Set(); // O(1) removal from active Sense Mode fracture registration.
-    if (mapData.oreRocks?.length) deps.zoneMineableRockMeshes.set(mapId, oreRockMeshes);
-    for (const rock of (mapData.oreRocks || [])) {
-      if (grid[rock.row]?.[rock.col]) {
-        grid[rock.row][rock.col].type = deps.TileType.ROCK;
-        grid[rock.row][rock.col].rockKind = 'diggableRockOre';
-        grid[rock.row][rock.col].oreKind = rock.oreKind;
-        // A real ore look (game.js ORE_DEFS key) drops that ore when mined,
-        // through the same tile.oreKey path Town Mine nodes use; stone-look
-        // rocks keep dropping stone only.
-        grid[rock.row][rock.col].oreKey = deps.oreDefs?.[rock.oreKey || rock.oreKind] ? (rock.oreKey || rock.oreKind) : null;
-        grid[rock.row][rock.col].caveSeparator = rock.caveSeparator === true; // Used by shattercask blast to clear all barrier strata.
+    const stale=separatorWalls.get(mapId);
+    if(stale){stale.mesh?.parent?.remove(stale.mesh);stale.mesh?.geometry?.dispose?.();separatorWalls.delete(mapId);}
+    rockMaps.set(mapId,oreRockMeshes); // Rebuilt caves replace stale tile indices completely.
+    rockScenes.set(mapId,scene);
+    const barriers=(mapData.oreRocks||[]).filter(rock=>rock.caveSeparator);
+    if(barriers.length){
+      const tiles=new Map(barriers.map(rock=>[rock.col+','+rock.row,rock]));
+      const minCol=Math.min(...barriers.map(rock=>rock.col)),maxCol=Math.max(...barriers.map(rock=>rock.col));
+      const minRow=Math.min(...barriers.map(rock=>rock.row)),maxRow=Math.max(...barriers.map(rock=>rock.row));
+      const door=doorOpeningFor({tiles},mapData.caveSitePlan);
+      const bounds={minX:Math.min(minCol,door?.x-.9??Infinity)-.8,
+        maxX:Math.max(maxCol+1,door?.x+.9??-Infinity)+.8,
+        minZ:Math.min(minRow,door?.z-.9??Infinity)-.8,
+        maxZ:Math.max(maxRow+1,door?.z+.9??-Infinity)+.8};
+      const height=Math.max(8,3*(Number(mapData.cavernCarvedHeightScale)||1.5)+3); // Deliberately pierces even the tall carved vault; no gap beneath the ceiling.
+      const material=window.OreRockTextures.materialFor(THREE,barriers[0].oreKey||barriers[0].oreKind,deps.oreDefs);
+      separatorWalls.set(mapId,{scene,tiles,bounds,height,material,door,mesh:null});
+    }
+    if(mapData.oreRocks?.length)deps.zoneMineableRockMeshes.set(mapId,oreRockMeshes);
+    for(const rock of mapData.oreRocks||[]){
+      if(grid[rock.row]?.[rock.col]){
+        const tile=grid[rock.row][rock.col];
+        tile.type=deps.TileType.ROCK;tile.rockKind='diggableRockOre';tile.oreKind=rock.oreKind;
+        tile.oreKey=deps.oreDefs?.[rock.oreKey||rock.oreKind]?(rock.oreKey||rock.oreKind):null;
+        tile.caveSeparator=rock.caveSeparator===true;
       }
-      const { stoneGeo } = window.TerrainGeometry.buildRockTileGeo(rock.col, rock.row);
-      if (!stoneGeo) continue;
-      const material=window.OreRockTextures.materialFor(THREE, rock.oreKey || rock.oreKind, deps.oreDefs); // Retain the authored ore textures and normal mining drop identities.
-      const rockGroup = new THREE.Group();
-      rockGroup.name = 'cave_ore_' + rock.col + '_' + rock.row; // Pickaxe and blast both retire this one tile-owned group.
-      const mass=rock.caveSeparator?separatorRockMass(THREE,rock,material):null;
-      if(mass){
-        stoneGeo.dispose?.(); // The ordinary low floor mound is not used for a full-height, destructible cave partition.
-        rockGroup.add(mass);
-      }else{
-        const rockMesh = new THREE.Mesh(stoneGeo, material); // Ordinary cave ore mounds remain unchanged outside rock barriers.
-        window.OreRockTextures.fitRockMesh(rockMesh, `${mapId}:${rock.col},${rock.row}`); // Existing continuous UV fitting remains exclusive to normal cave ore mounds.
-        rockMesh.castShadow = rockMesh.receiveShadow = true;
+      const rockGroup=new THREE.Group();
+      rockGroup.name='cave_ore_'+rock.col+'_'+rock.row;
+      rockGroup.userData.caveSeparatorTile=rock.caveSeparator===true;
+      if(!rock.caveSeparator){
+        const {stoneGeo}=window.TerrainGeometry.buildRockTileGeo(rock.col,rock.row);
+        if(!stoneGeo)continue;
+        const material=window.OreRockTextures.materialFor(THREE,rock.oreKey||rock.oreKind,deps.oreDefs);
+        const rockMesh=new THREE.Mesh(stoneGeo,material);
+        window.OreRockTextures.fitRockMesh(rockMesh,`${mapId}:${rock.col},${rock.row}`);
+        rockMesh.castShadow=rockMesh.receiveShadow=true;
         rockGroup.add(rockMesh);
       }
-      if (rock.caveSeparator) {
-        const fracture = crackRibbons(THREE, rock.col, rock.row);
-        rockGroup.add(fracture);
-        cracks.add(fracture);
-      }
-      rockGroup.position.set(rock.col + 0.5, 0, rock.row + 0.5);
+      rockGroup.position.set(rock.col+.5,0,rock.row+.5);
       scene.add(rockGroup);
-      deps.markOutline(rockGroup);
-      oreRockMeshes.set(`${rock.col},${rock.row}`, rockGroup);
+      if(!rock.caveSeparator)deps.markOutline(rockGroup); // Fused wall gets one outline after its tessellation is ready.
+      oreRockMeshes.set(rock.col+','+rock.row,rockGroup);
     }
-    if (cracks.size) separatorCracks.set(mapId, {scene,meshes:cracks});
+    if(separatorWalls.has(mapId))rebuildSeparatorWall(mapId);
     return oreRockMeshes;
   }
 
