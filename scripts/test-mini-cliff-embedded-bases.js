@@ -76,6 +76,45 @@ for(const net of layouts) {
 assert(exposedCaps>0,'translated grass caps expose previously unavailable ground tiles');
 assert(observedProjections.size>0,'mini-plateau generation recorded its displacement');
 
+// Multi-seed audit: irregular cliff contours, direct tier-jump boundaries,
+// nonzero ground elevations, and cap polygons wider than the old ±3-tile probe.
+let auditedCaps=0, wideCaps=0, nonUnitProjections=0; // Report the actually encountered geometry variants.
+for(let seed=0;seed<32;seed++){
+  const rows=32+(seed%9),cols=24+(seed%5); // Diverse parent-edge dimensions, not just the straight reference wall.
+  const faceAt=row=>7+(seed%4)+Math.round(Math.sin((row+seed*.7)/5)*(seed%3===0?2:1)); // A wavy parent plateau edge.
+  const grid=Array.from({length:rows},(_,row)=>Array.from({length:cols},(_,col)=>{
+    const face=faceAt(row),painted=seed%4!==0; // Every fourth fixture uses direct step cliffs, with no rock strip.
+    const wall=painted&&col===face;
+    return { type:wall?'rock':'grass',incline:wall,elevTier:col<face?0:1 };
+  }));
+  const floor=-3+(seed%6),rise=5+(seed%7); // Ground isn't necessarily zero; different adjacent plateau heights.
+  const varied=routes.build(grid,{area:'mini-cliff-contour-audit-'+seed,
+    tileY:tile=>floor+(tile?.elevTier||0)*rise,
+    blocked:tile=>!tile||tile.incline||tile.type==='rock'});
+  for(const shelf of varied.balconies){
+    auditedCaps++;
+    const base=shelf.base;
+    assert.equal(base.y,floor,'the rock body is rooted at the actual zone ground elevation');
+    assert.equal(base.parentComponent,varied.routes[shelf.routeId].bComp,'the original tiny plateau belongs to the parent');
+    assert(base.parentCoverage>=.54&&base.embeddedCoverage>=.72,'original plateau is mostly embedded');
+    assert(base.sharedBoundaryTiles.length>=Math.max(1,Math.ceil(shelf.width*.30)),
+      'width-dependent cliff contact survives curved and direct-step boundaries');
+    assert(shelf.projectionTiles>=1&&shelf.projectionTiles<=3,'the top translates 1-3 tiles');
+    if(shelf.width>4)wideCaps++;
+    if(shelf.projectionTiles>1)nonUnitProjections++;
+    const cellKeys=new Set(shelf.footprint.map(cell=>cell.c+','+cell.r)); // Cap's broad support footprint.
+    const dx=Math.abs(shelf.tangent.x)*shelf.width/2+Math.abs(shelf.normal.x)*3;
+    const dz=Math.abs(shelf.tangent.z)*shelf.width/2+Math.abs(shelf.normal.z)*3;
+    for(let x=Math.max(0,shelf.x-dx);x<Math.min(cols,shelf.x+dx);x+=.13)
+      for(let z=Math.max(0,shelf.z-dz);z<Math.min(rows,shelf.z+dz);z+=.13)
+        if(routes.shelfContains(shelf,x,z))
+          assert(cellKeys.has(Math.floor(x)+','+Math.floor(z)),
+            'even long curved cap corners must be registered as walkable support');
+  }
+}
+assert(auditedCaps>=8,'varied plateau contours must still generate meaningful miniature plateaus');
+console.log('mini-plateau contour audit:',{auditedCaps,wideCaps,nonUnitProjections});
+
 // Tiny THREE stand-in records the exact final triangle positions. It does
 // not simulate rasterization, only the renderer's authored geometry contract.
 class Geometry {
