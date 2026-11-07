@@ -12,7 +12,7 @@ const music = fs.readFileSync('docs/js/music-minigame.js', 'utf8'); // Gameplay'
 const grips = fs.readFileSync('docs/js/hand-tool-grips.js', 'utf8'); // Canonical authored flute grip values.
 const sinkSource = fs.readFileSync('docs/js/weapon-stance-drop-runtime.js', 'utf8'); // Reuses the real body/leg stance runtime.
 
-const begin = held.indexOf('  const flutePlayNote ='); // Authoritative definition start; no repeated pose data in this test.
+const begin = held.indexOf('  const fluteNeutralNotePose ='); // Includes the authored pose factory and strike-only sink constant before flutePlayNote.
 const end = held.indexOf('  window.HeldActionAnimations = Object.freeze', begin); // End of note definitions.
 assert(begin >= 0 && end > begin, 'both authored instrument animations must be present');
 const { flutePlayNote, kurrayaPlayNote } = vm.runInNewContext(held.slice(begin, end) + '\n({ flutePlayNote, kurrayaPlayNote });');
