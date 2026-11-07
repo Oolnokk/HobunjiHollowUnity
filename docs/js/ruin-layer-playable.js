@@ -74,11 +74,15 @@
     const material=root.ProceduralFurniture?.makePartMaterial?.({
       materialTexture:'carved_smooth.png',materialLighting:'unlit',materialFillMode:'never',color:'#777267'
     })||new THREE.MeshBasicMaterial({color:0x777267});
-    const plateMat=new THREE.MeshBasicMaterial({color:0x8c735b});
-    const gateMat=new THREE.MeshBasicMaterial({color:0x4f3b32});
-    const brazierMat=new THREE.MeshBasicMaterial({color:0x665346});
-    const flameMat=new THREE.MeshBasicMaterial({color:0xffb92a});
-    const materials=[material,plateMat,gateMat,brazierMat,flameMat]; // Disposed together with the geometry and owned interactive controls.
+    const tintedStone=(hex,fallback)=>root.ProceduralFurniture?.makePartMaterial?.({
+      materialTexture:'carved_smooth.png',materialLighting:'unlit',
+      materialFillEnabled:true,materialFillColor:hex,materialFillMode:'always',color:hex,
+    })||new THREE.MeshBasicMaterial({color:fallback}); // Recolor the author's stone PNG rather than substituting flat-colored dungeon furniture.
+    const plateMat=tintedStone('#8c735b',0x8c735b);
+    const gateMat=tintedStone('#4f3b32',0x4f3b32);
+    const brazierMat=tintedStone('#665346',0x665346);
+    const materials=[material,plateMat,gateMat,brazierMat]; // Disposed together with the geometry and owned interactive controls.
+    const wingFlameVisuals=[]; // Owns the player's campfire particle emitters for every ignited wing brazier.
     const states=[],gridScopes=[],added=new Set(),surfaces=[]; // Runtime gate/puzzle records, registered voxel scopes, map floor keys and terrain rectangles.
     const ownedControls=new Set(); // Every wing brazier, fire-source and authored puzzle control is released on reroll or failed setup.
     function addControl(control){ruin.controls.push(control);ownedControls.add(control);}
@@ -109,6 +113,7 @@
       if(activeId&&states.some(state=>state.challenges.some(challenge=>challenge.kind==='melodyEcho'&&challenge.id===activeId)))
         music.close?.();
       for(const state of states)for(const challenge of state.challenges)challenge.dispose?.();
+      for(const flame of wingFlameVisuals)flame.dispose?.(); // No stale authored GPU particles after a dungeon reroll.
       for(const control of [...ownedControls])removeControl(control);
       for(const scopeId of gridScopes)DevRandomRuin?.unregisterShaftGrid?.(scopeId);
       DS.clearScope(scope);group.parent?.remove(group);
@@ -296,8 +301,11 @@
         const goal=wing.rooms[wing.rooms.length-1],bx=goal.x+goal.w/2,bz=goal.z+goal.d/2;
         const pedestal=mesh('ruin-brazier-'+wing.id,new THREE.CylinderGeometry(.7,.85,.65,8),
           brazierMat,bx,floor.y+.38,bz);
-        const flame=mesh('ruin-brazier-flame-'+wing.id,new THREE.ConeGeometry(.43,1.3,7),
-          flameMat,bx,floor.y+1.27,bz);flame.visible=false;
+        const flame=new THREE.Group(); // Particle anchor replaces the opaque cone; visible only after this brazier is lit.
+        flame.name='ruin-brazier-flame-'+wing.id;
+        flame.position.set(bx,floor.y+1.27,bz);flame.visible=false;activeRoot.add(flame);
+        const flameVisual=root.PersistentGroundFire?.attachCampfireFlame?.(flame,{scale:1.1,rateScale:.95});
+        if(flameVisual)wingFlameVisuals.push(flameVisual); // Uses the exact player-placeable campfire emitter recipe.
         const brazier={id:wing.goalBrazierId,wingId:wing.id,lit:false,flame,pedestal};
         record.braziers.push(brazier);
         addControl({
@@ -344,6 +352,7 @@
       // be drawn over the player by the overhead third-person camera. Keep
       // physical collision/supports active; hide ONLY the upper story meshes.
       for(const [floor,rootGroup] of floorRoots)rootGroup.visible=floor*plan.options.floorHeight<=y+.8;
+      for(const flame of wingFlameVisuals)flame.update?.(Math.max(0,Math.min(.05,dt))); // Particle lifecycle is owned by the ruin's existing tick.
       for(const record of states){
         record.challenges[record.solved]?.tick?.(dt); // Only the current room consumes inputs, notes and target hooks.
         for(let i=0;i<record.solved;i++)
