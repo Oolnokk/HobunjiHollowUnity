@@ -6,13 +6,15 @@
   const ID = 'mammakhbuur'; // NPC/editor species id used by Surveyor Harkhanash and authored Mammakhbuur appearances.
   const DONOR = 'mashtzarr'; // Mammakhbuur inherit Mashtzarr cosmetics except for front hair.
   const NUHONGAN_ID = 'nuhongan'; // Distinct saved/runtime identity for the smaller Slagothim subspecies.
-  const NUHONGAN_DONOR = 'tletingan'; // Full Character Studio appearance/cosmetic authority for Nuhongan.
+  const NUHONGAN_DONOR = 'tletingan'; // Full Character Studio appearance/cosmetic authority for derived Slagothim.
+  const LONGORAN_ID = 'longoran'; // Full-size Slagothim variant using identical Tletingan wardrobe controls.
   const clone = value => value == null ? value : JSON.parse(JSON.stringify(value));
 
   const status = {
     configInstalled: false,
     privateSpeciesTableCaptured: false,
     nuhonganSlotCount: 0,
+    longoranSlotCount: 0, // Diagnostic count for the restored Longoran wardrobe.
     lastError: null,
   }; // Mobile-readable proof that both lightweight config and full private Studio data were hydrated.
 
@@ -56,6 +58,15 @@
       if (appearance.bodyPalettes?.[NUHONGAN_DONOR]) appearance.bodyPalettes[NUHONGAN_ID] = clone(appearance.bodyPalettes[NUHONGAN_DONOR]);
       status.configInstalled = true;
     }
+    if (nuhonganDonor) {
+      appearance.species[LONGORAN_ID] = {
+        ...clone(nuhonganDonor),
+        label: 'Longoran',
+        parentSpecies: NUHONGAN_DONOR,
+        genders: clone(nuhonganDonor.genders || ['male', 'female']),
+      }; // Same standalone parent key as Nuhongan; editing one subspecies never edits another.
+      if (appearance.bodyPalettes?.[NUHONGAN_DONOR]) appearance.bodyPalettes[LONGORAN_ID] = clone(appearance.bodyPalettes[NUHONGAN_DONOR]);
+    }
     return config;
   }
 
@@ -88,12 +99,32 @@
       } : undefined,
     };
 
+    const longoranPrior = table[LONGORAN_ID] || {};
+    table[LONGORAN_ID] = {
+      ...clone(donor),
+      ...clone(longoranPrior),
+      label: 'Longoran',
+      parentSpecies: NUHONGAN_DONOR,
+      genders: clone(longoranPrior.genders || donor.genders || ['male', 'female']),
+      male: {
+        ...(clone(donor.male) || {}),
+        ...(clone(longoranPrior.male) || {}),
+        slots: clone(donor.male?.slots || []), // Preserve full authoring options, not the stub entry.
+      },
+      female: donor.female || longoranPrior.female ? {
+        ...(clone(donor.female) || {}),
+        ...(clone(longoranPrior.female) || {}),
+        slots: clone(donor.female?.slots || []),
+      } : undefined,
+    };
+
     // Re-run the metadata install now that scratchbones-config has completed its
     // post-assignment palette/species population; this guarantees parentSpecies
     // is available to runtime hand/foot fallback on this page too.
     install(window.SCRATCHBONES_CONFIG);
     status.privateSpeciesTableCaptured = true;
     status.nuhonganSlotCount = table[NUHONGAN_ID].male.slots.length;
+    status.longoranSlotCount = table[LONGORAN_ID].male.slots.length;
     status.lastError = null;
     return true;
   }
@@ -138,6 +169,7 @@
     speciesId: ID,
     donorSpeciesId: DONOR,
     nuhonganSpeciesId: NUHONGAN_ID,
+    longoranSpeciesId: LONGORAN_ID,
     nuhonganDonorSpeciesId: NUHONGAN_DONOR,
     install,
     hydratePrivateSpeciesTable,
