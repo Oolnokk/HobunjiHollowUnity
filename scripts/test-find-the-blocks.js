@@ -36,7 +36,7 @@ const source=fs.readFileSync(path.join(__dirname,'../docs/js/dev-ruin-find-block
 new vm.Script(source,{filename:'dev-ruin-find-blocks.js'}); // Catch syntax errors before running any behavioral checks.
 
 function test(seed){
-  const fireTargets=[],projectileTargets=[],breakablePillars=[],registeredBlocks=[],surfaces=[],cleared=[];
+  const fireTargets=[],projectileTargets=[],breakablePillars=[],registeredBlocks=[],surfaces=[],cleared=[],barriers=[]; // Retain the actual authored obstruction centers for a push-route audit.
   const soloGroup=new Object3D(); // Parent scene has the same lifetime as one Puzzle Lab reroll.
   let melody=null,solved=0;
   const env={
@@ -46,7 +46,7 @@ function test(seed){
       isSlidingPushBlock(){return false;}
     },
     DevRandomRuinTileOccupancy:{
-      addSolidBox(){return true;},
+      addSolidBox(id,box,enabled){barriers.push({id,box,enabled});return true;},
       clearSolids(tag){cleared.push(tag);}
     },
     DynamicSurfaces:{
@@ -140,6 +140,32 @@ function test(seed){
     assert.equal(room.blocks[3].phase,'ready','A witch-bomb blast frees the fourth block');
   }
   assert.equal(room.solved,false,'Release subpuzzles never bypass the final four plates');
+  const free=(x,z)=>{
+    if(x<.5||x>23.5||z<.5||z>23.5)return false;
+    return !barriers.some(barrier=>{
+      if(barrier.enabled?.()===false)return false;
+      return Math.abs(x-barrier.box.cx)<barrier.box.halfX+.41
+        &&Math.abs(z-barrier.box.cz)<barrier.box.halfZ+.41;
+    });
+  }; // Mirrors square push-block bounds and the authored pillar footprints.
+  const route=(block,plate)=>{
+    const start=block.mesh.position;
+    const pending=[[start.x,start.z]],seen=new Set();
+    while(pending.length){
+      const [x,z]=pending.shift(),key=x+','+z;
+      if(seen.has(key))continue;
+      seen.add(key);
+      if(Math.abs(x-plate.x)<.01&&Math.abs(z-plate.z)<.01)return true;
+      for(const [dx,dz] of [[1,0],[-1,0],[0,1],[0,-1]]){
+        // A push needs BOTH the target square and a free square behind the block for the player.
+        if(free(x+dx,z+dz)&&free(x-dx,z-dz))pending.push([x+dx,z+dz]);
+      }
+    }
+    return false;
+  };
+  const matches=(i,used)=>i===4||room.plates.some((plate,j)=>
+    !(used&(1<<j))&&route(room.blocks[i],plate)&&matches(i+1,used|(1<<j)));
+  assert(matches(0,0),'All four released blocks must have distinct push-reachable plate destinations');
   for(let i=0;i<4;i++){
     const b=room.blocks[i],p=room.plates[i];
     b.phase='ready';b.mesh.userData.findBlocksCanDrop=false;
