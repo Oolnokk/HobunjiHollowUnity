@@ -211,6 +211,7 @@ function test(seed,size=24){
   }
   room.tick(.05);
   assert.equal(room.solved,true);
+  assert.equal(state.controls.length,0,'After four plates settle, completed fire and bomb controls no longer claim Action 1');
   assert.equal(solved,1,'The completion event fires only once');
   room.tick(.05);
   assert.equal(solved,1);
