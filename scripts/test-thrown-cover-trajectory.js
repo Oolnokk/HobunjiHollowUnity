@@ -63,7 +63,7 @@ result = resolver.resolve(origin,desired,opts);
 assert.equal(result.blocked,true,'the ranged shaft voxel blocker also cuts off physical throws');
 assert.equal(result.kind,'shaft-cover');
 delete window.DevRandomRuin;
-window.DynamicSurfaces = { sampleSupport:(x,_z)=>x>=2.9&&x<=3.3?{y:2.25}:null };
+window.DynamicSurfaces = { sampleSupport:(x,_z)=>x>=2.9&&x<=3.3?{y:1.8}:null };
 result = resolver.resolve(origin,desired,opts);
 assert.equal(result.blocked,true,'elevated support floors intercept the throw arc');
 assert.equal(result.kind,'raised-floor-cover');
