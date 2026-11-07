@@ -27,42 +27,40 @@ for (const [key, action] of Object.entries({flutePlayNote,kurrayaPlayNote})) {
 }
 assert.equal(flutePlayNote.headRelative, true, 'flute remains mouth anchored');
 assert.equal(kurrayaPlayNote.headRelative, false, 'Kurraya stays in its normal held-tool space');
-assert.equal(kurrayaPlayNote.poses.neutral.x,0.27,'supplied Kurraya Neutral X must survive');
-assert.equal(kurrayaPlayNote.poses.neutral.y,0.08,'supplied Kurraya Neutral Y must survive');
-assert.equal(kurrayaPlayNote.poses.neutral.z,0.02,'supplied Kurraya Neutral Z must survive');
+const suppliedNotePose = { // Every channel in the latest authored export is checked, including intentionally different rolls.
+  neutral:{
+    x:0.27,y:0.08,z:0.03,pitch:0,yaw:0,roll:7,bodyYaw:0,scale:0.85,headRelative:false,
+    shoulderAim:{grip:false,palmNormal:false},secondaryGrip:{enabled:true,percent:50,primaryPercent:50},
+    dualWield:{enabled:false},elbows:{left:{x:0.155,y:-0.195,z:0}},
+    rightHand:{enabled:true,x:-0.13,y:0.07,z:0.085,roll:52},bodySink:0,
+  },
+  windup:{
+    x:0.27,y:0.08,z:0.03,pitch:0,yaw:0,bodyYaw:0,roll:5,headRelative:false,
+    shoulderAim:{grip:false,palmNormal:false},secondaryGrip:{enabled:true,percent:50,primaryPercent:50},
+    dualWield:{enabled:false},elbows:{left:{x:0.155,y:-0.195,z:0}},
+    rightHand:{enabled:true,x:-0.13,y:0.07,z:0.085,roll:52},
+  },
+  strike:{
+    x:0.27,y:0.08,z:0.03,pitch:0,yaw:0,bodyYaw:0,roll:11,headRelative:false,
+    shoulderAim:{grip:false,palmNormal:false},secondaryGrip:{enabled:true,percent:50,primaryPercent:50},
+    dualWield:{enabled:false},elbows:{left:{x:0.155,y:-0.15,z:0.02},right:{x:-0.17,y:-0.28,z:0.11}},
+    rightHand:{enabled:true,x:-0.13,y:0.1,z:0.085,roll:52},bodySink:3,
+  },
+};
+assert.equal(kurrayaPlayNote.actionId,'kurraya_play_note');
 assert.equal(kurrayaPlayNote.gripMode,'palm-parallel');
-const authoredKurrayaWindup = {
-  x:0.27,y:0.08,z:0.02,pitch:0,yaw:0,bodyYaw:0,roll:0,headRelative:false,
-  shoulderAim:{grip:false,palmNormal:false},
-  secondaryGrip:{enabled:true,percent:50,primaryPercent:50},
-  dualWield:{enabled:false},
-  elbows:{left:{x:0.155,y:-0.195,z:0}},
-  rightHand:{enabled:true,x:-0.13,y:0.47,z:0.025,roll:52},
-}; // Exact supplied Windup, including both hands and the custom left elbow.
-assert.equal(JSON.stringify(kurrayaPlayNote.poses.windup),JSON.stringify(authoredKurrayaWindup),'Kurraya Windup must equal the supplied export');
-assert.equal(JSON.stringify({...kurrayaPlayNote.poses.neutral,scale:undefined,bodySink:undefined}),JSON.stringify({...authoredKurrayaWindup,scale:undefined,bodySink:undefined}),'Neutral must copy every Windup hand and tool channel');
-assert.equal(kurrayaPlayNote.poses.neutral.scale,1,'Neutral preserves default instrument scale');
-assert.equal(kurrayaPlayNote.poses.neutral.bodySink,0,'Neutral stands upright');
-assert.equal(kurrayaPlayNote.poses.neutral.secondaryGrip.enabled,true,'Kurraya Neutral retains Windup two-hand mode');
-assert.equal(kurrayaPlayNote.poses.neutral.rightHand.enabled,true,'Kurraya Neutral must already have a free strumming hand');
+assert.equal(kurrayaPlayNote.toolEndFlip,false);
+for (const phase of ['neutral','windup','strike']) {
+  assert.equal(JSON.stringify(kurrayaPlayNote.poses[phase]),JSON.stringify(suppliedNotePose[phase]),
+    'Kurraya '+phase+' must match the complete latest authoring');
+}
 assert.notEqual(kurrayaPlayNote.poses.neutral.rightHand,kurrayaPlayNote.poses.windup.rightHand,'each keyframe owns an independent free-hand transform');
 assert.notEqual(kurrayaPlayNote.poses.neutral.elbows,kurrayaPlayNote.poses.windup.elbows,'each keyframe owns an independent elbow');
-const authoredKurrayaStrike = {
-  x:0.27,y:0.08,z:0.02,pitch:0,yaw:0,bodyYaw:0,roll:0,headRelative:false,
-  shoulderAim:{grip:false,palmNormal:false},
-  secondaryGrip:{enabled:true,percent:50,primaryPercent:50},dualWield:{enabled:false},
-  elbows:{left:{x:0.155,y:-0.195,z:0}},
-  rightHand:{enabled:true,x:-0.13,y:0.5,z:0.025,roll:52},
-};
-assert.equal(JSON.stringify(kurrayaPlayNote.poses.strike),JSON.stringify(authoredKurrayaStrike),'Kurraya Strike must equal the supplied export');
-const kurrayaAnchorChannels = ['x','y','z','pitch','yaw','roll','bodyYaw']; // Every note phase keeps the same instrument transform, independently of the plucking arm.
-for (const phase of ['windup','strike']) {
-  for (const channel of kurrayaAnchorChannels) {
-    assert.equal(kurrayaPlayNote.poses[phase][channel],kurrayaPlayNote.poses.neutral[channel],
-      'Kurraya '+phase+' must not shift or rotate the instrument on '+channel);
-  }
+const kurrayaStationaryChannels=['x','y','z','pitch','yaw','bodyYaw']; // The instrument is allowed to roll, but never drift in position.
+for (const phase of ['windup','strike']) for (const channel of kurrayaStationaryChannels) {
+  assert.equal(kurrayaPlayNote.poses[phase][channel],kurrayaPlayNote.poses.neutral[channel],
+    'Kurraya '+phase+' may not displace the instrument on '+channel);
 }
-
 
 const clock = { ms: 0 }; // Deterministic sounded-note frame clock for the sampled game animation.
 const window = { HeldActionAnimations: {flutePlayNote,kurrayaPlayNote} }; // Runtime receives exactly the authored values.
@@ -70,12 +68,13 @@ vm.runInNewContext(instrumentSource, { window, document: {}, performance: {now: 
 const api = window.KurrayaInstrument;
 assert(api?.notePoseAt && api?.playFluteNote, 'game exposes separate note sampling and flute trigger');
 assert.equal(api.notePoseAt(flutePlayNote, flutePlayNote.strikeFrac).bodySink, 10, 'flute strike sinks the body by ten percent');
-for (const t of [0,0.08,kurrayaPlayNote.windupFrac,kurrayaPlayNote.strikeFrac,kurrayaPlayNote.holdFrac,0.92,1]) {
-  const pose = api.notePoseAt(kurrayaPlayNote,t);
-  for (const channel of kurrayaAnchorChannels) {
-    assert(Math.abs(pose[channel] - kurrayaPlayNote.poses.neutral[channel]) < 1e-9,
-      'runtime Kurraya transform must remain at Neutral at t='+t+' on '+channel);
-  }
+for (const [t,roll,sink] of [[0,7,0],[kurrayaPlayNote.windupFrac,5,0],[kurrayaPlayNote.strikeFrac,11,3],[kurrayaPlayNote.holdFrac,11,3],[1,7,0]]) {
+  const pose=api.notePoseAt(kurrayaPlayNote,t);
+  for (const channel of kurrayaStationaryChannels)
+    assert(Math.abs(pose[channel]-kurrayaPlayNote.poses.neutral[channel])<1e-9,'Kurraya tool should stay in place on '+channel+' at t='+t);
+  assert(Math.abs(pose.roll-roll)<1e-9,'Kurraya roll must pass through the authored keyframe at t='+t);
+  assert(Math.abs(pose.bodySink-sink)<1e-9,'Kurraya body bend must match the authored keyframe at t='+t);
+  assert.equal(pose.scale,0.85,'Neutral scale is shared across all note phases');
 }
 
 const twitch = api.newTwitchState(); // Single live Kurraya note animation state.
@@ -90,7 +89,7 @@ api.updateTwitch(twitch, group);
 assert.equal(group.position.x,0.1,'Kurraya body never shifts X while a note sounds');
 assert.equal(group.position.y,0.2,'Kurraya body never shifts Y while a note sounds');
 assert.equal(group.position.z,0.3,'Kurraya body never shifts Z while a note sounds');
-assert.equal(group.rotation.z,-1.25,'Kurraya body never rotates while a note sounds');
+assert(Math.abs(group.rotation.z-(-1.25+4*Math.PI/180))<1e-9,'Kurraya strike now rotates 4° relative to its authored neutral roll');
 api.triggerTwitch(twitch, group);
 assert.equal(group.position.x, 0.1, 'rapid retriggers restore its held position before starting a new note');
 assert.equal(group.rotation.z, -1.25, 'rapid retriggers do not accumulate rotation');
@@ -257,9 +256,10 @@ assert.equal(neutralGrip.primaryPercent,50);
 const neutralFree=gripsApi.sampleFreeRightHand(kurrayaPlayNote.poses,kurrayaPlayNote,0,'attack');
 const strikeFree=gripsApi.sampleFreeRightHand(kurrayaPlayNote.poses,kurrayaPlayNote,kurrayaPlayNote.strikeFrac,'attack');
 assert.equal(neutralFree.influence,1,'Kurraya right hand must already be free at Neutral');
-assert.equal(neutralFree.y,0.47,'Neutral must use the Windup plucking hand Y');
+assert.equal(neutralFree.y,0.07,'Neutral keeps the latest authored Kurraya plucking hand height');
+assert.equal(neutralFree.z,0.085,'Neutral keeps the authored hand depth');
 assert.equal(neutralFree.roll,52,'Neutral must use the Windup wrist roll');
-assert.equal(strikeFree.y,0.5,'Strike alone raises the free right hand to the authored Y');
+assert.equal(strikeFree.y,0.1,'Strike alone raises the free right hand to the authored Y');
 const otherPose={neutral:{secondaryGrip:{enabled:true}},windup:{secondaryGrip:{enabled:true}},strike:{secondaryGrip:{enabled:true}}};
 assert.equal(gripsApi.animationGripAt(0,kurrayaPlayNote,otherPose,'attack','hatchet').influence,0,'normal weapon Neutral still defaults to 1H');
 const freshKurraya = JSON.parse(JSON.stringify(kurrayaPlayNote)); // Simulates downloading an action after another weapon had been selected.
@@ -269,8 +269,8 @@ freshKurraya.poses.windup.secondaryGrip.enabled=false;
 const decorated = gripsApi.decorateEditorAnimationGrip(freshKurraya);
 assert.equal(decorated.poses.neutral.secondaryGrip.enabled,true,'export must use live Neutral 2H checkbox');
 assert.equal(decorated.poses.windup.secondaryGrip.enabled,true,'export must use live Windup 2H checkbox');
-assert.equal(decorated.poses.neutral.rightHand.y,0.47,'grip export must not replace the authored neutral free hand');
-assert.equal(decorated.poses.strike.rightHand.y,0.5,'grip export must not replace the authored strike free hand');
+assert.equal(decorated.poses.neutral.rightHand.y,0.07,'grip export must not replace the authored neutral free hand');
+assert.equal(decorated.poses.strike.rightHand.y,0.1,'grip export must not replace the authored strike free hand');
 const otherAction = {actionId:'light_weapon_idle',poses:{neutral:{secondaryGrip:{enabled:true}},windup:{secondaryGrip:{enabled:true}},strike:{secondaryGrip:{enabled:true}}}};
 gripsApi.loadEditorAnimationGrip({actionId:'light_weapon_idle',toolKey:'hatchet',style:'sweep',sequence:'attack',poses:otherAction.poses});
 assert.equal(gripsApi.decorateEditorAnimationGrip(otherAction).poses.neutral.secondaryGrip.enabled,false,'normal weapon Neutral 2H must remain disabled on export');
@@ -449,10 +449,14 @@ const loader=vm.runInNewContext(editor.slice(loaderStart,loaderEnd)+'\nloadAnimO
   editPhase:'neutral',currentActionId:'kurraya_play_note',
 });
 loader(JSON.parse(JSON.stringify(kurrayaPlayNote)));
-assert.equal(importedAnim.poses.neutral.rightHand.y,0.47,'import must not drop the free-hand Neutral Y');
+assert.equal(importedAnim.poses.neutral.rightHand.y,0.07,'import must not drop the free-hand Neutral Y');
 assert.equal(importedAnim.poses.windup.rightHand.roll,52,'import must not drop the free-hand Windup rotation');
-assert.equal(importedAnim.poses.strike.rightHand.y,0.5,'import must not drop the free-hand Strike Y');
+assert.equal(importedAnim.poses.strike.rightHand.y,0.1,'import must not drop the free-hand Strike Y');
 assert.equal(importedAnim.poses.neutral.elbows.left.x,0.155,'import must not lose the authored left elbow');
+assert.equal(importedAnim.poses.strike.elbows.right.y,-0.28,'import must preserve newly authored Strike right elbow');
+assert.equal(importedAnim.poses.neutral.scale,0.85,'import must preserve Kurraya neutral scale');
+assert.equal(importedAnim.poses.strike.roll,11,'import must preserve distinct Strike roll');
+assert.equal(importedAnim.poses.strike.bodySink,3,'import must preserve the new 3% body sink');
 assert.equal(importGripCalls[0].poses.neutral.secondaryGrip.enabled,true,'import must forward Neutral 2H to the shared grip system');
 assert.equal(importModeCalls[0].gripMode,'palm-parallel','import must restore the exact palm mode');
 
