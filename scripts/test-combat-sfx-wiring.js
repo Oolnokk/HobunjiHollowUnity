@@ -239,7 +239,8 @@ assert.deepStrictEqual(impactCalls, [
 
 async function testDecodedFinisherTiming() {
   const starts = []; // Actual WebAudio BufferSource.start calls and playback rates for consecutive audio scheduling.
-  const renderRequests = []; // Exact independent WSOLA pitches and tempo passed to the shared renderer.
+  const gains = []; // Real GainNode values show both slashes actually receive 80% of the authored sound level.
+  const renderRequests = // Exact independent WSOLA pitches and tempo passed to the shared renderer.
   const decoded = { duration: 0.9, numberOfChannels: 1, sampleRate: 44100, length: 39690, getChannelData: () => new Float32Array(39690) }; // Minimal valid decoded recording for the live audio owner.
   let audioContext = null; // Exposes the running test context clock to timing assertions.
   class FakeContext {
@@ -250,7 +251,7 @@ async function testDecodedFinisherTiming() {
       source.start = at => starts.push({ at, rate: source.playbackRate.value, duration: source.buffer.duration }); // Captures the exact scheduled cue from production WebAudio.
       return source;
     }
-    createGain() { return { gain: { value: 0 }, connect() {}, disconnect() {} }; }
+    createGain() { const gain = { gain: { value: 0 }, connect() {}, disconnect() {} }; gains.push(gain); return gain; }
     createStereoPanner() { return { pan: { value: 0 }, connect() {}, disconnect() {} }; }
     resume() { return Promise.resolve(); }
   }
@@ -286,6 +287,7 @@ async function testDecodedFinisherTiming() {
   assert(Math.abs(starts[0].duration / starts[0].rate - .3) < 1e-8, 'first processed recording lasts precisely one-third duration');
   assert(Math.abs(starts[1].duration / starts[1].rate - .3) < 1e-8, 'second processed recording lasts precisely one-third duration');
   assert.equal(FakeAudio.plays, nativeBefore, 'processed audio never triggers coupled native playback');
+  assert.deepStrictEqual(gains.slice(-2).map(node => node.gain.value), [0.72, 0.72], 'both WebAudio slashes use 80% of the normal 0.9 recorded volume');
   assert.equal(world.window.AudioSystem.combatSfxDebugSnapshot().last.detail.backend, 'independent-WSOLA');
   settings.combatSfx.quickAttackBonusSlash.volume = 0; // Explicit zero must silence even already-decoded positional voices.
   world.window.AudioSystem.playComboFinisherBonusSfx(0, 0, 'farm');
