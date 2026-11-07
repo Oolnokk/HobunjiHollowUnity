@@ -1411,6 +1411,15 @@ function _behindFlippedLayer(layer) {
   return { ...layer, xformPreset: null, ax: preset.ax, ay: preset.ay, sx: -preset.sx, sy: preset.sy };
 }
 
+function _placeFurLinedTrimBehindRearHood(layers, hood) {
+  const hoodIds = [hood?.id, hood?.originalId].filter(Boolean).join(' '); // Includes the IDs of custom loom-made instances.
+  if (!_textMatchesAny(hoodIds, ['fur-lined-hood'])) return;
+  const trimIndex = layers.findIndex(({ layer }) => layer?.paletteColorKey === 'B'); // Finds fur trim in the resolved hood stack.
+  if (trimIndex < 1) return;
+  const [trim] = layers.splice(trimIndex, 1); // Put fur under the opaque finehood-back without changing other hood styles.
+  layers.unshift(trim);
+}
+
 function _cloneBehindLayer(layer, group, gender) {
   if (!layer) return layer;
   const url = _getBehindLayerUrl(layer, group, gender);
@@ -1664,6 +1673,7 @@ async function renderProfile(canvas, profile, renderOptions = {}) {
     headUrl = _getBehindHeadUrl(speciesId, gender) || headUrl;
     if (!profile?.bodyColors?.__hobunjiWovenClothing?.some(item=>item?.slot==='hood' && item?.furHood)
         && resolveOptionLayers(hood, resolvedFighter).some(layer => layer.pos === 'back')) hoodLayers.length = 0; // Preserve other hoods' rear silhouette logic; fur stacks supply their own explicit rear order.
+    _placeFurLinedTrimBehindRearHood(hoodLayers, hood); // The front trim becomes a narrow rear edge behind the Fine Hood shell.
     const useBehindLayers = (layerList) => {
       for (const entry of layerList) {
         entry.layer = _cloneBehindLayer(entry.layer, entry.group, gender);
