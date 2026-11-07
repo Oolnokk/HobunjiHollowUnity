@@ -325,7 +325,8 @@ canvas{display:block;width:100%;height:100%}
      in-game character dump use the exact same code/format. -->
 <script src="../../js/transform-dump-utils.js?v=20261017h3ce7f8d"></script>
 <script src="../../js/rig-transform-dump.js?v=20261029rigdump1"></script>
-<script src="../../js/held-action-animations.js?v=20261103witchBombHands1"></script>
+<script src="../../js/held-action-animations.js?v=20261106instrumentNote1"></script>
+<script src="../../js/kurraya-instrument.js?v=20261106instrumentNote1"></script>
 <!-- Shared attack-pose math (window.SharedAttackPose): the SAME timeline, rest poses and mirroring rule the game plays for the player and every enemy. -->
 <script src="../../config/portrait-mouth-points.js?v=20261025mouth1"></script>
 <script src="../../js/attack-editor-mouth-point.js?v=20261025mouth1"></script>
@@ -425,6 +426,7 @@ function editorToolGrip() {
 }
 // The tool's mating point in holder space: its authored aperture, else (held bottles have no tool entry) the sprite's top edge.
 function editorToolAperture() {
+  if (currentToolKey === 'flute') return null; // The runtime flute's trimmed plane already has its open end at the mouth-relative holder origin.
   const grips = window.HobunjiHandToolGrips;
   const authored = grips?.apertureHolderPointForTool?.(currentToolKey, grips.currentGripContext?.(), { speciesId: currentSpeciesId, gender: currentGender });
   if (authored) return authored;
@@ -911,6 +913,8 @@ const TOOL_SPRITE_DEFS = {
   workhammer:   { label: 'Work Hammer (sweep)',    sprite: '../../assets/toolsprites/work_hammer.png',        animStyle: 'sweep', usesWeaponStanceBasis: true },
   harlyaoLongsword: { label: 'Harlyao Longsword (sweep)', sprite: '../../assets/toolsprites/harlyao_longsword.png', animStyle: 'sweep', usesWeaponStanceBasis: true },
   harlyaoBroadsword: { label: 'Harlyao Broadsword (sweep)', sprite: '../../assets/toolsprites/harlyao_broadsword.png', animStyle: 'sweep', usesWeaponStanceBasis: true },
+  flute:        { label: 'Flute (mouth-held, play note)', sprite: '../../assets/toolsprites/flute.png', animStyle: 'ranged' },
+  kurraya:      { label: 'Kurraya (two-plane, pluck note)', sprite: '../../assets/toolsprites/kurraya_front.png', animStyle: 'thrust' },
   bottle:       { label: 'Wine bottle (drink)',    sprite: '../../assets/objectsprites/bottle_wine.png',       animStyle: 'drink', scale: 0.5, flip: true },
   crossbow:     { label: 'Crossbow (unloaded)',    sprite: '../../assets/toolsprites/ranged_crossbow.png',      animStyle: 'ranged' },
   crossbowLoaded:{ label: 'Crossbow (loaded)',     sprite: '../../assets/toolsprites/ranged_crossbow_loaded.png',animStyle: 'ranged' },
@@ -932,6 +936,41 @@ function buildToolPlaneMesh(toolKey) {
     if (!def) { resolve(null); return; }
     toolTexLoader.load(def.sprite, tex => {
       tex.magFilter = tex.minFilter = THREE.NearestFilter;
+      // Preserve the same two-plane Kurraya and alpha-trimmed, mouthpiece-first
+      // flute visuals as their gameplay mounts; ordinary combat sprites follow below.
+      if (toolKey === 'kurraya') {
+        const topTexture = toolTexLoader.load('../../assets/toolsprites/kurraya_top.png');
+        topTexture.magFilter = topTexture.minFilter = THREE.NearestFilter;
+        const assembly = window.KurrayaInstrument?.buildAssembly?.({
+          THREE, frontTexture: tex, topTexture, toolModelWidth: TOOL_MODEL_WIDTH,
+        });
+        if (assembly) { resolve(assembly); return; }
+        logDebug('Kurraya editor assembly unavailable; check the shared instrument module.');
+      }
+      if (toolKey === 'flute') {
+        try {
+          const canvas = window.KurrayaInstrument.prepareFluteCanvas(tex.image);
+          const map = new THREE.CanvasTexture(canvas);
+          map.magFilter = map.minFilter = THREE.NearestFilter;
+          const worldHeight = 0.76; // Must equal the gameplay mouth-mounted flute's length.
+          const plane = new THREE.Mesh(
+            new THREE.PlaneGeometry(worldHeight * canvas.width / canvas.height, worldHeight),
+            new THREE.MeshBasicMaterial({ map, transparent:true, alphaTest:0.05, side:THREE.DoubleSide })
+          );
+          plane.rotation.x = Math.PI / 2; // Tube's open end stays at the holder origin, like the live mount.
+          plane.position.z = -worldHeight / 2;
+          const assembly = new THREE.Group();
+          assembly.name = 'flute_mouth_mount_preview';
+          assembly.add(plane);
+          tex.dispose();
+          resolve(assembly);
+          return;
+        } catch (error) {
+          logDebug('Flute preview trim failed: ' + error.message);
+          resolve(null);
+          return;
+        }
+      }
       const imgW = tex.image.width || 1, imgH = tex.image.height || 1;
       const planeW = TOOL_MODEL_WIDTH * (def.scale ?? 1);
       const planeH = planeW * (imgH / imgW);
@@ -1689,6 +1728,8 @@ const ACTION_DEFS = [
   { id: 'crossbow_load', group: 'Non-attack held actions', label: 'Crossbow — Load', statsPath: ['rangedWeapons','crossbow'], templateId: 'crossbow_load', practical: false },
   { id: 'scatterbow_load', group: 'Non-attack held actions', label: 'Scatterbow — Load', statsPath: ['rangedWeapons','scatterbow'], templateId: 'scatterbow_load', practical: false },
   { id: 'blowgun_ready', group: 'Non-attack held actions', label: "B'shuakauitl — Loaded", heldAnimationKey: 'blowgunReady', practical: false, toolKey: 'bshuakauitl' },
+  { id: 'flute_play_note', group: 'Musical instrument actions', label: 'Flute — Play Note', heldAnimationKey: 'flutePlayNote', practical: false, toolKey: 'flute' },
+  { id: 'kurraya_play_note', group: 'Musical instrument actions', label: 'Kurraya — Play Note', heldAnimationKey: 'kurrayaPlayNote', practical: false, toolKey: 'kurraya' },
   { id: 'held_item_small', group: 'Non-attack held actions', label: 'Small Held Item — Idle (Pick-Shovel basis)', heldAnimationKey: 'heldItemSmall', practical: false, toolKey: 'bottle' },
   { id: 'drink', group: 'Non-attack held actions', label: 'Drink', heldAnimationKey: 'drink', practical: false, toolKey: 'bottle' },
   { id: 'held_item_large', group: 'Non-attack held actions', label: 'Large Held Item — Idle (two-hand)', heldAnimationKey: 'heldItemLarge', practical: false, toolKey: 'bottle' },
@@ -1874,7 +1915,9 @@ function applySelectedAction({ play = true } = {}) {
   $('animName').value = action.label;
   anim.name = action.label;
   $('animStyle').value = anim.style;
-  $('actionSourceHelp').textContent = action.practical === false
+  $('actionSourceHelp').textContent = action.group === 'Musical instrument actions'
+    ? 'Playing one sounded note is this instrument’s action. Its animation has no hitbox, damage, knockback or combat stamina cost. Flute and Kurraya are authored separately.'
+    : action.practical === false
     ? 'Non-attack action: animation remains fully editable; practical attack effect is fixed at zero.'
     : 'Gameplay attack: animation and practical effect below are both scoped to this selected action.';
   renderStatFields();
@@ -2179,8 +2222,9 @@ function refreshJsonView() {
 function exportAnimObject() {
   const exported = {
     version: 1,
-    kind: anim.style === 'drink' ? 'hobunji_held_action_animation' : 'hobunji_attack_animation',
+    kind: currentAction().practical === false ? 'hobunji_held_action_animation' : 'hobunji_attack_animation',
     name: anim.name,
+    actionId: currentActionId, // Used to identify this instrument on export without guessing from its animation name.
     style: anim.style,
     sequence: anim.sequence,
     windupFrac: anim.windupFrac,
