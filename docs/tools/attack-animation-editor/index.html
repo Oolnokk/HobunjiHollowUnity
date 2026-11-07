@@ -2429,6 +2429,9 @@ function exportAnimObject() {
   if (typeof anim.projectileSpin === 'boolean') exported.projectileSpin = anim.projectileSpin;
   if (anim.projectileLockAlignment) exported.projectileLockAlignment = true;
   if (anim.projectileBasisDeg) exported.projectileBasisDeg = Number(anim.projectileBasisDeg) || 0;
+  const gripMode = window.HobunjiAttackEditorHandGripMode?.selectedMode; // The visible hand orientation is part of a faithful copied/downloaded animation export.
+  if (gripMode) exported.gripMode = gripMode;
+  window.HobunjiHandToolGrips?.decorateEditorAnimationGrip?.(exported); // Synchronize the grip panel's per-phase 2H and Dual Wield values before export/Undo, not only when the JSON textarea was patched.
   return window.HobunjiAttackEditorHandShoulderControls?.decorateAnimationObject?.(exported) || exported;
 }
 $('exportBtn').onclick = () => {
@@ -2548,6 +2551,19 @@ function loadAnimObject(data) {
     if (raw?.shoulderAim && typeof raw.shoulderAim === 'object') anim.poses[phase].shoulderAim = { ...raw.shoulderAim };
     if (raw?.secondaryGrip && typeof raw.secondaryGrip === 'object') anim.poses[phase].secondaryGrip = { ...raw.secondaryGrip };
     if (raw?.dualWield != null) anim.poses[phase].dualWield = typeof raw.dualWield === 'object' ? { ...raw.dualWield } : raw.dualWield;
+    if (raw?.rightHand && typeof raw.rightHand === 'object') {
+      const rightHand = { enabled: raw.rightHand.enabled === true }; // Preserve authored free-hand poses through import, history restore and mobile refresh.
+      for (const channel of FREE_RIGHT_HAND_CHANNELS) {
+        if (raw.rightHand[channel] == null) continue; // Missing angles must remain omitted, not converted to misleading explicit zeroes.
+        const value = Number(raw.rightHand[channel]);
+        if (Number.isFinite(value)) rightHand[channel] = Math.max(channel === 'pitch' || channel === 'yaw' || channel === 'roll' ? -360 : -5,
+          Math.min(channel === 'pitch' || channel === 'yaw' || channel === 'roll' ? 360 : 5, value));
+      }
+      anim.poses[phase].rightHand = rightHand;
+    }
+    if (raw?.offhandIdle && typeof raw.offhandIdle === 'object') {
+      anim.poses[phase].offhandIdle = { ...raw.offhandIdle, ...(raw.offhandIdle.pose && typeof raw.offhandIdle.pose === 'object' ? { pose: { ...raw.offhandIdle.pose } } : {}) }; // Restore the grip editor's optional offhand idle data too.
+    }
     if (raw?.elbows && typeof raw.elbows === 'object') {
       const elbows = Object.fromEntries(ATTACK_POSE_SIDES
         .map(side => [side, normalizedPoseElbow(raw.elbows?.[side])])
