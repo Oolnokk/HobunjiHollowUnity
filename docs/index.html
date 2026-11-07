@@ -37,7 +37,7 @@
   <!-- Small formatting/math helpers (esc/clamp/roundRect/formatClock/etc.)
        extracted out of game.js; must load before game.js and before every
        other module whose init(deps) is handed window.FormatUtils.clamp/esc. -->
-  <script src="js/format-utils.js?v=20261103crf2"></script>
+  <script src="js/format-utils.js?v=20261107flyers2"></script>
   <!-- Default building entry tile (buildingSpawnFromExit) extracted out of
        game.js; uses window.FormatUtils.clamp and must load before game.js. -->
   <script src="js/building-entry-spawn.js?v=20261026hfbed948"></script>
@@ -200,7 +200,7 @@
        Load once before all NPC interaction modules, including lazy runtimes. -->
   <script src="js/npc-interaction-policy.js?v=20261021fey1"></script>
   <!-- Reusable movement/tool/action suppression for synchronized character interactions. -->
-  <script src="js/character-action-locks.js?v=20261107mootreview2"></script>
+  <script src="js/character-action-locks.js?v=20261107flyers2"></script>
   <!-- NPC action-lock and alcohol-impairment presentation adapter. -->
   <script src="js/npc-character-state.js?v=20261021-npcsafety-rebased1"></script>
   <script src="js/npc-movement-head-target.js?v=20261101rugchairbednpc3"></script> <!-- Shared invisible movement gaze for allied NPC walkers and humanoid hostiles. -->
@@ -230,7 +230,7 @@
   <script src="js/voorg-ass-registration.js?v=20261027h7e25ded"></script> <!-- Shared Voorg-Ass creature/renderer/herd registration used by the three scripts below. -->
   <script src="js/pingdort-registration.js?v=20261107pingdort1"></script> <!-- Early hatchable egg and livestock config, before the game snapshots item kinds. -->
   <script src="js/moot-registration.js?v=20261107mootreview1"></script> <!-- Moot surface-wildlife and farm-baby registration; config must precede the main game snapshot. -->
-  <script src="js/creature-genetics.js?v=20261107moot2"></script>
+  <script src="js/creature-genetics.js?v=20261107flyers2"></script>
   <script src="js/animal-hides.js?v=20261102-animalhides2"></script> <!-- Per-unit genetics, rarity, price, and save data for butchered hides. -->
   <!-- Creature genotype recolor + pattern-overlay compositing. -->
   <script src="js/creature-texture-cache.js?v=20261105h5c6c35c"></script>
@@ -477,7 +477,7 @@
   <script src="js/honeyfuzzle-house.js?v=20261026honeyEggGenes3"></script> <!-- Honeyfuzzle House: 1x1 egg/swarm slot on a FarmProduction entry; hooked by farm-production.js, initialised by game.js. -->
   <script src="js/farm-layout-editor.js?v=20261016a"></script>
   <script src="js/world-meta-store.js?v=20261102h9d8381e"></script>
-  <script src="js/farm-animals.js?v=20261107mootreview1"></script>
+  <script src="js/farm-animals.js?v=20261107flyers2"></script>
   <!-- Farm buildings: barn placement/construction/demolition
        (window.FarmBuildings) — self-contained aside from deps injected
        via init(), and reads window.FarmAnimals at call time (already
@@ -492,7 +492,7 @@
        global by then), so load order relative to the other systems above
        doesn't matter; must load before game.js, which calls
        window.FarmTroughs.init(...) during its own setup. -->
-  <script src="js/farm-troughs.js?v=20261107mootreview1"></script>
+  <script src="js/farm-troughs.js?v=20261107flyers2"></script>
   <!-- Modular player house (window.HousePieces) — barn-shaped foundation/
        build/demolish pipeline for house-piece deeds bought from the
        Carpenter, replacing the old singular Highland House GLB. Depends on
@@ -631,7 +631,7 @@
   <script src="js/ruin-layer-playable.js?v=20261107integratedDungeon1"></script>
   <script src="js/ruin-v50-native-mechanisms.js?v=20261105hc10ba02"></script>
   <script src="js/ruin-v50-native-floors.js?v=20261107integratedDungeon1"></script>
-  <script src="js/ruin-shaft-connector.js?v=20261107shaftdoor1"></script>
+  <script src="js/ruin-shaft-connector.js?v=20261107flyers2"></script>
   <script src="js/ruin-v50-vestibule.js?v=20261105reachVest1"></script>
   <script src="js/ruin-multifloor-v50-style.js?v=20261106h753f499"></script> <!-- Vertical hub room composed on a CellGrid3D: balconies, doors, climbable buttresses; see docs/architecture/vertical-grid.md -->
   <!-- Wilderness fog-of-war, discovered-locale tracking, and map rendering
@@ -651,7 +651,7 @@
   <script src="js/flying-animal-rig.js?v=20261107eye1"></script> <!-- Canonical authored two-bone bird wing/body assembly. -->
   <script src="js/tzatzul-registration.js?v=20261107eye1"></script> <!-- Tzatzul dev species, hatchling peck, stable individual tint and flying-rig JSON. -->
   <script src="js/skeeri-ruins.js?v=20261107skeeri1"></script> <!-- Three authored Skeeri sizes, concealed ruin hatches and shaft witch-bomb runs. -->
-  <script src="js/tzatzul-live-visuals.js?v=20261107provision1"></script>
+  <script src="js/tzatzul-live-visuals.js?v=20261107flyers2"></script>
   <script src="js/tzatzul-cliff-sites.js?v=20261107h4239d09"></script> <!-- Separate rock-textured, non-climbable Tzatzul spires. -->
   <script src="js/tzatzul-flight-runtime.js?v=20261107scoutbound3"></script> <!-- Shared swept-body dive for exterior and nest mothers. -->
   <script src="js/tzatzul-nest-encounter.js?v=20261107foodcap1"></script> <!-- Authoritative indoor mother and hatchling combat in the existing wildlife tick. -->
@@ -716,7 +716,7 @@
        at call time (already global by then), so load order relative to the
        other systems above doesn't matter; must load before game.js, which
        calls window.WildlifeSpawn.init(...) during its own setup. -->
-  <script src="js/wildlife-spawn.js?v=20261107mootreview2"></script>
+  <script src="js/wildlife-spawn.js?v=20261107flyers2"></script>
   <!-- Town/zone building mesh spawning + decorative furniture/prop spawning
        (window.TownZoneBuildings) — reads globally-loaded HousePieceGen/
        WallBuilder/BuildingDoor/window.ProceduralFurniture/window.Music at
@@ -814,7 +814,7 @@
        so load order relative to the other systems above doesn't matter;
        must load before game.js, which calls window.FarmPanel.init(...)
        during its own setup. -->
-  <script src="js/farm-panel.js?v=20261031layoutCursor1"></script>
+  <script src="js/farm-panel.js?v=20261107flyers2"></script>
   <!-- Tasks tab (window.TasksPanel), Supplies tab (window.SupplyPage),
        whistle-equip row (window.WhistleEquip), and the Wildlife/genotype
        debug panel (window.WildlifeDebugPanel) — all read
