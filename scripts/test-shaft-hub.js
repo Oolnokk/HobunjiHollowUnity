@@ -39,6 +39,11 @@ for(const file of ['ruin-layer-plan.js','ruin-shaft-corridor.js','ruin-shaft-con
     const trial=Plan.compose({...options,plinthTrial:true});
     assert(trial.ok,trial.checks.filter(check=>!check.ok).map(check=>check.name).join(', '));
     assert.equal(trial.totalWings,baseline.totalWings);
+    for(const plan of [baseline,trial])for(const floor of plan.floors)for(const wing of floor.wings){
+      // A normal approach no longer spends 7–15 empty cells between rooms;
+      // the puzzle/defence chambers and their gate-to-room connectivity stay unchanged.
+      assert(wing.corridors.every(hall=>hall.length<=10),`overlong empty wing hallway on seed ${seed}: ${wing.id}`);
+    }
     assert.equal(trial.totalBraziers,baseline.totalBraziers);
     const floor=trial.floors.find(f=>f.rooms.some(room=>room.id===trial.trialRoomId));
     const wing=floor.wings.find(w=>w.rooms.some(room=>room.id===trial.trialRoomId));
