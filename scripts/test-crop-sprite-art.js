@@ -83,6 +83,48 @@ let secondSceneTraversals = 0; // Confirms each independently rendered scene own
 renderer.render({ traverse() { secondSceneTraversals++; } }, camera);
 assert.equal(secondSceneTraversals, 1, 'a second scene receives its own immediate discovery scan');
 
+
+class FakeColor { // Three.js-style color getter/setter used to check that the renderer preserves mixed pigment every frame.
+  constructor(hex) { this.hex = hex; }
+  getHex() { return this.hex; }
+  setHex(hex) { this.hex = hex; return this; }
+}
+class FakeMaterial { // Minimal Lambert/Basic material interface used by the authored billboard bridge.
+  constructor(opts = {}) { this.color = new FakeColor(opts.color ?? 0xffffff); this.isMeshLambertMaterial = false; }
+  dispose() {}
+}
+class FakeLambertMaterial extends FakeMaterial { constructor(opts) { super(opts); this.isMeshLambertMaterial = true; } }
+class FakeMesh { // World crop cube and subsequently converted PNG planes share this minimal object API.
+  constructor(geometry, material) {
+    this.geometry = geometry; this.material = material; this.userData = {}; this.children = [];
+    this.isMesh = true; this.parent = null; this.position = { x: .5, y: 0, z: .5, set(x, y, z) { this.x = x; this.y = y; this.z = z; } };
+    this.scale = { x: .7, y: .7, z: .7, setScalar(v) { this.x = v; this.y = v; this.z = v; } };
+    this.quaternion = { identity() {}, copy() {} };
+  }
+  add(child) { child.parent = this; this.children.push(child); }
+}
+sandboxWindow.THREE = {
+  WebGLRenderer: FakeWebGlRenderer, Mesh: FakeMesh, MeshLambertMaterial: FakeLambertMaterial, MeshBasicMaterial: FakeMaterial,
+  BufferGeometry: class {}, PlaneGeometry: class { constructor(width, height) { this.width = width; this.height = height; } },
+  TextureLoader: class { load(path, ready) { const texture = { image: { width: 24, height: 32 } }; ready(texture); return texture; } },
+  DoubleSide: 2,
+};
+const coloredCube = new FakeMesh(
+  { type: 'BoxGeometry', parameters: { width: 1, height: 1, depth: 1 }, dispose() {} },
+  new FakeLambertMaterial({ color: 0xb6a0c9 }),
+); // Imported garlink cube has an arbitrary hybrid color absent from the legacy fixed-color palette.
+coloredCube.parent = {};
+coloredCube.userData.hobunjiCropBaseKey = 'garlink'; // New farm renderer supplies species identity directly.
+coloredCube.userData.hobunjiCropVarietyColor = 0xb6a0c9; // Exact inherited RGB must be visible on the authored PNG cluster.
+fakeNowMs += 250;
+const cultivarScene = { traverse(callback) { callback(coloredCube); } };
+renderer.render(cultivarScene, camera);
+assert.equal(coloredCube.children.length, 3, 'hybrid garlink still becomes the three-plant authored PNG cluster');
+assert.equal(coloredCube.userData.hobunjiCropSpriteKey, 'garlink', 'hybrid retains species art after conversion');
+for (const plant of coloredCube.children) assert.equal(plant.material.color.getHex(), 0xb6a0c9, 'authored hybrid PNG is tinted to its inherited mixed color');
+renderer.render(cultivarScene, camera);
+for (const plant of coloredCube.children) assert.equal(plant.material.color.getHex(), 0xb6a0c9, 'render updates never reset a hybrid plant to native color');
+
 const fakeDefs = {
   needlegrain: { icon: '🌾' },
   heftroot: { icon: '🟡' },
