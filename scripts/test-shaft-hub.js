@@ -118,6 +118,48 @@ for(let seed=1;seed<=100;seed++){
     'Great Door must require a fire from each free shaft exit and each reserved native V50 floor');
 }
 
+// The sanctum's Great Door belongs to the shared shaft wall, not a V50
+// challenge-room wall. It is a teleport destination so it must be accessible
+// from floor-zero stone without stealing any of that story's four exits.
+{
+  const sanctum=fs.readFileSync('docs/js/dev-random-ruin-sanctum.js','utf8'); // Assert the real composer consumes the shaft's validated door site.
+  const interior=fs.readFileSync('docs/js/dev-random-ruin-interior-map.js','utf8'); // The public runtime exposes the same site without private globals.
+  assert(sanctum.includes('context.shaftHub===true')&&sanctum.includes('getShaftSanctumDoorSite'),
+    'normal ruins mount the Great Door at the main shaft instead of choosing a V50 wall');
+  assert(sanctum.includes('teleport(s.entry)')&&sanctum.includes('teleport(door.front)'),
+    'entering the distant sanctum and returning both use the canonical fade teleport');
+  assert(interior.includes('getShaftSanctumDoorSite:()=>ruin?.shaftSanctumDoorSite||null'),
+    'public ruin API exposes the checked shaft wall site');
+  for(let seed=1;seed<=160;seed++){
+    const plan=Plan.compose({seed,anchorX:320,anchorZ:320,nativeV50:true,
+      groundEntranceSide:['N','E','S','W'][seed%4]});
+    assert(plan.ok,'valid four-sided plan for door '+seed);
+    const portals=plan.floors.flatMap(f=>[
+      ...f.wings.map(w=>({floor:f.floor,side:w.side})),
+      ...(f.nativePort?[{floor:f.floor,side:f.nativePort.side}]:[]),
+    ]);
+    const hub=H.compose({seed,shaft:plan.options.shaftSize,wall:plan.options.shaftWall,
+      floors:plan.floorCount,spacing:plan.options.floorHeight,portals,
+      entranceSide:plan.options.groundEntranceSide,traversal:plan.options.shaftTraversal,
+      originX:plan.shaft.anchor.x-Math.floor((plan.options.shaftSize+plan.options.shaftWall*2)/2),
+      originZ:plan.shaft.anchor.z-Math.floor((plan.options.shaftSize+plan.options.shaftWall*2)/2)});
+    assert(hub.ok,'the actual obelisk shaft and its wall exits must be traversable');
+    const site=Connector.sanctumDoorSite(hub);
+    assert(site?.shaft===true,'a safe, shaft-mounted final door must exist for every seed and entrance side');
+    assert.equal(site.floorY,hub.grid.levelToY(0),'sanctum door is mounted on the shared shaft ground story');
+    const front={x:site.x+site.normal.x*1.8,z:site.z+site.normal.z*1.8};
+    const behind={x:site.x-site.normal.x*.4,z:site.z-site.normal.z*.4};
+    const g=hub.grid;
+    assert(g.canStand(g.xToCol(front.x),g.zToRow(front.z),0),'reachable walkable stone is in front of the door');
+    assert(g.isSolid(g.xToCol(behind.x),g.zToRow(behind.z),0),'the Great Door is set against solid shaft masonry');
+    assert(hub.wingPortals.filter(p=>p.floor===0&&p.side===site.side).every(p=>{
+      const pAcross=site.normal.z?p.col:p.row;
+      const across=site.normal.z?g.xToCol(site.x):g.zToRow(site.z);
+      return Math.abs(pAcross-across)>=7;
+    }),'the Great Door must not overlap an existing shaft portal');
+  }
+}
+
 // Native V50 rope flights pass *plain* CellGrid3D axis-aligned boxes
 // through the same segment intersection used by Three.Box3 projectile hits.
 // Regress an actual 3D closed gate and avoid a rawBox.clone() runtime crash.
