@@ -162,6 +162,37 @@ hud.clear();
 assert.equal(snapshot().visible.length, 0);
 assert.equal(snapshot().waiting, 0, 'explicit clear drops all stale session rewards');
 
+// Authoring an XP popup as Float+ must not silently disable its reward-history handoff.
+world.showChange('masteryXp', 4, { text: '+4 Pick Mastery', mode: 'floatPlus' });
+flushMicrotasks();
+world.update(now + 1400);
+assert.deepEqual(Array.from(snapshot().visible, entry => entry.text), ['+4 Pick Mastery'], 'Float+ XP also reaches the found list');
+world.clear();
+hud.clear();
+
+// A destroyed/rebuilt HUD must retain active entries, not replace them with empty markup.
+hud.enqueue('loot', '+1 Pine Cone');
+const mountedHud = body.children[0]; // Original HUD node must survive a detach and reattach.
+mountedHud.remove();
+assert.equal(mountedHud.isConnected, false);
+hud.enqueue('loot', '+2 Pine Cone');
+assert.equal(body.children[0], mountedHud, 'recreated HUD reuses its existing rows');
+assert.deepEqual(Array.from(snapshot().visible, entry => entry.text), ['+1 Pine Cone', '+2 Pine Cone']);
+assert.equal(mountedHud.children[1].children.length, 2, 'reattached DOM still contains the visible rows');
+hud.clear();
+
+// Rewards gained before body creation should drain when the page becomes interactive.
+const savedBody = document.body; // Restored after the pre-DOM-ready queue test.
+document.body = null;
+hud.enqueue('loot', '+3 Willow Leaf');
+hud.enqueue('skillXp', '+5 Foraging XP');
+assert.equal(snapshot().visible.length, 0);
+assert.equal(snapshot().waiting, 2, 'pre-body rewards remain queued');
+document.body = savedBody;
+listeners.get('DOMContentLoaded')();
+assert.deepEqual(Array.from(snapshot().visible, entry => entry.text), ['+3 Willow Leaf', '+5 Foraging XP']);
+hud.clear();
+
 const html = fs.readFileSync('docs/index.html', 'utf8'); // Ensures the browser loads the HUD before the world popup calls it.
 assert(html.indexOf('js/reward-readout.js?') < html.indexOf('js/world-popup-text.js?'));
 const css = fs.readFileSync('docs/style.css', 'utf8'); // Ensures missing HUD styling cannot silently ship.
