@@ -231,4 +231,59 @@ assert.deepStrictEqual(impactCalls, [
   { thrown: true },
 ], 'blowgun darts double impact pitch without changing arrow/crossbow/thrown hits');
 
-console.log('combat SFX wiring: ok');
+
+async function testDecodedFinisherTiming() {
+  const starts = []; // Actual WebAudio BufferSource.start calls and playback rates for consecutive audio scheduling.
+  const renderRequests = []; // Exact independent WSOLA pitches and tempo passed to the shared renderer.
+  const decoded = { duration: 0.9, numberOfChannels: 1, sampleRate: 44100, length: 39690, getChannelData: () => new Float32Array(39690) }; // Minimal valid decoded recording for the live audio owner.
+  let audioContext = null; // Exposes the running test context clock to timing assertions.
+  class FakeContext {
+    constructor() { this.currentTime = 42; this.state = 'running'; this.destination = {}; audioContext = this; }
+    decodeAudioData() { return Promise.resolve(decoded); }
+    createBufferSource() {
+      const source = { buffer: null, playbackRate: { value: 1 }, connect() {}, disconnect() {}, stop() {} };
+      source.start = at => starts.push({ at, rate: source.playbackRate.value, duration: source.buffer.duration }); // Captures the exact scheduled cue from production WebAudio.
+      return source;
+    }
+    createGain() { return { gain: { value: 0 }, connect() {}, disconnect() {} }; }
+    createStereoPanner() { return { pan: { value: 0 }, connect() {}, disconnect() {} }; }
+    resume() { return Promise.resolve(); }
+  }
+  const settings = { enabled: true, sfxVolume: 1, combatSfx: {
+    enabled: true, quickAttackBonusSlash: { url: 'anime-slash.wav', volume: 0.9, preload: true },
+  } }; // Same semantic cue key as production with no unrelated combat sounds.
+  const world = {
+    window: { SCRATCHBONES_CONFIG: { game: { audio: settings } }, AudioContext: FakeContext,
+      AnimalVoiceIndependentPlayback: {
+        renderDecodedIndependentBuffer(buffer, _ctx, opts) {
+          assert.equal(buffer, decoded, 'reuses the decoded shared anime slash, rather than independently fetching it');
+          renderRequests.push({ ...opts }); // Captures both semitone requests during startup, not on the first strike.
+          const pitch = 2 ** (opts.pitchSemitones / 12); // Renderer-reported playback rate accounts for the deliberate lower pitch.
+          return Promise.resolve({ buffer: { duration: buffer.duration * pitch / opts.tempo },
+            playbackRate: pitch, durationS: buffer.duration / opts.tempo });
+        },
+      } },
+    Audio: FakeAudio, performance: { now: () => 1000 }, document: { addEventListener() {} },
+    setTimeout: () => 0, fetch: async () => ({ ok: true, arrayBuffer: async () => new ArrayBuffer(1) }),
+  }; // Real production audio module executes in an isolated headless WebAudio context.
+  vm.runInNewContext(audio, world);
+  world.window.AudioSystem.init({ TILE: 64, player: { x: 0, y: 0 }, getCurrentArea: () => 'farm',
+    audioUrlFailed: () => false, isRealMediaError: () => false, markAudioUrlFailed() {} });
+  for (let i = 0; i < 12; i++) await new Promise(resolve => setImmediate(resolve)); // Flush async fetch, decode and the two cached renders without real timers.
+  assert.deepStrictEqual(renderRequests.map(v => [v.tempo, v.pitchSemitones]), [[3, -5], [3, -6]], 'both independent transforms pre-render before combat');
+  const nativeBefore = FakeAudio.plays; // Ensures the decoded path does not silently invoke an HTML Audio fallback.
+  world.window.AudioSystem.playComboFinisherBonusSfx(0, 0, 'farm');
+  assert.equal(starts.length, 2, 'the qualified finisher starts exactly two WebAudio voices');
+  assert(Math.abs(starts[0].at - (audioContext.currentTime + .005)) < 1e-8);
+  assert(Math.abs(starts[1].at - starts[0].at - .3) < 1e-8, 'second slash begins as soon as the one-third-duration first slash ends');
+  assert(Math.abs(starts[0].rate - 2 ** (-5 / 12)) < 1e-8, 'first slash is pitched down by five semitones');
+  assert(Math.abs(starts[1].rate - 2 ** (-6 / 12)) < 1e-8, 'second slash is pitched down by six semitones');
+  assert(Math.abs(starts[0].duration / starts[0].rate - .3) < 1e-8, 'first processed recording lasts precisely one-third duration');
+  assert(Math.abs(starts[1].duration / starts[1].rate - .3) < 1e-8, 'second processed recording lasts precisely one-third duration');
+  assert.equal(FakeAudio.plays, nativeBefore, 'processed audio never triggers coupled native playback');
+  assert.equal(world.window.AudioSystem.combatSfxDebugSnapshot().last.detail.backend, 'independent-WSOLA');
+}
+
+testDecodedFinisherTiming().then(() => console.log('combat SFX wiring: ok'))
+  .catch(error => { console.error(error); process.exitCode = 1; }); // CI must fail rather than hide async WebAudio assertions.
+
