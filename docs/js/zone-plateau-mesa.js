@@ -398,7 +398,6 @@
         deps.resolveTileMat(mapId, deps.TileType.ROCK), deps.resolveTileMat(mapId, deps.TileType.GRASS))); // Shared rock/grass terrain materials.
       const miniGrass = window.ZoneGrassBillboards?.buildMiniCliffGrassBillboards?.(zScene, network); // Same wind-animated billboards as walkable wilderness grass.
       if (miniGrass) meshes.push(miniGrass); // Mesa rebuilds remove this with the old cap rather than leaking elevated grass.
-      window.ReagentPlants?.registerMiniCliffHerbClusters?.(mapId, network); // Makes the new, visually clustered rewards harvestable.
       for (const route of network.routes) delete route.project; // The baked decals no longer need the triangle index.
     }
     scheduleMesaRenderBatching(zScene, mapId, meshes);
