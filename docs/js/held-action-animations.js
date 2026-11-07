@@ -232,16 +232,26 @@
   // The two instruments are non-damaging gameplay actions. Each real sounded
   // note runs its own Neutral → Windup → Note → Return path, including rapid
   // retriggers; both the editor and KurrayaInstrument sample these same poses.
+  const fluteNeutralNotePose = { // Exact user-authored Neutral; reused independently for the note's three edit phases.
+    headRelative: true,
+    x: 0.01, y: 0, z: 0, pitch: -108, yaw: 0, bodyYaw: 0, roll: 4,
+    scale: 1.3, bodySink: 0,
+    shoulderAim: { grip: true, palmNormal: false },
+    secondaryGrip: { enabled: false, percent: 50, primaryPercent: 50 },
+    dualWield: { enabled: false },
+    elbows: { right: { x: 0, y: -0.15, z: 0.1 } },
+  };
+  const copyFluteNotePose = () => JSON.parse(JSON.stringify(fluteNeutralNotePose)); // Each editable phase owns its own grip and elbow objects.
+  const FLUTE_STRIKE_BODY_SINK_PCT = 10; // Strike-only, editor-adjustable percent of height; player leg/body composer applies it live.
   const flutePlayNote = {
     version: 1, kind: 'hobunji_held_action_animation', name: 'Flute — Play Note',
     style: 'ranged', sequence: 'attack', headRelative: true,
     durationS: 0.32, windupFrac: 0.18, strikeFrac: 0.34, holdFrac: 0.62,
+    gripMode: 'palm-parallel',
     poses: {
-      // The aperture is on the mouth. Its pipe extends outward along -Z
-      // exactly like the existing flute/blowgun mouth mount.
-      neutral: { headRelative: true, x: 0, y: 0, z: 0, pitch: -180, yaw: 0, roll: 4, bodyYaw: 0, scale: 1.3, shoulderAim: { grip: false, palmNormal: true }, secondaryGrip: { enabled: false }, dualWield: { enabled: false } },
-      windup: { headRelative: true, x: 0, y: 0.012, z: 0, pitch: -177, yaw: 0, roll: 1, bodyYaw: 0, shoulderAim: { grip: false, palmNormal: true }, secondaryGrip: { enabled: false }, dualWield: { enabled: false } },
-      strike: { headRelative: true, x: 0, y: -0.012, z: 0, pitch: -180, yaw: 0, roll: 4, bodyYaw: 0, shoulderAim: { grip: false, palmNormal: true }, secondaryGrip: { enabled: false }, dualWield: { enabled: false } },
+      neutral: copyFluteNotePose(),
+      windup: copyFluteNotePose(), // Identical to Neutral: no unwanted lift or pipe rotation.
+      strike: { ...copyFluteNotePose(), bodySink: FLUTE_STRIKE_BODY_SINK_PCT }, // Only the body's downward bend distinguishes the sounded note.
     },
   };
   const kurrayaPlayNote = {
