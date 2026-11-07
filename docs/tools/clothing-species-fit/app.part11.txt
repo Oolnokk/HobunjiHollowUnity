@@ -14,8 +14,7 @@
     if(transform?.[key]==null||String(transform[key]).trim()===''||!Number.isFinite(Number(transform[key])))
       throw new Error(`The base transform is missing a valid ${key}.`);
   }
-  if(Number(transform.scaleX)<=0||Number(transform.scaleY)<=0)
-    throw new Error('This report has a zero/negative base scale, collapsing the garment grid. Reset or re-enter the base scale and copy fresh diagnostics before importing.');
+  // Nonpositive scales are repaired on import, using the original scale to recover local offsets.
 
   const section=text.split('source→target points:')[1]?.split('recent log:')[0];
   if(!section)throw new Error('The report is missing its source→target point list.');
@@ -37,7 +36,10 @@
   let maskTransform=null;
   const maskLine=readLine('cloud mask preview');
   if(maskLine){try{maskTransform=JSON.parse(maskLine)}catch{}}
-  return{region,species,gender,sourceSpecies,sourceGender,garment,transform,points,maskTransform};
+  const stageMatch=readLine('stage').match(/^(\d+)x(\d+)$/); // Original raster dimensions for reconstructing local offsets from translated points.
+  const stage=stageMatch&&Number(stageMatch[1])>0&&Number(stageMatch[2])>0
+    ?{width:Number(stageMatch[1]),height:Number(stageMatch[2])}:null; // Older reports without stage data fall back to the active raster.
+  return{region,species,gender,sourceSpecies,sourceGender,garment,transform,points,maskTransform,stage};
 }
 
 async function importPastedDiagnostics(){
@@ -62,13 +64,14 @@ async function importPastedDiagnostics(){
     if(!R.body||!R.cloth)throw new Error('Could not load the selected body and source garment; check repository access and try again.');
 
     const key=ensureTargetData(imported.species,imported.gender);
-    A.baseTransforms[key]={...imported.transform};
-    const baseGrid=transformedSourceGrid();
-    A.localOffsets[key]=imported.points.map((point,index)=>({x:point.x-baseGrid[index].x,y:point.y-baseGrid[index].y}));
+    const fit=repairedImportedFitState(imported,imported.stage?.width||E.stage.width,imported.stage?.height||E.stage.height); // Rebuilds local corrections relative to the original, possibly collapsed base.
+    A.baseTransforms[key]=fit.transform;
+    A.localOffsets[key]=fit.offsets;
     if(imported.maskTransform&&['scaleX','scaleY','translateY'].every(name=>Number.isFinite(Number(imported.maskTransform[name]))))
       A.maskPreviewTransforms[key]={...imported.maskTransform};
     mode='fit';saveState();syncTransformControls();syncMaskTransformControls();render();syncHistory();
     log(`Imported pasted fit for ${imported.garment}, ${imported.sourceSpecies} ${imported.sourceGender} → ${imported.species} ${imported.gender}.`);
+    if(fit.repairedAxes.length)log(`Recovered collapsed imported ${fit.repairedAxes.join('/')} for ${key} (base scale now 1); kept all 36 local fit offsets.`);
   }catch(error){log('ERROR '+error.message);status('Pasted fit not imported: '+error.message)}
 }
 

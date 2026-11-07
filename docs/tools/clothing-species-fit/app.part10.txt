@@ -118,7 +118,8 @@ function wireTransformPair(slider,number,field){
   number.addEventListener('focus',()=>pushUndo(),{passive:true});
   slider.addEventListener('input',()=>setTransformField(field,slider.value,slider));
   number.addEventListener('input',()=>setTransformField(field,number.value,number));
-  number.addEventListener('change',()=>syncTransformControls()); // Restore the last valid number if editing ends mid-entry.
+  number.addEventListener('change',()=>syncTransformControls());
+  number.addEventListener('blur',()=>syncTransformControls()); // Mobile number fields may blur without a change event.
 }
 function resetMaskTransform(){
   pushUndo();

@@ -51,13 +51,26 @@ function syncMaskTransformControls(){
     slider.value=String(value);number.value=String(value);
   }
 }
-function transformedSourceGrid(){
-  const tr=currentTransform(),w=Math.max(1,E.stage.width||234),h=Math.max(1,E.stage.height||173);
+function transformedGridForTransform(tr,w,h){
+  const width=Math.max(1,w),height=Math.max(1,h); // Shared stage dimensions for live and imported base grids.
   return SOURCE_GRID.map(p=>{
-    const px=(p.x-.5)*w*tr.scaleX+w*.5+tr.translateX;
-    const py=(p.y-.5)*h*tr.scaleY+h*.5+tr.translateY;
-    return{x:px/w,y:py/h};
-  }); // Global scale/translation is applied first.
+    const px=(p.x-.5)*width*tr.scaleX+width*.5+tr.translateX;
+    const py=(p.y-.5)*height*tr.scaleY+height*.5+tr.translateY;
+    return{x:px/width,y:py/height};
+  }); // Applies base transform in the original portrait's pixel coordinate frame.
+}
+function transformedSourceGrid(){
+  return transformedGridForTransform(currentTransform(),E.stage.width||234,E.stage.height||173);
+}
+function repairedImportedFitState(imported,width,height){
+  const transform={...imported.transform}; // A usable, repaired global transform for the incoming report.
+  const repairedAxes=['scaleX','scaleY'].filter(axis=>Number(transform[axis])<=0); // Axes that flattened or inverted the saved fitting grid.
+  const previousBase=transformedGridForTransform(imported.transform,width,height); // The grid used when the diagnostic points were recorded.
+  for(const axis of repairedAxes)transform[axis]=1;
+  const offsets=imported.points.map((point,i)=>({
+    x:point.x-previousBase[i].x,y:point.y-previousBase[i].y
+  })); // Preserve every authored local correction; only the degenerate base axis is repaired.
+  return{transform,offsets,repairedAxes};
 }
 function targetGrid(){
   const baseGrid=transformedSourceGrid(),offsets=currentOffsets();

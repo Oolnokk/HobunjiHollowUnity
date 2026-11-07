@@ -58,22 +58,46 @@ number.value='0';number.listeners.input();
 assert.equal(fit.scaleX,1,'A temporarily out-of-range scale must not be saved');
 number.value='0.835';number.listeners.input();
 assert.equal(fit.scaleX,.835,'A valid fractional scale should be accepted after intermediate typing');
-number.value='0';number.listeners.change();
-assert.equal(number.value,'0.835','Leaving an invalid number field restores the last valid scale');
+number.value='0';number.listeners.blur();
+assert.equal(number.value,'0.835','Blurring an invalid mobile field restores the last valid scale');
 assert.equal(saves,1,'Only the valid change should persist');
 assert.equal(renders,1,'Only the valid change should redraw');
 
-// A pasted grid with zero scale is ambiguous and must fail visibly instead of exporting a line.
+// The original Tletingan hood report must transfer across origins without re-flattening its 6x6 grid.
 const parseDiagnostics=new Function('GRID_SIZE',
   extractEditorFunction(parts[9]+parts[10],'function parseDiagnostics(', 'async function importPastedDiagnostics(')+
   '\nreturn parseDiagnostics;')(6);
-const invalidReport=[
-  'gridSize: 6x6','warp model: bilinear 6x6 quads',
-  'target grid: headwear::tletingan_male','garment: fine_hood',
-  'base transform: {"scaleX":0,"scaleY":0.835,"translateX":-3.5,"translateY":-11.25}'
+const fitMath=new Function('SOURCE_GRID',
+  extractEditorFunction(parts[2],'function transformedGridForTransform(', 'function targetGrid()')+
+  '\nreturn {transformedGridForTransform,repairedImportedFitState};')(
+    Array.from({length:36},(_,i)=>({x:(i%6)/5,y:Math.floor(i/6)/5}))
+  );
+const reportNodes=Array.from({length:36},(_,i)=>{
+  const sx=(i%6)/5,sy=Math.floor(i/6)/5;
+  const tx=.5-3.5/234+(i===14?.047:0),ty=(sy-.5)*.835+.5-11.25/173+(i===14?.018:0); // One deliberately edited local node.
+  return `${i}: (${sx.toFixed(3)},${sy.toFixed(3)}) -> (${tx.toFixed(3)},${ty.toFixed(3)})`;
+});
+const pastedReport=[
+  'gridSize: 6x6','warp model: bilinear 6x6 quads','fit region: headwear',
+  'target grid: headwear::tletingan_male','source species: tletingan','source gender: male',
+  'garment: fine_hood','stage: 234x173',
+  'base transform: {"scaleX":0,"scaleY":0.835,"translateX":-3.5,"translateY":-11.25}',
+  'source→target points:',...reportNodes,'recent log:'
 ].join('\n');
-assert.throws(()=>parseDiagnostics(invalidReport),/zero\/negative base scale/,
-  'Importing a collapsed report must direct the author to repair the original fit');
+const importedReport=parseDiagnostics(pastedReport);
+const repaired=fitMath.repairedImportedFitState(importedReport,importedReport.stage.width,importedReport.stage.height);
+assert.deepEqual(repaired.repairedAxes,['scaleX'],'The flattened X axis is the only repaired axis');
+assert.equal(repaired.transform.scaleX,1,'Import restores a usable hood width');
+assert.equal(repaired.transform.scaleY,.835,'Import keeps the vertical scale');
+assert.equal(repaired.transform.translateX,-3.5,'Import keeps the horizontal translation');
+assert.equal(repaired.transform.translateY,-11.25,'Import keeps the vertical translation');
+assert.equal(repaired.offsets.length,36,'All local grid corrections are retained');
+assert(Math.abs(repaired.offsets[14].x-.047)<.001,'Edited local X nodes survive base-scale recovery');
+assert(Math.abs(repaired.offsets[14].y-.018)<.001,'Edited local Y nodes survive base-scale recovery');
+const baselineAfter=fitMath.transformedGridForTransform(repaired.transform,234,173);
+assert(Math.abs((baselineAfter[5].x+repaired.offsets[5].x)-
+  (baselineAfter[0].x+repaired.offsets[0].x)-1)<.002,
+  'The imported top grid row has its full horizontal extent instead of collapsing');
 
 const key='from::tletingan_male::headwear::tletingan_male';
 const offsets=Array.from({length:36},()=>({x:0,y:0}));
