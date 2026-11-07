@@ -66,8 +66,24 @@
       newMesh(name,new THREE.BoxGeometry(w,h,d),mat(color,emissive,surface),x,bottom+h*.5,z,parent);
     const cylinder=(name,x,z,bottom,rad,h,color)=>
       newMesh(name,new THREE.CylinderGeometry(rad,rad,h,12),mat(color),x,bottom+h*.5,z);
-    const solid=(name,x,z,halfX,halfZ,enabled=()=>alive())=>
-      occupancy.addSolidBox(id+'-'+name,{cx:x,cz:z,halfX,halfZ},enabled,solidOwner); // Blocking is live and no larger than its visible stone.
+    const solid=(name,x,z,halfX,halfZ,enabled=()=>alive())=>{
+      if(kit.registerBlocker){
+        // Stacked wing stories need height-aware obstacles. V50's ordinary footprint registry samples only the entry level.
+        kit.registerBlocker({
+          id:id+'-'+name,
+          bounds:{minX:x-halfX,maxX:x+halfX,minZ:z-halfZ,maxZ:z+halfZ},
+          enabled,
+          blocksAt:(px,pz,_actorHeight,_record,radius,query)=>{
+            const worldY=Number(query?.worldY??query?.y??query?.floorY);
+            if(Number.isFinite(worldY)&&(worldY<floorY-.35||worldY>floorY+3.5))return false;
+            const pad=Math.max(0,Number(radius)||0);
+            return Math.abs(px-x)<=halfX+pad&&Math.abs(pz-z)<=halfZ+pad;
+          }
+        });
+        return true;
+      }
+      return occupancy.addSolidBox(id+'-'+name,{cx:x,cz:z,halfX,halfZ},enabled,solidOwner);
+    }; // Solo still uses its canonical footprint registry; layered stories use per-floor DynamicSurfaces blockers.
     const control=record=>{controls.push(record);if(kit.addControl)kit.addControl(record);else kit.state.controls.push(record);return record;};
     const support=(name,x,z,w,d,topY,enabled=()=>alive())=>kit.registerSurface({
       id:id+'-'+name,bounds:{minX:x-w*.5,maxX:x+w*.5,minZ:z-d*.5,maxZ:z+d*.5},
