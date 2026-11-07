@@ -73,6 +73,18 @@
     if (!ruin || deps?.getCurrentArea?.() !== MAP_ID) return null;
     return Number.isFinite(ruin.supportY) ? ruin.supportY : null; // Physical support used for hazard contact, unaffected by the cosmetic sinking offset.
   }
+  function acceptFreeJumpLanding(worldY) {
+    const y=Number(worldY); // Authoritative feet height at a confirmed ground landing, not a visual-animation offset.
+    if(!ruin||deps?.getCurrentArea?.()!==MAP_ID||!Number.isFinite(y))return false;
+    const x=deps.player.x/deps.TILE,z=deps.player.y/deps.TILE;
+    const surface=DS.sampleSupport?.(x,z,{minY:y-.08,maxY:y+.08,pad:.02});
+    ruin.supportY=y;ruin.supportId=surface?.id||null;
+    ruin.lastAcceptedPx={x:deps.player.x,y:deps.player.y};
+    ruin.lastSafePx={...ruin.lastAcceptedPx};
+    ruin.falling=null; // Jump already landed through FallSystem; don't apply a second legacy drop.
+    syncRuinPresentationHeight(y);
+    return true;
+  }
   function getGroundSupportYAt(x, z) {
     if (!ruin || deps?.getCurrentArea?.() !== MAP_ID || !Number.isFinite(x) || !Number.isFinite(z)) return null;
     const ground=DS.sampleSupport?.(x,z,{minY:-60,maxY:60,pad:.02}); // Spell impacts sample the actual ruined terrain, including lower/sunken floors.
@@ -1650,6 +1662,31 @@
 
   function reconcilePlayer(now){
     if(window.DevRandomRuinSimplePuzzles?.ownsPlayerMotion?.())return;
+    const freeJump=deps.player?._freeJump; // Ordinary jump maintains its own physical foot height until it lands.
+    if(freeJump){
+      const feetY=Number(deps.player.physicalFeetY); // Same height consumed by game.js avatar rendering and PlayerJump collision.
+      if(Number.isFinite(feetY)){
+        const px=deps.player.x/deps.TILE,pz=deps.player.y/deps.TILE;
+        if(freeJump.phase==='air'){
+          // Preserve native shaft geometry while ignoring ground-only support and
+          // instant-pit reconciliation until the airborne feet actually land.
+          const shaft=shaftAt(px,pz,feetY);
+          if(shaft&&shaftBlocks(shaft,px,pz,shaft.yToLevel(feetY+1e-5))){
+            deps.player.x=ruin.lastAcceptedPx.x;deps.player.y=ruin.lastAcceptedPx.y;
+          }else ruin.lastAcceptedPx={x:deps.player.x,y:deps.player.y};
+          return;
+        }
+        if(freeJump.phase==='supported'){
+          // Standing on an authored rock/table is a legitimate new elevation,
+          // not a ground-level tile the V50 step-height veto should undo.
+          ruin.supportY=feetY;ruin.supportId=freeJump.supportId||null;
+          ruin.lastAcceptedPx={x:deps.player.x,y:deps.player.y};
+          ruin.lastSafePx={...ruin.lastAcceptedPx};
+          syncRuinPresentationHeight(feetY);
+          return;
+        }
+      }
+    }
     if(deps.player?.climbing||deps.player?.onClimbSurface){ // Scripted climbs and ClimbSurfaces wall grabs both drive the accepted height themselves.
       ruin.obeliskFall=null; // A midair grab transitions completely into the existing shared climb session.
       const climbY=Number(deps.player.onClimbSurface?deps.player.wallClimbY:deps.player.climbSurfaceY); // Used to advance the ruin's accepted-height baseline during the shared ladder animation so landing is not rejected as an oversized step.
@@ -2041,7 +2078,7 @@
     },
     isShaftNetworkComplete:()=>ruin?.shaftLayerRuntime?ruin.shaftNetworkComplete===true:true, // No allocation in the hot Sanctum Great Door update path.
     isSlidingPushBlock:block=>ruin?.blockSlide?.block===block, // Keeps the separate floor-settling pass from adjusting a block mid-slide.
-    getGenerationProgress:()=>({phase:generationPhase,elapsedS:+((performance.now()-generationStartedMs)/1000).toFixed(1),attempts:lastGenerationAudit?.attempts?.length||0}),getDarknessSettings,setDebugBadgePart,getOcclusionMeshes:()=>ruin?.occlusionMeshes||null,setPlayerWorldPoint,getPlayerSupportY,getPlayerGroundSupportY,shaftSegmentHit,shaftCreatureCanEnter,syncShaftCreatureFloor,registerShaftGrid,unregisterShaftGrid:scope=>ruin?.shaftGrids?.delete(scope),setLevelRelativeSupport:on=>{if(ruin)ruin.levelRelativeSupport=on!==false;return !!ruin?.levelRelativeSupport;},getGroundSupportYAt,setMechanismTarget,lockMechanism,unlockMechanism,mechanismInfo,syncPlayerPresentationHeight:syncRuinPresentationHeight,getState:()=>ruin?{mapId:MAP_ID,storyVault:ruin.storyVault ? {footprints:ruin.storyVaultFootprintCount,doorBlocks:false,puzzles:0,decalReady:ruin.storyVaultDecalReady,decalError:ruin.storyVaultDecalError||null} : null,seed:ruin.seed,theme:ruin.theme,specialBoss:ruin.specialBoss,ruinName:ruin.ruinName,hachutu:!!ruin.hachutu,shaftHub:!!ruin.shaftHub,singleRoomTrial:ruin.singleRoomTrial||null,noLoot:ruin.noLoot===true,shaftConnection:ruin.shaftConnection||null, // The mobile debug snapshot reports the laboratory's chosen puzzle and reward policy.shaftLayerRuntime:ruin.shaftLayerRuntime?.getState?.()||null,
+    getGenerationProgress:()=>({phase:generationPhase,elapsedS:+((performance.now()-generationStartedMs)/1000).toFixed(1),attempts:lastGenerationAudit?.attempts?.length||0}),getDarknessSettings,setDebugBadgePart,getOcclusionMeshes:()=>ruin?.occlusionMeshes||null,setPlayerWorldPoint,getPlayerSupportY,getPlayerGroundSupportY,shaftSegmentHit,shaftCreatureCanEnter,syncShaftCreatureFloor,registerShaftGrid,unregisterShaftGrid:scope=>ruin?.shaftGrids?.delete(scope),setLevelRelativeSupport:on=>{if(ruin)ruin.levelRelativeSupport=on!==false;return !!ruin?.levelRelativeSupport;},getGroundSupportYAt,acceptFreeJumpLanding,setMechanismTarget,lockMechanism,unlockMechanism,mechanismInfo,syncPlayerPresentationHeight:syncRuinPresentationHeight,getState:()=>ruin?{mapId:MAP_ID,storyVault:ruin.storyVault ? {footprints:ruin.storyVaultFootprintCount,doorBlocks:false,puzzles:0,decalReady:ruin.storyVaultDecalReady,decalError:ruin.storyVaultDecalError||null} : null,seed:ruin.seed,theme:ruin.theme,specialBoss:ruin.specialBoss,ruinName:ruin.ruinName,hachutu:!!ruin.hachutu,shaftHub:!!ruin.shaftHub,singleRoomTrial:ruin.singleRoomTrial||null,noLoot:ruin.noLoot===true,shaftConnection:ruin.shaftConnection||null, // The mobile debug snapshot reports the laboratory's chosen puzzle and reward policy.shaftLayerRuntime:ruin.shaftLayerRuntime?.getState?.()||null,
     nativeV50Runtime:ruin.nativeV50Runtime?.getState?.()||null,
     runtimeWallPlanes:ruin.entranceWallPlanes||null,
     runtimeHallways:ruin.entranceHallways||null, // Persist the authoritative floor-zero generated audit after V50's iframe has detached every upper-floor preview root.

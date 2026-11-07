@@ -825,6 +825,10 @@
         // (no stamina cost, no terrain collision) rendered as a chain of
         // staggered hops rather than a continuous slide; climbSurfaceY/
         // climbHopBounce are consumed by updatePlayerMesh for the vertical rise.
+        physicalFeetY: null, // Jump's physical foot elevation, used by the renderer and height-aware traversal.
+        heightAboveGround: 0, // Actual distance above the local terrain, including raised furniture support.
+        jumpHeightAboveGround: 0, // Debug-compatible alias consumed by the jump system.
+        _freeJump: null, // Transient airborne/elevated-support motion, never part of save data.
         climbing: false, climbElapsed: 0, climbHopCount: 0,
         climbStartX: 0, climbStartY: 0, climbEndX: 0, climbEndY: 0,
         climbSurfaceStartY: 0, climbSurfaceEndY: 0, climbSurfaceY: 0, climbHopBounce: 0,
@@ -3311,9 +3315,9 @@
           && c < obj.col + bounds.fw && r < obj.row + bounds.fd;
       }
 
-      function furnitureBlocksMovementAt(area, x, z) {
-        if (window.AreaFootprintBlockers?.blocksPoint(area, x, z)) return true;
-        if (window.FurnitureTableSystem?.blocksBox(area, x, z)) return true; // Exterior and locale furniture share the normal NPC/player movement authority.
+      function furnitureBlocksMovementAt(area, x, z, worldY = null) {
+        if (window.AreaFootprintBlockers?.blocksBox(area, x, z, 0, worldY)) return true;
+        if (window.FurnitureTableSystem?.blocksBox(area, x, z, 0, worldY)) return true; // Exterior and locale furniture share the normal NPC/player movement authority.
         if (_isZoneArea(area) && window.FoliageFurnitureRuntime?.blocksPoint(area, x, z)) return true;
         if (interiorFurnitureObjects.some(obj => obj.area === area && decorativeFurnitureBlocksPoint(obj, x, z))) return true;
         if (area === 'interior' && _derivedHearthMeshes.some(h => {
@@ -16701,6 +16705,9 @@
         const routeNet = window.CliffRouteNetwork?.forArea?.(currentArea); // Reuse rendered Y-layer state rather than the underlying single-height grid.
         const shelf = window.CliffRouteNetwork?.shelfAt?.(routeNet, player.onCliffBalcony);
         if (!shelf || !shelf.footprint.some(f => f.c === col && f.r === row)) return null;
+        // A clustered herb patch belongs to one walkable mini-cliff tile, even on long ledges.
+        if (shelf.reward === 'herbCluster' && shelf.herbTile &&
+          (shelf.herbTile.c !== col || shelf.herbTile.r !== row)) return null;
         const state = window.CliffRouteNetwork.getRewardState(currentArea, shelf.id);
         if (state.claimed) return null;
         const areaAtCreation = currentArea; // Asynchronous lockpicking validates the original area/ledge before paying.
@@ -16724,7 +16731,29 @@
             }
             window.SkillSystem?.award?.('mining', window.SkillSystem?.XP_GAINS?.rock || 8, 'mined cliff ore');
             window.HobunjiActivityEvents?.emit('rock_broken', { area: currentArea });
-          } else {
+          } else if (shelf.reward === 'herbCluster') {
+            const reagentKey = shelf.reagentKey; // Chosen from this area's native plants by the cliff renderer.
+            const reagent = window.AlchemySystem?.REAGENT_DEFS?.[reagentKey]; // Shared reagent definition used by ordinary gathering.
+            if (!reagent) return { ok: false, message: 'These herbs cannot be identified yet.' };
+            const pickCount = 5; // One cluster represents five normal herb picks for yield, perks, and XP.
+            const bonusChance = window.SkillSystem?.bonusYieldChance?.('foraging') || 0; // Extra-yield chance from the ordinary Foraging perks and buffs.
+            const doubleRank = window.PerkSystem?.rank?.('foraging', 'doubleForageables') || 0; // Normal Double Forageables perk applies to every pick.
+            let amount = 0; // Total yield from five independent bonus rolls before accepting the harvest.
+            for (let pick = 0; pick < pickCount; pick++) {
+              amount += (1 + (rnd() < bonusChance ? 1 : 0)) * (doubleRank > 0 ? 2 : 1);
+            }
+            const previous = inventory[reagentKey] || 0; // Current stack before adding the whole cluster's reward.
+            if (previous + amount > window.InventoryStacks.MAX_TOTAL) {
+              return { ok: false, message: 'Not enough inventory space for all five herb picks.' }; // Never consume a cluster while discarding its herbs.
+            }
+            inventory[reagentKey] = previous + amount;
+            rewards.push(amount + ' ' + (reagent.label || reagentKey));
+            for (let pick = 0; pick < pickCount; pick++) {
+              window.SkillSystem?.award?.('foraging', window.SkillSystem?.XP_GAINS?.forage || 4, 'picked cliff herb cluster');
+              window.HobunjiActivityEvents?.emit('herb_picked', { area: currentArea, source: 'miniCliff' });
+            }
+            window.AudioSystem?.playObjectSfx?.(window.AudioSystem?.objectSfxConfig?.()?.harvest);
+          } else if (shelf.reward === 'buriedTreasure') {
             const metalLoot = window.WildTreasure?.rollTreasureMetalBarLoot?.() || {}; // Existing wilderness buried-chest metal picker.
             for (const [itemKey, amount] of Object.entries(metalLoot)) {
               inventory[itemKey] = Math.min(window.InventoryStacks.MAX_TOTAL, (inventory[itemKey] || 0) + amount);
@@ -16741,8 +16770,14 @@
         };
         return {
           id: shelf.id + '-resource', col, row, type: 'cliff_balcony_resource',
-          label: shelf.reward === 'oreRock' ? 'Ore Rock' : 'Buried Cliff Chest',
+          label: shelf.reward === 'oreRock' ? 'Ore Rock'
+            : shelf.reward === 'herbCluster' ? 'Herb Cluster' : 'Buried Cliff Chest',
           getButtons() {
+            if (shelf.reward === 'herbCluster') return [{
+              icon: '🌿', label: 'Pick the mini-cliff herb cluster',
+              action: 'obj_balcony_pick', inputAction: 'action1', worldInteraction: true,
+              style: 'primary', allowed: true,
+            }];
             if (shelf.reward === 'oreRock') return [{
               icon: '⛏️', label: 'Mine the balcony ore rock',
               action: 'obj_balcony_mine', inputAction: 'action1', worldInteraction: true,
@@ -16765,13 +16800,14 @@
               if (activeTool !== 'pick' || heldMode !== 'tool') return { ok: false, message: 'Equip a pick to mine this rock.' };
               return award();
             }
-            if (action === 'obj_balcony_dig' && shelf.reward !== 'oreRock' && !state.revealed) {
+            if (action === 'obj_balcony_pick' && shelf.reward === 'herbCluster') return award(); // Direct picking, no shovel.
+            if (action === 'obj_balcony_dig' && shelf.reward === 'buriedTreasure' && !state.revealed) {
               if (activeTool !== 'shovel' || heldMode !== 'tool') return { ok: false, message: 'Equip a shovel to dig here.' };
               window.CliffRouteNetwork.setRewardStage(currentArea, shelf.id, 'revealed');
               awardToolUseMasteryXp('shovel');
               return { ok: true, zoneVisualsUpdated: true, message: 'The dirt breaks away, revealing a buried chest.' };
             }
-            if (action === 'obj_balcony_open' && shelf.reward !== 'oreRock' && state.revealed) {
+            if (action === 'obj_balcony_open' && shelf.reward === 'buriedTreasure' && state.revealed) {
               const valid = () => isAvailable() && window.CliffRouteNetwork.getRewardState(currentArea, shelf.id).revealed;
               const started = window.ChestLockpicking?.open?.({
                 id: shelf.id, title: 'Cliff Chest', tier: 1, valid,
@@ -18847,6 +18883,7 @@
 
         const _fsPrevX = player.x, _fsPrevY = player.y;
 
+        if (window.PlayerJump?.tick?.(dt)) return; // Free-jump movement owns its physical elevation without impersonating a wall climb.
         if (player.climbing) {
           window.ClimbSystem.updateClimb(dt);
           return;
@@ -19243,6 +19280,32 @@
             && tileSpeedAt(wx + radius, wy - radius, tileWorldY) !== null
             && tileSpeedAt(wx - radius, wy + radius, tileWorldY) !== null
             && tileSpeedAt(wx + radius, wy + radius, tileWorldY) !== null;
+      }
+
+      function canPlayerOccupyAtHeight(wx, wy, feetY) {
+        if (!Number.isFinite(feetY)) return canPlayerOccupy(wx, wy);
+        const radius = PLAYER_RADIUS * 0.72; // Physical free-jump footprint matches normal walking.
+        if (window.InteriorDoorTiles?.blocksBox(currentArea, wx / TILE, wy / TILE, radius / TILE)) return false;
+        // Projectile-height occupancy skips some legacy 2D-only colliders.
+        // Check those at each player-collider corner, separately from the
+        // providers that already understand furniture and footprint height.
+        const grid = window.GridTileAccessors.getActiveGrid();
+        for (const [dx, dy] of [[-radius, -radius], [radius, -radius], [-radius, radius], [radius, radius]]) {
+          const x = (wx + dx) / TILE, z = (wy + dy) / TILE;
+          if (grid[Math.floor(z)]?.[Math.floor(x)]?._banditTentCollisionId) return false;
+          if (furnitureBlocksMovementAt(currentArea, x, z, feetY + 0.05)) return false;
+        }
+        const footprintY = feetY + 0.05; // Native footprint providers sample the actual foot height, not the projectile's radius-offset value.
+        // A narrow blocker can touch the middle of the player footprint while
+        // missing all four sampled corners. Test the FULL box at real feet Y.
+        // canOccupyAt checks tile cover separately with a projectile underside
+        // offset and must not be the sole authority for narrow 3D furniture.
+        if (window.AreaFootprintBlockers?.blocksBox(currentArea, wx / TILE, wy / TILE, radius / TILE, footprintY)) return false;
+        if (window.FurnitureTableSystem?.blocksBox(currentArea, wx / TILE, wy / TILE, radius / TILE, footprintY)) return false;
+        // canOccupyAt subtracts its collision radius from worldY to form a
+        // projectile's underside. Offset by that same radius so the player's
+        // actual feet, not a point below them, clear the top of a low rock.
+        return canOccupyAt(wx, wy, radius, footprintY + radius / TILE);
       }
 
       function canPlayerOccupy(wx, wy) {
@@ -25438,6 +25501,7 @@
         const ordinaryStandY = player.onBranch ? player.branchSurfaceY
           : player.onCliffBalcony ? player._cliffBalconyY
           : player.onClimbSurface ? player.wallClimbY
+          : player._freeJump ? player.physicalFeetY // Jump is an independently grounded/airborne motion, not a scripted climb.
           : player.climbing ? player.climbSurfaceY
           : Number.isFinite(ruinStandY) ? ruinStandY
           : (_isZoneArea(currentArea) ? surfaceYAtWorld(currentArea, wx, wz) : tileSurfaceYInArea(tile, currentArea));
@@ -32347,6 +32411,14 @@
         getPlayerInteractionRay: currentPlayerInteractionRay,
         worldSurfaceY: (x, y) => activeSurfaceYAtWorld(x / TILE, y / TILE),
         getMovementInput: climbMovementInput,
+        getBaseMoveSpeedTiles: () => MOVE_SPEED / TILE, // Jump travel reuses normal walking distance per second, not a separate hard-coded pace.
+        canStartFreeJump: () => gameStarted && !paused && !dialogueOpen && !sitInteraction &&
+          !window.Fishing?.state?.active && !window.MusicMinigame?.state?.active &&
+          !window.BedLiePose?.isActive?.() && !window.FarmAnimals?.isHarvesting?.() &&
+          !window.PlayerSocialPoses?.active, // Actions/minigames that own the player must not secretly queue a jump.
+        canPlayerOccupy, // Normal grounded movement authority.
+        canPlayerOccupyAtHeight, // Jump uses native world collision at the physical foot height.
+        furnitureBlocksMovementAt, // Allows only finite-height cover to be jumped; otherwise retains normal furniture collision.
       });
 
       // Climbable wall surfaces (js/climb-surfaces.js): attach on a forward dodge via

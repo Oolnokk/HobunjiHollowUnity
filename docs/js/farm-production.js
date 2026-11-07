@@ -17,7 +17,9 @@
     window.CropVarieties?.attach?.({ cropData: deps.cropData, ITEM_DEFS: deps.ITEM_DEFS, inventory: deps.inventory,
       inventoryItems: deps.inventoryItems, loadStorage: deps.loadStorage }); // Existing registries own produce, seeds and cooking effects.
     for (const definition of Object.values(catalog)) deps.ITEM_DEFS[definition.planItem] = { label: definition.label + ' Plan', icon: '📜', cat: 'building', sellPrice: Math.round(definition.price * 0.4), desc: 'Place from the Farm map. Persistent queue; slower processing with enhanced yield.' };
-    deps.ITEM_DEFS.mootBaby = { label: 'Baby Moot', icon: '🐾', cat: 'material', sellPrice: 0, desc: 'A baby Moot. Kept safely as an item until Moot animals are available.' };
+    window.MootRegistration?.registerBabyItem?.(deps.ITEM_DEFS); // Converts the Ranch's legacy baby placeholder into real deployable livestock.
+    window.MootRegistration?.registerLootItems?.(deps); // Preserve Moot carcass products in the same inventory catalog used by the Farm.
+
     deps.ITEM_DEFS.voorgAssBaby = { label: 'Baby Voorg-ass', icon: '🫏', cat: 'livestock', sellPrice: 80, tags: ['Livestock', 'Baby'], desc: 'A baby Voorg-ass for the farm Nursery.' };
     if (deps.ITEM_DEFS.uumkaoiiEgg) { deps.ITEM_DEFS.uumkaoiiEgg.label = "Fertile Uumkao'ii Egg"; deps.ITEM_DEFS.uumkaoiiEgg.tags = [...new Set([...(deps.ITEM_DEFS.uumkaoiiEgg.tags || []), 'Fertile'])]; }
     if (timer) clearInterval(timer);
