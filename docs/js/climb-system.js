@@ -972,6 +972,29 @@
     return true;
   }
 
+  // A committed directional step off a wilderness balcony is real airborne
+  // movement, not a scripted teleport. This deliberately leaves manual
+  // jumpFromBalcony alone for its existing authored jump-down/roll action.
+  function fallOffBalconyInAir(raw, outside) {
+    const player = deps?.player;
+    const shelf = window.CliffRouteNetwork?.shelfAt?.(currentCliffNetwork(), player?.onCliffBalcony);
+    if (!player || !shelf || player.climbing || !window.PlayerJump?.beginFlight || !outside) return false;
+    const length = Math.hypot(Number(raw?.x) || 0, Number(raw?.y) || 0);
+    if (length <= 0.01 || window.CliffRouteNetwork?.shelfContains?.(shelf, outside.x, outside.z, 0.02)) return false;
+    if (window.PlayerJump?.canOccupyAir?.(outside.x, outside.z, shelf.y) === false) return false;
+    const balconyId = player.onCliffBalcony; // Used only to restore the original support if flight creation fails.
+    player.onCliffBalcony = null;
+    const flight = window.PlayerJump.beginFlight({
+      x: outside.x, y: shelf.y, z: outside.z,
+      vx: raw.x / length * 0.6, vy: 0, vz: raw.y / length * 0.6,
+      safeX: player.x / deps.TILE, safeZ: player.y / deps.TILE,
+    }, { source: 'cliff balcony fall', deliberate: true });
+    if (!flight) { player.onCliffBalcony = balconyId; return false; }
+    window.FallSystem?.clearEdgeIntent?.(player);
+    player._edgeToe = 0;
+    return true;
+  }
+
   function updateBalcony(dt) {
     const player = deps?.player, net = currentCliffNetwork();
     if (!player?.onCliffBalcony) return false;
@@ -1019,11 +1042,14 @@
         // stops at the lip and must hold outward briefly to step off, so
         // brushing the edge never drops you (FallSystem.edgeIntent).
         const FS = window.FallSystem;
-        if (!FS) jumpFromBalcony(raw);
+        if (!FS) { if (!fallOffBalconyInAir(raw, { x, z })) jumpFromBalcony(raw); }
         else {
           const intent = FS.edgeIntent(player, dt, true);
           player._edgeToe = intent.progress;
-          if (intent.state === 'commit') { player._edgeToe = 0; jumpFromBalcony(raw); }
+          if (intent.state === 'commit') {
+            player._edgeToe = 0;
+            if (!fallOffBalconyInAir(raw, { x, z })) jumpFromBalcony(raw);
+          }
         }
       }
       if (supported && !blocked) { window.FallSystem?.clearEdgeIntent?.(player); player._edgeToe = 0; }
