@@ -1249,11 +1249,8 @@
   }
   function editorGripContext() { return normalizeGripContext(document.getElementById('handGripContextSelect')?.value || 'melee'); }
 
-  function editorAnimationJsonObject() {
-    const view = document.getElementById('jsonView');
-    if (!view) return null;
-    let parsed;
-    try { parsed = JSON.parse(view.value || '{}'); } catch (_) { return null; }
+  function decorateEditorAnimationGrip(parsed) {
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return parsed;
     if (!parsed.poses || typeof parsed.poses !== 'object') parsed.poses = {};
     for (const phase of ['neutral', 'windup', 'strike']) {
       if (!parsed.poses[phase] || typeof parsed.poses[phase] !== 'object') parsed.poses[phase] = {};
@@ -1269,6 +1266,13 @@
       else delete parsed.poses[phase].offhandIdle;
     }
     return parsed;
+  }
+
+  function editorAnimationJsonObject() {
+    const view = document.getElementById('jsonView');
+    if (!view) return null;
+    try { return decorateEditorAnimationGrip(JSON.parse(view.value || '{}')); }
+    catch (_) { return null; } // Text-area extension and file download use the exact same canonical grip decoration.
   }
 
   function patchEditorJsonView() {
@@ -1607,7 +1611,7 @@
     heldItemPlacementForTool, itemPointToHolder, holderPointToItem, applyHeldItemPlacement, DEFAULT_HEIGHT_MULTIPLIER, normalizeGripContext, currentGripContext,
     authoredPrimaryGripForTool, customGripAxisForTool, gripPointOnAxis, sampleFreeRightHand, primaryGripForTool, offhandPrimaryGripForTool, dualWieldOffhandGripOffsetForTool, spinPivotOffsetForTool, primaryGripSpanForTool, secondaryGripSpanForTool, secondaryGripForTool, dualWieldStateForTool, offhandIdleStateForTool, usesLegacyOffhandIdle,
     currentSecondaryGripAnimationState, currentDualWieldAnimationState, animationGripAt, gripModeForTool, setGripMode, replace, mutate, saveLocal, loadLocal, clearLocal, applyPrimaryGripVisuals, debugForTool,
-    editorSecondaryGripStateSnapshot, restoreEditorSecondaryGripState, loadEditorAnimationGrip,
+    editorSecondaryGripStateSnapshot, restoreEditorSecondaryGripState, loadEditorAnimationGrip, decorateEditorAnimationGrip,
     getDebug() {
       const snapshot = global.WeaponToolStances?.debugSnapshot?.() || null;
       const value = inAttackEditor() ? editorCurrentToolKey() : (snapshot?.itemKey || snapshot?.shape || '');
