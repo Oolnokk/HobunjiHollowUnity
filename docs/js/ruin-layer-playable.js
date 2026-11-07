@@ -251,15 +251,17 @@
           challenge=Challenges.compose({
             THREE,parent:activeRoot,room,y:floor.y,id:room.id,kind:room.challenge,side:wing.side,
             RuinLayerDefense:Defense,mapId:String(rec.mapData?.id||'map_i_dev_random_ruin'),
-            isActive:()=>record.solved===i&&!owner.disposed,
+            isActive:()=>record.solved===i&&!owner.disposed
+              &&(room.challenge!=='findBlocks'||Math.abs(Number(getPlayerY?.())-floor.y)<4.5), // Stacked block barriers must not project onto a lower floor.
             getPlayerPosition,getPlayerY,
-            addControl,removeControl, // One shared resolver owns these controls, and this network owns their cleanup.
+            addControl,removeControl,
+            showToast:options.showToast, // One shared resolver owns these controls, and this network owns their cleanup.
             onFireArmed:()=>options.showToast?.('The next projectile ignites.',true),
             onFireUnavailable:()=>options.showToast?.('Equip a ranged weapon to ignite the next shot.',false),
             onMusicStart:()=>{}, // Zelda-style discovery: pressing the bronze plate plays the tune with no tutorial popup.
             onMusicUnavailable:()=>options.showToast?.('The bronze plate remains silent.',false),
             onLink:()=>options.onStateChange?.(), // Report native projectile/fire/defence registration without a dev console.
-            onError:challenge=>{options.showToast?.('Statue defence unavailable: '+challenge.error,false);options.onStateChange?.();},
+            onError:challenge=>{options.showToast?.(challenge.kind==='findBlocks'?'Find the Blocks unavailable: '+challenge.error:'Statue defence unavailable: '+challenge.error,false);options.onStateChange?.();},
             onSolved:()=>{
               if(owner.disposed||record.solved!==i)return;
               record.solved++;
@@ -269,6 +271,7 @@
                 :challenge.kind==='dungeonFire'?'The ice recedes — a stone gate opens.'
                 :challenge.kind==='statueDefense'?'The defended statue sinks into the plinth — a stone gate opens.'
                 :challenge.kind==='ropeChain'?'The far bank releases the stone gate.'
+                :challenge.kind==='findBlocks'?'Four stone blocks settle — the gate opens.'
                 :'The last target falls — the stone gate opens.',true);
               options.onStateChange?.();
             }
@@ -360,6 +363,8 @@
       defenseRoomsReady:states.reduce((n,r)=>n+r.challenges.filter(c=>c.kind==='statueDefense'&&c.ready).length,0),
       defenseErrors:states.flatMap(r=>r.challenges.filter(c=>c.kind==='statueDefense'&&c.error)
         .map(c=>({id:c.id,error:c.error,attempts:c.attempts}))),
+      findBlocks:states.flatMap(r=>r.challenges.filter(c=>c.kind==='findBlocks')
+        .map(c=>({id:c.id,ready:c.ready,linked:c.linked,error:c.error,variant:c.variant,netVariant:c.netVariant,progress:c.snapshot?.()?.weighted??0}))), // In-game mobile diagnostics show each compound chamber's progress and installed variants.
       pendingRuntimeLinks:states.flatMap(record=>{
         const stage=record.challenges[record.solved];
         if(!stage)return [];
@@ -367,6 +372,7 @@
         return ranged&&!stage.linked||stage.kind==='dungeonFire'&&!stage.fireLinked
           ||stage.kind==='ropeChain'&&!stage.ropeLinked
           ||stage.kind==='statueDefense'&&!stage.ready
+          ||stage.kind==='findBlocks'&&(!stage.ready||!stage.linked)
           ?[{wingId:record.wingId,stage:stage.id,kind:stage.kind}]:[];
       }),
       perFloor:plan.floors.map(f=>({floor:f.floor,y:f.y,nativeV50:!!f.nativePort,

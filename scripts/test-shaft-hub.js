@@ -12,6 +12,16 @@ const Connector=require('../docs/js/ruin-shaft-connector.js');
 const Playable=require('../docs/js/ruin-layer-playable.js');
 globalThis.RuinWallFaces=require('../docs/js/ruin-wall-faces.js'); // The wings and shaft build their stone from merged faces when this is loaded, as index.html loads it.
 const Challenges=require('../docs/js/ruin-layer-challenges.js'); // Canonical projectile and plate stage logic. // Tests mounted stone wings, challenge gates and braziers.
+const NetworkChallenges={...Challenges,compose(options){ // Only the network-progression test substitutes the compound room: its real 16 variants and native push state have separate focused runtime tests.
+  if(options.kind!=='findBlocks')return Challenges.compose(options);
+  const stage={id:options.id,kind:'findBlocks',ready:true,linked:true,solved:false, // Solved state is consumed by the REAL network gate and brazier code.
+    tick(){},animate(){},dispose(){},
+    simulateCompletion(){
+      if(stage.solved||!options.isActive())return;
+      stage.solved=true;options.onSolved(stage);
+    }};
+  return stage;
+}};
 const NativeV50=require('../docs/js/ruin-v50-native-floors.js'); // Actual V50 story layout and pre-reserved footprint enforcement.
 
 const runtime=fs.readFileSync('docs/js/dev-random-ruin-interior-map.js','utf8');
@@ -45,6 +55,17 @@ for(const file of ['ruin-layer-plan.js','ruin-shaft-corridor.js','ruin-shaft-con
       assert(wing.corridors.every(hall=>hall.length<=10),`overlong empty wing hallway on seed ${seed}: ${wing.id}`);
     }
     assert.equal(trial.totalBraziers,baseline.totalBraziers);
+    for(const floor of baseline.floors){
+      const blocks=floor.rooms.filter(room=>room.challenge==='findBlocks');
+      assert(blocks.length>=1,'Every generated dungeon story has at least one Find the Blocks chamber');
+      assert(blocks.length<=3,'Short wings should not repeat the same compound challenge excessively');
+      assert(blocks.every(room=>room.w>=18&&room.d>=18),'Block puzzles have genuine 18x18 push-space footprints');
+      for(const wing of floor.wings){
+        const kinds=wing.rooms.map(room=>room.challenge);
+        assert(!kinds.some((kind,i)=>kind==='findBlocks'&&kinds[i-1]==='findBlocks'),
+          'Block puzzles must not be consecutive in the same wing');
+      }
+    }
     const floor=trial.floors.find(f=>f.rooms.some(room=>room.id===trial.trialRoomId));
     const wing=floor.wings.find(w=>w.rooms.some(room=>room.id===trial.trialRoomId));
     const stage=wing.rooms.findIndex(room=>room.id===trial.trialRoomId);
@@ -221,9 +242,12 @@ for(let seed=1;seed<=1000;seed++){
       assert.equal(wing.rooms.filter(r=>r.kind==='brazier-chamber').length,1,'exactly one brazier endpoint');
       assert.equal(wing.corridors.length,wing.rooms.length,'hallway per progression stage');
       if(wing.rooms.length===3){
-        assert.equal(wing.rooms[0].challenge,'pressurePlate','a two-puzzle wing starts with the real stone plate');
-        assert(['glyphObelisk','ceilingRailTargets'].includes(wing.rooms[1].challenge),
-          'a two-puzzle wing has the real ranged challenge before its brazier');
+        assert(['pressurePlate','findBlocks'].includes(wing.rooms[0].challenge),
+          'a two-puzzle wing begins with a real stone plate or the full four-block compound puzzle');
+        assert(['glyphObelisk','ceilingRailTargets','findBlocks'].includes(wing.rooms[1].challenge),
+          'its second chamber uses the ranged family or Find the Blocks without skipping a progression gate');
+        assert(!(wing.rooms[0].challenge==='findBlocks'&&wing.rooms[1].challenge==='findBlocks'),
+          'consecutive large block puzzles would make a short wing repetitive');
       }else assert(Plan.DEFAULTS.minChallenges===1 && wing.rooms[0].challenge,
         'single-puzzle branches still require an implemented mechanism');
       assert(wing.corridors.every(h=>h.length>0&&h.rects.length>=1),'variable-length halls must have footprint');
@@ -527,7 +551,7 @@ for(const side of ['north','east','south','west']){
   const preplanned=Plan.compose({seed:23,anchorX:320,anchorZ:320,shaftTraversal:'buttress'}); // Deliberately differs from the old post-generation anchor.
   const connected=Connector.connect({rec,ruin,seed:23,meta,preplanned,THREE,makeTile,DynamicSurfaces:DS,
     ShaftHub:H,ClimbSurfaces:climb,DevRandomRuin:dev,TileOccupancy:occupancy,
-    RuinLayerPlan:Plan,RuinShaftCorridor:Corridor,RuinLayerPlayable:Playable,RuinLayerChallenges:Challenges,RuinLayerDefense:Defense,CellGrid3D:G,
+    RuinLayerPlan:Plan,RuinShaftCorridor:Corridor,RuinLayerPlayable:Playable,RuinLayerChallenges:NetworkChallenges,RuinLayerDefense:Defense,CellGrid3D:G,
     getPlayerPosition:()=>({x:player.x,z:player.z}),getPlayerY:()=>player.y});
   assert(connected.hub.ok,'integrated octagonal room passed reachability');
   // The shaft's stone is merged stretch-to-fit faces in one masonry group (so decorateRuin can engrave the walls),
@@ -612,7 +636,7 @@ for(const side of ['north','east','south','west']){
     else if(remaining.kind==='melodyEcho')remaining.onMelodyResult({id:remaining.id,solved:true}); // Canonical flute completion event.
     else if(remaining.kind==='dungeonFire')remaining.fireRecord.onBurn(); // Canonical fire-contact callback; not a normal arrow hit.
     else if(remaining.kind==='ropeChain'){player={...remaining.ropeSpec.exit};network.tick(.05);} // Same bank condition as native rope traversal.
-    else if(remaining.kind==='statueDefense')remaining.simulateCompletion(); // Separate authored integration test validates plinth completion.
+    else if(remaining.kind==='statueDefense'||remaining.kind==='findBlocks')remaining.simulateCompletion(); // Separate authored integration test validates plinth completion.
     else for(let i=0;i<remaining.targetCount;i++)remaining.simulateHit(i); // Dispatch actual projectile onHit callbacks.
     assert(remaining.solved,'the puzzle family must truly unlock its gate: '+remaining.kind);
   }
@@ -635,7 +659,7 @@ for(const side of ['north','east','south','west']){
         else if(challenge.kind==='ropeChain'){
           network.tick(.05); // Registers the authored ropes into the active native V50 state.
           player={...challenge.ropeSpec.exit};network.tick(.05);
-        }else if(challenge.kind==='statueDefense')challenge.simulateCompletion();
+        }else if(challenge.kind==='statueDefense'||challenge.kind==='findBlocks')challenge.simulateCompletion();
         else for(let j=0;j<challenge.targetCount;j++)challenge.simulateHit(j);
         assert(challenge.solved,'every authored challenge can progress: '+challenge.id);
       }
@@ -688,7 +712,7 @@ for(const side of ['north','east','south','west']){
   const placed=Connector.connect({rec,ruin,seed:0,meta:{rooms:[{name:'vault'}]},
     THREE,makeTile,DynamicSurfaces:ds,ShaftHub:H,ClimbSurfaces:climb,
     DevRandomRuin:dev,RuinLayerPlan:Plan,RuinShaftCorridor:Corridor,
-    RuinLayerPlayable:Playable,RuinLayerChallenges:Challenges,RuinLayerDefense:Defense,CellGrid3D:G,getPlayerPosition:()=>({x:6,z:27}),getPlayerY:()=>0});
+    RuinLayerPlayable:Playable,RuinLayerChallenges:NetworkChallenges,RuinLayerDefense:Defense,CellGrid3D:G,getPlayerPosition:()=>({x:6,z:27}),getPlayerY:()=>0});
   assert(placed.route.ok&&placed.route.path[0].x===6&&placed.route.path[0].z===28,
     'fixed story vault extends physically through its actual southern doorway');
   assert(rec.floorSet.has('6,28')&&ruin.shaftConnection.physical);
