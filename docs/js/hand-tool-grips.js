@@ -14,6 +14,7 @@
   const HEIGHT_REFERENCE_GENDER = 'male';
   const DEFAULT_HEIGHT_MULTIPLIER = 0.5; // Half of the calculated-height difference reaches weapon size unless a shape authors otherwise.
   const HEIGHT_MULTIPLIER_PRESET = 'height-multiplier-0.5-v1'; // One-time migration of drafts saved when every shape defaulted to 1.
+  const FLUTE_GRIP_PRESET = 'flute-playing-grips-20261106-v1'; // One-time migration for stored grip drafts to this user-authored flute calibration only.
   const SECONDARY_GRIP_PRESET = 'animation-span-v1'; // Migrates old always-on secondary points into animation-gated Z spans.
   const MANUAL_MELEE_SPAN_PRESET = 'manual-handle-spans-20261004-v1'; // Updates the six inspected handle ranges in older saved drafts once.
   const MANUAL_MELEE_SPAN_TOOLS = new Set(['plainssword', 'bshuakauitl', 'fishingspear', 'pickshovel', 'hoe', 'hatchet']); // Limits that migration to the manually inspected weapons.
@@ -59,6 +60,7 @@
     primaryRotationPreset: PRIMARY_ROTATION_PRESET,
     rangedGripPreset: RANGED_GRIP_PRESET,
     heightMultiplierPreset: HEIGHT_MULTIPLIER_PRESET,
+    fluteGripPreset: FLUTE_GRIP_PRESET, // Older local grip drafts adopt the supplied flute grip without changing other weapons.
     tools: {
       hatchet: {
         primaryGrip: { position: { x: -0.04, y: -0.04, z: -0.0106 }, rotationDeg: { pitch: 90, yaw: -90, roll: 0 } },
@@ -207,6 +209,17 @@
         rangedSecondaryGripSpan: { enabled: false, startZ: 0, endZ: 0 },
         rangedGripMode: null,
       },
+      flute: {
+        toolScale: 0.6, // Base flute size, independent of the animation's neutral pose scale.
+        heightMultiplier: 0.5,
+        primaryGrip: { position: { x: 0, y: 0, z: 0 }, rotationDeg: { pitch: 0, yaw: 0, roll: 0 } },
+        secondaryGripSpan: { enabled: false, startZ: 0, endZ: 0 },
+        primaryGripSpan: { enabled: false, startZ: 0, endZ: 0 },
+        gripMode: null,
+        rangedPrimaryGrip: { position: { x: -0.05, y: 0.04, z: -0.1913 }, rotationDeg: { pitch: 0, yaw: -90, roll: 0 } },
+        rangedSecondaryGripSpan: { enabled: false, startZ: 0, endZ: 0 },
+        rangedGripMode: null,
+      },
     },
   };
 
@@ -349,6 +362,7 @@
     const resetManualMeleeSpans = next.manualMeleeSpanPreset !== MANUAL_MELEE_SPAN_PRESET; // Old local drafts receive the manual ranges without changing primary grips or scales.
     const resetLongHaftGrips = next.longHaftGripPreset !== LONG_HAFT_GRIP_PRESET; // Older drafts adopt the measured long-haft 1H centers and paired ranges once.
     const resetHeightMultipliers = next.heightMultiplierPreset !== HEIGHT_MULTIPLIER_PRESET; // Drafts from the all-1.0 default era adopt the 0.5 default once.
+    const resetFluteGrip = next.fluteGripPreset !== FLUTE_GRIP_PRESET; // Previously saved flute grips adopt these exported coordinates only once.
     next.schema = SCHEMA;
     next.secondaryGripPreset = SECONDARY_GRIP_PRESET;
     next.twoHandSpanPreset = TWO_HAND_SPAN_PRESET;
@@ -357,8 +371,10 @@
     next.primaryRotationPreset = PRIMARY_ROTATION_PRESET;
     next.rangedGripPreset = RANGED_GRIP_PRESET;
     next.heightMultiplierPreset = HEIGHT_MULTIPLIER_PRESET;
+    next.fluteGripPreset = FLUTE_GRIP_PRESET;
     const rawTools = next.tools && typeof next.tools === 'object' ? next.tools : {}; // Saved drafts override defaults, while newly added weapon defaults still appear after upgrades.
     next.tools = { ...clone(DEFAULT_DATA.tools), ...rawTools };
+    if (resetFluteGrip) next.tools.flute = clone(DEFAULT_DATA.tools.flute); // One-time targeted replacement preserves every unrelated tool, including unsaved drafts.
     for (const [toolKey, entry] of Object.entries(next.tools)) {
       if (!entry || typeof entry !== 'object') continue;
       const fallbackEntry = DEFAULT_DATA.tools[toolKey] || {}; // Lets pre-scale local drafts inherit the new committed scale for that same shape.
