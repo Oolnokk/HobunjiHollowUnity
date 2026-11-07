@@ -126,7 +126,7 @@
     }
     // These are loose, stackable finds. Do not replace the bespoke sprites of larger artifacts or equipment.
     if (/^(?:harlyao(?:Copper|Tin|Bronze)Coin|hachutuMoneyBones)$/.test(String(key))
-        || (!def.spriteIcon && /\b(?:pebbles?|beads?|buttons?|marbles?|tokens?|loose shells?)\b/i.test(joined))) {
+        || ((!def.spriteIcon || def.spriteIcon === 'pouch.png') && /\b(?:pebbles?|beads?|buttons?|marbles?|tokens?|loose shells?)\b/i.test(joined))) {
       return { spriteIcon: 'pouch.png', spriteMode: 'direct' };
     }
     return null;
@@ -152,7 +152,7 @@
   function ensure(key, def) {
     if (!def || typeof def !== 'object') return null;
     const previous = seen.get(def); // O(1) happy path on the main 60Hz HUD: do not scan labels or construct regexes again.
-    if (previous && [def.spriteIcon, def.spriteMode, def.spriteColor].join('|') === previous.signature) return previous.art;
+    if (previous && [def.spriteIcon, def.spriteMode, String(def.spriteColor)].join('|') === previous.signature) return previous.art;
     const alreadyAssigned = def.spriteIcon === 'scroll.png' && /^layered-scroll:[0-9a-f]{6}$/i.test(def.spriteMode || '')
       && !def.combatManualAbilityId && !def.techniqueScrollTier && !def.masteryUnlock && !def.attackCategory;
     // Selectable item-wheel entries lack the canonical item's attack metadata.
