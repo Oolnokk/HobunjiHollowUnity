@@ -52,7 +52,7 @@ const puzzleFireVisuals={attachCampfireFlame(anchor,options){
   const record={anchor,updates:0,disposed:false,update(){this.updates++;},dispose(){this.disposed=true;}};
   torchEmitters.push(record);return record;
 }};
-const fire=compose({THREE,parent,room,id:'fire-test',kind:'fireSconces',y:0,area,
+const fire=compose({THREE,parent,room,id:'fire-test',kind:'fireSconces',y:0,area,authoredCliffDoor:true,
   isActive:()=>activeArea===area,onSolved:()=>{completed++;},DynamicSurfaces:dynamicSurfaces,AreaFootprintBlockers:areaFootprints,
   groundFire:{intersects:(scope,x,z)=>scope===area&&hot.has(x+','+z)},puzzleFireVisuals,
   onSconceLit:()=>{lit++;},
@@ -61,12 +61,16 @@ const fire=compose({THREE,parent,room,id:'fire-test',kind:'fireSconces',y:0,area
 assert.equal(fire.sconces.length,2);
 assert.equal(torchEmitters.length,2,'two authored campfire emitters replace the old conical fire visuals');
 assert(torchEmitters.every(record=>record.anchor.visible===false),'unlit torches do not emit fire');
-assert.equal(blockers.size,1,'fire cave registers exactly one authoritative stone gate');
-const fireCollider=[...blockers.values()][0];
+assert.equal(blockers.size,2,'fire cave has one opening slab and one permanent carved stone wall, both physically registered');
+const fireCollider=[...blockers.values()].find(record=>!record.id.endsWith(':permanent-rock'));
+const stoneCollider=[...blockers.values()].find(record=>record.id.endsWith(':permanent-rock'));
+assert(stoneCollider?.enabled(),'unbreakable rock surrounds the actual puzzle doorway');
 assert(fireCollider.enabled(),'an unsolved fire cave gate blocks movement in its map');
-const gateX=room.x+room.w/2,gateZ=room.z+room.d-1.28; // The collision target follows the rock-clearance offset of the authored gate.
+const gateX=room.x+room.w/2,gateZ=room.z+room.d-2.8; // The sealed rock wall leaves a walkable treasure alcove behind it.
 assert(areaFootprints.blocksBox(area,gateX,gateZ,.18),'player movement physically collides with a locked fire-sconce gate');
 assert(!areaFootprints.blocksBox('other_map',gateX,gateZ,.18),'other maps can use the same tile coordinates without colliding with this cave');
+assert(areaFootprints.blocksBox(area,room.x+.65,gateZ,.18),'the rock flank closes the left passage even while the puzzle is locked');
+assert(areaFootprints.blocksBox(area,room.x+room.w-.65,gateZ,.18),'the rock flank closes the right passage even while the puzzle is locked');
 assert(!areaFootprints.blocksBox(area,gateX,gateZ,.18,10),'high projectiles pass over the short stone gate');
 activeArea='other_map';
 assert(!fireCollider.enabled(),'cached cave collision never leaks into another map');
@@ -89,6 +93,9 @@ assert(fire.door.position.y>1.75,'opening raises the physical stone slab visual'
 assert.equal(fire.backdrop.visible,false,'the black doorway plane disappears once the chest can be revealed');
 assert(!fireCollider.enabled(),'the collider opens only after the animated gate clears the threshold');
 assert(!areaFootprints.blocksBox(area,gateX,gateZ,.18),'player movement also clears the opened stone gate');
+assert(areaFootprints.blocksBox(area,room.x+.65,gateZ,.18),'solving the puzzle does not open the unbreakable left flank');
+assert(areaFootprints.blocksBox(area,room.x+room.w-.65,gateZ,.18),'solving the puzzle does not open the unbreakable right flank');
+assert(!areaFootprints.blocksBox(area,gateX,gateZ+1.3,.18),'the reward alcove is accessible through the opened doorway');
 fire.tick(.016);
 assert.equal(completed,1,'a solved fire cave cannot award its treasure again');
 fire.dispose();
@@ -101,13 +108,13 @@ const events=eventBus(); // The existing music bridge emits these exact instrume
 let playing=0,closed=0,awarded=0;
 const music={beginPlayerSession(){playing++;return true;},close(){closed++;}};
 let player={x:room.x+room.w/2,z:room.z+room.d/2-1.6};
-const timed=compose({THREE,parent,room,id:'music-test',kind:'timedMelody',y:0,area,
+const timed=compose({THREE,parent,room,id:'music-test',kind:'timedMelody',y:0,area,authoredCliffDoor:true,
   isActive:()=>activeArea===area,onSolved:()=>awarded++,getPlayerPosition:()=>player,getPlayerY:()=>0,
   music,events,puzzleCaveMelody:Song,songOptions:{difficulty:5},DynamicSurfaces:dynamicSurfaces,AreaFootprintBlockers:areaFootprints,
 });
 assert.equal(timed.song.measures,2);
-assert.equal(blockers.size,1,'music cave reuses the same single-owner gate lifecycle');
-const timedCollider=[...blockers.values()][0];
+assert.equal(blockers.size,2,'music cave registers both the lockable slab and permanently unbreakable stone flanks');
+const timedCollider=[...blockers.values()].find(record=>!record.id.endsWith(':permanent-rock'));
 assert(timedCollider.enabled(),'the music gate starts physically locked');
 assert(areaFootprints.blocksBox(area,gateX,gateZ,.18),'the stone-song gate blocks real player movement until solved');
 assert.equal(events.count('hobunji-kurraya-puzzle-note'),1,'only real instrument notes reach the score');
@@ -146,6 +153,7 @@ assert(areaFootprints.blocksBox(area,gateX,gateZ,.18),'the still-rising music sl
 timed.animate(.35);
 assert.equal(timed.backdrop.visible,false,'the solved instrument gate also reveals its chamber instead of leaving a black plane');
 assert(!areaFootprints.blocksBox(area,gateX,gateZ,.18),'the fully raised music slab no longer blocks player movement');
+assert(areaFootprints.blocksBox(area,room.x+.65,gateZ,.18),'the music gate's unbreakable rock flanks persist after unlocking');
 assert.equal(closed,2,'the normal instrument overlay closes after the final note');
 timed.dispose();
 assert.equal(blockers.size,0,'music cave disposes the registered collider');
