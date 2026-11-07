@@ -154,7 +154,7 @@ assert(areaFootprints.blocksBox(area,gateX,gateZ,.18),'the still-rising music sl
 timed.animate(.35);
 assert.equal(timed.backdrop.visible,false,'the solved instrument gate also reveals its chamber instead of leaving a black plane');
 assert(!areaFootprints.blocksBox(area,gateX,gateZ,.18),'the fully raised music slab no longer blocks player movement');
-assert(areaFootprints.blocksBox(area,room.x+.65,gateZ,.18),'the music gate's unbreakable rock flanks persist after unlocking');
+assert(areaFootprints.blocksBox(area,room.x+.65,gateZ,.18),"the music gate\'s unbreakable rock flanks persist after unlocking");
 assert.equal(closed,2,'the normal instrument overlay closes after the final note');
 timed.dispose();
 assert.equal(blockers.size,0,'music cave disposes the registered collider');
