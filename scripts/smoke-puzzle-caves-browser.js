@@ -88,6 +88,8 @@ async function main(){
         if(!fire.rockSurround?.geometry?.getAttribute?.('position'))throw Error('Sculpted permanent cave wall is missing from the real Three scene');
         if(fire.rockSurround.material!==caveShell.material||!fire.rockSurround.userData.caveSharedWallMaterial)
           throw Error('Carved rock wall did not inherit the exact surrounding cave-shell material');
+        if(fire.rockSurround.userData.naturalSurfaceUvOwner==='legacy-continuous-rock-uv')
+          throw Error('Cave wall was mislabeled as a legacy ore texture, overriding natural surface metadata');
         if(fire.backdrop.visible)throw Error('Unwanted black fire-door plane still covers the cave interior');
         await assertAuthoredGate(fire,'fire'); // Verify the actual asynchronously built black plane, not only its hidden placeholder.
         fire.dispose();fire=null;
@@ -130,8 +132,11 @@ async function main(){
         if(music.glyphs.length!==music.song.notes.length||
           !(music.inscription?.group.visible||music.scorePanel?.visible))
           throw Error('The full glowing Scratchbone clue did not appear on the fixed wall while standing on the plate');
-        if(music.inscription&&!music.inscription.diagnostics().vertical)
-          throw Error('The melody clue is lying on the floor instead of a standing cave-rock face');
+        if(!music.inscription||!music.inscription.diagnostics().vertical)
+          throw Error('The production melody decal system failed to mount the score on an upright stone face');
+        const fittedWidth=music.inscription.diagnostics().width*music.inscription.group.scale.x;
+        if(fittedWidth>(room.w-4.78)/2-.25)
+          throw Error('The generated score overhangs the rough cave wall flank and may clip out of the rock');
         let elapsed=0;
         for(let index=0;index<music.song.notes.length;index++){
           const note=music.song.notes[index],target=(note.startTick+.10)*music.song.secondsPerTick;
