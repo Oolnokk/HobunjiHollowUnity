@@ -25,7 +25,7 @@ context.CavernGenerator={
   },
 };
 vm.createContext(context);
-for(const path of ['docs/js/cave-site-system.js','docs/js/puzzle-cave-entrances.js'])
+for(const path of ['docs/js/cave-site-system.js','docs/js/puzzle-cave-entrances.js','docs/js/npc-pathfinding.js'])
   vm.runInContext(fs.readFileSync(path,'utf8'),context,{filename:path});
 const Cave=context.CaveSiteSystem,Entrances=context.PuzzleCaveEntrances;
 assert(Cave&&Entrances);
@@ -63,6 +63,17 @@ assert.equal(layout.transitions.length,gates.length);
 assert.equal(scene.transitions.length,gates.length);
 assert(layout.transitions.every(t=>t.puzzleCaveOnly&&t.target==='puzzle_cave_locked'&&t.targetSpotId==='den_exit'),
   'every independent outdoor transition points to its cavern\'s real entrance, including cached re-entry');
+let npcPreloads=0; // Counts forbidden synthetic cavern preloads requested by NPC path planning.
+context.NpcPathfinding.init({
+  npcTransitionPool:area=>area===zone?layout.transitions:[],
+  buildingScenes:new Map(),buildingSpawnFromExit:()=>({col:2,row:2}),
+  loadBuildingScene(){npcPreloads++;},
+  isBuildingArea:()=>false,
+});
+assert.equal(context.NpcPathfinding.areaLinksFrom(zone).length,0,
+  'wildlife and barbarians cannot pathfind through any independent outdoor Puzzle Cave entrances');
+assert.equal(npcPreloads,0,'NPC planning never preloads independently generated cave scenes');
+assert.equal(context.NpcPathfinding.areaLinksFrom('map_parent_cave',{warmBuildings:false}).length,0);
 assert.equal(layout.dens.length,ordinaryDens.length,'independent doors never become pack or barbarian home anchors');
 Entrances.clear(zone);
 assert.equal(layout.transitions.length,0);
@@ -102,6 +113,11 @@ for(let index=0;index<8;index++){
   const exit=map.exits.find(entry=>entry.id===door.id);
   assert(child&&child.contents==='puzzle_cave'&&child.parentMapId===id);
   assert(exit&&exit.targetMap===child.mapId&&exit.targetSpotId==='den_exit');
+  const npcLinks=context.NpcPathfinding;
+  npcLinks.init({npcTransitionPool:()=>[{target:'building',targetMapId:child.mapId,col:door.col,row:door.row}],
+    buildingScenes:new Map(),buildingSpawnFromExit:()=>({col:2,row:2}),loadBuildingScene(){npcPreloads++;}});
+  assert.equal(npcLinks.areaLinksFrom(id).length,0,'NPC route graph ignores hidden rock Puzzle Cave doors');
+  assert.equal(npcPreloads,0,'hidden Puzzle Cave destinations are never preloaded by NPCs');
   assert(plan.separator.farKeys.includes(door.col+','+door.row));
   assert(map.oreRocks.some(rock=>rock.caveSeparator&&rock.caveSeparatorLayer===1));
   assert(map.caveProps.some(prop=>prop.id===door.id&&prop.key==='cliffDoor'&&prop.alwaysOpen));
