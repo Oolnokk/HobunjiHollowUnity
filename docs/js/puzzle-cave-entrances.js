@@ -82,7 +82,7 @@
       if(pool.some(t=>t?.targetMapId===portal.mapId))continue;
       const transition={id:'den_'+portal.denId+'_enter',label:'Small Stone Door',
         col:portal.entry.c,row:portal.entry.r,area,target:'puzzle_cave_locked',
-        targetMapId:portal.mapId,puzzleCaveOnly:true}; // No animal-den footprint, faction/aggro marker, or hostile-interaction target.
+        targetMapId:portal.mapId,targetSpotId:'den_exit',puzzleCaveOnly:true}; // Both cached and fresh entry use the generated cavern's named walkable entrance. // No animal-den footprint, faction/aggro marker, or hostile-interaction target.
       pool.push(transition);
       portal.ownedTransitions.push({pool,transition}); // Exact references removed on scene retirement.
     }
