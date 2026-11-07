@@ -54,14 +54,19 @@
   function watchMovement(object,progress,options={}){
     if(!object||!Number.isFinite(progress))return false;
     const previous=movement.get(object);
+    const now=Number(root.performance?.now?.()??Date.now()); // Used for an idle timeout rather than resetting on duplicate same-frame progress reads.
     if(!previous){
-      movement.set(object,{progress,direction:0});
+      movement.set(object,{progress,direction:0,lastMoveAt:now});
       if(options.silent||progress<=.001||progress>=.999)return false;
       return mechanism(object,options); // A first sampled in-progress animation is a genuine move, not a restored end pose.
     }
     const delta=progress-previous.progress; // Progress is signed, so reversing a sliding door plays again.
     previous.progress=progress;
-    if(Math.abs(delta)<.001){previous.direction=0;return false;}
+    if(Math.abs(delta)<.001){
+      if(now-previous.lastMoveAt>.15)previous.direction=0; // Two runtimes can sample the same moving group each frame.
+      return false;
+    }
+    previous.lastMoveAt=now;
     const direction=Math.sign(delta);
     if(previous.direction===direction)return false;
     previous.direction=direction;
