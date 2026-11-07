@@ -586,6 +586,10 @@
     plan.clearanceFootprints.push(room); // The existing CavernGenerator builds the floor/ceiling/walls in one pass.
     plan.puzzleCave = {id:'puzzle-cave:'+String(mapData.id || plan.profile.mapId),
       col:center.col,row:center.row,room,kind:rng() < .43 ? 'fireSconces' : 'timedMelody',difficulty:1+Math.floor(rng()*5)}; // Both one-room variants share the save and reward lifecycle.
+    plan.puzzleTreasure={id:'puzzle-cave-reward:'+String(mapData.id||plan.profile.mapId),
+      col:center.col,row:center.row+3,tier:2}; // The authored bronze chest sits on supported chamber floor immediately in front of the rising stone gate.
+    mapData.cavePuzzleTreasure=clone(plan.puzzleTreasure); // The chest has a real tile, a visible model and a separately claimable persistent reward.
+    addProp(mapData,{...plan.puzzleTreasure,key:'ruinDungeonChestT2'}); // Reveal this normal chest only after the puzzle is solved.
     for(const [col,row] of window.CavernSculptor.expandFootprint([], [room]))
       blockedKeys.add(tileKey(col,row)); // No later features or occupant spawns can obstruct the score.
     mapData.cavePuzzle = clone(plan.puzzleCave); // Diagnostics and interior tools see the same planned room.
@@ -751,12 +755,13 @@
         const openPose = data.puzzle?.motion?.parts?.cliff_door_slab?.on;
         if(slab && openPose) {slab.position.y = openPose.y;slab.scale.z = openPose.sz;}
       }
-      group.position.set(prop.col + 0.5, 0, prop.row + 0.5);
+      group.position.set(prop.col + 0.5 + (Number(prop.offsetX)||0), 0, prop.row + 0.5 + (Number(prop.offsetZ)||0)); // Secret rock doors offset away from mined walls; other furniture stays at its authored tile centre.
       group.rotation.y = (Number(prop.rotY) || 0) * Math.PI / 180;
       group.scale.set(Number(prop.scaleX) || 1, 1, Number(prop.scaleZ) || 1); // Ruin rear tunnels extend into the solid rim while fitting the three-tile doorway width.
       group.userData.caveSiteProp = { mapId, id: prop.id, key: prop.key };
       scene.add(group);
       propRecord.groups.set(prop.id, group); // Only actual, scene-attached props become candidate Sense Mode targets.
+      if(prop.id===plansByMapId.get(id)?.puzzleTreasure?.id)syncPuzzleTreasureVisual(id); // Late-loaded chests obey the already saved solve/claim state.
       if(prop.key==='crateStack'){
         const profile=sitesByMapId.get(id); // Cache cave crate counts in its existing world-save state.
         const saved=profile?stateFor(profile):null;
@@ -770,6 +775,13 @@
       }
       return 1;
     }))).then(built => built.reduce((sum, n) => sum + n, 0));
+  }
+
+  function syncPuzzleTreasureVisual(mapId) {
+    const profile=sitesByMapId.get(String(mapId)),plan=plansByMapId.get(String(mapId)); // Live cave reward is identified by its own plan, not ordinary cache-open state.
+    if(!profile||!plan?.puzzleTreasure)return;
+    const chest=propMeshesByMapId.get(String(mapId))?.groups?.get(plan.puzzleTreasure.id);
+    if(chest)chest.visible=!!stateFor(profile).puzzleSolved&&!stateFor(profile).puzzleRewardClaimed;
   }
 
   function grantPuzzleCaveReward(profile, plan, state) {
@@ -794,6 +806,7 @@
       if(!parts.length)return false; // Retry after inventory support becomes available; do not consume reward.
       state.puzzleRewardClaimed=true;state.puzzleRewardPending=false;
       persistState();
+      syncPuzzleTreasureVisual(profile.mapId); // Consuming the reward hides the single authored chest without removing unrelated cache meshes.
       wildlifeDeps?.showToast?.('Puzzle Cave treasure: '+parts.join(', '),true);
       return true;
     }catch(error){
@@ -826,7 +839,8 @@
           state.puzzleSolved=true;
           state.puzzleRewardTier=Math.max(Number(state.outdoorPuzzleTier)||1,challenge.song?.rewardTier||2); // Outside song difficulty also influences the exclusive cave reward.
           persistState();
-          grantPuzzleCaveReward(profile,plan,state);
+          syncPuzzleTreasureVisual(key); // The gated chest appears where the slab just opened, rather than granting invisible loot.
+          wildlifeDeps?.showToast?.('Stone door opened! Claim the chest beyond it.',true);
         },
         getPlayerPosition:()=>{
           const p=wildlifeDeps?.player,t=Number(wildlifeDeps?.TILE)||32;
@@ -839,7 +853,7 @@
         challenge.solved=true;challenge.doorRise=1;
         challenge.door.position.y+=puzzle.kind==='fireSconces'?3.5:3.6; // Match the authored type's own lift distance on first render, without a one-frame jump.
         for(const sconce of challenge.sconces||[]){sconce.lit=true;sconce.flame.visible=true;} // Solved fire gates keep their lit torches after re-entry.
-        grantPuzzleCaveReward(profile,plan,state); // Retry a pending payout when definitions or saves are repaired.
+        syncPuzzleTreasureVisual(key); // A saved solution reveals an unclaimed chest on re-entry, but never automatically consumes it.
       }
       // RuinLayerChallenges.compose owns the ONE active-area-scoped gate blocker and
       // removes it in challenge.dispose(). Registering another here leaked an
@@ -869,7 +883,9 @@
     if (props?.scene === scene) for (const group of props.groups.values()) {
       if (group.parent !== scene) continue;
       const key = group.userData?.caveSiteProp?.key;
-      if (key === 'ruinEntranceDoor' || (key === 'ruinDungeonChestT2' && !state.cacheOpened)) roots.push(group);
+      if (key === 'ruinEntranceDoor' ||
+        (key === 'ruinDungeonChestT2' && (group.userData.caveSiteProp.id === plansByMapId.get(mapId)?.puzzleTreasure?.id
+          ? state.puzzleSolved&&!state.puzzleRewardClaimed : !state.cacheOpened))) roots.push(group); // Puzzle chest is sensed only after the gate opens.
     }
     return roots;
   }
@@ -913,7 +929,7 @@
       clearanceFootprints,
       separator: null,
       shattercasks: [], // Deterministic explosives spawned outside separator walls and occasionally elsewhere in caves.
-      banditSpawns: [], bodies: [], traps: [], coffins: [], mineRocks: [], mushrooms: [], cache: null, ruinEntrance: null, puzzleCave: null,
+      banditSpawns: [], bodies: [], traps: [], coffins: [], mineRocks: [], mushrooms: [], cache: null, ruinEntrance: null, puzzleCave: null, puzzleTreasure:null,
     }; // Runtime-only plan mirrors map decorations and drives mechanics that cannot live in static building map data.
     if (profile.contents === TYPES.RUIN_ENTRANCE) addRuinLayer(mapData, rng,
       allTiles.filter(tile => Math.hypot(tile.col - Number(mapData.exitCol), tile.row - Number(mapData.exitRow)) >= 3), blockedKeys, plan);
@@ -1024,14 +1040,16 @@
         const child = registerRockPuzzleSite(profile,tile); // Dedicated puzzle map; ordinary cave loot and occupancy remain untouched.
         const nearestRock = wall.slice().sort((a,b) =>
           ((a.col-tile.col)**2+(a.row-tile.row)**2)-((b.col-tile.col)**2+(b.row-tile.row)**2))[0]; // Model faces the mineable barrier rather than an arbitrary compass direction.
-        const facing = nearestRock ? Math.atan2(nearestRock.col-tile.col,nearestRock.row-tile.row)*180/Math.PI : 0;
+        const facing = nearestRock ? Math.atan2(nearestRock.col-tile.col,nearestRock.row-tile.row)*180/Math.PI+180 : 0; // Local +Z of cliffDoor faces the room, away from the mined rock face.
         plan.puzzleDoor = {id:'rock-puzzle-door-'+child.denId,col:tile.col,row:tile.row,targetMapId:child.mapId};
         mapData.exits.push({
           id:plan.puzzleDoor.id,label:'Hidden Stone Door',tiles:[[tile.col,tile.row]],
           targetMap:child.mapId,targetSpotId:'den_exit',spawnCol:0,spawnRow:0,generateDoor:false, // Resolve the child's actual generated entrance instead of spawning at tile 0,0.
         }); // Native building-to-building transitions, not NPC triggers or cave replacements.
+        const awayX=nearestRock?tile.col-nearestRock.col:0,awayZ=nearestRock?tile.row-nearestRock.row:0; // Normal from the mineable wall toward walkable cave floor.
+        const awayLength=Math.hypot(awayX,awayZ)||1; // Protect the degenerate case of a same-cell separator while offsetting the visual.
         addProp(mapData,{id:plan.puzzleDoor.id,key:'cliffDoor',col:tile.col,row:tile.row,
-          rotY:facing,scaleX:0.65,scaleZ:0.65,alwaysOpen:true});
+          rotY:facing,offsetX:awayX/awayLength*.22,offsetZ:awayZ/awayLength*.22,alwaysOpen:true}); // Keep normal door dimensions and stand it proud of the rock, matching outdoor entrances.
         blockedKeys.add(tileKey(tile.col,tile.row));
       }
     }
@@ -1387,6 +1405,23 @@
     const plan = plansByMapId.get(id);
     if (!plan || String(wildlifeDeps?.getCurrentArea?.() || '') !== id) return null;
     const profile = sitesByMapId.get(id); // The cave profile validates both cache and Duskcap world interactions.
+    const treasure=plan.puzzleTreasure; // The physical puzzle reward has its own visible chest and one-shot claim action.
+    if(profile&&treasure&&treasure.col===col&&treasure.row===row&&stateFor(profile).puzzleSolved
+      &&!stateFor(profile).puzzleRewardClaimed&&caveDistanceTiles(treasure)<=CACHE_OPEN_RADIUS_TILES){
+      return {
+        id:treasure.id,type:'treasure_chest',col,row,label:'🎁 Puzzle Cave Treasure',
+        getButtons:()=>[{icon:'🎁',label:'Claim Puzzle Treasure',action:'obj_claim_puzzle_treasure',style:'primary',allowed:true}],
+        onAction(action){
+          if(action!=='obj_claim_puzzle_treasure')return {ok:false,message:'Unknown action.'};
+          const saved=stateFor(profile); // Validate again on button press so an old touch prompt can never duplicate gear.
+          if(String(wildlifeDeps?.getCurrentArea?.()||'')!==id||plansByMapId.get(id)!==plan
+            ||!saved.puzzleSolved||saved.puzzleRewardClaimed||caveDistanceTiles(treasure)>CACHE_OPEN_RADIUS_TILES)
+            return {ok:false,message:'The puzzle treasure is out of reach.'};
+          const claimed=grantPuzzleCaveReward(profile,plan,saved);
+          return {ok:claimed,message:claimed?'':'The treasure remains sealed; check the cave diagnostics.',deferMemberSave:!claimed};
+        },
+      };
+    }
     const cache = plan.cache; // The authored chest now requires an explicit press instead of proximity auto-loot.
     if (profile && cache && cache.col === col && cache.row === row && !stateFor(profile).cacheOpened
       && caveDistanceTiles(cache) <= CACHE_OPEN_RADIUS_TILES) {
@@ -1602,6 +1637,7 @@
     markDiscovered(profile, state);
     ensureOccupants(profile, plan, state);
     triggerTraps(profile, plan, state);
+    syncPuzzleTreasureVisual(mapId); // Update visibility when an attempted claim was pending a late loot-definition load.
     // Hidden caches are awarded through the explicit lockpicking interaction, never proximity alone.
     // The cave scene is cached across visits: restore missing stalks after
     // their three-day regrowth window, without rebuilding the cave each tick.
@@ -1725,6 +1761,7 @@
         coffins: plansByMapId.get(currentArea).coffins,
         ruinEntrance: plansByMapId.get(currentArea).ruinEntrance,
         puzzleCave: plansByMapId.get(currentArea).puzzleCave,
+        puzzleTreasure: plansByMapId.get(currentArea).puzzleTreasure, // Mobile diagnostics show the reward chest tile even if a model fails to load.
         puzzleProgress: puzzleChallengesByMapId.get(currentArea)?.challenge?.melodyState||null,
         mushrooms: plansByMapId.get(currentArea).mushrooms,
       }) : null,
