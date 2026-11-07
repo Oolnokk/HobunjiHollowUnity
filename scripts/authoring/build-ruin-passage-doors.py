@@ -2,7 +2,7 @@
 """Regenerates the Random Test Ruin passage-door furniture (docs/config/furniture-authored/).
 
 These replace the flat brown boxes that used to close the ruin's hallway gates. They are the
-Ruin Entrance Door design (carved frame, sill, dark recess, sinking leaf, ONE centre seal
+Ruin Entrance Door design (carved frame, sill, open passage, sinking leaf, ONE centre seal
 decal -- the Great Door without its ring of sigils) cut to the gate widths the ruin
 builds. Local +Z faces the approach and the frame sits on y=0, like every other ruin door.
 
@@ -76,8 +76,6 @@ def variant(key, name, notes, outer, post, depth, leaf_depth, seal):
         part('post_right', 'Right Post', x=px, y=post_h / 2, sx=post, sy=post_h, sz=depth),
         part('lintel', 'Lintel', y=post_h + .15, sx=outer, sy=.3, sz=round(depth + .08, 3), color=STONE_LIGHT),
         part('sill', 'Sill', y=.04, z=.06, sx=round(clear, 3), sy=.08, sz=round(depth + .16, 3), color=STONE_DARK),
-        part('recess', 'Dark Passage', y=post_h / 2, z=round(-depth * .6, 3), sx=round(clear, 3), sy=post_h,
-             sz=round(depth * .9, 3), color='#040506', texture=None),
         leaf,
     ]
     data = {
