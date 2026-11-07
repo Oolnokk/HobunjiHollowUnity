@@ -56,6 +56,17 @@ function test(seed){
       }
     },
     DevRandomRuinFurniturePieces:{build(){return null;}},
+    DungeonRopeArt:{
+      createNetFrustum(){const net=new Object3D();net.userData.ropeAtlas='rope_long.png';return net;}
+    }, // The fixture supplies the mandatory shared PNG net renderer instead of taking an obsolete geometry fallback.
+    DungeonDoorIceCoverage:{scaledRecipe(){return {count:16,density:1};}},
+    IceStalagmiteCoverage:{
+      buildCeiling(_THREE,parent){
+        const layer=new Object3D();parent.add(layer);return {layer};
+      },
+      setGrowth(layer,growth){layer.userData.growth=growth;}
+    }, // The fixture preserves the real ceiling-ice builder and reverse-melt contract.
+
     DungeonFire:{
       registerTarget(target){fireTargets.push(target);return target.id;},
       unregisterTarget(id){cleared.push(id);},
@@ -69,6 +80,12 @@ function test(seed){
     },
     RuinLayerChallenges:{
       compose(options){
+        assert.equal(options.kind,'melodyEcho');
+        assert.equal(options.mapId,'map_i_dev_random_ruin','manual note events must be scoped to this ruin');
+        assert.equal(options.melodySurfaces.length,2,'the song can appear on either exposed pillar face');
+        const plateX=options.room.x+options.room.w/2,plateZ=options.room.z+options.room.d/2; // Both selected faces must point toward the plate.
+        for(const surface of options.melodySurfaces)
+          assert(Math.sin(surface.yaw)*(plateX-surface.x)+Math.cos(surface.yaw)*(plateZ-surface.z)>0);
         melody={tick(){},animate(){},dispose(){cleared.push('melody');},solve:options.onSolved};
         return melody;
       }

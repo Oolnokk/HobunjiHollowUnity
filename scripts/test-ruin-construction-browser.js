@@ -91,6 +91,38 @@ const URL=process.env.HOBUNJI_TEST_URL||'http://127.0.0.1:8000/index.html?skipIn
         standing:window.DevRandomRuin.getPlayerSupportY?.()??null};
     },nativeSeed);
     assert(shaft.ok&&shaft.surfaces>=2&&shaft.topLevel>=8,'the live multi-floor shaft must expose its physical climb faces: '+JSON.stringify(shaft));
+    await page.waitForFunction(()=>window.DevRandomRuinSanctum?.getState?.()?.built===true,null,{timeout:60000})
+      .catch(async error=>{
+        const diagnostics=await page.evaluate(()=>{
+          const state=window.DevRandomRuinSanctum?.getState?.()||null;
+          const simple=window.DevRandomRuinSimplePuzzles?.snapshot?.()||null;
+          return {
+            area:window.GridTileAccessors?.getCurrentArea?.()||null,
+            sanctum:state?{built:!!state.built,rejects:state.rejects||[],door:!!state.door,
+              shaftHub:!!state.context?.shaftHub}:null,
+            simple:{active:!!simple,composers:Object.keys(simple?.composers||{})},
+            shaftSite:window.DevRandomRuin?.getShaftSanctumDoorSite?.()||null,
+            generation:window.DevRandomRuin?.getGenerationProgress?.()||null,
+          }; // Print bounded diagnostics so a mobile reviewer can distinguish slow initialization from a missing composer.
+        });
+        throw new Error('Live Great Door failed to initialize: '+JSON.stringify(diagnostics)
+          +' | page errors: '+pageErrors.slice(-8).join(' | '),{cause:error});
+      });
+    const sanctumDoor=await page.evaluate(()=>{
+      const record=window.DevRandomRuinSanctum?.getState?.()?.door;
+      const wall=window.DevRandomRuin?.getShaftSanctumDoorSite?.();
+      const scene=window.GridTileAccessors?.getActiveScene?.();
+      const door=scene?.getObjectByName?.('dev_ruin_great_door');
+      const expected=wall&&{x:wall.x+wall.normal.x*.46,z:wall.z+wall.normal.z*.46};
+      return {mounted:!!door&&!!record,shaft:record?.attachedToShaft===true,
+        site:wall?{x:wall.x,z:wall.z,side:wall.side}:null,
+        distance:expected&&door?Math.hypot(door.position.x-expected.x,door.position.z-expected.z):null,
+        returnPoint:record?.front||null,entry:window.DevRandomRuinSanctum?.getState?.()?.entry||null,
+      }; // Mobile-friendly evidence from the actual scene, not an unrelated test plan.
+    });
+    assert(sanctumDoor.mounted&&sanctumDoor.shaft&&sanctumDoor.distance<.05&&sanctumDoor.returnPoint&&sanctumDoor.entry,
+      'the rendered Great Door must be on the physical shaft and teleport into the reserved sanctum: '+JSON.stringify(sanctumDoor));
+
     assert.equal(shaft.native.floors,shaft.plannedFloors-1,'each planned upper story must mount its real V50 floor in the live game');
     assert.equal(shaft.native.totalBraziers,shaft.native.floors,'every native V50 floor must have one objective brazier');
     assert.equal(shaft.native.brazierControls,shaft.native.floors,'each native brazier must be bound to the real interaction resolver');

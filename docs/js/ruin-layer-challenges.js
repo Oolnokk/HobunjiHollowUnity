@@ -183,25 +183,13 @@
       // and a progression gate; it never guesses from a normal arrow hit.
       const source=authored('ruinStandingBrazier',cx-2.3,y,cz)
         ||body('ruin-fire-source-'+id,new THREE.CylinderGeometry(.65,.8,.65,8),stone,cx-2.3,y+.37,cz);
-      const createEmitter=root.AuthoredFurniture?.createEmitterVisual;
-      if(typeof createEmitter==='function'){
-        const flameRoot=new THREE.Group(); // Particle flame stays attached to the authored brazier's bowl.
-        flameRoot.name='ruin-fire-flame-'+id;
-        flameRoot.position.set(cx-2.3,y+1.2,cz);group.add(flameRoot);
-        for(const stream of [
-          {id:'yellow',colorA:'#fff56a',colorB:'#ffdc12'},
-          {id:'red',colorA:'#ff5225',colorB:'#e91b08'},
-          {id:'orange',colorA:'#ffab3b',colorB:'#ff740c'}
-        ]){
-          const emitter=createEmitter(flameRoot,{id:'ruin_fire_'+stream.id,name:'Brazier flame',type:'fire',enabled:true,
-            position:{x:0,y:0,z:0},rotation:{x:0,y:0,z:0},radius:.12,size:.16,rate:9,
-            lifetime:.7,speed:.65,spread:.25,gravity:-.05,colorA:stream.colorA,colorB:stream.colorB},11);
-          if(emitter){emitter.update?.(1/9,true);flameVisuals.push(emitter);}
-        }
-        if(!flameVisuals.length)flameRoot.parent?.remove(flameRoot);
-      }
-      if(!flameVisuals.length)body('ruin-fire-source-flame-'+id,new THREE.ConeGeometry(.35,.8,7),
-        idle,cx-2.3,y+1.3,cz); // Only a fallback when the shared authored emitter runtime is unavailable.
+      const flameRoot=new THREE.Group(); // Reuses the player's campfire visual; no custom flame cones or alternative particle recipes.
+      flameRoot.name='ruin-fire-flame-'+id;
+      flameRoot.position.set(cx-2.3,y+1.2,cz);group.add(flameRoot);
+      const flameVisual=(options.puzzleFireVisuals||root.PersistentGroundFire)?.attachCampfireFlame?.(flameRoot,{
+        scale:.94,rateScale:.8,
+      }); // AuthoredFurniture loads campfire_fire from the exact campfire furniture JSON.
+      if(flameVisual)flameVisuals.push(flameVisual); // Shared update/dispose lifecycle below remains authoritative.
       const frozen=basic(0x9fdaed);
       const ice=body('ruin-fire-ice-seal-'+id,
         new THREE.BoxGeometry(2.3,2.1,.75),frozen,cx+2.1,y+1.18,cz);
@@ -343,9 +331,7 @@
       };
       events?.addEventListener?.('hobunji-kurraya-puzzle-note',timedNoteListener);
     }else if(kind==='melodyEcho'){
-      // This is the existing melody-echo mini-game: stepping onto the bronze
-      // plate plays the generated phrase; step off/on to hear it again, then
-      // play the note sequence using the equipped flute. No WRONG overlay.
+      // Read the inscription and play the ordinary equipped instrument; the plate never opens or claims input.
       const plate=body('ruin-melody-trigger-'+id,
         new THREE.BoxGeometry(1.35,.14,1.35),plateMat,cx,y+.07,cz);
       const plateSkin=authored('ruinRewardPlate',cx,y,cz);
@@ -358,23 +344,31 @@
       rec.plate=plate;rec.plateSkin=plateSkin;
       rec.notes=melodyFor(id);
       rec.lastDown=false;rec.attempts=0;
-      if(THREE.TextureLoader&&THREE.PlaneGeometry){
+      rec.heardNotes=[];rec.glyphs=[]; // Rolling player-note history and owned fallback art for native challenge diagnostics.
+      rec.inscription=root.RuinMelodyGlyphDecal?.create?.({
+        root:group,plate:{x:cx,y,z:cz},notes:rec.notes,
+        bounds:{minX:room.x,maxX:room.x+room.w,minZ:room.z,maxZ:room.z+room.d},
+        sampleSupport:()=>({y}),surfaces:options.melodySurfaces||[],surfaceRoot:options.surfaceRoot,
+        seed:melodyFor(id).reduce((sum,n)=>sum*8+n,0),
+      });
+      if(!rec.inscription&&THREE.TextureLoader&&THREE.PlaneGeometry){
+        // Standalone layered rooms may load without the random-ruin decal module.
         for(let i=0;i<rec.notes.length;i++){
-          const number=rec.notes[i]+1; // Actual Scratchbone 1–8 sprites match the generated instrument notes.
-          let texture=boneTextures.get(number);
+          const number=rec.notes[i]+1;
+          let texture=boneTextures.get(number); // Shared immutable textures, with per-challenge glowing sprite materials.
           if(!texture){
             texture=new THREE.TextureLoader().load('assets/hud/scratchbone'+number+'.png');
-            if(THREE.SRGBColorSpace)texture.colorSpace=THREE.SRGBColorSpace;
+            root.HobunjiSpritePngSurface?.configureTexture?.(THREE,texture,'ruin-melody-'+number);
             boneTextures.set(number,texture);
           }
-          const material=new THREE.MeshBasicMaterial({
-            map:texture,color:0xf5ead9,transparent:true,depthWrite:false,side:THREE.DoubleSide,
-          });
-          materials.push(material); // Textures are immutable and shared; only the decal material is owned by this room.
-          const decal=body('scratchbone-note-'+id+'-'+i,
-            new THREE.PlaneGeometry(.65,.75),material,
-            cx+(i-(rec.notes.length-1)/2)*.8,y+1.8,room.z+.55);
-          decal.userData.devRuinScratchboneMelodyNote=number;
+          const appearance={color:0xffda70,transparent:true,depthWrite:false,side:THREE.DoubleSide}; // Unlit glyphs stay luminous in dark ruins.
+          const material=root.HobunjiSpritePngSurface?.makeMaterial?.(THREE,texture,'ruin-melody-'+number,appearance)
+            ||new THREE.MeshBasicMaterial({map:texture,...appearance});
+          materials.push(material);
+          const decal=body('scratchbone-note-'+id+'-'+i,new THREE.PlaneGeometry(.65,.75),material,
+            cx-(i-(rec.notes.length-1)/2)*.8,y+1.8,room.z+.55);
+          decal.rotation.y=Math.PI;decal.visible=false; // Upright and facing south toward the plate, rather than a mirrored rear face.
+          decal.userData.devRuinScratchboneMelodyNote=number;rec.glyphs.push(decal);
         }
       }
       rec.onMelodyResult=detail=>{
@@ -385,8 +379,18 @@
           complete();
         }
       };
-      melodyListener=event=>rec.onMelodyResult(event?.detail); // One authoritative callback shared by browser event and tests.
-      events?.addEventListener?.('hobunji-ruin-melody-result',melodyListener);
+      melodyListener=event=>{
+        const detail=event?.detail,playerY=getPlayerY?.(); // Only ordinary player notes from this map and floor may advance the phrase.
+        if(rec.disposed||rec.solved||!isActive()||!Number.isFinite(playerY)||Math.abs(playerY-y)>=.75)return;
+        if((options.area||options.mapId)&&detail?.area!==(options.area||options.mapId))return;
+        const note=detail?.noteIndex;
+        if(!Number.isInteger(note)||note<0||note>=8)return;
+        rec.heardNotes.push(note);
+        if(rec.heardNotes.length>rec.notes.length)rec.heardNotes.shift();
+        if(rec.heardNotes.length===rec.notes.length&&rec.notes.every((n,i)=>n===rec.heardNotes[i]))
+          rec.onMelodyResult({id,solved:true});
+      };
+      events?.addEventListener?.('hobunji-kurraya-puzzle-note',melodyListener);
     }else if(kind==='glyphObelisk'){
       // Three separate real projectile targets spaced around the room.
       // Each uses the existing ranged weapon's world-space hit sweep.
@@ -553,17 +557,13 @@
         }
         rec.lastDown=!!down;
       }
-      if(kind==='melodyEcho'&&!rec.solved){
-        const down=isActive()&&player&&Number.isFinite(currentY)&&Math.abs(currentY-y)<.75
+      if(kind==='melodyEcho'){
+        const down=!rec.solved&&isActive()&&player&&Number.isFinite(currentY)&&Math.abs(currentY-y)<.75
           &&Math.abs(player.x-cx)<.58&&Math.abs(player.z-cz)<.58;
-        if(down&&!rec.lastDown){
-          const started=music?.beginPlayerSession?.({echoChallenge:{id,notes:rec.notes}});
-          if(started){
-            rec.attempts++;
-            options.onMusicStart?.(rec);
-          }else options.onMusicUnavailable?.(rec);
-        }
-        rec.lastDown=!!down; // Step off and on to replay the phrase, including after an incomplete attempt.
+        if(down&&!rec.lastDown)rec.attempts++;
+        rec.inscription?.setVisible?.(down);
+        for(const glyph of rec.glyphs)glyph.visible=!!down;
+        rec.lastDown=!!down;
       }
       if(kind==='ceilingRailTargets'&&!rec.solved){
         rec.elapsed+=Math.min(.05,Math.max(0,dt));
@@ -631,7 +631,8 @@
       rec.removeFootprintGate?.(); // Release the real player/NPC occupancy blocker before this scene is reused.
       if(rec.colliderId)(options.DynamicSurfaces||root.DynamicSurfaces)?.remove?.(rec.colliderId); // One owner for both collision removal and room teardown.
       if(ropeChain)bus?.removeExternalRopeChain?.(ropeChain);
-      if(melodyListener)events?.removeEventListener?.('hobunji-ruin-melody-result',melodyListener);
+      if(melodyListener)events?.removeEventListener?.('hobunji-kurraya-puzzle-note',melodyListener);
+      rec.inscription?.dispose?.();
       if(timedNoteListener)events?.removeEventListener?.('hobunji-kurraya-puzzle-note',timedNoteListener);
       if(rec.musicOpened)music?.close?.();
       for(const emitter of flameVisuals)emitter.dispose?.();
