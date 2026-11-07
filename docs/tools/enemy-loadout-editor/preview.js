@@ -3,12 +3,12 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 const THREE = { ...ThreeModule };
 window.THREE = THREE;
 const files = [
-  'config/scratchbones-config.js?v=20261106hoodrear1',
+  'config/scratchbones-config.js?v=20261107furrearconfig1',
   'config/attachment-rig-profiles.js?v=20261028a',
   'config/character-rig-scale-defaults.js?v=20261028a',
   'js/character-rig-scale.js?v=20261031hb701fa8',
   'js/color-fill.js?v=20261028a',
-  'js/portrait-utils.js?v=20261103furpaint1',
+  'js/portrait-utils.js?v=20261107furrearportrait1',
   'js/portrait-breathing.js?v=20261028a',
   'js/npc-avatar-preview-utils.js?v=20261031h4adfa50',
   'js/character-spine.js?v=spine1', // Hunchback weights/deformation, read by the portrait skin, shoulder aim and leg solver.
