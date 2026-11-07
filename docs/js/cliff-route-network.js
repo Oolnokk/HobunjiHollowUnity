@@ -64,6 +64,7 @@
         shelf.y >= candidate.y1 - 0.01 || !Number.isFinite(groundY)) return null;
     const priority = 1 + hash(candidate.a.c, candidate.a.r, 117 + shelf.nodeId) % 3; // First-choice cap translation, varied by generation seed.
     const projections = [...new Set([priority, 1, 2, 3])]; // Fallbacks find a shape really embedded behind irregular parent edges.
+    const failures = []; // Mobile debug: retain the measured coverage of rejected miniature-plateau footprints.
     const ring = [[-1,-1],[0,-1],[1,-1],[1,1],[0,1],[-1,1]]; // Exact same top outline, before translation.
     for (const projection of projections) {
       const original = { ...shelf,
@@ -74,7 +75,7 @@
       const maxC = Math.floor(Math.max(...outline.map(p => p[0])));
       const minR = Math.floor(Math.min(...outline.map(p => p[2])));
       const maxR = Math.floor(Math.max(...outline.map(p => p[2])));
-      if (minC < 0 || minR < 0 || maxC >= cols || maxR >= rows) continue;
+      if (minC < 0 || minR < 0 || maxC >= cols || maxR >= rows) { failures.push({ projection, reason:'outside-map' }); continue; }
       const footprint = []; // Parent-owned body tiles; used for validation, never registered as walkable.
       const boundaryCells = []; // Shared unwalkable stone boundary strip, if the source cliff has one.
       let samples = 0, inParent = 0, inRock = 0; // Fraction of *area*, not merely intersecting tile count.
@@ -97,8 +98,16 @@
       // Prevent a floating cap whose "original plateau" actually lay out in
       // open air. A parent boundary may be solid rock rather than a walkable tile.
       if (!samples || !footprint.length || inParent / samples < 0.54 ||
-          (inParent + inRock) / samples < 0.72) continue;
-      if (candidate.walls > 0 && !boundaryCells.length) continue; // Share actual unwalkable face tiles when painted.
+          (inParent + inRock) / samples < 0.72) {
+        failures.push({ projection, reason:'parent-coverage', parent:inParent / Math.max(1,samples),
+          embedded:(inParent+inRock) / Math.max(1,samples) });
+        continue;
+      }
+      if (candidate.walls > 0 && !boundaryCells.length) {
+        failures.push({ projection, reason:'missing-wall-seam', parent:inParent / samples });
+        continue; // Share actual unwalkable face tiles when painted.
+      }
+      debug.miniBasesAccepted = (debug.miniBasesAccepted||0)+1; // Live generator diagnostics for quality audits.
       return {
         x: original.x, z: original.z, y: groundY, elevation: groundY,
         footprint, boundaryCells, parentComponent: candidate.bComp,
@@ -107,6 +116,8 @@
         neighborY: candidate.y0, // Rock starts at zone ground even beside an elevated neighboring plateau.
       };
     }
+    debug.miniBasesRejected = (debug.miniBasesRejected||0)+1;
+    debug.lastMiniBaseFailure = { a:candidate.a, b:candidate.b, shelf:shelf.id, failures }; // Most recent reason a miniature plateau could not grow.
     return null;
   }
 
@@ -191,6 +202,7 @@
       busy.push({ x: midx, z: midz });
       if (required) parent[b] = a;
     }
+    debug.miniBasesAccepted = 0; debug.miniBasesRejected = 0; debug.lastMiniBaseFailure = null; // Reset per build for mobile inspection.
     const balconies = [];
     for (const route of routes) {
       const c = selected[route.id], id = route.id, h = c.y1 - c.y0;
@@ -294,6 +306,7 @@
     }
     const connectedRoots = new Set(components.map((_, i) => find(i)));
     const network = { area: opts.area || null, grid, cols, rows, components, component, routes, balconies, adjacency,
+      miniBaseStats: { accepted:debug.miniBasesAccepted, rejected:debug.miniBasesRejected, lastFailure:debug.lastMiniBaseFailure }, // In-game generator debug export.
       unconnectedComponents: Math.max(0, connectedRoots.size - 1), candidateCount: candidates.length, rejectedRoutes, options: opts };
     // Adapt ShaftHub.reachable(): walking components, legal climbing links,
     // and every balcony node must be reachable from some ground entrance.
