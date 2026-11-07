@@ -1263,6 +1263,7 @@
     window.PuzzleCaveEntrances?.forgetCave?.(mapId); // A relocated cave's old elevated entrance must be retired with its old save signature.
     puzzleChallengesByMapId.get(mapId)?.challenge?.dispose?.();
     puzzleChallengesByMapId.delete(mapId); // Retire the timed puzzle's listeners and authored meshes with the cavern.
+    window.CavernOreRocks?.forgetMap?.(mapId); // Tear down the fused cave wall and its mineable indices when a relocated cave is retired.
     plansByMapId.delete(mapId);
     bodiesByMapId.delete(mapId);
     bodySpawnPromises.delete(mapId);
