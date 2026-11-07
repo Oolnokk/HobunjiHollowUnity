@@ -14,6 +14,8 @@
   const rockMaps = new Map(); // Per-cave tile -> logical mineable rock group; removing a tile keeps the existing pickaxe/blast contract.
   const rockScenes = new Map(); // Per-cave scene owner for Sense Mode, so stale caves cannot leak highlights.
   const separatorWalls = new Map(); // Per-cave fused mesh, still-live diggable tiles and permanent carved puzzle-door openings.
+  const pendingRebuilds = new Set(); // Batched Shattercask/restore tile removals re-mesh the wall only once per explosion or scene load.
+  let batchDepth = 0; // A nested blast or state restore can safely reuse the same batching API.
   const ROCK_SAMPLE_STEP = 0.25; // World units per sculpting sample; fine enough for a visibly carved single-tile opening.
   const ROCK_EDGES = [[0,1],[0,2],[0,3],[1,2],[1,3],[2,3]];
   const ROCK_TETRAHEDRA = [[0,5,1,6],[0,1,2,6],[0,2,3,6],[0,3,7,6],[0,7,4,6],[0,4,5,6]];
@@ -191,7 +193,10 @@
     if(!group)return false;
     rocks.delete(id);
     const wall=separatorWalls.get(mapId);
-    if(group.userData?.caveSeparatorTile&&wall?.tiles.delete(id))rebuildSeparatorWall(mapId);
+    if(group.userData?.caveSeparatorTile&&wall?.tiles.delete(id)){
+      if(batchDepth)pendingRebuilds.add(mapId);
+      else rebuildSeparatorWall(mapId);
+    }
     group.parent?.remove(group);
     group.traverse(node=>{
       node.geometry?.dispose?.();
@@ -213,6 +218,7 @@
     // forgetZoneDenState) so removeZoneMineableRockVisual never targets an
     // orphaned rock group from a layout that no longer exists.
     const oreRockMeshes = new Map();
+    pendingRebuilds.delete(mapId); // Rebuilding an evicted cave must not later apply a queued cut to its replacement scene.
     const stale=separatorWalls.get(mapId);
     if(stale){stale.mesh?.parent?.remove(stale.mesh);stale.mesh?.geometry?.dispose?.();separatorWalls.delete(mapId);}
     rockMaps.set(mapId,oreRockMeshes); // Rebuilt caves replace stale tile indices completely.
@@ -260,6 +266,18 @@
     return oreRockMeshes;
   }
 
+  function withBatchedCuts(callback) {
+    batchDepth++; // Both blast terrain clearing and saved terrain restoration may remove several adjacent stones.
+    try{return callback();}
+    finally{
+      batchDepth--;
+      if(!batchDepth){
+        for(const mapId of pendingRebuilds)rebuildSeparatorWall(mapId);
+        pendingRebuilds.clear();
+      }
+    }
+  }
+
   function debugSnapshot(mapId) {
     const ids=mapId==null?[...separatorWalls.keys()]:[String(mapId)]; // Optional cave filter keeps mobile diagnostics small.
     return ids.map(id=>{
@@ -274,5 +292,5 @@
     const wall=separatorWalls.get(String(mapId)); // Scalar probe allows mobile debugging of mined holes without browser developer tools.
     return wall ? rockField(wall,Number(x),Number(y),Number(z)) : null;
   }
-  window.CavernOreRocks = { init, build, senseTargets, removeVisual, debugSnapshot, probeRock, CAVERN_ORE_TINTS };
+  window.CavernOreRocks = { init, build, senseTargets, removeVisual, withBatchedCuts, debugSnapshot, probeRock, CAVERN_ORE_TINTS };
 })();
