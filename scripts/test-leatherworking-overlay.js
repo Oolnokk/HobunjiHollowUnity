@@ -30,6 +30,7 @@ class TestElement {
   set innerHTML(html) {
     this.markup = html;
     this.nodes.clear();
+    if (html.includes('data-dye-row')) this.nodes.set('[data-dye-row]', new TestElement('label')); // The undressed label is selected by presence rather than a named data value.
     for (const tag of html.matchAll(/<(button|select|span|img|output)\b[^>]*>/g)) {
       const data = tag[0].match(/\bdata-(action|field|view)="([^"]+)"/);
       if (!data) continue;
