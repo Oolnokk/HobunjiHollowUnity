@@ -166,8 +166,8 @@
       // A narrow winding walkable route, not invisible stairs or an interaction that teleports the player.
       // Each tile is separated by at most the normal step-up threshold.
       const path=[
-        [x+4,z+2],[x+3,z+2],[x+3,z+1],[x+2,z+1],[x+2,z],
-        [x+2,z-1],[x+1,z-2]
+        [x+4,z+1],[x+4,z],[x+3,z],[x+3,z-1],
+        [x+2,z-1],[x+2,z],[x+1,z]
       ];
       path.forEach(([sx,sz],i)=>{
         const topY=floorY+STAIR_RISE*(i+1);
@@ -196,7 +196,7 @@
           id:id+'-pillar-song',kind:'melodyEcho',mapId:MAP_ID,
           isActive:alive,onSolved:triggerSink,
           getPlayerPosition:kit.playerWorld,
-          getPlayerY:()=>kit.playerWorld()?.y??floorY,
+          getPlayerY:()=>game.getPlayerGroundSupportY?.()??kit.playerWorld()?.y??floorY,
           music:root.MusicMinigame
         });
         if(!challenge)throw new Error('Could not compose the native melody echo for the tall pillar.');
@@ -264,7 +264,7 @@
       block.pillar=stone;return block;
     }
     function createPlates(){
-      const positions=[[cx-1.5,cz-.5],[cx+.5,cz-.5],[cx-1.5,cz+1.5],[cx+.5,cz+1.5]];
+      const positions=[[cx-1,cz-1],[cx+1,cz-1],[cx-1,cz+1],[cx+1,cz+1]]; // Plate centers share the blocks' 1-unit slide lattice; half-tile offsets make a plate impossible to fill.
       positions.forEach(([x,z],index)=>{
         const mesh=cube('find-blocks-pressure-plate-'+index,x,z,floorY-.025,.91,.06,.91,COLOR.plate);
         const line=cube('find-blocks-plate-frame-'+index,x,z,floorY+.04,.64,.04,.64,COLOR.mark);
