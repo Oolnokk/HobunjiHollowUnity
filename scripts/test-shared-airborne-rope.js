@@ -160,6 +160,16 @@ function world() {
   state.flight=null;
   released.ropeId='different-rope';
   assert.equal(catcher(released),true,'ordinary mid-jump entry may grab the same rope');
+  const fast={x:3.75,y:.4,z:3.5,ropeId:'previous-rope'}; // A one-frame flight spanning both sides of a grip.
+  state.flight=fast;
+  let caughtAt=null; // Captures the actual swept sample at which the catch occurs.
+  const swept=new Function('state','inRuin','ropeCatchPoint','catchRopeInFlight',
+    ruinSource.slice(start,end)+'\nreturn catchAirborneRope;')(
+      state,()=>true,(_r,p)=>Math.abs(p.x-3.2)<=.15,
+      (_r,p)=>{caughtAt=p.x;return true});
+  assert.equal(swept(fast,{x:2.5,y:.4,z:3.5}),true,
+    'a fast ruin rope release catches a grip even when both frame endpoints miss');
+  assert(caughtAt>=3.05&&caughtAt<=3.35,'the catch happens on the swept path');
 }
 // Ruin ledge falls use the same entry point when directional movement is held.
 {
