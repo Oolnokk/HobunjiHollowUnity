@@ -35,7 +35,7 @@ context.window = {};
 vm.runInNewContext(fs.readFileSync('docs/js/cooking-data.js', 'utf8'), context);
 const cookingData = context.window.HobunjiCookingData;
 assert.equal(cookingData.recipes.length, 19, 'the 17 prototype meals plus mayonnaise and bread recipes are available');
-assert.equal(Object.keys(cookingData.items).length, 98, 'all prototype ingredients, tree-nut oils, and three new Gorkunash imported spices remain available as data');
+assert.equal(Object.keys(cookingData.items).length, 99, 'all existing prototype ingredients plus the rare Tzatzul Egg remain available as data');
 for (const spice of ['cloudSaffron','starpepper','nightCardamom'])
   assert(cookingData.items[spice]?.categories.includes('spice'), `${spice} is a real, usable imported seasoning`);
 const acceptedCategories = new Set(cookingData.recipes.flatMap(recipe => recipe.slots.flatMap(slot => slot.accepts)));

@@ -114,6 +114,38 @@
       "name": "Cloud Forest Rescue Clearing",
       "category": "story_poi",
       "singleton": true
+    },
+    {
+      "id": "locale_tzatzul_nest_map_northern_cliffs_0",
+      "file": "config/locales/locale_tzatzul_nest_map_northern_cliffs_0.json",
+      "name": "Tzatzul Nest 1 — Northern Cliffs",
+      "category": "cave_interior",
+      "singleton": true,
+      "mapId": "map_i_den_tzatzul_map_northern_cliffs_0"
+    },
+    {
+      "id": "locale_tzatzul_nest_map_northern_cliffs_1",
+      "file": "config/locales/locale_tzatzul_nest_map_northern_cliffs_1.json",
+      "name": "Tzatzul Nest 2 — Northern Cliffs",
+      "category": "cave_interior",
+      "singleton": true,
+      "mapId": "map_i_den_tzatzul_map_northern_cliffs_1"
+    },
+    {
+      "id": "locale_tzatzul_nest_map_western_slope_0",
+      "file": "config/locales/locale_tzatzul_nest_map_western_slope_0.json",
+      "name": "Tzatzul Nest 1 — Western Slope",
+      "category": "cave_interior",
+      "singleton": true,
+      "mapId": "map_i_den_tzatzul_map_western_slope_0"
+    },
+    {
+      "id": "locale_tzatzul_nest_map_western_slope_1",
+      "file": "config/locales/locale_tzatzul_nest_map_western_slope_1.json",
+      "name": "Tzatzul Nest 2 — Western Slope",
+      "category": "cave_interior",
+      "singleton": true,
+      "mapId": "map_i_den_tzatzul_map_western_slope_1"
     }
   ]
 }

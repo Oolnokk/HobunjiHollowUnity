@@ -2322,6 +2322,11 @@
         }
       ],
       "entries": []
+    },
+    "creature_tzatzul_hatchling": {
+      "label": "Tzatzul Hatchling",
+      "note": "Empty until hatchling-specific drops are authored. The mother's treasure hoard belongs only to the adult corpse.",
+      "entries": []
     }
   }
 }

@@ -100,11 +100,47 @@
     </div>`;
   }
 
+  function renderTzatzulCensus() {
+    const flight = window.TzatzulFlightRuntime?.debugSnapshot?.(); // Existing flight owner supplies everything this mobile panel reports.
+    if (!flight) return '';
+    const spires = window.TzatzulCliffSites?.snapshot?.(); // Real cave-spire geometry and generation errors for mobile.
+    const wings = window.TzatzulLiveVisuals?.snapshot?.(); // Actual wing mesh load/pose state, not an assumed successful render.
+    const nest = window.TzatzulNestEncounter?.debugSnapshot?.(); // Real miniboss counters, available without DevTools.
+    const arena = window.TzatzulNestInterior?.debugSnapshot?.(); // Displays actual wall and spike geometry counts.
+    const area = deps?.getCurrentArea?.();
+    const inhabitants = (flight.birds || []).filter(bird => bird.area === area);
+    const fmt = value => deps.esc(String(value ?? 'none'));
+    const live = inhabitants.map(bird =>
+      '<div>' + fmt(bird.id) + ' · ' + fmt(bird.phase) + ' · ' + fmt(bird.pose)
+      + (bird.target ? ' · target ' + fmt(bird.target) : '') + '</div>').join('');
+    return '<div style="padding:8px 10px;margin-bottom:8px;border:1px solid rgba(145,179,222,.3);border-radius:6px;font-size:12px">'
+      + '<div style="font-weight:600">Tzatzul flight / cliff roosts</div>'
+      + '<div>Living: <b>' + flight.active + '</b> · launched: ' + flight.flights
+      + ' · swoops: ' + flight.swoops + ' · hits/misses: ' + flight.hits + '/' + flight.misses + '</div>'
+      + '<div>Live wing rigs: ' + (wings?.liveRigs ?? 0) + ' · failed loads: ' + (wings?.loadFailures ?? 0) + '</div>'
+      + '<div>Inaccessible nest spires: ' + (flight.roosts?.find(record => record.area === area)?.count || 0) + '</div>'
+      + '<div>Nest arenas: ' + (arena?.arenas?.length || 0) + ' · rock perches: ' + (arena?.rockMeshes || 0)
+      + ' · stone spike layers: ' + (arena?.spikeMeshes || 0) + '</div>'
+      + '<div>Nest dives: ' + (nest?.dives || 0) + ' · wall hits: ' + (nest?.wallHits || 0)
+      + ' · sharp spike hits: ' + (nest?.spikeHits || 0) + ' · delivered victims: ' + (nest?.deposited || 0) + '</div>'
+      + (nest?.lastImpact ? '<div>Last collision: ' + fmt(nest.lastImpact.kind)
+        + ' · unused dive: ' + fmt((nest.lastImpact.deficitTiles || 0).toFixed(2)) + ' tiles</div>' : '')
+      + (nest?.encounters || []).filter(encounter => encounter.mapId === area)
+        .map(encounter => '<div>Mother HP: ' + fmt(encounter.motherHealth)
+          + ' · hatchlings: ' + fmt(encounter.hatchlingsAlive)
+          + ' · eggs: ' + fmt(encounter.eggs) + ' · remains: ' + fmt(encounter.victims)
+          + ' · ' + fmt(encounter.phase) + '</div>').join('')
+      + (spires?.lastError ? '<div style="color:#f3b98c">Spire: ' + fmt(spires.lastError) + '</div>' : '')
+      + (live || '<div style="opacity:.72">No adult Tzatzul encountered here yet.</div>')
+      + (wings?.lastError ? '<div style="color:#f3b98c">Rig: ' + fmt(wings.lastError) + '</div>' : '')
+      + '</div>';
+  }
+
   function renderWildlifeDebugPanel() {
     syncWildlifeTabVisibility();
     const container = document.getElementById('wildlifeDenList');
     if (!container) return;
-    const censusHtml = renderDenNestCensus() + renderDenTurnoverCensus() + renderRoamingHerdCensus() + renderCaveGeometryCensus();
+    const censusHtml = renderDenNestCensus() + renderDenTurnoverCensus() + renderRoamingHerdCensus() + renderCaveGeometryCensus() + renderTzatzulCensus();
     if (!window.WildlifeSpawn.getDenGenotypes().size) {
       container.innerHTML = censusHtml + '<div style="opacity:.6;padding:8px 0">No den-family genotypes generated yet this session. Roaming herds are reported separately above because they do not belong to caverns.</div>';
       return;

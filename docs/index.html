@@ -422,9 +422,9 @@
   <!-- Wearer-only trinket hooks: imported from PR #1421 and child #1426, before Combat.init in game.js. -->
   <script src="js/combat/specialized-combat-trinket-hooks.js?v=20261106trinkets20"></script>
   <script src="js/combat/double-edged-combat-trinkets.js?v=20261106trinkets20"></script>
-  <script src="js/cooking-data.js?v=20261021hb2f8016"></script>
+  <script src="js/cooking-data.js?v=20261107h2eeee50"></script>
   <script src="js/food-processing.js?v=20261015hc6ddbcf"></script>
-  <script src="js/cooking-system.js?v=20261102-food24h2"></script>
+  <script src="js/cooking-system.js?v=20261105tzEgg1"></script>
   <script src="js/key-item-system.js?v=20260918banubu1"></script>
   <!-- Alchemy (reagent/effect defs, potion brewing, shared timed effects) —
        window.AlchemySystem. Self-contained aside from deps injected via
@@ -497,7 +497,7 @@
        time, not at load time, so script order relative to them doesn't
        matter; must load before game.js, which calls
        window.HousePieces.init(...) during its own setup. -->
-  <script src="js/house-pieces.js?v=20261105hc45b427&surfaceUv=20261026orequad1"></script>
+  <script src="js/house-pieces.js?v=20261107h25a2447&surfaceUv=20261026orequad1"></script>
   <!-- Death ragdoll → lootable corpse (window.CreatureDeath) —
        self-contained aside from deps injected via init(), so load order
        relative to the other systems above doesn't matter; must load
@@ -640,6 +640,13 @@
        above doesn't matter; must load before game.js, which calls
        window.PerpRotation.init(...) during its own setup. -->
   <script src="js/perp-rotation.js?v=20261026h7f6f691"></script>
+  <script src="js/animal-shoulder-spline.js?v=20261105tzFlight1"></script> <!-- Required by the actual seven-point flying rig perch deformation. -->
+  <script src="js/flying-animal-rig.js?v=20261105tzatzul1"></script> <!-- Canonical authored two-bone bird wing/body assembly. -->
+  <script src="js/tzatzul-registration.js?v=20261107h0a205cd"></script> <!-- Tzatzul dev species, hatchling peck, stable individual tint and flying-rig JSON. -->
+  <script src="js/tzatzul-live-visuals.js?v=20261107h21f981f"></script>
+  <script src="js/tzatzul-cliff-sites.js?v=20261107h4239d09"></script> <!-- Separate rock-textured, non-climbable Tzatzul spires. -->
+  <script src="js/tzatzul-flight-runtime.js?v=20261107h6a50f9d"></script> <!-- Shared swept-body dive for exterior and nest mothers. -->
+  <script src="js/tzatzul-nest-encounter.js?v=20261107h7f36c3b"></script> <!-- Authoritative indoor mother and hatchling combat in the existing wildlife tick. -->
   <!-- Funji & Son's General Store (window.GeneralStore) — self-contained
        aside from deps injected via init(), and reads window.DyeSystem/
        window.ConditionRegistry at render time (already global by then), so
@@ -701,7 +708,7 @@
        at call time (already global by then), so load order relative to the
        other systems above doesn't matter; must load before game.js, which
        calls window.WildlifeSpawn.init(...) during its own setup. -->
-  <script src="js/wildlife-spawn.js?v=20261104scent1439c"></script>
+  <script src="js/wildlife-spawn.js?v=20261106tzNestBoss1"></script>
   <!-- Town/zone building mesh spawning + decorative furniture/prop spawning
        (window.TownZoneBuildings) — reads globally-loaded HousePieceGen/
        WallBuilder/BuildingDoor/window.ProceduralFurniture/window.Music at
@@ -811,7 +818,7 @@
   <script src="js/tasks-panel.js?v=20261029hguild2"></script>
   <script src="js/supply-page.js?v=20261029seedblocks2"></script>
   <script src="js/whistle-equip.js?v=20261016hb4b3fe1"></script>
-  <script src="js/wildlife-debug-panel.js?v=20261106independentPuzzle1"></script>
+  <script src="js/wildlife-debug-panel.js?v=20261107h043d585"></script>
   <script src="js/wildlife-behavior-map.js?v=20261010hb5092df"></script>
   <!-- Shipping tab (player bag <-> shipping-box transfer UI, window.
        ShippingPanel) — pure DOM/state, no other window.* system reads;
@@ -879,6 +886,7 @@
   <script src="config/cave-shape.js?v=20261013caveshape1"></script>
   <script src="js/cavern-sculptor.js?v=20261013hae568c9"></script>
   <script src="js/cavern-generator.js?v=20261026cavewalls1"></script>
+  <script src="js/tzatzul-nest-interior.js?v=20261107h10e155e"></script> <!-- Author four high-vault boss rooms using the existing cavern mesh and stone stalagmite generator. -->
   <script src="js/ore-rock-textures.js?v=20261102authorAssetBase1"></script> <!-- Shared metal-bodied ore and verdigris materials: mine, wilderness, caves. -->
   <script src="js/cavern-ore-rocks.js?v=20261027sense1"></script>
   <script src="js/town-mine.js?v=20261026ghouls1"></script>
@@ -2986,7 +2994,7 @@
   <script src="js/delvers-vault-signal.js?v=20261031storyVault1"></script>
   <script src="js/bed-lie-pose.js?v=20261102mattressxray2"></script> <!-- Surface-aligned sleep presentation; game.js injects the live player and calendar. -->
   <script src="js/lunge-targeting.js?v=1"></script>
-  <script src="game.js?v=20261107h64924be"></script>
+  <script src="game.js?v=20261107hce7c04a"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261029hguild2"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->

@@ -27,6 +27,8 @@
     return c.state === 'corpse' && c.health <= 0 && !!c.streamVisuals && !c.isBandit && !c.isCompanion && !c.keepCorpseAfterLoot && !c.corpseLooted && !c.isAmphibiousFishCorpse;
   }
   function canHide(c) {
+    if ((c._tzFlight?.phase && c._tzFlight.phase !== 'perched')
+      || c.tzatzulCarrying || c.tzatzulCapturedBy) return false; // Preserve distant spyglass views of original airborne prey.
     if (c.health <= 0) return isStreamableCorpse(c);
     if (c.isBandit || c.isCompanion || c.prone || c._branchDefense || (c.knockbackT || 0) > 0 || (c.retreatT || 0) > 0) return false;
     if (c.state === 'chase' || c.state === 'searching' || c.state === 'patrol-chase' || c.state === 'return' || c.state === 'fleeing-low-health') return false;

@@ -34,7 +34,7 @@
     ['EntityDistanceLod', 'entity-distance-lod.js?v=20260919b'],
     ['WildernessSimulationLOD', 'wilderness-simulation-lod.js?v=20261009hcee431b'],
     // Wildlife's own visibility/render-cost LOD (distance-hidden avatar/shadow/ring HUD), sibling to the bandit-sleep LOD just above.
-    ['WildlifeVisualLod', 'wildlife-visual-lod.js?v=20261105h2cefe25'],
+    ['WildlifeVisualLod', 'wildlife-visual-lod.js?v=20261107h7bdc402'],
     // Adds the Harlyao-zone second darkness pass, then re-clears lantern/furniture-light masks. Terror later supplies the cached stack darkness/radius modifiers read by this adapter.
     ['HarlyaoNightMarchAtmosphere', 'harlyao-night-march-atmosphere.js?v=20261104habd63f8'],
     // Reusable solid-color translucent/emissive character treatment plus one cheap WeatherFX lantern-style glow provider per formation/object group.
