@@ -629,7 +629,7 @@
     const pool = deps.npcTransitionPool(area);
     const links = [];
     for (const t of pool) {
-      if(t.puzzleCaveOnly)continue; // Independent cliff Puzzle Cave doors are player-only; NPCs and hostile AI never target, traverse, or prewarm them.
+      if(t.puzzleCaveOnly || String(t.targetMapId||'').includes('_puzzle_rock_'))continue; // Puzzle Cave entrances are player-only: no NPC route edge, traversal, or scene prewarming.
       if (t.target === 'building' && t.targetMapId) {
         if (warmBuildings && !deps.buildingScenes.has(t.targetMapId)) deps.loadBuildingScene(t.targetMapId);
         const bi = deps.buildingScenes.get(t.targetMapId);
