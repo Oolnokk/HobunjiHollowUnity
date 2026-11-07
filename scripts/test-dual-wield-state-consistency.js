@@ -90,7 +90,7 @@ assert.equal(game.grips.currentDualWieldAnimationState().influence, 0);
   const pending = new Map(), installed = [], disposed = [];
   let toolChanges = 0;
   const scope = { window: { HobunjiDualWieldWeaponVisuals: { teardown() {} }, HobunjiHandToolGrips: { editorToolChanged() { toolChanges++; } } },
-    toolPlaneMesh: null, currentToolKey: '', toolHolder: { add: mesh => installed.push(mesh), remove() {} },
+    toolPlaneMesh: null, currentToolKey: '', syncGripAxisMarkers() {}, toolHolder: { add: mesh => installed.push(mesh), remove() {} },
     buildToolPlaneMesh: key => new Promise(resolve => pending.set(key, resolve)), disposeToolPlaneMesh: mesh => disposed.push(mesh), logDebug() {} };
   vm.createContext(scope);
   vm.runInContext(html.slice(start, end) + '\nthis.swap = setToolSprite;', scope);

@@ -58,7 +58,8 @@ assert.match(grips, /function applyEditorGripPresentation/, 'editor visual path 
 assert.match(grips, /applyHeldItemPlacement\(visual, key, currentGripContext\(\), editorScaleIdentity\(\)\)/, 'editor grip presentation must apply the shared grip-anchored base + calculated-height weapon placement');
 assert.doesNotMatch(grips, /function primaryGripForTool\(\) \{ return identityTransform\(\); \}/, 'old fixed-hand identity target must not return');
 assert.doesNotMatch(grips, /function inverseTransform|function composePrimaryInverseWithPoint/, 'dead inverse-weapon grip math must not remain after hand-target migration');
-assert.match(grips, /position: itemPointToHolder\(value, \{ x: 0, y: 0, z: itemZ \}, context, identity\)/, 'secondary hand span must also resolve directly in item space through the grip-anchored mapping');
+assert.match(grips, /const point = gripPointOnAxis\(ensureTool\(value\)\?\.customGripAxis, itemZ\)/, 'secondary hand span must follow the authored item-local haft axis');
+assert.match(grips, /position: itemPointToHolder\(value, point, context, identity\)/, 'secondary hand span must resolve through the shared item-space placement mapping');
 assert.match(grips, /function heightMultiplierForTool/, 'held-item metadata must expose a per-weapon height multiplier');
 assert.match(grips, /1 \+ \(heightRatio - 1\) \* heightMultiplier/, 'effective weapon scale must blend calculated character-height ratio by the authored multiplier');
 assert.match(grips, /editorFieldPair\(scaleFields, 'handToolHeightMultiplier', 'Height multiplier'/, 'Attack Editor grip UI must expose the weapon height multiplier');
