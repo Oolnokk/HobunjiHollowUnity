@@ -436,7 +436,7 @@
   <!-- Banubu's Tea Grinder delegates trait legality/targeting to AlchemySystem
        but outputs cooking Tea Blends, so it must load after both systems. -->
   <script src="js/tea-grinder.js?v=20261019h0edeaef"></script>
-  <script src="js/persistent-ground-fire.js?v=20261106caveFinish1"></script><!-- Area-scoped fire patches shared by flasks, Shattercasks and stone sconces. -->
+  <script src="js/persistent-ground-fire.js?v=20261107puzzleFire1"></script><!-- Area-scoped fire patches shared by flasks, Shattercasks and stone sconces. -->
   <script src="js/alchemy-flasks.js?v=20261106hbd5b51f"></script>
   <!-- Dye catalog/ownership (window.DyeSystem) — character creation, the
        redye panel, General Store clothing stock, and treasure loot all
@@ -623,7 +623,7 @@
   <script src="js/ruin-shaft-corridor.js?v=20261104directVestibule1"></script>
   <script src="js/ruin-layer-defense.js?v=20261104soloNoLoot1"></script>
   <script src="js/puzzle-cave-melody.js?v=20261105puzzleCaves1"></script><!-- Reusable rhythm grid and timed plate-gated cave songs. -->
-  <script src="js/ruin-layer-challenges.js?v=20261106h014c5af"></script>
+  <script src="js/ruin-layer-challenges.js?v=20261107puzzleWallAudit2"></script>
   <script src="js/ruin-layer-playable.js?v=20261106ha9f48ae"></script>
   <script src="js/ruin-v50-native-mechanisms.js?v=20261105hc10ba02"></script>
   <script src="js/ruin-v50-native-floors.js?v=20261105hd86bc92"></script>
@@ -891,7 +891,7 @@
   <script src="js/cavern-generator.js?v=20261026cavewalls1"></script>
   <script src="js/tzatzul-nest-interior.js?v=20261107h10e155e"></script> <!-- Author four high-vault boss rooms using the existing cavern mesh and stone stalagmite generator. -->
   <script src="js/ore-rock-textures.js?v=20261102authorAssetBase1"></script> <!-- Shared metal-bodied ore and verdigris materials: mine, wilderness, caves. -->
-  <script src="js/cavern-ore-rocks.js?v=20261027sense1"></script>
+  <script src="js/cavern-ore-rocks.js?v=20261107puzzleWallAudit2"></script>
   <script src="js/town-mine.js?v=20261026ghouls1"></script>
   <script src="js/town-mine-descent.js?v=20261023mdesc2"></script>
   <!-- A wilderness zone's in-bounds elevated plateau/mesa terrain
@@ -924,15 +924,15 @@
   <script src="js/locale-cave-runtime.js?v=20261010h40fea5e"></script>
   <!-- Promotes wilderness den anchors into generic cave sites; wraps WildlifeSpawn/CavernGenerator/DevSpawner, all loaded above. -->
   <script src="js/locale-cliff-wall-mounts.js?v=20261105cliffPortal1"></script><!-- Mount editor-authored furniture on the resolved procedural wall normal and elevation. -->
-  <script src="js/puzzle-cave-entrances.js?v=20261106independentPuzzle2"></script><!-- Real mini-cliff cliffDoor placement, exterior timed plate, and authoritative gated transition. -->
-  <script src="js/cave-site-system.js?v=20261106independentPuzzle2"></script>
+  <script src="js/puzzle-cave-entrances.js?v=20261107puzzleFire1"></script><!-- Real mini-cliff cliffDoor placement, exterior timed plate, and authoritative gated transition. -->
+  <script src="js/cave-site-system.js?v=20261107puzzleWallAudit2"></script>
   <!-- Two-necked Shattercask runtime. Loaded after Combat/DevSpawner/CaveSiteSystem so their
        hooks bind before game.js initializes the subsystems; also handles touch prompts. -->
   <!-- Capability/event substrate (window.WorldEvents, window.Targetables): pure registries with no
        dependencies; must load before shattercasks.js, which feeds them. See docs/architecture/ruin-capabilities.md. -->
   <script src="js/world-events.js?v=1"></script>
   <script src="js/targetables.js?v=1"></script>
-  <script src="js/shattercasks.js?v=20261106h97ffb1d"></script>
+  <script src="js/shattercasks.js?v=20261107fusedWall1"></script>
   <script src="js/crate-piles.js?v=20261105hf6df591"></script>
   <script src="js/hronal-witch-bombs.js?v=20261106ha49d50c"></script>
   <!-- Hanging ropes: the shared rope swing arithmetic (pure) and the rope component burdens hang from. Needs Shattercasks at
