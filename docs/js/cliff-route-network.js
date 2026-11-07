@@ -270,7 +270,7 @@
               return other.nodes.some(from => from.links.some(index => {
                 if (index <= from.id) return false;
                 const to = other.nodes[index];
-                if (Math.min(from.y, to.y) > shelf.y + 0.2 || Math.max(from.y, to.y) < shelf.base.neighborY - 0.85) return false;
+                if (Math.min(from.y, to.y) > shelf.y + 0.2 || Math.max(from.y, to.y) < shelf.y - MIN_MINI_CLIFF_HEIGHT - 0.85) return false; // The buried ground-rooted body is visual, not a tall route obstacle.
                 return crossesObstacle(from, to, capBounds, 0.25);
               }));
             });
