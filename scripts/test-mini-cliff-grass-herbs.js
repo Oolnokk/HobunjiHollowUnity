@@ -95,7 +95,7 @@ const handlerWindow={
 };
 const ctx={
   window:handlerWindow,currentArea:area,player:{onCliffBalcony:herb.id},
-  _isZoneArea:()=>true,inventory,rnd:()=>0.99,refreshItemScroll(){},
+  _isZoneArea:()=>true,inventory,activeTool:'pick',heldMode:'tool',rnd:()=>0.99,refreshItemScroll(){},
   buildInventoryGrid(){},buildPackClothingSection(){},
 };
 vm.runInNewContext(game.slice(handlerStart,handlerEnd)
