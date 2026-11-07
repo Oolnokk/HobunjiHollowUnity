@@ -138,23 +138,15 @@
       const block=makeBlock('ice',x,z,ceiling-1.85);
       const iceRoot=new THREE.Group();
       iceRoot.name='find-blocks-ceiling-icicles';iceRoot.position.set(x,ceiling-.1,z);
-      iceRoot.rotation.x=Math.PI;iceRoot.userData.devRuinFootprintIgnore=true;group.add(iceRoot);
-      const builder=root.IceStalagmiteCoverage,recipe=root.DungeonDoorIceCoverage?.scaledRecipe?.(2.2,id+'-ceiling',{
+      iceRoot.userData.devRuinFootprintIgnore=true;group.add(iceRoot);
+      const recipe=root.DungeonDoorIceCoverage?.scaledRecipe?.(2.2,id+'-ceiling',{
         count:16,density:1,iceHeightMin:1.15,iceHeightMax:1.7,radius:.25,iceFootprintPadding:.08
-      });
-      if(builder?.build&&recipe){
-        const source=new THREE.Group(); // The furniture-editor ice builder receives the same invisible source geometry as its normal door treatment.
-        const proxy=new THREE.Mesh(new THREE.BoxGeometry(.96,1.65,.96),new THREE.MeshBasicMaterial());
-        proxy.userData.authoredPartId='find_blocks_ceiling_ice_source';proxy.position.y=.83;source.add(proxy);
-        try{iceLayer=builder.build(THREE,source,recipe);}
-        finally{proxy.geometry.dispose();proxy.material.dispose();}
-        if(iceLayer?.userData?.surfaceGrowthStats?.spikes){
-          iceLayer.traverse(node=>{node.userData.devRuinFootprintIgnore=true;});
-          iceRoot.add(iceLayer);
-        }else iceLayer=null;
-      }
-      if(!iceLayer)newMesh('fallback-icicle',new THREE.ConeGeometry(.55,1.65,7),mat(COLOR.ice),
-        0,.9,0,iceRoot);
+      }); // Same saved furniture-ice surface recipe as dungeon doors and hanging burdens.
+      const ice=root.IceStalagmiteCoverage?.buildCeiling?.(THREE,iceRoot,{
+        width:.96,depth:.96,height:1.65,recipe,
+      }); // Author upright around the trapped block, then invert the result at the ceiling.
+      if(!ice)throw new Error('Find the Blocks ceiling ice requires the Furniture Editor ice builder.');
+      iceLayer=ice.layer; // The existing melt animation retracts the actual authored growth mesh.
       const hit=cube('find-blocks-ice-fire-hit',x,z,ceiling-1.92,1.05,1.65,1.05,COLOR.ice);
       hit.material.transparent=true;hit.material.opacity=0;hit.material.depthWrite=false;
       registerBurn('ice',hit,()=>{
