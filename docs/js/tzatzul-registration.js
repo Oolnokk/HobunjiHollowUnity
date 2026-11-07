@@ -63,6 +63,7 @@
       ...baseline, ...previousAdult, label: 'Tzatzul',
       hostile: true, diet: 'carnivore', defaultSizeClass: 'large',
       modelWidth: Number(previousAdult.modelWidth) || 2.2,
+      spriteAspect: 1000 / 1617, // Both authored body sprites use this canvas; native hitboxes and the articulated rig must match.
       attackRangePx: tile * 1.4, attackHalfConeRad: Math.PI / 3,
       attackDamage: 24, attackTag: 'sharp', attackCooldownS: 2.4,
       attacks: ['pounce'], // Exterior fight will replace this with flight-based engagement once nests are generated.
@@ -75,7 +76,7 @@
     db[HATCHLING_KIND] = {
       ...adult, ...existingHatchling, label: 'Tzatzul Hatchling',
       defaultSizeClass: 'small', modelWidth: adult.modelWidth * HATCHLING_SCALE.x,
-      visualScaleY: HATCHLING_SCALE.y,
+      spriteAspect: (adult.spriteAspect || 600 / 1375) * HATCHLING_SCALE.y / HATCHLING_SCALE.x, // Native planes must preserve the requested independent X/Y ratios.
       attackDamage: 6, attackRangePx: tile * 0.72, attackCooldownS: 1.8,
       attacks: ['tzatzulPeck'], isFlyingSpecies: false,
       lootPool: 'creature_tzatzul_hatchling', // Nest hatchlings do not independently produce a mother's accumulated prey hoard.
@@ -161,6 +162,7 @@
   async function createRig(identity = null) {
     const { settings, images } = await loadRig();
     const instance = window.FlyingAnimalRig.create(settings, images);
+    instance.talonCarry = settings.talonCarry; // Live actors use the same authored socket and payload poses as the editor.
     if (identity?.tintHex && window.THREE) instance.root.traverse(node => {
       if (node.isMesh && node.material?.color) node.material.color.set(identity.tintHex);
     }); // Per-instance materials preserve every other map bird's independently identifiable color.

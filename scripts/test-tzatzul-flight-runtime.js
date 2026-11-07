@@ -114,9 +114,10 @@ assert.equal(w.TzatzulFlightRuntime.__test.releaseCaptive(carryPrey,'duplicate')
 assert.equal(w.TzatzulFlightRuntime.debugSnapshot().captures,1,'mobile capture census counts only one event');
 const dyingPrey={creatureKey:'gar-wolf',health:10,areaId:zone,x:farBird.x,y:farBird.y,state:'chase'};
 assert(w.TzatzulFlightRuntime.__test.capture(farBird,dyingPrey));
-dyingPrey.health=0;
+dyingPrey.health=0;dyingPrey.state='dying';
 assert.equal(w.TzatzulFlightRuntime.__test.carryCaptive(farBird),false,'dead prey cannot remain attached to a living bird');
 assert.equal(farBird._tzFlight.captive,null,'death cleanup clears the bird owner');
+assert.equal(dyingPrey.state,'dying','capture cleanup must preserve the canonical death transition');
 assert.equal(dyingPrey.tzatzulCapturedBy,null,'death cleanup clears the prey owner');
 assert.equal(w.TzatzulFlightRuntime.__test.capture(farBird,player),false,'player capture waits for playable nest encounter');
 const oversized={creatureKey:'nazgraku',health:200,def:{defaultSizeClass:'large'},

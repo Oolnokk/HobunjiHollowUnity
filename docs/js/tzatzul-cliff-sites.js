@@ -32,7 +32,7 @@
   const root=new T.Group(); // A single owner makes full scene unload cheap.
   root.name='tzatzul-nest-spire:'+s.shelfId;
   root.position.set(s.x,s.y-s.height/2,s.z);
-  root.userData.tzatzulNest={id:s.id,caveId:s.caveId,caveMapId:s.caveMapId,climbable:false,encounterReady:false}; // Cave interior is registered, but exterior entry still requires a safe abduction transition.
+  root.userData.tzatzulNest={id:s.id,caveId:s.caveId,caveMapId:s.caveMapId,climbable:false,encounterReady:!!window.TzatzulNestInterior?.isNestMap?.(s.caveMapId)}; // The cave is accessed through the carrier's native building transition.
   const base=new T.MeshBasicMaterial({color:0x45463f,side:T.DoubleSide});
   const rock=new T.Mesh(new T.CylinderGeometry(1.05,.32,s.height,7,3),base);
   window.NaturalSurfaceMaterials?.naturalizeMesh?.(rock,'cliffs','world-stretch'); // Canonical carved_smooth rock texture.

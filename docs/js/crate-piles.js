@@ -101,6 +101,16 @@
     if(changed)persistSupplies();
     return changed;
   }
+  // The inactive zone cache tears a zone's scene down while the player is away.
+  // Drop every live reference to that scene (piles, uncollected drops and the
+  // one-shot rehydration marker); savedDrops and savedCounts persist, so
+  // restoreAreaDrops and the camp's own re-registration rebuild them on re-entry.
+  function releaseZone(mapId) {
+    restoredScenes.delete(mapId);
+    const prefix=String(mapId)+'::';
+    for(const id of [...piles.keys()])if(id.startsWith(prefix))piles.delete(id);
+    for(const [id,drop] of [...junk])if(drop.mapId===mapId||id.startsWith(prefix)){drop.group.parent?.remove(drop.group);junk.delete(id);}
+  }
   function nearestInteractable(mapId,x,z) {
     let best = null, distance = 1.65;
     for (const pile of piles.values()) {
@@ -229,7 +239,7 @@
       spareBursts.push(old); // Recycle the oldest blast instead of discarding its GPU instance buffer.
     }
     if (!shardArt) {
-      const texture=new THREE.TextureLoader().load('assets/textures/crate_side.png');
+      const texture=new THREE.TextureLoader().load('assets/textures/crate_side.png',window.CreatureTextureCache?.capFurnitureTexture); // Shards are tiny; the 1378px source is scaled once at load.
       // Crop the four-times-stretched central area rather than shrinking its pattern to fit.
       texture.wrapS=THREE.RepeatWrapping;texture.wrapT=THREE.RepeatWrapping;
       texture.repeat.set(.25,.25);texture.offset.set(.375,.375);
@@ -364,5 +374,5 @@
     savedUncollectedDrops:savedDrops.size,savedCountOverrides:savedCounts.size,
   });
   window.CratePiles={installed:true,registerPile,unregisterPile,nearestInteractable,takeCrate,
-    shatterBurden,sweepMelee,tick,forgetPile,debugSnapshot};
+    shatterBurden,sweepMelee,tick,forgetPile,releaseZone,debugSnapshot};
 })();

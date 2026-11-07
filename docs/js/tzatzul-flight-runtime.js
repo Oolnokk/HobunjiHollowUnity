@@ -5,8 +5,6 @@
   if (window.TzatzulFlightRuntime) return;
 
   const ALLOWED_AREAS = new Set(['map_northern_cliffs', 'map_western_slope']); // Real cliff environments.
-  const BIRDS_PER_ZONE = 2; // Bounded wildlife population and expensive articulated rig count.
-  const MIN_ROOST_GAP_TILES = 14; // Separate nests cannot pile up in adjacent miniature ledges.
   const HUNT_RANGE_TILES = 12; // Target query only occurs once per resting cycle.
   const REST_SECONDS = 5; // Birds visibly perch instead of permanently orbiting.
   const SPEED_TILES_PER_SECOND = 7; // Flight travel across world tiles.
@@ -56,8 +54,10 @@
       const state = bird._tzFlight, roost = supports.get(state?.roostId);
       if (!roost) continue;
       const support = roost.support;
+      const changed = state.roost !== support; // Only rebuilt scenes reset a resting bird's hunt clock.
       state.roost = support; bird.tzatzulNestMapId = roost.caveMapId; // Streamed spire always refreshes cave identity.
-      if (state.phase === 'perched' || state.phase === 'await-roost') {
+      if (!bird.prone && !bird._knockbackLedgeFall && !bird._knockbackLedgeAir && !(bird.knockbackT > 0) && (state.phase === 'await-roost' || changed && state.phase === 'perched')) {
+        if (state.phase === 'await-roost' && !bird.onPerch) { returnHome(bird); continue; } // Fly back after a real knock-off instead of teleporting to the high spire.
         if (window.PerchSupport?.attach?.(bird, support)) {
           state.phase = 'perched'; state.elapsed = 0; state.rest = REST_SECONDS;
           state.target = null; bird.tzatzulFlightPose = 'perched'; bird.tzatzulDivePitchRad = 0;
@@ -91,7 +91,7 @@
     return other && other !== bird && other.health > 0 && other.areaId === bird.areaId
       && other.creatureKey !== 'tzatzul' && other.creatureKey !== 'tzatzul-hatchling'
       && !other.onBranch && !other.onPerch && !other.tzatzulCapturedBy && !other._denHidden
-      && other.state !== 'dying';
+      && !other._downed && other.state !== 'dying';
   }
   function choosePrey(bird) {
     let target = null, best = tile() * HUNT_RANGE_TILES;
@@ -188,12 +188,16 @@
     const record = captured.get(prey);
     if (!record) return false;
     captured.delete(prey);
+    for (const hook of record.renderHooks || []) {
+      if (hook.mesh.onAfterRender === hook.after) hook.mesh.onAfterRender = hook.previous;
+    } // Restore only this capture's hooks, preserving other rendering owners.
     const bird = record.bird;
     if (bird?._tzFlight?.captive === prey) bird._tzFlight.captive = null;
     if (bird) bird.tzatzulCarrying = false;
     window.PerchSupport?.forget?.(prey); // Restore native ground movement, never leave a dangling synthetic branch.
     prey.onBranch = null; prey.branchT = 0; prey.branchSurfaceY = 0;
-    prey.tzatzulCapturedBy = null; prey.state = record.state;
+    prey.tzatzulCapturedBy = null;
+    if (prey.health > 0) prey.state = record.state; // Death already owns the dying/corpse state; releasing cannot revive its AI.
     if (record.player) {
       prey.vx = 0; prey.vy = 0; // Native cave entry needs a grounded, stationary exterior exit record.
       if (reason === 'returned to roost' && canAbductPlayer(bird)
@@ -201,7 +205,7 @@
         const landing = safeExteriorReturn(prey, record);
         prey.x = landing.x; prey.y = landing.y;
         try {
-          deps.enterBuilding(record.nestMapId, undefined, undefined, 'tzatzul_nest_exit'); // The game's native async loader owns scene and safe exit.
+          deps.enterBuilding(record.nestMapId, undefined, undefined, 'tzatzul_delivery'); // The game's native async loader owns scene and safe exit.
           stats.nestEntries++;
           stats.lastCapture = { event: 'nest-entered', reason, mapId: record.nestMapId, prey: 'player' };
         } catch (error) {
@@ -213,10 +217,12 @@
       } else {
         prey.x = n(record.pickupX, prey.x); prey.y = n(record.pickupY, prey.y); // Dead carrier releases player at known ground.
       }
-    } else if (reason === 'returned to roost' && record.areaId === deps?.getCurrentArea?.()) {
-      prey.x = n(bird?._tzFlight?.roost?.x, prey.x) + tile() * 2;
-      prey.y = n(bird?._tzFlight?.roost?.y, prey.y) + tile() * 2;
-    } // NPC deposits remain nonlethal until the visible cave-corpse and loot system is implemented.
+    } else if (prey.health > 0 && reason === 'returned to roost' && record.areaId === deps?.getCurrentArea?.()) {
+      prey.x = n(record.pickupX, prey.x); prey.y = n(record.pickupY, prey.y);
+      window.TzatzulNestEncounter?.storeVictim?.(prey, bird, record.rendered === true);
+    } else if (!record.player && prey.health > 0) {
+      prey.x = n(record.pickupX, prey.x); prey.y = n(record.pickupY, prey.y);
+    } // Unseen prey and interrupted carries return alive to their known original ground.
     stats.releases++;
     if (!record.player) stats.lastCapture = { event: 'released', reason, prey: prey.creatureKey || prey.name || 'npc' };
     return true;
@@ -232,12 +238,32 @@
     if (!bird.onPerch || !window.PerchSupport?.attach?.(prey, bird.onPerch, bird.branchT)) {
       releaseCaptive(prey, 'flight support lost'); return false;
     }
+    observeCarry(prey, captured.get(prey));
     prey.tzatzulCapturedBy = bird._tzFlight.identity.id;
     prey.state = 'tzatzul-carried';
     prey.branchSurfaceY = Math.max(surface(prey.x, prey.y) + .1, n(bird.branchSurfaceY) - .46); // Body hangs from authored talon socket below the parent.
     return true;
   }
+  function observeCarry(prey, record) {
+    if (!record || record.player || record.rendered) return;
+    const ref = prey.avatarRef; // Hooks must follow visual promotion of the original live actor.
+    if (!ref || prey._wildlifeVisualsReleased) return;
+    record.renderHooks ||= [];
+    for (const mesh of [ref.frontPlane, ref.backPlane]) {
+      if (!mesh || record.renderHooks.some(hook => hook.mesh === mesh)) continue;
+      const previous = mesh.onAfterRender; // Respect PNG rendering and diagnostic hooks already on the actor.
+      const after = function (...args) {
+        previous?.apply(this, args);
+        const image = mesh.material?.map?.image; // A blank or still-loading portrait does not prove that the prey was visible.
+        if (captured.get(prey) === record && prey.tzatzulCapturedBy && mesh.visible !== false
+          && Number(image?.width || image?.naturalWidth) > 0) record.rendered = true;
+      };
+      mesh.onAfterRender = after;
+      record.renderHooks.push({ mesh, previous, after });
+    }
+  }
   function canCarry(prey) {
+    if (prey?.avatarRef?.riderMount) return false; // The rider and a large mount are one visible load, not medium prey.
     const size = String(prey?.genotype?.sizeClass || prey?.sizeClass || prey?.def?.defaultSizeClass || 'medium').toLowerCase();
     return size === 'small' || size === 'medium'; // Attacks can hit large creatures, but talons cannot lift them.
   }
@@ -258,6 +284,7 @@
       window.KnockbackCollisionImpact?.cancel?.(prey); // A successful grab replaces the attack's original knockback movement.
     }
     prey.tzatzulCapturedBy = bird._tzFlight.identity.id; prey.state = 'tzatzul-carried';
+    observeCarry(prey, captured.get(prey));
     stats.captures++;
     stats.lastCapture = { event: 'captured', prey: prey.creatureKey || prey.name || 'npc' };
     mark(bird, 'captured visible prey');
@@ -267,7 +294,7 @@
     const state = bird._tzFlight, perch = window.PerchSupport;
     if (!state || !perch) return false;
     const start = { x: n(bird.x), y: n(bird.y),
-      worldY: n(bird.branchSurfaceY, surface(bird.x, bird.y)) };
+      worldY: bird.onBranch || bird.onPerch ? n(bird.branchSurfaceY, surface(bird.x, bird.y)) : surface(bird.x, bird.y) };
     const end = { x: n(endpoint.x), y: n(endpoint.y), worldY: n(endpoint.worldY, start.worldY) };
     const support = perch.line('tzatzul:flight:' + ++flightSerial + ':' + state.identity.id, start, end);
     if (!perch.attach(bird, support, 0)) return false;
@@ -278,7 +305,7 @@
       z: (end.y - start.y) / (tile() * length) }; // 3D beak-first facing follows the dive, not the talon pose.
     const half = hitboxSize(bird); // Freeze body dimensions for this leg; no expensive mesh reads each frame.
     state.segment = { duration: Math.max(.55, Math.min(5, distance(start, end) / (tile() * SPEED_TILES_PER_SECOND))),
-      half, heading, from: start, to: end, lastBody: null }; // World-space travel powers cave wall impact's unused-distance calculation.
+      half, heading, from: start, to: end, diveAimFraction: endpoint.diveAimFraction || 1, lastBody: null }; // World-space travel powers cave wall impact's unused-distance calculation.
     state.segment.lastBody = bodyCenter(bird, state.segment); // Swept-body starting frame includes elevated roost height.
     state.elapsed = 0; state.phase = phase; state.target = target; state.struck = false;
     bird.tzatzulDivePitchRad = phase === 'swoop' ? Math.atan2(vertical, horizontal) : 0; // Rig pitches with the nose-first body on descent.
@@ -294,7 +321,19 @@
     const box = targetBox(target); // Aim once at the prey's BODY, including its real elevation and size.
     const half = hitboxSize(bird);
     const aim = Math.max(box.min.y, (box.min.y + box.max.y) / 2 - half.y);
-    const ok = startLeg(bird, { x: target.x, y: target.y, worldY: aim }, 'swoop', target);
+    const endpoint = { x: target.x, y: target.y, worldY: aim }; // Outdoor dives stop at prey; arena dives commit through to the far wall.
+    if (bird._tzNestMother) {
+      const plan = window.TzatzulNestInterior?.getArena?.(bird.areaId);
+      const dx = n(target.x) - n(bird.x), dy = n(target.y) - n(bird.y);
+      const length = Math.hypot(dx, dy); // A zero-distance target keeps the ordinary safe endpoint.
+      if (plan && length > 1) {
+        const travel = (Math.max(3, n(plan.arenaRadiusTiles, 10)) * 2 + 4) * tile();
+        endpoint.x = bird.x + dx / length * travel; endpoint.y = bird.y + dy / length * travel;
+        // The descent reaches prey height at the committed target, then levels off.
+        endpoint.diveAimFraction = Math.min(1, length / travel);
+      }
+    }
+    const ok = startLeg(bird, endpoint, 'swoop', target);
     if (ok) stats.swoops++;
     return ok;
   }
@@ -313,6 +352,7 @@
     if (entry === null) return false; // No pre-timed hit: only actual 3D torso/body overlap can deal damage.
     state.struck = true; // One collision/attack per committed swoop, even across long frames.
     const combat = window.Combat?.deps;
+    const beforeHealth = target.health; // Invulnerability/dodge rejection must also reject talon capture.
     const damage = Math.max(1, n(bird.def?.attackDamage, 24));
     const opts = { attacker: bird, tag: 'sharp', aerialSwoop: true, impactCollider: 'body' };
     let applied = false;
@@ -327,7 +367,7 @@
       target: target === deps.player ? 'player' : target.creatureKey || 'creature',
       sweptFraction: +entry.toFixed(3), phase: state.phase, collider: 'body' };
     if (applied) { stats.hits++; mark(bird, 'headfirst body dive hit');
-      if (!bird._tzNestMother && target.health > 0) capture(bird, target); } // Exterior birds abduct; boss mother attacks without restarting the cave transition.
+      if (!bird._tzNestMother && target.health > 0 && target.health < beforeHealth) capture(bird, target); } // Exterior birds abduct; boss mother attacks without restarting the cave transition.
     else { stats.misses++; mark(bird, 'body contact (damage unavailable)'); }
     return applied;
   }
@@ -338,13 +378,19 @@
     const t = Math.max(0, Math.min(1, state.elapsed / state.segment.duration));
     bird.branchT = t;
     window.PerchSupport?.constrain?.(bird); // Reuses native onBranch and branchSurfaceY movement/portrait height.
+    if (state.phase === 'swoop' && state.segment.diveAimFraction < 1) {
+      const leg = state.segment; // Follow the frozen descending line to prey height, then continue level toward the far wall.
+      const descent = Math.min(1, t / leg.diveAimFraction);
+      bird.branchSurfaceY = leg.from.worldY + (leg.to.worldY - leg.from.worldY) * descent;
+    }
     carryCaptive(bird); // Prey uses the same elevated support as the flying body.
     bird.tzatzulFlightPose = t < .15 || t > .85 ? 'flap' : 'glide';
     if (state.phase === 'swoop') {
       const previous = state.segment.lastBody;
       const current = bodyCenter(bird, state.segment);
       state.segment.lastBody = current;
-      hit(bird, previous, current); // The complete torso is swept from last frame to this frame; no talon point or fixed attack timestamp.
+      const contactedPrey = hit(bird, previous, current); // The complete torso is swept from last frame to this frame; no talon point or fixed attack timestamp.
+      if (contactedPrey && bird._tzNestMother) { returnHome(bird); return; } // Continue toward the opposite perch immediately after body contact.
       if (!state.struck && bird._tzNestMother
         && window.TzatzulNestEncounter?.resolveTerrainImpact?.(bird,previous,current,state.segment)) {
         state.struck = true; // Missed a player but hit a cave obstacle; never resolve another impact on this leg.
@@ -387,6 +433,11 @@
       }
       const state = bird._tzFlight;
       if (!state) continue;
+      if (!bird.onPerch || bird.prone || bird.knockbackT > 0) {
+        if (state.captive) releaseCaptive(state.captive, 'carrier knocked from perch');
+        state.phase = 'await-roost';
+        continue;
+      }
       if (state.phase === 'await-roost') continue; // Only ensureZone can restore a missing physical perch.
       if (state.phase !== 'perched') { advance(bird, step); continue; }
       state.elapsed += step;
@@ -413,7 +464,9 @@
   }
   window.TzatzulFlightRuntime = Object.freeze({
     init, ensureZone, update, onDayAdvance, debugSnapshot,
-    owns: bird => (actors.has(bird) || window.TzatzulNestEncounter?.owns?.(bird)) && !!bird._tzFlight && bird.health > 0, // Indoor mothers share the canonical flight/body owner; no competing ground movement.
+    owns: bird => !!(actors.has(bird) || window.TzatzulNestEncounter?.owns?.(bird)) && !!bird._tzFlight && bird.health > 0 && !!bird.onPerch && !bird.prone && !(bird.knockbackT > 0), // Indoor mothers share the canonical flight/body owner; no competing ground movement.
+    sweptBodyHit, // Nest obstacles use the exact same continuous body sweep as prey contact.
+    returnToRoost: returnHome, // Recovery uses the normal flight path after a genuine perch knock-off.
     beginNestDive: (bird,target) => bird?._tzNestMother === true && swoop(bird,target),
     advanceNestFlight: (bird,dt) => bird?._tzNestMother === true && advance(bird,Math.max(0,Math.min(.1,n(dt)))),
     __test: Object.freeze({ roosts, choosePrey, swoop, returnHome, capture, carryCaptive, releaseCaptive }),

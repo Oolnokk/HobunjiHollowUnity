@@ -360,6 +360,7 @@
     refresh,
     dispose,
     snapshot,
+    slotColors: Object.freeze([...SLOT_COLORS]), // Canonical action palette shared with color-coded scroll bindings.
   };
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init, { once: true });

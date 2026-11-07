@@ -38,7 +38,10 @@ const near = (a, b, label, eps = 1e-6) => assert.ok(Math.abs(a - b) < eps, `${la
   assert.match(bandit, /handsPivot\.rotation\.y = Math\.PI \/ 2;/, 'hands pivot starts in the legs-frame orientation');
   assert.match(bandit, /syncHandFrame\(\) \{ handsPivot\.rotation\.y = \(legsPivot\.rotation\.y \|\| 0\) \+ Math\.PI \/ 2; \}/, 'hand frame helper mirrors legsPivot');
   assert.match(read('docs/game.js'), /legsPivot\.rotation\.y = planeDelta; c\.avatarRef\.syncHandFrame\?\.\(\)/, 'game keeps hands in sync each frame');
-  assert.equal((read('docs/js/creature-death.js').match(/syncHandFrame\?\.\(\)/g) || []).length, 3, 'death resets keep hands in sync');
+  const deathSource = read('docs/js/creature-death.js');
+  assert.equal((deathSource.match(/syncHandFrame\?\.\(\)/g) || []).length, 4, 'death resets keep hands in sync (begin, recover, settleAsCorpse and restoreSettledPose)');
+  const restoreBody = deathSource.slice(deathSource.indexOf('function restoreSettledPose'), deathSource.indexOf('window.CreatureDeath = {'));
+  assert.match(restoreBody, /syncHandFrame\?\.\(\)/, 'a corpse rebuilt on a new rig also keeps its hands in sync');
 }
 
 // 3. GLB feet resolve their loader from the import map like the hand attachments do.

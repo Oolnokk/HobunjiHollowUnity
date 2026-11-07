@@ -48,7 +48,7 @@
                 }
               },
               "behindImage": {
-                "url": "./assets/cosmetics/clothes/hood/simplehood_tl_m.png"
+                "url": "./assets/cosmetics/clothes/hood/tl_finehood-back_m.png"
               }
             }
           }
@@ -81,7 +81,7 @@
                 }
               },
               "behindImage": {
-                "url": "./assets/cosmetics/clothes/hood/simplehood_mashtz_m.png"
+                "url": "./assets/cosmetics/clothes/hood/mashtz_finehood-back_m.png"
               }
             }
           }
@@ -114,7 +114,7 @@
                 }
               },
               "behindImage": {
-                "url": "./assets/cosmetics/clothes/hood/simplehood_tl_m.png"
+                "url": "./assets/cosmetics/clothes/hood/finehood-back_m.png"
               }
             }
           }
@@ -147,7 +147,7 @@
                 }
               },
               "behindImage": {
-                "url": "./assets/cosmetics/clothes/hood/simplehood_tl_m.png"
+                "url": "./assets/cosmetics/clothes/hood/finehood-back_f.png"
               }
             }
           }
@@ -180,7 +180,7 @@
                 }
               },
               "behindImage": {
-                "url": "./assets/cosmetics/clothes/hood/simplehood_tl_m.png"
+                "url": "./assets/cosmetics/clothes/hood/kenk_finehood-back_m.png"
               }
             }
           }
@@ -213,7 +213,7 @@
                 }
               },
               "behindImage": {
-                "url": "./assets/cosmetics/clothes/hood/simplehood_tl_m.png"
+                "url": "./assets/cosmetics/clothes/hood/kenk_finehood-back_f.png"
               }
             }
           }
@@ -246,7 +246,7 @@
                 }
               },
               "behindImage": {
-                "url": "./assets/cosmetics/clothes/hood/simplehood_tl_m.png"
+                "url": "./assets/cosmetics/clothes/hood/engh_finehood-back_m.png"
               }
             }
           }
@@ -279,7 +279,7 @@
                 }
               },
               "behindImage": {
-                "url": "./assets/cosmetics/clothes/hood/simplehood_tl_m.png"
+                "url": "./assets/cosmetics/clothes/hood/engh_finehood-back_f.png"
               }
             }
           }
@@ -312,7 +312,7 @@
                 }
               },
               "behindImage": {
-                "url": "./assets/cosmetics/clothes/hood/simplehood_tl_m.png"
+                "url": "./assets/cosmetics/clothes/hood/kenk_finehood-back_m.png"
               }
             }
           }
@@ -345,7 +345,7 @@
                 }
               },
               "behindImage": {
-                "url": "./assets/cosmetics/clothes/hood/simplehood_tl_m.png"
+                "url": "./assets/cosmetics/clothes/hood/kenk_finehood-back_f.png"
               }
             }
           }
@@ -378,7 +378,7 @@
                 }
               },
               "behindImage": {
-                "url": "./assets/cosmetics/clothes/hood/simplehood_mashtz_m.png"
+                "url": "./assets/cosmetics/clothes/hood/mashtz_finehood-back_f.png"
               }
             }
           }

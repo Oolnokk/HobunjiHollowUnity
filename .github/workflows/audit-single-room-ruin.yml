@@ -1,0 +1,46 @@
+name: Audit Single-Room Ruin Puzzles
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/audit-single-room-ruin.yml'
+      - 'docs/js/dev-ruin-single-room-trial.js'
+      - 'docs/js/ruin-layer-challenges.js'
+      - 'docs/js/dev-random-ruin-*.js'
+      - 'docs/tools/debris-ifier/debrisifier-*.js'
+      - 'scripts/audit-single-room-puzzles-browser.js'
+      - 'scripts/smoke-dev-ruin-single-room-browser.js'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate puzzle sources
+        run: |
+          node scripts/test-dev-ruin-single-room-trial.js
+          node --check scripts/audit-single-room-puzzles-browser.js
+          node --check scripts/smoke-dev-ruin-single-room-browser.js
+      - name: Install browser
+        run: |
+          npm install --no-save --package-lock=false playwright@1.55.0 three@0.128.0
+          npx playwright install --with-deps chromium
+      - name: Serve game
+        run: python3 -m http.server 8000 --directory docs >/tmp/hobunji-http.log 2>&1 &
+      - name: Generate and inspect every solo puzzle
+        run: node scripts/audit-single-room-puzzles-browser.js
+      - name: Upload all per-puzzle diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: solo-ruin-puzzle-audit
+          path: test-artifacts/solo-puzzle-audit.json
+          if-no-files-found: ignore

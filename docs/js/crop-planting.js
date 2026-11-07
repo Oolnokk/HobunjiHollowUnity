@@ -7,17 +7,17 @@
   // ever mutated in place, so direct references are safe; canPlantCropOnTile
   // and clampInventoryStack stay in game.js (other farm code shares them).
   let deps = null;
-  function init(injectedDeps) { deps = injectedDeps; }
+  function init(injectedDeps) { deps = injectedDeps; window.CropVarieties?.attach?.({ cropData: deps.cropData, inventory: deps.inventory }); }
 
   function plantCrop(tile, crop) {
-    const data = deps.cropData[crop];
+    const data = deps.cropData[crop] || (window.CropVarieties?.ensure?.(crop) && deps.cropData[crop]);
     if (!data) return { ok: false, message: 'Unknown crop.' };
     // A spent seed stack is deleted (clampInventoryStack), and
     // `undefined <= 0` is false — so the count is normalized first, or the
     // last seed could be "planted" forever while the stack turns into NaN.
     if ((Number(deps.inventory[data.seedKey]) || 0) <= 0) return { ok: false, message: `No ${data.label} seeds left.` };
     if (tile.crop) return { ok: false, message: 'Something is already growing here.' };
-    if (!deps.canPlantCropOnTile(crop, tile))
+    if (!deps.canPlantCropOnTile(data.baseCrop || crop, tile))
       return { ok: false, message: 'Can only plant on tilled or raised soil.' };
     deps.inventory[data.seedKey]--;
     deps.clampInventoryStack(data.seedKey);
@@ -33,7 +33,8 @@
   function harvestCrop(tile) {
     if (!tile.crop) return { ok: false, message: 'Nothing to harvest here.' };
     if (!tile.cropReady) return { ok: false, message: `${tile.crop} isn't ready yet.` };
-    const data = deps.cropData[tile.crop];
+    const data = deps.cropData[tile.crop] || (window.CropVarieties?.ensure?.(tile.crop) && deps.cropData[tile.crop]);
+    if (!data) return { ok: false, message: 'Unknown crop variety.' };
     // Bountiful Harvest (Farming perk): a chance for one extra crop unit
     // from the same harvest, capped well below Foraging/Mining's yield
     // perks since processed goods already amplify quality economically.

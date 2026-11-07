@@ -73,12 +73,10 @@
     "grehlr": {
       "parts": {
         "tletingan_male": {
-          "front": "assets/cosmetics/clothes/hood/furhood_grehlr-front_tl_m.png",
-          "back": "assets/cosmetics/clothes/hood/furhood_grehlr-back_tl_m.png"
+          "front": "assets/cosmetics/clothes/hood/furhood_grehlr-front_tl_m.png"
         },
         "mashtzarr_male": {
-          "front": "assets/cosmetics/clothes/hood/furhood_grehlr-front_mashtz_m.png",
-          "back": "assets/cosmetics/clothes/hood/furhood_grehlr-back_mashtz_m.png"
+          "front": "assets/cosmetics/clothes/hood/furhood_grehlr-front_mashtz_m.png"
         }
       },
       "patterns": {},

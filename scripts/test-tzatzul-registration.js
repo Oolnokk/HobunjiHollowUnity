@@ -27,7 +27,7 @@ assert(api.register({ CREATURE_DB: db, TILE: 55 }));
 assert.equal(db.tzatzul.isFlyingSpecies, true);
 assert.equal(db['tzatzul-hatchling'].attacks[0], 'tzatzulPeck');
 assert.equal(db['tzatzul-hatchling'].modelWidth, db.tzatzul.modelWidth * 3 / 8);
-assert.equal(db['tzatzul-hatchling'].visualScaleY, 5 / 8);
+assert(Math.abs(db['tzatzul-hatchling'].modelWidth * db['tzatzul-hatchling'].spriteAspect / (db.tzatzul.modelWidth * (db.tzatzul.spriteAspect || 600 / 1375)) - 5 / 8) < 1e-10, 'native hatchling height is five eighths of adult height');
 assert.equal(typeof calls.tzatzulPeck.update, 'function');
 assert.match(html, /tzatzul-registration\.js\?v=/);
 assert.match(fs.readFileSync('docs/js/wildlife-spawn.js','utf8'), /TzatzulRegistration\?\.register/);

@@ -557,6 +557,7 @@
     if (entry) return entry;
     entry = { base: null, loaded: false, pendingClones: new Set() };
     entry.base = _texLoader.load((window.__hobunjiFurnitureAssetBase || 'assets/') + 'textures/' + filename, () => {
+      window.CreatureTextureCache?.capFurnitureTexture?.(entry.base); // Oversized tiling art (crate_side is 1378x1378) is scaled once, before any clone captures its image.
       entry.loaded = true;
       for (const clone of entry.pendingClones) {
         finishPartTexture(clone, entry.base.image);
@@ -591,17 +592,35 @@
     return material;
   }
 
+  // three r128 uploads one GPU texture per Texture object, and a part's
+  // rotation/repeat/fill live on the Texture, so every part of every placed
+  // instance used to clone its own: four identical crate stacks held twelve
+  // GPU copies of the same 1378x1378 image (~116 MB). Parts whose file,
+  // rotation, repeat and fill all match now share one clone. Nothing mutates a
+  // part texture after this point (the rope animation owns a separate loader),
+  // and dispose() is a no-op because the cache owns these for the session.
+  const _sharedPartTextures = new Map(); // `${file}|${rotation}|${repeatU}|${repeatV}|${fill}` -> THREE.Texture
   function applyPartTexture(mat, part) {
-    const entry = texEntry(part.materialTexture);
-    const tex = entry.base.clone();
-    tex.needsUpdate = true;
-    tex.rotation = (part.materialRotationDeg || 0) * DEG;
-    tex.userData = Object.assign({}, tex.userData); // three.js r128 Textures have no userData field; give each clone its own.
-    tex.userData.furnitureTexture = part.materialTexture;
-    tex.userData.furnitureFill = part.materialFillMode !== 'never' && part.materialFillEnabled && /^#[0-9a-f]{6}$/i.test(part.materialFillColor || '') ? part.materialFillColor : null;
-    if (!entry.loaded) entry.pendingClones.add(tex);
-    else finishPartTexture(tex, entry.base.image);
-    tex.repeat.set(Math.max(.01, Number(part.materialRepeatU) || 1), Math.max(.01, Number(part.materialRepeatV) || 1));
+    const rotation = (part.materialRotationDeg || 0) * DEG;
+    const repeatU = Math.max(.01, Number(part.materialRepeatU) || 1), repeatV = Math.max(.01, Number(part.materialRepeatV) || 1);
+    const fill = part.materialFillMode !== 'never' && part.materialFillEnabled && /^#[0-9a-f]{6}$/i.test(part.materialFillColor || '') ? part.materialFillColor : null;
+    const key = [part.materialTexture, rotation.toFixed(5), repeatU, repeatV, fill || '-'].join('|');
+    let tex = _sharedPartTextures.get(key);
+    if (!tex) {
+      const entry = texEntry(part.materialTexture);
+      tex = entry.base.clone();
+      tex.needsUpdate = true;
+      tex.rotation = rotation;
+      tex.userData = Object.assign({}, tex.userData); // three.js r128 Textures have no userData field; give each clone its own.
+      tex.userData.furnitureTexture = part.materialTexture;
+      tex.userData.furnitureFill = fill;
+      tex.userData.furnitureShared = true;
+      if (!entry.loaded) entry.pendingClones.add(tex);
+      else finishPartTexture(tex, entry.base.image);
+      tex.repeat.set(repeatU, repeatV);
+      tex.dispose = () => {}; // Shared across instances; removing one piece of furniture must not free the GPU copy the others draw with.
+      _sharedPartTextures.set(key, tex);
+    }
     mat.map = tex;
     mat.color.set(0xffffff);
     mat.transparent = !!part.textureTransparent;
@@ -847,15 +866,20 @@ function campfireRecipe() {
     box(.34, .28, -.27, .075, .56, .075, .85, { color: '#765236' }),
     box(-.34, .28, .27, .075, .56, .075, .85, { color: '#765236' }),
     box(.34, .28, .27, .075, .56, .075, .85, { color: '#765236' }),
-    box(0, .72, 0, .34, .055, .34, 1, { color: '#9b672f' }),
-    box(0, .96, 0, .265, .39, .265, 1, { color: '#e7ad55', surfaceOpacity: .62, materialLighting: 'unlit' }),
-    ...[[-.15, -.15], [.15, -.15], [-.15, .15], [.15, .15]].map(([x, z]) =>
-      cyl(x, .96, z, .025, .42, .025, 1, { color: '#9b672f', segments: 8 })),
-    cyl(0, 1.19, 0, .36, .12, .36, 1, { color: '#9b672f', topScaleX: .48, topScaleZ: .48, segments: 12 }),
-    cyl(0, 1.27, 0, .09, .08, .09, 1, { color: '#b98243', segments: 8 }),
-    box(0, 1.41, 0, .20, .025, .025, 1, { color: '#9b672f' }),
-    box(-.09, 1.34, 0, .025, .14, .025, 1, { color: '#9b672f' }),
-    box(.09, 1.34, 0, .025, .14, .025, 1, { color: '#9b672f' }),
+    // Miniature brass lantern + internal candle; mirrors the authored accessory while JSON loads.
+    box(0, .681, 0, .238, .022, .238, 1, { color: '#9b672f', segments: 4 }),
+    box(0, .777, 0, .1855, .156, .1855, 1, { color: '#e7ad55', surfaceOpacity: .62, materialLighting: 'unlit', segments: 4 }),
+    cyl(0, .748, 0, .061, .092, .061, 1, { color: '#f3dba8', segments: 12 }),
+    cyl(0, .814, 0, .034, .045, .034, 1, { color: '#ffe16b', surfaceOpacity: .98, materialLighting: 'unlit', topScaleX: .16, topScaleZ: .16, depthWrite: false, segments: 12 }),
+    cyl(-.105, .777, -.105, .0175, .168, .0175, 1, { color: '#9b672f', segments: 12 }),
+    cyl(.105, .777, -.105, .0175, .168, .0175, 1, { color: '#9b672f', segments: 12 }),
+    cyl(-.105, .777, .105, .0175, .168, .0175, 1, { color: '#9b672f', segments: 12 }),
+    cyl(.105, .777, .105, .0175, .168, .0175, 1, { color: '#9b672f', segments: 12 }),
+    cyl(0, .869, 0, .252, .048, .252, 1, { color: '#9b672f', topScaleX: .48, topScaleZ: .48, segments: 12 }),
+    cyl(0, .901, 0, .063, .032, .063, 1, { color: '#b98243', segments: 12 }),
+    box(-.063, .929, 0, .0175, .056, .0175, 1, { color: '#9b672f', segments: 4 }),
+    box(.063, .929, 0, .0175, .056, .0175, 1, { color: '#9b672f', segments: 4 }),
+    box(0, .957, 0, .14, .01, .0175, 1, { color: '#9b672f', segments: 4 }),
   ];
 
   // Placeholder weathered-stone statue/totem: a plinth, a tapered column, and

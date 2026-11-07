@@ -121,12 +121,13 @@
       + '<div>Nest arenas: ' + (arena?.arenas?.length || 0) + ' · rock perches: ' + (arena?.rockMeshes || 0)
       + ' · stone spike layers: ' + (arena?.spikeMeshes || 0) + '</div>'
       + '<div>Nest dives: ' + (nest?.dives || 0) + ' · wall hits: ' + (nest?.wallHits || 0)
-      + ' · sharp spike hits: ' + (nest?.spikeHits || 0) + '</div>'
+      + ' · sharp spike hits: ' + (nest?.spikeHits || 0) + ' · delivered victims: ' + (nest?.deposited || 0) + '</div>'
       + (nest?.lastImpact ? '<div>Last collision: ' + fmt(nest.lastImpact.kind)
         + ' · unused dive: ' + fmt((nest.lastImpact.deficitTiles || 0).toFixed(2)) + ' tiles</div>' : '')
       + (nest?.encounters || []).filter(encounter => encounter.mapId === area)
         .map(encounter => '<div>Mother HP: ' + fmt(encounter.motherHealth)
           + ' · hatchlings: ' + fmt(encounter.hatchlingsAlive)
+          + ' · eggs: ' + fmt(encounter.eggs) + ' · remains: ' + fmt(encounter.victims)
           + ' · ' + fmt(encounter.phase) + '</div>').join('')
       + (spires?.lastError ? '<div style="color:#f3b98c">Spire: ' + fmt(spires.lastError) + '</div>' : '')
       + (live || '<div style="opacity:.72">No adult Tzatzul encountered here yet.</div>')

@@ -47,6 +47,7 @@
     const skill = apis.skill ?? window.SkillSystem; // Shared authority for active food/stat combat modifiers.
     const perks = apis.perks ?? window.PerkSystem; // Shared authority for purchased perk ranks and general combat damage.
     const alchemy = apis.alchemy ?? window.AlchemySystem; // Shared authority for active potion/buff multipliers.
+    const trinkets = apis.trinkets ?? window.TrinketSystem; // Current equipped trinkets affect the displayed dodge and knockback modifiers.
     const cooking = apis.cooking ?? window.CookingSystem; // Shared authority for active food movement and Stamina-regeneration multipliers.
     const combat = apis.combat ?? window.Combat; // Shared authority for the composed current combat movement multiplier.
     const resources = apis.resources ?? window.ResourceSystem; // Shared authority for effective resource maxima and current attack-speed/exhaustion timing.
@@ -103,8 +104,8 @@
         maxHealth: effectiveMax('health', 'maxHealth'),
         maxStamina: effectiveMax('stamina', 'maxStamina'),
         maxFooting: effectiveMax('footing', 'maxFooting'),
-        dodgeIframeMs: Math.round(BASE_DODGE_PROFILE.iframeMs * finite(outfit.dodgeEfficacy, 1)),
-        dodgeDurationMs: Math.round(BASE_DODGE_PROFILE.durationS * 1000 * finite(outfit.dodgeEfficacy, 1)),
+        dodgeIframeMs: Math.round(BASE_DODGE_PROFILE.iframeMs * finite(outfit.dodgeEfficacy, 1) * safeNumber(() => trinkets?.combatMultiplier?.('dodgeEfficacy'), 1)),
+        dodgeDurationMs: Math.round(BASE_DODGE_PROFILE.durationS * 1000 * finite(outfit.dodgeEfficacy, 1) * safeNumber(() => trinkets?.combatMultiplier?.('dodgeEfficacy'), 1)),
       },
     };
   }

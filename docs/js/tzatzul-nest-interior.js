@@ -30,6 +30,8 @@
       if (floor.has(key)) colliders.set(key, [col, row]);
     }
     mapData.colliders = [...colliders.values()];
+    mapData.entrySpots ||= {};
+    mapData.entrySpots.tzatzul_delivery = { col: finite(plan.arenaCenter?.col, 13), row: finite(plan.arenaCenter?.row, 13) + 1 }; // Abduction arrives inside the arena, clear of the automatic exit tile.
     const record = records.get(mapData.id) || { mesh: null, group: null, registered: false, points: [] };
     record.plan = plan; record.floorY = finite(mapData.floorSurfaceY);
     record.mapId = mapData.id;

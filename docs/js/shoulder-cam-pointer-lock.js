@@ -26,13 +26,14 @@
     return !!deps?.threeContainer && document.pointerLockElement === deps.threeContainer;
   }
 
-  function puzzleInstrumentOpen() {
-    return window.MusicMinigame?.state?.instrumentMode === 'puzzle';
+  function puzzleUiNeedsCursor() {
+    const puzzleLab = document.getElementById?.('devRuinLabPanel'); // The arena picker needs a free cursor like the puzzle instrument.
+    return window.MusicMinigame?.state?.instrumentMode === 'puzzle' || puzzleLab?.hidden === false;
   }
 
   function request() {
     if (!cursorlessMouseAimRequested() || !deps.isDesktop || isActive()) return;
-    if (puzzleInstrumentOpen() || deps.isUiBlockingPointerLock?.()) return; // UI needs a free cursor.
+    if (puzzleUiNeedsCursor() || deps.isUiBlockingPointerLock?.()) return; // UI needs a free cursor.
     // Can reject (no transient user activation, or the browser's own
     // rate-limit on repeated requests) — that's fine, game.js's click-to-relock
     // handler gives the player another chance.
@@ -44,7 +45,7 @@
   }
 
   document.addEventListener('pointerlockchange', () => {
-    if (puzzleInstrumentOpen()) release(); // Catch a camera lock request that was already in flight when the puzzle opened.
+    if (puzzleUiNeedsCursor()) release(); // Catch a camera lock request that was already in flight when the puzzle opened.
   });
 
   window.ShoulderCamPointerLock = Object.freeze({

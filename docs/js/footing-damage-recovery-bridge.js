@@ -20,7 +20,8 @@
     const lastDamageAt = Number(entity?.lastFootingDamageAt);
     if (!Number.isFinite(lastDamageAt)) return 0;
     const elapsedS = Math.max(0, (nowMs() - lastDamageAt) / 1000);
-    return Math.max(0, FOOTING_RECOVERY_DELAY_S - elapsedS);
+    const delayMultiplier = Math.max(0.1, Number(window.ResourceSystem?.statModifier?.(entity, 'footingRecoveryDelay')) || 1); // Unshaken shortens the standing hit-to-regen lockout without increasing Footing recovery speed.
+    return Math.max(0, FOOTING_RECOVERY_DELAY_S * delayMultiplier - elapsedS);
   }
 
   function defaultFootingRegenPerSec(entity) {

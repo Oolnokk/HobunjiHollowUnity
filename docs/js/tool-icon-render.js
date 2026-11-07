@@ -30,7 +30,7 @@
       || document.querySelector('script[data-hobunji-held-render-order]')) return;
 
   const composerSrc = 'js/surface-occlusion-composer.js?v=20261102composer2';
-  const heldSrc = 'js/held-object-render-order.js?v=20261103dungeonplumepadding2';
+  const heldSrc = 'js/held-object-render-order.js?v=20261105h49e6c66';
 
   function loadHeldRenderer() {
     if (window.HeldObjectRenderOrder?.installed
@@ -133,7 +133,7 @@
 (() => {
   'use strict';
   if (window.ActionArchSlotColors?.installed || document.querySelector('script[data-action-arch-slot-colors]')) return;
-  const src = 'js/action-arch-slot-colors.js?v=20260831a';
+  const src = 'js/action-arch-slot-colors.js?v=20261107h7345c84';
   if (document.readyState === 'loading' && document.currentScript) {
     document.write(`<script data-action-arch-slot-colors="1" src="${src}"><\/script>`);
     return;

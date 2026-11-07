@@ -237,6 +237,16 @@
     if (state?.mapId === mapId) ensureVisualForCurrentArea();
   }
 
+  // The inactive zone cache tears a zone's scene down while the player is
+  // elsewhere. The saved campfire stays; only its visual belonged to that
+  // scene, and onZoneEntered re-attaches it when the zone is rebuilt.
+  function releaseVisualIfZone(mapId) {
+    if (!state || state.mapId !== mapId || visualArea !== mapId) return false;
+    removeVisual();
+    recordDebug('zone-cache-visual-released', { mapId });
+    return true;
+  }
+
   function distanceToPlayerTiles() {
     if (!state) return Infinity;
     const player = deps.getPlayer();
@@ -320,6 +330,6 @@
     init, supportsArea, place, placeFromKit, clear, clearIfZone, clearMineCampfireOnDeath,
     relocateForGeneratedMineFloor, updateVfx, onZoneEntered, isHere, distanceToPlayerTiles,
     getNearbyActions, returnToCampfire, requestReturnToCampfire, doSave, doCook, doBrew,
-    serialize, restore, ensureLoaded, getDebugState,
+    serialize, restore, ensureLoaded, getDebugState, releaseVisualIfZone,
   };
 })();

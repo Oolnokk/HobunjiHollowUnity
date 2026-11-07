@@ -184,8 +184,63 @@
     return out;
   }
 
+  // Plain (non-genotype) creature sprites are uploaded straight from their PNG
+  // and some are authored far larger than they are ever shown: grehlr is
+  // 3000x2250 (~36 MB of mipmapped GPU memory per frame, ~100 MB for its
+  // idle/run frames) next to the 1024-px display bound used for composites
+  // above. Scaling the long edge down once, at load, keeps every sprite at or
+  // under this size; anything already smaller is returned untouched. Plane
+  // size comes from modelWidth/spriteAspect and rig data is sprite-normalized,
+  // so a uniform downscale does not move anchors. Overridable through
+  // SCRATCHBONES_CONFIG.game.assets.pngPlaneAvatar.maxSourceEdge.
+  const DEFAULT_MAX_SOURCE_EDGE = 1536; // Leaves 1375-px art (gar-wolf) native; only 1536+ sprites are scaled.
+  function maxSourceEdge() {
+    const configured = Number(window.SCRATCHBONES_CONFIG?.game?.assets?.pngPlaneAvatar?.maxSourceEdge);
+    return Number.isFinite(configured) && configured >= 256 ? configured : DEFAULT_MAX_SOURCE_EDGE;
+  }
+
+  function capSourceImage(image, maxEdge = maxSourceEdge()) {
+    const width = Number(image?.naturalWidth || image?.width) || 0, height = Number(image?.naturalHeight || image?.height) || 0;
+    if (!width || !height || typeof document === 'undefined') return image;
+    const scale = maxEdge / Math.max(width, height);
+    if (scale >= 1) return image;
+    const out = document.createElement('canvas');
+    out.width = Math.max(1, Math.round(width * scale));
+    out.height = Math.max(1, Math.round(height * scale));
+    const ctx = out.getContext('2d');
+    if (!ctx) return image;
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(image, 0, 0, out.width, out.height);
+    return out;
+  }
+
+  // TextureLoader.load callback: swaps an oversized decoded image for its
+  // capped canvas before the texture is first uploaded to the GPU.
+  function capLoadedTexture(texture, maxEdge) {
+    const capped = capSourceImage(texture?.image, maxEdge);
+    if (capped && capped !== texture.image) { texture.image = capped; texture.needsUpdate = true; }
+    return texture;
+  }
+
+  // Tiling material textures (crate planks, carved stone) are painted onto
+  // surfaces that cover a few hundred screen pixels at most, yet crate_side.png
+  // ships at 1378x1378 (~9.7 MB mipmapped). They get a tighter bound than
+  // creature sprites. Overridable through
+  // SCRATCHBONES_CONFIG.game.assets.furnitureTextureMaxEdge.
+  const DEFAULT_FURNITURE_TEXTURE_MAX_EDGE = 512;
+  function furnitureTextureMaxEdge() {
+    const configured = Number(window.SCRATCHBONES_CONFIG?.game?.assets?.furnitureTextureMaxEdge);
+    return Number.isFinite(configured) && configured >= 64 ? configured : DEFAULT_FURNITURE_TEXTURE_MAX_EDGE;
+  }
+  function capFurnitureTexture(texture) { return capLoadedTexture(texture, furnitureTextureMaxEdge()); }
+
   window.CreatureTextureCache = {
     fitGeneratedCanvas,
+    capSourceImage,
+    capLoadedTexture,
+    capFurnitureTexture,
+    furnitureTextureMaxEdge,
     create,
     genotypeFrameSetKey,
     isDisposed: owner => disposedOwners.has(owner),

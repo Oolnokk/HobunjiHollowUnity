@@ -18,12 +18,15 @@
 // Pure logic over CellGrid3D (and ClimbSurfaces for mount()); runs under node and in the browser.
 (function (root, factory) {
   const isCjs = typeof module === 'object' && module.exports;
-  const api = factory(isCjs ? require('./cell-grid-3d.js') : root.CellGrid3D);
+  const api = factory(isCjs ? require('./cell-grid-3d.js') : root.CellGrid3D, isCjs ? require('./ruin-wall-faces.js') : root.RuinWallFaces,
+    isCjs ? require('./ruin-reaching-obelisks.js') : root.RuinReachingObelisks);
   if (isCjs) module.exports = api;
   else root.ShaftHub = api;
-})(typeof self !== 'undefined' ? self : globalThis, function (G) {
+})(typeof self !== 'undefined' ? self : globalThis, function (G, Faces, Obelisks) {
   'use strict';
   const { KIND, DIR } = G;
+  const PATCH = 6; // Largest stretch-to-fit patch of shaft stone, in world units (the V50 stone mapping uses the same 6).
+  const FEATURE = { w:3, h:2, max:24 }; // A wall rectangle at least this big (cells) is a feature wall: its own mesh, so it can carry its own engraving. Only the `max` largest are engraved: each costs an engraving atlas, and GPU memory on phones is the limit.
 
   const SIDES = ['N', 'E', 'S', 'W'];
   const OPPOSITE_DIR = { N: DIR.S, S: DIR.N, E: DIR.W, W: DIR.E }; // a balcony on the N wall faces its climbable side S, into the shaft
@@ -41,6 +44,7 @@
     octagon: true,   // Both the visible exterior and inner void have chamfered corners.
     entranceSide: 'N', // The integrated ruin joins via a corridor at ground level.
     climbStyle: 'holds',
+    traversal: 'buttress', // Legacy authored shaft; generated ruins choose a complete method.
     landings: false, // Reserve an enclosed chamber at the end of each balcony corridor.
     chambers: false, // Extend landings into seeded side rooms for the V50 wing.
     seed: 1,
@@ -108,7 +112,7 @@
     if (o.octagon) {
       const lo=o.wall,hi=lo+o.shaft-1,cut=Math.floor(o.shaft*.19),width=5; // Five-cell galleries remain walkable around higher buttresses.
       const approaches=new Set(); // All climb lanes, across every story.
-      for(const side of balconySides){
+      for(const side of (o.traversal==='reachingObelisks'?[]:balconySides)){
         const g=sideGeometry(side,o,cols,rows),out=OUTWARD[side];
         for(const f of g.front)approaches.add((f.c-out.c)+','+(f.r-out.r));
       }
@@ -126,8 +130,13 @@
     const balconies = [], doors = [];
     balconySides.forEach((side, k) => {
       const level = o.spacing * (k + 1), geo = sideGeometry(side, o, cols, rows);
-      for (const cell of geo.buttress) grid.fillBox(cell.c, cell.r, 0, cell.c, cell.r, level - 1, KIND.SOLID);
-      for (const cell of geo.front) grid.paintClimbFaces(cell.c, cell.r, 0, cell.c, cell.r, level - 1, OPPOSITE_DIR[side], o.climbStyle);
+      if(o.traversal==='reachingObelisks'){
+        // Keep only the balcony floor, not its full-height continuous climbing buttress.
+        for(const cell of geo.buttress)grid.set(cell.c,cell.r,level-1,KIND.SOLID);
+      }else{
+        for (const cell of geo.buttress) grid.fillBox(cell.c, cell.r, 0, cell.c, cell.r, level - 1, KIND.SOLID);
+        for (const cell of geo.front) grid.paintClimbFaces(cell.c, cell.r, 0, cell.c, cell.r, level - 1, OPPOSITE_DIR[side], o.climbStyle);
+      }
       const tunnel = o.landings ? geo.tunnel.slice(0,-1) : geo.tunnel; // Keep the outermost wall intact behind a landing.
       for (const cell of tunnel) { // door: 1 wide, 2 high, from the wall-adjacent row out
         if (geo.buttress.some(b => b.c === cell.c && b.r === cell.r && !b.wallRow)) continue;
@@ -183,8 +192,13 @@
         world: {x:grid.colToX(geometry.edge.c + .5), z:grid.rowToZ(geometry.edge.r + .5), y:grid.levelToY(level)}
       });
     }
+    const obelisks=o.traversal==='reachingObelisks'?Obelisks?.compose?.({
+      seed:o.seed,shaft:o.shaft,wall:o.wall,spacing:o.spacing,floors:o.floors,
+      originX:o.originX,originZ:o.originZ,baseY:o.baseY,balconySides}):null;
+    if(o.traversal==='reachingObelisks'&&!obelisks?.ok)
+      throw new Error('The selected reaching-obelisk traversal is missing or unsolvable.');
     const surfaces = grid.collectClimbSurfaces();
-    const result = { ok: false, options: o, grid, cols, rows, levels, balconies, doors, entrance, wingPortals, surfaces, checks: [],
+    const result = { ok: false, options: o, grid, cols, rows, levels, balconies, doors, entrance, wingPortals, surfaces, obelisks, checks: [],
       stories: Array.from({length:o.balconies+1},(_,floor)=>({floor,level:floor*o.spacing,balconies:balconies.filter(b=>b.level===floor*o.spacing),gallery:(ringCellsByLevel.find(r=>r.floor===floor)?.cells||[]).filter(c=>grid.canStand(c.col,c.row,floor*o.spacing))})) }; // Level map for a subsequent wing composer.
     result.checks = verify(result);
     result.ok = result.checks.every(c => c.ok);
@@ -230,13 +244,18 @@
 
   function verify(result) {
     const { grid, balconies, doors, entrance, options: o } = result, checks = [], add = (name, ok, detail) => checks.push({ name, ok: !!ok, detail: detail ?? null });
-    const reach = reachable(result);
+    const reach = result.obelisks?.ok
+      ?{has:(c,r,l)=>grid.canStand(c,r,l)&&l>=0&&l<=o.spacing*(o.floors-1)} // Verified state/flight graph replaces continuous climb edges.
+      :reachable(result);
+    if(result.obelisks)add('obeliskTraversalVerified',result.obelisks.ok&&result.obelisks.routes.length===o.floors-1);
     add('entranceOpen', grid.floorLevelAt(entrance.inside.c, entrance.inside.r, 0) === 0, 'the ground entrance leads onto the shaft floor');
     add('spacing', o.spacing >= 3, `balcony floors are ${o.spacing} apart (2 cells of headroom needed above each)`);
     for (const b of balconies) {
       const stands = b.cells.filter(c => grid.canStand(c.col, c.row, b.level));
       add(`balcony${b.index}Standable`, stands.length === b.cells.length, `${stands.length}/${b.cells.length} balcony cells have a floor and 2 cells of headroom`);
-      add(`balcony${b.index}Climbable`, result.surfaces.some(s => s.y0 <= grid.levelToY(0) + 1e-6 && Math.abs(s.y1 - grid.levelToY(b.level)) < 1e-6), 'a wall rectangle runs from the ground to the balcony floor');
+      if(result.obelisks)add(`balcony${b.index}ObeliskRoute`,result.obelisks.routes.some(route=>route.story===b.index&&route.exitY===b.y),
+        'an audited state-machine and ballistic route replaces the climb wall');
+      else add(`balcony${b.index}Climbable`, result.surfaces.some(s => s.y0 <= grid.levelToY(0) + 1e-6 && Math.abs(s.y1 - grid.levelToY(b.level)) < 1e-6), 'a wall rectangle runs from the ground to the balcony floor');
       add(`balcony${b.index}Reachable`, b.cells.some(c => reach.has(c.col, c.row, b.level)), 'reachable from the entrance by walking and climbing');
     }
     for (const d of doors) {
@@ -266,38 +285,44 @@
     const { grid } = result;
     const shell = new THREE.Group(); // Owns the shaft shell, bedrock floor and climb markings.
     shell.name = 'shaft-hub';
-    const exposed = [], ceilingCells = []; // Roof faces inward only, so the overhead game camera sees the interior.
-    const faces = [[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]];
-    for (let l = 0; l < grid.levels; l++) for (let r = 0; r < grid.rows; r++) for (let c = 0; c < grid.cols; c++) {
-      if (!grid.isSolid(c,r,l)) continue;
-      if (l === grid.levels - 1) {
-        if (!grid.isSolid(c,r,l-1)) ceilingCells.push([c,r]); // Underside where the shaft has air beneath.
-      } else if (faces.some(([dc,dr,dl]) => !grid.inBounds(c+dc,r+dr,l+dl) || !grid.isSolid(c+dc,r+dr,l+dl))) exposed.push([c,r,l]);
-    }
     const material = globalThis.ProceduralFurniture?.makePartMaterial?.({materialTexture:'carved_smooth.png',materialLighting:'unlit',materialFillMode:'never',color:'#7a746b'}) || new THREE.MeshBasicMaterial({color:0x7a746b}); // Exactly the same unlit ruin stone as V50 walls.
-    const blocks = new THREE.InstancedMesh(new THREE.BoxGeometry(grid.cellSize,grid.cellHeight,grid.cellSize),material,exposed.length);
-    const matrix = new THREE.Matrix4(); // Reused across all exposed solid cells.
-    exposed.forEach(([c,r,l],i) => blocks.setMatrixAt(i,matrix.makeTranslation(
-      grid.colToX(c+.5),grid.levelToY(l+.5),grid.rowToZ(r+.5))));
-    shell.add(blocks);
-    if (ceilingCells.length) {
-      const underside=material.clone(); // Same ruin stone texture, facing inward like the main ruin ceiling.
-      underside.side=THREE.FrontSide;
-      underside.needsUpdate=true;
-      const plane=new THREE.PlaneGeometry(grid.cellSize,grid.cellSize);
-      plane.rotateX(Math.PI/2); // Normal -Y: visible from below, culled above.
-      const ceiling=new THREE.InstancedMesh(plane,underside,ceilingCells.length);
-      ceiling.name='shaft-hub-textured-roof-underside';
-      ceilingCells.forEach(([c,r],i)=>ceiling.setMatrixAt(i,matrix.makeTranslation(grid.colToX(c+.5),grid.levelToY(grid.levels-1),grid.rowToZ(r+.5))));
-      shell.add(ceiling);
-    }
-    const floorCells=[]; // No rectangular floor visible under the clipped octagon.
+    // The stone is real faces, not a field of one-unit boxes: neighbouring faces merge into large flat rectangles
+    // (js/ruin-wall-faces.js) cut into patches of at most PATCH units, each stretching the texture to fit, so the
+    // walls read like the older V50 rooms and can be engraved by FurniturePatternSurfaces.decorateRuin. The
+    // masonry group is kept apart from the climb markings so only stone is ever patterned. Roof faces point
+    // inward only, so the overhead game camera sees the interior; collision stays on the voxel grid.
+    const masonry = new THREE.Group();
+    masonry.name = 'shaft-hub-masonry';
+    shell.add(masonry);
+    const frame = { origin:{ x:grid.colToX(0), y:grid.levelToY(0), z:grid.rowToZ(0) }, size:{ x:grid.cellSize, y:grid.cellHeight, z:grid.cellSize }, patch:{ h:PATCH, v:PATCH } };
+    const part = (name, rects, parent = masonry) => {
+      if (!rects.length) return null;
+      const mesh = new THREE.Mesh(Faces.toGeometry(THREE, Faces.buildQuads(rects, frame)), material);
+      mesh.name = name;
+      parent.add(mesh);
+      return mesh;
+    };
+    const faces = Faces.voxelFaces({ cols:grid.cols, rows:grid.rows, levels:grid.levels, isSolid:(c, r, l) => grid.isSolid(c, r, l) });
+    const sides = faces.filter(rect => rect.axis !== 'y');
+    const area = rect => (rect.a1 - rect.a0) * (rect.b1 - rect.b0);
+    const chosen = new Set(sides.filter(rect => rect.a1 - rect.a0 >= FEATURE.w && rect.b1 - rect.b0 >= FEATURE.h).sort((a, b) => area(b) - area(a)).slice(0, FEATURE.max));
+    const isFeature = rect => chosen.has(rect);
+    // FurniturePatternSurfaces builds one engraving atlas per mesh, sized to the unwrapped extent of every face it
+    // selects. That suits a connected wall, as in the older V50 rooms (one mesh per wall); hundreds of disjoint faces
+    // in one mesh shrink the atlas to nothing. So each broad wall is its own mesh in a group the decorator is pointed
+    // at, and the many narrow strips (the octagon's stepped diagonals, ledge fronts) stay plain stretched stone.
+    const features = new THREE.Group();
+    features.name = 'shaft-hub-feature-walls';
+    features.userData.ruinFeatureWalls = true; // The style pass engraves every group carrying this flag (js/ruin-multifloor-v50-style.js).
+    masonry.add(features);
+    for (const rect of sides.filter(isFeature)) part('shaft-hub-feature-wall', [rect], features); // One shared name: one pattern "type".
+    part('shaft-hub-walls', sides.filter(rect => !isFeature(rect)));
+    part('shaft-hub-ledges', faces.filter(rect => rect.axis === 'y')); // Balcony tops, undersides and the roof: stretched like the walls.
+    const floorMask = new Uint8Array(grid.cols * grid.rows); // No rectangular floor visible under the clipped octagon.
     const lo=result.options.wall,hi=lo+result.options.shaft-1,cut=Math.floor(result.options.shaft*.19);
     for(let r=0;r<grid.rows;r++) for(let c=0;c<grid.cols;c++)
-      if(grid.canStand(c,r,0)&&(!result.options.octagon||inOctagon(c,r,lo,hi,cut)||result.entrance.side==='N'&&c===result.entrance.col&&r<lo||result.entrance.side==='S'&&c===result.entrance.col&&r>hi||result.entrance.side==='W'&&r===result.entrance.row&&c<lo||result.entrance.side==='E'&&r===result.entrance.row&&c>hi)) floorCells.push([c,r]);
-    const floor=new THREE.InstancedMesh(new THREE.BoxGeometry(grid.cellSize,.1,grid.cellSize),material,floorCells.length);
-    floorCells.forEach(([c,r],i)=>floor.setMatrixAt(i,matrix.makeTranslation(grid.colToX(c+.5),grid.baseY-.05,grid.rowToZ(r+.5))));
-    floor.name='shaft-hub-octagonal-floor'; shell.add(floor);
+      if(grid.canStand(c,r,0)&&!(result.obelisks&&Math.abs(c-(lo+hi)/2)<(result.options.shaft-10)/2&&Math.abs(r-(lo+hi)/2)<(result.options.shaft-10)/2)&&(!result.options.octagon||inOctagon(c,r,lo,hi,cut)||result.entrance.side==='N'&&c===result.entrance.col&&r<lo||result.entrance.side==='S'&&c===result.entrance.col&&r>hi||result.entrance.side==='W'&&r===result.entrance.row&&c<lo||result.entrance.side==='E'&&r===result.entrance.row&&c>hi)) floorMask[r*grid.cols+c]=1;
+    part('shaft-hub-octagonal-floor', Faces.mergeMask(floorMask, grid.cols, grid.rows).map(rect => ({ axis:'y', side:1, plane:0, a0:rect.i0, a1:rect.i1, b0:rect.j0, b1:rect.j1 })));
     if (climb?.buildVisual) for (const surface of result.surfaces) shell.add(climb.buildVisual(THREE,surface));
     return shell;
   }
@@ -312,6 +337,8 @@
     for(const cell of grid.standingSurfaces({clearance:2})){
       if(cell.level>=grid.levels-1)continue; // No invisible standing surface on the roof.
       if(o.octagon&&!inOctagon(cell.col,cell.row,0,grid.cols-1,exteriorCut))continue;
+      if(result.obelisks&&cell.level===0&&Math.abs(cell.col-(o.wall+(o.shaft-1)/2))<(o.shaft-10)/2
+        &&Math.abs(cell.row-(o.wall+(o.shaft-1)/2))<(o.shaft-10)/2)continue; // No implicit support inside the fatal basin.
       let rows=levelRows.get(cell.level);
       if(!rows){rows=new Map();levelRows.set(cell.level,rows);}
       let columns=rows.get(cell.row);

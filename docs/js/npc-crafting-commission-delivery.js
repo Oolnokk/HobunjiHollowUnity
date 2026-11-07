@@ -131,7 +131,7 @@
       lastError = 'NpcWardrobe.offerClothing unavailable during commission turn-in';
       return false;
     }
-    const verdict = offerClothing(commission.recipientId, item); // Delivers the commission as a real gift into the recipient's wardrobe.
+    const verdict = offerClothing(commission.recipientId, item, { commission: true }); // A validated commission enters the recipient's wardrobe regardless of unsolicited-gift style preferences.
     if (verdict?.accepted === false) {
       lastError = `recipient rejected matched garment: ${commission.recipientId}`;
       return false;
@@ -157,6 +157,20 @@
     const patterned = commission.patterned ? 'patterned ' : ''; // Player-facing woven-pattern qualifier.
     const dyes = window.NpcCraftingCommissionGenerator?.formatDyeSlots?.(commission) || ''; // Same requirements shown in the original ask line.
     return `${material} ${patterned}${commission.articleLabel} for ${commission.recipientName}. ${dyes}${isReady(task) ? ' — ready' : ''}`;
+  }
+
+  function turnInPrompt(task) {
+    const commission = task?.commission; // Used by game.js to label crafting hand-ins without relying on the empty fetch-item array.
+    if (commission?.type === 'furniture') {
+      const name = commission.furnitureLabel || 'furniture';
+      return { text: `Did you finish the ${name} I asked you to make?`, label: `Here's your ${name}.` };
+    }
+    if (commission?.type === 'clothing') {
+      const article = commission.articleLabel || 'clothing';
+      const recipient = commission.recipientName || 'them';
+      return { text: `Did you finish the ${article} for ${recipient}?`, label: `Here's the ${article} for ${recipient}.` };
+    }
+    return null;
   }
 
   function complete(taskId) {
@@ -209,6 +223,6 @@
 
   window.NpcCraftingCommissionDelivery = Object.freeze({
     version: VERSION, setDeps, acceptedPatch, onAccepted, isReady, matchingClothing,
-    colorMatches, furnitureReady, requirementText, complete, debugSnapshot,
+    colorMatches, furnitureReady, requirementText, turnInPrompt, complete, debugSnapshot,
   });
 })();

@@ -26,7 +26,7 @@ input,select{width:100%;background:#0d1621;border:1px solid rgba(255,255,255,.14
 </style>
 <script src="https://unpkg.com/three@0.128.0/build/three.min.js"></script>
 <script src="https://unpkg.com/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
-<script src="../../js/portrait-utils.js?v=20261103furpaint1"></script>
+<script src="../../js/portrait-utils.js?v=20261107fitp2"></script>
 <script>
   // This nested tool page must resolve the shared portrait loader at docs/assets/, not docs/tools/pattern-editor/assets/.
   window.setPortraitAssetBase(new URL('../../assets/', document.baseURI).href);
@@ -36,7 +36,7 @@ input,select{width:100%;background:#0d1621;border:1px solid rgba(255,255,255,.14
 <script src="../../js/sprite-recolor.js"></script>
 <script src="../../js/clothing-weaving-system.js?v=20261104hPatternQuick1435a"></script>
 <script src="../../js/fur-hood-direct-paint-editor.js?v=20261103furpaint1"></script>
-<script src="../../js/fur-hood-leatherworking.js?v=20261103fur1"></script>
+<script src="../../js/fur-hood-leatherworking.js?v=20261106grehlr2"></script>
 <script src="../../js/fur-hood-exclusion-editor.js?v=20261103fur-exclusions1"></script>
 <script src="../../js/creature-genetics.js?v=20261103furGeneChoices1"></script>
 <script src="../../js/trim-contour-warp.js?v=20261002contourwarp1"></script>
@@ -45,7 +45,7 @@ input,select{width:100%;background:#0d1621;border:1px solid rgba(255,255,255,.14
 <script src="../../js/repo-pattern-library.js"></script>
 <script src="../../js/furniture-pattern-surfaces.js?v=20261104hb3db90a"></script>
 <script src="../../js/terrain-preview.js?v=20261013he41c002"></script>
-<script src="../../js/procedural-furniture.js?v=20261030h4437e5e"></script>
+<script src="../../js/procedural-furniture.js?v=20261106hlantern9"></script>
 <script src="furniture-preview.js?v=20261029maskSlots2"></script>
 </head>
 <body>
@@ -2517,7 +2517,7 @@ function setupFurAuthoring() {
     sessionMotifs: newMotifPixels.size, paintedMotifs: [...newMotifPixels.keys()], error: lastFurAuthorError,
     latestChange: 'Nelk Mashtzarr back sprite renamed; raw art pixel-eyedropper exports exact global/role exclusions with live no-exclusion/with-exclusion comparisons.',
   });
-  fetch('../../config/patterns/fur-hoods.json').then(response => {
+  fetch('../../config/patterns/fur-hoods.json?v=20261106grehlr1').then(response => {
     if (!response.ok) throw new Error('Manifest HTTP ' + response.status);
     return response.json();
   }).then(data => {

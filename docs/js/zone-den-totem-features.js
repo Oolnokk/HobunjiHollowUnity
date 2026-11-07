@@ -21,7 +21,7 @@
   ensureCompanionScript('HOBUNJI_ROOT_TOTEM_CONFIG', '../config/root-totem-config.js');
   ensureCompanionScript('NaturalSurfaceMaterialConfig', '../config/natural-surface-materials.js');
   ensureCompanionScript('NaturalSurfaceMaterials', 'natural-surface-materials.js');
-  ensureCompanionScript('FurnitureVesselRuntime', 'furniture-vessel-runtime.js?v=20261102furnsurface1');
+  ensureCompanionScript('FurnitureVesselRuntime', 'furniture-vessel-runtime.js?v=20261106hlantern2');
   ensureCompanionScript('FurnitureDecalRuntime', 'furniture-decal-runtime.js?v=20261003h3fbafdb');
   ensureCompanionScript('StructuralWrap', 'structural-wrap.js');
   ensureCompanionScript('DeadzoneBillboard', 'deadzone-billboard.js?v=20260926a');
@@ -391,6 +391,7 @@
       const group = new THREE.Group();
       group.name = 'animalDenEntrances';
       for (const den of denList) {
+        if(window.PuzzleCaveEntrances?.hasPortal?.(mapId,den.id))continue; // Mini-cliff Puzzle Caves use their real authored cliffDoor instead of duplicating the old ground-level den facade.
         const denEntranceLocale = activeAnimalDenEntranceLocale(den); // Full-size or small cliff template this den was placed with.
         const denEntranceObject = denEntranceObjectFromLocale(denEntranceLocale); // Cave-specific visual settings come from that den locale.
         const w = den.w || 1, h = den.h || 1;

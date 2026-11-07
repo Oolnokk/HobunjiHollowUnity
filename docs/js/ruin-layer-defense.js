@@ -148,7 +148,7 @@
         if(record.disposed)return;
         const source=composition.encounter;
         encounter=encounters.create({
-          ...source,id:prefix+'combat',mapId,
+          ...source,id:prefix+'combat',mapId,noLoot:options.noLoot===true, // Single-room puzzle lab encounters may fight, but never create lootable kills.
           objective:{...source.objective,plinthId},
           spawners:(source.spawners||[]).map(s=>({...s,x:origin.x+s.x,z:origin.z+s.z})),
           surfaceY:()=>y, // Enemy feet remain on the generated story's floor rather than on the global ground layer.

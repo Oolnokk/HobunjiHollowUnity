@@ -674,7 +674,10 @@
     const distance = deps.TILE * 0.8;
     const spawnX = beastmaster.x + Math.cos(angle) * distance;
     const spawnY = beastmaster.y + Math.sin(angle) * distance;
+    const genotypeKind = window.CreatureGenetics?.SPECIES_ALIAS?.[creatureKey] || creatureKey; // Resolves coat aliases for the standard genetics roll.
+    const genotype = window.CreatureGenetics?.makeDefaultGenotype?.(genotypeKind) || null; // The factory uses this to paint the hound's coat, patterns, and eyes.
     const hound = deps.makeCreatureEntity(creatureKey, spawnX, spawnY, {
+      genotype,
       scene: beastmaster.scene,
       grid: beastmaster.areaGrid,
       cols: beastmaster.areaCols,
@@ -712,7 +715,7 @@
     deps.companionObjects.add(hound);
     rec.gangIds.add(hound.id);
     window.__farmLog?.(
-      `[bandits] Slagothim Beastmaster spawned ${creatureKey} companion ${hound.id} (${hound.maxHealth} HP, ${tunedDef.attackDamage} damage).`,
+      `[bandits] Slagothim Beastmaster spawned ${creatureKey} companion ${hound.id} (${hound.maxHealth} HP, ${tunedDef.attackDamage} damage; coat ${hound.genotype?.base?.color || 'missing'}).`,
       'wildlife',
     );
     return hound;
@@ -1374,11 +1377,13 @@
       holdSeconds,
       holdLabel: 'Searching ' + (c.name || c.def.label) + '...',
       getButtons() {
+        if (c.ruinNoLoot===true)return []; // No corpse loot prompt in the isolated puzzle lab.
         if (holdSeconds > 0) return [{ icon: c.lootIcon || '🦴', label: 'Hold to Search', action: 'corpse_hold_loot', style: 'primary', allowed: true, worldInteraction: true, promptRoot: c.avatarRef?.group || null }];
         return [{ icon: '🪙', label: 'Loot ' + (c.name || c.def.label), action: 'obj_loot_corpse', style: 'primary', allowed: true }];
       },
       onAction(action) {
         if (action !== 'obj_loot_corpse') return { ok: false, message: 'Unknown action.' };
+        if(c.ruinNoLoot===true)return {ok:false,message:'This test-room opponent carries no loot.'}; // Also protects against calling the corpse action directly.
         const parts = grantBanditLoot(deps.rollLootPool(c.def.lootPool, { entity: c }));
         const specialAmmo = window.RangedWeapons?.rollSpecialAmmoLoot?.() || 0;
         if (specialAmmo) parts.push(`🏹 Special Ammo×${specialAmmo}`);

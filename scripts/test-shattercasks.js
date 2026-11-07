@@ -37,13 +37,25 @@ const detonateBody=code.slice(detonateStart,detonateEnd);
 assert(detonateBody.includes('if(!cask||cask.exploded)return false;') &&
   detonateBody.includes("playObjectSfxKey?.('shattercaskBlast')") &&
   code.includes("detonate(c,'throw-impact')") &&
-  (code.includes("detonate(vase,'melee')") || code.includes("detonate(vase,'melee',opts.actor)")) && // Attacker context is now forwarded for attributed impacts.
+  code.includes("detonate(vase,'melee',source)") && // The player-rooted Shattercask chain can snapshot Flaskmaster without changing enemy strike ownership.
   code.includes("const handler=burden.impactHandler||BURDEN_IMPACT_HANDLERS.get(burden.kind)||burden.data?.carryable?.impactHandler;") &&
   code.includes("if(typeof handler==='function')return handler(burden,'projectile')!==false;") &&
-  code.includes("return detonate(burden,'projectile');"),
+  code.includes("return detonate(burden,'projectile',source);"),
   'one guarded detonation boundary plays the blast cue for thrown/melee hits, while projectile hits preserve generic Burden handlers and the guarded Shattercask fallback');
+assert(code.includes("triggerBurdenBlastAt(cask.mapId,x,z,RADIUS*flaskmasterRadius,cask.id,attribution)") &&
+  code.includes("lastBlastAttribution={id:cask.id") &&
+  code.includes("const flaskmasterFactor = key =>"),
+  'player-provenance snapshots and Shattercask-only inheritance are exposed for mobile diagnostics');
 assert.equal((detonateBody.match(/playObjectSfxKey\?\.\('shattercaskBlast'\)/g)||[]).length,1,
   'the central detonation path contains one sound request');
+assert(code.includes("const explosive=burden.kind==='shattercask'||burden.kind==='flameShattercask'") &&
+  code.includes("if((burden.kind==='shattercask'||burden.kind==='flameShattercask')&&!burden._backOriginalSpawnRetired)") &&
+  code.includes("if(cask.kind!=='soursap'&&cask.kind!=='shattercask'&&cask.kind!=='flameShattercask')") &&
+  code.includes("window.PersistentGroundFire?.ignite?.("),
+  'Flame Shattercasks retain carrier-hit explosions and consumed-spawn area transfers, and use the real burning ground impact');
+assert(code.includes("this.kind === 'flameShattercask' ? 'Flame Shattercask'"),
+  'the physical flame charge uses a readable name in mobile carry prompts');
+
 assert(code.includes('assets/textures/boards.png')&&code.includes('assets/textures/carved_smooth.png'),'debris uses the real body and neck textures');
 
 assert.equal(asset.particleEmitters.filter(e=>e.enabled&&e.type==='bubbles').length,2,
@@ -334,8 +346,12 @@ class Raycaster {
 }
 function authoredGroup() {
   const group=new Node(),mesh=new Mesh({attributes:{position:{count:3}},authoredMock:true},new Material({visible:true}));
+  mesh.renderOrder=0; // Match THREE.Mesh's default order so post-carry restoration is asserted precisely.
   group.add(mesh);
-  group.userData.meshById=new Map([['silhouette',mesh]]);
+  const decal=new Mesh({attributes:{position:{count:3}}},new Material({visible:true,transparent:true,depthTest:true,depthWrite:false})); // Real furniture decals are nested noncolliding Meshes.
+  decal.renderOrder=0;decal.userData.furnitureDecal=true;mesh.add(decal);
+  group.userData.meshById=new Map([['silhouette',mesh]]); // Deliberately excludes the decal, mirroring authored collision registration.
+  group.userData.authoredDecalMeshes=[decal];
   return group;
 }
 const THREE = {Group:Node,Mesh,SkinnedMesh,InstancedMesh,Object3D,Vector3,Euler,Quaternion,Raycaster,RingGeometry,
@@ -489,6 +505,7 @@ async function arenaScenario() {
     new Material({name:'npc_avatar_skinned_back_material',visible:true,depthTest:true,depthWrite:true})
   ]);
   portrait.name='player_skinned_plane_assembly';
+  portrait.renderOrder=2; // Original front PNG draw order for held/stowed restoration checks.
   portrait.bind({bones:[]},{});
   body.position.set(player.x/64,0,player.y/64); // Mirror live game.js: the avatar root tracks the actor's tile position.
   body.add(portrait);
@@ -535,6 +552,7 @@ async function arenaScenario() {
     new Material({name:'npc_avatar_skinned_back_material',visible:true,depthTest:true,depthWrite:true})
   ]);
   rebuilt.name='player_rebuilt_skinned_plane_assembly';
+  rebuilt.renderOrder=2; // The rebuilt avatar retains the same native front/back sort order.
   rebuilt.bind(portrait.skeleton,portrait.bindMatrix);
   body.remove(portrait);body.add(rebuilt);
   game.Combat.update(.18);
@@ -549,6 +567,23 @@ async function arenaScenario() {
   const stowed=game.Shattercasks.getBurden(first.id,currentArea); // Confirms the original burden is attached to the current rendered portrait, not a copy.
   assert.equal(stowed.group.parent,rebuilt,'stowed charge is parented directly to the rebuilt portrait plane');
   assert.equal(game.Shattercasks.debugSnapshot().backCarryMount.portraitAttached,true);
+  const stowedMesh=stowed.group.userData.meshById.values().next().value; // Real authored furniture part must draw between back and front PNGs.
+  const stowedDecal=stowed.group.userData.authoredDecalMeshes[0]; // The noncolliding visual child must use the same face ordering as the modeled part.
+  assert(!stowed.meshColliders.includes(stowedDecal),'decals are not borrowed into the hit-detection colliders');
+  const stowedRear=body.children.find(node=>node.userData?.shattercaskRearOverlay);
+  assert.equal(stowedRear?.renderOrder,2.05,'stowed rear skinned pass precedes furniture');
+  assert.equal(stowedRear?.material[1].depthWrite,false,'rear skinned depth cannot mask the back-carried furniture');
+  assert.equal(stowedMesh.renderOrder,2.15,'back-stowed geometry follows rear PNG order');
+  assert.equal(stowedDecal.renderOrder,2.15,'back-stowed noncolliding decals remain visible through the rear PNG');
+  assert.equal(stowedDecal.material.depthWrite,false,'decal keeps its original no-depth-write rule');
+  assert.equal(stowedMesh.material.transparent,true,'opaque furniture switches into the PNG transparent queue while stowed');
+  assert.equal(stowedMesh.material.depthTest,true,'back furniture remains hidden by closer walls and terrain');
+  assert.equal(stowedMesh.material.depthWrite,false,'back furniture cannot cover the front PNG through depth writes');
+  assert.equal(rearHeadwear.renderOrder,2.08,'back headwear is also behind the stowed Burden');
+  assert.equal(rearHeadwear.material.depthWrite,false,'back headwear cannot mask the stowed Burden');
+  assert.equal(rebuilt.renderOrder,2.25,'skinned front PNG is drawn after the back Burden');
+  assert.equal(rebuilt.material[0].visible,true,'front-facing skin stays visible while back-stowing');
+  assert.equal(game.Shattercasks.debugSnapshot().rearPortraitXray.stowedParts,2,'mobile debug counts both the burden body and its noncolliding authored decal');
   assert.equal(game.Shattercasks.hitProjectile({vase:stowed}),false,'stowed charge cannot receive an independent projectile hit');
   const beforePortraitYaw=stowed.group.getWorldPosition(new Vector3()); // A visual-only deadzone turn must reach its child.
   const authoredStowLocal=stowed.group.position.clone();
@@ -562,6 +597,13 @@ async function arenaScenario() {
   assert(game.Shattercasks.takeFromBack(),'the tool arch takes the back Burden into the hands');
   assert.equal(game.Shattercasks.debugSnapshot().held,first.id,'retrieval does not replace the burden with an inventory copy');
   assert.equal(game.Shattercasks.debugSnapshot().backCarried,null,'retrieval clears the back slot');
+  assert.equal(rebuilt.renderOrder,2,'taking the Burden back into the hands restores native front PNG order');
+  assert.equal(stowedRear.material[1].depthWrite,true,'held Burdens retain the original rear-pass depth rules');
+  assert.equal(rearHeadwear.renderOrder,2.6,'retrieval restores the held-only rear headwear layer');
+  assert.equal(rearHeadwear.material.depthWrite,true,'retrieval restores held-only rear headwear depth');
+  assert.equal(stowedMesh.renderOrder,1.4,'retrieved furniture returns to the standard held layer');
+  assert.equal(stowedDecal.renderOrder,0,'a hand-held decal returns to its pre-stowed draw order');
+  assert.equal(stowedMesh.material.transparent,undefined,'retrieval restores the authored material transparency');
   deps.getPlayerInteractionRay=()=>({origin:{x:player.x/64-2,y:1,z:player.y/64},direction:{x:1,y:-.5,z:0}});
   assert(game.WorldActionInputClaims.dispatch('action1','press',{source:'desktop-mouse'}),
     'Action 1 press starts aiming through the shared cross-device input claim');
@@ -601,6 +643,10 @@ async function arenaScenario() {
     'Action 2 release stays consumed even after dropping');
   assert.equal(game.Shattercasks.debugSnapshot().held,null,'no ghost held charge remains');
   assert.equal(rebuilt.material[1].visible,true,'drop restores real skinned back PNG rendering');
+  assert.equal(rebuilt.renderOrder,2,'drop restores the original front PNG render order');
+  assert.equal(stowedMesh.renderOrder,0,'drop restores the furniture normal render order');
+  assert.equal(stowedDecal.renderOrder,0,'drop restores the furniture decal native draw order');
+  assert.equal(stowedMesh.material.depthWrite,undefined,'drop restores the furniture original depth-write configuration');
   assert.equal(rearHeadwear.renderOrder,2,'drop restores the native rear head render order');
   assert.equal(rearHeadwear.material.depthWrite,false,'drop restores the native headwear depth semantics');
   assert.equal(body.children.filter(node=>node.userData?.shattercaskRearOverlay).length,0,
@@ -632,22 +678,25 @@ async function arenaScenario() {
   assert.equal(cancelledThrows,1,'incoming hit also cancels the shared held throw pose');
   assert.equal(game.Shattercasks.debugSnapshot().throwAim,null,'detonation clears aim');
   assert.equal(rebuilt.material[1].visible,true,'detonation restores the rear portrait');
-  const spare=game.Shattercasks.activeBurdenRecords().find(vase=>!vase.exploded&&!vase.carried);
-  assert(spare,'a second real Burden is available for back impact validation');
+  const spareTile=await game.Shattercasks.spawnRandomInDevArena();
+  const spare=game.Shattercasks.getBurden(spareTile.id,currentArea);
+  assert(spare,'a fresh real Burden is available for back impact validation after chain reactions');
   player.x=(spare.col+.5)*64;player.y=(spare.row+.5)*64;
   body.position.set(player.x/64,0,player.y/64); // The physical body root follows the actor between item pickups.
   assert(game.Shattercasks.pickUp(spare),'pickup of a spare charge succeeds');
   assert(game.Shattercasks.stowOnBack(),'spare charge is stowed on the back');
   assert.equal(game.Shattercasks.debugSnapshot().backCarried?.id,spare.id);
+  const carrierX=player.x/64,carrierZ=player.y/64;
+  const backBlastIndex=blasts.length;
   player.lastAttackReceivedAt+=500; // ResourceSystem's direct-hit timestamp advances for a real impact.
   game.Combat.update(.016);
   assert.equal(game.Shattercasks.debugSnapshot().backCarried,null,'taking a hit detonates the back charge');
   assert.equal(game.Shattercasks.getBurden(spare.id,currentArea),null,'the real charge is consumed exactly once');
-  assert.equal(blasts.at(-1)?.x,player.x/64,'back explosion uses the carrier exact world X');
-  assert.equal(blasts.at(-1)?.z,player.y/64,'back explosion uses the carrier exact world Z');
+  assert.equal(blasts[backBlastIndex]?.x,carrierX,'back explosion uses the carrier exact world X');
+  assert.equal(blasts[backBlastIndex]?.z,carrierZ,'back explosion uses the carrier exact world Z');
   for(let r=1;r<8;r++)for(let c=1;c<8;c++)tiles[r][c]={type:'rock'};
   await assert.rejects(game.Shattercasks.spawnRandomInDevArena(),/No unoccupied walkable tile/);
-  assert.equal(modelBuilds,4,'no art created for rejected requests');
+  assert.equal(modelBuilds,5,'no art created for rejected requests');
 }
 (async()=>{
   await arenaScenario();

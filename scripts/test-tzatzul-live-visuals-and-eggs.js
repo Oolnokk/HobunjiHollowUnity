@@ -35,7 +35,7 @@ const loot = JSON.parse(read('docs/config/loot/loot-pools.json'));
 assert.equal(loot.pools.creature_tzatzul_hatchling.entries.length, 0);
 assert.deepEqual(Array.from(loot.pools.mixedCrateTreasurePuzzle.sourcePools, s => s.poolId),
   ['crateJunk', 'treasureChest', 'puzzleCave']);
-assert.equal(loot.pools.puzzleCave.entries.length, 0, 'future puzzle loot remains deliberately unpopulated');
+assert(loot.pools.puzzleCave.entries.length > 0, 'mixed remains include the merged puzzle-cave reward pool');
 
 const created = []; // Tracks actual per-instance rig allocations and disposal after death.
 const painted = []; // Confirms the game-controlled pose reaches the authored wing renderer.

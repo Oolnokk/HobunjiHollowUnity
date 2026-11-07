@@ -271,7 +271,7 @@
 
   function snapLoosePushBlocksToSupport() {
     for (const block of pushBlocks) {
-      if (block.userData.__devRuinRideDaisId) continue;
+      if (block.userData.__devRuinRideDaisId || window.DevRandomRuin?.isSlidingPushBlock?.(block)) continue;
       const center = centerFor(block);
       const support = supportAt(center.x, center.z);
       if (!support) continue;

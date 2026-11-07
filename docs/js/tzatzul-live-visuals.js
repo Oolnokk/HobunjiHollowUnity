@@ -51,7 +51,7 @@
   }
   function present(actor, state, camera) {
     if (!state.rig) return;
-    const pose = actor.tzatzulFlightPose === 'perched' || actor.tzatzulFlightPose === 'glide'
+    const pose = kind(actor) === window.TzatzulRegistration?.HATCHLING_KIND ? 'perched' : actor.tzatzulFlightPose === 'perched' || actor.tzatzulFlightPose === 'glide'
       || actor.tzatzulFlightPose === 'flap' ? actor.tzatzulFlightPose
       : actor.onBranch ? 'perched'
         : actor._animalAttack || ['chase','patrol-chase','fleeing-low-health'].includes(actor.state) ? 'flap' : 'perched';
@@ -101,7 +101,13 @@
       const height = Number(actor.avatarRef?.frontPlane?.geometry?.parameters?.height)
         || Number(state.originals[0]?.node?.geometry?.parameters?.height)
         || Number(actor.def?.modelWidth) || 1; // Match the authoritative native portrait height, including large birds.
-      if (rig.root.scale?.setScalar) rig.root.scale.setScalar(height);
+      if (rig.root.scale?.setScalar) {
+        rig.root.scale.setScalar(height);
+        if (kind(actor) === window.TzatzulRegistration?.HATCHLING_KIND) {
+          const ratios = window.TzatzulRegistration.HATCHLING_SCALE; // Height comes from the native plane; correct only the width for the deformed hatchling body.
+          rig.root.scale.x *= ratios.x / ratios.y;
+        }
+      }
       rig.root.rotation.y = Math.PI / 2; // Flying side sprite inherits the same orientation as the native animal front plane.
       group.add(rig.root);
       group.userData ||= {};
@@ -134,7 +140,7 @@
       scanT = SCAN_PERIOD_S;
       debug.scans++;
       for (const actor of deps.hostileObjects) {
-        if (kind(actor) !== window.TzatzulRegistration?.KIND || actor.areaId !== area || !(actor.health > 0)) continue;
+        if (![window.TzatzulRegistration?.KIND, window.TzatzulRegistration?.HATCHLING_KIND].includes(kind(actor)) || actor.areaId !== area || !(actor.health > 0)) continue;
         if (tracked.has(actor)) continue;
         actor.tzatzulIdentity ||= window.TzatzulRegistration.identityFor(area, stableIndex(actor)); // Distinct, stable fallback until each nest assigns its persistent family ID.
         tracked.set(actor, { rig: null, loading: false, removed: false, originals: [],
@@ -160,10 +166,47 @@
     }
     return tracked.size;
   }
+  function alignCaptive(prey, group = prey?.avatarRef?.group) {
+    if (!prey?.tzatzulCapturedBy || !group?.parent || !window.THREE?.Object3D) return false;
+    let state = null; // Only registered bird rigs can own the exact original captive actor.
+    for (const [actor, candidate] of tracked) if (actor._tzFlight?.captive === prey) { state = candidate; break; }
+    const rig = state?.rig;
+    if (!rig?.talonCarry || !rig.root?.parent) return false;
+    const THREE = window.THREE, animal = prey !== deps.player && !prey.isBandit; // The live actor, including clothing and genotype, is the payload.
+    state.payload ||= { frame: new THREE.Object3D(), object: new THREE.Object3D(),
+      worldScale: new THREE.Vector3(), scale: new THREE.Vector3(), inverse: new THREE.Matrix4(), matrix: new THREE.Matrix4() };
+    const payload = state.payload; // Scratch transforms are allocated once per bird, rather than per animation frame.
+    if (payload.frame.parent !== rig.root) { rig.root.add(payload.frame); payload.frame.add(payload.object); }
+    rig.root.getWorldScale(payload.worldScale);
+    let source = deps.getTzatzulCarryAnchor?.(prey); // Player and animal anchors come from the live game's canonical resolver.
+    if (!source && prey.isBandit) {
+      const appearance = prey.rosterRecord?.appearance || prey.avatarRef?.profile || {};
+      const profile = window.HOBUNJI_ATTACHMENT_RIG_PROFILES?.characters?.[appearance.speciesId + '::' + appearance.gender];
+      const posterior = profile?.anchors?.posterior;
+      const height = Number(prey.avatarRef?.modelHeight) || 1; // Same profile-derived portrait dimensions as the Furniture Editor's humanoid hold preview.
+      source = { ...(posterior?.position || {}), y: window.HOBUNJI_ATTACHMENT_RIG_MATH?.characterPosteriorY?.(profile?.posteriorRule, height, prey.avatarRef?.group?.userData?.handAttachY) || 0, rotationDeg:posterior?.rotationDeg };
+    }
+    source ||= { x:0, y:0, z:0 };
+    const anchor = { position: animal ? { x:-(source.z || 0), y:source.y || 0, z:source.x || 0 } : source,
+      rotation: source.rotationDeg };
+    window.FlyingAnimalRig.placeTalonPayload(payload.frame, payload.object,
+      { ...rig.talonCarry, birdScale: Math.max(.01, Math.abs(payload.worldScale.x)) },
+      animal ? 'animal' : 'humanoid', anchor);
+    if (animal) payload.object.rotateY(-Math.PI / 2); // Same X-normal to Z-normal adapter as the authored animal preview.
+    payload.frame.updateWorldMatrix(true, true);
+    payload.scale.copy(group.scale); // Keep the prey's actual dimensions; the bird's scale must never resize its captive.
+    group.parent.updateWorldMatrix(true, false);
+    payload.inverse.copy(group.parent.matrixWorld).invert();
+    payload.matrix.multiplyMatrices(payload.inverse, payload.object.matrixWorld);
+    payload.matrix.decompose(group.position, group.quaternion, group.scale);
+    group.scale.copy(payload.scale);
+    group.updateWorldMatrix(false, true);
+    return true;
+  }
   function snapshot() {
     return { ...debug, activeArea: area, tracked: tracked.size,
       liveRigs: [...tracked.values()].filter(state => !!state.rig).length,
       loading: [...tracked.values()].filter(state => state.loading).length };
   }
-  window.TzatzulLiveVisuals = Object.freeze({ init, tick, snapshot, release });
+  window.TzatzulLiveVisuals = Object.freeze({ init, tick, snapshot, release, alignCaptive });
 })();

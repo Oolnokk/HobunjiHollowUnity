@@ -6,13 +6,15 @@ const vm = require('vm');
 const gear = { clothingItems: [] };
 let saved = 0;
 let traitKeySeen = null;
+let deliveryOptionsSeen = null; // Confirms the woven-ID adapter forwards commission-only acceptance context.
 const wardrobeStored = [];
 const ItemTraits = {
   computeItemTraits(key) { traitKeySeen = key; return ['clothing']; },
 };
 const NpcWardrobe = {
   init(deps) { this.deps = deps; },
-  offerClothing(_npcId, instance) {
+  offerClothing(_npcId, instance, options) {
+    deliveryOptionsSeen = options;
     wardrobeStored.push({ ...instance, uid: 'wardrobe-copy' });
     return { accepted: true };
   },
@@ -50,7 +52,8 @@ windowStub.NpcWardrobe.init({
   getGearInventory: () => gear,
   saveGearInventory: () => { saved++; },
 });
-const verdict = windowStub.NpcWardrobe.offerClothing('npc', woven);
+const verdict = windowStub.NpcWardrobe.offerClothing('npc', woven, { commission: true });
+assert.equal(deliveryOptionsSeen?.commission, true, 'commission acceptance context survives the woven NPC adapter');
 assert.equal(verdict.accepted, true);
 assert.equal(wardrobeStored[0].cosmeticId, 'tankan_tunic', 'NPC wardrobe stores/render-resolves the authored cosmetic id');
 assert.equal(wardrobeStored[0].__loomPlayerCosmeticId, woven.cosmeticId, 'NPC storage preserves the unique player-side id for take-back');

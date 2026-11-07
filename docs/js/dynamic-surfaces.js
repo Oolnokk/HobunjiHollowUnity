@@ -114,7 +114,9 @@
   function blockerAt(x, z, options = {}) {
     const radius = number(options.radius, 0);
     const actorHeight = number(options.actorHeight, 1.25);
+    const scope = options.scope == null ? null : String(options.scope); // Optional exact map/subsystem scope, matching sampleSupport's authoritative area filtering.
     for (const record of blockers.values()) {
+      if (scope != null && record.scope !== scope) continue; // A cliff door in one wilderness area cannot obstruct another area's balcony.
       if (!recordEnabled(record)) continue;
       const bounds = recordBounds(record);
       if (!contains(bounds, x, z, radius)) continue;

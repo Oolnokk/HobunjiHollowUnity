@@ -103,11 +103,18 @@
       ink:ruin.specialBodyColor3,
     }:undefined; // Named-lich masonry shares the original wall-ink selection.
     const ids=root.FurniturePatternSurfaces?.decorateRuin?.(accents,seed,special)||[];
+    // Broad walls of the shaft and the puzzle wings: real flat faces (js/ruin-wall-faces.js), one mesh each in a group
+    // flagged ruinFeatureWalls, engraved exactly like the older V50 rooms. Only those groups, never the plain strips or
+    // climb markings beside them.
+    const featureGroups=[];rec.scene.traverse?.(node=>{if(node.userData?.ruinFeatureWalls===true)featureGroups.push(node);});
+    const wallIds=[];
+    for(const group of featureGroups)wallIds.push(...(root.FurniturePatternSurfaces?.decorateRuin?.(group,seed,special)||[]));
     const original=ruin.localeRoot.userData||{};
-    original.ruinPatternIds=[...new Set([...(original.ruinPatternIds||[]),...ids])];
+    original.ruinPatternIds=[...new Set([...(original.ruinPatternIds||[]),...ids,...wallIds])];
     ruin.shaftConnection.patternedWallPanels=faces;
     ruin.shaftConnection.patternedPilasters=pillars;
     ruin.shaftConnection.patternIds=ids.length;
+    ruin.shaftConnection.patternedFeatureWalls=wallIds.length; // Engraving motifs placed on the shaft's and wings' broad merged stone walls.
     const tick=()=>{
       const y=Number(getPlayerY?.()); // Match the existing shaft wing rule: floors above the player's feet cannot cover the camera.
       if(!Number.isFinite(y))return;
@@ -116,6 +123,11 @@
     };
     tick(); // Hide upper-story decorations from the first displayed frame.
     const cleanup=()=>{
+      const engravings=[];for(const group of featureGroups)group.traverse?.(node=>{if(node.userData?.furniturePattern)engravings.push(node);}); // Collected first: removing while traversing would skip siblings.
+      for(const node of engravings){ // Engravings are overlay children of the shaft stone; release their own geometry and atlas textures.
+        node.parent?.remove(node);node.geometry?.dispose?.();
+        for(const mat of Array.isArray(node.material)?node.material:[node.material])if(mat){mat.map?.dispose?.();mat.dispose?.();}
+      }
       accents.parent?.remove(accents);
       const geometries=new Set([wallFace,pilaster]),materials=new Set([stone]);
       accents.traverse(node=>{

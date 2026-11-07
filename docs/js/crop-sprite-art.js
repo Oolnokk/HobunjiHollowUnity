@@ -72,6 +72,7 @@
       }
     }
 
+    window.ObjectSpriteCatalog?.applyAll?.(injectedDeps); // Covers static gathered/processed inventory items alongside the crop-specific authored art.
     lastItemSync = { ok: true, patchedDefs, patchedEntries };
     return { ...lastItemSync };
   }
@@ -130,7 +131,7 @@
     if (geometry.type !== 'BoxGeometry') return false;
     if (Math.abs(Number(params.width) - 1) > 0.0001 || Math.abs(Number(params.height) - 1) > 0.0001 || Math.abs(Number(params.depth) - 1) > 0.0001) return false;
     const color = mesh.material.color?.getHex?.(); // Used to distinguish crop placeholders from unrelated unit cubes by the authored crop palette.
-    if (!WORLD_COLOR_TO_CROP.has(color)) return false;
+    if (!WORLD_COLOR_TO_CROP.has(color) && !CROP_ART[mesh.userData?.hobunjiCropBaseKey]) return false; // A cultivar's blended tint is not in the legacy fixed-color lookup.
     const sx = Number(mesh.scale?.x); // Used with sy/sz to reject ordinary world cubes that happen to share a crop color.
     const sy = Number(mesh.scale?.y); // Used to verify game.js's crop placeholder keeps a uniform growth scale.
     const sz = Number(mesh.scale?.z); // Used to verify game.js's crop placeholder keeps a uniform growth scale.
@@ -140,11 +141,11 @@
     return xFrac < 0.01 && zFrac < 0.01;
   }
 
-  function makeClusterPlant(cropKey, aspect, texture, index) {
+  function makeClusterPlant(cropKey, aspect, texture, index, pigment = null) {
     const geometry = new window.THREE.PlaneGeometry(aspect, 1); // Used to preserve the authored PNG aspect for this cluster member.
     const material = new window.THREE.MeshBasicMaterial({
       map: texture,
-      color: 0xffffff,
+      color: pigment ?? 0xffffff, // Only imported/crossbred cultivars tint the authored crop PNG; natives remain unchanged.
       transparent: true,
       alphaTest: 0.04,
       side: window.THREE.DoubleSide,
@@ -180,7 +181,7 @@
     mesh.userData.hobunjiCropClusterCount = CLUSTER_OFFSETS.length;
 
     for (let index = 0; index < CLUSTER_OFFSETS.length; index++) {
-      mesh.add(makeClusterPlant(cropKey, aspect, texture, index));
+      mesh.add(makeClusterPlant(cropKey, aspect, texture, index, mesh.userData.hobunjiCropVarietyColor));
     }
     activeBillboards.add(mesh);
   }
@@ -239,7 +240,7 @@
       inspected++;
       if (!isUnitCropCube(object)) return;
       const color = object.material.color.getHex(); // Used to map game.js's exact current growth/ripe palette back to a crop key.
-      const cropKey = WORLD_COLOR_TO_CROP.get(color);
+      const cropKey = object.userData?.hobunjiCropBaseKey || WORLD_COLOR_TO_CROP.get(color); // Regional garlink/ongyums keep their three-plant PNGs.
       if (!cropKey) return;
       object.userData.hobunjiCropRootKey = cropKey; // Used by crop-billboard-presentation to remove water-surface lift from every generic farm crop, even ones that stay cubes.
       if (CROP_ART[cropKey]?.worldMode === 'billboard') queueBillboard(object, cropKey);
@@ -267,7 +268,7 @@
       anchor.material?.color?.setHex?.(0xffffff);
       anchor.quaternion?.identity?.();
       for (const plant of anchor.children || []) {
-        plant.material?.color?.setHex?.(0xffffff);
+        plant.material?.color?.setHex?.(anchor.userData.hobunjiCropVarietyColor ?? 0xffffff); // Never erase a cultivar's inherited tint during render.
         if (camera?.quaternion && plant.userData?.hobunjiCropClusterMember) plant.quaternion.copy(camera.quaternion);
       }
     }

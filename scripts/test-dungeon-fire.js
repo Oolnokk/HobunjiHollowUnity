@@ -265,7 +265,7 @@ async function main() {
     'Tothal ice covers actual generated, transit, modular and explicitly eligible doors instead of visible doorway sheets');
   assert(/dev-random-ruin-dungeon-fire\.js\?v=[A-Za-z0-9_-]+/.test(fs.readFileSync(path.join(root,'docs/js/dev-random-ruin-bootstrap.js'),'utf8')),
     'the dungeon-fire mechanism loader has a cache-busting token');
-  assert(mechanismCode.includes("registerComposer({id:'dungeonFire',buildRooms,update,controls,snapshot,clear})"),
+  assert.match(mechanismCode,/registerComposer\(\{id:'dungeonFire',buildRooms,.*\bupdate,controls,snapshot,clear\}\)/,
     'Dungeon Fire is registered with the generated Harlyao ruin composer');
   assert(mechanismCode.includes('registerFireTarget(record,brazier=>') &&
     mechanismCode.includes('brazier.cleansed=window.DevRandomRuinLichThemes?.clearPlasmRadius?.(point.x,point.z,brazier.radius)||0;') &&
@@ -302,8 +302,8 @@ async function main() {
     'the regular ranged frame must animate the already-armed held weapon before firing');
   const heldOverlayCode = fs.readFileSync(path.join(root, 'docs/js/held-object-render-order.js'), 'utf8'); // Confirms every world-up particle stays inside the shared weapon x-ray replay.
   assert(heldOverlayCode.includes('hobunjiDungeonFireVfxPadding') &&
-    fs.readFileSync(path.join(root, 'docs/js/tool-icon-render.js'), 'utf8').includes('20261103dungeonplumepadding2'),
-    'the authored flame padding is supported and its dynamic loader cache token updated');
+    /held-object-render-order\.js\?v=[A-Za-z0-9_-]+/.test(fs.readFileSync(path.join(root, 'docs/js/tool-icon-render.js'), 'utf8')), // Any token: scripts/check-cache-busts.js moves it whenever the module changes, so pinning one value breaks on every later edit.
+    'the authored flame padding is supported and the dynamic loader still carries a cache token');
   assert(rangedCode.includes('const dungeonFire = window.DungeonFire?.consumeNextProjectile?.() === true;') &&
     rangedCode.includes('shotOptions?.dungeonFire === true && i > 0'),
     'only one player projectile in a volley consumes the one-shot fire charge');

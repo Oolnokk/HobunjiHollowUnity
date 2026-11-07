@@ -576,7 +576,7 @@
     #menuBtn.open  { background: var(--accent-dim); border-color: rgba(249,226,138,0.5); }
 
     /* ── Farm editor toggle button ───────────────────────── */
-    #farmEditBtn, #mapEditBtn {
+    #farmEditBtn, #mapEditBtn, #devRuinLabBtn {
       position: fixed;
       left: calc(var(--play-right) - 10 * var(--col)); top: calc(var(--oy) + 2 * var(--row));
       width: calc(4 * var(--col)); height: calc(2 * var(--row));
@@ -591,8 +591,17 @@
       box-shadow: 0 4px 16px rgba(0,0,0,0.35);
       transition: background 0.15s; cursor: pointer;
     }
-    #farmEditBtn:hover, #mapEditBtn:hover { background: rgba(255,255,255,0.12); }
-    #farmEditBtn.fed-open, #mapEditBtn.fed-open { background: rgba(100,220,130,0.22); border-color: rgba(100,220,130,0.5); }
+    #farmEditBtn:hover, #mapEditBtn:hover, #devRuinLabBtn:hover { background: rgba(255,255,255,0.12); }
+    #farmEditBtn.fed-open, #mapEditBtn.fed-open, #devRuinLabBtn[aria-expanded="true"] { background: rgba(100,220,130,0.22); border-color: rgba(100,220,130,0.5); }
+    /* Leave both editor slots clear, including the shifted Furniture Placer. */
+    #devRuinLabBtn {
+      left: calc(var(--play-right) - 20 * var(--col));
+      min-width: 44px;
+      min-height: 44px;
+      pointer-events: auto;
+      touch-action: manipulation;
+    }
+    #devRuinLabBtn[hidden], #devRuinLabPanel[hidden] { display: none; }
 
     /* ── Dev spawn menu toggle button (same slot as #farmEditBtn) ────── */
     #devSpawnBtn {
@@ -647,7 +656,7 @@
 
 
     /* ── Farm editor panel ───────────────────────────────── */
-    #farmEditorPanel, #mapEditPanel, #devSpawnPanel, #furniturePlacerPanel, #farmworkPanel {
+    #farmEditorPanel, #mapEditPanel, #devSpawnPanel, #furniturePlacerPanel, #farmworkPanel, #devRuinLabPanel {
       position: fixed;
       right: 2px;
       top: calc(var(--oy) + 4 * var(--row));
@@ -663,6 +672,20 @@
       backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
       overflow: hidden;
     }
+    #devRuinLabPanel {
+      top: max(calc(var(--oy) + 4 * var(--row)), calc(var(--oy) + 2 * var(--row) + 44px));
+      width: min(340px, 92vw);
+    }
+    #devRuinLabPanel select {
+      width: 100%; min-height: 44px; padding: 6px 8px;
+      color: var(--text); background: var(--glass-2);
+      border: 1px solid var(--border-bright); border-radius: 8px; font: inherit;
+    }
+    #devRuinLabPanel .fed-action-btn, #devRuinLabClose { min-height: 44px; }
+    .dev-ruin-lab-summary { padding: 8px; border: 1px solid var(--border); border-radius: 8px; }
+    #devRuinLabHint { margin: 0 0 4px; line-height: 1.4; }
+    #devRuinLabFeedback[data-phase="error"] { color: #ffc1ae; }
+    #devRuinLabFeedback[data-phase="solved"] { color: #9de9b8; }
     /* Farmwork uses the same readable modal shell and controller highlight as Furniture Placement. */
     #farmworkPanel { color: var(--text); width: clamp(275px, 30vw, 360px); z-index: 60; }
     #farmworkContents { display: block; }
@@ -1153,8 +1176,22 @@
     }
     button.abt#dodgeBtn:active { transform: translate(50%, 50%) scale(0.92); }
     #dodgeBtn .abt-icon { font-size: 1.3em; }
+    /* Jump / Climb: second button on the innermost ring, above Dodge. */
+    #jumpBtn {
+      position: absolute;
+      right:  calc(-1*cos(105deg)*var(--ar0));
+      bottom: calc(   sin(105deg)*var(--ar0));
+      transform: translate(50%, 50%);
+      width: clamp(46px, calc(1.05 * var(--col)), 62px); height: clamp(46px, calc(1.05 * var(--col)), 62px);
+      color: var(--jump-input-color, #6EE7B7);
+      border-color: color-mix(in srgb, var(--jump-input-color, #6EE7B7) 58%, transparent);
+      background: color-mix(in srgb, var(--jump-input-color, #6EE7B7) 12%, transparent);
+      display: flex;
+    }
+    button.abt#jumpBtn:active { transform: translate(50%, 50%) scale(0.92); }
+    #jumpBtn .abt-icon { font-size: 1.3em; }
     @media (pointer: fine) {
-      #dodgeBtn { display: none !important; }
+      #dodgeBtn, #jumpBtn { display: none !important; }
     }
     /* ── Arc Container: grid x:24 y:10 w:8 h:8 (32×18).
        Sized to exactly match the layout-spec bounding box.
