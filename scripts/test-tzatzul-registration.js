@@ -31,4 +31,8 @@ assert(Math.abs(db['tzatzul-hatchling'].modelWidth * db['tzatzul-hatchling'].spr
 assert.equal(typeof calls.tzatzulPeck.update, 'function');
 assert.match(html, /tzatzul-registration\.js\?v=/);
 assert.match(fs.readFileSync('docs/js/wildlife-spawn.js','utf8'), /TzatzulRegistration\?\.register/);
+assert.match(source, /SPRITES\.eyes, SPRITES\.blink\]\.map\(image\)/, 'the custom rig loads existing full-canvas eye and blink sprites');
+assert.match(rigSource, /flyingAnimalEyeOverlay/, 'eye overlays are independent of the maternal body tint');
+assert.match(rigSource, /eyePerched = .*perched\.geometry/, 'perched eyes inherit the authored shoulder spline');
+assert.match(rigSource, /blinkShut \? eyeShutTexture : eyeOpenTexture/, 'blink swaps the overlay without replacing the bird body');
 console.log('Tzatzul author export, registry, unique identities, inherited hatchling color and peck registration PASS.');

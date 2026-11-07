@@ -194,6 +194,7 @@
     const bird = record.bird;
     if (bird?._tzFlight?.captive === prey) bird._tzFlight.captive = null;
     if (bird) bird.tzatzulCarrying = false;
+    window.TzatzulLiveVisuals?.restoreCaptive?.(prey); // Revert the talon-payload rotation before ground/prone animation owns this actor again.
     window.PerchSupport?.forget?.(prey); // Restore native ground movement, never leave a dangling synthetic branch.
     prey.onBranch = null; prey.branchT = 0; prey.branchSurfaceY = 0;
     prey.tzatzulCapturedBy = null;
@@ -275,6 +276,7 @@
       || bird._tzFlight.captive || !bird.onPerch) return false;
     const pickupX = n(prey.x), pickupY = n(prey.y); // Capture the original ground position BEFORE native perch attachment moves the prey.
     if (!window.PerchSupport?.attach?.(prey, bird.onPerch, bird.branchT)) return false;
+    window.TzatzulLiveVisuals?.rememberCaptive?.(prey); // Snapshot the real player/NPC/animal rotation before the first talon alignment.
     captured.set(prey, { bird, player: isPlayer, nestMapId: bird.tzatzulNestMapId,
       pickupX, pickupY, state: prey.state,
       areaId: isPlayer ? bird.areaId : prey.areaId }); // Preserve original actor identity, clothing and safe exterior return position.

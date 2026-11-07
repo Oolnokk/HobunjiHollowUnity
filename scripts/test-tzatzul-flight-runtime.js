@@ -17,6 +17,7 @@ const supports={
 const zone='map_northern_cliffs'; // The real selected cliff biome.
 const creatures=new Set(); // Shared hostiles Set from the production injection contract.
 const companions=new Set(); // The same shared companion Set available to wildlife prey selection.
+const savedOrientation=new WeakMap(); // Mock native portrait orientation recovery, called by the same flight release hooks as production.
 const player={x:128,y:128,health:100}; // Real Tzatzul prey type is the player.
 const targetFoot = a => a?.onBranch ? a.branchSurfaceY : 0; // In test the world floor is at y=0, except for explicitly perched prey.
 let hits=0; // Counts exact damage calls; a single swoop cannot hit repeatedly.
@@ -29,7 +30,11 @@ const w={PerchSupport:supports,__farmLog(){},
       box:{min:{x:x-width/2,y:floor,z:z-width/2},max:{x:x+width/2,y:floor+height,z:z+width/2}} };
   } },
   TzatzulRegistration:{identityFor:(a,i)=>({id:a+':'+i,tintHex:'#bb7777'})},
-  TzatzulLiveVisuals:{release(){}},
+  TzatzulLiveVisuals:{
+    release(){},
+    rememberCaptive(prey) { const rotation=prey.avatarRef?.group?.quaternion; if(rotation) savedOrientation.set(prey,rotation.angle); },
+    restoreCaptive(prey) { if(!savedOrientation.has(prey))return; prey.avatarRef.group.quaternion.angle=savedOrientation.get(prey); savedOrientation.delete(prey); },
+  },
   TzatzulCliffSites:{ensure:(area)=>area===zone?[
     {id:'tzatzul:roost:a', support:{id:'tzatzul:roost:a',dimension:0,x:128,y:128,worldY:6}},
     {id:'tzatzul:roost:b', support:{id:'tzatzul:roost:b',dimension:0,x:2240,y:128,worldY:7}},
@@ -99,14 +104,17 @@ assert.equal(hits,beforeElevationDodge,'elevated target cannot be hit by a body 
 player.onBranch=null;player.branchSurfaceY=0;
 player.x=originalPlayerX;player.y=originalPlayerY;
 // Capture uses the ORIGINAL live prey and its native elevated perch; no replacement corpse or cloned rig.
-const carryPrey={creatureKey:'gar-wolf',health:40,areaId:zone,x:farBird.x,y:farBird.y,state:'patrol'};
+const carryPrey={creatureKey:'gar-wolf',health:40,areaId:zone,x:farBird.x,y:farBird.y,state:'patrol',
+  avatarRef:{group:{quaternion:{angle:.41}}}}; // The grounded animal keeps the native rotation before talon-payload alignment.
 assert(w.TzatzulFlightRuntime.__test.capture(farBird,carryPrey),'live animal is captured by the swooping bird');
 assert.strictEqual(farBird._tzFlight.captive,carryPrey,'bird retains original prey object');
 assert.equal(farBird.tzatzulCarrying,true,'gripping art is selected');
 assert.equal(carryPrey.tzatzulCapturedBy,farBird._tzFlight.identity.id,'prey is marked against double targeting');
 assert(w.TzatzulFlightRuntime.__test.carryCaptive(farBird),'prey follows the native elevated flight support');
 assert.strictEqual(carryPrey.onPerch,farBird.onPerch,'same support carries prey through 3D flight');
+carryPrey.avatarRef.group.quaternion.angle=-1.5; // Simulates the head-down quaternion copied from the bird's talon payload.
 assert(w.TzatzulFlightRuntime.__test.releaseCaptive(carryPrey,'returned to roost'),'arrival safely releases surviving prey');
+assert.equal(carryPrey.avatarRef.group.quaternion.angle,.41,'release restores the pre-carry orientation instead of crawling sideways');
 assert.equal(carryPrey.state,'patrol','native animal AI state restored');
 assert.equal(carryPrey.tzatzulCapturedBy,null,'no stale capture owner');
 assert.equal(farBird.tzatzulCarrying,false,'gripping pose cleared');
