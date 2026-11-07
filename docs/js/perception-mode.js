@@ -240,9 +240,10 @@
       nests: window.DenNestSystem?.senseTargets?.(scene) || [],
       hives: window.HoneyfuzzleHives?.senseTargets?.(scene) || [],
       caveFeatures: window.CaveSiteSystem?.senseTargets?.(scene) || [],
+      shaftObeliskSwitches: window.RuinReachingObelisks?.senseTargets?.(scene) || [], // Only ascent switches, not unrelated ruin projectile targets.
     };
     lastStats.specialSources = Object.fromEntries(Object.entries(specialSources).map(([name, roots]) => [name, roots.length]));
-    for (const roots of Object.values(specialSources)) for (const root of roots) consider(root, 'interact');
+    for (const roots of Object.values(specialSources)) for (const root of roots) consider(root, 'interact'); // Shaft glyphs reuse the standard near-range green mask and do not disclose other puzzles.
     for (const crop of sources.crops || []) {
       consider(crop.root, crop.tile?.cropReady ? 'interact' : 'friendly', { crop });
     }
