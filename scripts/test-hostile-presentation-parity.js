@@ -37,8 +37,11 @@ const near = (a, b, label, eps = 1e-6) => assert.ok(Math.abs(a - b) < eps, `${la
   const bandit = read('docs/js/combat/combat-bandit.js');
   assert.match(bandit, /handsPivot\.rotation\.y = Math\.PI \/ 2;/, 'hands pivot starts in the legs-frame orientation');
   assert.match(bandit, /syncHandFrame\(\) \{ handsPivot\.rotation\.y = \(legsPivot\.rotation\.y \|\| 0\) \+ Math\.PI \/ 2; \}/, 'hand frame helper mirrors legsPivot');
-  assert.match(read('docs/game.js'), /legsPivot\\.rotation\\.y = planeDelta;[\\s\\S]{0,120}if \\(rigInView\\) c\\.avatarRef\\.syncHandFrame\\?\\.\\(\\)/,
-    'game updates the leg frame and synchronizes hands when the actor is in view');
+  const game = read('docs/game.js'); // Checks the active in-view rig synchronization without relying on a whitespace-sensitive regex.
+  assert.ok(game.includes('const rigInView = window.OffscreenRigLod.shouldAnimate('),
+    'visibility-based procedural rig throttling remains wired');
+  assert.ok(game.includes('if (c.avatarRef.legsPivot) { c.avatarRef.legsPivot.rotation.y = planeDelta; if (rigInView) c.avatarRef.syncHandFrame?.(); }'),
+    'game synchronizes hand and leg yaw for actors in view');
   const deathSource = read('docs/js/creature-death.js');
   assert.equal((deathSource.match(/syncHandFrame\?\.\(\)/g) || []).length, 4, 'death resets keep hands in sync (begin, recover, settleAsCorpse and restoreSettledPose)');
   const restoreBody = deathSource.slice(deathSource.indexOf('function restoreSettledPose'), deathSource.indexOf('window.CreatureDeath = {'));
