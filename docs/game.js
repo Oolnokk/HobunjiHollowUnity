@@ -26212,6 +26212,15 @@
         wildlifeDistanceInput.addEventListener('change', () => {
           window.WildlifeVisualLod.setWakeRadius(wildlifeDistanceInput.value);
           wildlifeDistanceInput.value = window.WildlifeVisualLod.wakeRadius();
+          if (wildlifeCombatDistanceInput) wildlifeCombatDistanceInput.value = window.WildlifeVisualLod.combatReleaseRadius(); // The fighting radius is floored by the calm radii.
+        });
+      }
+      const wildlifeCombatDistanceInput = document.getElementById('settingWildlifeCombatDistance'); // Separate distance at which fighting animals return to data.
+      if (wildlifeCombatDistanceInput) {
+        wildlifeCombatDistanceInput.value = window.WildlifeVisualLod.combatReleaseRadius();
+        wildlifeCombatDistanceInput.addEventListener('change', () => {
+          window.WildlifeVisualLod.setCombatReleaseRadius(wildlifeCombatDistanceInput.value);
+          wildlifeCombatDistanceInput.value = window.WildlifeVisualLod.combatReleaseRadius();
         });
       }
 

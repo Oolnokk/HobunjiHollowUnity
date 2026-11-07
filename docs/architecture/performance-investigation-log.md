@@ -185,7 +185,7 @@ Ranked roughly by how much the numbers say they matter. None of these were the "
    The remaining holders are small and bounded; see "Heap growth across zone visits" before touching it.
 7. **The corpse swap keeps the newest 6 per area and any within 5 tiles of the player** (`keepFull`, `nearTiles`,
    `minSettledS` in `SCRATCHBONES_CONFIG.game.banditCorpseRetire`). Defaults were picked from arena tests; a tribe camp
-   of 15 leaves up to 6 full rigs behind. Tune with measurements.
+   of 15 leaves up to 6 full rigs behind. Tune with measurements. A distance rule (`farTiles`, default 24 game tiles = the Porakaneki release radius) now also swaps settled bodies far from the player regardless of that cap: a wilderness AI snapshot showed barbarian corpses at 27–31 tiles still fully rigged and visible while their living camp-mates were already data. Tradeoff: walking away from a fresh pile turns it into flat markers; coming back does not restore the bodies (still lootable). Not yet measured in-game.
 8. **UI-side suspects from a user-run browser trace**, not reproduced or measured here: the potion-select icon being
    toggled by two scripts, and `inventory-gear-compact-effects.js` `refreshPresentation` (1.56 s of style recalculation
    in one trace; it reads `getBoundingClientRect` from a `requestAnimationFrame` callback, which I did confirm).
