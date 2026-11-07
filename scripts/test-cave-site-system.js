@@ -199,7 +199,7 @@ for(const map of puzzleCaves){
   const treasure=map.cavePuzzleTreasure; // The earned loot has a tangible authored chest even when it is initially concealed.
   assert(treasure&&floorKeys.has(treasure.col+','+treasure.row),'puzzle chest is on an actual carved floor tile');
   const gateZ=puzzle.room.row+9-2.8; // Same chamber gate depth used by the live puzzle compositor.
-  assert(treasure.row+.5-gateZ>1.05,'the treasure is beyond the player's front-of-door interaction reach');
+  assert(treasure.row+.5-gateZ>1.05,"the treasure is beyond the player\'s front-of-door interaction reach");
   assert(treasure.row+.5-gateZ<2,'the opened passage leads to a nearby, walkable reward alcove');
   assert(map.caveProps.some(prop=>prop.id===treasure.id&&prop.key==='ruinDungeonChestT2'),
     'both puzzle types build the ordinary authored bronze treasure chest');
