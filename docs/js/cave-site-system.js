@@ -1151,12 +1151,14 @@
     let changed = 0;
     const layout = zoneLayout(zoneId);
     for (const transition of layout?.transitions || []) {
+      if(transition?.puzzleCaveOnly)continue; // Inert cliff-door labels never become wildlife Den-Mother cave labels.
       if (!byMapId.has(transition?.targetMapId)) continue;
       const label = window.WildlifeSpawn?.denTurnoverStateForCavern?.(transition.targetMapId)?.name || 'Unexplored cave'; // Exterior labels reveal the name only after entry.
       if (transition.label !== label) { transition.label = label; changed++; }
     }
     const info = wildlifeDeps?.zoneScenes?.get?.(zoneId);
     for (const transition of info?.transitions || []) {
+      if(transition?.puzzleCaveOnly)continue; // Preserve dedicated stone-door labels in the live scene.
       if (!byMapId.has(transition?.targetMapId)) continue;
       const label = window.WildlifeSpawn?.denTurnoverStateForCavern?.(transition.targetMapId)?.name || 'Unexplored cave'; // Exterior labels reveal the name only after entry.
       if (transition.label !== label) { transition.label = label; changed++; }
@@ -1205,6 +1207,12 @@
     ensureStateLoaded();
     const profile = sitesByMapId.get(mapId); // Old signature's discovery/loot state must not follow the relocated cave slot.
     if (profile) runtimeStateBySignature.delete(profile.signature);
+    const child = rockPuzzleSitesByParent.get(mapId); // A relocated parent may not leave a walkable secret door behind.
+    if(child){
+      runtimeStateBySignature.delete(child.signature);
+      sitesByMapId.delete(child.mapId);
+      rockPuzzleSitesByParent.delete(mapId);
+    }
     for (const record of bodiesByMapId.get(mapId) || []) {
       const resident = wildlifeDeps?.hostileObjects?.has?.(record.entity) || devSpawnerDeps?.corpseObjects?.has?.(record.entity); // Wildlife renewal may already have removed this entity through the shared despawn owner.
       wildlifeDeps?.hostileObjects?.delete?.(record.entity);
@@ -1665,6 +1673,8 @@
     const zones = zoneId ? [String(zoneId)] : [...sitesByZone.keys()]; // Requested/all registered zones included in the mobile-readable diagnostic snapshot.
     const sites = zones.flatMap(id => sitesForZone(id));
     const currentArea = String(wildlifeDeps?.getCurrentArea?.() || '');
+    const cliffSites = zones.flatMap(id => outdoorPuzzleSitesByZone.get(id) || []); // Debug only the selected zone(s), not stale entrances from other regions.
+    const rockSites = [...rockPuzzleSitesByParent.values()].filter(site => zones.includes(site.zoneId)); // Count hidden doors separately from ordinary caves.
     return {
       ready: integrationsInstalled,
       currentArea,
@@ -1673,9 +1683,9 @@
       cliffEntrances: window.PuzzleCaveEntrances?.debugSnapshot?.() || null, // Mobile-accessible outside score, raised support and gate lock state. // Mobile-safe inspection of active fire without devtools.
       zoneCount: zones.length,
       caveCount: sites.length, // Ordinary caves only.
-      puzzleCaveCount: [...outdoorPuzzleSitesByZone.values()].flat().length + rockPuzzleSitesByParent.size, // Separate from the ordinary cave count.
-      outdoorPuzzleCaveCount:[...outdoorPuzzleSitesByZone.values()].flat().length,
-      rockPuzzleCaveCount:rockPuzzleSitesByParent.size,
+      puzzleCaveCount: cliffSites.length + rockSites.length, // Separate from the ordinary cave count.
+      outdoorPuzzleCaveCount:cliffSites.length,
+      rockPuzzleCaveCount:rockSites.length,
       caves: sites.map(site => ({ mapId: site.mapId, zoneId: site.zoneId, denId: site.denId, contents: site.contents, inhabitant: site.inhabitant, label: site.discoveredLabel })),
       currentPlan: plansByMapId.has(currentArea) ? clone({
         profile: plansByMapId.get(currentArea).profile,
