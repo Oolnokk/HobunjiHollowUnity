@@ -28,7 +28,7 @@ assert.match(parts.join(''),/Image timed out after 15 seconds/,'Missing images m
 assert.match(parts.join(''),/Timed out after 12 seconds/,'Repository JSON fetches must be bounded');
 
 // The canonical cloud mask patch was retired; the rig loader must not invoke its missing function.
-assert.doesNotMatch(parts[5],/installCanonicalCloudMaskScale\\s*\\(/,
+assert.doesNotMatch(parts[5],/installCanonicalCloudMaskScale\s*\(/,
   'The runtime rig must not call a removed mask patch function');
 assert.doesNotMatch(parts[5],/::mask:/,
   'Preview-only cloud-mask sliders must not create redundant canonical portrait cache entries');
@@ -45,7 +45,7 @@ const slider=input('1','0.5','1.75'),number=input('1','0.5','1.75');
 let saves=0,renders=0;
 const fields=new Function('currentTransform','saveState','syncTransformControls','render',
   extractEditorFunction(parts[9],'function setTransformField(', 'function resetMaskTransform(')+
-  '\\nreturn {setTransformField,wireTransformPair};')(
+  '\nreturn {setTransformField,wireTransformPair};')(
     ()=>fit,()=>{saves++},
     ()=>{slider.value=String(fit.scaleX);number.value=String(fit.scaleX);},
     ()=>{renders++}
@@ -69,7 +69,7 @@ const state={baseTransforms:{[key]:{scaleX:0,scaleY:.835,translateX:-3.5,transla
 const runtime={logs:[]};
 const ensure=new Function('A','R','SOURCE_GRID','targetKey','defaultTransform','zeroOffsets',
   extractEditorFunction(parts[2],'function ensureTargetData(', 'function currentTransform()')+
-  '\\nreturn ensureTargetData;')(
+  '\nreturn ensureTargetData;')(
     state,runtime,offsets,()=>key,
     ()=>({scaleX:1,scaleY:1,translateX:0,translateY:0}),()=>offsets.map(()=>({x:0,y:0}))
   );
