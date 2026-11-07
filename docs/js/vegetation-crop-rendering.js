@@ -492,6 +492,21 @@
     return null;
   }
 
+  function _tintVarietyFoliage(group, color) {
+    if (color == null) return; // Native crops retain shared foliage materials.
+    const tint = new THREE.Color(color); // The inherited seed color is a target for leaves and grain heads.
+    group.traverse(child => {
+      if (!child.isMesh || !child.material) return;
+      const recolor = material => {
+        if (!material?.clone || !material.color) return material;
+        const copy = material.clone(); // Never mutate shared materials belonging to ordinary crops.
+        copy.color.lerp(tint, .46); // Keep anatomical contrast while showing the cultivar pigment.
+        return copy;
+      };
+      child.material = Array.isArray(child.material) ? child.material.map(recolor) : recolor(child.material);
+    });
+  }
+
   function updateCropMeshes() {
     _ensureCropList();
     const grid = deps.getGrid();
@@ -509,11 +524,13 @@
         continue;
       }
 
-        const data   = deps.cropData[tile.crop];
+        const data   = deps.cropData[tile.crop] || (window.CropVarieties?.ensure?.(tile.crop) && deps.cropData[tile.crop]);
+        if (!data) continue;
         const growth = Math.min(tile.cropAge / data.growDays, 1.0);
         const surfY  = deps.tileSurfaceY(tile.type) + tile.water * deps.WATER_UNIT;
 
-        if (FOLIAGE_CROPS.has(tile.crop)) {
+        const family = data.baseCrop || tile.crop; // Varied needlegrain/heftroot keep their species' detailed procedural foliage.
+        if (FOLIAGE_CROPS.has(family)) {
           // ── Procedural foliage mesh ──────────────────────────────
           const bucket = _growthBucket(growth);
           if (cropMeshes[i] && cropGrowthBucket[i] !== bucket) {
@@ -522,8 +539,9 @@
             cropMeshes[i] = null;
           }
           if (!cropMeshes[i]) {
-            const group = _buildFoliageMesh(tile.crop, growth, col, row);
+            const group = _buildFoliageMesh(family, growth, col, row);
             if (group) {
+              _tintVarietyFoliage(group, data.varietyColor); // Only cultivar clones receive the inherited tint.
               deps.scene.add(group);
               deps.markOutline(group);
               cropMeshes[i]       = group;
@@ -544,7 +562,8 @@
 
         } else {
           // ── Simple colored cube (all other crops) ────────────────
-          const colors = CROP_COLORS[tile.crop] || CROP_COLORS.garlink;
+          const variety = data.varietyColor; // Genetic ripe color is used by the existing simple crop-mesh path.
+          const colors = variety == null ? (CROP_COLORS[tile.crop] || CROP_COLORS.garlink) : { body: variety, ripe: variety, sprout: 0x6c9751 };
           const size   = CROP_MIN_SCALE + (CROP_MAX_SCALE - CROP_MIN_SCALE) * growth;
           const color  = tile.cropReady ? colors.ripe
                        : growth < 0.15  ? colors.sprout
@@ -554,6 +573,9 @@
             const geo  = new THREE.BoxGeometry(1, 1, 1);
             const mat  = new THREE.MeshLambertMaterial({ color });
             const mesh = new THREE.Mesh(geo, mat);
+            mesh.userData.hobunjiCropBaseKey = family; // Authored PNG bridge still identifies imported garlink/ongyums without guessing their new color.
+            mesh.userData.hobunjiCropRootKey = family; // Soil anchoring applies to imported crops just as it does to native ones.
+            mesh.userData.hobunjiCropVarietyColor = variety ?? null; // Preserves the precise hybrid pigment on the billboard children.
             mesh.castShadow = true;
             deps.scene.add(mesh);
             mesh.layers.enable(1);
@@ -788,14 +810,21 @@
   function buildStandaloneCropMesh(crop, growth, ready, col, row) {
     const g = Math.max(0, Math.min(1, growth));
     const size = CROP_MIN_SCALE + (CROP_MAX_SCALE - CROP_MIN_SCALE) * g;
-    if (FOLIAGE_CROPS.has(crop)) {
-      const group = _buildFoliageMesh(crop, g, col, row);
+    const variety = window.CropVarieties?.ensure?.(crop); // Saved NPC crops use the same genotype/color as the farm.
+    const family = variety?.family || crop;
+    if (FOLIAGE_CROPS.has(family)) {
+      const group = _buildFoliageMesh(family, g, col, row);
       if (!group) return null;
+      _tintVarietyFoliage(group, variety?.color);
       group.scale.setScalar(size);
       return { mesh: group, lift: 0.01 };
     }
-    const colors = CROP_COLORS[crop] || CROP_COLORS.garlink;
+    const pigment = variety?.color; // Reuse the resolved genotype; redeclaring "variety" here broke the whole renderer.
+    const colors = pigment == null ? (CROP_COLORS[crop] || CROP_COLORS.garlink) : { body: pigment, ripe: pigment, sprout: 0x6c9751 };
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshLambertMaterial({ color: ready ? colors.ripe : g < 0.15 ? colors.sprout : colors.body }));
+    mesh.userData.hobunjiCropBaseKey = family; // Saved NPC plots use the same authored crop-art bridge.
+    mesh.userData.hobunjiCropRootKey = family;
+    mesh.userData.hobunjiCropVarietyColor = pigment ?? null;
     mesh.scale.setScalar(size);
     return { mesh, lift: size / 2 + 0.02 };
   }

@@ -156,6 +156,7 @@
       cookingBaseBoost: Math.max(1, Number(input.cookingBaseBoost) || 1),
       cookingProcessingTier: tier,
       cookingDefaultStars: Math.max(1, Math.min(5, Number(input.cookingDefaultStars) || 3)),
+      ...(input.foodEffects ? { foodEffects: { ...input.foodEffects } } : {}), // Hybrid ingredient traits persist through grinding, mashing and preserving.
     };
   }
 
@@ -258,6 +259,22 @@
   function getProcessingOutputs(methodId, inputKey) {
     const input = deps.ITEM_DEFS[inputKey];
     if (!input) return null;
+    const cultivar = window.CropVarieties?.ensure?.(inputKey); // Only harvested variety keys resolve; seeds remain ineligible.
+    if (cultivar) {
+      const baseOutput = getProcessingOutput(methodId, cultivar.family); // Existing species recipes stay the one authoritative recipe list.
+      if (baseOutput) {
+        if (methodId === 'composting' || methodId === 'grindingFeed') return [baseOutput]; // Fodder and fertilizer are generic, not genetic.
+        const suffix = baseOutput.key.startsWith(cultivar.family) ? baseOutput.key.slice(cultivar.family.length) : null;
+        if (suffix) {
+          return [{
+            ...baseOutput, key: inputKey + suffix,
+            label: baseOutput.label.replace(deps.ITEM_DEFS[cultivar.family]?.label || cultivar.family, input.label),
+            ingredientKeys: [inputKey], giftIngredientKeys: [inputKey], spriteColor: cultivar.color,
+            ...cookingFromSource(input, baseOutput.cookingCategories?.length ? baseOutput.cookingCategories : input.cookingCategories || [], baseOutput.cookingProcessingTier || 'quick', 'cooking'),
+          }]; // Distinct processed keys retain the inherited food-effect pair and never collapse into ordinary flour/jam.
+        }
+      }
+    }
     const dewColorMatch = DEW_COLOR_KEYS.find(color => dewItemKey(color) === inputKey);
     if (methodId === 'squeezing' && dewColorMatch) {
       const color = dewColorMatch;
@@ -365,6 +382,7 @@
       ...(output.cookingBaseBoost ? { cookingBaseBoost: output.cookingBaseBoost } : {}),
       ...(output.cookingProcessingTier ? { cookingProcessingTier: output.cookingProcessingTier } : {}),
       ...(output.cookingDefaultStars ? { cookingDefaultStars: output.cookingDefaultStars } : {}),
+      ...(output.foodEffects ? { foodEffects: { ...output.foodEffects } } : {}), // Preserve both inherited buffs in the registered processed item.
     }; // Used to make dynamically generated fats valid hearth ingredients immediately.
     if (deps.ITEM_DEFS[output.key]) {
       if (output.ingredientKeys?.length) deps.ITEM_DEFS[output.key].ingredientKeys = [...output.ingredientKeys];
