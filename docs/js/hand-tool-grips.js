@@ -15,6 +15,7 @@
   const DEFAULT_HEIGHT_MULTIPLIER = 0.5; // Half of the calculated-height difference reaches weapon size unless a shape authors otherwise.
   const HEIGHT_MULTIPLIER_PRESET = 'height-multiplier-0.5-v1'; // One-time migration of drafts saved when every shape defaulted to 1.
   const FLUTE_GRIP_PRESET = 'flute-playing-grips-20261106-v1'; // One-time migration for stored grip drafts to this user-authored flute calibration only.
+  const AUTHORED_HAND_ROTATIONS_PRESET = 'instrument-hand-rotations-20261107-v1'; // Migrates only the three rotations newly calibrated in the exported grip profile; positions, spans, scales, and axes stay authored.
   const SECONDARY_GRIP_PRESET = 'animation-span-v1'; // Migrates old always-on secondary points into animation-gated Z spans.
   const MANUAL_MELEE_SPAN_PRESET = 'manual-handle-spans-20261004-v1'; // Updates the six inspected handle ranges in older saved drafts once.
   const MANUAL_MELEE_SPAN_TOOLS = new Set(['plainssword', 'bshuakauitl', 'fishingspear', 'pickshovel', 'hoe', 'hatchet']); // Limits that migration to the manually inspected weapons.
@@ -61,6 +62,7 @@
     rangedGripPreset: RANGED_GRIP_PRESET,
     heightMultiplierPreset: HEIGHT_MULTIPLIER_PRESET,
     fluteGripPreset: FLUTE_GRIP_PRESET, // Older local grip drafts adopt the supplied flute grip without changing other weapons.
+    authoredHandRotationsPreset: AUTHORED_HAND_ROTATIONS_PRESET, // Already-authored rotations are not overwritten on later loads.
     tools: {
       hatchet: {
         primaryGrip: { position: { x: -0.04, y: -0.04, z: -0.0106 }, rotationDeg: { pitch: 90, yaw: -90, roll: 0 } },
@@ -100,7 +102,7 @@
         gripMode: null,
         primaryGripSpan: { enabled: true, startZ: 0.0394, endZ: 0.1594 }, // Main-hand range translated around the measured tan-section center.
         secondaryGripSpan: { enabled: true, startZ: -0.1606, endZ: -0.0406 }, // Offhand range stays opposite the main range around the fixed 1H grip.
-        rangedPrimaryGrip: { position: { x: -0.04, y: -0.04, z: -0.0006 }, rotationDeg: { pitch: 90, yaw: -90, roll: 0 } },
+        rangedPrimaryGrip: { position: { x: -0.04, y: -0.04, z: -0.0006 }, rotationDeg: { pitch: -90, yaw: 90, roll: 0 } }, // Rotation-only calibration from the authored grip export; mouthpiece position unchanged.
         rangedSecondaryGripSpan: { enabled: false, startZ: 0, endZ: 0 },
         rangedGripMode: null,
       },
@@ -213,11 +215,13 @@
         customGripAxis: { enabled: false, start: { x: 0, y: 0, z: 0 }, end: { x: 0, y: 0, z: 0.5 } }, // Artist places nut and bridge; no guessed Kurraya measurements are activated by default.
         primaryGripSpan: { enabled: false, startZ: 0, endZ: 0.5 },
         secondaryGripSpan: { enabled: false, startZ: 0, endZ: 0.5 },
+        primaryGrip: { position: { x: 0, y: 0, z: 0 }, rotationDeg: { pitch: -135, yaw: 3, roll: 0 } }, // Only Kurraya's hand rotation is newly authored; no exported position or axis is imported.
+        rangedPrimaryGrip: { position: { x: 0, y: 0, z: 0 }, rotationDeg: { pitch: 90, yaw: -90, roll: 0 } }, // Preserve the export's separate ranged rotation without taking its ranged hand position.
       },
       flute: {
         toolScale: 0.6, // Base flute size, independent of the animation's neutral pose scale.
         heightMultiplier: 0.5,
-        primaryGrip: { position: { x: 0, y: 0, z: 0 }, rotationDeg: { pitch: 0, yaw: 0, roll: 0 } },
+        primaryGrip: { position: { x: 0, y: 0, z: 0 }, rotationDeg: { pitch: 90, yaw: -90, roll: 0 } }, // Rotation from user's export; preserve the existing flute grip position.
         secondaryGripSpan: { enabled: false, startZ: 0, endZ: 0 },
         primaryGripSpan: { enabled: false, startZ: 0, endZ: 0 },
         gripMode: null,
@@ -420,6 +424,7 @@
     const resetLongHaftGrips = next.longHaftGripPreset !== LONG_HAFT_GRIP_PRESET; // Older drafts adopt the measured long-haft 1H centers and paired ranges once.
     const resetHeightMultipliers = next.heightMultiplierPreset !== HEIGHT_MULTIPLIER_PRESET; // Drafts from the all-1.0 default era adopt the 0.5 default once.
     const resetFluteGrip = next.fluteGripPreset !== FLUTE_GRIP_PRESET; // Previously saved flute grips adopt these exported coordinates only once.
+    const resetAuthoredHandRotations = next.authoredHandRotationsPreset !== AUTHORED_HAND_ROTATIONS_PRESET; // Prior drafts get the corrected hand rotations once, without migrating tool placement.
     next.schema = SCHEMA;
     next.secondaryGripPreset = SECONDARY_GRIP_PRESET;
     next.twoHandSpanPreset = TWO_HAND_SPAN_PRESET;
@@ -429,6 +434,7 @@
     next.rangedGripPreset = RANGED_GRIP_PRESET;
     next.heightMultiplierPreset = HEIGHT_MULTIPLIER_PRESET;
     next.fluteGripPreset = FLUTE_GRIP_PRESET;
+    next.authoredHandRotationsPreset = AUTHORED_HAND_ROTATIONS_PRESET;
     const rawTools = next.tools && typeof next.tools === 'object' ? next.tools : {}; // Saved drafts override defaults, while newly added weapon defaults still appear after upgrades.
     next.tools = { ...clone(DEFAULT_DATA.tools), ...rawTools };
     if (resetFluteGrip) next.tools.flute = clone(DEFAULT_DATA.tools.flute); // One-time targeted replacement preserves every unrelated tool, including unsaved drafts.
@@ -457,6 +463,11 @@
       // weapons therefore keep their current hand placement until an artist
       // explicitly edits the Ranged set in the Attack Animation Editor.
       entry.rangedPrimaryGrip = normalizeTransform(entry.rangedPrimaryGrip ?? entry.primaryGrip);
+      if (resetAuthoredHandRotations) {
+        // Apply only exported rotations, never X/Y/Z, 3D Nut/Bridge endpoints, span percentages, tool scales or grip mode.
+        if (toolKey === 'kurraya' || toolKey === 'flute') entry.primaryGrip.rotationDeg = { ...DEFAULT_DATA.tools[toolKey].primaryGrip.rotationDeg };
+        if (toolKey === 'bshuakauitl' || toolKey === 'kurraya') entry.rangedPrimaryGrip.rotationDeg = { ...DEFAULT_DATA.tools[toolKey].rangedPrimaryGrip.rotationDeg };
+      }
       entry.rangedSecondaryGripSpan = inferredSpan({
         secondaryGripSpan: entry.rangedSecondaryGripSpan ?? entry.secondaryGripSpan,
         primaryGrip: entry.rangedPrimaryGrip,
