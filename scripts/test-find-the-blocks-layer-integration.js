@@ -8,7 +8,7 @@ const vm=require('node:vm');
 const path=require('node:path');
 const source=fs.readFileSync(path.join(__dirname,'../docs/js/ruin-layer-challenges.js'),'utf8'); // Test the shipped challenge dispatcher, not a copied adapter.
 new vm.Script(source,{filename:'ruin-layer-challenges.js'});
-let inMap=false,stageActive=true,ready=false,created=0,disposed=0,solved=0,links=0;
+let inMap=false,stageActive=true,ready=false,created=0,disposed=0,solved=0,links=0,playerX=9; // Move across the room preloading threshold without creating an expensive faraway puzzle.
 const registered=[],released=[],controls=[],surfaces=[],blockers=[]; // Audit the scoped raised supports and elevated blocker registrations.
 let puzzleOptions=null;
 const bus={
@@ -37,7 +37,7 @@ vm.runInNewContext(source,env,{filename:'ruin-layer-challenges.js'});
 const challenge=env.RuinLayerChallenges.compose({
   THREE:{},parent:{},room:{id:'floor2-E-room1',x:0,z:0,w:18,d:18},id:'floor2-E-room1',
   kind:'findBlocks',y:16,isActive:()=>stageActive,
-  getPlayerPosition:()=>({x:9,z:9,y:16}),getPlayerY:()=>16,
+  getPlayerPosition:()=>({x:playerX,z:9,y:16}),getPlayerY:()=>16,
   addControl:control=>controls.push(control),
   removeControl:control=>controls.splice(controls.indexOf(control),1),
   onLink:()=>links++,
@@ -51,7 +51,9 @@ inMap=true;challenge.tick(.05);
 assert.equal(created,0,'Wait for the native V50 occupancy registry to initialize');
 ready=true;stageActive=false;challenge.tick(.05);
 assert.equal(created,0,'Do not mount an inactive or vertically distant puzzle');
-stageActive=true;challenge.tick(.05);
+stageActive=true;playerX=100;challenge.tick(.05);
+assert.equal(created,0,'Unvisited compound rooms do not eagerly build when the player enters a story');
+playerX=9;challenge.tick(.05);
 assert.equal(created,1);
 assert.equal(challenge.ready,true);
 assert.equal(challenge.linked,true);
