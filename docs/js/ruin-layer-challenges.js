@@ -645,14 +645,16 @@
         rec.session.step(dt,down);
         rec.inscription?.setVisible?.(down);
         if(rec.scorePanel)rec.scorePanel.visible=!!down;
-        if(down&&!rec.lastDown){rec.attempts++;root.RuinInteractionAudio?.activator?.(rec.plate);}
+        if(down&&!rec.lastDown)rec.attempts++;
+        root.RuinInteractionAudio?.watchPlate?.(rec.plate,!!down); // The stone plate clicks on press and release; the note clue only appears when occupied.
         // The plate only reveals the score; equipping/playing the instrument is the player's choice.
         rec.lastDown=!!down;
       }
       if(kind==='melodyEcho'){
         const down=!rec.solved&&isActive()&&player&&Number.isFinite(currentY)&&Math.abs(currentY-y)<.75
           &&Math.abs(player.x-cx)<.58&&Math.abs(player.z-cz)<.58;
-        if(down&&!rec.lastDown){rec.attempts++;root.RuinInteractionAudio?.activator?.(rec.plate);}
+        if(down&&!rec.lastDown)rec.attempts++;
+        root.RuinInteractionAudio?.watchPlate?.(rec.plate,!!down); // Echo plates use the same edge-triggered physical stone click as outdoor plates.
         rec.inscription?.setVisible?.(down);
         for(const glyph of rec.glyphs)glyph.visible=!!down;
         rec.lastDown=!!down;
