@@ -84,18 +84,24 @@ const handlerStart=game.indexOf('function getCliffBalconyResourceAt(col, row) {'
 const handlerEnd=game.indexOf('function getWorldObjectAt(col, row) {',handlerStart);
 assert(handlerStart>=0 && handlerEnd>handlerStart,'the actual game entry point still owns cliff rewards');
 const inventory={};
-let xp=0;
+let xp=0; // Tracks the Foraging XP calls for each pick.
+let bonusChance=0; // Simulates the Foraging extra-yield chance.
+let doubleRank=0; // Simulates Double Forageables.
+let randomDraws=0; // Verifies five separate yield rolls per cluster.
+let herbEvents=0; // Tracks per-pick activity events.
+let rolls=[0.99]; // Deterministic perk rolls for test scenarios.
 const handlerWindow={
   CliffRouteNetwork:{...routes,forArea:()=>network},
-  InventoryStacks:{MAX_TOTAL:20}, PerkSystem:{rank:()=>0},
+  InventoryStacks:{MAX_TOTAL:20}, PerkSystem:{rank:()=>doubleRank},
   AlchemySystem:globalThis.AlchemySystem,
-  SkillSystem:{bonusYieldChance:()=>0,XP_GAINS:{forage:4},award:()=>{xp++;}},
-  HobunjiActivityEvents:{emit(){}},
+  SkillSystem:{bonusYieldChance:()=>bonusChance,XP_GAINS:{forage:4},award:()=>{xp++;}},
+  HobunjiActivityEvents:{emit(type){if(type==='herb_picked')herbEvents++;}},
   AudioSystem:{playObjectSfx(){},objectSfxConfig:()=>({harvest:'pick'})},
 };
 const ctx={
   window:handlerWindow,currentArea:area,player:{onCliffBalcony:herb.id},
-  _isZoneArea:()=>true,inventory,activeTool:'pick',heldMode:'tool',rnd:()=>0.99,refreshItemScroll(){},
+  _isZoneArea:()=>true,inventory,activeTool:'pick',heldMode:'tool',
+  rnd(){return rolls[(randomDraws++)%rolls.length];},refreshItemScroll(){},
   buildInventoryGrid(){},buildPackClothingSection(){},
 };
 vm.runInNewContext(game.slice(handlerStart,handlerEnd)
@@ -105,11 +111,37 @@ assert(pick,'elevated herb receives an interactable with the existing reward pri
 assert.equal(pick.getButtons()[0].action,'obj_balcony_pick','herb picking is neither mining nor digging');
 assert.equal(pick.onAction('obj_balcony_dig').ok,false,'herbs cannot be dug into treasure chests');
 assert.equal(pick.onAction('obj_balcony_pick').ok,true,'picking harvests the real elevated reward');
-assert.equal(inventory.nativeHerb,1,'picking grants native reagents');
-assert.equal(xp,1,'picking grants ordinary foraging experience');
+assert.equal(inventory.nativeHerb,5,'one cluster is five ordinary native-reagent picks');
+assert.equal(randomDraws,5,'each pick gets its own bonus roll');
+assert.equal(xp,5,'all five picks grant normal Foraging XP');
+assert.equal(herbEvents,5,'all five picks notify the normal activity system');
 assert.equal(routes.getRewardState(area,herb.id).claimed,true,'picking persists in cliff reward state');
 assert.equal(herbs.visible,false,'picking hides the entire clustered model');
 assert.equal(ctx.getCliffResource(4,5),null,'claimed ledges do not create duplicate forage actions');
+// All five yield rolls must receive Foraging's extra-yield chance independently,
+// then Double Forageables must double each individual pick.
+routes.restoreRewards({});
+inventory.nativeHerb=0; xp=0; herbEvents=0; randomDraws=0;
+bonusChance=0.5; doubleRank=1; rolls=[0.1,0.9,0.2,0.8,0.3]; // 3 successful bonuses of 5.
+const perkPick=ctx.getCliffResource(4,5);
+assert.equal(perkPick.onAction('obj_balcony_pick').ok,true,'perked cluster harvest succeeds');
+assert.equal(inventory.nativeHerb,16,'five independent picks with three bonuses and double-yield grant (5+3)*2');
+assert.equal(randomDraws,5,'perked harvest still rolls exactly five times');
+assert.equal(xp,5,'yield perks do not replace any of the five XP grants');
+assert.equal(herbEvents,5,'perked harvest still reports five picked herbs');
+assert.equal(herbs.visible,false,'perked harvest removes its visual cluster');
+
+// Insufficient stack space must not silently throw away four of the five picks.
+routes.restoreRewards({});
+inventory.nativeHerb=handlerWindow.InventoryStacks.MAX_TOTAL-1;
+xp=0; herbEvents=0; randomDraws=0;
+const noRoom=ctx.getCliffResource(4,5).onAction('obj_balcony_pick');
+assert.equal(noRoom.ok,false,'a partly full stack cannot consume a five-pick cluster');
+assert.equal(inventory.nativeHerb,19,'failed pick grants no partial loot');
+assert.equal(routes.getRewardState(area,herb.id).claimed,false,'failed pick leaves cluster available');
+assert.equal(herbs.visible,true,'failed pick leaves the visual cluster');
+assert.equal(xp,0,'failed pick grants no XP');
+assert.equal(herbEvents,0,'failed pick emits no events');
 ctx.player.onCliffBalcony=ore.id;
 assert.equal(ctx.getCliffResource(10,5).getButtons()[0].action,'obj_balcony_mine','ore still uses a pick');
 ctx.player.onCliffBalcony=chest.id;
