@@ -183,25 +183,13 @@
       // and a progression gate; it never guesses from a normal arrow hit.
       const source=authored('ruinStandingBrazier',cx-2.3,y,cz)
         ||body('ruin-fire-source-'+id,new THREE.CylinderGeometry(.65,.8,.65,8),stone,cx-2.3,y+.37,cz);
-      const createEmitter=root.AuthoredFurniture?.createEmitterVisual;
-      if(typeof createEmitter==='function'){
-        const flameRoot=new THREE.Group(); // Particle flame stays attached to the authored brazier's bowl.
-        flameRoot.name='ruin-fire-flame-'+id;
-        flameRoot.position.set(cx-2.3,y+1.2,cz);group.add(flameRoot);
-        for(const stream of [
-          {id:'yellow',colorA:'#fff56a',colorB:'#ffdc12'},
-          {id:'red',colorA:'#ff5225',colorB:'#e91b08'},
-          {id:'orange',colorA:'#ffab3b',colorB:'#ff740c'}
-        ]){
-          const emitter=createEmitter(flameRoot,{id:'ruin_fire_'+stream.id,name:'Brazier flame',type:'fire',enabled:true,
-            position:{x:0,y:0,z:0},rotation:{x:0,y:0,z:0},radius:.12,size:.16,rate:9,
-            lifetime:.7,speed:.65,spread:.25,gravity:-.05,colorA:stream.colorA,colorB:stream.colorB},11);
-          if(emitter){emitter.update?.(1/9,true);flameVisuals.push(emitter);}
-        }
-        if(!flameVisuals.length)flameRoot.parent?.remove(flameRoot);
-      }
-      if(!flameVisuals.length)body('ruin-fire-source-flame-'+id,new THREE.ConeGeometry(.35,.8,7),
-        idle,cx-2.3,y+1.3,cz); // Only a fallback when the shared authored emitter runtime is unavailable.
+      const flameRoot=new THREE.Group(); // Reuses the player's campfire visual; no custom flame cones or alternative particle recipes.
+      flameRoot.name='ruin-fire-flame-'+id;
+      flameRoot.position.set(cx-2.3,y+1.2,cz);group.add(flameRoot);
+      const flameVisual=(options.puzzleFireVisuals||root.PersistentGroundFire)?.attachCampfireFlame?.(flameRoot,{
+        scale:.94,rateScale:.8,
+      }); // AuthoredFurniture loads campfire_fire from the exact campfire furniture JSON.
+      if(flameVisual)flameVisuals.push(flameVisual); // Shared update/dispose lifecycle below remains authoritative.
       const frozen=basic(0x9fdaed);
       const ice=body('ruin-fire-ice-seal-'+id,
         new THREE.BoxGeometry(2.3,2.1,.75),frozen,cx+2.1,y+1.18,cz);

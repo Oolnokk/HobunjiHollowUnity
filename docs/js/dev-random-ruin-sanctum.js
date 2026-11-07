@@ -141,27 +141,20 @@
     return kit.naturalizeStone(new THREE.Mesh(geometry, kit.makeBasic(color)));
   }
 
-  // Blue fire: the game's furniture fire emitter (same one the lich aura
-  // uses) plus a flickering flame sprite so it reads even with particles off.
+  // Blue braziers are the player's authored campfire particles recolored by the
+  // sanctum palette. Only the decorative glow halo remains a sprite.
   function createBlueFire(parent, scale = 1) {
-    const anchor = new THREE.Group();
+    const anchor = new THREE.Group(); // Owns the one campfire particle visual and the ambient colored halo.
     anchor.name = 'dev_ruin_blue_fire';
     anchor.visible = false;
     parent.add(anchor);
-    const flame = new THREE.Sprite(new THREE.SpriteMaterial({ map:textures().flame, color:0xffffff, transparent:true, depthWrite:false, fog:false, blending:THREE.AdditiveBlending }));
-    flame.scale.set(.34 * scale, .5 * scale, 1);
-    flame.position.y = .2 * scale;
-    flame.userData.devRuinFootprintIgnore = true;
     const halo = glowSprite(0x4fb6ff, 1.2 * scale, .5);
     halo.position.y = .2 * scale;
-    anchor.add(flame, halo);
-    const emitter = window.AuthoredFurniture?.createEmitterVisual?.(anchor, {
-      id:'dev_ruin_blue_fire', name:'Ruin Blue Fire', type:'fire', enabled:true,
-      position:{ x:0, y:.04, z:0 }, rotation:{ x:0, y:0, z:0 },
-      radius:.12 * scale, size:.12 * scale, rate:34, lifetime:.8, speed:.55 * scale, spread:.3, gravity:-.05,
-      colorA:FIRE_BRIGHT, colorB:FIRE_COLOR,
-    }, 48) || null;
-    return { anchor, flame, halo, emitter, lit:false };
+    anchor.add(halo);
+    const emitter = window.PersistentGroundFire?.attachCampfireFlame?.(anchor, {
+      scale:.87 * scale,rateScale:.9,colorA:FIRE_BRIGHT,colorB:FIRE_COLOR,
+    }) || null; // One authored campfire_fire recipe, not an independent blue-flame particle system.
+    return { anchor, halo, emitter, lit:false };
   }
 
   function igniteFire(fire) {
@@ -173,9 +166,8 @@
   function updateFire(fire, now, dt) {
     if (!fire?.lit) return;
     const flicker = .88 + .12 * Math.sin(now * .017 + fire.anchor.id) + .06 * Math.sin(now * .041);
-    fire.flame.scale.y = fire.flame.scale.x * 1.45 * flicker;
     fire.halo.material.opacity = .38 + .14 * flicker;
-    fire.emitter?.update?.(dt, true, { colorA:FIRE_BRIGHT, colorB:FIRE_COLOR });
+    fire.emitter?.update?.(dt); // Uses the saved authored campfire motion, recolored on creation.
   }
 
   // ─── Braziers on the V50 puzzle goals ──────────────────────────────────
@@ -533,13 +525,14 @@
   }
 
   function buildGreatDoor(kit, context, site, decalCount) {
-    const floorY = Number(context.meta?.floorSurfaceY) || 0;
-    s.hiddenDecor = clearDoorFootprint(context, site);
+    const floorY = Number.isFinite(Number(site.floorY))?Number(site.floorY):Number(context.meta?.floorSurfaceY)||0; // Shaft entrance uses its actual ground-story CellGrid3D datum.
+    s.hiddenDecor = site.shaft?[]:clearDoorFootprint(context, site); // Do not hide V50 displays when the door stands against shaft masonry.
     const door = buildDoorVisual(kit, kit.group(), decalCount, site.height, 'dev_ruin_great_door');
     const offset = DOOR_WALL_OFFSET;
     door.group.position.set(site.x + site.normal.x * offset, floorY, site.z + site.normal.z * offset);
     door.group.rotation.y = Math.atan2(site.normal.x, site.normal.z);
     door.site = site;
+    door.attachedToShaft=site.shaft===true; // Mobile diagnostics and return teleport use this exact shaft-side door.
     door.state = 'sealed';
     door.front = { x:site.x + site.normal.x * 1.8, z:site.z + site.normal.z * 1.8 };
     door.group.userData.interactive3D = true;
@@ -1093,8 +1086,11 @@
     }).filter(Boolean); // Every eligible generated room has one sleeping skeleton encounter.
     s.braziers = buildBraziers(kit, context);
     if (cfg('sanctum.safePathBraziers', true)) buildSafePathBraziers(kit);
-    const site = chooseDoorSite(kit, context, s.rng);
-    if (!site) { s.rejects.push('no clear wall for the Great Door'); return; }
+    const site=context.shaftHub===true
+      ? window.DevRandomRuin?.getShaftSanctumDoorSite?.()
+      : chooseDoorSite(kit, context, s.rng); // Normal ruins MUST use a verified inner shaft wall, not a random V50 room wall.
+    if (!site) { s.rejects.push(context.shaftHub?'no safe wall on the main shaft for the Great Door':'no clear wall for the Great Door'); return; }
+    if(site.shaft)s.doorSiteStats={shaft:true,side:site.side,x:site.x,z:site.z}; // In-game/mobile debug confirms where the door is actually mounted.
     s.door = buildGreatDoor(kit, context, site, s.braziers.length);
     buildSanctum(kit, context, s.braziers.length, s.rng);
     if (!s.braziers.length) tryAwakenDoor(); // A ruin without local blue goals still requires all shaft-wing braziers.
@@ -1149,7 +1145,7 @@
       return {
         built:s.built, rejects:s.rejects.slice(), doorSiteStats:s.doorSiteStats || null,
         braziers:s.braziers.map(b => ({ id:b.id, label:b.label, lit:b.lit, at:p(b.holder) })),
-        door:s.door ? { state:s.door.state, progress:+s.door.progress.toFixed(3), at:p(s.door.group), front:s.door.front, decals:s.door.decals.length } : null,
+        door:s.door ? { state:s.door.state, progress:+s.door.progress.toFixed(3), at:p(s.door.group), front:s.door.front, attachedToShaft:!!s.door.attachedToShaft, shaftSide:s.door.site?.side||null, decals:s.door.decals.length } : null,
         bgs:!!s.bgs, layout:s.layout, entry:s.entry || null, bossType:s.bossType || null,
         boss:s.boss ? { id:s.boss.id, health:s.boss.health, maxHealth:s.boss.maxHealth, x:+(s.boss.x / (deps?.TILE || 64)).toFixed(2), z:+(s.boss.y / (deps?.TILE || 64)).toFixed(2) } : null,
         bossDefeated:s.bossDefeated, specialBoss:s.isSpecialBoss, roomGuards:(s.roomCoffins||[]).map(g=>({room:g.index,spawned:g.spawned,pending:g.spawnPending,alive:Number(g.skeleton?.health)>0})), rearDoor:s.rearDoor ? { open:s.rearDoor.open, progress:+s.rearDoor.progress.toFixed(3) } : null,

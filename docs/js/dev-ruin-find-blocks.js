@@ -39,9 +39,18 @@
     let melody=null,iceLayer=null,iceMelt=0,bombTube=null,hitCount=0; // Driven by tick, never by artificial completion switches.
     const fire=root.DungeonFire,bombs=root.HronalWitchBombs;
     const alive=()=>!disposed&&isActive();
-    const mat=(color,emissive=0)=>new THREE.MeshStandardMaterial({
-      color,roughness:.82,metalness:.06,emissive,emissiveIntensity:emissive?.46:0
-    });
+    const mat=(color,emissive=0)=>{
+      const fill='#'+(Number(color)>>>0).toString(16).padStart(6,'0'); // Recolors the Furniture Editor's carved-smooth PNG for every stone block and puzzle fixture.
+      const authored=root.ProceduralFurniture?.makePartMaterial?.({
+        materialTexture:'carved_smooth.png',materialLighting:emissive?'lit':'unlit',
+        materialFillEnabled:true,materialFillColor:fill,materialFillMode:'always',color:fill,
+      }); // Keeps geometry/gameplay unchanged; the shared PNG cache owns the texture.
+      if(authored){
+        if(emissive&&authored.emissive){authored.emissive.setHex(emissive);authored.emissiveIntensity=.46;}
+        return authored;
+      }
+      return new THREE.MeshStandardMaterial({color,roughness:.82,metalness:.06,emissive,emissiveIntensity:emissive?.46:0});
+    };
     const newMesh=(name,geo,material,x,cy,z,parent=group)=>{
       const mesh=new THREE.Mesh(geo,material);
       mesh.name=name;mesh.position.set(x,cy,z);
@@ -121,13 +130,8 @@
       const net=new THREE.Group();net.name='find-blocks-burnable-net';
       net.position.set(x,ceiling-.12,z);net.userData.devRuinFootprintIgnore=true;group.add(net);
       const skin=root.DungeonRopeArt?.createNetFrustum?.(.98,.98,1.0);
-      if(skin){skin.userData.devRuinFootprintIgnore=true;net.add(skin);}
-      else{
-        const rope=mat(COLOR.rope);
-        for(const dx of [-.45,.45])for(const dz of [-.45,.45])
-          newMesh('net-cord',new THREE.CylinderGeometry(.026,.026,1.08,5),rope,dx,-.56,dz,net);
-        cube('find-blocks-net-beam',0,0,-.12,1.1,.12,.12,COLOR.rope,0,net);
-      }
+      if(!skin)throw new Error('Find the Blocks net needs the shared rope_long PNG renderer.');
+      skin.userData.devRuinFootprintIgnore=true;net.add(skin); // The same one-piece rope_long atlas as regular burden nets.
       const hit=cube('find-blocks-net-fire-hit',x,z,ceiling-1.18,.95,1.12,.95,0x8c7551);
       hit.material.transparent=true;hit.material.opacity=0;hit.material.depthWrite=false;
       registerBurn('net',hit,()=>{net.visible=false;hit.visible=false;return startFall(block);});
@@ -138,23 +142,15 @@
       const block=makeBlock('ice',x,z,ceiling-1.85);
       const iceRoot=new THREE.Group();
       iceRoot.name='find-blocks-ceiling-icicles';iceRoot.position.set(x,ceiling-.1,z);
-      iceRoot.rotation.x=Math.PI;iceRoot.userData.devRuinFootprintIgnore=true;group.add(iceRoot);
-      const builder=root.IceStalagmiteCoverage,recipe=root.DungeonDoorIceCoverage?.scaledRecipe?.(2.2,id+'-ceiling',{
+      iceRoot.userData.devRuinFootprintIgnore=true;group.add(iceRoot);
+      const recipe=root.DungeonDoorIceCoverage?.scaledRecipe?.(2.2,id+'-ceiling',{
         count:16,density:1,iceHeightMin:1.15,iceHeightMax:1.7,radius:.25,iceFootprintPadding:.08
-      });
-      if(builder?.build&&recipe){
-        const source=new THREE.Group(); // The furniture-editor ice builder receives the same invisible source geometry as its normal door treatment.
-        const proxy=new THREE.Mesh(new THREE.BoxGeometry(.96,1.65,.96),new THREE.MeshBasicMaterial());
-        proxy.userData.authoredPartId='find_blocks_ceiling_ice_source';proxy.position.y=.83;source.add(proxy);
-        try{iceLayer=builder.build(THREE,source,recipe);}
-        finally{proxy.geometry.dispose();proxy.material.dispose();}
-        if(iceLayer?.userData?.surfaceGrowthStats?.spikes){
-          iceLayer.traverse(node=>{node.userData.devRuinFootprintIgnore=true;});
-          iceRoot.add(iceLayer);
-        }else iceLayer=null;
-      }
-      if(!iceLayer)newMesh('fallback-icicle',new THREE.ConeGeometry(.55,1.65,7),mat(COLOR.ice),
-        0,.9,0,iceRoot);
+      }); // Same saved furniture-ice surface recipe as dungeon doors and hanging burdens.
+      const ice=root.IceStalagmiteCoverage?.buildCeiling?.(THREE,iceRoot,{
+        width:.96,depth:.96,height:1.65,recipe,
+      }); // Author upright around the trapped block, then invert the result at the ceiling.
+      if(!ice)throw new Error('Find the Blocks ceiling ice requires the Furniture Editor ice builder.');
+      iceLayer=ice.layer; // The existing melt animation retracts the actual authored growth mesh.
       const hit=cube('find-blocks-ice-fire-hit',x,z,ceiling-1.92,1.05,1.65,1.05,COLOR.ice);
       hit.material.transparent=true;hit.material.opacity=0;hit.material.depthWrite=false;
       registerBurn('ice',hit,()=>{

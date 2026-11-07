@@ -1660,6 +1660,24 @@
     return true;
   }
 
+  // When the player steps off a ruin ledge with directional input, use the
+  // same gravity, steering and height-aware collision as an ordinary jump.
+  // The native staged drop remains available when there is no input.
+  function beginSteerableRuinFall(x,z) {
+    const input=deps.getMovementInput?.()||{x:deps.player.inputX,y:deps.player.inputY};
+    if(Math.hypot(Number(input.x)||0,Number(input.y)||0)<=.05)return false;
+    const safe=ruin.lastSafePx; // Last collision-approved floor point before the proposed step into open air.
+    const flight=window.PlayerJump?.beginFlight?.({
+      x,y:ruin.supportY,z,vx:0,vy:0,vz:0,
+      safeX:safe?.x/deps.TILE,safeZ:safe?.y/deps.TILE,
+    },{source:'ruin ledge fall',deliberate:false});
+    if(!flight)return false;
+    ruin.falling=null; // Do not also run the original timed fall/footing penalty.
+    ruin.lastAcceptedPx={x:deps.player.x,y:deps.player.y};
+    syncRuinPresentationHeight(flight.feetY);
+    return true;
+  }
+
   function reconcilePlayer(now){
     if(window.DevRandomRuinSimplePuzzles?.ownsPlayerMotion?.())return;
     const freeJump=deps.player?._freeJump; // Ordinary jump maintains its own physical foot height until it lands.
@@ -1749,6 +1767,7 @@
       }
     }else info=positionInfo(deps.player.x,deps.player.y,ruin.levelRelativeSupport?ruin.supportY:null);
     if(grid && info.support && ruin.supportY-info.support.y>grid.cellHeight+.02){
+      if(beginSteerableRuinFall(x,z))return;
       ruin.falling={startedAt:now,x:deps.player.x,y:deps.player.y,landing:info.support};
       window.ResourceSystem?.spendFooting?.(deps.player,35,'shaft fall');
       return;
@@ -1763,6 +1782,7 @@
         if(window.PlayerDowned?.dieImmediately?.('hachutu-temple-abyss')!==true)deps.damagePlayer?.(999999);
         return;
       }
+      if(beginSteerableRuinFall(x,z))return;
       ruin.falling={startedAt:now,x:deps.player.x,y:deps.player.y,safe:{...ruin.lastSafePx}};
       window.ResourceSystem?.spendFooting?.(deps.player,35,'test ruin fall');
       return;
@@ -2050,7 +2070,8 @@
   window.DevRandomRuin=Object.freeze({getVestibuleRoots:()=>ruin?{stone:ruin.vestibuleStone||null,props:ruin.stoneAgeStats?.props||0,bindings:ruin.rootGrowthBindings?.length||0,rooted:!!ruin.rootedMechanisms,ms:ruin.vestibuleRootMs||0,error:ruin.vestibuleRootError||null}:null,generate,generateStoryVault,reroll:()=>ruin?.shaftTest?generateShaftTest():generate(randomSeed(),ruin?.singleRoomTrial?{singleRoomTrial:true,puzzleType:ruin.singleRoomTrial.mode==='weighted'?'weighted':ruin.singleRoomTrial.kind}:{hachutu:ruin?.hachutu===true,rootMechanisms:ruin?.rootedMechanisms===true,stoneAge:ruin?.stoneAgeRequested===true,composedTrial:ruin?.composedTrialForced===true?true:undefined}),clear:()=>{if(deps?.getCurrentArea?.()===MAP_ID)leaveRuin();else clearRuntime(true);},leave:leaveRuin,exitTo,getInteractionControls:()=>ruin?ruin.controls.filter(control=>control.kind!=='story-vault-pedestal'||window.DelversGuild?.vaultPhase?.()==='search').map(control=>({...control,range:Number.isFinite(Number(control.range))?Number(control.range):CONTROL_RANGE})):[],registerLabPushBlock,getNativeV50TestRuntime:()=>devModeEnabled()?ruin?.nativeV50Runtime||null:null, // Developer-mode-only diagnostic handle for Playwright to exercise the actual generated puzzle controls and stage gates; not a gameplay solver.
     setPuzzleLabStatus,
     getRuntimeContext:()=>ruin?{scene:ruin.scene,grid:ruin.grid,root:ruin.localeRoot,meta:ruin.meta,floorSet:ruin.floorSet,floorScope:SCOPE,ceilingY:ruin.ceilingY,spawn:{...ruin.spawn},cols:ruin.cols,rows:ruin.rows,sanctumMapSize:ruin.sanctumMapSize,sanctumPlan:ruin.sanctumPlan||null,
-    shaftEntrance:ruin.compactVestibule?window.RuinShaftConnector?.entranceOutside?.(ruin.meta,{x:entryPadX,z:entryPadZ},RUIN_TILE_SCALE)||null:null,seed:ruin.seed,theme:ruin.theme,specialBoss:ruin.specialBoss,ruinName:ruin.ruinName,hachutu:!!ruin.hachutu,stoneAge:!!ruin.stoneAge,stoneAgeStats:ruin.stoneAgeStats||null,shaftHub:!!ruin.shaftHub,singleRoomTrial:ruin.singleRoomTrial||null,labFurniture:ruin.labFurniture,noLoot:ruin.noLoot===true,puzzleOptions:{...ruin.puzzleOptions}}:null,getPuzzleGenerationOptions:()=>readPuzzleGenerationOptions(),setPuzzleGenerationOptions:options=>savePuzzleGenerationOptions(options),getOccupancySnapshot:()=>ruin?.occupancy?.snapshot?.()||null,getLastSolvabilityAudit:()=>lastGenerationAudit?JSON.parse(JSON.stringify(lastGenerationAudit)):null,getShaftNetworkState:()=>ruin?{...ruin.shaftLayerRuntime?.getState?.(),obelisk:ruin.shaftObeliskRuntime?.getState?.()||null,
+    shaftEntrance:ruin.compactVestibule?window.RuinShaftConnector?.entranceOutside?.(ruin.meta,{x:entryPadX,z:entryPadZ},RUIN_TILE_SCALE)||null:null,seed:ruin.seed,theme:ruin.theme,specialBoss:ruin.specialBoss,ruinName:ruin.ruinName,hachutu:!!ruin.hachutu,stoneAge:!!ruin.stoneAge,stoneAgeStats:ruin.stoneAgeStats||null,shaftHub:!!ruin.shaftHub,singleRoomTrial:ruin.singleRoomTrial||null,labFurniture:ruin.labFurniture,noLoot:ruin.noLoot===true,puzzleOptions:{...ruin.puzzleOptions}}:null,getPuzzleGenerationOptions:()=>readPuzzleGenerationOptions(),setPuzzleGenerationOptions:options=>savePuzzleGenerationOptions(options),getOccupancySnapshot:()=>ruin?.occupancy?.snapshot?.()||null,getLastSolvabilityAudit:()=>lastGenerationAudit?JSON.parse(JSON.stringify(lastGenerationAudit)):null,getShaftSanctumDoorSite:()=>ruin?.shaftSanctumDoorSite||null, // The verified inner shaft-wall threshold is the only normal Great Door entrance.
+    getShaftNetworkState:()=>ruin?{...ruin.shaftLayerRuntime?.getState?.(),obelisk:ruin.shaftObeliskRuntime?.getState?.()||null,
       airborne:ruin.obeliskFall?{height:ruin.obeliskFall.y,verticalSpeed:ruin.obeliskFall.v}:null}:null,
     getShaftCollisionMap:(requestedFloor=0)=>{
       if(!ruin?.shaftGrids?.size)return null;
@@ -2084,5 +2105,6 @@
     runtimeHallways:ruin.entranceHallways||null, // Persist the authoritative floor-zero generated audit after V50's iframe has detached every upper-floor preview root.
     preplannedShaft:{nativeFloors:ruin.preplannedShaft?.nativeFloorCount||0,
       anchor:ruin.preplannedShaft?.shaft?.anchor||null},
+    shaftSanctumDoorSite:ruin.shaftSanctumDoorSite?{side:ruin.shaftSanctumDoorSite.side,x:ruin.shaftSanctumDoorSite.x,z:ruin.shaftSanctumDoorSite.z,y:ruin.shaftSanctumDoorSite.floorY}:null, // Mobile debug exposes the actual Great Door wall anchor.
     shaftLayerPlan:ruin.shaftHubPlan?{schema:ruin.shaftHubPlan.schema,floorCount:ruin.shaftHubPlan.floorCount,anchor:ruin.shaftHubPlan.shaft.anchor,spacing:ruin.shaftHubPlan.options.spacing,wings:ruin.shaftHubPlan.floors.map(f=>({floor:f.floor,sides:f.wings.map(w=>w.side),braziers:f.braziers.length}))}:null,requestedSeed:ruin.requestedSeed,sourceSeed:ruin.sourceSeed,tileScale:RUIN_TILE_SCALE,wallStyle:ruin.wallStyle||null,stoneAge:!!ruin.stoneAge,stoneAgeRequested:!!ruin.stoneAgeRequested,stoneAgeStats:ruin.stoneAgeStats||null,rootedMechanisms:!!ruin.rootedMechanisms,rootedMechanismCount:ruin.rootGrowthBindings?.length||0,darkness:getDarknessSettings(),materialStats:{stoneMeshes:ruin.denMaterialMeshCount||0,cliffMeshes:ruin.denMaterialMeshCount||0,converted:ruin.unlitConvertedMaterialCount||0,remainingLit:ruin.remainingLitMaterialCount||0,legacyStone:ruin.legacyStoneMaterialCount||0,totalMeshes:ruin.totalRuinMeshCount||0,ceilingCells:ruin.ceilingCellCount||0,ceilingY:ruin.ceilingY??null,ceilingTextured:!!(Array.isArray(ruin.ceilingMesh?.material)?ruin.ceilingMesh.material:ruin.ceilingMesh?.material)?.map,ceilingMaterialTexture:ruin.ceilingMesh?.material?.map?.userData?.furnitureTexture||null,ceilingNaturalSurface:(Array.isArray(ruin.ceilingMesh?.material)?ruin.ceilingMesh.material[0]:ruin.ceilingMesh?.material)?.userData?.naturalSurface||null,occlusionMeshes:ruin.occlusionMeshes?.length||0},rooms:ruin.meta.rooms?.length||0,plinthTrialRoomId:ruin.shaftHubPlan?.trialRoomId||null,controls:ruin.controls.length,shaftNavigation:[...(ruin.shaftGrids?.entries()||[])].map(([scope,entry])=>({scope,cols:entry.grid.cols,rows:entry.grid.rows,levels:entry.grid.levels,playerLevel:entry.grid.yToLevel(ruin.supportY)})),keyStatueDispensers:(window.KeyStatues?.debugSnapshot?.().dispensers||[]).filter(state=>state.mapId===MAP_ID),authoredPuzzleNodes:window.FurniturePuzzleRuntime?.debug?.().find(record=>record.mapId===MAP_ID)?.nodes||[],mechanisms:[...ruin.mechanisms.values()].map(m=>({id:m.id,type:m.type,progress:m.progress,target:m.target,externalTarget:m.externalTarget??null})),transitDoors:(ruin.transitDoorStates||[]).map(state=>({id:state.door?.id||null,open:+state.open.toFixed(3),target:state.target,axis:state.crossingAxis,center:state.center?{x:+state.center.x.toFixed(3),z:+state.center.z.toFixed(3)}:null})),puzzleOptions:ruin.puzzleOptions,puzzleGeneration:ruin.puzzleGeneration,solvability:ruin.solvability,generationAttempt:ruin.generationAttempt,presentation:presentationSnapshot(),occupancy:ruin.occupancy?.snapshot?.(),dynamic:DS.debugSnapshot()}:null});
 })();

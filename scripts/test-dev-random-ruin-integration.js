@@ -363,8 +363,13 @@ assert(debrisIndex.includes('window.__debrisEmbeddedRuntime&&parent!==window&&pa
 assert(debrisIndex.includes('window.__debrisUsedParentThree=true'), 'hidden generator dependency diagnostics must prove the parent THREE path was selected');
 assert(interior.includes('usedParentThree:child?.__debrisUsedParentThree===true'), 'generator timeout diagnostics must expose whether local parent THREE was used');
 assert(debrisBootstrap.includes("const EMBEDDED_TREE = 'debrisifier-v50-embedded-tree.json'"), 'embedded runtime must name the committed local tree');
-assert(debrisBootstrap.includes('const hallReplacement = \'const width=randomIntInclusive(rng,5,6),length=randomIntInclusive(rng,5,8);\''), 'embedded runtime must widen normal V50 hallways to 5–6 cells');
-assert(debrisBootstrap.includes("escapeHallReplacement = 'hallWidth=randomIntInclusive(rng,5,6),hallLen=10+rooms.length*3;'"), 'embedded runtime must widen fallback V50 hallways to 5–6 cells');
+assert(debrisBootstrap.includes('const width=randomIntInclusive(rng,5,6),puzzleSlots=')
+  &&debrisBootstrap.includes('randomIntInclusive(rng,2,4)')
+  &&debrisBootstrap.includes('runtimeHallwayWidthCells: [5, 6]')
+  &&debrisBootstrap.includes('keepLong=!!window.__devRuinLayoutReservation'),
+  'embedded V50 hallways must retain player width while shortening only non-puzzle connectors');
+assert(debrisBootstrap.includes('hallLen=window.__devRuinLayoutReservation?10+rooms.length*3:6'),
+  'fallback hallways must start short while keeping the retry-based collision escape');
 assert(debrisBootstrap.includes('Math.max(3,Number(door.widthCells)||3)'), 'hallway door arches must consume the authored doorway width instead of a fixed 3-cell span');
 assert(debrisBootstrap.includes('Math.max(3,Number(chosen.door.widthCells)||3)'), 'focus doorway arches must consume the authored doorway width');
 assert(debrisBootstrap.includes("new URL('../../'+fromDocsRoot,location.href)"), 'embedded runtime must map repo asset paths to the local docs origin');
