@@ -21,7 +21,10 @@
     if(!campfireTemplatePromise){
       campfireTemplatePromise=Promise.resolve().then(()=>authored?.load?.('campfire')).then(data=>{
         campfireTemplate=pick(data);
-        if(!campfireTemplate)window.__farmLog?.('[puzzle-fire] authored campfire flame unavailable','warn');
+        if(!campfireTemplate){
+          campfireTemplatePromise=null; // Retry if the first ignition preceded authored-furniture initialization.
+          window.__farmLog?.('[puzzle-fire] authored campfire flame unavailable','warn');
+        }
         return campfireTemplate;
       }).catch(error=>{
         campfireTemplatePromise=null; // A late furniture-loader recovery can retry rather than leave invisible fires permanently.
