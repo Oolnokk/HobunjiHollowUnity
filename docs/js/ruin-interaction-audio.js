@@ -7,7 +7,7 @@
   else root.RuinInteractionAudio=api;
 })(typeof globalThis!=='undefined'?globalThis:this,function(root){
   'use strict';
-  const REFERENCE_SPAN=Object.freeze({activator:1,mechanism:4}); // World-space spans whose uploaded recordings play at original pitch.
+  const REFERENCE_SPAN=Object.freeze({activator:1.2,mechanism:4}); // World-space spans whose uploaded recordings play at original pitch.
   const movement=new WeakMap(); // Per physical mechanism: previous progress/direction, to play once per motion or reversal.
   const plateStates=new WeakMap(); // Per physical pressure plate: last pressed state, to suppress continuous audio.
   const debug={lastCue:null,lastPitch:1,lastSpan:null,plays:0}; // Mobile-friendly playback diagnostics.
@@ -56,7 +56,7 @@
     const previous=movement.get(object);
     const now=Number(root.performance?.now?.()??Date.now()); // Used for an idle timeout rather than resetting on duplicate same-frame progress reads.
     if(!previous){
-      movement.set(object,{progress,direction:0,lastMoveAt:now});
+      movement.set(object,{progress,direction:options.silent||progress<=.001||progress>=.999?0:1,lastMoveAt:now});
       if(options.silent||progress<=.001||progress>=.999)return false;
       return mechanism(object,options); // A first sampled in-progress animation is a genuine move, not a restored end pose.
     }
