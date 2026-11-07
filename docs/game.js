@@ -15731,6 +15731,7 @@
         _zoneVegetationMeshes.delete(mapId);
         _zoneMineableRockMeshes.delete(mapId);
         _zoneGrassMeshes.delete(mapId);
+        window.ZonePlateauMesa?.releaseZone?.(mapId); // Its render batches (and the hidden source meshes behind them) were kept in a module-level map forever.
         _zoneMesaMeshGroups.delete(mapId);
         window.CliffElevatedSurfaces?.clear?.(mapId); // Release only this wilderness area's stacked support scope on unload.
         window.CliffRouteNetwork?.releaseArea?.(mapId); // Drop transient scene/route references; saved balcony rewards survive.
@@ -15765,7 +15766,11 @@
       }
       function zoneResidents(mapId) {
         const residents = [];
-        for (const set of [hostileObjects, corpseObjects]) for (const c of set) if ((c.areaId || c.zoneId) === mapId) residents.push(c);
+        // A bandit parked by js/wilderness-simulation-lod.js carries a synthetic areaId ("__wilderness_lod_sleep__:<zone>") so
+        // the hostile update skips it; its real zone is _wildernessLodAreaId. Matching only areaId made sleepers invisible here:
+        // they neither pinned the zone nor were released with it, and each one kept `scene` (so the whole evicted zone's render
+        // lists and geometry) alive through hostileObjects. Found with heap snapshots.
+        for (const set of [hostileObjects, corpseObjects]) for (const c of set) if (((c._wildernessLodSleeping && c._wildernessLodAreaId) || c.areaId || c.zoneId) === mapId) residents.push(c);
         return residents;
       }
       // Ordinary creatures (wildlife and ambient hostiles) are rebuilt from their

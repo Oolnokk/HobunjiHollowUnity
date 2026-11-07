@@ -754,6 +754,7 @@
     buildZoneMesaMeshes,
     rebuildZoneMesaMeshes,
     mesaBatchSnapshot,
+    releaseZone: disposeMesaBatches, // Called when a zone scene is torn down or evicted so _mesaBatchesByMap stops pinning it.
     buildRockMoundBumpField,
     sampleRockMoundBump,
   };
