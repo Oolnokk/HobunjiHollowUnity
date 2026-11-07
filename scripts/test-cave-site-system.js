@@ -618,7 +618,9 @@ console.log(`PASS cave-site-system: ${workspace.animalDens.length} anchors -> ${
   assert.equal(rock1.children.length,0,'neighboring tiles do not contribute their own overlapping visible surface');
   assert.equal(separatorGrid[0][0].rockKind,'diggableRockOre','rocky barrier uses the existing pickaxe mining tile contract');
   assert.equal(separatorGrid[0][1].caveSeparator,true,'adjacent barrier layers preserve the existing Shattercask blast contract');
-  assert.equal(oreCtx.CavernOreRocks.removeVisual(separatorMap,0,0),true,'mining one rock-wall tile triggers a rebuilt cut');
+  assert.equal(separatorGrid[0][0].projectileCoverHeightTiles,8,'the sculpted ceiling-high wall blocks projectiles above an ordinary ore mound');
+  assert.equal(separatorGroups.delete('0,0'),true,'ordinary indexed pickaxe removal heals an exposed stone cut');
+  assert.equal(separatorGrid[0][0].projectileCoverHeightTiles,undefined,'a mined wall tile loses its old tall projectile cover');
   assert.equal(separatorGroups.has('0,0'),false,'the mined tile is no longer registered as solid scene rock');
   assert.equal(separatorGroups.has('1,0'),true,'the neighbouring mineable wall rock remains intact');
   assert.equal(oldGeo.disposed,true,'old triangulations are disposed after remeshing, avoiding a mobile GPU leak');
@@ -626,7 +628,7 @@ console.log(`PASS cave-site-system: ${workspace.animalDens.length} anchors -> ${
   assert.equal(fused()[0].userData.caveSeparatorLiveTiles,1,'only unbroken tiles contribute to the unified visible wall');
   assert(oreCtx.CavernOreRocks.probeRock(separatorMap,.55,1,.5)>0,'the mined gap is genuinely open, not an invisible overlapping mesh');
   assert(oreCtx.CavernOreRocks.probeRock(separatorMap,1.5,1,.5)<0,'remaining rock has a freshly sealed exposed rock face');
-  assert.equal(oreCtx.CavernOreRocks.removeVisual(separatorMap,1,0),true,'blast events can retire the next rock independently');
+  assert.equal(oreCtx.CavernOreRocks.removeVisual(separatorMap,1,0),true,'Shattercask blasts can retire the next rock independently');
   assert.equal(fused().length,0,'a completely mined barrier leaves no empty rock mesh');
 
   const doorScene=new Obj(),doorMap='map_i_fused_secret_door',doorGrid=[[{},{},{},{}]];
