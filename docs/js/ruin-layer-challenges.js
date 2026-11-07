@@ -241,6 +241,7 @@
       const dark=body('puzzle-cave-fire-darkness-'+id,
         new THREE.BoxGeometry(5.05,3.65,.025),basic(0x050404),cx,y+1.82,caveGateZ+.21);
       dark.userData.puzzleCaveBackdrop=true;
+      dark.visible=false; // An actual carved cave is behind the door, not an opaque dungeon-portal rectangle.
       gate.userData.puzzleCaveDoor=true;
       rec.door=gate;rec.backdrop=dark;rec.sconces=[];rec.doorRise=0;
       const gateY=gate.position.y; // Slab-only rise leaves the black cave entrance fixed and both sconces attached to the wall.
@@ -262,7 +263,7 @@
         if(!rec.solved||rec.disposed)return;
         rec.doorRise=Math.min(1,rec.doorRise+Math.max(0,Number(dt)||0)/.95);
         gate.position.y=gateY+3.5*rec.doorRise;
-        dark.visible=rec.doorRise<.96; // Once the door opens, the opaque black wall must not hide the revealed reward chest.
+        dark.visible=false; // Never cover the physical treasure alcove with a black portal plane.
       };
     }else if(kind==='timedMelody'){
       // Cliff-door score: visible Scratchbone notation on a stone gate, no audible example.
@@ -272,54 +273,32 @@
       const song=composer.generate(id,options.songOptions||{}); // The cave's stable ID fixes the tune and reward tier on reload.
       const plate=body('puzzle-cave-music-plate-'+id,
         new THREE.CylinderGeometry(1.18,1.18,.15,32),plateMat,cx,y+.08,cz-1.6);
-      rec.plate=plate;rec.song=song;rec.attempts=0;rec.lastDown=false;rec.musicOpened=false;rec.musicClosing=0;
+      rec.plate=plate;rec.song=song;rec.attempts=0;rec.lastDown=false;
+      rec.plateArt=root.PuzzleCavePlateArt?.decorate?.(THREE,plate,{radius:1.18,thickness:.15})||null; // Furniture-textured stone, inscribed with hao'uun in the Tankan author font.
       const gate=body('puzzle-cave-stone-door-'+id,
         new THREE.BoxGeometry(4.7,3.4,.32),stone,cx,y+1.75,caveGateZ);
       const backdrop=body('puzzle-cave-door-darkness-'+id,
         new THREE.BoxGeometry(5.05,3.65,.025),basic(0x050404),cx,y+1.82,caveGateZ+.21);
       gate.userData.puzzleCaveDoor=true;backdrop.userData.puzzleCaveBackdrop=true;
-      rec.door=gate;rec.backdrop=backdrop;rec.glyphs=[];
-      const columns=Math.min(8,song.notes.length),rows=Math.ceil(song.notes.length/columns);
-      for(let i=0;i<song.notes.length;i++){
-        const note=song.notes[i],number=note.index+1;
-        let texture=boneTextures.get(number);
-        if(!texture&&THREE.TextureLoader){
-          texture=new THREE.TextureLoader().load('assets/hud/scratchbone'+number+'.png');
-          if(THREE.SRGBColorSpace)texture.colorSpace=THREE.SRGBColorSpace;
-          boneTextures.set(number,texture);
-        }
-        const glyphMat=texture?new THREE.MeshBasicMaterial({
-          map:texture,color:0xc6baab,transparent:true,depthWrite:false,side:THREE.DoubleSide
-        }):basic(0xc6baab);
-        if(texture)materials.push(glyphMat);
-        const glyph=new THREE.Mesh(new THREE.PlaneGeometry(.43,.48),glyphMat);
-        glyph.name='puzzle-cave-timed-note-'+i;
-        glyph.position.set((i%columns-(columns-1)/2)*.53,
-          .59-(Math.floor(i/columns)-(rows-1)/2)*.61,-.17);
-        glyph.userData.puzzleCaveNote={index:note.index,duration:note.lengthTicks};
-        gate.add(glyph);owned.push(glyph);rec.glyphs.push(glyph);
-      }
+      backdrop.visible=false; // The puzzle already lives in a carved cave: a black portal card is not an interior wall.
+      rec.door=gate;rec.backdrop=backdrop;rec.glyphs=[];rec.scorePanel=null;rec.inscription=null;
+      // The inscription is placed on an unmoving stone flank after its fused wall has been constructed.
       const baseY=gate.position.y; // Door opening lifts the same slab and its inscriptions, leaving the black aperture fixed.
       rec.animate=dt=>{
         if(!rec.solved)return;
         rec.doorRise=Math.min(1,(rec.doorRise||0)+Math.max(0,Number(dt)||0)/.85);
         gate.position.y=baseY+3.6*rec.doorRise;
-        backdrop.visible=rec.doorRise<.96; // The solved cavern shows the chest, not a permanently black entrance card.
-        if(rec.musicClosing>0){
-          rec.musicClosing=Math.max(0,rec.musicClosing-Math.max(0,Number(dt)||0));
-          if(rec.musicClosing===0&&rec.musicOpened){music?.close?.();rec.musicOpened=false;}
-        }
+        backdrop.visible=false; // No black plane before or after opening, including during the authored model's async load.
       };
       rec.session=composer.createSession(song,{
         onSolved:()=>{
-          rec.plate.material=hit;
-          rec.musicClosing=.48; // Allow the last played flute note to sound before the overlay closes.
-          complete();
+          rec.plate.material?.color?.setHex?.(TARGET_COLORS.hit); // Keep carved_smooth on the solved plate.
+          complete(); // The player chose to play their instrument; never seize or dismiss it.
         },
         onChanged:snapshot=>{
           for(let i=0;i<rec.glyphs.length;i++){
             const material=rec.glyphs[i].material;
-            const color=i===snapshot.activeIndex?0xffda70:0xc6baab;
+            const color=i===snapshot.activeIndex?0xffee89:0xffb35e; // Cycling glow teaches timing without opening any instrument UI.
             material.color?.setHex?.(color); // One glyph glows during its full written duration; silence means none glows.
           }
           rec.melodyState=snapshot; // Exposed in the existing mobile ruin diagnostics.
@@ -423,6 +402,51 @@
       }); // Slightly behind the slab so sconces and score glyphs remain visible in front.
       if(surround){owned.push(surround);rec.rockSurround=surround;}
     }
+    if(options.authoredCliffDoor && kind==='timedMelody'){
+      const notes=rec.song.notes.map(note=>note.index); // Exact eight-key Scratchbone pitch indices, independent of note duration.
+      const side=(melodyFor(id)[0]&1)?-1:1; // Stable side selection: clues don't teleport when the cave reloads.
+      const scoreFace={x:cx+side*3.45,y:y+1.95,z:caveGateZ+.11,yaw:Math.PI,vertical:true,fallback:false}; // Stable carved flank, never the moving slab.
+      if(THREE.Raycaster&&rec.rockSurround?.raycast){
+        const ray=new THREE.Raycaster(new THREE.Vector3(scoreFace.x,scoreFace.y,cz-1.6),
+          new THREE.Vector3(0,0,1),0,10); // One-time snap to the sculpted rock face, not a per-frame performance raycast.
+        const face=ray.intersectObject(rec.rockSurround,false)[0];
+        if(face?.point&&Number.isFinite(face.point.z))scoreFace.z=face.point.z-.025; // Attach ink to the actual surface, avoiding a floating decal.
+      }
+      rec.inscription=root.RuinMelodyGlyphDecal?.create?.({
+        root:group,plate:{x:cx,y,z:cz-1.6},notes,seed:melodyFor(id)[1],
+        surfaces:[scoreFace],sampleSupport:()=>({y}),
+        makeStoneMaterial:()=>new THREE.MeshBasicMaterial({color:0x777267,transparent:true,opacity:0,depthWrite:false}),
+      })||null; // Reuses the actual Scratchbone decal generator introduced for the newer manual melody puzzle.
+      if(rec.inscription){
+        rec.glyphs=rec.inscription.group.children.filter(node=>node.userData?.melodyNoteIndex!==undefined);
+      }else{
+        // Standalone puzzle fixtures may omit the shared decal module. Keep the same glowing vertical score and plate-gated reveal.
+        const board=new THREE.Group();
+        board.name='puzzle-cave-fallback-score';board.position.set(scoreFace.x,scoreFace.y,scoreFace.z);
+        if(board.rotation)board.rotation.y=scoreFace.yaw;
+        else board.rotation={y:scoreFace.yaw}; // Headless Group stubs lack Euler rotation; the rendered THREE.Group has it.
+        board.visible=false;group.add(board);rec.scorePanel=board;
+        const columns=Math.min(6,notes.length),rows=Math.ceil(notes.length/6);
+        notes.forEach((index,i)=>{
+          const number=index+1;
+          let texture=boneTextures.get(number);
+          if(!texture&&THREE.TextureLoader){
+            texture=new THREE.TextureLoader().load('assets/hud/scratchbone'+number+'.png');
+            root.HobunjiSpritePngSurface?.configureTexture?.(THREE,texture,'puzzle-cave-note-'+number);
+            boneTextures.set(number,texture);
+          }
+          const mat=new THREE.MeshBasicMaterial({map:texture||null,color:0xffb35e,transparent:true,
+            depthWrite:false,side:THREE.DoubleSide});
+          materials.push(mat);
+          const glyph=new THREE.Mesh(new THREE.PlaneGeometry(.25,.28),mat);
+          const row=Math.floor(i/6),column=i%6,rowLength=Math.min(6,notes.length-row*6);
+          glyph.position.set((column-(rowLength-1)/2)*.31,((rows-1)/2-row)*.35,.028);
+          glyph.name='puzzle-cave-timed-note-'+i;glyph.userData.melodyNoteIndex=index;
+          glyph.userData.puzzleCaveNote={index,duration:rec.song.notes[i].lengthTicks};
+          board.add(glyph);owned.push(glyph);rec.glyphs.push(glyph);
+        });
+      }
+    }
     if(options.authoredCliffDoor && (kind==='timedMelody'||kind==='fireSconces')){
       // Use the real authored, lightly rockified cliff gate (frame, darkness,
       // stone slab and 0.95-second slab motion). No interactive puzzle metadata
@@ -441,30 +465,16 @@
         rec.authoredGate=model;
         rec.door.visible=false; // The modeled slab/frame/darkness replace the placeholder when the JSON is ready.
         const darkness=group.children.find(node=>node.userData?.puzzleCaveBackdrop);
-        if(darkness)darkness.visible=false;
-        let board=null;
-        if(rec.glyphs?.length){
-          board=new THREE.Group(); // Visible Scratchbone score stays engraved on the movable slab, not the wall behind it.
-          board.name='puzzle_cave_stone_score';
-          board.position.set(cx,y+1.67,gateZ-.36);
-          const cols=Math.min(8,rec.glyphs.length);
-          rec.glyphs.forEach((glyph,index)=>{
-            rec.door.remove(glyph);
-            board.add(glyph);
-            glyph.position.set((index%cols-(cols-1)/2)*.44,.28-Math.floor(index/cols)*.49,0);
-          });
-          group.add(board);
-        }
+        if(darkness)darkness.visible=false; // The authored passage is a real treasure alcove, not a painted black card.
         const off=motion.off,on=motion.on;
-        const authoredDark=model.userData?.meshById?.get?.('cliff_gate_darkness')||null; // The original authored black plane is not an actual passage once the reward is revealed.
-        const baseBoardY=y+1.67;
+        const authoredDark=model.userData?.meshById?.get?.('cliff_gate_darkness')||null; // This decorative portal plane is inappropriate inside a real carved cave.
+        if(authoredDark)authoredDark.visible=false; // Hide it even while the physical stone slab remains locked.
         const updateAuthoredDoor=()=>{
           const progress=Math.max(0,Math.min(1,Number(rec.doorRise)||0));
           const ease=progress*progress*(3-2*progress);
           slab.position.y=off.y+(on.y-off.y)*ease;
           slab.scale.z=off.sz+(on.sz-off.sz)*ease;
-          if(authoredDark)authoredDark.visible=progress<.96; // Let the carved chamber and the newly revealed chest be visible once unlocked.
-          if(board){board.position.y=baseBoardY+(on.y-off.y)*3*ease;board.visible=progress<.94;}
+          if(authoredDark)authoredDark.visible=false; // A late async animation must never bring the black rectangle back.
         };
         const priorAnimation=rec.animate;
         rec.animate=dt=>{priorAnimation?.(dt);updateAuthoredDoor();};
@@ -547,14 +557,9 @@
         const down=!rec.solved&&isActive()&&player&&Number.isFinite(currentY)&&Math.abs(currentY-y)<.75
           &&Math.hypot(player.x-cx,player.z-(cz-1.6))<=1.18;
         rec.session.step(dt,down);
-        if(down&&!rec.lastDown){
-          rec.musicOpened=!!music?.beginPlayerSession?.(); // Native flute instrument, including mobile/controller bindings.
-          if(rec.musicOpened){rec.attempts++;options.onMusicStart?.(rec);}
-          else options.onMusicUnavailable?.(rec);
-        }
-        if(!down&&rec.lastDown&&rec.musicOpened&&!rec.solved){
-          music?.close?.();rec.musicOpened=false;
-        }
+        rec.inscription?.setVisible?.(down);
+        if(rec.scorePanel)rec.scorePanel.visible=!!down;
+        if(down&&!rec.lastDown)rec.attempts++; // The plate only reveals the score; equipping/playing the instrument is the player's choice.
         rec.lastDown=!!down;
       }
       if(kind==='melodyEcho'){
@@ -634,7 +639,8 @@
       if(melodyListener)events?.removeEventListener?.('hobunji-kurraya-puzzle-note',melodyListener);
       rec.inscription?.dispose?.();
       if(timedNoteListener)events?.removeEventListener?.('hobunji-kurraya-puzzle-note',timedNoteListener);
-      if(rec.musicOpened)music?.close?.();
+      rec.plateArt?.dispose?.(); // Retire async Tankan lettering without affecting the player's own instrument session.
+      if(rec.plateArt)rec.plate?.material?.dispose?.(); // Author-textured plate material is owned by this challenge, not the shared furniture texture.
       for(const emitter of flameVisuals)emitter.dispose?.();
       flameVisuals=[];
       if(icePlacement)root.DungeonDoorIceCoverage?.clear?.(icePlacement);

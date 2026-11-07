@@ -44,6 +44,9 @@ async function main(){
       const THREE=window.THREE;
       if(!THREE?.Group||!window.RuinLayerChallenges?.compose)throw Error('Real Three/ruin composer missing');
       const group=new THREE.Group(); // Detached 3D test scene never interferes with the saved player's world.
+      const caveShell=new THREE.Mesh(new THREE.BoxGeometry(1,1,1),new THREE.MeshBasicMaterial({color:0x514c44}));
+      caveShell.userData.interiorCavernMaterialParity='farm-cliffs'; // Model the already-built native shell as the authoritative wall texture.
+      group.add(caveShell);
       const area='puzzle_cave_browser_test';
       const room={x:3,z:5,w:9,d:9};
       const gateX=room.x+room.w/2,gateZ=room.z+room.d-2.8; // The center opening connects the chamber to an actual walkable treasure alcove.
@@ -69,6 +72,9 @@ async function main(){
         if(collision.blocksBox(area,gateX,gateZ,.18))throw Error('Raised fire gate still blocks player');
         if(!collision.blocksBox(area,room.x+.65,gateZ,.18))throw Error('Player can bypass opened door through unbreakable rock');
         if(!fire.rockSurround?.geometry?.getAttribute?.('position'))throw Error('Sculpted permanent cave wall is missing from the real Three scene');
+        if(fire.rockSurround.material!==caveShell.material||!fire.rockSurround.userData.caveSharedWallMaterial)
+          throw Error('Carved rock wall did not inherit the exact surrounding cave-shell material');
+        if(fire.backdrop.visible)throw Error('Unwanted black fire-door plane still covers the cave interior');
         fire.dispose();fire=null;
         if(collision.providerIds().length!==countBefore)throw Error('Fire cave leaked collision provider on disposal');
 
@@ -85,7 +91,16 @@ async function main(){
         const songBpm=music.song.bpm; // Preserved after teardown for the mobile Chromium smoke result.
         if(!collision.blocksBox(area,gateX,gateZ,.18))throw Error('Closed melody slab is not collidable');
         music.tick(0);
-        if(opened!==1)throw Error('Stepping onto a real plate did not enter the instrument session');
+        if(opened!==0||closed!==0)throw Error('Stepping on a song plate must never open or close the player instrument');
+        if(music.backdrop.visible)throw Error('Unwanted black melody-door plane still covers the carved alcove');
+        if(music.plate.userData.puzzleCavePlateTexture!=='carved_smooth.png'||
+          music.plate.userData.puzzleCaveTankanText!=="hao'uun")
+          throw Error('Melody plate is missing authored carved_smooth material or Tankan hao\'uun inscription');
+        if(music.glyphs.length!==music.song.notes.length||
+          !(music.inscription?.group.visible||music.scorePanel?.visible))
+          throw Error('The full glowing Scratchbone clue did not appear on the fixed wall while standing on the plate');
+        if(music.inscription&&!music.inscription.diagnostics().vertical)
+          throw Error('The melody clue is lying on the floor instead of a standing cave-rock face');
         let elapsed=0;
         for(let index=0;index<music.song.notes.length;index++){
           const note=music.song.notes[index],target=(note.startTick+.10)*music.song.secondsPerTick;
@@ -100,9 +115,10 @@ async function main(){
         if(collision.blocksBox(area,gateX,gateZ,.18))throw Error('Raised melody slab still blocks player');
         if(!collision.blocksBox(area,room.x+room.w-.65,gateZ,.18))throw Error('Right rock flank bypasses melody puzzle');
         music.dispose();music=null;
+        group.remove(caveShell);caveShell.geometry.dispose();caveShell.material.dispose();
         if(collision.providerIds().length!==countBefore||group.children.length!==0)
           throw Error('Composed cave mechanisms leaked scene geometry or collision providers');
-        return {passed:true,instrumentSessions:opened,songsSolved:state.solved,sconces:state.lit,bpm:songBpm};
+        return {passed:true,automaticInstrumentSessions:opened,songsSolved:state.solved,sconces:state.lit,bpm:songBpm};
       }finally{
         fire?.dispose?.();music?.dispose?.();
       }
