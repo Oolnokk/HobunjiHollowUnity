@@ -56,18 +56,19 @@
     const previous=movement.get(object);
     const now=Number(root.performance?.now?.()??Date.now()); // Used for an idle timeout rather than resetting on duplicate same-frame progress reads.
     if(!previous){
-      movement.set(object,{progress,direction:options.silent||progress<=.001||progress>=.999?0:1,lastMoveAt:now});
+      movement.set(object,{progress,direction:0,initialMotion:!options.silent&&progress>.001&&progress<.999,lastMoveAt:now}); // The first mid-motion sample is audible; learn its direction without double-playing next frame.
       if(options.silent||progress<=.001||progress>=.999)return false;
       return mechanism(object,options); // A first sampled in-progress animation is a genuine move, not a restored end pose.
     }
     const delta=progress-previous.progress; // Progress is signed, so reversing a sliding door plays again.
     previous.progress=progress;
     if(Math.abs(delta)<.001){
-      if(now-previous.lastMoveAt>.15)previous.direction=0; // Two runtimes can sample the same moving group each frame.
+      if(now-previous.lastMoveAt>150)previous.direction=0; // performance.now() is milliseconds: only a genuinely idle 150 ms resets the direction.
       return false;
     }
     previous.lastMoveAt=now;
     const direction=Math.sign(delta);
+    if(previous.initialMotion){previous.initialMotion=false;previous.direction=direction;return false;} // First measured direction belongs to the already-audible initial movement.
     if(previous.direction===direction)return false;
     previous.direction=direction;
     return mechanism(object,options);
