@@ -223,10 +223,10 @@
       const minCol=Math.min(...barriers.map(rock=>rock.col)),maxCol=Math.max(...barriers.map(rock=>rock.col));
       const minRow=Math.min(...barriers.map(rock=>rock.row)),maxRow=Math.max(...barriers.map(rock=>rock.row));
       const door=doorOpeningFor({tiles},mapData.caveSitePlan);
-      const bounds={minX:Math.min(minCol,door?.x-.9??Infinity)-.8,
-        maxX:Math.max(maxCol+1,door?.x+.9??-Infinity)+.8,
-        minZ:Math.min(minRow,door?.z-.9??Infinity)-.8,
-        maxZ:Math.max(maxRow+1,door?.z+.9??-Infinity)+.8};
+      const bounds={minX:Math.min(minCol,door ? door.x-.9 : Infinity)-.8,
+        maxX:Math.max(maxCol+1,door ? door.x+.9 : -Infinity)+.8,
+        minZ:Math.min(minRow,door ? door.z-.9 : Infinity)-.8,
+        maxZ:Math.max(maxRow+1,door ? door.z+.9 : -Infinity)+.8};
       const height=Math.max(8,3*(Number(mapData.cavernCarvedHeightScale)||1.5)+3); // Deliberately pierces even the tall carved vault; no gap beneath the ceiling.
       const material=window.OreRockTextures.materialFor(THREE,barriers[0].oreKey||barriers[0].oreKind,deps.oreDefs);
       separatorWalls.set(mapId,{scene,tiles,bounds,height,material,door,mesh:null});
@@ -260,5 +260,19 @@
     return oreRockMeshes;
   }
 
-  window.CavernOreRocks = { init, build, senseTargets, removeVisual, CAVERN_ORE_TINTS };
+  function debugSnapshot(mapId) {
+    const ids=mapId==null?[...separatorWalls.keys()]:[String(mapId)]; // Optional cave filter keeps mobile diagnostics small.
+    return ids.map(id=>{
+      const wall=separatorWalls.get(id);
+      if(!wall)return {mapId:id,found:false};
+      return {mapId:id,found:true,liveTiles:wall.tiles.size,height:wall.height,
+        triangles:wall.mesh?.geometry?.userData?.caveFusedRockTriangles||0,
+        doorOpening:!!wall.door,meshReady:!!wall.mesh};
+    });
+  }
+  function probeRock(mapId,x,y,z) {
+    const wall=separatorWalls.get(String(mapId)); // Scalar probe allows mobile debugging of mined holes without browser developer tools.
+    return wall ? rockField(wall,Number(x),Number(y),Number(z)) : null;
+  }
+  window.CavernOreRocks = { init, build, senseTargets, removeVisual, debugSnapshot, probeRock, CAVERN_ORE_TINTS };
 })();
