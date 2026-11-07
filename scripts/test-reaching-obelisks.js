@@ -180,7 +180,7 @@ try{
   assert.equal(rt.isDeathAt(rt.plan.pillars[0].x,rt.plan.pillars[0].z,-8),true);
   assert.equal(rt.isDeathAt(rt.plan.pillars[0].x,rt.plan.pillars[0].z,8),false);
   rt.dispose();
-  climber.onClimbSurface=null; // A game scene transition releases the player before unloading its climb provider.
+  assert.equal(climber.onClimbSurface,null,'unloading the shaft releases its active climber rather than preserving a stale attachment');
   assert(!parent.children.length&&!projectileTargets.size&&!surfaces.size&&!climbs.size,
     'reroll removes all shaft meshes, dynamic supports and climb faces');
 }finally{globalThis.IceStalagmiteCoverage=savedIce;}
