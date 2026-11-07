@@ -81,7 +81,7 @@
       const base=door.baseY||0,openingHeight=door.openingHeight||2.0;
       const irregularCut=.032*Math.sin(y*4.2+across*3.5)+.027*Math.sin(y*6.3-across*4.9);
       const opening=roundedBox(across,y-(base+openingHeight/2-.10),depth,
-        door.openingHalfWidth||.37,openingHeight/2,door.openingDepth||.65,.07)+irregularCut;
+        door.openingHalfWidth||.37,openingHeight/2,door.openingDepth||.42,.07)+irregularCut;
       body=Math.max(body,-opening); // Carve through rock: the subtraction creates complete inside surfaces around the hole.
     }
     return body;
