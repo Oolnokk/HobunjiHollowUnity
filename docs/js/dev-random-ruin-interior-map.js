@@ -612,7 +612,10 @@
       for (const e of object.userData.rotatingSegments||[]) if (e?.segment) {
         e.segment.userData.interactive3D = true; // Each marked cube is its own semantic prompt anchor even though the pair shares one puzzle root.
         e.segment.userData.devRuinInteractionType = 'linkedCubeControl';
-        ruin.controls.push({kind:'linkedCube',object:e.segment,promptRoot:e.segment,range:2.05,touchIcon:'↻',label:'Rotate Cube '+(labels[e.controlIndex]||e.controlIndex+1),onPress:()=>ruin.api.rotateLinkedCube(object,e.controlIndex,1)});
+        ruin.controls.push({kind:'linkedCube',object:e.segment,promptRoot:e.segment,range:2.05,touchIcon:'↻',label:'Rotate Cube '+(labels[e.controlIndex]||e.controlIndex+1),onPress:()=>{
+          ruin.api.rotateLinkedCube(object,e.controlIndex,1);
+          window.RuinInteractionAudio?.mechanism?.(e.segment); // Linked stone control visibly rotates on each accepted interaction.
+        }});
       }
     });
     for (const a of ruin.activators) {
@@ -1878,7 +1881,12 @@
         else if(linkedPlate)linkedPlate.userData.weightProgress=m.progress;
       }
     }
-    for(const m of ruin.mechanisms.values())window.RuinInteractionAudio?.watchMovement?.(m.root,m.progress); // Emit one stone rumble per physical motion, never during the once-a-second reapply pass.
+    for(const m of ruin.mechanisms.values()){
+      const soundSource=m.type==='stoneDoor'
+        ?(m.root.children||[]).find(child=>child.isMesh&&child.geometry)||m.root
+        :m.root; // Share the physical door-panel identity with the native V50 controller to avoid two simultaneous recordings.
+      window.RuinInteractionAudio?.watchMovement?.(soundSource,m.progress);
+    } // Emit one stone rumble per physical motion, never during the once-a-second reapply pass.
     // applyProgress re-traverses each mechanism; it is a pure function of its
     // progress and the plate/glyph signals, so it only runs when those change.
     let signals='';for(const root of ruin.mechanismSignalRoots)signals+=(root.userData.weightProgress??'')+','+(root.userData.solveProgress??'')+';';
