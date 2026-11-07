@@ -49,7 +49,8 @@ assert(contextStart >= 0 && contextEnd > contextStart,'real context action handl
 const contextAction = game.slice(contextStart, contextEnd); // Inspect priority in the shipped handler, not a preview-only shim.
 assert(contextAction.indexOf("attacker._attachment?.id === 'maskbound-headtaker'") >= 0,'active Headtaker grip is recognized as a dodge-only context');
 assert(contextAction.indexOf("attacker._attachment?.id === 'maskbound-headtaker'") < contextAction.indexOf('if (_pendingSpotTransition)'), 'Headtaker escape outranks a nearby door/context transition');
-assert(contextAction.indexOf("attacker._attachment?.id === 'maskbound-headtaker'") < contextAction.indexOf('const climb ='), 'Headtaker escape outranks a nearby climb surface');
+assert(contextAction.indexOf("attacker._attachment?.id === 'maskbound-headtaker'") < contextAction.indexOf('ClimbSystem?.cliffDodge'), 'Headtaker escape outranks the cliff sidestep');
+assert(!contextAction.includes('startClimb'), 'Dodge no longer starts climbs; Jump/Climb owns them');
 
 const posStart=game.indexOf('        const tx = c.x / TILE, tz = c.y / TILE, ty =');
 const posEnd=game.indexOf('        // Bob animation when moving',posStart);

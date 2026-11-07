@@ -160,6 +160,20 @@
     }
   },
   "items": {
+    "tzatzulEgg": {
+      "id": "tzatzulEgg",
+      "name": "Tzatzul Egg",
+      "categories": ["egg"],
+      "quality": 3,
+      "baseBoost": 4,
+      "processingTier": "raw",
+      "primaryEffect": "perception",
+      "sellPrice": 240,
+      "infertile": true,
+      "incubatable": false,
+      "description": "An exceptionally valuable, infertile Tzatzul egg. An ingredient, not a hatchable creature.",
+      "tags": ["Tzatzul", "Egg", "Rare", "Infertile"]
+    },
     "yellowDew": {
       "id": "yellowDew",
       "name": "Yellow Uumkao’ii Dew",

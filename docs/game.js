@@ -19,6 +19,7 @@
       const cameraJoystickZone = document.getElementById('cameraJoystickZone');
       const cameraJoystickKnob = document.getElementById('cameraJoystickKnob');
       const dodgeBtn = document.getElementById('dodgeBtn');
+      const jumpBtn = document.getElementById('jumpBtn');
       const btnSwapTarget = document.getElementById('btnSwapTarget');
       const btnWeaponSwitch = document.getElementById('btnWeaponSwitch');
       const btnWeaponSwitchIcon = document.getElementById('btnWeaponSwitchIcon');
@@ -5407,12 +5408,17 @@
       // resolved — same assumption docs/game.js's other cached config
       // loaders make (see loadBanditGangConfig). Moved into
       // docs/js/loot-rolling.js; game.js just wires it up and kicks it off.
+      let shopStockCatalogReady = false; // The async shop config callback is gated until barn/house defaults and item registration exist.
+      let shopStockApplyPending = false; // Replays a fast cached config resolution once the late game startup declarations initialize.
       window.LootRolling.init({
         weaponDamageTypeForTool,
         getCurrentArea: () => currentArea,
         getPlayerData: () => _playerData,
         calendar,
-        applyLoadedShopStock: () => _applyLoadedShopStock(),
+        applyLoadedShopStock: () => {
+          if (shopStockCatalogReady) _applyLoadedShopStock();
+          else shopStockApplyPending = true; // Promise may resolve during staged startup; never touch BARN_TIERS in its TDZ.
+        },
       });
       window.LootRolling.loadLootShopConfig();
 
@@ -5464,8 +5470,8 @@
             }
             const specialAmmo = window.RangedWeapons?.rollSpecialAmmoLoot?.() || 0; // Every creature corpse gets the same high-chance shared-ammo roll as bandits.
             if (specialAmmo) parts.push(`🏹 Special Ammo×${specialAmmo}`);
-            corpseObjects.delete(c);
-            despawnCreature(c);
+            if (c.keepCorpseAfterLoot) c.corpseLooted = true; // Tzatzul victim piles retain their bodies and one-shot searched state.
+            else { corpseObjects.delete(c); despawnCreature(c); }
             return {
               ok: true,
               message: parts.length ? `Butchered the ${c.def.label}: ${parts.join(' ')}` : `Nothing usable left on the ${c.def.label}.`,
@@ -7052,10 +7058,29 @@
             if (c.isBandit) { window.BanditCombat.updateToolMesh(c); window.BanditCombat.updateTrailArc(c, dt); }
             continue;
           }
+          if (c.tzatzulCapturedBy) {
+            if (!tickCreatureResources(c, dt, false)) continue; // Poison/bleeding still resolve while the original actor is airborne.
+            updateWildlifeVisualLod(c, 0); // Promote the original carried portrait even when viewed through a distant spyglass.
+            updateCreatureMesh(c, dt, c.facing);
+            updateCreatureAnimFrame(c, dt, false);
+            window.TzatzulLiveVisuals?.alignCaptive?.(c);
+            continue; // The carrier owns position; ground AI and attacks must not overwrite it.
+          }
           // Beastmaster pets stay in hostileObjects so player targeting and
           // damage can find them, but companionObjects owns their movement
           // and attacks so they can follow their bandit master.
           if (c.banditCompanion) continue;
+          // The canonical wildlife tick already moved this Tzatzul's body
+          // before updateHostiles. Keep live vitals/LOD/portrait animation,
+          // but do not let the ordinary ground AI move it a second time.
+          if (window.TzatzulFlightRuntime?.owns?.(c)) {
+            const distanceTiles = Math.hypot(player.x - c.x, player.y - c.y) / TILE;
+            updateWildlifeVisualLod(c, distanceTiles);
+            if (!tickCreatureResources(c, dt, false)) continue;
+            updateCreatureMesh(c, dt, c.facing);
+            updateCreatureAnimFrame(c, dt, c._tzFlight?.phase !== 'perched');
+            continue;
+          }
           // Honeyfuzzle swarms fly home to their hive stump at dusk and tuck
           // inside it overnight (js/honeyfuzzle-hives.js) — hive-controlled
           // frames skip the generic wildlife AI entirely.
@@ -8696,6 +8721,12 @@
         for (const c of companionObjects) {
           if (c.health <= 0) continue;
           if (c.areaId !== currentArea) continue;
+          if (c.tzatzulCapturedBy) {
+            updateCreatureMesh(c, dt, c.facing);
+            updateCreatureAnimFrame(c, dt, false);
+            window.TzatzulLiveVisuals?.alignCaptive?.(c);
+            continue; // Captured companions share the carrier's flight path instead of following their master.
+          }
           window.AnimalVocalizations?.tickCreature?.(c, dt, {
             allowPassive: c.stableRole !== 'mount',
           });
@@ -9454,6 +9485,7 @@
         member.minedRockState = serializeZoneMinedRockState();
         member.townMineState = window.TownMine?.serialize?.() || null;
         member.slagothimTradersState = window.SlagothimTraders?.serialize?.() || null;
+        member.tzatzulNestState = window.TzatzulNestEncounter?.serialize?.() || null;
         member.caveSiteState = window.CaveSiteSystem?.serialize?.() || null;
         member.doorstepVisitState = window.DoorstepVisits?.serialize?.() || {};
         member.romanceState = window.RomanceSystem?.serialize?.() || null;
@@ -10293,17 +10325,20 @@
         }
         if (window.Fishing?.state?.active) { window.Fishing.close(); return; } // Dodge dismisses every fishing phase through the shared camera/pose cleanup.
         if (window.DevRandomRuinSimplePuzzles?.releaseActiveRope?.()) return; // Rope traversal outranks climb/door context while attached.
-        if (window.ClimbSurfaces?.release?.()) return; // Dodge while attached to a climbable wall lets go.
+        if (window.ClimbSystem?.cliffDodge?.()) return; // On a cliff face or ledge, Dodge is a projectile-dodging sidestep and never lets go; leaving the rock is the Jump action.
         if (player.climbing || player.dodging) return;
         if (_pendingSpotTransition) { startSceneTransition(() => performTravel(_pendingSpotTransition)); return; }
-        // Climbing is now the forward-dodge context action. Sideways/backward
-        // dodges remain ordinary evasive movement and cannot grab a nearby tree.
-        const climb = window.ClimbSystem.getClimbTarget();
-        if (climb && (climb.type === 'branchJumpDown' || dodgeInputIsForward())) { window.ClimbSystem.startClimb(climb); return; }
-        const worldClimb = window.ClimbSystem.getWorldClimbTarget?.(); // Non-grid ledges (ruins) climb from the same forward dodge.
-        if (worldClimb && dodgeInputIsForward()) { worldClimb.start(); return; }
-        if (player.onCliffBalcony && window.ClimbSystem?.jumpFromBalcony?.()) return; // Side/back dodge leaps from the raised ledge to the highest lower support.
         performDodge();
+      }
+
+      // Jump/Climb: the one deliberate vertical action (Space, pad A when nothing
+      // else wants it, touch inner ring). Climbing used to be the forward dodge.
+      function performJumpAction() {
+        if (window.PlayerDowned?.isDowned?.() || player.prone) return false;
+        if (window.DevRandomRuinSimplePuzzles?.releaseActiveRope?.()) return true; // Rope traversal: jump lets go, as dodge used to.
+        if (window.ClimbSurfaces?.release?.()) return true; // Attached climbable wall: jump lets go.
+        if (player.dodging) return false;
+        return !!window.ClimbSystem?.jumpAction?.();
       }
 
       // Combat-ability movement: a short forward step/leap toward the aim
@@ -14849,6 +14884,7 @@
             // cavern-generator.js's pickOreRockTiles/pickCreatureSpawnTiles).
             // Cavern ore-rock placement (tile marking + tinted rock meshes
             // registered for mining) now lives in js/cavern-ore-rocks.js.
+            window.TzatzulNestEncounter?.buildNest?.(mapId, mapData, bScene); // Native egg furniture and mobile hold-to-take interaction.
             window.CavernOreRocks.build(mapId, mapData, bScene, bGrid);
             // Cave-site history props (catacomb coffins, cache chest, ruin door)
             // are authored furniture placed by js/cave-site-system.js.
@@ -17207,6 +17243,11 @@
         });
       }
       _registerHousePieceDeedItemDefs();
+      shopStockCatalogReady = true; // Barn/house catalog declarations and both item registration helpers are initialized.
+      if (shopStockApplyPending) {
+        shopStockApplyPending = false;
+        _applyLoadedShopStock(); // Apply cached shop stock once, after defaults exist; slower network resolutions use the normal callback.
+      }
 
       // ── Fish catalog ────────────────────────────────────────────
       // Keyed by zone category. "town" is the only zone with real river/stream
@@ -18719,6 +18760,16 @@
       }
 
       function updateMovement(dt) {
+        if (player.tzatzulCapturedBy) {
+          // TzatzulFlightRuntime owns the original player's position and elevation
+          // during a successful beak-first capture. Joystick/controller movement
+          // must not overwrite the bird's shared perch path or restart combat.
+          playerAutoWalk = null;
+          input.x = 0; input.y = 0;
+          player.vx = 0; player.vy = 0;
+          player.inputX = 0; player.inputY = 0; player.inputStrength = 0;
+          return;
+        }
         syncMobileAutoTargetCombatState();
         syncMobileAutoTargetButton(); // Target availability refreshes even when prone, mounted, or another mode skips ordinary movement.
         updateMobileArchCombatAimLifecycle();
@@ -25611,6 +25662,7 @@
             || (!player.climbing && !player.onBranch && !player.onClimbSurface && playerMesh.position.y > groundedTargetY + 0.12),
           directionX: player.lungeDirX, directionZ: player.lungeDirY,
         });
+        window.TzatzulLiveVisuals?.alignCaptive?.(player, playerMesh); // Apply the authored humanoid talon pose after ordinary player animation.
       }
 
       // ── Update reticle ────────────────────────────────────────────
@@ -26430,6 +26482,13 @@
               tickCorpses(dt);
             }
           }
+
+          // Dev AI-free testing must not freeze timed Puzzle Cave scores, exterior
+          // pressure plates, or the physical stone-gate opening animation.
+          // In normal play the WildlifeSpawn wrapper already calls the puzzle
+          // runtime once; this alternate path runs only while that wrapper is skipped.
+          if (window.DevTestingSwitchbox?.flags?.noNpcBehavior)
+            window.CaveSiteSystem?.tickPuzzleRuntime?.(dt);
 
           const miscGameplayPerf = window.PerfProfiler?.begin('misc gameplay'); // Dens/climbing/tent interactions and transition-spot checks below.
           window.ClimbSystem?.updateFallenNests?.(dt);
@@ -27672,7 +27731,7 @@
           || (interactionButton ? _worldInteractionPromptAnchor : null);
         const promptActionIds = ['action1', 'action2', 'action3', 'interact'];
         const promptInputs = promptButtons.map((button, index) => { // Used by each floating row to render its rebound input and matching arch color independently.
-          const actionId = button.inputAction || (button.action === 'climb_branch' ? 'dodge' : (promptActionIds[index] || `action${index + 1}`)); // Context providers may bind a row to an exact physical arch input; otherwise preserve the ordinary inferred slot mapping.
+          const actionId = button.inputAction || (button.action === 'climb_branch' ? 'jump' : (promptActionIds[index] || `action${index + 1}`)); // Context providers may bind a row to an exact physical arch input; otherwise preserve the ordinary inferred slot mapping.
           const touchLabel = actionId === 'dodge' ? 'Dodge' : `Action ${index + 1}`; // Used when touch controls have no keyboard/controller glyph.
           return {
             actionId,
@@ -27730,9 +27789,15 @@
           // unconditional textContent write queues childList mutations that wake
           // every action-arch MutationObserver (arch-button-labels, action-arch-icons...).
           const fishingCancel = !!window.Fishing?.state?.active; // Fishing owns Dodge regardless of nearby climb context.
-          const dodgeIcon = fishingCancel ? '🏳️' : climbBtn ? climbBtn.icon : '💨', dodgeLabel = fishingCancel ? 'Exit fishing' : climbBtn ? climbBtn.label : 'Dodge';
+          const dodgeIcon = fishingCancel ? '🏳️' : '💨', dodgeLabel = fishingCancel ? 'Exit fishing' : 'Dodge';
           if (icon && icon.textContent !== dodgeIcon) icon.textContent = dodgeIcon;
           if (label && label.textContent !== dodgeLabel) label.textContent = dodgeLabel;
+        }
+        if (jumpBtn) { // Jump/Climb owns the climb prompt now; Dodge always says Dodge.
+          const icon = jumpBtn.querySelector('.abt-icon'), label = jumpBtn.querySelector('.abt-label');
+          const jumpIcon = climbBtn ? climbBtn.icon : '🧗', jumpLabel = climbBtn ? climbBtn.label : 'Jump';
+          if (icon && icon.textContent !== jumpIcon) icon.textContent = jumpIcon;
+          if (label && label.textContent !== jumpLabel) label.textContent = jumpLabel;
         }
 
         if (!needsRebuild) return;
@@ -28327,6 +28392,9 @@
         toggleQuickWeaponSwitch();
       });
 
+      // Jump / Climb touch button (inner ring, beside Dodge).
+      jumpBtn?.addEventListener('pointerdown', ev => { ev.preventDefault(); performJumpAction(); });
+
       // Mobile mirror of the V key / D-pad down 'toggleMount' action —
       // .active is kept in sync with rideState in window.Mounts.updateMountRide.
       btnCallMount?.addEventListener('pointerdown', ev => {
@@ -28610,7 +28678,7 @@
           || /^(?:plant_|place_|spawn_)/.test(action);
         const btn = computeActionButtons().find(b => b.allowed !== false
           && !toolSet.has(b.action) && !isItemAction(b.action));
-        if (!btn) return;
+        if (!btn) { performJumpAction(); return; } // Pad A doubles as Jump/Climb when there is nothing to interact with.
         activeAction = btn.action;
         useActiveAction();
       }
@@ -28854,6 +28922,7 @@
           return;
         }
         if (actionId === 'dodge') { performContextAction(); return; }
+        if (actionId === 'jump') { performJumpAction(); return; }
         if (actionId === 'toggleMount') { window.Mounts?.toggleMount(); return; }
         if (actionId === 'swapTarget') {
           const aimAngle = controllerLookActive ? controllerLookAngle
@@ -29766,7 +29835,7 @@
           // this wrap into a full 360° orbit instead of the usual ±45° peek
           // clamp. Falls through to the raycast-based facing/aim below
           // otherwise, same as it always has.
-          if ((e.shiftKey || activeCameraMode === SHOULDER_SURF_MODE) && cameraDragAllowed()) {
+          if (activeCameraMode === SHOULDER_SURF_MODE && cameraDragAllowed()) { // Shift is Dodge now; it no longer rotates the camera.
             const cfg = desktopControlsConfig();
             const turnMultiplier = window.Combat?.postAttackTurnMultiplier?.(player) ?? 1; // Applies slowdown without ignoring any movementX/Y deltas.
             const degPerPx = (Number.isFinite(Number(cfg.cameraRotateDegPerPx)) ? Number(cfg.cameraRotateDegPerPx) : 0.15) * turnMultiplier;
@@ -29779,7 +29848,7 @@
             return;
           }
 
-          if (cameraDragPointerId !== null || e.shiftKey) return; // Shift+mouse movement is rotating the camera, not aiming
+          if (cameraDragPointerId !== null) return;
           const rect = threeContainer.getBoundingClientRect();
           _mouseNDC.x =  ((e.clientX - rect.left)  / rect.width)  * 2 - 1;
           _mouseNDC.y = -((e.clientY - rect.top)   / rect.height) * 2 + 1;
@@ -31908,6 +31977,11 @@
       });
 
       window.WildlifeSpawn?.init({
+        companionObjects, // Tzatzuls hunt companions through the same target collection as wildlife.
+        worldSurfaceY: (x, y) => activeSurfaceYAtWorld(x / TILE, y / TILE), // Flight hitboxes/carry height use the actual current terrain elevation.
+        getTzatzulCarryAnchor: actor => actor === player ? playerAttachmentAnchor('posterior')
+          : actor.isBandit ? null : creatureAttachmentAnchor(actor.creatureKey, 'saddle', actor.genotype), // Canonical authored animal saddle and player posterior coordinates.
+        save: saveMemberWorldData, // Nest eggs and delivered victims persist through the ordinary member save.
         corpseObjects, // Cave renewal removes cached corpse entities along with living residents.
         despawnCreature, // Den turnover must dispose removed residents through the same owner as ordinary despawns.
         TILE,
@@ -31946,6 +32020,8 @@
         player,
         calendar,
         damagePlayer, // Used by js/cave-site-system.js's one-shot cache traps (it captures this dependency bag).
+        enterBuilding, // Native async cavern loader + return-exit ownership for Tzatzul player abduction.
+        canPlayerOccupy, // Check the exterior safe return tile before committing a nest transition.
       });
 
       window.CavernGenerator?.init({
@@ -32213,7 +32289,27 @@
         };
       };
 
+      window.FallSystem?.init({ // Landing/edge/grip rules shared by climbing, ledges and cliff falls (js/fall-system.js).
+        PLATEAU_UNIT: typeof PLATEAU_UNIT === "number" ? PLATEAU_UNIT : 2.5,
+        enterProneIfDepleted: (entity, dirX, dirY) => {
+          if (!entity) return false;
+          const isPlayerEntity = entity === player;
+          const direction = hitDirectionRelativeToFacing(isPlayerEntity ? entity.angle : (entity.facing || 0), entity.x, entity.y, entity.x - (dirX || 0) * TILE, entity.y - (dirY || 0) * TILE);
+          enterProneIfFootingDepleted(entity, isPlayerEntity, direction);
+          return !!entity.prone;
+        },
+      });
       window.ClimbSystem?.init({
+        beginCliffDodgeEffects: () => { // Same stamina/i-frames/cooldown as a normal dodge, without the roll movement.
+          if (player.dodgeCooldownT > 0) return false;
+          if (window.ResourceSystem) window.ResourceSystem.spendStamina(player, DODGE_STAMINA_COST, 'dodge');
+          else player.stamina = Math.max(0, player.stamina - DODGE_STAMINA_COST);
+          player.dodgeCooldownT = DODGE_COOLDOWN_S;
+          player.invulnUntil = performance.now() + DODGE_IFRAME_MS;
+          window.CombatVocalizations?.playDodge?.(player);
+          window.CombatTutorial?.observe?.('dodge');
+          return true;
+        },
         _isZoneArea,
         getCurrentArea: () => currentArea,
         player,
@@ -33054,6 +33150,7 @@
         restoreZoneMinedRockState(playerData.minedRockState);
         window.TownMine?.restore?.(playerData.townMineState);
         window.SlagothimTraders?.restore?.(playerData.slagothimTradersState);
+        window.TzatzulNestEncounter?.restore?.(playerData.tzatzulNestState);
         window.CaveSiteSystem?.restore?.(playerData.caveSiteState);
         // Potion items just restored into `inventory` above have no ITEM_DEFS
         // entry yet this page load (ITEM_DEFS starts empty of them every

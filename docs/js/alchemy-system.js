@@ -55,6 +55,11 @@
     potionOfSpeed: recipe('potionOfSpeed', 'bones', 'lighten', 'wind', { label: 'Potion of Speed', icon: '🏃', useMode: 'drink', application: 'buff', stat: 'movementSpeed', magnitude: 0.45, durationS: 52, desc: 'Increases movement speed.' }),
     potionOfEfficiency: recipe('potionOfEfficiency', 'breath', 'lighten', 'wind', { label: 'Potion of Efficiency', icon: '🪶', useMode: 'drink', application: 'buff', stat: 'staminaSpend', magnitude: 0.38, durationS: 52, desc: 'Reduces Stamina costs.' }),
 
+    fireFlask: recipe('fireFlask','senses','afflict','fire',{
+      baseBatch:2,label:'Fire Flask',icon:'🔥',useMode:'throw',application:'groundFire',
+      splashRadius:1.6,amount:10,particleColors:['#ff9b28','#ff4b1e'],
+      desc:'Shatters into a lingering burning patch. Fire catches on stone sconces and creatures.'
+    }),
     hemorrhageFlask: recipe('hemorrhageFlask', 'blood', 'afflict', 'fire', { baseBatch: 2, label: 'Hemorrhage Flask', icon: '🧨', useMode: 'throw', application: 'affliction', afflictionId: 'bleedingHealth', amount: 48, splashRadius: 1.45, particleColors: ['#b3132b', '#ff5668'], particleIntensity: 1.35, desc: 'Applies a large amount of Bleeding Health in a splash.' }),
     woundingFlask: recipe('woundingFlask', 'blood', 'afflict', 'water', { baseBatch: 2, label: 'Wounding Flask', icon: '🫙', useMode: 'throw', application: 'affliction', afflictionId: 'woundedStamina', amount: 28, splashRadius: 1.35, particleColors: ['#6aa8d9', '#bb263f'], desc: 'Applies Wounded Stamina in a splash.' }),
     congealingFlask: recipe('congealingFlask', 'blood', 'afflict', 'earth', { baseBatch: 2, label: 'Congealing Flask', icon: '🫙', useMode: 'throw', application: 'affliction', afflictionId: 'congealedHealth', amount: 30, splashRadius: 1.3, particleColors: ['#6d2c31', '#9b7452'], desc: 'Applies Congealed Health in a splash.' }),
@@ -392,6 +397,7 @@
     else if (definition.application === 'cleanseFamily') window.ResourceSystem?.removeAfflictionsByFamily?.(entity, definition.family, amount);
     else if (definition.application === 'cleanseTag') window.ResourceSystem?.removeAfflictionsByTag?.(entity, definition.tag, amount);
     else if (definition.application === 'affliction') window.ResourceSystem?.addAffliction?.(entity, definition.afflictionId, amount);
+    else if (definition.application === 'groundFire') window.ResourceSystem?.addAffliction?.(entity, 'burningHealth', amount); // Instant splash then the world patch persists on the ground.
     else if (definition.application === 'buff') addTimedEffect(definition, factor, options.potencyTier || 0);
     else if (definition.application === 'narcotic') {
       addTimedEffect(definition, factor, options.potencyTier || 0);

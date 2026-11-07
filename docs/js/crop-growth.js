@@ -15,10 +15,12 @@
     return deps.cardinalNeighbors(col, row).some(point => grid[point.row][point.col].type === deps.TileType.TRENCH);
   }
 
-  // Returns 0..1 growth rate based on how close tile.water is to crop ideal band.
+  // Base water/ditch fit is 0..1; regional cultivars also inherit simple seasonal tolerance.
   function cropGrowthMultiplier(tile, col, row) {
     if (!tile.crop) return 0;
-    const data = deps.cropData[tile.crop];
+    const data = deps.cropData[tile.crop] || (window.CropVarieties?.ensure?.(tile.crop) && deps.cropData[tile.crop]);
+    if (!data) return 0;
+    if (!data) return 0; // Unknown saved crop keys cannot break the daily farm tick.
     const { idealMin, idealMax } = data;
     const w = tile.water / deps.MAX_WATER;
     let waterMul;
@@ -26,7 +28,9 @@
     else if (w < idealMin) waterMul = Math.max(0, (w - (idealMin - 0.4)) / 0.4);
     else waterMul = Math.max(0, ((idealMax + 0.4) - w) / 0.4);
     const ditchMul = data.needsAdjacentDitch && !hasAdjacentDitch(col, row) ? 0.65 : 1.0;
-    return waterMul * ditchMul;
+    const season = window.CalendarSystem?.currentSeason?.()?.name || deps.getCalendar?.()?.season || ''; // Only local Hobunji seasons affect this farm.
+    const climateMul = Number(data.seasonGrowth?.[season]) || 1; // Parent climate genes make cold and rain tolerance meaningful.
+    return waterMul * ditchMul * climateMul;
   }
 
   function tickCropDay() {
@@ -36,7 +40,9 @@
       for (let col = 0; col < deps.COLS; col++) {
         const tile = grid[row][col];
         if (!tile.crop) continue;
-        const data = deps.cropData[tile.crop];
+        const data = deps.cropData[tile.crop] || (window.CropVarieties?.ensure?.(tile.crop) && deps.cropData[tile.crop]);
+        if (!data) continue;
+        if (!data) { tile.stress = 'unknown crop'; continue; } // Preserve the tile for recovery rather than crashing.
         const mul = cropGrowthMultiplier(tile, col, row);
         const ditchStress = data.needsAdjacentDitch && !hasAdjacentDitch(col, row) ? 'needs ditch' : '';
         const tooDry = tile.water / deps.MAX_WATER < data.idealMin; // Same 0..1 scale as idealMin (tile.water is 0..MAX_WATER).

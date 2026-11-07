@@ -62,8 +62,12 @@
     const u = Math.max(-1, Math.min(1, along / (s.width / 2))), i = u < 0 ? 0 : 1, t = u < 0 ? u + 1 : u;
     const depth = Array.isArray(profile) && profile.length === 3
       ? profile[i] + (profile[i + 1] - profile[i]) * t : s.depth;
+    const offsets = s.contourOffsets; // Follow the same curved noodle profile as CliffRouteNetwork's actual mesh.
+    const shift = Array.isArray(offsets) && offsets.length === 3
+      ? offsets[i] + (offsets[i + 1] - offsets[i]) * t : 0; // Applied to BOTH front and rear cap edges.
+    const rear = -s.depth / 2 + shift; // Dynamic surface support uses the translated lid, never its ground-rooted body.
     return Math.abs(along) <= s.width / 2 + pad &&
-      across >= -s.depth / 2 - pad && across <= -s.depth / 2 + depth + pad;
+      across >= rear - pad && across <= rear + depth + pad;
   }
 
   function clear(area) {

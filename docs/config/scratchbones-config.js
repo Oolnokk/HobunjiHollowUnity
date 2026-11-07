@@ -321,7 +321,8 @@ window.SCRATCHBONES_CONFIG = {
       },
       "actions": [
         { "id": "interact", "label": "Interact", "desktop": "KeyE", "controller": "Button0" },
-        { "id": "dodge", "label": "Dodge", "desktop": "Space", "controller": "Button1" },
+        { "id": "dodge", "label": "Dodge", "desktop": "ShiftLeft", "controller": "Button1" },
+        { "id": "jump", "label": "Jump / Climb", "desktop": "Space", "controller": null },
         { "id": "action1", "label": "Tool/Item Action 1", "desktop": "Mouse0", "controller": "RightTrigger" },
         { "id": "action2", "label": "Tool/Item Action 2", "desktop": "Mouse2", "controller": "LeftTrigger" },
         { "id": "action3", "label": "Tool/Item Action 3", "desktop": "KeyF", "controller": "Button2" },
@@ -330,7 +331,7 @@ window.SCRATCHBONES_CONFIG = {
         { "id": "action6", "label": "Tool/Item Action 6", "desktop": "Digit8", "controller": "Button9" },
         { "id": "action7", "label": "Tool/Item Action 7", "desktop": "Digit9", "controller": "Button14" },
         { "id": "action8", "label": "Tool/Item Action 8", "desktop": "Digit0", "controller": "Button15" },
-        { "id": "swapTarget", "label": "Swap Target", "desktop": "KeyG", "controller": "Button5" },
+        { "id": "swapTarget", "label": "Swap Target", "desktop": "KeyC", "controller": "Button5" },
         { "id": "toggleMount", "label": "Call/Dismiss Mount", "desktop": "KeyV", "controller": "Button13" },
         { "id": "perceptionMode", "label": "Perception Mode", "desktop": "KeyB", "controller": "Button14" },
         { "id": "weaponSwitch", "label": "Swap Melee / Ranged", "desktop": "KeyR", "controller": "Button11" },
@@ -4188,12 +4189,6 @@ window.SCRATCHBONES_CONFIG = {
               "hairSlot": "back",
               "idIncludes": ["splayedknot"],
               "url": "cosmetics/appearance/shared/splayedknot-behind.png"
-            },
-            {
-              "_comment": "Fur-lined Hood reuses Fine Hood's entire rear silhouette, so its front-only fur trim must not cover that behind sprite.",
-              "idIncludes": ["fur-lined-hood"],
-              "urlIncludes": ["furlinedhood-trim"],
-              "hide": true
             },
             {
               "_comment": "Fine hood's face-opening trim isn't visible from behind the head at all -- the single finehood-back sprite below stands in for the whole hood.",

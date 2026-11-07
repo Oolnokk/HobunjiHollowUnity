@@ -391,6 +391,7 @@
       const group = new THREE.Group();
       group.name = 'animalDenEntrances';
       for (const den of denList) {
+        if(window.PuzzleCaveEntrances?.hasPortal?.(mapId,den.id))continue; // Mini-cliff Puzzle Caves use their real authored cliffDoor instead of duplicating the old ground-level den facade.
         const denEntranceLocale = activeAnimalDenEntranceLocale(den); // Full-size or small cliff template this den was placed with.
         const denEntranceObject = denEntranceObjectFromLocale(denEntranceLocale); // Cave-specific visual settings come from that den locale.
         const w = den.w || 1, h = den.h || 1;

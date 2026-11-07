@@ -78,13 +78,16 @@
       const key = canonicalKey(item.id); // Used to avoid duplicate Uumkao'ii/Drenkirra egg stacks.
       const categories = [...new Set(item.categories)]; // Used by recipe-slot compatibility checks.
       const icon = CATEGORY_ICONS[categories[0]] || '🥕'; // Used in inventory and cooking UI when no bespoke art exists yet.
+      const authoredSellPrice = Math.max(0, Number(item.sellPrice) || 0); // Rare ingredients like the infertile Tzatzul Egg keep their explicitly authored value in all normal pack/shipping contexts.
       if (!deps.ITEM_DEFS[key]) {
         deps.ITEM_DEFS[key] = {
-          icon, label: item.name, cat: 'food', sellPrice: Math.max(1, Math.round(2 + defaultStarsFor(item) * 2)),
-          tags: ['Ingredient', ...categories.map(category => data().categoryLabels[category] || category)],
-          desc: 'Cooking ingredient. Its source will be added in a future content pass.',
+          icon, label: item.name, cat: 'food', sellPrice: Math.max(1, authoredSellPrice, Math.round(2 + defaultStarsFor(item) * 2)),
+          tags: ['Ingredient', ...categories.map(category => data().categoryLabels[category] || category), ...(item.tags || [])],
+          desc: item.description || 'Cooking ingredient. Its source will be added in a future content pass.',
         };
       }
+      if (authoredSellPrice > 0) deps.ITEM_DEFS[key].sellPrice = Math.max(authoredSellPrice, Number(deps.ITEM_DEFS[key].sellPrice) || 0); // Preserve rarer authored ingredient resale on later registry rebuilds.
+      if (item.description && (!deps.ITEM_DEFS[key].desc || deps.ITEM_DEFS[key].desc.includes('source will be added'))) deps.ITEM_DEFS[key].desc = item.description;
       Object.assign(deps.ITEM_DEFS[key], {
         cookingCategories: categories,
         cookingPrimaryEffect: item.primaryEffect,

@@ -632,7 +632,7 @@ if (/\/tools\/locale-editor\/(?:index\.html)?$/.test(location.pathname)) {
   document.head.appendChild(localeTerrainScript);
 
   const localePreview3dScript = document.createElement('script'); // Adds relative-height shortcuts and a full-viewport live 3D authoring preview.
-  localePreview3dScript.src = 'locale-preview3d.js?v=20261104h0f6db50';
+  localePreview3dScript.src = 'locale-preview3d.js?v=20261107fitp2';
   localePreview3dScript.defer = true;
   document.head.appendChild(localePreview3dScript);
 

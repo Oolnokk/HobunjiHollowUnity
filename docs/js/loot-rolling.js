@@ -121,6 +121,26 @@
     const pool = _lootPools[poolId];
     // Shared composition is data-driven so later puzzle-cave tables can be
     // populated without touching Tzatzul AI or making new loot grant paths.
+    if (pool?.kind === 'exclusive') {
+      // Puzzle-cave trinkets are an actual one-of-N reward, not 13 independent
+      // Bernoulli rolls (which could otherwise award zero or multiple trinkets).
+      const constrainedTier = Number.isFinite(Number(context.rewardTier)) && Number(context.rewardTier) >= 1; // Standalone cave sets a tier; mixed victim loot intentionally draws from all tiers.
+      const desiredTier = constrainedTier ? Math.max(1,Math.min(5,Math.floor(Number(context.rewardTier)))) : null;
+      const definitions = window.TrinketSystem?.DEFINITIONS || {}; // Prevent the mixed source from giving unknown items before the dependent trinket PR is loaded.
+      const entries = (pool.entries || []).filter(entry => entry?.itemKey &&
+        (desiredTier == null || entry.tier == null || Number(entry.tier) === desiredTier) &&
+        Number(entry.weight ?? 1) > 0 && (poolId !== 'puzzleCave' || !!definitions[String(entry.itemKey).replace(/^trinket_/, '')]));
+      if (!entries.length) return {};
+      const totalWeight = entries.reduce((sum,entry) => sum+Number(entry.weight ?? 1),0); // Stable configured probability mass.
+      const random = typeof context.random === 'function' ? context.random :
+        () => window.GameRandom?.random?.() ?? Math.random();
+      let pick = Math.max(0,Math.min(.999999999,Number(random()) || 0))*totalWeight;
+      for(const entry of entries){
+        pick-=Number(entry.weight ?? 1);
+        if(pick<0)return {[entry.itemKey]:1};
+      }
+      return {[entries[entries.length-1].itemKey]:1};
+    }
     if (pool?.kind === 'mixed') {
       const parentIds = Array.isArray(ancestry) ? ancestry : []; // Recursion guard; cyclic edited tables never hang the game.
       if (parentIds.includes(poolId) || parentIds.length >= 8) return {};
@@ -129,7 +149,9 @@
           && !parentIds.includes(source.poolId) && Number.isFinite(Number(source.weight))
           && Number(source.weight) > 0 && _lootPools[source.poolId]
           && (_lootPools[source.poolId].kind === 'mixed'
-            || Array.isArray(_lootPools[source.poolId].entries) && _lootPools[source.poolId].entries.length > 0));
+            || Array.isArray(_lootPools[source.poolId].entries) && _lootPools[source.poolId].entries.some(entry =>
+              _lootPools[source.poolId].kind !== 'exclusive'||source.poolId !== 'puzzleCave'
+                || !!window.TrinketSystem?.DEFINITIONS?.[String(entry.itemKey||'').replace(/^trinket_/, '')]))); // An unmerged trinket dependency is a deferred source, not an empty selected roll.
       const gained = {}; // Flat inventory stacks; the caller's clothingDrops side-channel stores rich garment records.
       const selected = []; // Bound-sized diagnostics for test UI / mobile.
       const draws = Math.max(0, Math.min(10, Math.floor(Number(pool.rolls) || 1)));
