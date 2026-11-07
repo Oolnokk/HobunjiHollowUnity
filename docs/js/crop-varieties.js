@@ -3,8 +3,9 @@
 
   // Crop inheritance uses the livestock system's simple parent-pick approach:
   // two color genes, two ingredient-effect genes, and two climate genes.
-  // The six base-4 digits are the entire genotype, encoded in the crop key;
-  // seeds, harvested goods, planted tiles and processor saves can restore it.
+  // Six base-6 digits hold inherited traits. New crosses also encode their exact
+  // blended RGB color in the crop key to survive generations and save/restore;
+  // the original six-digit cultivar keys remain backward compatible.
   const REGIONS = Object.freeze([
     { label: 'Hobunji Hollow', climate: 'foggy northwestern upland forest with heavy rain', ideal: null, growth: 1,
       season: { Deadgrass: 1, Stormtide: 1, Coldmuck: 1, Longpour: 1 } },
@@ -32,7 +33,7 @@
   const COLOR_FILTERS = Object.freeze([0xffffff, 0xd6ac72, 0xafc4aa, 0xb2c6ed, 0x72c7c8, 0xb98bce]); // Regional tint genes shared by renderer and seed catalog.
   const REGIONAL_EFFECTS = Object.freeze([null, 'foraging', 'fortitude', 'vigor', 'fishing', 'perception']); // Imported food traits reflect climate-driven cultivation, not a new buff system.
   const MAX_CODE = /^[0-5]{6}$/; // Prevents unbounded arbitrary keys from being installed as game items.
-  const VARIANT_KEY = /^cv_(needlegrain|heftroot|garlink|ongyums|redberries|blueberries|yellowberries|whiteberries|blackberries|blackMustard|greenMustard)_([0-5]{6})(Seeds)?$/;
+  const VARIANT_KEY = /^cv_(needlegrain|heftroot|garlink|ongyums|redberries|blueberries|yellowberries|whiteberries|blackberries|blackMustard|greenMustard)_([0-5]{6})(?:_([0-9a-f]{6}))?(Seeds)?$/;
   let cropData = null; // Shared runtime cropData mutated in place; read by growth, planting and the farm.
   let itemDefs = null; // Shared ITEM_DEFS mutated in place; read by inventory, trader and cooking.
   let inventory = null; // Current player's seed/harvest stacks used to rehydrate saved hybrids.
@@ -46,13 +47,13 @@
   const seedKey = crop => crop + 'Seeds'; // Dynamic seed keys live in the ordinary inventory.
   const fromItemKey = key => {
     const match = VARIANT_KEY.exec(String(key || '')); // Used for saved produce, seed and tile crop IDs.
-    return match && FAMILIES.includes(match[1]) ? { family: match[1], code: match[2] } : null;
+    return match && FAMILIES.includes(match[1]) ? { family: match[1], code: match[2], colorHex: match[3] || null } : null;
   };
-  const idFor = (family, code) => 'cv_' + family + '_' + code; // One deterministic crop identity per genotype.
+  const idFor = (family, code, colorHex = null) => 'cv_' + family + '_' + code + (colorHex ? '_' + colorHex : ''); // One deterministic crop identity per genotype.
   function genesFor(key) {
-    if (FAMILIES.includes(key)) return { family: key, genes: '000000' };
+    if (FAMILIES.includes(key)) return { family: key, genes: '000000', colorHex: null };
     const parsed = fromItemKey(key); // Hybrid items and seeds both identify the same parent genotype.
-    return parsed ? { family: parsed.family, genes: parsed.code } : null;
+    return parsed ? { family: parsed.family, genes: parsed.code, colorHex: parsed.colorHex } : null;
   }
   function mixHex(a, b) {
     const channel = shift => Math.round((((a >>> shift) & 255) + ((b >>> shift) & 255)) / 2); // Blend inherited color alleles without shared material mutations.
@@ -62,11 +63,11 @@
     const channel = shift => Math.round(((base >>> shift) & 255) * (.42 + .58 * ((filter >>> shift) & 255) / 255)); // Keep recognisable colors while differentiating origins.
     return (channel(16) << 16) | (channel(8) << 8) | channel(0);
   }
-  function phenotype(family, code) {
+  function phenotype(family, code, colorHex = null) {
     const base = cropData?.[family];
     if (!base || !MAX_CODE.test(code)) return null;
     const genes = [...code].map(Number); // Used to resolve two alleles in each of the three trait pairs.
-    const color = mixHex(tintedColor(NATIVE_COLORS[family], COLOR_FILTERS[genes[0]]), tintedColor(NATIVE_COLORS[family], COLOR_FILTERS[genes[1]]));
+    const color = colorHex == null ? mixHex(tintedColor(NATIVE_COLORS[family], COLOR_FILTERS[genes[0]]), tintedColor(NATIVE_COLORS[family], COLOR_FILTERS[genes[1]])) : Number.parseInt(colorHex, 16); // Save-compatible, exact parent-color midpoint.
     const nativeEffect = window.HobunjiCookingData?.items?.[base.cropKey]?.primaryEffect || 'farming'; // Canonical local ingredient buff.
     const effectA = REGIONAL_EFFECTS[genes[2]] || nativeEffect;
     const effectB = REGIONAL_EFFECTS[genes[3]] || nativeEffect;
@@ -80,11 +81,11 @@
     const region = code === '000000' ? REGIONS[0].label : genes.every(gene => gene === genes[0]) ? REGIONS[genes[0]].label : 'Crossbred';
     return { family, genes: code, color, effects, idealMin: min, idealMax: max, growDays: Math.max(1, Math.round(Number(base.growDays || 3) * growth * 10) / 10), seasonGrowth, region };
   }
-  function register(family, code) {
-    if (!FAMILIES.includes(family) || !MAX_CODE.test(code) || !cropData?.[family]) return null;
-    const id = idFor(family, code);
+  function register(family, code, colorHex = null) {
+    if (!FAMILIES.includes(family) || !MAX_CODE.test(code) || (colorHex != null && !/^[0-9a-f]{6}$/.test(colorHex)) || !cropData?.[family]) return null;
+    const id = idFor(family, code, colorHex);
     if (variants.has(id) && cropData[id] && (!itemDefs || itemDefs[seedKey(id)])) return variants.get(id); // Hot path for rendering, crop growth and inventory.
-    const traits = phenotype(family, code);
+    const traits = phenotype(family, code, colorHex);
     if (!traits) return null;
     const base = cropData[family];
     const label = traits.region + ' ' + (base.label || family);
@@ -100,6 +101,7 @@
         tags: [...new Set([...(item.tags || []), 'Regional Variety'])],
       };
       itemDefs[id] = { ...baseProduce, label, icon: baseProduce.icon || base.emoji || '🌾', cat: baseProduce.cat || 'crop',
+        ...(baseProduce.spriteIcon ? { spriteIcon: baseProduce.spriteIcon, spriteMode: 'direct', spriteColor: traits.color } : {}), // Tint hybrid inventory PNGs, leave native sprites alone.
         sellPrice: Math.max(1, Math.round((Number(baseProduce.sellPrice) || 15) * 1.2)),
         cookingCategories: [...(baseProduce.cookingCategories || item?.categories || [])], cookingPrimaryEffect: Object.keys(traits.effects)[0],
         foodEffects: { ...traits.effects }, varietyColor: traits.color, ingredientColor: traits.color,
@@ -121,7 +123,7 @@
     const parsed = fromItemKey(key);
     if (!parsed) return null;
     const wasRegistered = !!cropData?.[idFor(parsed.family, parsed.code)]; // Only freshly restored genomes require another cooking catalog sync.
-    const variety = register(parsed.family, parsed.code);
+    const variety = register(parsed.family, parsed.code, parsed.colorHex);
     if (variety && !wasRegistered) window.CookingSystem?.registerIngredientItems?.();
     return variety;
   }
@@ -186,14 +188,19 @@
   function breed(firstKey, secondKey, rng = Math.random) {
     const a = produceFamily(firstKey), b = produceFamily(secondKey);
     if (!a || !b || a !== b) return null; // Same crop species only, equivalent in complexity to livestock breeding.
-    const first = genesFor(firstKey).genes, second = genesFor(secondKey).genes;
+    const firstParent = genesFor(firstKey), secondParent = genesFor(secondKey); // Read both genotypes and existing phenotypes, including prior blends.
+    const first = firstParent.genes, second = secondParent.genes;
+    const colorA = phenotype(a, first, firstParent.colorHex).color;
+    const colorB = phenotype(a, second, secondParent.colorHex).color;
+    const mixedPigment = mixHex(colorA, colorB).toString(16).padStart(6, '0'); // Each RGB channel averages both parents, even after many generations.
     const pick = (code, start) => Number(code[start + (rng() < .5 ? 0 : 1)]);
     const child = '' + pick(first, 0) + pick(second, 0) + pick(first, 2) + pick(second, 2) + pick(first, 4) + pick(second, 4);
     const genes = [...child];
     if (rng() < .025) { const locus = Math.floor(rng() * 6); genes[locus] = String(Math.floor(rng() * REGIONS.length)); } // Rare single-allele mutation, as in livestock.
-    const result = genes.every(gene => gene === '0')
+    const childCode = genes.join(''); // Keep climate/effect genes at their original simple inherited complexity.
+    const result = firstKey === a && secondKey === a && childCode === '000000'
       ? { id: a, seedKey: cropData[a]?.seedKey, label: cropData[a]?.label, ...phenotype(a, '000000') }
-      : register(a, genes.join('')); // Local × local gives ordinary seeds rather than a duplicate "Hobunji" genotype.
+      : register(a, childCode, mixedPigment); // All other crosses visibly blend and preserve color in their ordinary seed IDs.
     if (result) {
       lastChange = 'Crossbred ' + firstKey + ' × ' + secondKey + ' → ' + result.label + '.';
       window.CookingSystem?.registerIngredientItems?.(); // The newly invented ingredient keeps its inherited buffs in every recipe picker.
@@ -202,8 +209,16 @@
   }
   function details(key) {
     const genes = genesFor(key);
-    return genes && genes.genes !== '000000' ? phenotype(genes.family, genes.genes) : null;
+    return genes && (genes.genes !== '000000' || genes.colorHex) ? phenotype(genes.family, genes.genes, genes.colorHex) : null;
   }
-  window.CropVarieties = Object.freeze({ REGIONS, FAMILIES, attach, ensure, hydrate, registered, refreshBrushes, offers, produceFamily, breed, details,
+  function colorOf(key) {
+    const parent = genesFor(key); // Seed maker preview and regression tests use the same display color.
+    return parent ? phenotype(parent.family, parent.genes, parent.colorHex)?.color ?? null : null;
+  }
+  function blendedColor(firstKey, secondKey) {
+    const a = produceFamily(firstKey), b = produceFamily(secondKey); // Incompatible crop species cannot mix.
+    return a && a === b ? mixHex(colorOf(firstKey), colorOf(secondKey)) : null;
+  }
+  window.CropVarieties = Object.freeze({ REGIONS, FAMILIES, attach, ensure, hydrate, registered, refreshBrushes, offers, produceFamily, breed, details, colorOf, blendedColor,
     get lastChange() { return lastChange; } }); // Exposed for mobile production diagnostics and regression tests.
 })();
