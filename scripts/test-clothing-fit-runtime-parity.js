@@ -434,9 +434,9 @@ const renderer={
   NpcAvatarPreview:{renderProfileToCanvas:async(canvas,profile,opts)=>{
     portraitCalls.push({canvas,profile,opts});
     assert.equal(profile.hood.id,'fine_hood','Canonical option is the actual equipped hood');
-    assert.equal(profile.hood.tintSlot,'HOOD','Game's hood dye slot is preserved');
+    assert.equal(profile.hood.tintSlot,'HOOD',"Game's hood dye slot is preserved");
     assert.deepEqual(profile.hood.variantLayers.tletingan_male.map(l=>l.paletteColorKey),['A','B'],
-      'Game's base and trim dye material roles remain intact');
+      "Game's base and trim dye material roles remain intact");
     assert(opts.layerImageOverrides.size===2,'Both fitted hood materials enter one render-local image map');
     if(opts.portraitView==='behind')backOption=profile.hood;
     fittedColor=opts.layerImageOverrides.get(profile.hood.variantLayers.tletingan_male[0].url);
