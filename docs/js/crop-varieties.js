@@ -26,6 +26,7 @@
     'yellowberries', 'whiteberries', 'blackberries', 'blackMustard', 'greenMustard',
   ]); // Existing farm crops remain the species boundary for uncomplicated crossbreeding.
   const MUSHTARD_LABELS = Object.freeze({ blackMustard: 'Black Mushtard', greenMustard: 'Green Mushtard' }); // Player-facing names only; unchanged species IDs preserve existing saves and recipes.
+  const mushtardDisplayText = value => String(value).replace(/mustard/gi, match => match === match.toUpperCase() ? 'MUSHTARD' : match[0] === 'M' ? 'Mushtard' : 'mushtard'); // Keeps mobile pack labels' original capitalization while changing only visible text.
   const NATIVE_COLORS = Object.freeze({
     needlegrain: 0xd4c526, heftroot: 0xf0d15a, garlink: 0xf2ead0, ongyums: 0xe09a4b,
     redberries: 0xff4f62, blueberries: 0x5f80ff, yellowberries: 0xffe86a,
@@ -149,11 +150,11 @@
       if (itemDefs?.[family]) itemDefs[family].label = label; // Harvested native produce shown in the pack.
       const nativeSeedKey = base.seedKey; // Uses the original seed ID, singular or plural, without save migration.
       if (nativeSeedKey && itemDefs?.[nativeSeedKey]) {
-        itemDefs[nativeSeedKey].label = String(itemDefs[nativeSeedKey].label || label + ' Seeds').replace(/Mustard/g, 'Mushtard');
+        itemDefs[nativeSeedKey].label = mushtardDisplayText(itemDefs[nativeSeedKey].label || label + ' Seeds');
       }
       for (const item of inventoryItems || []) {
         if (item?.key === family || item?.key === nativeSeedKey) {
-          item.label = String(item.label || label).replace(/Mustard/g, 'Mushtard'); // Keep already-populated mobile pack choices consistent.
+          item.label = mushtardDisplayText(item.label || label); // Keep already-populated mobile pack choices consistent.
         }
       }
     }
