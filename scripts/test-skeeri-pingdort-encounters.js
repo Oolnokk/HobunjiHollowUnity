@@ -14,6 +14,11 @@ for(const species of ['skeeri','pingdort']){
     assert(fs.existsSync(path.join(root,'docs/assets',rig[pose])));
   }
 }
+const authorHtml=read('docs/tools/flying-animal-author/index.html'); // Standalone mobile editor must expose Pingdort.
+const authorApp=read('docs/tools/flying-animal-author/app.js'); // The new preset loads a separate authoring JSON and saved draft.
+assert(authorHtml.includes('<option value="pingdort">Pingdort</option>'));
+assert(authorApp.includes("pingdort: 'creaturesprites/pingdort_'"));
+assert(authorApp.includes("pingdort: '../../config/creatures/pingdort-flying-rig.json'"));
 class Root {
   constructor(geo=null,mat=null){
     this.geometry=geo;this.material=mat;this.children=[];this.parent=null;this.isObject3D=true;
@@ -100,6 +105,7 @@ async function check(){
   const ruin=w.SkeeriRuins.mount({rec:{scene,mapData:{id:area}},plan,seed:11,
     getPlayerY:()=>0,difficulty:5});
   assert.equal(ruin.hatches.length,5);assert.equal(ruin.bombers.length,3);
+  assert.deepEqual(ruin.hatches.map(h=>h.floor),[0,1,2,3,4],'hatch difficulty follows floor index, not world elevation');
   const hatch=ruin.hatches.find(h=>h.size==='small')||ruin.hatches[0];
   const before=ruin.actors.size;assert(w.SkeeriRuins.activateCompartment(hatch.id));
   for(let i=0;i<10;i++)w.SkeeriRuins.update(.1);
