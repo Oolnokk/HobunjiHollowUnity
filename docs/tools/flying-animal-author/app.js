@@ -16,8 +16,12 @@
     const presetPaths = Object.freeze({ // A preset is identified by all three art assets.
       tzatzul: 'creaturesprites/tzatzul_',
       skeeri: 'creaturesprites/skeeri_',
+      pingdort: 'creaturesprites/pingdort_', // Pingdort has authored flying, perched, and wings PNGs.
     });
-    const presetConfig = '../../config/creatures/skeeri-flying-rig.json'; // Repository-owned Skeeri data.
+    const presetConfigs = Object.freeze({ // Shipped JSON presets are independent of each species' local draft.
+      skeeri: '../../config/creatures/skeeri-flying-rig.json',
+      pingdort: '../../config/creatures/pingdort-flying-rig.json',
+    });
     const presetForRig = candidate => Object.keys(presetPaths).find(name =>
       ['flying', 'perched', 'wings'].every(key =>
         candidate[key] === presetPaths[name] + key + '.png')) || 'custom';
@@ -206,9 +210,9 @@
           } catch { /* Missing or damaged browser data must not hide the shipped preset. */ }
         }
         if (!authored && name === 'tzatzul') authored = rigAPI.defaults;
-        if (!authored && name === 'skeeri') {
-          const response = await fetch(presetConfig);
-          if (!response.ok) throw new Error(`Skeeri preset could not be fetched (HTTP ${response.status}).`);
+        if (!authored && Object.hasOwn(presetConfigs, name)) {
+          const response = await fetch(presetConfigs[name]);
+          if (!response.ok) throw new Error(`${name} preset could not be fetched (HTTP ${response.status}).`);
           authored = await response.json();
         }
         if (id !== loadId) return;
