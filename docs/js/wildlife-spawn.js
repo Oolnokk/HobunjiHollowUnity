@@ -124,6 +124,7 @@
   function init(injectedDeps) {
     ensurePuktukRuntimeRegistration(injectedDeps);
     ensureVoorgAssRuntimeRegistration(injectedDeps);
+    window.MootRegistration?.register?.(injectedDeps); // Independent Northern Cliffs grazing groups and usable Ranch starter; no den insertion.
     window.TzatzulRegistration?.register?.(injectedDeps); // Species registration is synchronous, like Voorg-Ass; actual nesting is separate.
     window.TzatzulLiveVisuals?.init?.(injectedDeps);
     window.TzatzulRegistration?.registerPeck?.(); // Ensure the authored hatchling attack exists after Combat initialization.
@@ -1313,7 +1314,7 @@
     }
 
     if (spawned > 0) {
-      window.__farmLog?.(`[voorg-ass] spawned roaming herd key=${herdKey} size=${spawned} mother=${motherIndex >= 0 ? 1 : 0} babies=${motherBabyCount} anchor=(${Math.round(anchor.x / deps.TILE)},${Math.round(anchor.y / deps.TILE)})`, 'wildlife');
+      window.__farmLog?.(`[${speciesKey === 'moot' ? 'moot' : 'voorg-ass'}] spawned roaming herd key=${herdKey} size=${spawned} mother=${motherIndex >= 0 ? 1 : 0} babies=${motherBabyCount} anchor=(${Math.round(anchor.x / deps.TILE)},${Math.round(anchor.y / deps.TILE)})`, 'wildlife');
       if (zoneId === deps.getCurrentArea() && speciesKey === VOORG_ASS_SPECIES) deps.showToast('A large Voorg-Ass herd is roaming the cliffs.', false);
     }
     return spawned;
