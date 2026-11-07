@@ -22,10 +22,8 @@
   const nativeRenderMapPanel = WildernessMap.renderMapPanel.bind(WildernessMap);
 
   const keyFor = (col, row) => `${col},${row}`;
-  const sortedKeys = keys => [...keys].sort((a, b) => {
-    const [ac, ar] = a.split(',').map(Number), [bc, br] = b.split(',').map(Number);
-    return ar - br || ac - bc;
-  });
+  const sortedKeys = keys => [...keys].map(k => { const i = k.indexOf(','); return [k, +k.slice(0, i), +k.slice(i + 1)]; })
+    .sort((a, b) => a[2] - b[2] || a[1] - b[1]).map(e => e[0]); // Parse each key once, not per comparison.
 
   function worldBox(object) {
     if (!object) return null;
@@ -294,10 +292,19 @@
   }
 
   function pushBlockBox(model, block) {
-    const pose = model.slidingPushBlocks.get(block); // Cached until the actual block transform moves.
+    const pose = model.slidingPushBlocks.get(block); // Cached until the block or any ancestor actually moves.
     if (!pose) return null;
+    if (!block.parent) return null; // Not mounted in the scene yet (or discarded): its world box is meaningless and must never collide.
     const {x, y, z} = block.position;
-    if (x !== pose.x || y !== pose.y || z !== pose.z) Object.assign(pose, {x, y, z, box:worldBox(block)});
+    let px = 0, py = 0, pz = 0;
+    const parent = block.parent;
+    parent.updateWorldMatrix?.(true, false);
+    const pe = parent.matrixWorld?.elements;
+    if (pe) { px = pe[12]; py = pe[13]; pz = pe[14]; }
+    if (x !== pose.x || y !== pose.y || z !== pose.z || parent !== pose.parent
+      || px !== pose.px || py !== pose.py || pz !== pose.pz || !pose.box) {
+      Object.assign(pose, {x, y, z, parent, px, py, pz, box:worldBox(block)}); // Re-measure when the parent moved or the first box predated mounting.
+    }
     return pose.box;
   }
 

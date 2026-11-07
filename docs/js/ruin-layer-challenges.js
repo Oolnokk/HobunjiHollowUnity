@@ -48,7 +48,7 @@
       const seed=Array.from(String(id)).reduce((hash,ch)=>Math.imul(hash^ch.charCodeAt(0),16777619)>>>0,2166136261); // A reproducible mix of net and pillar mechanisms per wing.
       function setup(){
         if(rec.disposed||puzzle||failed||!isActive()
-          ||bus?.hasActiveRuinState?.()!==true||!game?.getOccupancySnapshot?.())return;
+          ||bus?.hasActiveRuinState?.()!==true||!(game?.hasOccupancy?game.hasOccupancy():game?.getOccupancySnapshot?.()))return; // Presence check only: building the full snapshot sorts every floor cell and ran every frame.
         const player=getPlayerPosition?.(); // Deferred construction avoids eagerly mounting several heavy compound rooms on a story the player has just reached.
         if(!player||player.x<room.x-5||player.x>room.x+room.w+5
           ||player.z<room.z-5||player.z>room.z+room.d+5)return;

@@ -1051,7 +1051,25 @@
     owner.rootedMechanisms=true;owner.occupancy?.refresh();
   }
 
-  async function generate(seed=randomSeed(),opts={}) {
+  // Only one ruin build may be in flight. A second Enter press (or the Generate button, a site entry and the
+  // Puzzle Lab racing) used to start a parallel build whose clearRuntime() tore down the first one's scene mid-way,
+  // leaving two occupancy models/blockers and phantom collisions that snapped the player back to spawn.
+  let ruinBuildInFlight=null;
+  function singleFlight(impl){
+    return function(...args){
+      if(ruinBuildInFlight){
+        console.warn('[Random Test Ruin] build already in progress; ignoring duplicate enter request.');
+        return ruinBuildInFlight.then(()=>false,()=>false);
+      }
+      const run=Promise.resolve(impl(...args));
+      const tracked=run.finally(()=>{if(ruinBuildInFlight===tracked)ruinBuildInFlight=null;});
+      ruinBuildInFlight=tracked;
+      return run;
+    };
+  }
+  const generate=singleFlight(generateImpl), generateStoryVault=singleFlight(generateStoryVaultImpl), generateShaftTest=singleFlight(generateShaftTestImpl);
+
+  async function generateImpl(seed=randomSeed(),opts={}) {
     if ((!devModeEnabled()&&!opts.site) || !deps || !buildingScenes) return false;
     const singleRoomTrial=opts.singleRoomTrial===true; // Keeps isolated dev generation out of wilderness sites and the authored Hachutu temple.
     if(singleRoomTrial&&(opts.site===true||opts.hachutu===true||!devModeEnabled()))return false;
@@ -1231,7 +1249,7 @@
   // Fixed story ruin: intentionally bypass V50 generation and all puzzle/boss composers.
   // It still uses this module's normal _buildingScenes, scene transition, floor support,
   // player-mesh ownership and exit lifecycle, so it is a real playable interior.
-  async function generateStoryVault(options = {}) {
+  async function generateStoryVaultImpl(options = {}) {
     if (!deps || !buildingScenes || !window.DelversGuild?.hasTalisman?.()) return false;
     if (!['search','report'].includes(window.DelversGuild?.vaultPhase?.())) return false;
     try {
@@ -1403,7 +1421,7 @@
     }
   }
 
-  async function generateShaftTest(){
+  async function generateShaftTestImpl(){
     if(!devModeEnabled()||!deps||!buildingScenes||!window.ShaftHub)return false;
     const hub=window.ShaftHub.compose({seed:randomSeed(),landings:true}); // Standalone scene keeps the V50 floor and walls out of the shaft.
     if(!hub.ok){deps.showToast?.('Shaft layout failed its reachability check.',false);return false;}
@@ -1568,7 +1586,12 @@
   function shaftAt(x,z,referenceY=0){
     // Reuse the pure tested selector instead of duplicating 3D wing overlap
     // logic in this 2D interior adapter. The shaft retains precedence at ports.
-    return window.RuinLayerPlayable?.selectGrid?.(ruin?.shaftGrids,x,z,referenceY)||null;
+    const grid=window.RuinLayerPlayable?.selectGrid?.(ruin?.shaftGrids,x,z,referenceY)||null;
+    // A wing whose floor is more than a level above the actor is overhead, not underfoot. Treating it as the
+    // collision owner makes every cell below its bedrock read as solid: an invisible tile-sized wall that
+    // snaps the player back to spawn.
+    if(grid&&Number.isFinite(Number(referenceY))&&grid.yToLevel(Number(referenceY)+1e-5)<-1)return null;
+    return grid;
   }
 
   function shaftActorFloor(actor,x,z,maxDrop=1){
@@ -2087,7 +2110,17 @@
   window.DevRandomRuin=Object.freeze({getVestibuleRoots:()=>ruin?{stone:ruin.vestibuleStone||null,props:ruin.stoneAgeStats?.props||0,bindings:ruin.rootGrowthBindings?.length||0,rooted:!!ruin.rootedMechanisms,ms:ruin.vestibuleRootMs||0,error:ruin.vestibuleRootError||null}:null,generate,generateStoryVault,reroll:()=>ruin?.shaftTest?generateShaftTest():generate(randomSeed(),ruin?.singleRoomTrial?{singleRoomTrial:true,puzzleType:ruin.singleRoomTrial.mode==='weighted'?'weighted':ruin.singleRoomTrial.kind}:{hachutu:ruin?.hachutu===true,rootMechanisms:ruin?.rootedMechanisms===true,stoneAge:ruin?.stoneAgeRequested===true,composedTrial:ruin?.composedTrialForced===true?true:undefined}),clear:()=>{if(deps?.getCurrentArea?.()===MAP_ID)leaveRuin();else clearRuntime(true);},leave:leaveRuin,exitTo,getInteractionControls:()=>ruin?ruin.controls.filter(control=>control.kind!=='story-vault-pedestal'||window.DelversGuild?.vaultPhase?.()==='search').map(control=>({...control,range:Number.isFinite(Number(control.range))?Number(control.range):CONTROL_RANGE})):[],registerLabPushBlock,unregisterLabPushBlock,getNativeV50TestRuntime:()=>devModeEnabled()?ruin?.nativeV50Runtime||null:null, // Developer-mode-only diagnostic handle for Playwright to exercise the actual generated puzzle controls and stage gates; not a gameplay solver.
     setPuzzleLabStatus,
     getRuntimeContext:()=>ruin?{scene:ruin.scene,grid:ruin.grid,root:ruin.localeRoot,meta:ruin.meta,floorSet:ruin.floorSet,floorScope:SCOPE,ceilingY:ruin.ceilingY,spawn:{...ruin.spawn},cols:ruin.cols,rows:ruin.rows,sanctumMapSize:ruin.sanctumMapSize,sanctumPlan:ruin.sanctumPlan||null,
-    shaftEntrance:ruin.compactVestibule?window.RuinShaftConnector?.entranceOutside?.(ruin.meta,{x:entryPadX,z:entryPadZ},RUIN_TILE_SCALE)||null:null,seed:ruin.seed,theme:ruin.theme,specialBoss:ruin.specialBoss,ruinName:ruin.ruinName,hachutu:!!ruin.hachutu,stoneAge:!!ruin.stoneAge,stoneAgeStats:ruin.stoneAgeStats||null,shaftHub:!!ruin.shaftHub,singleRoomTrial:ruin.singleRoomTrial||null,labFurniture:ruin.labFurniture,noLoot:ruin.noLoot===true,puzzleOptions:{...ruin.puzzleOptions}}:null,getPuzzleGenerationOptions:()=>readPuzzleGenerationOptions(),setPuzzleGenerationOptions:options=>savePuzzleGenerationOptions(options),getOccupancySnapshot:()=>ruin?.occupancy?.snapshot?.()||null,getLastSolvabilityAudit:()=>lastGenerationAudit?JSON.parse(JSON.stringify(lastGenerationAudit)):null,getShaftSanctumDoorSite:()=>ruin?.shaftSanctumDoorSite||null, // The verified inner shaft-wall threshold is the only normal Great Door entrance.
+    shaftEntrance:ruin.compactVestibule?window.RuinShaftConnector?.entranceOutside?.(ruin.meta,{x:entryPadX,z:entryPadZ},RUIN_TILE_SCALE)||null:null,seed:ruin.seed,theme:ruin.theme,specialBoss:ruin.specialBoss,ruinName:ruin.ruinName,hachutu:!!ruin.hachutu,stoneAge:!!ruin.stoneAge,stoneAgeStats:ruin.stoneAgeStats||null,shaftHub:!!ruin.shaftHub,singleRoomTrial:ruin.singleRoomTrial||null,labFurniture:ruin.labFurniture,noLoot:ruin.noLoot===true,puzzleOptions:{...ruin.puzzleOptions}}:null,getPuzzleGenerationOptions:()=>readPuzzleGenerationOptions(),setPuzzleGenerationOptions:options=>savePuzzleGenerationOptions(options),getOccupancySnapshot:()=>ruin?.occupancy?.snapshot?.()||null,hasOccupancy:()=>!!ruin?.occupancy?.snapshot,debugPlayerCollision:()=>{ // Pixel Probe readout: the 3D voxel grid (not the footprint registry) is what snaps to whole tiles.
+      if(!ruin||!deps?.player)return null;
+      const x=deps.player.x/deps.TILE,z=deps.player.y/deps.TILE,grid=shaftAt(x,z,ruin.supportY);
+      const out={x:+x.toFixed(3),z:+z.toFixed(3),supportY:ruin.supportY,supportId:ruin.supportId,lastAccepted:ruin.lastAcceptedPx?{x:+(ruin.lastAcceptedPx.x/deps.TILE).toFixed(3),z:+(ruin.lastAcceptedPx.y/deps.TILE).toFixed(3)}:null,shaftGrids:ruin.shaftGrids?.size||0,grid:null};
+      if(grid){
+        const level=grid.yToLevel(ruin.supportY+1e-5),col=grid.xToCol(x),row=grid.zToRow(z),cells=[];
+        for(let r=row-1;r<=row+1;r++)for(let c=col-1;c<=col+1;c++)cells.push(grid.inBounds(c,r,0)?(grid.hasHeadroom(c,r,level)?'.':'#'):'-');
+        out.grid={level,col,row,blockedHere:shaftBlocks(grid,x,z,level),cells3x3:cells.join('')};
+      }
+      return out;
+    },getLastSolvabilityAudit:()=>lastGenerationAudit?JSON.parse(JSON.stringify(lastGenerationAudit)):null,getShaftSanctumDoorSite:()=>ruin?.shaftSanctumDoorSite||null, // The verified inner shaft-wall threshold is the only normal Great Door entrance.
     getShaftNetworkState:()=>ruin?{...ruin.shaftLayerRuntime?.getState?.(),obelisk:ruin.shaftObeliskRuntime?.getState?.()||null,
       airborne:ruin.obeliskFall?{height:ruin.obeliskFall.y,verticalSpeed:ruin.obeliskFall.v}:null}:null,
     getShaftCollisionMap:(requestedFloor=0)=>{
