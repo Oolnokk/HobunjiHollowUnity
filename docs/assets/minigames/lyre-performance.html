@@ -1818,7 +1818,10 @@
   }
 
   function automaticPluckLabel(mode = state.pluckInputMode) {
-    return automaticPatternDefinition(mode).label;
+    const labChoice = state.game?.labAdaptiveAutoPick
+      ? KURRAYA_LAB_PATTERN_CHOICES.find(choice => choice.id === mode)
+      : null; // Only the Music Lab's session preview needs its neutral figure name; saved gameplay labels stay untouched.
+    return labChoice?.label || automaticPatternDefinition(mode).label;
   }
 
   function fourWayIndex(x, y) {
@@ -6904,14 +6907,21 @@
       const timer = setTimeout(() => {
         state.demoTimers.delete(timer);
         if (!state.game.active || !state.game.demoActive || generation !== state.demoGeneration || state.paused) return;
-        const voicedPattern = automaticPatternSteps(pattern.melodyMidi,pattern.fret,mode); // Live chord revoicing, without resetting the preview's alternating direction.
+        const scheduledAt = nowMs() + targetGameTime - gameTime(); // Project this note's authored beat onto the audio clock, even if its timer callback was late.
+        const pulseClock = sharedTransportData(scheduledAt); // Match the harmony and meter at the scheduled attack, not whatever chord happens to sound on callback arrival.
+        const voicedPattern = automaticPatternSteps(pattern.melodyMidi,pattern.fret,mode,pulseClock); // Revoice each subdivision from its scheduled harmony without resetting alternating direction.
         const step = voicedPattern.steps[pulseStep % voicedPattern.steps.length];
         const voiceKey = `demo-auto:${generation}:${eventIndex}:${pulseStep}:${++state.previewCounter}`;
-        if (step?.type === 'note') void playAuditoryOnlyMidi(step.midi,voiceKey,0.76 * (step.velocity || 1));
+        if (step?.type === 'note') void playAuditoryOnlyMidi(step.midi,voiceKey,0.76 * (step.velocity || 1),null,true,scheduledAt);
         else if (step?.type === 'strum' || step?.type === 'boom') {
-          const voicing = step.type === 'boom' ? melodyTopStrumMidis(pattern.melodyMidi,'boom') : melodyTopStrumMidis(pattern.melodyMidi,step.voicing || 'full');
+          const voicing = step.type === 'boom'
+            ? melodyTopStrumMidis(pattern.melodyMidi,'boom',pulseClock)
+            : melodyTopStrumMidis(pattern.melodyMidi,step.voicing || 'full',pulseClock);
           const ordered = step.direction === 'up' ? voicing.slice().reverse() : voicing;
-          ordered.forEach((midi,stringIndex) => setTimeout(() => void playAuditoryOnlyMidi(midi,`${voiceKey}:${stringIndex}`,0.4 * (step.velocity || 1)),stringIndex * 14));
+          ordered.forEach((midi,stringIndex) => setTimeout(() => {
+            if (!state.game.active || !state.game.demoActive || generation !== state.demoGeneration || state.paused) return; // Stopping a demo cancels delayed chord strings too.
+            void playAuditoryOnlyMidi(midi,`${voiceKey}:${stringIndex}`,0.4 * (step.velocity || 1),null,true,scheduledAt + stringIndex * 14);
+          },stringIndex * 14));
         }
       },Math.max(0,targetGameTime - gameTime()));
       state.demoTimers.add(timer);
