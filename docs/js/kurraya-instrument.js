@@ -407,10 +407,15 @@
       }
       const pose=notePoseAt(note,elapsed/twitchState.durationMs);
       const rest=note.poses.neutral;
-      for(const axis of ['x','y','z'])group.position[axis]=twitchState.basePosition[axis]+pose[axis]-(Number(rest[axis])||0);
+      for(const axis of ['x','y','z']){
+        const delta=pose[axis]-(Number(rest[axis])||0);
+        group.position[axis]=twitchState.basePosition[axis]+(Math.abs(delta)<1e-9?0:delta); // Exactly preserve resting position when all keyframes agree; avoid interpolated roundoff drift.
+      }
       const deg=Math.PI/180;
-      for(const [axis,channel] of [['x','pitch'],['y','yaw'],['z','roll']])
-        group.rotation[axis]=twitchState.baseRotation[axis]+(pose[channel]-(Number(rest[channel])||0))*deg;
+      for(const [axis,channel] of [['x','pitch'],['y','yaw'],['z','roll']]){
+        const delta=pose[channel]-(Number(rest[channel])||0);
+        group.rotation[axis]=twitchState.baseRotation[axis]+(Math.abs(delta)<1e-9?0:delta*deg); // Shared authored rotation can remain static while only plucking fingers move.
+      }
       return;
     }
     const axis=twitchState.axis;
