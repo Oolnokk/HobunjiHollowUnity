@@ -109,7 +109,7 @@ function testCarryableTabBoot() {
   assert.match(html,/id="tab-carry"[^>]*class="hidden"/,'the Carryable fallback panel exists without JavaScript');
   assert.match(html,/id="carryAuthorLoadStatus"/,'loading failures have visible mobile-safe diagnostics');
   assert.match(html,/'avatar','carry','base','io'/,'base mode switches include the Carryable pane');
-  assert.match(html,/carryable-objects\.js\?v=20261107carryTabPermanent1[^>]+onerror=/,'the separate authoring script exposes load errors');
+  assert.match(html,/carryable-objects\.js\?v=20261107carryPosteriorFrame2[^>]+onerror=/,'the separate authoring script exposes load errors');
   assert.match(author,/getElementById\('carryModeTab'\)\|\|document\.createElement\('button'\)/,'authoring reuses the static tab');
   assert.match(author,/getElementById\('tab-carry'\)\|\|document\.createElement\('div'\)/,'authoring reuses the static panel');
 }
@@ -204,10 +204,13 @@ function testRuntime() {
   assert.equal(chargePart.material.transparent,true,'replacement material inherits the stowed render flags');
   assert.equal(chargePart.material.depthWrite,false,'replacement material cannot mask the front PNG');
   assert.equal(priorMaterial.depthWrite,true,'detached original material is restored on replacement');
-  const authoredBurdenPoint=new Vector3(.13,.22,-.16).multiply(charge.group.scale).applyQuaternion(charge.group.quaternion);
-  const actualAttachment=charge.group.position.clone().add(authoredBurdenPoint);
-  for(const [axis,expected] of Object.entries({x:.12,y:-.08,z:.04}))
-    assert(Math.abs(actualAttachment[axis]-expected)<1e-8,'back burden anchor follows portrait-local author coordinate on '+axis);
+  const authoredBurdenPoint=new Vector3(.13,.22,-.16); // Object-space contact point; the actual stow transform determines its world location.
+  const actualAttachment=charge.group.localToWorld(authoredBurdenPoint.clone());
+  const expectedAttachment=bodyRoot.localToWorld(new Vector3(.08+.12,.42-.08,.18+.04)); // Hip position plus both back-only offsets.
+  for(const axis of ['x','y','z'])
+    assert(Math.abs(actualAttachment[axis]-expectedAttachment[axis])<1e-8,'back uses the same species-adjusted posterior frame as holding on '+axis);
+  assert(Math.abs(actualAttachment.y-(portrait.position.y-.08))>.01,
+    'stow must not use the portrait-plane center as the species height origin');
   assert.equal(window.Shattercasks.debugSnapshot().backCarryMount.portraitAttached,true);
   assert.equal(window.Shattercasks.debugSnapshot().backCarryMount.collision,'carrier-hitbox');
   assert.equal(originalTarget.hitbox(),null,'stowing also invalidates hitboxes exposed by previously cached Targetables entries');
@@ -345,8 +348,10 @@ function testRuntime() {
   assert(window.Shattercasks.pickUp(travel));
   assert(window.Shattercasks.stowOnBack());
   assert.equal(travel.group.parent,rigidPortrait,'default back stow mounts to the available rigid portrait');
-  for(const axis of ['x','y','z'])assert(Math.abs(travel.group.position[axis])<1e-8,
-    'a burden without authored back coordinates defaults to the exact portrait center on '+axis);
+  const travelWorld=travel.group.getWorldPosition(new Vector3());
+  const defaultPosteriorWorld=currentBodyRoot.localToWorld(new Vector3(0,.42,0)); // Even unconfigured Burdens inherit the carrier's anatomical hip.
+  for(const axis of ['x','y','z'])assert(Math.abs(travelWorld[axis]-defaultPosteriorWorld[axis])<1e-8,
+    'a burden without authored back coordinates defaults to the species-adjusted posterior on '+axis);
   const secondScene=new Group(); // Mimics a destination ruin with a static object using the same local ID.
   currentArea='map_back_destination';
   activeScene=secondScene;
