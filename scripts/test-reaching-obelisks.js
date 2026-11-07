@@ -128,7 +128,7 @@ try{
       nextBeat();
       assert.equal(rt.getState().beat,beat,'quarter-turn occurs on the correct numbered beat');
       assert.equal(a.rotation,(bar*3-3+beat-1)%4,'one 90-degree rotation on every non-downbeat');
-      assert.equal(b.rotation,a.rotation,'all obelisks turn in sync, including the previously unrotating columns');
+      assert.equal(b.rotation,0,'B keeps its original fixed rotation; only the A mechanism was motorized');
     }
     if(bar<4){
       nextBeat();
