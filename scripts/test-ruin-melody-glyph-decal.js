@@ -104,3 +104,20 @@ const tight=api.create({root:new Group(),plate,notes:[4,3,2,1],bounds:{minX:-.4,
 assert.equal(tight.diagnostics().fallback,true);
 assert.deepEqual(Array.from(tight.diagnostics().notes),[4,3,2,1]);
 console.log('Procedural ruin Scratchbone glyph decals passed.');
+
+// Explicit vertical stone faces keep notes upright and appear only on their own trigger.
+const upright=api.create({root:new Group(),plate,notes:first,sampleSupport,
+  surfaces:[{x:0,y:1.6,z:3,yaw:Math.PI},{x:3,y:1.6,z:0,yaw:-Math.PI/2}],seed:1});
+assert.equal(upright.diagnostics().vertical,true);
+assert.equal(upright.group.position.x,3,'seed selects a stable exposed pillar face');
+assert.equal(upright.group.visible,false,'unoccupied plate hides the clue');
+upright.setVisible(true);assert.equal(upright.group.visible,true);
+assert(upright.group.children.slice(1).every(glyph=>glyph.rotation.x===0&&glyph.position.z>0),
+  'vertical glyphs face outward with their tops pointing up');
+assert(upright.group.children.slice(1).every(glyph=>glyph.material.color===0xffda70),'glyphs use a luminous warm tint');
+upright.setVisible(false);assert.equal(upright.group.visible,false);
+const floorClue=api.create({root:new Group(),plate,notes:first,bounds,sampleSupport});
+const yaw=floorClue.group.rotation.y; // Local glyph top must point away from the plate on either floor side.
+assert((-Math.sin(yaw)*floorClue.group.position.x-Math.cos(yaw)*floorClue.group.position.z)>0,
+  'floor fallback is upright as read from the pressure plate');
+upright.dispose();assert.equal(upright.group.children.length,0,'owned material wrappers are released on reroll');

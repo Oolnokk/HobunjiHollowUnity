@@ -1208,7 +1208,7 @@
     const noteSlots=window.KurrayaPuzzle?.NOTE_CODES.length ?? 8; // Match the instrument range in game and the standalone ruin preview.
     const melody=Array.from({length:noteCount},()=>Math.min(noteSlots-1,Math.max(0,Math.floor(rng()*noteSlots))));
     const inscription=window.RuinMelodyGlyphDecal?.create?.({
-      root,plate:plates[0],notes:melody,
+      root,plate:plates[0],notes:melody,surfaceRoot:context.scene,seed:melody.reduce((sum,n)=>sum*8+n,0),
       bounds:slot.bounds||roomBounds(context.meta,owner),
       hallway:isHallway,hallAxis:owner?.axis,
       sampleSupport,
@@ -1218,7 +1218,7 @@
         materialTexture:'carved_smooth.png',materialLighting:'unlit',color:'#c2b39b',
         materialFillEnabled:true,materialFillColor:'#c2b39b',materialFillMode:'always',
       }),
-    }); // A carved floor inscription reads the actual generated notes and remains independent of the trigger's interaction surface.
+    }); // Visible stone faces reveal the generated phrase only while its trigger is occupied.
     const set={id,slotKind:isHallway?'hallway':'room',root,plates,notes:melody,inscription,heardNotes:[],playbackTimers:[],attempts:0,mistakes:0,solved:false,solveCount:0,onComplete:typeof slot.onComplete==='function'?slot.onComplete:null}; // Each set listens to the player's rolling note history independently of its pressure-plate playback.
     state.chordPlateSets.push(set); // Retain the established composer reference while replacing its internal musical challenge.
     if(isHallway)usedHallways?.add?.(owner.id);
@@ -2347,7 +2347,7 @@
     for(const set of state.chordPlateSets){
       syncEchoInscription(set); // Live authoring/generator updates can replace the inscription without rebuilding the room.
       for(const plate of set.plates){
-        const down=Math.abs(player.x-plate.x)<=.39&&Math.abs(player.z-plate.z)<=.39;
+        const down=Math.abs(player.x-plate.x)<=.39&&Math.abs(player.z-plate.z)<=.39&&Math.abs(player.y-plate.y)<.75;
         plate.mesh.position.y=plate.y+.03-(down?.035:0);
         if(down&&!plate.down&&!set.solved){
           plate.pressCount++;
@@ -2357,6 +2357,7 @@
         }
         if (!set.solved && !down) plate.material.color.setHex(CHORD_PLATE_IDLE_COLOR);
         plate.down=down;
+        set.inscription?.setVisible?.(down);
       }
     }
   }

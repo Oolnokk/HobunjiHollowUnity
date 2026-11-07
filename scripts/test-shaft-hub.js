@@ -444,25 +444,33 @@ const Defense={create:options=>({
   const music={beginPlayerSession:arg=>{started.push(arg);return true;}};
   let floor=4,player={x:27,z:29},done=0;
   const melody=Challenges.compose({THREE,parent:new Group(),room:{x:20,z:22,w:14,d:14},
-    id:'melody-test',kind:'melodyEcho',y:4,isActive:()=>true,
+    id:'melody-test',kind:'melodyEcho',area:'test-area',y:4,isActive:()=>true,
     getPlayerPosition:()=>player,getPlayerY:()=>floor,
     music,events,onSolved:()=>done++});
   assert.equal(melody.notes.length,Challenges.melodyFor('melody-test').length);
   assert(melody.notes.every(n=>Number.isInteger(n)&&n>=0&&n<8));
   melody.tick(.05);
-  assert.equal(started.length,1,'stepping onto bronze plate plays one existing flute echo session');
+  assert.equal(started.length,0,'standing on the plate never equips or locks the instrument');
   for(let i=0;i<10;i++)melody.tick(.05);
-  assert.equal(started.length,1,'standing still does not restart the melody');
-  handlers.get('hobunji-ruin-melody-result')({detail:{id:'someone-else',solved:true}});
-  handlers.get('hobunji-ruin-melody-result')({detail:{id:'melody-test',solved:false}});
-  assert.equal(done,0,'wrong and unrelated melodies do not complete a room');
-  player={x:20,z:22};melody.tick(.05);player={x:27,z:29};melody.tick(.05);
-  assert.equal(started.length,2,'stepping off and on replays this fixed note sequence');
-  assert.deepEqual(started[0].echoChallenge.notes,started[1].echoChallenge.notes);
-  floor=0;melody.tick(.05);assert.equal(started.length,2,'lower story cannot trigger this floor plate');
-  floor=4;handlers.get('hobunji-ruin-melody-result')({detail:{id:'melody-test',solved:true}});
-  assert(melody.solved&&done===1,'real instrument success opens the gate once');
-  melody.dispose();assert(!handlers.size,'melody result event listener removed on ruin exit');
+  assert.equal(melody.attempts,1,'standing still does not retrigger the plate');
+  const note=(noteIndex,area='test-area')=>handlers.get('hobunji-kurraya-puzzle-note')({detail:{noteIndex,area}}); // Exercise the actual ordinary instrument event bridge.
+  assert(!handlers.has('hobunji-ruin-melody-result'),'legacy minigame results cannot bypass manual note recognition');
+  for(const value of [undefined,-1,8,NaN])note(value);
+  assert.equal(melody.heardNotes.length,0,'invalid input never advances the melody');
+  floor=0;for(const value of melody.notes)note(value);
+  assert.equal(done,0,'notes from another story cannot solve the room');
+  floor=4;for(const value of melody.notes)note(value,'other-map');
+  assert.equal(done,0,'notes from another map cannot solve the room');
+  player={x:20,z:22};melody.tick(.05);
+  assert.equal(started.length,0,'leaving the plate never needs an automatic music session');
+  note((melody.notes[0]+1)%8);
+  for(const value of melody.notes.slice(0,-1))note(value);
+  assert.equal(done,0,'a partial phrase cannot solve the room');
+  note(melody.notes.at(-1));
+  assert(melody.solved&&done===1,'manual notes solve the phrase even after stepping off the clue plate');
+  for(const value of melody.notes)note(value);
+  assert.equal(done,1,'completion fires only once');
+  melody.dispose();assert(!handlers.size,'ordinary note listener removed on ruin exit');
 }
 
 // Real projectile challenges share the canonical ranged-hit bus; a stale
