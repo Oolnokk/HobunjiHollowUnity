@@ -329,7 +329,7 @@
       if(ancestor!==scene||!mount.group.parent)continue;
       const playerY=Number(mount.getPlayerY?.());
       for(const state of mount.states.values()){
-        const pillarY=state.pillarY?.()??state.object.getWorldPosition(new (root.THREE?.Vector3||mount.group.position.constructor)()).y;
+        const pillarY=state.pillarY(); // Exact moving support datum is already shared with the projectile registry.
         if(Number.isFinite(playerY)&&Math.abs(pillarY-playerY)>mount.spacing*.55)continue;
         if(state.object?.parent)visible.push(state.object);
       }
