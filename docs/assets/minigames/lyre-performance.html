@@ -1499,6 +1499,7 @@
     pluckGeneration:0, // Invalidates older pluck timers whenever the stick mode or fret changes.
     pluckStep:0, // Advances through the current chord-melody fingerpicking pattern.
     pluckNextPulseAt:0, // Holds the absolute performance-time target for the next beat-corrected automatic pluck.
+    pluckLegatoHandoffs:0, // Counts seamless melody/held-fret changes in the mobile instrument debug display.
     autoReleaseTail:null, // Keeps every tapped automatic pattern alive through the current beat boundary after release.
     nextSlowArpDirection:'forward', // Alternates the base-rate arpeggio between forward and reverse rolls on successive melody inputs.
     lastPluckTapErrorMs:null, // Exposes the latest immediate melody attack's signed offset from its nearest intended beat.
@@ -3909,6 +3910,18 @@
     state.pluckStep += 1;
     fret.autoPulseCount = (fret.autoPulseCount || 0) + 1;
     const voiceKey = `fretted-pluck:${generation}:${++state.previewCounter}`;
+    // Arm the next pulse before awaiting sample setup: slow mobile audio must not break the beat grid.
+    const interval = pluckIntervalMs(state.pluckInputMode);
+    if (generation === state.pluckGeneration && interval > 0) {
+      let nextTarget = pulseTarget + interval;
+      while (nextTarget <= nowMs() + 2) {
+        nextTarget += interval;
+        state.pluckStep += 1; // Skips inaudible late pulses instead of letting asynchronous audio drift away from the beat grid.
+      }
+      if (state.autoReleaseTail && nextTarget >= state.autoReleaseTail.stopAt - 2) nextTarget = state.autoReleaseTail.stopAt; // Silent cleanup at the boundary, unless another melody arrives before it.
+      state.pluckNextPulseAt = nextTarget;
+      state.pluckTimer = setTimeout(() => { state.pluckTimer = null; void playFrettedPluckPulse(generation); }, Math.max(0,nextTarget - nowMs() - PULSE_LOOKAHEAD_MS));
+    }
     try {
       if (!state.paused) {
         const interval = Math.max(1,pluckIntervalMs(state.pluckInputMode));
@@ -3938,17 +3951,6 @@
       }
     } catch (error) {
       log('Audio-only automatic pulse failed', `${error.name}: ${error.message}`);
-    }
-    const interval = pluckIntervalMs(state.pluckInputMode);
-    if (generation === state.pluckGeneration && interval > 0) {
-      let nextTarget = pulseTarget + interval;
-      while (nextTarget <= nowMs() + 2) {
-        nextTarget += interval;
-        state.pluckStep += 1; // Skips inaudible late pulses instead of letting asynchronous audio drift away from the beat grid.
-      }
-      if (state.autoReleaseTail && nextTarget >= state.autoReleaseTail.stopAt - 2) nextTarget = state.autoReleaseTail.stopAt; // Schedules a silent cleanup at the boundary instead of adding an unwanted downbeat attack.
-      state.pluckNextPulseAt = nextTarget;
-      state.pluckTimer = setTimeout(() => { state.pluckTimer = null; void playFrettedPluckPulse(generation); }, Math.max(0,nextTarget - nowMs() - PULSE_LOOKAHEAD_MS));
     }
   }
 
@@ -3991,8 +3993,18 @@
     refs.transportStatus.innerHTML = `<strong>${automaticPluckLabel(mode)}${isLatchedAutoBankLayout() ? ' latched' : ' engaged'}.</strong> The immediate melody attack is followed by ${scheduled?.remainingBeforeBeat ?? 0} remaining subdivision${scheduled?.remainingBeforeBeat === 1 ? '' : 's'} before the next beat.`;
   }
 
-  function restartActiveFrettedPluck() {
-    if (!state.pluckInputMode) return;
+  function retainFrettedPluckPulse(reason = 'melody change') {
+    // A sounding figure already owns the subdivision clock; a new melody changes its voicing, not its phase.
+    const pendingPulse = state.pluckNextPulseAt > 0 && (state.pluckTimer || state.pluckNextPulseAt >= nowMs() - PULSE_LOOKAHEAD_MS);
+    if (!state.pluckInputMode || !pendingPulse) return false;
+    const resumedTail = Boolean(state.autoReleaseTail); // Converts a pending silent beat-boundary cleanup back into a sounding pulse.
+    state.autoReleaseTail = null;
+    state.pluckLegatoHandoffs += 1;
+    log('Auto-pick legato handoff',`${reason} · step ${state.pluckStep} · ${resumedTail ? 'release tail resumed' : 'roll continues'}`);
+    return true;
+  }
+
+  function restartActiveFrettedPluck() {    if (!state.pluckInputMode) return;
     const mode = state.pluckInputMode;
     stopFrettedPluck(false);
     state.pluckInputMode = mode;
@@ -4106,7 +4118,7 @@
     if (isDown) {
       if (backupPlayerInputBlocked(sourceId)) return;
       interruptSuccessfulPreviewForPlayer(sourceId);
-      interruptAutoReleaseTail(`bank ${control.toUpperCase()} from ${sourceId}`);
+      if (!usesAutomaticPluckInput()) interruptAutoReleaseTail(`bank ${control.toUpperCase()} from ${sourceId}`); // A bank shift alone does not silence an ongoing roll; the next fret supplies the new pitch.
     }
     if (isDualArpLayout()) return;
     if (isFourGroupAutoLayout()) {
@@ -4163,7 +4175,11 @@
       return;
     }
     if (isDown) {
-      interruptAutoReleaseTail(`new melody ${NOTE_GLYPHS[noteIndex]} from ${sourceId}`);
+      if (state.frettedSources.has(sourceId)) { // Ignore held-key repeats and duplicate pointer-downs without retriggering the melody.
+        log('Duplicate automatic-note press ignored',sourceId);
+        if (button) button.classList.add('held');
+        return;
+      }
       state.triggerGestures.forEach(gesture => { gesture.usedAsHold = true; });
       const modeOffsetSnapshot = currentModeOffset();
       const pressedAt = nowMs();
@@ -4175,7 +4191,7 @@
       state.lastInput = `${isFrettedPluckLayout() ? 'fret' : 'auto-pick melody'} ${NOTE_GLYPHS[noteIndex]} ${midiName(noteMidi(noteIndex,modeOffsetSnapshot))} from ${sourceId}`;
       if (state.pluckInputMode) {
         void playImmediateAutomaticMelody(fret,sourceId); // The real press is heard and scored now; only the continuation is quantized.
-        restartActiveFrettedPluck();
+        if (!retainFrettedPluckPulse(`new melody ${NOTE_GLYPHS[noteIndex]} from ${sourceId}`)) restartActiveFrettedPluck();
       } else if (isLatchedAutoBankLayout()) void triggerNote(noteIndex, sourceId, modeOffsetSnapshot); // Centered stick preserves the ordinary one-shot five-bank behavior.
     } else {
       const releasedFret = state.frettedSources.get(sourceId);
@@ -4191,8 +4207,9 @@
       if (isLatchedAutoBankLayout()) releaseNote(noteIndex, sourceId); // Stops a centered direct note when the sampler is in sustain mode.
       state.noteSources[noteIndex].delete(sourceId);
       state.frettedSources.delete(sourceId);
-      if (currentFretData() && state.pluckInputMode) restartActiveFrettedPluck();
-      else if (!currentFretData()) {
+      if (currentFretData() && state.pluckInputMode && wasActiveFret) {
+        if (!retainFrettedPluckPulse(`return to held melody from ${sourceId}`)) restartActiveFrettedPluck();
+      } else if (!currentFretData()) {
         const tailStarted = wasActiveFret && beginAutoReleaseTail(releasedFret,sourceId);
         if (!tailStarted) {
           clearTimeout(state.pluckTimer);
@@ -6724,20 +6741,15 @@
   function scheduleSuccessfulPreviewContinuation(event,eventIndex) {
     const mode = state.game.demoMode;
     const definition = FRETTED_PLUCK_MODES[mode];
-    if (!definition || event.inputType === 'strum') return;
+    if (!definition || definition.kind === 'direct' || event.inputType === 'strum') return; // Single Note never acquires an automatic tail.
     const beatMs = Math.max(1,state.game.quarterBeatMs || state.game.beatMs); // Keep preview arpeggio note values unchanged under the 6/8 eighth-note metronome.
     const interval = beatMs / Math.max(1,definition.division);
     const performanceAt = Math.max(0,event.time - state.game.countInMs);
-    const beatAnchor = Math.round(performanceAt / beatMs) * beatMs;
-    let gridStep = Math.max(1,Math.floor((performanceAt - beatAnchor + 1.5) / interval) + 1);
-    let nextPerformanceAt = beatAnchor + interval * gridStep;
-    while (nextPerformanceAt <= performanceAt + 2) {
-      gridStep += 1;
-      nextPerformanceAt = beatAnchor + interval * gridStep;
-    }
+    // Use one song-wide pulse phase so the figure does not restart with each new preview melody.
+    let gridStep = Math.max(1,Math.floor((performanceAt + 2) / interval) + 1);
+    let nextPerformanceAt = interval * gridStep;
     const nextEvent = state.game.events.slice(eventIndex + 1).find(candidate => candidate.state === 'pending');
-    const beatBoundaryAt = state.game.countInMs + beatAnchor + beatMs;
-    const stopAt = Math.min(beatBoundaryAt,nextEvent?.time ?? Infinity);
+    const stopAt = Math.min(state.game.endAt,nextEvent?.time ?? Infinity); // A phrase continues to the next melody (or song end), not just the next beat.
     const pattern = demoAutomaticPattern(event,mode);
     const generation = state.demoGeneration;
     while (state.game.countInMs + nextPerformanceAt < stopAt - 2) {
@@ -6757,7 +6769,7 @@
       },Math.max(0,targetGameTime - gameTime()));
       state.demoTimers.add(timer);
       gridStep += 1;
-      nextPerformanceAt = beatAnchor + interval * gridStep;
+      nextPerformanceAt = interval * gridStep;
     }
   }
 
@@ -7101,7 +7113,7 @@
       if (!state.game.active) landFreePlayCapoCue(harmonyStep); // Contact flash occurs on the exact frame the hidden progression advances.
       state.lastHarmonyStep = harmonyStep;
       updateArpeggioUI();
-      if (usesAutomaticPluckInput() && state.pluckInputMode && currentFretData()) restartActiveFrettedPluck();
+      // The next scheduled pulse already rebuilds its voicing from the arriving harmony; keep its phase intact.
     }
     if (padKey !== state.lastRootPadKey) {
       state.lastRootPadKey = padKey;
@@ -7286,6 +7298,7 @@
       `Markers: ${marker.trimStart.toFixed(3)} > ${marker.loopIn.toFixed(3)} ⇄ ${marker.loopOut.toFixed(3)} > ${marker.trimEnd.toFixed(3)}`,
       `Note set: ${state.scaleName} ${midiName(state.tonicMidi)} | locked layout ${state.layoutPreset} | visual ${state.visualPreset}${state.visualPreset === 'timing-rings' ? ` (${state.timingPromptBeats} beats ahead)` : ''} | melody bank ${modeLabelFromOffset(currentModeOffset())} (notes ${currentModeOffset() + 1}–${currentModeOffset() + 4})${usesAutomaticPluckInput() && currentFretData() ? ` | held melody ${midiName(noteMidi(currentFretData().noteIndex,currentFretData().modeOffset))}` : ''}${state.autoReleaseTail ? ` | beat fill until boundary ${midiName(noteMidi(state.autoReleaseTail.fret.noteIndex,state.autoReleaseTail.fret.modeOffset))}` : ''}`,
       `Harmony: ${currentHarmonyData().source === 'song' ? `${songTitle(state.game.songType)} silent chords` : state.harmonyPattern} | step ${currentHarmonyStep() + 1}${activeSongChordTimeline() ? `/${activeSongChordTimeline().length}` : `/${(HARMONY_PATTERNS[state.harmonyPattern] || []).length}`} degree ${currentHarmonyData().degreeNumber} (${currentHarmonyData().romanNumeral}) · ${currentHarmonyData().chordName} | ${currentHarmonyBeatData().inCountIn ? 'intro ' : 'beat '}${currentHarmonyBeatData().beatInChord + 1}/${currentHarmonyBeatData().beatsPerChord} | shared ${activeClockBpm()} quarter-BPM ${sharedTransportData().meter.label} clock${sharedTransportData().meter.grouping.length>1 ? ` (${sharedTransportData().meter.grouping.join('+')})` : ''} | click ${state.auditoryMetronome ? (state.metronomeSampleBuffer ? 'sample' : 'synth') : 'off'} | root pad ${state.rootPadEnabled ? `${midiName(rootPadTargetMidi())} ${state.rootPadSampleBuffer ? 'sample' : 'kurraya'} @ ${Math.round((state.rootPadSampleBuffer ? state.rootPadSampleLevel : state.rootPadLevel) * 100)}%` : 'off'}`,
+      `Auto-pick phase: ${state.pluckNextPulseAt ? `${Math.round(state.pluckNextPulseAt - nowMs())} ms to next pulse` : 'idle'} | legato handoffs ${state.pluckLegatoHandoffs} | release tail ${state.autoReleaseTail ? 'active' : 'none'}`,
       `Arpeggio: ${isDualArpLayout() ? `L ${DUAL_ARP_LABELS.left[state.arpeggioIndex]} ${midiName(dualArpeggioMidi('left',state.arpeggioIndex))} | R ${DUAL_ARP_LABELS.right[state.rightArpeggioIndex]} ${midiName(dualArpeggioMidi('right',state.rightArpeggioIndex))}` : usesAutomaticPluckInput() ? `${automaticPluckLabel()} | step ${state.pluckStep}${currentFretData() ? ` | ${automaticPatternSteps(noteMidi(currentFretData().noteIndex,currentFretData().modeOffset),currentFretData(),state.pluckInputMode).label} | ${automaticPatternDefinition().kind}` : ''}` : `slot ${state.arpeggioIndex + 1} → ${midiName(arpeggioMidi())} | fixed register −1 oct`} | LS ${state.leftStick.map(value => value.toFixed(2)).join(', ')} | RS ${state.rightStick.map(value => value.toFixed(2)).join(', ')} | gesture channels ${state.gestureMediaChannels.size}`,
       `Four-way LS: selected ${['UP','RIGHT','DOWN','LEFT'][state.leftStickSector] || 'UP'} ${automaticPatternDefinition().short} | slots ${normalizeAutoPickSlots().map((id,index) => `${['U','R','D','L'][index]}:${automaticPatternDefinition(id).short}`).join(' · ')}`,
       `Held notes/automatic melodies: ${state.noteSources.map((set,index) => set.size ? index+1 : null).filter(Boolean).join(', ') || 'none'} | auto-pick sources ${state.frettedSources.size} | mode sources ${state.modeSources.size} | ordered shifts ${state.fourGroupShiftSources.size} | trigger gestures ${state.triggerGestures.size} | active voice groups ${state.voices.size} / voices ${activeVoiceCount()}`,
