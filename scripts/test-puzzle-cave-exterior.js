@@ -36,6 +36,8 @@ const context={console,THREE,Math,Promise,Number,Map,Set,Date,
   __farmLog:()=>{},
 };
 context.window=context;context.globalThis=context;
+const sounds=[]; // Captures the shipped audio adapter's real semantic SFX calls in this no-speaker gameplay fixture.
+context.AudioSystem={playObjectSfxKey:(key,volume,pitch)=>sounds.push({key,volume,pitch})};
 function load(file) {
   const module={exports:{}};context.module=module;
   vm.runInNewContext(read(file),context,{filename:file});
@@ -44,6 +46,7 @@ function load(file) {
 context.CliffRouteNetwork=load('docs/js/cliff-route-network.js');
 context.PuzzleCaveMelody=load('docs/js/puzzle-cave-melody.js');
 context.LocaleCliffWallMounts=load('docs/js/locale-cliff-wall-mounts.js');
+context.RuinInteractionAudio=load('docs/js/ruin-interaction-audio.js'); // Test the actual shared sound adapter alongside the exterior gate.
 const Exterior=load('docs/js/puzzle-cave-entrances.js');
 const classified=kind=>({isMesh:true,userData:{melodyScoreSurface:kind}}); // Only explicitly authored vertical surfaces may bypass generated terrain material checks.
 assert.equal(Exterior.scoreSurfaceKind(classified('wall'),{materialIndex:0}),'wall');
@@ -159,6 +162,10 @@ assert.equal(gate.scoreSurface.kind,'pillar',
 const stone=gate.scoreBoard.children.find(child=>child.name==='puzzle-cave-score-pillar');
 assert(stone,'a wall-less ledge receives an actual vertical carved-stone backing for its note decal');
 const pillarBottom=gate.scoreBoard.position.y-stone.geometry.dimensions[1]/2;
+assert(Math.hypot(gate.scoreSurface.x-gate.plate.x,gate.scoreSurface.z-gate.plate.z)>.48,
+  'a freestanding score pillar must not cover the melody pressure plate');
+assert(Math.hypot(gate.scoreSurface.x-gate.door.x,gate.scoreSurface.z-gate.door.z)>.32,
+  'a freestanding score pillar must not sit directly in the doorway');
 assert(Math.abs(pillarBottom-gate.shelf.y-.015)<.001,
   'the score pillar is rooted into the ledge rather than floating over snow or empty air');
 assert.equal(gate.glyphGlows.length,gate.song.notes.length,'each outdoor note has a shared-visibility additive halo');
@@ -188,14 +195,20 @@ Exterior.update(.01,area);
 assert.equal(opened,0,'stepping onto the plate must not auto-equip or open an instrument');
 assert.equal(gate.lastDown,true,'standing on the real raised plate activates the melody clue');
 assert(gate.scoreBoard.visible,'the exterior Scratchbone score lights up on the active raised plate');
+assert.equal(sounds.filter(event=>event.key==='stoneActivator').length,1,
+  'stepping onto the outdoor melody plate plays exactly one recorded activator cue');
 assert(gate.glyphGlows.some(glow=>glow.material.opacity===.65),
   'the currently active note brightens its halo while the pressure plate is held');
 const scoreHeight=gate.scoreBoard.position.y; // The exterior score must remain pinned to its wall or pillar during door animation.
 player.x=(gate.plate.x+1.2)*64;player.y=(gate.plate.z+1.2)*64;
 Exterior.update(.01,area);
 assert(!gate.scoreBoard.visible,'stepping off the pressure plate hides both glyphs and their glows');
+assert.equal(sounds.filter(event=>event.key==='stoneActivator').length,2,
+  'releasing the exterior plate plays one more edge-triggered stone cue');
 player.x=gate.plate.x*64;player.y=gate.plate.z*64;
 Exterior.update(.01,area);
+assert.equal(sounds.filter(event=>event.key==='stoneActivator').length,3,
+  're-entering the exterior plate is a separate valid activation');
 const song=gate.song;
 let elapsed=0; // Musical clock advanced through the actual exterior controller's per-frame path.
 for(const note of song.notes){
@@ -214,6 +227,8 @@ assert(saved.get(mapId).tier>=1,'the outside difficulty tier persists with the c
 player.x=(gate.entry.c+.5)*64;player.y=(gate.entry.r+.5)*64;
 for(let i=0;i<30;i++)Exterior.update(.05,area);
 assert(gate.rise>=.98,'the authored stone slab has completely risen');
+assert.equal(sounds.filter(event=>event.key==='stoneMechanism').length,1,
+  'the solved cave slab plays the large stone mechanism recording once, never every animation frame');
 assert(!gate.scoreBoard?.visible,'the solved exterior score retires with the lifted slab');
 assert.equal(gate.scoreBoard.position.y,scoreHeight,
   'the decal must not drift upward with the opening slab (the original floating-note regression)');
