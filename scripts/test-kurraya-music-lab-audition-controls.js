@@ -124,6 +124,8 @@ for(const [signature,barUnits] of [['2/4',2],['3/4',3],['4/4',4],['5/4',5],['6/8
   assert.ok(fall.at(-1).midi < fall[0].midi,signature+' falling figure should reach a lower voice');
   assert.equal(wave[0].midi,wave.at(-1).midi,signature+' wave should return to its first voice at the bar end');
   const chord = figures.find(figure=>figure.id==='strum-alternating-8').steps;
+  assert.ok(chord.slice(1).some(step=>step.type==='strum'),
+    signature+' must contain audible chord strokes even without secondary meter accents');
   const accentSlots = meter.groupStarts.map(beat=>Math.round(beat*meter.quarterUnitsPerBeat*2));
   for(const accent of accentSlots.slice(1)) {
     assert.equal(chord[accent].type,'strum',signature+' must strum at each extra grouped accent');
