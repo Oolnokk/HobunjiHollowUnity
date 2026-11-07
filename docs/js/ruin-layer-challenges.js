@@ -274,7 +274,9 @@
       const plate=body('puzzle-cave-music-plate-'+id,
         new THREE.CylinderGeometry(1.18,1.18,.15,32),plateMat,cx,y+.08,cz-1.6);
       rec.plate=plate;rec.song=song;rec.attempts=0;rec.lastDown=false;
-      rec.plateArt=root.PuzzleCavePlateArt?.decorate?.(THREE,plate,{radius:1.18,thickness:.15})||null; // Furniture-textured stone, inscribed with hao'uun in the Tankan author font.
+      rec.plateArt=root.PuzzleCavePlateArt?.decorate?.(THREE,plate,{
+        radius:1.18,thickness:.15,toward:{x:0,z:1}
+      })||null; // Furniture-textured stone, inscribed with hao'uun in the Tankan author font.
       const gate=body('puzzle-cave-stone-door-'+id,
         new THREE.BoxGeometry(4.7,3.4,.32),stone,cx,y+1.75,caveGateZ);
       const backdrop=body('puzzle-cave-door-darkness-'+id,
