@@ -102,7 +102,7 @@
       itemDefs[id] = { ...baseProduce, label, icon: baseProduce.icon || base.emoji || '🌾', cat: baseProduce.cat || 'crop',
         sellPrice: Math.max(1, Math.round((Number(baseProduce.sellPrice) || 15) * 1.2)),
         cookingCategories: [...(baseProduce.cookingCategories || item?.categories || [])], cookingPrimaryEffect: Object.keys(traits.effects)[0],
-        foodEffects: { ...traits.effects }, varietyColor: traits.color,
+        foodEffects: { ...traits.effects }, varietyColor: traits.color, ingredientColor: traits.color,
         tags: [...new Set([...(baseProduce.tags || []), 'Crop', 'Regional Variety'])],
         desc: traits.region + ' variety. Water ' + Math.round(traits.idealMin * 100) + '–' + Math.round(traits.idealMax * 100) + '%. ' + Object.keys(traits.effects).join(' / ') + ' ingredients.' };
       itemDefs[seedKey(id)] = { ...baseSeed, label: label + ' Seeds', icon: baseSeed.icon || '🌱', cat: baseSeed.cat || 'seed',
@@ -144,7 +144,8 @@
   }
   function registered({ ownedOnly = false } = {}) {
     hydrate(inventory);
-    const storage = storageGetter?.() || {}; // Both bag and farm storage are valid sources for delegated farm planting.
+    let storage = {}; // Both bag and farm storage are valid sources for delegated farm planting.
+    try { storage = storageGetter?.() || {}; } catch (_) { /* Early boot may not have farm storage yet. */ }
     return [...known].filter(id => !ownedOnly || (Number(inventory?.[seedKey(id)]) || 0) > 0 || (Number(storage[seedKey(id)]) || 0) > 0)
       .map(id => ({ id, seedKey: seedKey(id), label: cropData?.[id]?.label || id }));
   }
@@ -190,7 +191,9 @@
     const child = '' + pick(first, 0) + pick(second, 0) + pick(first, 2) + pick(second, 2) + pick(first, 4) + pick(second, 4);
     const genes = [...child];
     if (rng() < .025) { const locus = Math.floor(rng() * 6); genes[locus] = String(Math.floor(rng() * REGIONS.length)); } // Rare single-allele mutation, as in livestock.
-    const result = register(a, genes.join(''));
+    const result = genes.every(gene => gene === '0')
+      ? { id: a, seedKey: cropData[a]?.seedKey, label: cropData[a]?.label, ...phenotype(a, '000000') }
+      : register(a, genes.join('')); // Local × local gives ordinary seeds rather than a duplicate "Hobunji" genotype.
     if (result) {
       lastChange = 'Crossbred ' + firstKey + ' × ' + secondKey + ' → ' + result.label + '.';
       window.CookingSystem?.registerIngredientItems?.(); // The newly invented ingredient keeps its inherited buffs in every recipe picker.
