@@ -361,6 +361,29 @@ function testRuntime() {
   assert.equal(window.Shattercasks.backCarriedInfo(),null,'hit-triggered explosion clears the back slot');
   assert.equal(window.Shattercasks.getBurden(charge.id),null,'the original physical item is consumed');
 
+  // Exercise the ACTUAL wild-crate authoring, not just a synthetic back pose:
+  // a Nuhongan-height character should resolve the supplied 180-degree stow
+  // in the same body-posterior frame as its held crate.
+  const crateData=JSON.parse(read('docs/config/furniture-authored/looseCrate.json')); // Authored wild-crate runtime asset.
+  const crate=window.Shattercasks.registerBurden({mapId:currentArea,scene,group:new Group(),
+    id:'test-authored-loose-crate',kind:'looseCrate',hanging:false,data:crateData});
+  assert(window.Shattercasks.pickUp(crate),'real authored crate can be held after previous back Burden was consumed');
+  assert(window.Shattercasks.stowOnBack(),'real authored crate can be stowed');
+  assert.equal(crate.group.parent,rigidPortrait,'real crate stows on the currently active portrait');
+  const crateBack=crateData.carryable.backCarry; // Separate authored pose; the contact point must still meet the live species posterior.
+  const crateContact=crate.group.localToWorld(new Vector3(
+    crateBack.position.x,crateBack.position.y,crateBack.position.z));
+  const expectedCrateContact=currentBodyRoot.localToWorld(new Vector3(
+    crateBack.posteriorOffset.x,.19+crateBack.posteriorOffset.y,crateBack.posteriorOffset.z));
+  for(const axis of ['x','y','z'])
+    assert(Math.abs(crateContact[axis]-expectedCrateContact[axis])<1e-8,
+      'the actual crate back contact point uses the species posterior on '+axis);
+  const crateCenter=crate.group.getWorldPosition(new Vector3()); // Detects an incorrect 180-degree Z flip or Mao'ao-height offset.
+  assert(Math.abs(crateCenter.y-(.19-.02+.186))<1e-8,'authored -0.186 Y moves the stowed crate below its held height');
+  assert(Math.abs(crateCenter.z-(-.256))<1e-8,'the authored 180-degree stow moves the crate onto the character back');
+  assert(window.Shattercasks.takeFromBack(),'the actual crate returns to hands without losing its authoring');
+  assert(window.Shattercasks.discardBurden(crate),'the real crate fixture cleans up before movement tests');
+
   // A carried shattercask moving between rooms must never replace a static
   // shattercask with the same area-local ID, or respawn at its original source.
   const travel=window.Shattercasks.registerBurden({mapId:currentArea,scene,group:new Group(),
