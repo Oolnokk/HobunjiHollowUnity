@@ -92,6 +92,25 @@ function world() {
   assert(t.player._freeJump?.phase!=='rope','release cannot auto-catch the same rope in the next frame');
   assert(Number.isFinite(before));
 }
+// Dodge is a normal rope-release input in ruins; it must not cancel the
+// resultant flight, and outdoors it should dismount instead of dropping the
+// rider's physical elevation state with no landing.
+{
+  const t=world();
+  t.window.HangingRopes.registerRope({
+    id:'dodge-dismount',mapId:'zone-test',x:3.1,y:2.1,z:3.5,length:1.7,yaw:0,
+  });
+  t.input.x=1;
+  assert(t.window.PlayerJump.start());
+  for(let i=0;i<35&&t.player._freeJump?.phase!=='rope';i++)t.step();
+  assert.equal(t.player._freeJump?.phase,'rope');
+  t.player.dodging=true;
+  t.step();
+  assert.equal(t.player._freeJump?.phase,'air','Dodge must release an outdoor rider into free flight');
+  t.step();
+  assert.equal(t.player._freeJump?.phase,'air','Dodge input must not cancel the release flight');
+  assert.equal(t.window.HangingRopes.debugSnapshot().activePlayerRope,null);
+}
 // A high-momentum launch can pass both sides of the grip within ONE frame.
 // The swept mover must sample each substep, not just the next frame's origin.
 {
@@ -109,7 +128,9 @@ function world() {
 {
   const t=world();
   const f=t.window.PlayerJump.beginFlight({x:2.5,y:2,z:3.5,vx:2,vy:1,vz:0},{external:true,source:'ruin rope swing'});
+  t.player.dodging=true; // Ruin rope release uses the same Dodge input that normally cancels free jumps.
   assert.equal(t.window.PlayerJump.tick(0.1),true);
+  assert.equal(t.player._freeJump,f,'Dodge must not erase a ruin-owned rope launch');
   assert.equal(f.x,2.5,'the normal mover does not double-integrate a ruin-owned flight');
   f.y=1.8;
   assert(t.window.PlayerJump.syncExternalFlight(f));
