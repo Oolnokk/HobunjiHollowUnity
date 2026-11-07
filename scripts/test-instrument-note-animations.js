@@ -262,8 +262,12 @@ assert.equal(neutralFree.roll,52,'Neutral must use the Windup wrist roll');
 assert.equal(strikeFree.y,0.5,'Strike alone raises the free right hand to the authored Y');
 const otherPose={neutral:{secondaryGrip:{enabled:true}},windup:{secondaryGrip:{enabled:true}},strike:{secondaryGrip:{enabled:true}}};
 assert.equal(gripsApi.animationGripAt(0,kurrayaPlayNote,otherPose,'attack','hatchet').influence,0,'normal weapon Neutral still defaults to 1H');
-assert(grips.includes("editorCurrentToolKey() === 'kurraya'"),'editor must preserve Kurraya Neutral 2H during loading/export');
-assert(grips.includes("phase === 'neutral' && editorCurrentToolKey() !== 'kurraya'"),'Kurraya Neutral checkbox must be editable without changing other weapons');
+assert(grips.includes("function editorKurrayaNeutralAllowed(dataObj = null)"),'editor must resolve the Kurraya by its action, not a stale preview sprite');
+assert(grips.includes("editorKurrayaNeutralAllowed(parsed)"),'Kurraya Neutral enabled flag must survive exporting when a previous sprite was selected');
+assert(grips.includes("editorKurrayaNeutralAllowed(dataObj)"),'loading new Kurraya animation must not disable Neutral 2H');
+assert(grips.includes("phase === 'neutral' && !editorKurrayaNeutralAllowed()"),'Kurraya Neutral checkbox must remain editable without unlocking weapon idle 2H');
+assert(editor.includes("actionId: currentActionId, toolKey: preset.toolKey"),'action switching must pass authoritative Kurraya identity to grip loader');
+assert(editor.includes("actionId: currentActionId, toolKey: currentAction().toolKey"),'undo/restore must pass authoritative Kurraya identity to grip loader');
 
 assert.equal(gripsApi.defaultData.tools.kurraya.customGripAxis.enabled,false,'Kurraya axis is opt-in until Nut and Bridge have been measured');
 const length=Math.sqrt(0.32); // Distance from (0.1,0.2,0) Nut to (0.5,0.6,0) Bridge in tool units.
