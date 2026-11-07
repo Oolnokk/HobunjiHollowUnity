@@ -113,7 +113,8 @@ for(const [signature,barUnits] of [['2/4',2],['3/4',3],['4/4',4],['5/4',5],['6/8
   const slotCount = Math.round(barUnits * 2);
   const figures = patternScope.figures.map(choice => ({id:choice.id,...patternScope.pattern(60,{},choice.id,clock)}));
   for(const figure of figures) {
-    assert.equal(figure.steps.length,slotCount,signature+' '+figure.id+' must fill one entire bar rather than replay an old fixed-length figure');
+    assert.equal(figure.steps.length,figure.id === 'direct' ? 1 : slotCount,
+      signature+' '+figure.id+' must be one-shot or adapt its shape to one complete bar');
     assert.ok(figure.steps.every(step => ['note','strum','boom','rest'].includes(step.type)),
       signature+' '+figure.id+' must use only real engine step types');
   }
