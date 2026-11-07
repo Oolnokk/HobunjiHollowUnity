@@ -90,6 +90,11 @@ function test(seed){
   assert.equal(room.blocks.length,4);
   assert.equal(room.plates.length,4);
   assert.equal(registeredBlocks.length,4);
+  // Native block pushes are whole world-unit steps. Every plate must lie on that same lattice.
+  for(const plate of room.plates){
+    assert(Number.isInteger(plate.x-room.blocks[0].mesh.position.x),'Plate X matches the native sliding grid');
+    assert(Number.isInteger(plate.z-room.blocks[0].mesh.position.z),'Plate Z matches the native sliding grid');
+  }
   assert.equal(room.blocks[2].phase,'ready','Elevated block is pushable at spawn');
   assert.equal(room.blocks[2].mesh.userData.findBlocksCanDrop,true);
   assert.equal(surfaces.length,9,'Seven stairs, their dais and tower support are registered');
