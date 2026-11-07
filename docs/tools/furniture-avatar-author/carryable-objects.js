@@ -281,6 +281,12 @@
     if(previewActive())startPreview();
     syncHoldingPreview();
   }
+  const originalBuildAvatarFromCanvas=buildAvatarFromCanvas; // Keeps the standalone Avatar-tab model hidden if a late portrait rebuild happens in Carryable mode.
+  buildAvatarFromCanvas=function(...args){
+    const result=originalBuildAvatarFromCanvas(...args);
+    if(avatarGroup)avatarGroup.visible=!(previewActive()&&!!previewActor); // Async cosmetics must not reveal a duplicate avatar over the active Carryable preview.
+    return result;
+  };
   document.getElementById('carryShowAvatar').addEventListener('change',e=>{
     previewEnabled=!!e.target.checked;setHoldingVisibility();
   });
