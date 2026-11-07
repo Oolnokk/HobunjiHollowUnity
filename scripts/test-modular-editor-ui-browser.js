@@ -41,23 +41,25 @@ async function ready(page) {
     await ready(page);
     const original = await page.evaluate(() => {
       const api = window.ModularWeapons, shaft = api.getConfig().shafts.kylie;
-      return {
-        mounts: JSON.stringify(shaft.mounts),
-        boxes: Object.values(shaft.overrides).flatMap(pair => pair.bridges?.strokes || []).filter(op => op.recipe).length,
-      };
+      const authored = Object.entries(shaft.overrides).flatMap(([head, pair]) =>
+        (pair.bridges?.strokes || []).filter(op => op.recipe).map(op => ({ head, recipe: op.recipe, box: op.box })));
+      return { mounts: JSON.stringify(shaft.mounts), boxes: authored.length,
+        authored: JSON.stringify(authored) };
     });
-    assert.equal(original.boxes, 0, 'Cleaned shipped Kylie has no bulk recipe placements');
+    assert.equal(original.boxes, 1, 'Shipped Kylie retains its newly authored fuse placement, not the old bulk copies');
+    assert.match(original.authored, /"recipe":"fuse"/, 'The authored Kylie fuse recipe is shipped');
 
     // Seed actual same-origin storage with precisely the two old October 29 boxes on each Kylie blade pair.
     await page.evaluate(() => {
       const api = window.ModularWeapons, draft = JSON.parse(JSON.stringify(api.getConfig()));
       const boxA = { x0:338.7881062280972,y0:908.9415575926496,x1:398.33130614420867,y1:1025.3933025613278 };
       const boxB = { x0:222.33636125941896,y0:729.7850268716061,x1:546.9258404481329,y1:1850.0402748508363 };
-      for (const [key, head] of Object.entries(draft.heads))
-        if (head.mount.type === 'blade' && !api.isDisallowed('kylie', key))
-          (draft.shafts.kylie.overrides[key] ||= {}).bridges = { outline:10,strokes:[
-            { recipe:'recipe-1',box:{...boxA} }, { recipe:'tanged-head---sleeved-shaft',box:{...boxB} }
-          ] };
+      for (const [key, head] of Object.entries(draft.heads)) if (head.mount.type === 'blade' && !api.isDisallowed('kylie', key)) {
+        const pair = (draft.shafts.kylie.overrides[key] ||= {}); // Keep the newly authored fuse stroke while simulating old bulk copies.
+        pair.bridges = { ...(pair.bridges || {}), outline:10, strokes:[ ...(pair.bridges?.strokes || []),
+          { recipe:'recipe-1',box:{...boxA} }, { recipe:'tanged-head---sleeved-shaft',box:{...boxB} }
+        ] };
+      }
       api.replace(draft, true);
     });
     await page.reload({waitUntil:'domcontentloaded',timeout:30000}); await ready(page);
@@ -117,11 +119,14 @@ async function ready(page) {
       return {
         mounts: JSON.stringify(shaft.mounts),
         boxes: Object.values(shaft.overrides).flatMap(pair => pair.bridges?.strokes || []).filter(op => op.recipe).length,
+        authored: JSON.stringify(Object.entries(shaft.overrides).flatMap(([head, pair]) =>
+          (pair.bridges?.strokes || []).filter(op => op.recipe).map(op => ({ head, recipe: op.recipe, box: op.box })))),
         stored: !!window.localStorage.getItem('hobunji.modularWeapons.v5'),
       };
     });
     assert.equal(saved.mounts, original.mounts);
-    assert.equal(saved.boxes, 0, 'Redo leaves all Kylie blade pairs clear');
+    assert.equal(saved.boxes, 1, 'Redo removes old Kylie copies while preserving its authored fuse');
+    assert.equal(saved.authored, original.authored, 'Legacy cleanup preserves the authored fuse geometry exactly');
     assert(saved.stored, 'Cleanup is persisted in localStorage');
 
     // Bulk placement must explain what it will touch, and cannot re-introduce Kylie copies.
@@ -133,7 +138,7 @@ async function ready(page) {
     assert.match(confirmation, /Single-ended/i);
     assert.match(confirmation, /Kylie/);
     assert.equal(await page.evaluate(() => Object.values(window.ModularWeapons.getConfig().shafts.kylie.overrides)
-      .flatMap(pair => pair.bridges?.strokes || []).filter(op => op.recipe).length), 0);
+      .flatMap(pair => pair.bridges?.strokes || []).filter(op => op.recipe).length), 1, 'Bulk placement does not add Kylie recipes');
     assert.deepEqual(errors, [], 'Actual mobile editor should not throw JS exceptions');
     console.log('Modular editor browser: PASS (old Kylie draft, primitive rows, recipe edit, cleanup, Undo/Redo, bulk scope)');
   } finally { await browser?.close(); await new Promise(resolve => server.close(resolve)); }
