@@ -92,6 +92,54 @@ through the bandit path:
   bandits pinning a zone varied between runs. Camps themselves (the `BanditCamps` records) stay.
 - Piping a log watcher through `cut` buffers it and delivers nothing for minutes; use `grep --line-buffered` only.
 
+## Heap growth across zone visits (measured, retainer not found)
+
+After #1469 only one zone stays built, but the JS heap still climbs with every zone visit. An earlier note here said
+"~100 MB per zone" from a four-visit run; the longer run below corrects that to roughly **25 MB per visit**, and shows
+it does not level off.
+
+**How it was measured.** Eight zone visits (each of the four zones twice, 25 s in the zone, back to town, 16 s for the
+trim), after an idle control. At each checkpoint: two forced GCs, then CDP `Performance.getMetrics` (`JSHeapUsedSize`,
+`Nodes`, `JSEventListeners`, `Documents`), `renderer.info.memory`, and V8's sampling heap profiler
+(`HeapProfiler.startSampling` at 65,536 bytes, then `getSamplingProfile`: `selfSize` summed per call site is the bytes
+*still alive* that were allocated there). Do not mix `performance.memory.usedJSHeapSize` with the CDP counter: at the
+same moment they differ by about 2x (320 vs 156 MB).
+
+- **Idle control is flat:** 156 → 157 → 156 MB over two minutes in town, with unchanged geometry, texture and object
+  counts. The growth is caused by zone visits, not by time.
+- **Same zone, same state, one cycle later** (the zone that is kept built at a checkpoint, compared with the next time
+  it is the kept zone): western slope 202 → 318 MB (+116), northern cliffs 225 → 326 (+101), southern cloud forest
+  269 → 364 (+95), eastern mire 297 → 360 (+63). Scene object count stayed ~2.4-2.6 k and canvas/image counts stayed
+  7 / 98, so it is not the live scene.
+- **It is not a plateau.** Per visit the heap went +46, +23, +44, +28 (first visits), then +21, +8, +38, -4
+  (revisits): smaller and noisier, about +16 MB per revisit on average, still climbing.
+- **The DOM grows too:** about +1,700 nodes, +130 event listeners and +3 `Document` objects per visit (nodes 21.3 k →
+  34.7 k, listeners 2.4 k → 3.4 k, `Documents` 2 → 25 over the run). I did not find the source. No game code creates
+  `srcdoc` iframes (the only hits are comments), so the extra documents are something else.
+- **Where the surviving bytes were allocated** (growth in live sampled MB from visit 4, when every zone had been built
+  once, to visit 8): three.js internals +20.7 (mostly one minified function), `water-body-outline-overlay.js` +14.2
+  (`makeFace`, `buildFoldedSurfaceTopology`, `collectFaceUvs`), `zone-plateau-mesa.js` +10.5 (`buildZoneMesaMeshes`),
+  `game.js` +6.0 (an anonymous function around line 11368 inside `buildZoneScene`), `surface-stretch-uv-furniture.js`
+  +5.5 (`preserveEdgeScale`), `terrain-geometry.js` +4.3 (`bindRenderedGroundGeometry`). **`bandit-camps.js` grew by only
+  0.1 MB**, so the camp state is not the cause.
+
+**Ruled out.** Growth with time alone (idle control). The live scene (object count flat). Bandit camp state. `game.js`'s
+own per-zone bookkeeping: `_disposeZoneScene` clears all 21 per-zone collections declared there; the only one it does
+not clear is `_zoneLayouts`, which is deliberately kept as the source data a zone is rebuilt from.
+
+**Leads, not confirmed retainers.** `evictZoneScene` releases only `HeldObjectRenderOrder`, `CratePiles`,
+`PorakanekiCampPlacementPolicy`, `Shattercasks` and `WorldPopupText` by name. `zone-plateau-mesa.js` keeps
+`_mesaBatchesByMap` (batch meshes plus the hidden source meshes) per zone and disposes it only from
+`scheduleMesaRenderBatching` and `rebuildZoneMesaMeshes`, i.e. on rebuild; I found no call from the eviction path, and
+`disposeMesaBatches` does not dispose the hidden source meshes' geometry. That would hold one set per zone, which by
+itself is bounded, so it cannot be the whole story. `water-body-outline-overlay.js` caches per-object results in a
+`WeakMap` (`domainCache`), which stays alive as long as its key does.
+
+**Next step.** Find who *retains* the objects, which allocation sites cannot tell you. Either take heap snapshots after
+visit 4 and visit 8 and compare retainer paths (large: expect hundreds of MB each, so use a streaming parser, not
+`JSON.parse`), or check each suspect module's own state for evicted zones (`ZonePlateauMesa.snapshot()` already lists
+the zones it still holds) and release candidates one at a time, watching the post-GC heap.
+
 ## Real but not fixed (start here if you are asked to go further)
 
 Ranked roughly by how much the numbers say they matter. None of these were the "never recovers" cause.
@@ -108,8 +156,8 @@ Ranked roughly by how much the numbers say they matter. None of these were the "
 5. **Scheduler `checkpoint` ~5.5 ms**: this is only the dispatcher for every `pre-render` subscriber, so it is the sum
    of many modules. The scheduler's `getDebug()` has per-subscriber timings; the real-hardware trace named
    "procedural hand pose sync" (~8.5 ms) as the biggest scheduler entry.
-6. **The heap still creeps ~100 MB per zone visited** after the eviction fix (544 → 796 MB over four zones, roughly half
-   the old rate). Something other than the zone scene keeps memory. Not diagnosed.
+6. **The heap keeps growing across zone visits, about 25 MB per visit, and it is unbounded.** Quantified, attributed to
+   code, and *not yet traced to its retainer*; see "Heap growth across zone visits" below before touching it.
 7. **The corpse swap keeps the newest 6 per area and any within 5 tiles of the player** (`keepFull`, `nearTiles`,
    `minSettledS` in `SCRATCHBONES_CONFIG.game.banditCorpseRetire`). Defaults were picked from arena tests; a tribe camp
    of 15 leaves up to 6 full rigs behind. Tune with measurements.
