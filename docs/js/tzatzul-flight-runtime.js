@@ -224,7 +224,8 @@
     if (bird?._tzFlight) bird._tzFlight.delivered = false; // Completion is set only by the actual cave transition or victim store.
     if (bird?._tzFlight?.captive === prey) bird._tzFlight.captive = null;
     if (bird) bird.tzatzulCarrying = false;
-    const fellFromTalons = reason === 'fled carrying prey' || reason === 'carrier knocked from perch'; // A real interruption drops prey where the bird was flying.
+    const fellFromTalons = reason === 'fled carrying prey' || reason === 'carrier knocked from perch'
+      || reason === 'carrier died'; // A killed carrier drops its actual prey; unloaded scenes still use the safe pickup.
     window.TzatzulLiveVisuals?.restoreCaptive?.(prey); // Revert the talon-payload rotation before ground/prone animation owns this actor again.
     if (fellFromTalons) window.PerchSupport?.release?.(prey, 'dropped by Tzatzul'); // Existing elevated-perch fall injury and footing, exactly once.
     window.PerchSupport?.forget?.(prey); // Restore native ground movement, never leave a dangling synthetic branch.
@@ -268,7 +269,7 @@
     if (!(bird.health > 0) || !(prey.health > 0)
       || (prey === deps.player ? deps.getCurrentArea?.() !== bird.areaId : prey.areaId !== bird.areaId)
       || !deps.hostileObjects.has(bird) || captured.get(prey)?.bird !== bird) {
-      releaseCaptive(prey, 'owner or prey unavailable'); return false;
+      releaseCaptive(prey, !(bird.health > 0) ? 'carrier died' : 'owner or prey unavailable'); return false;
     }
     if (!bird.onPerch || !window.PerchSupport?.attach?.(prey, bird.onPerch, bird.branchT)) {
       releaseCaptive(prey, 'flight support lost'); return false;
@@ -489,7 +490,8 @@
     }
     for (const bird of actors) {
       if (!deps.hostileObjects.has(bird) || !(bird.health > 0)) {
-        if (bird._tzFlight?.captive) releaseCaptive(bird._tzFlight.captive, 'bird died or unloaded');
+        if (bird._tzFlight?.captive) releaseCaptive(bird._tzFlight.captive,
+          !(bird.health > 0) ? 'carrier died' : 'owner or prey unavailable');
         actors.delete(bird); window.TzatzulLiveVisuals?.release?.(bird, 'dead or unloaded'); continue;
       }
       if (bird.areaId !== area) {
