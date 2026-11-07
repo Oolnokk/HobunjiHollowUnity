@@ -2424,8 +2424,8 @@
     return state.tonicMidi + bank[clamp(Math.round(index), 0, 7)] + HARMONY_REGISTER_OFFSET;
   }
 
-  function chordStrumMidis() {
-    const bank = currentHarmonyData().bankOffsets; // Captures the chord at the instant the stick crosses the strum threshold.
+  function chordStrumMidis(clock = sharedTransportData()) {
+    const bank = currentHarmonyData(clock).bankOffsets; // Lets ahead-of-time plucks use the chord sounding at their actual pulse timestamp.
     return bank.slice(0, 6).map(offset => state.tonicMidi + offset + HARMONY_REGISTER_OFFSET);
   }
 
@@ -2456,8 +2456,8 @@
     return Math.min(directDistance, 12 - directDistance);
   }
 
-  function alteredChordPitchClasses(melodyMidi) {
-    const harmony = currentHarmonyData();
+  function alteredChordPitchClasses(melodyMidi, clock = sharedTransportData()) {
+    const harmony = currentHarmonyData(clock);
     const melodyPitchClass = pitchClass(melodyMidi); // Anchors the altered chord before any octave or roll ordering is chosen.
     const triadPitchClasses = harmony.bankOffsets.slice(0,3).map(offset => pitchClass(state.tonicMidi + offset)); // Reads the current chord's root, third, and fifth independently of register.
     const [rootPitchClass,thirdPitchClass,fifthPitchClass] = triadPitchClasses;
@@ -2513,8 +2513,8 @@
     return referenceMidi + upwardDistance;
   }
 
-  function voiceAlteredChordFromMelody(melodyMidi,direction = 'up') {
-    const alteredChord = alteredChordPitchClasses(melodyMidi); // Supplies the octave-agnostic chord that every roll must voice.
+  function voiceAlteredChordFromMelody(melodyMidi,direction = 'up',clock = sharedTransportData()) {
+    const alteredChord = alteredChordPitchClasses(melodyMidi,clock); // Supplies the octave-agnostic chord that every roll must voice.
     let bestVoicing = null;
     let bestScore = Infinity;
     uniquePermutations(alteredChord.remainingPitchClasses).forEach(order => {
@@ -2539,9 +2539,9 @@
     return {alteredChord,midis:[melodyMidi,...(bestVoicing || [])]};
   }
 
-  function smartArpeggioMidis(fretMidi,direction = 'forward') {
+  function smartArpeggioMidis(fretMidi,direction = 'forward',clock = sharedTransportData()) {
     const rollDirection = direction === 'reverse' ? 'down' : 'up'; // Forward rises away from the melody; reverse falls away from it.
-    return voiceAlteredChordFromMelody(fretMidi,rollDirection).midis;
+    return voiceAlteredChordFromMelody(fretMidi,rollDirection,clock).midis;
   }
 
 
@@ -2553,8 +2553,8 @@
     return fret.slowRollDirection;
   }
 
-  function melodyTopStrumMidis(fretMidi, voicing = 'full') {
-    const lowerChord = chordStrumMidis().map(midi => {
+  function melodyTopStrumMidis(fretMidi, voicing = 'full', clock = sharedTransportData()) {
+    const lowerChord = chordStrumMidis(clock).map(midi => {
       let voiced = midi;
       while (voiced >= fretMidi) voiced -= 12; // Every accompaniment string stays below the melody by construction.
       return voiced;
@@ -2563,7 +2563,7 @@
     return [...lowerVoices,fretMidi]; // The held melody is always the highest note in every automatic strum.
   }
 
-  function automaticPatternSteps(fretMidi, fret, mode = state.pluckInputMode) {
+  function automaticPatternSteps(fretMidi, fret, mode = state.pluckInputMode, clock = null) {
     const definition = automaticPatternDefinition(mode);
     const noteStep = (midi, velocity = 1) => ({type:'note',midi,velocity});
     const restStep = () => ({type:'rest'});
@@ -2587,9 +2587,10 @@
       };
       return {steps:patterns[definition.strumStyle] || patterns.reggae,label:definition.label.toLowerCase()};
     }
-    const ascending = smartArpeggioMidis(fretMidi,'forward');
-    const descending = smartArpeggioMidis(fretMidi,'reverse');
-    const lower = melodyTopStrumMidis(fretMidi,'full').slice(0,-1).sort((a,b) => a - b);
+    const harmonyClock = clock || sharedTransportData(); // One snapshot ensures every voice in this roll belongs to the same scheduled chord.
+    const ascending = smartArpeggioMidis(fretMidi,'forward',harmonyClock);
+    const descending = smartArpeggioMidis(fretMidi,'reverse',harmonyClock);
+    const lower = melodyTopStrumMidis(fretMidi,'full',harmonyClock).slice(0,-1).sort((a,b) => a - b);
     const low = lower[0] ?? fretMidi - 12;
     const mid = lower[Math.floor((lower.length - 1) / 2)] ?? fretMidi - 7;
     const high = lower.at(-1) ?? fretMidi - 3;
@@ -3904,7 +3905,8 @@
     }
     const definition = automaticPatternDefinition();
     const fretMidi = noteMidi(fret.noteIndex, fret.modeOffset);
-    const pattern = automaticPatternSteps(fretMidi,fret,state.pluckInputMode);
+    const pulseClock = sharedTransportData(pulseTarget); // Use the harmony that will sound at the scheduled subdivision, not the previous chord from audio look-ahead.
+    const pattern = automaticPatternSteps(fretMidi,fret,state.pluckInputMode,pulseClock);
     const patternIndex = state.pluckStep % pattern.steps.length;
     const step = pattern.steps[patternIndex];
     state.pluckStep += 1;
@@ -3933,7 +3935,7 @@
           const voice = gateVoice(await playAuditoryOnlyMidi(step.midi,voiceKey,0.78 * (step.velocity || 1),'touch-left-fretted-pluck',true,pulseTarget));
           if (voice) refs.transportStatus.innerHTML = `<strong>${automaticPluckLabel()} · ${pattern.label}:</strong> ${patternIndex === 0 ? 'auditory melody return' : 'auditory chord voice'} ${midiName(step.midi)} · automatic continuation only · ${currentHarmonyData().chordName}`;
         } else if (step?.type === 'strum' || step?.type === 'boom') {
-          const voicing = step.type === 'boom' ? melodyTopStrumMidis(fretMidi,'boom') : melodyTopStrumMidis(fretMidi,step.voicing || 'full');
+          const voicing = step.type === 'boom' ? melodyTopStrumMidis(fretMidi,'boom',pulseClock) : melodyTopStrumMidis(fretMidi,step.voicing || 'full',pulseClock);
           const ordered = step.direction === 'up' ? voicing.slice().reverse() : voicing;
           ordered.forEach((midi,stringIndex) => {
             const stringDelay = stringIndex * Math.max(10,Math.round(STRUM_NOTE_DELAY_MS * .72));
@@ -6735,7 +6737,7 @@
     const fret = {noteIndex:event.noteIndex,modeOffset:event.modeOffset,slowRollDirection:state.game.demoNextSlowArpDirection};
     const pattern = automaticPatternSteps(melodyMidi,fret,mode);
     if (automaticPatternDefinition(mode).arpStyle === 'alternating') state.game.demoNextSlowArpDirection = fret.slowRollDirection === 'forward' ? 'reverse' : 'forward';
-    return {melodyMidi,steps:pattern.steps,label:pattern.label};
+    return {melodyMidi,fret,steps:pattern.steps,label:pattern.label}; // Keep the preview's chosen alternating-roll direction while letting later pulses follow new chords.
   }
 
   function scheduleSuccessfulPreviewContinuation(event,eventIndex) {
@@ -6754,12 +6756,13 @@
     const generation = state.demoGeneration;
     while (state.game.countInMs + nextPerformanceAt < stopAt - 2) {
       const targetGameTime = state.game.countInMs + nextPerformanceAt;
-      const patternIndex = gridStep % pattern.steps.length;
-      const step = pattern.steps[patternIndex];
+      const pulseStep = gridStep; // Immutable song-wide subdivision index for this queued callback.
       const timer = setTimeout(() => {
         state.demoTimers.delete(timer);
         if (!state.game.active || !state.game.demoActive || generation !== state.demoGeneration || state.paused) return;
-        const voiceKey = `demo-auto:${generation}:${eventIndex}:${gridStep}:${++state.previewCounter}`;
+        const voicedPattern = automaticPatternSteps(pattern.melodyMidi,pattern.fret,mode); // Live chord revoicing, without resetting the preview's alternating direction.
+        const step = voicedPattern.steps[pulseStep % voicedPattern.steps.length];
+        const voiceKey = `demo-auto:${generation}:${eventIndex}:${pulseStep}:${++state.previewCounter}`;
         if (step?.type === 'note') void playAuditoryOnlyMidi(step.midi,voiceKey,0.76 * (step.velocity || 1));
         else if (step?.type === 'strum' || step?.type === 'boom') {
           const voicing = step.type === 'boom' ? melodyTopStrumMidis(pattern.melodyMidi,'boom') : melodyTopStrumMidis(pattern.melodyMidi,step.voicing || 'full');
