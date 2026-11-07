@@ -45,7 +45,15 @@ for(const net of layouts) {
     assert.equal(base.projectionTiles,shelf.projectionTiles,'body and cap agree on translation');
     assert(base.parentCoverage>=0.54 && base.embeddedCoverage>=0.72,
       'most of the original plateau is actually buried in parent rock geometry');
-    if(base.hasPaintedBoundary) assert(base.boundaryCells.length>0,'body shares actual unwalkable stone boundary tiles when the parent has them');
+    if(base.hasPaintedBoundary) assert(base.boundaryCells.length>0,'body overlaps the real painted stone band when present');
+    const requiredShared=Math.max(1,Math.ceil(shelf.width*0.30)); // Long contour strips must share several actual parent edge tiles.
+    assert(base.sharedBoundaryTiles.length>=requiredShared,'the original little plateau shares a meaningful portion of its parent cliff boundary');
+    for(const shared of base.sharedBoundaryTiles){
+      assert(base.footprint.some(cell=>cell.c===shared.c&&cell.r===shared.r),
+        'shared boundary cells belong to the original embedded plateau, not unrelated nearby rock');
+      assert.equal(routes.componentAt(net,shared.c,shared.r),base.parentComponent,
+        'the shared boundary is owned by the actual parent plateau');
+    }
     for(const cell of base.footprint) {
       assert.equal(routes.componentAt(net,cell.c,cell.r),route.bComp,
         'the nested original plateau belongs to its owning higher plateau');
