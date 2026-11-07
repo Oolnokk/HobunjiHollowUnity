@@ -1914,9 +1914,15 @@
     return kurrayaSixEightMeterCache || (kurrayaSixEightMeterCache = timeSignatureData(KURRAYA_TIME_SIGNATURE,KURRAYA_BEAT_GROUPING));
   }
 
+  function kurrayaLabMeterData(mode) {
+    if (!KURRAYA_LAB_METERS.some(entry => entry.id === mode && mode !== 'original')) return null;
+    const [numerator,denominator] = mode.split('/').map(Number); // The Lab picker uses "7/8" ids; the generic meter helper accepts numeric [7,8] pairs.
+    return timeSignatureData([numerator,denominator]);
+  }
+
   function activeKurrayaLabMeter() {
     const mode = state.game.active && state.game.labMeterOverride; // Only a Lab audition uses the override while playing; free play and NPCs stay unchanged.
-    return mode ? timeSignatureData(mode) : null;
+    return kurrayaLabMeterData(mode);
   }
 
   function fixedKurrayaMixedMeterPhase(performanceQuarterBeatFloat = 0) {
@@ -2912,7 +2918,7 @@
     const definition = getSongDefinition('when-the-kininjis-bloom'); // Supplies the active authored/generated melody so the standalone Music Lab draws exactly what Play will audition.
     const arrangement = activeKurrayaSongArrangement();
     const tonicPitchClass = ((state.tonicMidi % 12) + 12) % 12;
-    const auditionMeter = state.songAuditionMeter === 'original' ? null : timeSignatureData(state.songAuditionMeter);
+    const auditionMeter = kurrayaLabMeterData(state.songAuditionMeter);
     const quarterBeatsPerBar = auditionMeter?.measureQuarterBeats || FIXED_HARMONY_CHORD_QUARTER_BEATS;
     const auditionNoteScale = quarterBeatsPerBar / FIXED_HARMONY_CHORD_QUARTER_BEATS; // Display reinterprets note timing without altering saved 48-quarter-beat melody drafts.
     let melodyBeat = 0;
@@ -6756,7 +6762,7 @@
 
   function generateSong(type, bpm, options = {}) {
     const melodyDefinition = getSongDefinition(type);
-    const labMeter = type === 'when-the-kininjis-bloom' && options.labMeterOverride ? timeSignatureData(options.labMeterOverride) : null;
+    const labMeter = type === 'when-the-kininjis-bloom' ? kurrayaLabMeterData(options.labMeterOverride) : null;
     const meter = labMeter || timeSignatureData(melodyDefinition?.timeSignature || [4,4],melodyDefinition?.beatGrouping);
     const melodyDurationScale = labMeter ? meter.measureQuarterBeats / FIXED_HARMONY_CHORD_QUARTER_BEATS : 1; // Fits all sixteen melody bars to the experimental denominator and numerator.
     const quarterBeatMs = 60000 / bpm; // MIDI note positions and saved chord lengths remain quarter-note based.
