@@ -60,9 +60,9 @@
       onAction: action => { if (action !== 'obj_farmproduction_' + entry.id) return { ok: false, message: 'Unknown action.' }; open(entry.id); return { ok: true, message: 'Opened building.' }; } };
     for (let row = entry.row; row < entry.row + size.h; row++) for (let col = entry.col; col < entry.col + size.w; col++) deps.worldObjects.set(col + ',' + row, entry.object);
     window.HoneyfuzzleHouse?.syncVisual(entry, size); // Hovering swarm over an occupied Honeyfuzzle House.
-    window.AuthoredFurniture.load(definition.base || entry.key).then(data => { // Seed maker starts with the existing 2×1 compost-box exterior rather than a missing model.
+    window.AuthoredFurniture.load(definition.modelKey || entry.key).then(data => { // Only buildings with an explicit visual model alias reuse a mesh; other family.base values denote processor recipes.
       if (generation !== entry.visualGeneration || !buildings.includes(entry)) return;
-      if (!data) { lastError = 'Missing authored building: ' + entry.key; deps.debugLog(lastError, 'warn'); return; }
+      if (!data) { lastError = 'Missing authored building: ' + (definition.modelKey || entry.key); deps.debugLog(lastError, 'warn'); return; }
       entry.mesh = window.AuthoredFurniture.buildGroup(tintData(data), 0x8b6540);
       entry.mesh.position.set(entry.col + size.w / 2, deps.surfaceY(entry.col + size.w / 2, entry.row + size.h / 2), entry.row + size.h / 2);
       if (entry.mesh.rotation) entry.mesh.rotation.y = -(entry.rot || 0) * Math.PI / 2; // Clockwise quarter turns seen from above.
