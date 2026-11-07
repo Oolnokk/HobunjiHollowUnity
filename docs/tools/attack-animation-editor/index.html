@@ -803,11 +803,12 @@ const gizmoProxy = new THREE.Object3D();
 toolBase.add(gizmoProxy);
 const freeHandGizmo = new THREE.Object3D(); // Tracks the selected keyframe's right-hand position independently of the instrument.
 freeHandGizmo.name = 'attack_editor_free_right_hand';
-const gripAxisMarkers = { // 3D handles follow the actual scaled tool holder, not an untransformed mockup.
-  start: new THREE.Mesh(new THREE.SphereGeometry(0.025, 12, 8), new THREE.MeshBasicMaterial({ color: 0x22d3ee, depthTest: false })),
-  end: new THREE.Mesh(new THREE.SphereGeometry(0.025, 12, 8), new THREE.MeshBasicMaterial({ color: 0xf59e0b, depthTest: false })),
+const gripAxisMarkers = { // The authored Nut/Bridge sockets live beside the real Kurraya geometry and render through its two opaque sprite planes.
+  start: new THREE.Mesh(new THREE.SphereGeometry(0.03, 12, 8), new THREE.MeshBasicMaterial({ color: 0x22d3ee, depthTest: false, depthWrite: false })),
+  end: new THREE.Mesh(new THREE.SphereGeometry(0.03, 12, 8), new THREE.MeshBasicMaterial({ color: 0xf59e0b, depthTest: false, depthWrite: false })),
 };
-const gripAxisLine = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0x8b5cf6, depthTest: false })); // The selected nut-to-bridge virtual Z line.
+const gripAxisLine = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0x8b5cf6, depthTest: false, depthWrite: false })); // Draw after the instrument's crossed PNG planes so the guide cannot disappear behind them.
+for (const node of [...Object.values(gripAxisMarkers), gripAxisLine]) node.renderOrder = 10000;
 toolHolder.add(gripAxisMarkers.start, gripAxisMarkers.end, gripAxisLine);
 function syncGripAxisMarkers() {
   const grips = window.HobunjiHandToolGrips;
@@ -940,6 +941,11 @@ $('gizmoRotateBtn').onclick = () => setGizmoMode('rotate');
 window.HobunjiAttackEditorGripAxis = { // Hand-grip panel's mobile-friendly 3D point buttons reuse the normal TransformControls.
   select(point) { if (!gripAxisMarkers[point]) return; setGizmoMode('translate', point); logDebug(`Move ${point === 'start' ? 'Nut' : 'Bridge'} marker to author the custom grip axis.`); },
   refresh: syncGripAxisMarkers,
+  debug: () => ({ // Mobile-readable preview truth, separate from the saved grip profile.
+    toolKey: currentToolKey, visible: gripAxisMarkers.start.visible && gripAxisMarkers.end.visible && gripAxisLine.visible,
+    nut: { x: gripAxisMarkers.start.position.x, y: gripAxisMarkers.start.position.y, z: gripAxisMarkers.start.position.z },
+    bridge: { x: gripAxisMarkers.end.position.x, y: gripAxisMarkers.end.position.y, z: gripAxisMarkers.end.position.z },
+  }),
 };
 
 // ── Weapon mesh: a real PNG sprite plane, same convention as game.js's
@@ -1058,6 +1064,7 @@ async function setToolSprite(toolKey) {
   currentToolKey = toolKey;
   if (g) { toolHolder.add(g); logDebug(`Weapon sprite set: ${toolKey}`); }
   window.HobunjiHandToolGrips?.editorToolChanged?.();
+  syncGripAxisMarkers(); // An async tool-sprite replacement must not leave the previous tool's hidden/visible guide cached until playback resumes.
 }
 $('toolSpriteSelect').innerHTML = Object.entries(TOOL_SPRITE_DEFS).map(([k, d]) => `<option value="${k}">${d.label}</option>`).join('');
 $('toolSpriteSelect').addEventListener('change', () => {
