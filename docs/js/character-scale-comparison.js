@@ -30,6 +30,8 @@
   let chair = null;
   let THREE = null;
   let persistTimer = 0;
+  let tuningRefreshTimer = 0; // Debounces rebuilding only the selected Longoran feet after dragging a gait/posture control.
+  let previewWalking = false; // In-place preview mode, ticked by the Animation Author's existing Three.js frame owner.
   let portraitRenderChain = Promise.resolve(); // Serializes portrait rendering because NpcAvatarPreview temporarily installs the active NPC account shim.
 
   const clone = value => value == null ? value : JSON.parse(JSON.stringify(value));
@@ -139,8 +141,11 @@
       const picked = pool.find(item => !isChild(item.npc)) || pool[0] || null;
       if (picked) return { ...target, npc: picked.npc };
       // Nuhongan share Tletingan appearance, but must keep their own editable scale.
-      const donor = target.species === 'nuhongan'
+      const derivedSlagothim = target.species === 'nuhongan' || target.species === 'longoran'; // Both use Tletingan artwork rather than requiring a uniquely authored NPC.
+      const donor = derivedSlagothim
         ? candidates.find(item => normalizeSpecies(item.appearance.speciesId) === 'tletingan' && !isChild(item.npc))
+          || npcs.map(npc => ({ npc, appearance: npcAppearance(npc) }))
+            .find(item => normalizeSpecies(item.appearance.speciesId) === 'tletingan' && !isChild(item.npc))
         : null; // Supplies an adult, same-gender preview without creating a world NPC.
       if (!donor) return { ...target, npc: null };
       const npc = clone(donor.npc); // Isolates preview identity and appearance from the authored NPC database.
@@ -149,6 +154,15 @@
       npc.species = target.species;
       npc.gender = target.gender;
       npc.appearance = { ...npcAppearance(donor.npc), speciesId: target.species, gender: target.gender };
+      if (normalizeGender(donor.appearance.gender) !== target.gender) {
+        // Some species/genders have no adult representative in the NPC database.
+        // Cross-gender fallback keeps Tletingan's body colours, but removes old
+        // male-only outfit/hair assignments so the female variant can render.
+        npc.appearance.cosmetics = {};
+        npc.equippedCosmetics = [];
+        npc.appliedDyes = {};
+        npc.avatarEditor = { rawExport: {} };
+      }
       npc.avatarEditor ||= {};
       npc.avatarEditor.rawExport ||= {};
       npc.avatarEditor.rawExport.appearance = clone(npc.appearance);
@@ -174,7 +188,7 @@ body[data-animation-author-mode="${MODE}"] #maaStopBtn,
 body[data-animation-author-mode="${MODE}"] #maaNewBtn,
 body[data-animation-author-mode="${MODE}"] #maaUndoBtn{display:none!important}
 body[data-animation-author-mode="${MODE}"] #maaViewportBadge{left:12px;right:12px;max-width:none;text-align:center}
-#${PANEL_ID}{display:none;position:absolute;z-index:18;left:50%;bottom:max(10px,env(safe-area-inset-bottom));transform:translateX(-50%);width:min(680px,calc(100% - 20px));padding:10px;border:1px solid rgba(255,255,255,.16);border-radius:14px;background:rgba(7,16,26,.94);backdrop-filter:blur(10px);gap:8px}
+#${PANEL_ID}{display:none;position:absolute;z-index:18;left:50%;bottom:max(10px,env(safe-area-inset-bottom));transform:translateX(-50%);width:min(680px,calc(100% - 20px));max-height:min(74dvh,720px);overflow-y:auto;overscroll-behavior:contain;padding:10px;border:1px solid rgba(255,255,255,.16);border-radius:14px;background:rgba(7,16,26,.94);backdrop-filter:blur(10px);gap:8px}
 body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
 #${PANEL_ID} .scaleHead{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 #${PANEL_ID} .scaleSelected{font-weight:850;color:var(--accent)}
@@ -183,6 +197,13 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
 #${PANEL_ID} output{text-align:right;color:var(--accent);font-weight:850;font-variant-numeric:tabular-nums}
 #${PANEL_ID} .scaleActions{display:flex;gap:7px;flex-wrap:wrap}
 #${PANEL_ID} .scaleStatus{font-size:10px;color:var(--muted)}
+#${PANEL_ID} .longoranTuning{display:grid;gap:8px;border-top:1px solid rgba(255,255,255,.18);padding-top:10px}
+#${PANEL_ID} .longoranTuning[hidden]{display:none!important}
+#${PANEL_ID} .longoranTuning h3{margin:0;font-size:13px}
+#${PANEL_ID} .longoranTuning small{color:var(--muted)}
+#${PANEL_ID} .longoranTuning .scaleRow{grid-template-columns:minmax(0,1fr) minmax(50px,72px)}
+#${PANEL_ID} .longoranTuning input[type=number]{width:100%;min-width:0}
+#${PANEL_ID} .longoranTuning select{min-height:38px}
 `;
     document.head.appendChild(style);
   }
@@ -219,6 +240,12 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
           <input id="maaFullScaleRange${axis}" type="range" min="${min}" max="${max}" step="${step}" value="${value}" aria-label="${ariaLabel}">
           <input id="maaFullScaleNum${axis}" type="number" min="${min}" max="${max}" step="${step}" value="${value}" aria-label="${ariaLabel} (exact value)">%
         </div>`;
+      const tuningRow = (axis, label, min, max, step, value, unit) => `
+        <div class="scaleRow">
+          <label for="maaLongoranRange${axis}">${label}</label>
+          <input id="maaLongoranRange${axis}" type="range" min="${min}" max="${max}" step="${step}" value="${value}" aria-label="${label}">
+          <input id="maaLongoranNum${axis}" type="number" min="${min}" max="${max}" step="${step}" value="${value}" aria-label="${label} exact value">${unit}
+        </div>`; // Same range+numeric mobile authoring pattern as the full-character scale inputs.
       panel.innerHTML = `
         <div class="scaleHead"><b>Full character scale</b><span id="maaFullScaleSelected" class="scaleSelected">Tap a character</span><span id="maaFullScaleNpc" class="pill">—</span></div>
         ${scaleRow('X', 'Width', 10, 400, 0.5, 100, 'Body width scale')}
@@ -226,6 +253,23 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
         ${scaleRow('Head', 'Head', 10, 400, 0.5, 100, 'Head scale')}
         ${scaleRow('OffsetY', 'Head Y offset', -50, 50, 0.5, 0, 'Head Y offset, percent of model height')}
         ${scaleRow('Age', 'Age (hunch)', 0, 100, 1, 0, 'Per-NPC age hunch, lowers the head further')}
+        <div id="maaLongoranTuning" class="longoranTuning" hidden>
+          <h3>Longoran · forward spine and walking lurch</h3>
+          <small>These species-wide values carry into gameplay on this origin. Width, height and head controls above remain independent per gender.</small>
+          ${tuningRow('Hunch', 'Standing hunch', 0, 100, 1, 75, '%')}
+          ${tuningRow('Kyphosis', 'Forward spine hook', 0, 100, 1, 80, '%')}
+          ${tuningRow('Lurch', 'Walking forward lean', 0, 25, 0.5, 19, '°')}
+          ${tuningRow('Cadence', 'Step cadence multiplier', 0.4, 1.5, 0.01, 0.66, '×')}
+          ${tuningRow('Stance', 'Planted-step fraction', 0.52, 0.82, 0.01, 0.74, '')}
+          ${tuningRow('DragLift', 'Dragging foot lift', 0.01, 0.45, 0.01, 0.09, '×')}
+          <div class="scaleRow"><label for="maaLongoranDragSide">Dragging foot</label><select id="maaLongoranDragSide"><option value="left">Left</option><option value="right">Right</option></select></div>
+          <div class="scaleActions">
+            <button id="maaLongoranWalkPreview" type="button" class="secondary" aria-pressed="false">Preview walking</button>
+            <button id="maaLongoranResetTuning" type="button" class="secondary">Reset Longoran posture & gait</button>
+            <button id="maaLongoranExportTuning" type="button" class="secondary">Export Longoran tuning</button>
+          </div>
+          <small id="maaLongoranTuningStatus">Standing curvature uses the shared CharacterSpine rig; movement uses the Maskbound gait solver.</small>
+        </div>
         <div class="scaleActions"><button id="maaFullScaleExport" type="button" class="good">Export scale JSON</button><button id="maaFullScaleFrame" type="button" class="secondary">Frame lineup</button><button id="maaFullScaleReset" type="button" class="secondary">Reset all to repo defaults</button></div>
         <div id="maaFullScaleStatus" class="scaleStatus">Preview-only lineup: hands and feet use the Rig Coordinates runtime; no lineup actor is saved into Rig or Multi mode. Head scale/offset are compensated at the neck rig, so stretching width/height never distorts head proportions. Age is per-NPC and composes with Head Y offset for a hunched-over look.</div>`;
       workspace.appendChild(panel);
@@ -244,6 +288,18 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
       ageRange.addEventListener('change', persistProfiles);
       ageNumber.addEventListener('input', () => { ageRange.value = ageNumber.value; applyAgeSlider(); });
       ageNumber.addEventListener('change', persistProfiles);
+      for (const axis of ['Hunch', 'Kyphosis', 'Lurch', 'Cadence', 'Stance', 'DragLift']) {
+        const range = panel.querySelector(`#maaLongoranRange${axis}`);
+        const number = panel.querySelector(`#maaLongoranNum${axis}`);
+        range.addEventListener('input', () => { number.value = range.value; applyLongoranSliders(); });
+        number.addEventListener('input', () => { range.value = number.value; applyLongoranSliders(); });
+        range.addEventListener('change', applyLongoranSliders);
+        number.addEventListener('change', applyLongoranSliders);
+      }
+      panel.querySelector('#maaLongoranDragSide').addEventListener('change', applyLongoranSliders);
+      panel.querySelector('#maaLongoranWalkPreview').addEventListener('click', toggleWalkPreview);
+      panel.querySelector('#maaLongoranResetTuning').addEventListener('click', resetLongoranTuning);
+      panel.querySelector('#maaLongoranExportTuning').addEventListener('click', exportLongoranTuning);
       panel.querySelector('#maaFullScaleExport').addEventListener('click', exportJson);
       panel.querySelector('#maaFullScaleFrame').addEventListener('click', frame);
     }
@@ -314,6 +370,7 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
 
   function select(entry) {
     if (!entry) return;
+    if (selected && selected !== entry) stopWalkPreview(); // Do not leave the previous avatar pitched or mid-stride.
     selected = entry;
     const scale = window.HobunjiCharacterRigScale?.scaleFor?.(entry.species, entry.gender, entry.profile) || { x: 1, y: 1, head: 1, offsetY: 0 };
     document.getElementById('maaFullScaleSelected').textContent = `${prettySpecies(entry.species)} · ${entry.gender}`;
@@ -324,7 +381,126 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
     setSliderValue('OffsetY', clampOffsetPercent(scale.offsetY * 100));
     const age = entry.npc?.id ? (host()?.npcAgeFor?.(entry.npc.id) || 0) : 0;
     setSliderValue('Age', clampAgePercent(age * 100));
+    const longoranPanel = document.getElementById('maaLongoranTuning'); // Other species keep the uncluttered universal scale controls.
+    if (longoranPanel) longoranPanel.hidden = entry.species !== 'longoran';
+    if (entry.species === 'longoran') {
+      const tune = window.HobunjiLongoranSpecies?.tuningSnapshot?.();
+      if (tune) {
+        const fields = { Hunch: tune.spineProfile.hunch * 100, Kyphosis: tune.spineProfile.kyphosis * 100,
+          Lurch: tune.gaitProfile.lurchDegrees, Cadence: tune.gaitProfile.cadence,
+          Stance: tune.gaitProfile.stance, DragLift: tune.gaitProfile.dragLift }; // Human-readable UI units reflect the exact canonical runtime values.
+        for (const [axis, value] of Object.entries(fields)) setLongoranSliderValue(axis, value);
+        document.getElementById('maaLongoranDragSide').value = tune.gaitProfile.dragSide;
+      }
+    }
     status(`Selected ${prettySpecies(entry.species)} ${entry.gender} · ${entry.npc?.name || entry.npc?.id || 'repository NPC'}.`);
+  }
+
+  function setLongoranSliderValue(axis, value) {
+    const range = document.getElementById(`maaLongoranRange${axis}`); // Keeps the mobile range/number pair in sync without changing runtime state.
+    const number = document.getElementById(`maaLongoranNum${axis}`);
+    if (range) range.value = String(value);
+    if (number) number.value = String(Math.round(value * 100) / 100);
+  }
+
+  function longoranScaleFor(entry) {
+    return window.HobunjiCharacterRigScale?.scaleFor?.(entry.species, entry.gender, entry.profile)
+      || { x: 1, y: 1, head: 1, offsetY: 0 }; // Used when refreshing the portrait bone without changing authored proportions.
+  }
+
+  function refreshLongoranPresentation() {
+    for (const entry of entries) {
+      if (entry.species !== 'longoran' || !entry.model) continue;
+      const spine = window.HobunjiCharacterSpine?.bind?.(entry.model, { speciesId: 'longoran' }); // Rebind new species posture onto the same portrait root/shoulder-orbit cache.
+      if (spine) window.HobunjiCharacterSpine?.applyToRig?.(entry.model.userData?.neckRig, spine, Number(entry.model.userData?.portraitModelHeight) || 1);
+      const ageFraction = entry.npc?.id ? (host()?.npcAgeFor?.(entry.npc.id) || 0) : 0; // Each gender uses its own representative's age, never the currently selected row's.
+      window.HobunjiCharacterRigScale?.applyToParent?.(entry.group, entry.species, entry.gender, longoranScaleFor(entry), ageFraction); // Restores head compensation after spine rebind.
+      if (entry.footOptions && THREE) {
+        try { entry.feet?.dispose?.(); }
+        catch (error) { console.warn('[full-character-scale] failed to release old Longoran feet:', error); }
+        entry.feet = window.ProceduralLegAnimation?.attach?.(THREE, entry.group, entry.footOptions) || null; // The gait solver snapshots per-avatar lurch/stance on attach.
+        entry.feet?.update?.(0, 0, false, null);
+      }
+    }
+    window.ProceduralHandFrameDriver?.syncNow?.();
+  }
+
+  function queueLongoranRefresh() {
+    clearTimeout(tuningRefreshTimer);
+    tuningRefreshTimer = setTimeout(() => {
+      tuningRefreshTimer = 0;
+      window.HobunjiLongoranSpecies?.persistTuning?.(); // Debounced disk write, not one storage operation per slider event.
+      refreshLongoranPresentation(); // Rebuild the actual gait handle and re-solve the standing spine, not just the number labels.
+    }, 110);
+  }
+
+  function applyLongoranSliders() {
+    if (!active || selected?.species !== 'longoran') return;
+    const read = axis => Number(document.getElementById(`maaLongoranRange${axis}`)?.value);
+    const updated = window.HobunjiLongoranSpecies?.applyTuning?.({
+      spineProfile: { hunch: read('Hunch') / 100, kyphosis: read('Kyphosis') / 100 },
+      gaitProfile: { lurchDegrees: read('Lurch'), cadence: read('Cadence'), stance: read('Stance'),
+        dragLift: read('DragLift'), dragSide: document.getElementById('maaLongoranDragSide')?.value },
+    }, { persist: false }); // All validation/clamping happens in the same owner read by gameplay.
+    const data = window.HobunjiLongoranSpecies?.tuningSnapshot?.();
+    if (!data) return;
+    for (const [axis, value] of Object.entries({
+      Hunch: data.spineProfile.hunch * 100, Kyphosis: data.spineProfile.kyphosis * 100,
+      Lurch: data.gaitProfile.lurchDegrees, Cadence: data.gaitProfile.cadence,
+      Stance: data.gaitProfile.stance, DragLift: data.gaitProfile.dragLift,
+    })) setLongoranSliderValue(axis, value);
+    if (updated) queueLongoranRefresh();
+    const info = document.getElementById('maaLongoranTuningStatus');
+    if (info) info.textContent = `Standing hunch ${(data.spineProfile.hunch * 100).toFixed(0)}% · forward hook ${(data.spineProfile.kyphosis * 100).toFixed(0)}% · walking lean ${data.gaitProfile.lurchDegrees.toFixed(1)}° · ${previewWalking ? 'walking in place' : 'idle'}`;
+  }
+
+  function stopWalkPreview() {
+    previewWalking = false;
+    if (selected?.model) selected.model.rotation.x = 0; // Only the authoring portrait pitch is temporary; the actual spine curve remains.
+    selected?.feet?.update?.(0, 0, false, null);
+    const button = document.getElementById('maaLongoranWalkPreview');
+    if (button) { button.setAttribute('aria-pressed', 'false'); button.textContent = 'Preview walking'; }
+  }
+
+  function toggleWalkPreview() {
+    if (!active || selected?.species !== 'longoran') return;
+    if (previewWalking) { stopWalkPreview(); return; }
+    previewWalking = true;
+    const button = document.getElementById('maaLongoranWalkPreview');
+    if (button) { button.setAttribute('aria-pressed', 'true'); button.textContent = 'Stop walking'; }
+  }
+
+  function exportLongoranTuning() {
+    const tune = window.HobunjiLongoranSpecies?.tuningSnapshot?.(); // Exports the same validated object that the game reads from the Longoran runtime bridge.
+    if (!tune) { status('Longoran tuning is unavailable: check the species bootstrap.'); return; }
+    const blob = new Blob([JSON.stringify(tune, null, 2) + '\n'], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = 'hobunji_longoran_tuning.json';
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+    status('Exported Longoran spine and walking-gait tuning as JSON. Changes are also saved for this browser origin.');
+  }
+
+  function resetLongoranTuning() {
+    if (!active || selected?.species !== 'longoran') return;
+    window.HobunjiLongoranSpecies?.resetTuning?.();
+    select(selected);
+    clearTimeout(tuningRefreshTimer);
+    tuningRefreshTimer = 0;
+    refreshLongoranPresentation();
+    status('Longoran standing curve and gait restored to the repository defaults.');
+  }
+
+  function tick(dt) {
+    if (!active || !previewWalking || selected?.species !== 'longoran') return;
+    const frameDt = Math.max(0, Math.min(0.05, Number(dt) || 0)); // Called from the editor's existing Three.js frame tick, never starts a second loop.
+    selected.feet?.update?.(frameDt, 3.2, false, null); // Uses the actual procedural foot solver to show cadence, stance, and dragging.
+    const lean = Number(selected.feet?.getRunLean?.()) || 0;
+    if (selected.model) selected.model.rotation.x = lean; // Positive X pitches the portrait's top toward its own +Z/front, matching the runtime composer.
   }
 
   function currentAgeFraction() {
@@ -390,14 +566,15 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
     if (!active) return;
     if (window.confirm && !window.confirm('Reset every species/gender scale (width, height, head, head Y offset) and every per-NPC age back to the repository defaults? This discards all local overrides.')) return;
     const count = host()?.resetToRepositoryDefaults?.() || 0;
+    window.HobunjiLongoranSpecies?.resetTuning?.(); // "Reset all" also restores the new species-wide spine and gait settings.
     for (const entry of entries) {
       const scale = window.HobunjiCharacterRigScale?.scaleFor?.(entry.species, entry.gender, entry.profile) || { x: 1, y: 1, head: 1, offsetY: 0 };
       window.HobunjiCharacterRigScale?.applyToParent?.(entry.group, entry.species, entry.gender, scale, 0);
     }
-    window.ProceduralHandFrameDriver?.syncNow?.();
+    refreshLongoranPresentation();
     if (selected) select(selected);
     persistProfiles();
-    status(`Reset ${count} species/gender scale${count === 1 ? '' : 's'} and every per-NPC age to repository defaults.`);
+    status(`Reset ${count} species/gender scales, Longoran posture/gait, and per-NPC age to repository defaults.`);
   }
 
   function exportJson() {
@@ -541,7 +718,7 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
     const modelWidth = Number(model.userData.portraitModelWidth) || modelHeight;
     model.position.y = modelHeight / 2;
 
-    const feet = window.ProceduralLegAnimation?.attach?.(THREE, group, {
+    const footOptions = {
       speciesId: rep.species,
       gender: rep.gender,
       bodyColors: avatar.profile?.bodyColors || avatar.exportNpc.appearance?.bodyColors,
@@ -551,7 +728,8 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
       name: `${group.name}_feet`,
       profile: avatar.profile,
       portraitSize: avatar.front.width || 200,
-    }) || null;
+    }; // Retained so Longoran gait slider changes can reattach precisely the same procedural-leg solver, without rerendering PNGs.
+    const feet = window.ProceduralLegAnimation?.attach?.(THREE, group, footOptions) || null;
     feet?.update?.(0, 0, false, null);
 
     previewRoot.add(group);
@@ -560,7 +738,7 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
       x: rigProfile.anatomy.rigScaleX, y: rigProfile.anatomy.rigScaleY, head: rigProfile.anatomy.headScale, offsetY: rigProfile.anatomy.headOffsetY,
     }, ageFraction);
     window.ProceduralHandFrameDriver?.syncNow?.();
-    return { ...rep, group, model, feet, profile: rigProfile, avatarProfile: avatar.profile };
+    return { ...rep, group, model, feet, footOptions, profile: rigProfile, avatarProfile: avatar.profile };
   }
 
   async function buildChair() {
@@ -691,6 +869,10 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
   }
 
   function disposePreview() {
+    clearTimeout(tuningRefreshTimer);
+    if (tuningRefreshTimer) window.HobunjiLongoranSpecies?.persistTuning?.(); // Save a slider change even if the author exits immediately.
+    tuningRefreshTimer = 0;
+    stopWalkPreview();
     selected = null;
     for (const entry of entries) {
       try { entry.feet?.dispose?.(); } catch (_) {}
@@ -771,6 +953,7 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
       enter,
       exit,
       exportJson,
+      tick, // The host calls this once per already-running Animation Author frame, only while previewing Longoran walking.
       get active() { return active; },
       get selectedKey() { return selected?.key || null; },
       get previewCount() { return entries.length; },
@@ -778,7 +961,10 @@ body[data-animation-author-mode="${MODE}"] #${PANEL_ID}{display:grid}
         active,
         building,
         lineup: entries.map(entry => entry.key),
-        latestChange: 'Nuhongan male/female use preview-only Tletingan representatives; Mashtzarr retain their own male/female NPCs and scales.',
+        selected: selected?.key || null,
+        walking: previewWalking,
+        longoranTuning: window.HobunjiLongoranSpecies?.tuningSnapshot?.() || null, // Mobile-readable proof of the exact values shared with gameplay.
+        latestChange: 'Longoran and Nuhongan male/female preview from Tletingan donors. Longoran spine and gait are editable and saved, with live walking preview.',
       }),
     });
     return true;
