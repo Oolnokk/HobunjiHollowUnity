@@ -49,6 +49,9 @@
       function setup(){
         if(rec.disposed||puzzle||failed||!isActive()
           ||bus?.hasActiveRuinState?.()!==true||!game?.getOccupancySnapshot?.())return;
+        const player=getPlayerPosition?.(); // Deferred construction avoids eagerly mounting several heavy compound rooms on a story the player has just reached.
+        if(!player||player.x<room.x-5||player.x>room.x+room.w+5
+          ||player.z<room.z-5||player.z>room.z+room.d+5)return;
         try{
           const kit={
             state:{controls:[]},group:()=>parent,
