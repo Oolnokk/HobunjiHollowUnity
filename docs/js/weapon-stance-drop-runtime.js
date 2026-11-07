@@ -76,14 +76,14 @@
       const engaged = stances.stanceEngaged();
       const now = performance.now();
       const swinging = engaged && now - swingSinkAtMs < SWING_SAMPLE_FRESH_MS && Number.isFinite(swingSinkPct);
-      const notePose = !engaged ? instrumentNotePose(now) : null; // Music plays outside normal weapon stances, so never compete with a combat swing.
+      const notePose = swinging ? null : instrumentNotePose(now); // Actual combat attacks win; otherwise a sounded flute note takes priority over a carried weapon's idle stance.
       const playingNote = notePose !== null;
-      const pct = engaged
-        ? (swinging ? swingSinkPct : (global.SharedAttackPose?.idleBodySinkPct?.() ?? 0))
-        : (playingNote ? Math.max(0, Number(notePose.bodySink) || 0) : 0);
+      const pct = swinging ? swingSinkPct
+        : playingNote ? Math.max(0, Number(notePose.bodySink) || 0)
+        : engaged ? (global.SharedAttackPose?.idleBodySinkPct?.() ?? 0) : 0;
       legs.setStanceYawDeg?.(swinging ? swingBodyYawDeg : playingNote ? (Number(notePose.bodyYaw) || 0) : (stances.idleBodyYawSnapshot?.(idleYaw).yawDeg || 0)); // The leg away from the authored turn leads.
       legs.setStanceDrop(pct / 100 * (legs.modelHeight || 0), swinging || playingNote); // Both attack and flute notes follow their pose; release remains eased.
-      lastReason = swinging ? 'swing-pose' : engaged ? 'idle-stance' : playingNote ? 'instrument-note' : 'no-stance';
+      lastReason = swinging ? 'swing-pose' : playingNote ? 'instrument-note' : engaged ? 'idle-stance' : 'no-stance';
     }
 
     const applied = ownsBody || !enabled() ? 0 : legs.getStanceDrop();
