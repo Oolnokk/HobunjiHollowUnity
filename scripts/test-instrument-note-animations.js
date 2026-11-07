@@ -381,5 +381,44 @@ assert(editor.includes('slider?.addEventListener(\'input\', () => applyFreeChann
 assert(editor.includes('slider?.addEventListener(\'input\', () => {\n        numberInput.value'),'touch slider drives elbow state');
 assert(music.includes('playPlayerKurrayaNote?.()'),'game relays sounded notes to the free hand');
 assert(handDriver.includes('freeRightHandFor(record, toolKey)'),'live procedural hand driver consumes independent hand poses');
+assert(handDriver.includes('const avatar = record.avatarRoot; // Editor 3D gizmos'), 'gameplay must interpret free-hand XYZ relative to the same avatar root used by the editor gizmo');
+assert(editor.includes('avatarModel.add(freeHandGizmo)'), 'the hand gizmo must author positions in avatar-model space');
+assert(editor.includes('avatarModel.worldToLocal(p)'), 'capture from the tool grip must use the same avatar-local frame');
+assert(editor.includes("if (preset.gripMode) gripModeEditor?.loadFromAnimationObject?.(preset)"),'Kurraya action selection must restore palm-parallel');
+assert(editor.includes("else gripModeEditor?.syncForTool?.()"),'other actions must reset any prior Kurraya manual grip selection');
+
+// Execute the real editor JSON import path, not just string-match its free-hand field.
+const loaderStart=editor.indexOf('function safeNum(v, fallback)');
+const loaderEnd=editor.indexOf('// ── Render loop',loaderStart);
+assert(loaderStart>=0 && loaderEnd>loaderStart,'must find production animation loader to test import/Undo');
+const importedAnim={name:'',style:'thrust',sequence:'attack',durationS:0.32,windupFrac:0.18,strikeFrac:0.34,holdFrac:0.62,poses:{}}; // Fixture receives real authored game action after import.
+const importGripCalls=[]; // Verifies imported two-hand state reaches the shared hand-grip adapter.
+const importModeCalls=[]; // Verifies imported palm mode reaches the shared grip-mode selector.
+const importInputs=new Map(); // Minimal browser UI values needed by loadAnimObject.
+const importField=id=>{ if (!importInputs.has(id)) importInputs.set(id,{value:'',textContent:''}); return importInputs.get(id); };
+const loader=vm.runInNewContext(editor.slice(loaderStart,loaderEnd)+'\nloadAnimObject',{
+  anim:importedAnim, currentAction:()=>({label:'Kurraya — Play Note',toolKey:'kurraya'}),
+  prepareTemplateForAction:()=>({style:'thrust',sequence:'attack'}),actionStatsEntry:()=>null,logDebug:()=>{},
+  syncToolEndFlipUi:()=>{},clampFracs:()=>{},neutralPoseFor:()=>({x:0,y:0,z:0,pitch:0,yaw:0,bodyYaw:0,roll:0,scale:1}),
+  defaultPose:(x,y,z,pitch,yaw,bodyYaw,roll)=>({x,y,z,pitch,yaw,bodyYaw,roll}),
+  FREE_RIGHT_HAND_CHANNELS:['x','y','z','pitch','yaw','roll'],ATTACK_POSE_SIDES:['left','right'],
+  normalizedPoseElbow:p=>p && [p.x,p.y,p.z].every(Number.isFinite)?{...p}:null,
+  SharedAttackPose:{MAX_BODY_SINK_PCT:25},
+  window:{
+    HobunjiAttackEditorHandShoulderControls:{loadFromAnimationObject:()=>{}},
+    HobunjiHandToolGrips:{loadEditorAnimationGrip:o=>importGripCalls.push(o)},
+    HobunjiAttackEditorHandGripMode:{loadFromAnimationObject:o=>importModeCalls.push(o)},
+  },
+  $:importField,renderActivePosePanel:()=>{},selectEditPhase:()=>{},updateTimelineSegments:()=>{},refreshJsonView:()=>{},
+  editPhase:'neutral',currentActionId:'kurraya_play_note',
+});
+loader(JSON.parse(JSON.stringify(kurrayaPlayNote)));
+assert.equal(importedAnim.poses.neutral.rightHand.y,0.47,'import must not drop the free-hand Neutral Y');
+assert.equal(importedAnim.poses.windup.rightHand.roll,52,'import must not drop the free-hand Windup rotation');
+assert.equal(importedAnim.poses.strike.rightHand.y,0.5,'import must not drop the free-hand Strike Y');
+assert.equal(importedAnim.poses.neutral.elbows.left.x,0.155,'import must not lose the authored left elbow');
+assert.equal(importGripCalls[0].poses.neutral.secondaryGrip.enabled,true,'import must forward Neutral 2H to the shared grip system');
+assert.equal(importModeCalls[0].gripMode,'palm-parallel','import must restore the exact palm mode');
+
 
 console.log('Flute/Kurraya authored poses, 3D grip axis, right-hand mode, note routing and body sink passed');
