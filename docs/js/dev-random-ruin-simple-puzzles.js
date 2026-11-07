@@ -991,11 +991,19 @@
   // Ordinary jumps and unscripted falls may catch ANY free rope, not merely
   // the air-only chain ropes. Only airborne movement calls this; walking past
   // a rope still requires the existing interaction prompt.
-  function catchAirborneRope(f) {
+  function catchAirborneRope(f, from = null) {
     if (!state || !inRuin() || (state.flight && state.flight !== f) || state.activeRope || !f) return false; // Accept the current rope-release flight as well as an ordinary PlayerJump approach.
-    for (const rope of state.ropes) {
-      if (rope.attached || rope.burden || rope.id === f.ropeId || !ropeCatchPoint(rope, f)) continue;
-      return catchRopeInFlight(rope, f);
+    const distance = from ? Math.hypot(f.x - from.x, f.y - from.y, f.z - from.z) : 0;
+    const samples = Math.max(1, Math.ceil(distance / 0.12)); // Fast rope-release arcs must not skip a grip between frames.
+    for (let i = 1; i <= samples; i++) {
+      const point = i === samples ? f : { ...f,
+        x: from.x + (f.x - from.x) * i / samples,
+        y: from.y + (f.y - from.y) * i / samples,
+        z: from.z + (f.z - from.z) * i / samples };
+      for (const rope of state.ropes) {
+        if (rope.attached || rope.burden || rope.id === f.ropeId || !ropeCatchPoint(rope, point)) continue;
+        return catchRopeInFlight(rope, point);
+      }
     }
     return false;
   }
@@ -2381,6 +2389,7 @@
   function updateFlight(dt) {
     const f=state.flight;
     if(!f)return;
+    const previous={x:f.x,y:f.y,z:f.z}; // Start of the swept rope-to-rope catch path.
     f.vy-=ROPE_GRAVITY*dt;
     const control=window.PlayerJump?.airControl?.(0.6)||{x:0,z:0}; // Steering while falling never discards the original rope release momentum.
     const next={x:f.x+(f.vx+control.x)*dt,z:f.z+(f.vz+control.z)*dt,y:f.y+f.vy*dt};
@@ -2390,7 +2399,7 @@
     }else if(platformBlocksAt(next.x,next.z,next.y)){
       f.y=next.y;f.vx=0;f.vz=0; // Hit a rope platform's side below its top: drop down its face instead of passing into it.
     }else{f.x=next.x;f.z=next.z;f.y=next.y;}
-    if(catchAirborneRope(f))return; // A released swing is still airborne: any free rope on its swept route can be caught, not only explicitly air-only rope chains.
+    if(catchAirborneRope(f,previous))return; // The swept release arc can catch ordinary and air-only ropes without skipping between frames.
     const chain=ropeChainPitAt(f.x,f.z,f.y);
     // The player must die BEFORE sampling floors lower down the same X/Z:
     // a missed upper-story catch could otherwise land on a lower deck and
