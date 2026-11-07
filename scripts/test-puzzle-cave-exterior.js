@@ -22,7 +22,7 @@ class SceneObject {
 class Group extends SceneObject {}
 class Mesh extends SceneObject {constructor(geometry,material){super();this.geometry=geometry;this.material=material;this.isMesh=true;}}
 class Material {
-  constructor(opts={}){this.color={hex:opts.color,setHex(v){this.hex=v;}};this.map=opts.map;}
+  constructor(opts={}){this.color={hex:opts.color,setHex(v){this.hex=v;}};this.map=opts.map;this.opacity=opts.opacity??1;}
   dispose(){this.disposed=true;}
 }
 class Geometry {dispose(){this.disposed=true;}}
