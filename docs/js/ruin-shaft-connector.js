@@ -215,7 +215,8 @@
     ruin.shaftSanctumDoorSite=greatDoorSite; // Public runtime exposes the same validated wall face to the sanctum composer.
     ruin.shaftHub=true;ruin.shaftWing=true;ruin.shaftHubPlan=plan;
     ruin.shaftConnection={length:route.length,corners:route.corners,physical:true,entrance,mouth,
-      floorCount:plan.floorCount,totalWingsPlanned:plan.totalWings,braziersPlanned:plan.totalBraziers,
+      floorCount:plan.floorCount,docks:placed.docks?.length||0, // One audited, physically walkable cantilever on each story, including the ground entrance.
+      totalWingsPlanned:plan.totalWings,braziersPlanned:plan.totalBraziers,
       hallwayTiles:route.tiles.length,addedFloorTiles:allFloor.length,
       straightVestibule:!!plan.options.groundEntranceSide,
       traversal:plan.options.shaftTraversal, // Mobile diagnostics and ruin movement inspect the same chosen method.
