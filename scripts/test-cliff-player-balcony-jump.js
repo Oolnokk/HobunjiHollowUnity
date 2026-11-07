@@ -79,4 +79,30 @@ assert(ctx.window.ClimbSystem.updateBalcony(0.15));
 assert(player.climbing, 'walking across the ledge edge begins a world-height descent');
 assert(player.climbEndX > player.climbStartX, 'walk-off fall preserves the chosen outward direction');
 
+// With PlayerJump loaded in normal gameplay, the same outward walk-off
+// commits into real airborne physics so the player can steer and catch ropes.
+let airborne = null; // Captures the shared flight passed by the new balcony drop path.
+ctx.window.PlayerJump = {
+  canOccupyAir: () => true,
+  beginFlight(flight, options) {
+    airborne = { flight, options };
+    player._freeJump = { phase: 'air', feetY: flight.y };
+    return player._freeJump;
+  },
+};
+player.climbing = false;
+player.onCliffBalcony = shelf.id;
+player._freeJump = null;
+player.x = 6.45 * 64;
+player.y = shelf.z * 64;
+input = { x: 1, y: 0 };
+assert(ctx.window.ClimbSystem.updateBalcony(1/60)); // Real 60 fps frame: the foot is beyond the walkability inset but still inside the physical shelf.
+assert(airborne, 'outward movement transfers the balcony fall into the shared airborne system');
+assert.equal(player.climbing, false, 'a directional fall does not start a scripted climb');
+assert.equal(player.onCliffBalcony, null, 'the old balcony no longer owns airborne movement');
+assert.equal(airborne.flight.y, shelf.y, 'the flight retains the shelf\'s true world elevation');
+assert(airborne.flight.x > 6.5, 'the flight begins just outside the physical shelf edge');
+assert(airborne.flight.vx > 0, 'outward walk-off retains a small directional drift');
+assert.equal(airborne.options.source, 'cliff balcony fall');
+
 console.log('PASS real ClimbSystem jump: takeoff, overhang clearance, landing and walking off ledge');
