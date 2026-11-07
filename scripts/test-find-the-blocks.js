@@ -38,7 +38,8 @@ new vm.Script(source,{filename:'dev-ruin-find-blocks.js'}); // Catch syntax erro
 function test(seed){
   const fireTargets=[],projectileTargets=[],breakablePillars=[],registeredBlocks=[],surfaces=[],cleared=[],barriers=[]; // Retain the actual authored obstruction centers for a push-route audit.
   const soloGroup=new Object3D(); // Parent scene has the same lifetime as one Puzzle Lab reroll.
-  let melody=null,solved=0;
+  const subpuzzles=[]; // Every nested melody/glyph/rail challenge must be solved and disposed through its real callback seam.
+  let solved=0;
   const env={
     THREE,
     DevRandomRuin:{
@@ -69,8 +70,9 @@ function test(seed){
     },
     RuinLayerChallenges:{
       compose(options){
-        melody={tick(){},animate(){},dispose(){cleared.push('melody');},solve:options.onSolved};
-        return melody;
+        const challenge={kind:options.kind,id:options.id,tick(){},animate(){},dispose(){cleared.push('challenge:'+options.id);},solve:options.onSolved};
+        subpuzzles.push(challenge);
+        return challenge;
       }
     }
   }; // Each seed gets fresh services, so a previous variant cannot leak state into the next one.
@@ -100,11 +102,20 @@ function test(seed){
   assert.equal(surfaces.length,9,'Seven stairs, their dais and tower support are registered');
   assert.equal(room.solved,false);
 
-  for(const kind of ['net','ice']){
-    const target=fireTargets.find(item=>item.id.endsWith('-'+kind));
-    assert(target,'Both ceiling mechanisms need native DungeonFire targets');
-    assert.notEqual(target.onBurn(),false,'Fire must release the overhead restraint');
+  const net=fireTargets.find(item=>item.id.endsWith('-net'));
+  if(room.netVariant==='fire'){
+    assert(net,'Burnable ceiling net uses the native DungeonFire target');
+    assert.notEqual(net.onBurn(),false,'Fire must sever the ceiling net');
+  }else{
+    assert.equal(net,undefined,'Non-fire net variant must not expose a fake burn target');
+    const netUnlock=subpuzzles.find(challenge=>challenge.id.endsWith('-net-challenge'));
+    assert(netUnlock,'The ceiling net must be linked to a real reusable subpuzzle');
+    assert.equal(netUnlock.kind,room.netVariant==='glyphs'?'glyphObelisk':room.netVariant==='movingTargets'?'ceilingRailTargets':'melodyEcho');
+    netUnlock.solve();
   }
+  const ice=fireTargets.find(item=>item.id.endsWith('-ice'));
+  assert(ice,'Ceiling icicles always use the existing DungeonFire system');
+  assert.notEqual(ice.onBurn(),false);
   for(let i=0;i<100;i++)room.tick(.05);
   assert.equal(room.blocks[0].phase,'ready','Net block lands after fire');
   assert.equal(room.blocks[1].phase,'ready','Ice block lands after melting');
@@ -118,11 +129,13 @@ function test(seed){
   assert.equal(ledge.phase,'ready','Block settles and re-enters the native pusher');
   assert.equal(ledge.mesh.userData.findBlocksCanDrop,false,'Grounded blocks must not keep the ledge exception');
 
-  if(seed===0){
-    assert(melody,'Melody variant must use existing ruin melody composer');
-    melody.solve();for(let i=0;i<100;i++)room.tick(.05);
-    assert(room.snapshot().pillarHeight<.1,'Solved flute phrase sinks the pillar');
-  }else if(seed===1){
+  if(room.variant==='melody'||room.variant==='ceilingRail'){
+    const pillarUnlock=subpuzzles.find(challenge=>challenge.id.endsWith('-pillar-unlock'));
+    assert(pillarUnlock,'Tall pillar must use a real native melody or moving-target challenge');
+    assert.equal(pillarUnlock.kind,room.variant==='melody'?'melodyEcho':'ceilingRailTargets');
+    pillarUnlock.solve();for(let i=0;i<100;i++)room.tick(.05);
+    assert(room.snapshot().pillarHeight<.1,'Solving the native pillar challenge sinks the stone');
+  }else if(room.variant==='projectiles'){
     assert.equal(projectileTargets.length,3,'Projectile variant registers three ranged targets');
     const posts=[[13.5,15.5],[15.5,13.5],[17.5,13.5]]; // The three solid blocker pillars frame the central room.
     projectileTargets.forEach((target,i)=>{
@@ -133,7 +146,7 @@ function test(seed){
     });
     for(let i=0;i<100;i++)room.tick(.05);
     assert(room.snapshot().pillarHeight<.1,'All projectile glyphs sink the pillar');
-  }else{
+  }else if(room.variant==='witchBomb'){
     assert.equal(breakablePillars.length,1,'Cracked pillar must register with actual bomb explosions');
     breakablePillars[0].onBreak();
     for(let i=0;i<100;i++)room.tick(.05);
@@ -179,8 +192,10 @@ function test(seed){
   assert.equal(solved,1);
   room.dispose();
   assert.equal(state.controls.length,0,'No ghost interaction controls remain after reroll');
-  assert(cleared.includes('find-the-blocks'),'Custom blocker footprints are released');
-  assert.equal(cleared.filter(id=>id.endsWith('-net')||id.endsWith('-ice')).length,2,'Both flame targets are unregistered');
+  assert(cleared.some(id=>id.startsWith('find-the-blocks:')),'The specific chamber-owned blocker footprints are released');
+  assert.equal(cleared.filter(id=>id.endsWith('-ice')||id.endsWith('-net')).length,room.netVariant==='fire'?2:1,
+    'Every registered flame target is unregistered, without inventing a target for other net variants');
+  assert.equal(cleared.filter(id=>id.startsWith('challenge:')).length,subpuzzles.length,'All native subpuzzle hooks are disposed');
   // V50 ceiling heights vary with generated wall profiles; none of the four blocks may breach a short roof.
   const lowRoof=3.05;
   const tight=env.DevRuinFindBlocks.create({
@@ -192,7 +207,8 @@ function test(seed){
     assert(block.mesh.position.y+.41<=lowRoof-.17,'No block may clip through a real V50 ceiling: '+block.name);
   tight.dispose();
   assert.equal(state.controls.length,0,'A short-roof reroll must also release every control');
-  return room.variant;
+  return room.variant+'/'+room.netVariant;
 }
-assert.deepEqual([0,1,2].map(test),['melody','projectiles','witchBomb']);
-console.log('PASS Find the Blocks: 4 movable blocks, 4 plates, fire, ice, winding rise, ledge drop, 3 pillar variants, gate, cleanup');
+const combinations=new Set(Array.from({length:16},(_,seed)=>test(seed)));
+assert.equal(combinations.size,16,'Four independent pillar triggers and four independent net triggers must generate sixteen stable combinations');
+console.log('PASS Find the Blocks: 16 native mechanism combinations, 4 blocks/plates, real fire/ice/ledge, reachable push paths, scoped cleanup');
