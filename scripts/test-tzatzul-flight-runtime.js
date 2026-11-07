@@ -6,6 +6,7 @@ const fs=require('node:fs');
 const vm=require('node:vm');
 const file=path=>fs.readFileSync(path,'utf8');
 const native=new Map(); // Registered actual cliff ledges, keyed by area.
+const drops=[]; // Verify a killed flying carrier releases its original victim at the actual midair position.
 const supports={
   point:(id,x,y,worldY)=>({id,dimension:0,x,y,worldY}),
   line:(id,start,end)=>({id,dimension:1,start,end}),
@@ -13,6 +14,8 @@ const supports={
   unregister(area,id){return native.get(area)?.delete(id)||false;},
   attach(c,p,t=0){if(c.health<=0)return false;c.onPerch=p;c.branchT=t;c.x=p.dimension? p.start.x:p.x;c.y=p.dimension?p.start.y:p.y;c.branchSurfaceY=p.dimension?p.start.worldY:p.worldY;return true;},
   constrain(c){const p=c.onPerch;if(!p)return false;const t=Math.max(0,Math.min(1,c.branchT));if(p.dimension===1){c.x=p.start.x+(p.end.x-p.start.x)*t;c.y=p.start.y+(p.end.y-p.start.y)*t;c.branchSurfaceY=p.start.worldY+(p.end.worldY-p.start.worldY)*t;}return true;},
+  forget(c){if(!c.onPerch)return false;c.onPerch=null;return true;},
+  release(c,reason){if(!c.onPerch)return null;drops.push({c,reason,x:c.x,y:c.y});c.onPerch=null;return {fell:true};},
 };
 const zone='map_northern_cliffs'; // The real selected cliff biome.
 const creatures=new Set(); // Shared hostiles Set from the production injection contract.
@@ -179,7 +182,19 @@ assert.match(file('docs/js/wildlife-visual-lod.js'),/c\.tzatzulCapturedBy/,
   'captured wildlife bypass ordinary distance hiding while airborne');
 player.x=originalPlayerX;player.y=originalPlayerY;
 const initialKeyCount=w.TzatzulFlightRuntime.debugSnapshot().populationKeys;
+assert(supports.attach(bird,bird._tzFlight.roost),'dying carrier starts above its physical spire');
+const deathPrey={creatureKey:'bandit',isBandit:true,health:80,areaId:zone,
+  x:bird.x+4*64,y:bird.y,state:'patrol'}; // A visible rider should fall where the Tzatzul actually dies, not teleport to the pickup.
+const originalDropX=deathPrey.x; // Saved capture location is deliberately separated from the bird's flight position.
+assert(w.TzatzulFlightRuntime.__test.capture(bird,deathPrey));
+assert(w.TzatzulFlightRuntime.__test.carryCaptive(bird));
+const actualDropX=deathPrey.x; // The carried actor now shares the raised flight support.
+assert.notEqual(actualDropX,originalDropX,'capture moves prey away from its original pickup');
 bird.health=0;w.TzatzulFlightRuntime.update(.1);
+assert.equal(deathPrey.x,actualDropX,'death drops prey at its actual carried position');
+assert.equal(drops.at(-1)?.c,deathPrey,'death invokes the canonical perch fall for the actual captive');
+assert.equal(deathPrey.tzatzulCapturedBy,null,'the bird dying clears captured actor ownership');
+
 assert.equal(w.TzatzulFlightRuntime.debugSnapshot().active,1);
 assert.equal(w.TzatzulFlightRuntime.ensureZone(zone),0,'death does not immediately respawn');
 w.TzatzulFlightRuntime.onDayAdvance();
