@@ -357,6 +357,7 @@
         if (!slide) { state.vx = 0; state.vz = 0; break; } // A blocked rope launch cannot keep tunnelling into a wall.
         player.x = slide.x * deps.TILE; player.y = slide.z * deps.TILE;
         debug.slides++;
+        if (state.phase === 'air' && tryAirGrab(state, direction.strength ? direction : state.lastDirection || direction)) return; // Also catch at the swept slide point, not only before the frame.
         continue;
       }
       if (state.phase === 'air' && state.obstaclePending) {
@@ -367,6 +368,7 @@
       }
       player.x = x * deps.TILE; player.y = z * deps.TILE;
       state.lastX = x; state.lastZ = z;
+      if (state.phase === 'air' && tryAirGrab(state, direction.strength ? direction : state.lastDirection || direction)) return; // Fast rope swings can cross a grip between frame starts; sample each swept movement segment.
     }
   }
 
