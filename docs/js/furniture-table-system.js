@@ -526,7 +526,7 @@
       const p = nearbyGiftWalker?.root?.position;
       const nearbyGiftCandidate = p && Math.hypot(p.x - player.x, p.z - player.z) <= 2
         ? socialCandidates.find(candidate => candidate.walker === nearbyGiftWalker) : null; // Only candidates that passed area, visibility and actor-hitbox checks can be selected.
-      focused = furnitureFocus || nearbyGiftCandidate || null;
+      focused = furnitureFocus?.kind === 'blocker' ? (nearbyGiftCandidate || furnitureFocus) : (furnitureFocus || nearbyGiftCandidate || null); // A noninteractive scenery hit must not hide a gift available to a nearby hunter; actionable furniture still wins.
     }
     return focused;
   }
