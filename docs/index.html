@@ -70,8 +70,8 @@
   <script src="js/loot-rolling.js?v=20261105puzzleCaves1"></script>
   <!-- Seed planting/crop harvesting, extracted out of game.js. Must load
        before game.js, which calls window.CropPlanting.init(...). -->
-  <script src="js/crop-varieties.js?v=20261106khyclimate1"></script>
-  <script src="js/crop-planting.js?v=20261008hc238a6f"></script>
+  <script src="js/crop-varieties.js?v=20261107cultivar2"></script>
+  <script src="js/crop-planting.js?v=20261107cultivar2"></script>
   <!-- Wilderness den teleport + Den-Mother nest hold-to-take interaction,
        extracted out of game.js. Must load before game.js, which calls
        window.DenNestSystem.init(...) (binds its own devTeleportDenBtn/
@@ -99,7 +99,7 @@
        createInitialGrid(), before loading any saved farm layout) and
        window.FarmEditor.loadFarmLayout()/etc. immediately after. -->
   <script src="js/farm-editor.js?v=20261102tablechild1"></script>
-  <script src="js/farm-plot-editor.js?v=20261029allberries4"></script> <!-- Shared family plot records and workers. -->
+  <script src="js/farm-plot-editor.js?v=20261107cultivar2"></script> <!-- Shared family plot records and workers. -->
   <script src="js/farmwork-ui.js?v=20261029seedblocks2"></script> <!-- Controller-capable normal gameplay Farmwork manager. -->
   <!-- Terrain/path tile geometry builders, extracted out of game.js. Must
        load before game.js, which calls window.TerrainGeometry.init(...)
@@ -116,7 +116,7 @@
        ZoneGrassBillboards, ReagentPlants, WildBerries, WildTreasure) also
        read its exported mbRng/grassBladeGeo/getGrassBillboardMat helpers
        from their own init() calls further down game.js. -->
-  <script src="js/vegetation-crop-rendering.js?v=20261031farmworkGrass1"></script>
+  <script src="js/vegetation-crop-rendering.js?v=20261107cultivar2"></script>
   <!-- Active-area grid/scene/dimension accessors and building/den footprint
        collision checks, extracted out of game.js. Must load before game.js,
        which calls window.GridTileAccessors.init(...) alongside the other
@@ -152,7 +152,7 @@
        js/wild-berries.js also read from it via their own init() calls
        further down game.js. Doesn't touch the DOM (see player-vitals.js's
        comment above and the plan notes on that bug class). -->
-  <script src="js/item-processing.js?v=20261027masteryWheel1"></script>
+  <script src="js/item-processing.js?v=20261107cultivar2"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
   <script src="debug.js?v=20261024h557d69c"></script>
@@ -307,7 +307,7 @@
   <script src="js/local-save-folder.js?v=20261102h966632d"></script>
   <!-- Onboarding overlay -->
   <link rel="stylesheet" href="onboarding.css?v=20261005h64e87e5">
-  <script src="config/farm-specializations.js?v=20261023h27b1956"></script>
+  <script src="config/farm-specializations.js?v=20261107cultivar2"></script>
   <script src="config/crop-economy.js?v=20261008crop1"></script>
   <script src="js/farm-world-settings.js?v=20261013h4299425"></script>
   <script src="onboarding.js?v=20261104weaponfamily1"></script>
@@ -469,7 +469,7 @@
        global by then), so load order relative to the other systems above
        doesn't matter; must load before game.js, which calls
        window.FarmAnimals.init(...) during its own setup. -->
-  <script src="js/farm-production.js?v=20261026hf65533c"></script>
+  <script src="js/farm-production.js?v=20261107cultivar2"></script>
   <script src="js/honeyfuzzle-house.js?v=20261026honeyEggGenes3"></script> <!-- Honeyfuzzle House: 1x1 egg/swarm slot on a FarmProduction entry; hooked by farm-production.js, initialised by game.js. -->
   <script src="js/farm-layout-editor.js?v=20261016a"></script>
   <script src="js/world-meta-store.js?v=20261102h9d8381e"></script>
@@ -545,7 +545,7 @@
        game.js calls window.SlagothimTraders.init(...); the name generator supplies
        Slagothim culture names for caravan members. -->
   <script src="js/scratchbones-name-generator.js?v=20261008slagothim1"></script>
-  <script src="js/slagothim-traders.js?v=20261027slagothimtownreview5"></script>
+  <script src="js/slagothim-traders.js?v=20261107cultivar2"></script>
   <!-- Khymeryyan civil calendar (day/week/month/year derivations + regional
        seasons) and the Calendar tab UI (window.CalendarSystem) —
        self-contained aside from deps injected via init(), so load order
@@ -963,7 +963,7 @@
        (window.WorldPortraitLife; game.js calls init and ticks it). -->
   <!-- Daily crop growth tick + water/ditch growth multiplier
        (window.CropGrowth; game.js calls init and forwards tickCropDay). -->
-  <script src="js/crop-growth.js?v=20261015hcrop001"></script>
+  <script src="js/crop-growth.js?v=20261107cultivar2"></script>
   <!-- Perception Mode: toggleable eagle-vision highlights + crop/livestock
        info lists (window.PerceptionMode; game.js calls init/update/renderOverlay). -->
   <script src="js/perception-mode.js?v=20261101spyglassNames2"></script>
