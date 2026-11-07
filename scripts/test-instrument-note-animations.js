@@ -51,8 +51,11 @@ assert.equal(kurrayaPlayNote.actionId,'kurraya_play_note');
 assert.equal(kurrayaPlayNote.gripMode,'palm-parallel');
 assert.equal(kurrayaPlayNote.toolEndFlip,false);
 for (const phase of ['neutral','windup','strike']) {
-  assert.equal(JSON.stringify(kurrayaPlayNote.poses[phase]),JSON.stringify(suppliedNotePose[phase]),
-    'Kurraya '+phase+' must match the complete latest authoring');
+  assert.equal(Object.keys(kurrayaPlayNote.poses[phase]).length,Object.keys(suppliedNotePose[phase]).length,
+    'Kurraya '+phase+' must not contain unexpected pose channels');
+  for (const [channel,expected] of Object.entries(suppliedNotePose[phase]))
+    assert.equal(JSON.stringify(kurrayaPlayNote.poses[phase][channel]),JSON.stringify(expected),
+      'Kurraya '+phase+' must match authored '+channel+' exactly');
 }
 assert.notEqual(kurrayaPlayNote.poses.neutral.rightHand,kurrayaPlayNote.poses.windup.rightHand,'each keyframe owns an independent free-hand transform');
 assert.notEqual(kurrayaPlayNote.poses.neutral.elbows,kurrayaPlayNote.poses.windup.elbows,'each keyframe owns an independent elbow');
