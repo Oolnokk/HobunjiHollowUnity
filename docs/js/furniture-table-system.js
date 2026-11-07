@@ -496,7 +496,8 @@
       if(hitbox)socialCandidates.push({kind:'npc',walker,hitbox});
     };
     for(const walker of deps.getWalkers?.() || [])addNpc(walker);
-    addNpc(deps.extraWalker?.());
+    const nearbyGiftWalker = deps.extraWalker?.(); // Proximity-gated tribe hunter proxy; a missed camera ray must not make a two-tile gift impossible.
+    addNpc(nearbyGiftWalker);
     // Aim uses the actual (possibly raised) camera ray. Nearby NPCs keep their
     // priority; a broad table blocker must not hide a pot that its ray hits.
     const socialHit = deps.focusCandidates(socialCandidates, 40) || null; // NPC priority remains unless the physical wardrobe is visibly nearer to the camera.
@@ -518,7 +519,15 @@
       const visible = deps.focusCandidates(unobstructedCandidates, 40)?.candidate;
       focused = visible?.kind === 'service' && visible.entry === furnitureFocus.entry
         ? visible : furnitureFocus;
-    } else focused = furnitureFocus;
+    } else {
+      // Preserve aimed characters, chairs, storage and solid blockers; only use the
+      // nearby gift proxy when the camera ray hit nothing else. No remote offers:
+      // the same two-tile rule is enforced here even if a caller supplies a stale proxy.
+      const p = nearbyGiftWalker?.root?.position;
+      const nearbyGiftCandidate = p && Math.hypot(p.x - player.x, p.z - player.z) <= 2
+        ? socialCandidates.find(candidate => candidate.walker === nearbyGiftWalker) : null; // Only candidates that passed area, visibility and actor-hitbox checks can be selected.
+      focused = furnitureFocus || nearbyGiftCandidate || null;
+    }
     return focused;
   }
 
