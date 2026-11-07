@@ -1418,6 +1418,16 @@
     'strum-waltz':{label:'Waltz Down–Up–Up',short:'WALTZ',ringLabel:'WALTZ',kind:'strum',division:1,strumStyle:'waltz',category:'Strum',tradition:'European ballroom',description:'A three-beat melody-led down–up–up cycle.'},
     'strum-bluegrass-8':{label:'Bluegrass Boom–Chuck',short:'BOOM CHK',ringLabel:'BOOM<br>CHK',kind:'strum',division:2,strumStyle:'bluegrass',category:'Strum',tradition:'Appalachian bluegrass',description:'Alternates a low-plus-melody boom with a crisp melody-top chord.'}
   };
+  const KURRAYA_LAB_PATTERN_CHOICES = Object.freeze([
+    {id:'direct',label:'Single Note',category:'Melody',description:'Only the written melody sounds; no automatic notes are added.'},
+    {id:'arp-forward-8',label:'Rise',category:'Arpeggio',description:'A broken chord climbs through the bar, expanding or compressing to its length.'},
+    {id:'arp-reverse-8',label:'Fall',category:'Arpeggio',description:'A broken chord descends through the bar and follows its accents.'},
+    {id:'arp-forward-reverse-16',label:'Wave',category:'Arpeggio',description:'The chord rises and falls once per bar, however many beats the bar contains.'},
+    {id:'arp-alternating-8',label:'Alternate',category:'Arpeggio',description:'Successive melody notes exchange upward and downward broken-chord directions.'},
+    {id:'arp-alberti-16',label:'Weave',category:'Arpeggio',description:'Low, high, and inner voices interleave, with emphasis at each beat group.'},
+    {id:'tremolo-8',label:'Pulse',category:'Rhythm',description:'Repeated melody notes articulate the beat groups at a lighter, even subdivision.'},
+    {id:'strum-alternating-8',label:'Chord Strokes',category:'Rhythm',description:'Chord attacks follow the main accents while quieter notes connect the groups.'}
+  ]); // Music Lab broad sound shapes only; existing gameplay pattern identifiers and saved four-way slots remain compatible.
   const KURRAYA_LAB_METERS = Object.freeze([
     {id:'original',label:'Original · 6/8 intro → 3/4 melody'},
     ...['2/4','3/4','4/4','5/4','6/8','7/8','9/8','12/8'].map(id=>({id,label:id}))
@@ -2608,6 +2618,42 @@
     const restStep = () => ({type:'rest'});
     const strumStep = (direction = 'down', velocity = .82, gate = .42, voicing = 'full') => ({type:'strum',direction,velocity,gate,voicing});
     const boomStep = (velocity = .82, gate = .55) => ({type:'boom',velocity,gate});
+    if (state.game.labAdaptiveAutoPick && KURRAYA_LAB_PATTERN_CHOICES.some(choice => choice.id === mode)) {
+      const harmonyClock = clock || sharedTransportData(); // Lab figures follow the sounding meter instead of a fixed number of notes per pattern.
+      const meter = harmonyClock.meter;
+      const barSlots = Math.max(2,Math.round(meter.measureQuarterBeats * 2)); // One eighth-note step each: e.g. 3/4 = 6, 5/4 = 10, 7/8 = 7.
+      const accentSlots = new Set(meter.groupStarts.map(beat => Math.round(beat * meter.quarterUnitsPerBeat * 2))); // Starts of 3+3 or 2+2+3 groups.
+      const rising = smartArpeggioMidis(fretMidi,'forward',harmonyClock);
+      const falling = smartArpeggioMidis(fretMidi,'reverse',harmonyClock);
+      const direction = definition.arpStyle === 'alternating' ? assignSlowArpDirection(fret) : 'forward'; // A new melody changes the direction, not the bar clock.
+      const roll = direction === 'reverse' ? falling : rising;
+      const lower = melodyTopStrumMidis(fretMidi,'full',harmonyClock).slice(0,-1).sort((a,b) => a - b);
+      const low = lower[0] ?? fretMidi - 12;
+      const inner = lower[Math.floor((lower.length - 1) / 2)] ?? fretMidi - 7;
+      const high = lower.at(-1) ?? fretMidi - 3;
+      const steps = Array.from({length:barSlots},(_,slot) => {
+        const groupStart = accentSlots.has(slot);
+        const velocity = slot === 0 ? 1 : groupStart ? .98 : slot % 2 === 0 ? .82 : .7; // Audible meter accents without changing note timing.
+        const progress = slot / Math.max(1,barSlots - 1);
+        if (mode === 'direct') return noteStep(fretMidi,velocity);
+        if (mode === 'tremolo-8') return noteStep(fretMidi,velocity);
+        if (mode === 'strum-alternating-8') {
+          if (slot === 0) return noteStep(fretMidi,velocity);
+          if (groupStart) return strumStep(slot % 2 ? 'up' : 'down',velocity,.45);
+          return slot % 2 === 0 ? noteStep(fretMidi,.64) : restStep();
+        }
+        if (mode === 'arp-forward-8') return noteStep(rising[Math.round(progress * (rising.length - 1))],velocity);
+        if (mode === 'arp-reverse-8') return noteStep(falling[Math.round(progress * (falling.length - 1))],velocity);
+        if (mode === 'arp-forward-reverse-16') {
+          const wave = progress < .5 ? progress * 2 : (1 - progress) * 2;
+          return noteStep(rising[Math.round(wave * (rising.length - 1))],velocity);
+        }
+        if (mode === 'arp-alternating-8') return noteStep(roll[Math.floor(progress * roll.length) % roll.length],velocity);
+        const weave = [fretMidi,low,high,inner,high,low]; // Pitch contour, not a particular fixed-meter historical figure.
+        return noteStep(weave[slot % weave.length],velocity);
+      });
+      return {steps,label:KURRAYA_LAB_PATTERN_CHOICES.find(choice=>choice.id===mode)?.label.toLowerCase() || 'adaptive figure'};
+    }
     if (definition.kind === 'direct') return {steps:[noteStep(fretMidi)],label:'single note'};
     if (definition.kind === 'tremolo') {
       if (definition.tremStyle === 'burst') return {steps:[noteStep(fretMidi),noteStep(fretMidi,.94),noteStep(fretMidi,.9),restStep()],label:'three-stroke tremolo burst'};
@@ -6839,7 +6885,8 @@
     const definition = FRETTED_PLUCK_MODES[mode];
     if (!definition || definition.kind === 'direct' || event.inputType === 'strum') return; // Single Note never acquires an automatic tail.
     const beatMs = Math.max(1,state.game.quarterBeatMs || state.game.beatMs); // Keep preview arpeggio note values unchanged under the 6/8 eighth-note metronome.
-    const interval = beatMs / Math.max(1,definition.division);
+    const division = state.game.labAdaptiveAutoPick ? 2 : definition.division; // Lab-only figures run on one eighth-note grid and reshape to each selected meter.
+    const interval = beatMs / Math.max(1,division);
     const performanceAt = Math.max(0,event.time - state.game.countInMs);
     // Use one song-wide pulse phase so the figure does not restart with each new preview melody.
     let gridStep = Math.max(1,Math.floor((performanceAt + 2) / interval) + 1);
@@ -6927,7 +6974,7 @@
     state.hitWindow = Number($('#difficultySelect').value) || 170;
     const song = generateSong(type, state.bpm, options);
     clearNoteElements();
-    state.game = {active:true,startTime:nowMs(),pausedAt:0,pauseAccum:0,events:song.events,score:0,combo:0,hits:0,attempts:0,total:song.events.length,travelMs:3000,endAt:song.endAt,songType:type,beatMs:song.beatMs,quarterBeatMs:song.quarterBeatMs,timeSignature:song.timeSignature,beatGrouping:song.beatGrouping,countInBeats:song.countInBeats,countInMs:song.countInMs,totalSongBeats:song.totalSongBeats,demoActive:!!demoMode,demoMode,demoNextSlowArpDirection:'forward',labMeterOverride:options.labMeterOverride || null,backupAccompaniment:!!options.backupAccompaniment,loopDemo:!!options.loopDemo,proceduralAmbient:!!options.proceduralAmbient};
+    state.game = {active:true,startTime:nowMs(),pausedAt:0,pauseAccum:0,events:song.events,score:0,combo:0,hits:0,attempts:0,total:song.events.length,travelMs:3000,endAt:song.endAt,songType:type,beatMs:song.beatMs,quarterBeatMs:song.quarterBeatMs,timeSignature:song.timeSignature,beatGrouping:song.beatGrouping,countInBeats:song.countInBeats,countInMs:song.countInMs,totalSongBeats:song.totalSongBeats,demoActive:!!demoMode,demoMode,demoNextSlowArpDirection:'forward',labMeterOverride:options.labMeterOverride || null,labAdaptiveAutoPick:options.labAdaptiveAutoPick === true,backupAccompaniment:!!options.backupAccompaniment,loopDemo:!!options.loopDemo,proceduralAmbient:!!options.proceduralAmbient};
     document.body.classList.toggle('backup-accompaniment',!!state.game.backupAccompaniment);
     state.visibilityPauseStarted = 0;
     state.lastHarmonyStep = -1;
@@ -7701,15 +7748,14 @@
       return {
         selectedMode:state.songAuditionPattern,
         selectedMeter:state.songAuditionMeter,
-        patterns:Object.entries(AUTO_PICK_PATTERN_LIBRARY).map(([id,definition]) => ({
-          id,label:definition.label,category:definition.category,kind:definition.kind,division:definition.division,
-          tradition:definition.tradition,description:definition.description
-        })), // The Lab reads exactly the same definition table as the four gameplay Auto Pick slots.
+        patterns:KURRAYA_LAB_PATTERN_CHOICES.map(choice => ({
+          ...choice,kind:AUTO_PICK_PATTERN_LIBRARY[choice.id].kind,division:choice.id === 'direct' ? 1 : 2
+        })), // A curated set of broad, meter-adaptive shapes built from existing gameplay instruments; no genre labels.
         meters:KURRAYA_LAB_METERS.map(entry=>({...entry}))
       };
     },
     setAutoPickAuditionPattern(mode) {
-      if (!Object.prototype.hasOwnProperty.call(AUTO_PICK_PATTERN_LIBRARY,mode)) throw new RangeError('Unknown Kurraya Auto Pick pattern.');
+      if (!KURRAYA_LAB_PATTERN_CHOICES.some(choice => choice.id === mode)) throw new RangeError('Unknown Music Lab figure.');
       if (state.game.active) stopSong('Audition picking pattern changed.');
       state.songAuditionPattern = mode;
       return this.autoPickAuditionState();
@@ -7726,7 +7772,7 @@
       const auditionScaleName = applyPerformanceScale(scaleName,{persist:false}); // An audition never persists a different scale to gameplay.
       state.selectedSong = 'when-the-kininjis-bloom';
       const labMeterOverride = state.songAuditionMeter === 'original' ? null : state.songAuditionMeter;
-      startSong(state.selectedSong,{demoMode:state.songAuditionPattern,labMeterOverride,scaleOverride:auditionScaleName,persistScale:false});
+      startSong(state.selectedSong,{demoMode:state.songAuditionPattern,labMeterOverride,labAdaptiveAutoPick:true,scaleOverride:auditionScaleName,persistScale:false});
       return this.scaleAuditionState();
     },
     stopSongAudition() {
