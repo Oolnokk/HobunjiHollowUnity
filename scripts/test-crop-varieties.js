@@ -113,7 +113,8 @@ assert.equal(Object.keys(itemDefs[flour[0].key].foodEffects).length, 2);
 game.FarmWorldSettings = { read: () => ({ meta: {}, world: { farmStarterBuildings: [] } }), current: () => ({}) };
 game.FarmPanel = { cancelBarnPlacement() {}, render() {} };
 game.FarmBuildings = { canPlaceAt: () => true, clearFootprint() {} };
-game.AuthoredFurniture = { load: async () => null };
+const loadedBuildingModels = []; // Captures which authored exterior was requested, without loading real Three.js geometry.
+game.AuthoredFurniture = { load: async key => { loadedBuildingModels.push(key); return null; } };
 game.HoneyfuzzleHouse = { tick() {}, syncVisual() {}, removeVisual() {} };
 run('docs/js/farm-production.js');
 const deps = { // Same farm/production injection seam used by game.js.
@@ -125,11 +126,15 @@ const deps = { // Same farm/production injection seam used by game.js.
   consumeInput(key) { inventory[key]--; return 4; },
 };
 game.FarmProduction.init(deps);
+game.FarmProduction.load([{ id: 'windmillVisual', key: 'windmillSmall', col: 4, row: 4 }]);
+assert.ok(loadedBuildingModels.includes('windmillSmall'), 'existing mills keep their authored building exterior, not their recipe base');
+assert.equal(loadedBuildingModels.includes('handMill'), false, 'processor base never replaces the mill building');
 game.FarmProduction.load([]);
 game.FarmProduction.arm('seedMakerSmall');
 assert.equal(game.FarmProduction.placeAt(0, 0).ok, true);
 const maker = game.FarmProduction.entries()[0]; // The placed, persistent production machine.
 assert.equal(inventory.seedMakerSmallPlan, 0);
+assert.ok(loadedBuildingModels.includes('compostBinSmall'), 'seed maker deliberately reuses the real compost-crate exterior');
 const incompatible = game.FarmProduction.enqueueSeeds(maker.id, { source: 'bag', itemKey: 'needlegrain' }, { source: 'bag', itemKey: 'heftroot' });
 assert.equal(incompatible.ok, false);
 assert.equal(inventory.needlegrain, 1);
