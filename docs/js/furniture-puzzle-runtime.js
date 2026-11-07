@@ -385,8 +385,11 @@
     const started = performance.now();
     const revision = (object.userData.puzzleAnimationRevision || 0) + 1;
     object.userData.puzzleAnimationRevision = revision;
-    if(puzzle.role==='mechanism'&&Math.abs(from-target)>.00001)
-      window.RuinInteractionAudio?.mechanism?.(object); // One recorded stone movement per physical animated transition.
+    if(puzzle.role==='mechanism'&&Math.abs(from-target)>.00001
+      &&object.userData.__ruinSoundTarget!==target){
+      object.userData.__ruinSoundTarget=target; // Tracks the most recent motion command, preventing restarted tween frames from replaying the recording.
+      window.RuinInteractionAudio?.mechanism?.(object);
+    }
     if (duration <= 0 || Math.abs(from - target) < .00001) {
       applyMechanism(object, target);
       onComplete?.();
