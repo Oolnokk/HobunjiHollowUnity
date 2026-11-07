@@ -193,14 +193,15 @@ assert.deepStrictEqual(JSON.parse(JSON.stringify(landmarkSnap.landmarkSources)),
 assert.equal(PM.COLORS.landmark, '#6ab69e', 'all four landmark kinds share the bronze-verdigris mask material');
 
 // The only additional ruin glyphs Sense Mode may reveal are the mounted shaft ascent switches.
-const shaftSwitch=entity({x:4,z:0}),farShaftSwitch=entity({x:18,z:0});
+const shaftSwitch=entity({x:26,z:0}),farShaftSwitch=entity({x:26.01,z:0});
 const staleShaftSwitch=entity({x:2,z:0},otherScene);
 const unrelatedProjectileGlyph=entity({x:5,z:0}); // Never returned by the shaft-specific provider.
 sandbox.window.RuinReachingObelisks={senseTargets:()=>[shaftSwitch,farShaftSwitch,staleShaftSwitch]};
 PM.update(8200);
 const shaftSnap=PM.debugSnapshot();
+assert.equal(PM.SHAFT_SWITCH_RANGE_TILES,26,'the large shaft gives only its ascent targets a longer Sense range');
 assert.equal(shaftSnap.specialSources.shaftObeliskSwitches,3,'mobile debug reports scene-owned shaft switch candidates');
-assert.equal(shaftSnap.byCategory.interact,11,'only the one mounted, close shaft switch receives the green Sense outline');
+assert.equal(shaftSnap.byCategory.interact,11,'only one in-range shaft switch receives the green Sense outline');
 assert(!shaftSnap.byCategory.projectileTarget,'other projectile puzzle families have no blanket Sense category');
 assert(unrelatedProjectileGlyph.parent===scene,'a nearby unrelated glyph is deliberately excluded');
 
