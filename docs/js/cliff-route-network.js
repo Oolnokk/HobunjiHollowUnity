@@ -127,7 +127,7 @@
         failures.push({ projection, reason:'missing-wall-seam', parent:inParent / samples });
         continue; // Share actual unwalkable face tiles when painted.
       }
-      debug.miniBasesAccepted = (debug.miniBasesAccepted||0)+1; // Live generator diagnostics for quality audits.
+      debug.miniBasesFitted = (debug.miniBasesFitted||0)+1; // Body passed geometry checks, but its climbing transfer still needs validation.
       return {
         x: original.x, z: original.z, y: groundY, elevation: groundY,
         footprint, boundaryCells, sharedBoundaryTiles, parentComponent: candidate.bComp,
@@ -223,7 +223,7 @@
       busy.push({ x: midx, z: midz });
       if (required) parent[b] = a;
     }
-    debug.miniBasesAccepted = 0; debug.miniBasesRejected = 0; debug.lastMiniBaseFailure = null; // Reset per build for mobile inspection.
+    debug.miniBasesAccepted = 0; debug.miniBasesFitted = 0; debug.miniBasesRejected = 0; debug.lastMiniBaseFailure = null; // Per-build placement diagnostics.
     const shelfRejections = {}; // Track post-embedding route clearance failures per reason for mobile debugging.
     const balconies = [];
     for (const route of routes) {
@@ -323,6 +323,7 @@
               nodes.push(landing);
               nodes[idx].links.push(shelf.nodeId);
               balconies.push(shelf);
+              debug.miniBasesAccepted++; // Only successful climbing-connected ledges count as accepted.
               break placement; // One successful ledge per height; first try the longer body, then a slim fallback.
             }
           }
@@ -336,7 +337,8 @@
     }
     const connectedRoots = new Set(components.map((_, i) => find(i)));
     const network = { area: opts.area || null, grid, cols, rows, components, component, routes, balconies, adjacency,
-      miniBaseStats: { accepted:debug.miniBasesAccepted, rejected:debug.miniBasesRejected, lastFailure:debug.lastMiniBaseFailure, shelfRejections }, // In-game generator debug export.
+      miniBaseStats: { accepted:debug.miniBasesAccepted, fitted:debug.miniBasesFitted,
+        rejected:debug.miniBasesRejected, lastFailure:debug.lastMiniBaseFailure, shelfRejections }, // In-game generator debug export.
       unconnectedComponents: Math.max(0, connectedRoots.size - 1), candidateCount: candidates.length, rejectedRoutes };
     // Adapt ShaftHub.reachable(): walking components, legal climbing links,
     // and every balcony node must be reachable from some ground entrance.
