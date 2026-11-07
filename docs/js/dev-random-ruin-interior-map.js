@@ -651,9 +651,9 @@
     }
   }
 
-  // The lab's four movable blocks reuse native V50 face bracing, smooth sliding and swept collisions.
+  // Lab AND generated wing blocks reuse the native V50 face bracing, smooth sliding and swept collision.
   function registerLabPushBlock(block,worldStep=1) {
-    if(!ruin?.singleRoomTrial||ruin.singleRoomTrial.kind!=='findBlocks'||!ruin.occupancy?.registerSlidingPushBlock||!block?.isObject3D)return false;
+    if(!ruin?.occupancy?.registerSlidingPushBlock||!block?.isObject3D)return false;
     if(ruin.pushBlocks.includes(block))return true;
     block.userData ||= {};
     block.userData.previewMotion={type:'pushPuzzleBlock'}; // Selected by both the V50 push controller and dynamic occupancy.
