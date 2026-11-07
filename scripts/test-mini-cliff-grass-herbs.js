@@ -25,6 +25,16 @@ class Group extends Object3D {
   constructor() { super(); this.children=[]; this.userData={}; this.visible=true; }
   add(obj) { this.children.push(obj); obj.parent=this; }
 }
+class BufferGeometry {
+  constructor(){ this.attributes={};this.groups=[]; }
+  setAttribute(key,value){this.attributes[key]=value;}
+  addGroup(start,count,materialIndex){this.groups.push({start,count,materialIndex});}
+  computeVertexNormals(){}
+  computeBoundingSphere(){}
+}
+class Mesh {
+  constructor(geometry,material){this.geometry=geometry;this.material=material;this.userData={};this.isMesh=true;}
+}
 class InstancedMesh {
   constructor(geometry, material, count) {
     this.geometry=geometry; this.material=material; this.count=count; this.userData={};
@@ -34,7 +44,8 @@ class InstancedMesh {
   computeBoundingSphere(){}
 }
 const T = {
-  Matrix4, Object3D, Group, InstancedMesh,
+  Matrix4, Object3D, Group, InstancedMesh, Mesh, BufferGeometry,
+  Float32BufferAttribute:class { constructor(values,itemSize){this.values=values;this.itemSize=itemSize;} },
   TextureLoader:class {load(){return {};}},
   MeshBasicMaterial:class {}, MeshStandardMaterial:class {},
   BoxGeometry:class {}, DodecahedronGeometry:class {},
@@ -50,9 +61,13 @@ const shelf = (id,x,reward)=>({
 const herb=shelf('herb',4.5,'herbCluster');
 const ore=shelf('ore',10.5,'oreRock');
 const chest=shelf('chest',16.5,'buriedTreasure');
+for (const ledge of [herb,ore,chest]) {
+  ledge.base={x:ledge.x-0.3,z:ledge.z-0.4,y:0,footprint:[{c:Math.floor(ledge.x),r:5}]};
+}
 const network={area,routes:[],balconies:[herb,ore,chest]};
 const naturalRock={tag:'terrain-rock-mound'};
 const rockMaterial={tag:'zone-rock-material'};
+const groundMaterial={tag:'zone-grass-material'};
 globalThis.TerrainGeometry={buildRockTileGeo:()=>({stoneGeo:naturalRock})};
 globalThis.AlchemySystem={
   REAGENT_DEFS:{nativeHerb:{icon:'🌿',label:'Native Herb',color:0x55aa44}},
@@ -61,7 +76,12 @@ globalThis.AlchemySystem={
 globalThis.ReagentPlants={
   buildReagentPlantMesh(){ const plant=new Group();plant.add({});plant.add({});return plant; },
 };
-const result=routes.render(T,scene,network,rockMaterial,{tag:'grass'});
+const result=routes.render(T,scene,network,rockMaterial,groundMaterial);
+const miniCliffTerrain=result.find(m=>m.name.endsWith('-cliff-balconies'));
+assert(miniCliffTerrain,'mini-cliff plateau shell is rendered');
+assert.equal(miniCliffTerrain.material[0],groundMaterial,'walkable cap shares the zone ground material');
+assert.equal(miniCliffTerrain.material[1],rockMaterial,'cliff sides share the same zone rock material');
+assert(miniCliffTerrain.geometry.groups.every(g=>g.count>0),'both cap and cliff rock faces are present');
 const oreMesh=result.find(m=>m.name.endsWith('cliff-balcony-ores'));
 assert.equal(oreMesh.geometry,naturalRock,'mini-cliff ore uses the same mound model as loose ground rock');
 assert.equal(oreMesh.material,rockMaterial,'mini-cliff ore uses the zone stone material');
@@ -163,7 +183,6 @@ grass.init({
   getGrassEnabled:()=>true,
   mbRng(seed){let n=seed>>>0;return ()=>((n=(Math.imul(n,1664525)+1013904223)>>>0)/4294967296);},
 });
-herb.base={footprint:[{c:4,r:5}]};
 const grassScene={objects:[],add(obj){this.objects.push(obj);}};
 const cover=grass.buildMiniCliffGrassBillboards(grassScene,{area,balconies:[herb]});
 assert(cover && cover.children[0].count>0,'elevated ledge gets wind-animated grass');
