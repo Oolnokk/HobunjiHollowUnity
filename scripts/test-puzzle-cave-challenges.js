@@ -71,6 +71,7 @@ assert(areaFootprints.blocksBox(area,gateX,gateZ,.18),'player movement physicall
 assert(!areaFootprints.blocksBox('other_map',gateX,gateZ,.18),'other maps can use the same tile coordinates without colliding with this cave');
 assert(areaFootprints.blocksBox(area,room.x+.65,gateZ,.18),'the rock flank closes the left passage even while the puzzle is locked');
 assert(areaFootprints.blocksBox(area,room.x+room.w-.65,gateZ,.18),'the rock flank closes the right passage even while the puzzle is locked');
+assert(areaFootprints.blocksBox(area,gateX,gateZ,.18,2.5),'midair movement cannot bypass the still-taller locked stone slab');
 assert(!areaFootprints.blocksBox(area,gateX,gateZ,.18,10),'high projectiles pass over the short stone gate');
 activeArea='other_map';
 assert(!fireCollider.enabled(),'cached cave collision never leaks into another map');
