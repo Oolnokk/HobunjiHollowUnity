@@ -541,18 +541,18 @@ console.log(`PASS cave-site-system: ${workspace.animalDens.length} anchors -> ${
   }
   let fittedFaces = 0; // Verifies both random-cave builds reach the shared ore-rock face fitting helper.
   class RockGeometry {
-    constructor(){this.disposed=false;this.positions=Array.from({length:12},(_,i)=>[i/12-.5,(i%3)/4-.25,(i%5)/6-.35]);}
+    constructor(){this.disposed=false;this.attributes={};this.positions=Array.from({length:12},(_,i)=>[i/12-.5,(i%3)/4-.25,(i%5)/6-.35]);}
     getAttribute(key){if(key!=='position')return null;return {count:this.positions.length,
       getX:i=>this.positions[i][0],getY:i=>this.positions[i][1],getZ:i=>this.positions[i][2],
       setXYZ:(i,x,y,z)=>{this.positions[i]=[x,y,z];}};}
-    setAttribute(){}
+    setAttribute(name,attribute){this.attributes[name]=attribute;}
     computeVertexNormals(){}
     dispose(){this.disposed=true;}
   }
   class RockMaterial {constructor(){this.userData={};}dispose(){}}
   const oreCtx = { THREE: { Mesh: Obj, Group: Obj, MeshStandardMaterial: RockMaterial,
       MeshBasicMaterial:RockMaterial,IcosahedronGeometry:RockGeometry,BufferGeometry:RockGeometry,
-      Float32BufferAttribute:class{},DoubleSide:2 },
+      Float32BufferAttribute:class{constructor(array,itemSize){this.array=array;this.itemSize=itemSize;}},DoubleSide:2 },
     TerrainGeometry: { buildRockTileGeo: () => ({ stoneGeo: new RockGeometry() }) },
     OreRockTextures: { materialFor: (_three, key) => ({ key, userData: { sharedOreRockMaterial: true } }),
       fitRockMesh: () => { fittedFaces++; } } };
@@ -585,16 +585,42 @@ console.log(`PASS cave-site-system: ${workspace.animalDens.length} anchors -> ${
     {col:1,row:0,oreKind:'stone',caveSeparator:true,caveSeparatorLayer:2},
   ]},separatorScene,separatorGrid); // Adjacent layers share a logical cave wall but each tile is a standalone diggable rock.
   const rock0=separatorGroups.get('0,0'),rock1=separatorGroups.get('1,0');
-  const masses=group=>{const result=[];group.traverse(node=>{if(node.userData?.caveSeparatorMass)result.push(node);});return result;};
-  assert.equal(masses(rock0).length,3,'each rock-wall tile renders three overlapping irregular stone lobes, not a cube');
-  assert.equal(masses(rock1).length,3,'a deeper barrier tile has its own rock masses');
-  assert.equal(rock0.userData.caveSeparatorCracks,undefined,'fracture markings do not replace the mineable rock surface');
+
+  const fused=()=>separatorScene.children.filter(child=>child.userData?.caveSeparatorFused);
+  assert.equal(fused().length,1,'touching rocks fuse into exactly one rendered rock wall, without overlapping clipped lobes');
+  const oldMesh=fused()[0],oldGeo=oldMesh.geometry;
+  assert.equal(oldMesh.userData.caveSeparatorLiveTiles,2,'shared wall tracks both independently mineable tiles');
+  assert(oldGeo.userData.caveFusedRockTriangles>0,'the wall is an actual triangulated solid');
+  assert.equal(oldGeo.attributes.position.array.length,oldGeo.attributes.uv.array.length/2*3,'each fused stone vertex receives continuous stone UVs');
+  assert(oreCtx.CavernOreRocks.probeRock(separatorMap,1,1,.5)<0,'the shared seam inside neighboring tiles is filled with uninterrupted rock');
+  assert(oreCtx.CavernOreRocks.probeRock(separatorMap,.55,1,.5)<0,'the left mineable tile is initially solid');
+  assert(oreCtx.CavernOreRocks.debugSnapshot(separatorMap)[0].height>=8,'the wall penetrates the highest ordinary cave ceiling rather than stopping as a mound');
+  assert.equal(rock0.children.length,0,'a mineable tile is a collision/loot handle, not a second clipping visual');
+  assert.equal(rock1.children.length,0,'neighboring tiles do not contribute their own overlapping visible surface');
   assert.equal(separatorGrid[0][0].rockKind,'diggableRockOre','rocky barrier uses the existing pickaxe mining tile contract');
   assert.equal(separatorGrid[0][1].caveSeparator,true,'adjacent barrier layers preserve the existing Shattercask blast contract');
-  assert.equal(oreCtx.CavernOreRocks.removeVisual(separatorMap,0,0),true,'mining one rock-wall tile removes its entire sculpted mass');
+  assert.equal(oreCtx.CavernOreRocks.removeVisual(separatorMap,0,0),true,'mining one rock-wall tile triggers a rebuilt cut');
   assert.equal(separatorGroups.has('0,0'),false,'the mined tile is no longer registered as solid scene rock');
   assert.equal(separatorGroups.has('1,0'),true,'the neighbouring mineable wall rock remains intact');
-  assert.equal(oreCtx.CavernOreRocks.removeVisual(separatorMap,1,0),true,'a second mining/blast event can independently retire the next wall piece');
+  assert.equal(oldGeo.disposed,true,'old triangulations are disposed after remeshing, avoiding a mobile GPU leak');
+  assert.equal(fused().length,1,'rebuilding replaces the wall mesh instead of leaving overlaid versions');
+  assert.equal(fused()[0].userData.caveSeparatorLiveTiles,1,'only unbroken tiles contribute to the unified visible wall');
+  assert(oreCtx.CavernOreRocks.probeRock(separatorMap,.55,1,.5)>0,'the mined gap is genuinely open, not an invisible overlapping mesh');
+  assert(oreCtx.CavernOreRocks.probeRock(separatorMap,1.5,1,.5)<0,'remaining rock has a freshly sealed exposed rock face');
+  assert.equal(oreCtx.CavernOreRocks.removeVisual(separatorMap,1,0),true,'blast events can retire the next rock independently');
+
+  const doorScene=new Obj(),doorMap='map_i_fused_secret_door',doorGrid=[[{},{},{},{}]];
+  oreCtx.CavernOreRocks.build(doorMap,{oreRocks:[
+    {col:1,row:0,oreKind:'stone',caveSeparator:true},
+    {col:2,row:0,oreKind:'stone',caveSeparator:true},
+  ],caveSitePlan:{puzzleDoor:{col:3,row:0}}},doorScene,doorGrid);
+  const doorMesh=doorScene.children.find(child=>child.userData?.caveSeparatorFused);
+  assert.equal(doorMesh.userData.caveSeparatorDoorOpening,true,'the hidden puzzle door is carved as a real opening in the fused stone');
+  assert(oreCtx.CavernOreRocks.probeRock(doorMap,3.5,1,.5)>0,'the door center is air, not an overlaid rock plane');
+  assert(oreCtx.CavernOreRocks.probeRock(doorMap,3.5,1,1.03)<0,'cutting the door heals the exposed stone jamb');
+  assert(oreCtx.CavernOreRocks.probeRock(doorMap,3.5,2.6,.5)<0,'the carved passage has a solid stone lintel above the doorway');
+  assert(doorMesh.geometry.userData.caveFusedRockTriangles>0,'the healed doorway is triangulated into the rock rather than a texture mask');
+  assert.equal(oreCtx.CavernOreRocks.debugSnapshot(doorMap)[0].doorOpening,true,'the mobile diagnostics identify a carved door');
   const mineKinds = new Set();
   for (let i = 0; i < 40; i++) {
     for (const rock of decorate(profile(`map_i_test_ores_${i}`, 'ore_mine')).oreRocks) mineKinds.add(rock.oreKind);
