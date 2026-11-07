@@ -14,7 +14,8 @@
   const now = () => (Number(deps?.calendar.day) || 1) + (Number(deps?.calendar.time01) || 0); // World time, including sleeping/time-passage transitions.
   function init(injectedDeps) {
     deps = injectedDeps;
-    window.CropVarieties?.attach?.({ cropData: deps.cropData, ITEM_DEFS: deps.ITEM_DEFS, inventory: deps.inventory }); // Existing registries own produce, seeds and cooking effects.
+    window.CropVarieties?.attach?.({ cropData: deps.cropData, ITEM_DEFS: deps.ITEM_DEFS, inventory: deps.inventory,
+      inventoryItems: deps.inventoryItems, loadStorage: deps.loadStorage }); // Existing registries own produce, seeds and cooking effects.
     for (const definition of Object.values(catalog)) deps.ITEM_DEFS[definition.planItem] = { label: definition.label + ' Plan', icon: '📜', cat: 'building', sellPrice: Math.round(definition.price * 0.4), desc: 'Place from the Farm map. Persistent queue; slower processing with enhanced yield.' };
     deps.ITEM_DEFS.mootBaby = { label: 'Baby Moot', icon: '🐾', cat: 'material', sellPrice: 0, desc: 'A baby Moot. Kept safely as an item until Moot animals are available.' };
     deps.ITEM_DEFS.voorgAssBaby = { label: 'Baby Voorg-ass', icon: '🫏', cat: 'livestock', sellPrice: 80, tags: ['Livestock', 'Baby'], desc: 'A baby Voorg-ass for the farm Nursery.' };
@@ -244,6 +245,7 @@
       result.count -= amount; collected += amount;
     }
     entry.ready = entry.ready.filter(result => result.count > 0);
+    if (catalog[entry.key]?.family === 'seedMaker' && collected) window.CropVarieties?.refreshBrushes?.(); // New cultivars are selectable as soon as their seeds are collected.
     deps.saveMemberWorldData(); deps.saveFarmLayout();
     return { ok: collected > 0, message: collected ? 'Collected ' + collected + ' goods; excess stays here.' : 'Nothing fits in your bag, or no goods are ready.' };
   }
