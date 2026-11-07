@@ -169,8 +169,16 @@ assert(bridgeStart>=0&&bridgeEnd>bridgeStart,'live flute hand bridge absent');
 const avatarRoot={}; // Only the local player should route to the mouth-mounted flute.
 const liveHolder={parent:{},visible:true}; // Same scene object consumed by the hand driver, not an editor-only proxy.
 let fluteActive=true; // Simulates the same instrument closing without replacing the player's hand driver.
+let kurrayaActive=false; // Tests that the next instrument takes over the player without affecting an NPC.
+const kurrayaHolder={parent:{},visible:true}; // Real held-assembly parent consumed by the runtime hand driver.
 const fakeWindow={
-  KurrayaInstrument:{fluteHandTarget:()=>fluteActive?{holder:liveHolder,toolKey:'flute',gripContext:'ranged'}:null,fluteDiagnostics:()=>({active:fluteActive})},
+  KurrayaInstrument:{
+    fluteHandTarget:()=>fluteActive?{holder:liveHolder,toolKey:'flute',gripContext:'ranged'}:null,
+    fluteDiagnostics:()=>({active:fluteActive}),
+    kurrayaHandDiagnostics:()=>({active:kurrayaActive}),
+    playerKurrayaHandTarget:()=>kurrayaActive?{holder:kurrayaHolder,toolKey:'kurraya',gripContext:'melee'}:null,
+    playerRightHandPose:()=>kurrayaActive?{influence:1,x:0.5,y:0.25,z:0.1,pitch:0,yaw:0,roll:0}:null,
+  },
   WeaponToolStances:{getRuntimeState:()=>({itemKey:'hatchet',activeSlot:'weapon'})},
 };
 const handBridge=vm.runInNewContext(
@@ -190,6 +198,13 @@ assert.equal(handBridge.currentToolKey(hostile),'hatchet','player flute must not
 fluteActive=false; // Closing the music session returns the hands to the standard weapon path.
 assert.equal(handBridge.currentToolKey(local),'hatchet','normal weapon grip must return after the flute session closes');
 assert.equal(handBridge.currentGripContext(local),'melee','ordinary grip context must return after the flute session closes');
+kurrayaActive=true;
+assert.equal(handBridge.currentToolKey(local),'kurraya','Kurraya player session must own the equipped tool key');
+assert.equal(handBridge.currentGripContext(local),'melee','Kurraya custom axis uses the 2H/melee grip frame');
+assert.equal(handBridge.currentToolHolder(local),kurrayaHolder,'the actual player Kurraya assembly parent owns the hand mount');
+assert.equal(handBridge.currentToolKey(hostile),'hatchet','player Kurraya hand selection cannot leak into NPC grips');
+kurrayaActive=false;
+assert.equal(handBridge.currentToolKey(local),'hatchet','closing Kurraya restores the previous equipment hand state');
 
 
 // Integration tests for the optional custom 3D virtual Z and the detachable plucking hand.
@@ -231,6 +246,10 @@ assert.equal(freeWindup.influence,1);
 assert.equal(freeWindup.y,0.3);
 assert.equal(freeStrike.x,0.4);
 assert.equal(freeStrike.pitch,24);
+const strikeOnly={neutral:{rightHand:{enabled:false}},windup:{rightHand:{enabled:false}},strike:{rightHand:{enabled:true,x:0.65,y:0.2,z:0.1}}};
+const midway=gripsApi.sampleFreeRightHand(strikeOnly,kurrayaPlayNote,(kurrayaPlayNote.windupFrac+kurrayaPlayNote.strikeFrac)/2);
+assert.equal(midway.x,0.65,'detaching into Strike must keep the target coordinate rather than lerping from avatar origin');
+assert(Math.abs(midway.influence-0.5)<1e-9,'detaching into Strike must smoothly blend from the live grip');
 assert.equal(gripsApi.sampleFreeRightHand({neutral:{},windup:{},strike:{}},kurrayaPlayNote,0.4),null,'old attacks must preserve bound-hand behavior');
 
 window.HobunjiHandToolGrips=gripsApi;
