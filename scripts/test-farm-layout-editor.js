@@ -37,7 +37,7 @@ production.init({ calendar: { day: 1, time01: 0 }, inventory: {}, ITEM_DEFS: {},
 const defs = context.FARM_SPECIALIZATIONS_CONFIG.buildings;
 assert.deepEqual([defs.compostBinSmall, defs.compostBinMedium, defs.compostBinLarge].map(d => [d.w, d.h]), [[2, 1], [3, 2], [4, 2]]);
 for (const def of Object.values(defs)) { // Some structures reuse an existing authored mesh (for example, the seed maker uses the compost box).
-  const assetKey = def.base || def.key; // Mirror FarmProduction.spawn's shared-model selection.
+  const assetKey = def.modelKey || def.key; // Never confuse processor family.base with an authored visual-model alias.
   const asset = JSON.parse(fs.readFileSync('docs/config/furniture-authored/' + assetKey + '.json'));
   assert.equal(asset.footprint.d, def.h, def.key + ' authored depth matches its footprint');
   assert.equal(asset.footprint.w, def.w, def.key + ' authored width matches its footprint');
