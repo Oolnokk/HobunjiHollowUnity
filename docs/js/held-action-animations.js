@@ -254,33 +254,29 @@
       strike: { ...copyFluteNotePose(), bodySink: FLUTE_STRIKE_BODY_SINK_PCT }, // Only the body's downward bend distinguishes the sounded note.
     },
   };
-  const kurrayaHoldTransform = { // The supplied Kurraya placement stays fixed; the independent right hand plucks the strings.
-    x: 0.27, y: 0.08, z: 0.02, pitch: 0, yaw: 0, bodyYaw: 0, roll: 0,
-  };
-  const kurrayaWindupNotePose = { // Authored plucking posture; also the stationary Neutral/rest stance.
-    ...kurrayaHoldTransform, headRelative: false,
+  const kurrayaSharedNotePose = { // Note phases share a position and grip relationship; roll, elbows, hand height and body sink are authored separately.
+    x: 0.27, y: 0.08, z: 0.03, pitch: 0, yaw: 0, bodyYaw: 0,
+    headRelative: false,
     shoulderAim: { grip: false, palmNormal: false },
     secondaryGrip: { enabled: true, percent: 50, primaryPercent: 50 },
     dualWield: { enabled: false },
     elbows: { left: { x: 0.155, y: -0.195, z: 0 } },
-    rightHand: { enabled: true, x: -0.13, y: 0.47, z: 0.025, roll: 52 },
+    rightHand: { enabled: true, x: -0.13, y: 0.07, z: 0.085, roll: 52 },
   };
-  const copyKurrayaWindupPose = () => JSON.parse(JSON.stringify(kurrayaWindupNotePose)); // Keyframes must not alias nested elbows, free hand or grip settings.
+  const copyKurrayaNotePose = () => JSON.parse(JSON.stringify(kurrayaSharedNotePose)); // Each editable phase has independent nested hand, elbow and grip fields.
   const kurrayaPlayNote = {
     version: 1, kind: 'hobunji_held_action_animation', name: 'Kurraya — Play Note',
     actionId: 'kurraya_play_note', style: 'thrust', sequence: 'attack',
     durationS: 0.32, windupFrac: 0.18, strikeFrac: 0.34, holdFrac: 0.62,
     headRelative: false, toolEndFlip: false, gripMode: 'palm-parallel',
     poses: {
-      neutral: { ...copyKurrayaWindupPose(), scale: 1, bodySink: 0 }, // Windup's complete hand pose is the idle pose; these neutral-only defaults preserve sizing and standing height.
-      windup: copyKurrayaWindupPose(),
+      neutral: { ...copyKurrayaNotePose(), roll: 7, scale: 0.85, bodySink: 0 }, // Latest authored rest posture; Windup deliberately rolls a further -2°.
+      windup: { ...copyKurrayaNotePose(), roll: 5 },
       strike: {
-        ...kurrayaHoldTransform, headRelative: false,
-        shoulderAim: { grip: false, palmNormal: false },
-        secondaryGrip: { enabled: true, percent: 50, primaryPercent: 50 },
-        dualWield: { enabled: false },
-        elbows: { left: { x: 0.155, y: -0.195, z: 0 } },
-        rightHand: { enabled: true, x: -0.13, y: 0.5, z: 0.025, roll: 52 },
+        ...copyKurrayaNotePose(), roll: 11,
+        elbows: { left: { x: 0.155, y: -0.15, z: 0.02 }, right: { x: -0.17, y: -0.28, z: 0.11 } },
+        rightHand: { enabled: true, x: -0.13, y: 0.1, z: 0.085, roll: 52 },
+        bodySink: 3, // Same body/leg stance sink channel used by the flute, but much subtler.
       },
     },
   };
