@@ -120,6 +120,7 @@ assert(afterGraph.verification.unreachablePlateaus.length <= beforeGraph.verific
 // Keep a visible slider in the Lab so plateauSteepness survives settingsFromControls.
 const labHtml = fs.readFileSync(path.join(__dirname, '../docs/tools/wilderness-generation-lab/index.html'), 'utf8'); // Shipped lab schema checked without a browser.
 assert(labHtml.includes("key:'plateauSteepness'"), 'the exact live-zone recipe must expose a plateauSteepness control');
+assert(labHtml.includes("'cliff plateau steepness'"), 'mobile lab stats must show the applied height multiplier and lifted tiles');
 const labFeatures = fs.readFileSync(path.join(__dirname, '../docs/tools/wilderness-generation-lab/lab-features.js'), 'utf8'); // Verifies the Lab still sources gameplay zone configs.
 assert(labFeatures.includes("zoneSettings?.('map_northern_cliffs')") && labFeatures.includes("zoneSettings?.('map_western_slope')"),
   'wilderness Lab presets must use the actual live zone settings');
