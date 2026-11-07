@@ -88,6 +88,7 @@
 
   function installMeshHook(mesh, rigState, side) {
     if (!mesh?.isMesh) return false;
+    if (mesh.userData?.noOutline !== true) mesh.layers.enable(1); // Every fallback/replaced foot must join the shell pass, just like the existing hand adapter.
     markWaterOccluded(mesh, rigState, side);
     if (mesh.userData?.__hobunjiFeetOutlineParity) return false;
 
