@@ -43,17 +43,27 @@
     let melody=null,netChallenge=null,iceLayer=null,iceMelt=0,bombTube=null,hitCount=0; // Driven by tick, never by artificial completion switches.
     const fire=root.DungeonFire,bombs=root.HronalWitchBombs;
     const alive=()=>!disposed&&isActive();
-    const mat=(color,emissive=0)=>new THREE.MeshStandardMaterial({
-      color,roughness:.82,metalness:.06,emissive,emissiveIntensity:emissive?.46:0
-    });
+    const mat=(color,emissive=0,surface='carved')=>{
+      // All block bodies, pressure plates, stairs, stone pillars, gates and rune insets use the same carved_smooth.png material as the rest of the dungeon.
+      const carved=surface==='carved'?root.ProceduralFurniture?.makePartMaterial?.({
+        materialTexture:'carved_smooth.png',materialLighting:'unlit',materialFillMode:'never',
+        color:'#'+Number(color).toString(16).padStart(6,'0')
+      }):null;
+      if(carved){
+        if(emissive&&carved.emissive?.setHex){carved.emissive.setHex(emissive);carved.emissiveIntensity=.46;}
+        return carved; // Unlit tint preserves visible bronze/green plate signals and glowing-colored markings on textured stone.
+      }
+      return new THREE.MeshStandardMaterial({color,roughness:.82,metalness:.06,
+        emissive,emissiveIntensity:emissive?.46:0}); // Offline/headless fallback when the furniture texture service is not loaded.
+    };
     const newMesh=(name,geo,material,x,cy,z,parent=group)=>{
       const mesh=new THREE.Mesh(geo,material);
       mesh.name=name;mesh.position.set(x,cy,z);
       mesh.userData.devRuinFootprintIgnore=true; // The registered dynamic support/blocker owns collision, not a stale mesh scan.
       parent.add(mesh);return mesh;
     };
-    const cube=(name,x,z,bottom,w,h,d,color=COLOR.stone,emissive=0,parent=group)=>
-      newMesh(name,new THREE.BoxGeometry(w,h,d),mat(color,emissive),x,bottom+h*.5,z,parent);
+    const cube=(name,x,z,bottom,w,h,d,color=COLOR.stone,emissive=0,parent=group,surface='carved')=>
+      newMesh(name,new THREE.BoxGeometry(w,h,d),mat(color,emissive,surface),x,bottom+h*.5,z,parent);
     const cylinder=(name,x,z,bottom,rad,h,color)=>
       newMesh(name,new THREE.CylinderGeometry(rad,rad,h,12),mat(color),x,bottom+h*.5,z);
     const solid=(name,x,z,halfX,halfZ,enabled=()=>alive())=>
@@ -127,12 +137,12 @@
       const skin=root.DungeonRopeArt?.createNetFrustum?.(.98,.98,1.0);
       if(skin){skin.userData.devRuinFootprintIgnore=true;net.add(skin);}
       else{
-        const rope=mat(COLOR.rope);
+        const rope=mat(COLOR.rope,0,'rope');
         for(const dx of [-.45,.45])for(const dz of [-.45,.45])
           newMesh('net-cord',new THREE.CylinderGeometry(.026,.026,1.08,5),rope,dx,-.56,dz,net);
-        cube('find-blocks-net-beam',0,0,-.12,1.1,.12,.12,COLOR.rope,0,net);
+        cube('find-blocks-net-beam',0,0,-.12,1.1,.12,.12,COLOR.rope,0,net,'rope');
       }
-      const hit=cube('find-blocks-net-fire-hit',x,z,ceiling-1.18,.95,1.12,.95,0x8c7551);
+      const hit=cube('find-blocks-net-fire-hit',x,z,ceiling-1.18,.95,1.12,.95,0x8c7551,0,group,'rope');
       hit.material.transparent=true;hit.material.opacity=0;hit.material.depthWrite=false;
       const release=()=>{net.visible=false;hit.visible=false;return startFall(block);}; // Every net trigger releases the same physical falling block.
       if(netVariant==='fire')registerBurn('net',hit,release);
@@ -170,9 +180,9 @@
           iceRoot.add(iceLayer);
         }else iceLayer=null;
       }
-      if(!iceLayer)newMesh('fallback-icicle',new THREE.ConeGeometry(.55,1.65,7),mat(COLOR.ice),
+      if(!iceLayer)newMesh('fallback-icicle',new THREE.ConeGeometry(.55,1.65,7),mat(COLOR.ice,0,'ice'),
         0,.9,0,iceRoot);
-      const hit=cube('find-blocks-ice-fire-hit',x,z,ceiling-1.92,1.05,1.65,1.05,COLOR.ice);
+      const hit=cube('find-blocks-ice-fire-hit',x,z,ceiling-1.92,1.05,1.65,1.05,COLOR.ice,0,group,'ice');
       hit.material.transparent=true;hit.material.opacity=0;hit.material.depthWrite=false;
       registerBurn('ice',hit,()=>{
         hit.visible=false;iceMelt=.001; // Retraction starts on real flaming-projectile contact.
