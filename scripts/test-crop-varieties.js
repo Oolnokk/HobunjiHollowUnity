@@ -153,6 +153,18 @@ const restored = game.FarmProduction.entries()[0];
 assert.equal(restored.ready[0].count, 2);
 assert.equal(game.FarmProduction.collect(restored.id).ok, true);
 assert.ok(inventory.needlegrainSeeds >= 2);
+inventory[east.id] = 1; inventory[west.id] = 1; // Parent harvests are standard bag stacks.
+const hybridBatch = game.FarmProduction.enqueueSeeds(restored.id, { source: 'bag', itemKey: east.id }, { source: 'bag', itemKey: west.id });
+assert.equal(hybridBatch.ok, true, 'seed maker accepts two regional crops of one species');
+calendar.day = 4; game.FarmProduction.tick(); assert.equal(restored.ready.length, 0, 'hybrid seeds must take two game days');
+calendar.day = 5; game.FarmProduction.tick();
+assert.equal(restored.ready[0].key, offspring.seedKey, 'actual machine breeding produces the same mixed-pigment genotype as the genetics module');
+assert.equal(restored.ready[0].count, 2, 'actual breeding queue makes two seeds');
+game.FarmProduction.load(JSON.parse(JSON.stringify(game.FarmProduction.serialize()))); // Mimics loading a world whose seed maker contains unfinished collected output.
+const hybridMaker = game.FarmProduction.entries()[0];
+assert.equal(game.FarmProduction.collect(hybridMaker.id).ok, true);
+assert.equal(game.CropVarieties.colorOf(offspring.seedKey), expectedPigment, 'collected seeds retain both parental colors after machine save/reload');
+assert.equal(inventory[offspring.seedKey], 2, 'collected mixed-color seeds use a normal stack');
 
 game.LootRolling = { rollItemStars: () => 3, starRatingText: () => '★★★☆☆' };
 run('docs/js/crop-planting.js');
