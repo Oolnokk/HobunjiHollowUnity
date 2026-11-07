@@ -662,8 +662,8 @@
       record.rig.placePaperHandGuideWorld?.(primarySocket.position, primarySocket.quaternion);
       let primary = handSocketAfterGripMode(record, primarySocket); // Preserve the ordinary raw-socket contract for 1H/2H and diagnostics.
       const freeHand = freeRightHandFor(record, toolKey); // A free note keyframe is avatar-local instead of attached to the instrument mesh.
-      if (freeHand && freeHand.influence > 0.0001 && record.rig.parent?.localToWorld) {
-        const avatar = record.rig.parent; // Player/editor avatar origin; follows body movement but ignores tool rotations.
+      if (freeHand && freeHand.influence > 0.0001 && record.avatarRoot?.localToWorld) {
+        const avatar = record.avatarRoot; // Editor 3D gizmos and capture use avatarModel-local XYZ, NOT the rig's parent. Avatar roots have a vertical portrait offset: using rig.parent here displaced every authored live hand.
         const handPosition = new record.THREE.Vector3(Number(freeHand.x)||0, Number(freeHand.y)||0, Number(freeHand.z)||0);
         avatar.localToWorld(handPosition);
         const handRotation = hierarchyWorldQuaternion(record, avatar, new record.THREE.Quaternion())
