@@ -801,7 +801,8 @@
     if (speciesId === 'omgurku') return null; // The Omgurku's Voorg-ass-derived quadruped lower rig owns all locomotion; never spawn humanoid feet.
     if (!speciesId) return null;
     const gender = normalizeGender(options.gender);
-    const authoredGait = options.gaitProfile?.style === 'maskbound-lurch' ? options.gaitProfile : null; // NPC-only movement style; ordinary species/gender defaults stay untouched.
+    const speciesGait = speciesId === 'longoran' ? window.HobunjiLongoranSpecies?.gaitProfile : null; // Longoran share the Maskbound walk solver, including when used by a player/ordinary NPC.
+    const authoredGait = options.gaitProfile?.style === 'maskbound-lurch' ? options.gaitProfile : speciesGait; // Explicit combat/editor gait takes priority over species defaults.
     const gaitNumber = (value, fallback, min, max) => Number.isFinite(Number(value)) ? Math.max(min, Math.min(max, Number(value))) : fallback; // Validate serialized troop gait tuning against wild/invalid values.
     const lurch = authoredGait ? {
       dragSide: authoredGait.dragSide === 'right' ? 'right' : 'left',
@@ -835,7 +836,7 @@
     const posteriorY = posteriorYForSpecies(speciesId, gender, modelHeight, Number(options.handAttachY));
     const posteriorX = posteriorXForSpecies(speciesId, gender); // Used to recenter the legs and to locate the seated surface in this avatar-local frame.
     // Hunched characters (js/character-spine.js) plant their feet farther apart and take longer strides to carry the stooped upper body. Fixed per avatar.
-    const spineGait = window.HobunjiCharacterSpine?.resolve({ spine: options.spine }) || null;
+    const spineGait = window.HobunjiCharacterSpine?.resolve({ speciesId, spine: options.spine, profile: options.profile }) || null; // Species posture widens Longoran feet even when no per-actor spine is authored.
     const spineStance = spineGait?.stanceScale > 1 ? spineGait.stanceScale : 1;
     const spineStride = spineGait?.strideScale > 1 ? spineGait.strideScale : 1;
     const portraitGuides = options.portraitRig ? window.HobunjiCharacterSpine?.makeBoneGuides?.(THREE, options.portraitRig) || null : null; // Spine/neck guides on the portrait skin share this solver's "show bones" toggle.
