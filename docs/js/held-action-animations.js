@@ -397,7 +397,7 @@
   } else if (!isAnimationAuthor && !isEnemyLoadoutEditor) {
     handScripts.push(new URL('js/procedural-hand-grip-runtime.js?v=20260918throwcharge3', docsBase).href);
     handScripts.push(new URL('js/weapon-idle-body-yaw-runtime.js?v=20260915perf1', docsBase).href);
-    handScripts.push(new URL('js/weapon-stance-drop-runtime.js?v=20261106fluteSink1', docsBase).href);
+    handScripts.push(new URL('js/weapon-stance-drop-runtime.js?v=20261107kurrayaNoteSink2', docsBase).href);
     handScripts.push(new URL('js/crossbow-strike-audio-trim.js?v=20260818a', docsBase).href);
     handScripts.push(new URL('js/weapon-png-scale.js?v=20260902c', docsBase).href);
     handScripts.push(new URL('js/hand-pixel-probe-diagnostics.js?v=20261101handdrift2', docsBase).href);
