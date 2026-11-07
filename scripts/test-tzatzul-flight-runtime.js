@@ -62,21 +62,28 @@ assert(file('docs/js/tzatzul-flight-runtime.js').includes('TzatzulCliffSites?.en
   'birds use the non-climbable spire builder rather than accessible mini-cliff caps');
 assert.equal(w.TzatzulFlightRuntime.ensureZone('map_southern_cloud_forest'),0);
 const bird=[...creatures][0];
-const loyalAnimal={creatureKey:'gar-wolf',health:45,areaId:zone,x:bird.x+8,y:bird.y+8,isCompanion:true}; // A player-owned wolf can be prey, not ignored for being outside the hostile collection.
+const loyalAnimal={creatureKey:'gar-wolf',health:45,areaId:zone,x:bird.x+8,y:bird.y+8,isCompanion:true}; // Companions are explicitly excluded from the hatchling food roster.
 companions.add(loyalAnimal);
 const originalPlayerX=player.x,originalPlayerY=player.y;
 player.x=50000;player.y=50000;
-assert.strictEqual(w.TzatzulFlightRuntime.__test.choosePrey(bird),loyalAnimal,
-  'a Tzatzul can select a nearby companion using the real shared animal target logic');
+assert.strictEqual(w.TzatzulFlightRuntime.__test.choosePrey(bird),null,
+  'Tzatzuls ignore animal companions and wildlife when provisioning hatchlings');
 player.x=originalPlayerX;player.y=originalPlayerY;
 companions.delete(loyalAnimal);
 assert.equal(bird.onPerch.dimension,0,'bird rests on registered zero-dimensional rock support');
 assert(bird.tzatzulIdentity.tintHex,'bird holds a unique palette key for live visuals');
 for(let i=0;i<80;i++)w.TzatzulFlightRuntime.update(.1);
-assert(w.TzatzulFlightRuntime.debugSnapshot().swoops>0,'nearby player provokes an actual flight');
+assert(w.TzatzulFlightRuntime.debugSnapshot().scouts>0,'a Tzatzul actively scouts when no suitable prey is nearby');
 assert(bird.onPerch.dimension===1||bird._tzFlight.phase==='perched','flight uses 1D elevated support');
 for(let i=0;i<160;i++)w.TzatzulFlightRuntime.update(.1);
 assert(w.TzatzulFlightRuntime.debugSnapshot().flights>0);
+const bandit={creatureKey:'bandit',isBandit:true,health:100,areaId:zone,x:bird.x+7*64,y:bird.y}; // Shared hostile roster is the authoritative source of raiders.
+creatures.add(bandit);
+assert.strictEqual(w.TzatzulFlightRuntime.__test.choosePrey(bird),bandit,'bandits count as hatchling food');
+const barbarian={creatureKey:'porakaneki',isTribeHunter:true,health:100,areaId:zone,x:bird.x+64,y:bird.y}; // Tribe hunters share the bandit combat entity pipeline.
+creatures.add(barbarian);
+assert.strictEqual(w.TzatzulFlightRuntime.__test.choosePrey(bird),barbarian,'barbarian hunters count as food');
+creatures.delete(bandit); creatures.delete(barbarian);
 assert(hits<=w.TzatzulFlightRuntime.debugSnapshot().swoops,'at most one damage transaction per swoop');
 const farBird=[...creatures][1]; // Distinct mother used to test long dives at the actual contact point.
 player.x=farBird.x-64*9;player.y=farBird.y;
