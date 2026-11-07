@@ -587,7 +587,7 @@
     plan.puzzleCave = {id:'puzzle-cave:'+String(mapData.id || plan.profile.mapId),
       col:center.col,row:center.row,room,kind:rng() < .43 ? 'fireSconces' : 'timedMelody',difficulty:1+Math.floor(rng()*5)}; // Both one-room variants share the save and reward lifecycle.
     plan.puzzleTreasure={id:'puzzle-cave-reward:'+String(mapData.id||plan.profile.mapId),
-      col:center.col,row:center.row+4,tier:2}; // The bronze chest sits on the re-carved back row, behind the lifted slab but safely inside the 9x9 floor.
+      col:center.col,row:center.row+3,tier:2}; // The bronze chest occupies the deep reward alcove, with real walking space behind the unbreakable, puzzle-locked wall.
     mapData.cavePuzzleTreasure=clone(plan.puzzleTreasure); // The chest has a real tile, a visible model and a separately claimable persistent reward.
     addProp(mapData,{...plan.puzzleTreasure,key:'ruinDungeonChestT2'}); // Reveal this normal chest only after the puzzle is solved.
     for(const [col,row] of window.CavernSculptor.expandFootprint([], [room]))
