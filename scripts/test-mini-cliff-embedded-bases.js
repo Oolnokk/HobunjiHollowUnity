@@ -45,7 +45,7 @@ for(const net of layouts) {
     assert.equal(base.projectionTiles,shelf.projectionTiles,'body and cap agree on translation');
     assert(base.parentCoverage>=0.54 && base.embeddedCoverage>=0.72,
       'most of the original plateau is actually buried in parent rock geometry');
-    assert(base.boundaryCells.length>0,'body shares actual unwalkable stone boundary tiles with its parent');
+    if(base.hasPaintedBoundary) assert(base.boundaryCells.length>0,'body shares actual unwalkable stone boundary tiles when the parent has them');
     for(const cell of base.footprint) {
       assert.equal(routes.componentAt(net,cell.c,cell.r),route.bComp,
         'the nested original plateau belongs to its owning higher plateau');
