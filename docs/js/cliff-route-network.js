@@ -829,19 +829,34 @@
         const builder = globalThis.ReagentPlants?.buildReagentPlantMesh;
         if (!pool.length || !builder) continue;
         s.reagentKey = pool[hash(Math.floor(s.x * 100), Math.floor(s.z * 100), 197) % pool.length]; // Shared with mini-cliff forage interaction.
+        // Anchor the entire cluster in ONE walkable cap tile, rather than
+        // spreading its six herbs across every cell touched by a long ledge.
+        const tileCenters = (s.footprint || []).map(f => ({ c: f.c, r: f.r, x: f.c + 0.5, z: f.r + 0.5 }))
+          .filter(p => shelfContains(s, p.x, p.z))
+          .sort((a, b) => (a.x - s.x) ** 2 + (a.z - s.z) ** 2 - ((b.x - s.x) ** 2 + (b.z - s.z) ** 2));
+        const herbSpot = tileCenters[0] || { c: Math.floor(s.x), r: Math.floor(s.z), x: s.x, z: s.z }; // Thin cap fallback.
+        s.herbTile = { c: herbSpot.c, r: herbSpot.r }; // Used by the elevated one-tile interaction lookup.
         const cluster = new THREE.Group();
         const rand = n => hash(Math.floor(s.x * 100), Math.floor(s.z * 100), n) / 4294967296; // Stable per-ledge plant positions.
         for (let stem = 0; stem < 6; stem++) {
           const plant = builder(s.reagentKey);
           if (!plant) continue;
           const rot = rand(300 + stem) * Math.PI * 2;
-          const radial = (0.08 + rand(320 + stem) * 0.25);
-          plant.position.set(Math.cos(rot) * radial, 0, Math.sin(rot) * radial);
+          let radial = 0.08 + rand(320 + stem) * 0.25;
+          let x = herbSpot.x + Math.cos(rot) * radial, z = herbSpot.z + Math.sin(rot) * radial; // Every stalk occupies the same tile.
+          for (let attempt = 0; attempt < 4 && (!shelfContains(s, x, z) ||
+            Math.floor(x) !== herbSpot.c || Math.floor(z) !== herbSpot.r); attempt++) {
+            radial *= 0.5;
+            x = herbSpot.x + Math.cos(rot) * radial;
+            z = herbSpot.z + Math.sin(rot) * radial;
+          }
+          if (!shelfContains(s, x, z) || Math.floor(x) !== herbSpot.c || Math.floor(z) !== herbSpot.r) { x = herbSpot.x; z = herbSpot.z; }
+          plant.position.set(x - herbSpot.x, 0, z - herbSpot.z);
           plant.scale.multiplyScalar(0.78 + rand(340 + stem) * 0.43);
           cluster.add(plant);
         }
         if (!cluster.children.length) continue;
-        cluster.position.set(s.x, s.y + 0.016, s.z);
+        cluster.position.set(herbSpot.x, s.y + 0.016, herbSpot.z);
         cluster.name = network.area + '-mini-cliff-herb-' + s.id;
         cluster.userData.miniCliffHerb = { area: network.area, id: s.id, reagentKey: s.reagentKey }; // Pickable forage lookup.
         cluster.userData.isBillboard = true;
