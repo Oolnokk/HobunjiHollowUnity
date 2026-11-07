@@ -1859,6 +1859,8 @@
     GESTATION_HOURS_PER_DAY,
     clearAnimalObjects,
     updateAnimalMeshes,
+    refreshGenotypeAvatar: (avatarRef, kind, genotype, frame = 'idle', blinkShut = false) =>
+      _applyGenotypeCompositeTexture(avatarRef, kind, frame, genotype, blinkShut), // Dev Companion reuses the live farm/wild texture residency and both mirrored sprite planes.
     setVatWorkerPose,
     clearVatWorkerPose,
     GESTATION_DAYS: LIVESTOCK_GESTATION_DAYS,

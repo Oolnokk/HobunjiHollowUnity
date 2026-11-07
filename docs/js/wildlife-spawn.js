@@ -124,6 +124,11 @@
   function init(injectedDeps) {
     ensurePuktukRuntimeRegistration(injectedDeps);
     ensureVoorgAssRuntimeRegistration(injectedDeps);
+    window.TzatzulRegistration?.register?.(injectedDeps); // Species registration is synchronous, like Voorg-Ass; actual nesting is separate.
+    window.TzatzulLiveVisuals?.init?.(injectedDeps);
+    window.TzatzulRegistration?.registerPeck?.(); // Ensure the authored hatchling attack exists after Combat initialization.
+    window.TzatzulFlightRuntime?.init?.(injectedDeps); // Shared wildlife population and movement owner.
+    window.TzatzulNestEncounter?.init?.(injectedDeps); // Indoor boss encounter uses the same hostile roster and wildlife tick. // The canonical wildlife update tick will own bird-rig promotion, animation and disposal.
     deps = injectedDeps;
     installDenTurnoverDeathHook();
   }
@@ -1801,6 +1806,9 @@
     const currentArea = deps.getCurrentArea();
     if (currentArea !== lastTurnoverArea) { lastTurnoverArea = currentArea; processDueCaves(); }
     if (deps.getCutscenePreviewActive()) return;
+    window.TzatzulLiveVisuals?.tick?.(dt, currentArea);
+    window.TzatzulFlightRuntime?.update?.(dt); // Reuses the same tick, not an additional RAF or scan.
+    window.TzatzulNestEncounter?.update?.(dt); // Only the active authored nest cave is evaluated; no second RAF. // Actual dev-spawned Tzatzul get their authored body/wing rig in the existing update loop, even outside wilderness zones.
     denCheckTimer -= dt;
     if (denCheckTimer > 0) return;
     denCheckTimer = DEN_CHECK_INTERVAL_S;
@@ -1810,6 +1818,7 @@
     ensureCurrentZoneDenPacks();
     ensureCurrentZoneRoamingHerds();
     ensureCurrentZoneNestTrees();
+    window.TzatzulFlightRuntime?.ensureZone?.(currentArea); // Cliff birds spawn only where elevated natural ledge geometry exists.
     window.HoneyfuzzleHives?.ensureCurrentZone(); // Swarms come out of their hive stumps by day (js/honeyfuzzle-hives.js).
     window.BanditCamps.ensureCurrentZoneCamps();
     if (_zoneEntryAnimalLogPending === currentArea) {
@@ -1910,6 +1919,7 @@
       pendingDenRespawn.clear();
       pendingNestTreeRespawn.clear();
       pendingRoamingHerdRespawn.clear();
+      window.TzatzulFlightRuntime?.onDayAdvance?.(); // Failed/dead roosts turn over on the normal in-game day.
       processDueCaves(); // 06:00 raw-day rollover never advances the civil-midnight cave countdown.
     },
   };

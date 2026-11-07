@@ -5470,8 +5470,8 @@
             }
             const specialAmmo = window.RangedWeapons?.rollSpecialAmmoLoot?.() || 0; // Every creature corpse gets the same high-chance shared-ammo roll as bandits.
             if (specialAmmo) parts.push(`🏹 Special Ammo×${specialAmmo}`);
-            corpseObjects.delete(c);
-            despawnCreature(c);
+            if (c.keepCorpseAfterLoot) c.corpseLooted = true; // Tzatzul victim piles retain their bodies and one-shot searched state.
+            else { corpseObjects.delete(c); despawnCreature(c); }
             return {
               ok: true,
               message: parts.length ? `Butchered the ${c.def.label}: ${parts.join(' ')}` : `Nothing usable left on the ${c.def.label}.`,
@@ -7058,10 +7058,29 @@
             if (c.isBandit) { window.BanditCombat.updateToolMesh(c); window.BanditCombat.updateTrailArc(c, dt); }
             continue;
           }
+          if (c.tzatzulCapturedBy) {
+            if (!tickCreatureResources(c, dt, false)) continue; // Poison/bleeding still resolve while the original actor is airborne.
+            updateWildlifeVisualLod(c, 0); // Promote the original carried portrait even when viewed through a distant spyglass.
+            updateCreatureMesh(c, dt, c.facing);
+            updateCreatureAnimFrame(c, dt, false);
+            window.TzatzulLiveVisuals?.alignCaptive?.(c);
+            continue; // The carrier owns position; ground AI and attacks must not overwrite it.
+          }
           // Beastmaster pets stay in hostileObjects so player targeting and
           // damage can find them, but companionObjects owns their movement
           // and attacks so they can follow their bandit master.
           if (c.banditCompanion) continue;
+          // The canonical wildlife tick already moved this Tzatzul's body
+          // before updateHostiles. Keep live vitals/LOD/portrait animation,
+          // but do not let the ordinary ground AI move it a second time.
+          if (window.TzatzulFlightRuntime?.owns?.(c)) {
+            const distanceTiles = Math.hypot(player.x - c.x, player.y - c.y) / TILE;
+            updateWildlifeVisualLod(c, distanceTiles);
+            if (!tickCreatureResources(c, dt, false)) continue;
+            updateCreatureMesh(c, dt, c.facing);
+            updateCreatureAnimFrame(c, dt, c._tzFlight?.phase !== 'perched');
+            continue;
+          }
           // Honeyfuzzle swarms fly home to their hive stump at dusk and tuck
           // inside it overnight (js/honeyfuzzle-hives.js) — hive-controlled
           // frames skip the generic wildlife AI entirely.
@@ -8702,6 +8721,12 @@
         for (const c of companionObjects) {
           if (c.health <= 0) continue;
           if (c.areaId !== currentArea) continue;
+          if (c.tzatzulCapturedBy) {
+            updateCreatureMesh(c, dt, c.facing);
+            updateCreatureAnimFrame(c, dt, false);
+            window.TzatzulLiveVisuals?.alignCaptive?.(c);
+            continue; // Captured companions share the carrier's flight path instead of following their master.
+          }
           window.AnimalVocalizations?.tickCreature?.(c, dt, {
             allowPassive: c.stableRole !== 'mount',
           });
@@ -9460,6 +9485,7 @@
         member.minedRockState = serializeZoneMinedRockState();
         member.townMineState = window.TownMine?.serialize?.() || null;
         member.slagothimTradersState = window.SlagothimTraders?.serialize?.() || null;
+        member.tzatzulNestState = window.TzatzulNestEncounter?.serialize?.() || null;
         member.caveSiteState = window.CaveSiteSystem?.serialize?.() || null;
         member.doorstepVisitState = window.DoorstepVisits?.serialize?.() || {};
         member.romanceState = window.RomanceSystem?.serialize?.() || null;
@@ -14858,6 +14884,7 @@
             // cavern-generator.js's pickOreRockTiles/pickCreatureSpawnTiles).
             // Cavern ore-rock placement (tile marking + tinted rock meshes
             // registered for mining) now lives in js/cavern-ore-rocks.js.
+            window.TzatzulNestEncounter?.buildNest?.(mapId, mapData, bScene); // Native egg furniture and mobile hold-to-take interaction.
             window.CavernOreRocks.build(mapId, mapData, bScene, bGrid);
             // Cave-site history props (catacomb coffins, cache chest, ruin door)
             // are authored furniture placed by js/cave-site-system.js.
@@ -18738,6 +18765,16 @@
       }
 
       function updateMovement(dt) {
+        if (player.tzatzulCapturedBy) {
+          // TzatzulFlightRuntime owns the original player's position and elevation
+          // during a successful beak-first capture. Joystick/controller movement
+          // must not overwrite the bird's shared perch path or restart combat.
+          playerAutoWalk = null;
+          input.x = 0; input.y = 0;
+          player.vx = 0; player.vy = 0;
+          player.inputX = 0; player.inputY = 0; player.inputStrength = 0;
+          return;
+        }
         syncMobileAutoTargetCombatState();
         syncMobileAutoTargetButton(); // Target availability refreshes even when prone, mounted, or another mode skips ordinary movement.
         updateMobileArchCombatAimLifecycle();
@@ -25630,6 +25667,7 @@
             || (!player.climbing && !player.onBranch && !player.onClimbSurface && playerMesh.position.y > groundedTargetY + 0.12),
           directionX: player.lungeDirX, directionZ: player.lungeDirY,
         });
+        window.TzatzulLiveVisuals?.alignCaptive?.(player, playerMesh); // Apply the authored humanoid talon pose after ordinary player animation.
       }
 
       // ── Update reticle ────────────────────────────────────────────
@@ -31944,6 +31982,11 @@
       });
 
       window.WildlifeSpawn?.init({
+        companionObjects, // Tzatzuls hunt companions through the same target collection as wildlife.
+        worldSurfaceY: (x, y) => activeSurfaceYAtWorld(x / TILE, y / TILE), // Flight hitboxes/carry height use the actual current terrain elevation.
+        getTzatzulCarryAnchor: actor => actor === player ? playerAttachmentAnchor('posterior')
+          : actor.isBandit ? null : creatureAttachmentAnchor(actor.creatureKey, 'saddle', actor.genotype), // Canonical authored animal saddle and player posterior coordinates.
+        save: saveMemberWorldData, // Nest eggs and delivered victims persist through the ordinary member save.
         corpseObjects, // Cave renewal removes cached corpse entities along with living residents.
         despawnCreature, // Den turnover must dispose removed residents through the same owner as ordinary despawns.
         TILE,
@@ -31982,6 +32025,8 @@
         player,
         calendar,
         damagePlayer, // Used by js/cave-site-system.js's one-shot cache traps (it captures this dependency bag).
+        enterBuilding, // Native async cavern loader + return-exit ownership for Tzatzul player abduction.
+        canPlayerOccupy, // Check the exterior safe return tile before committing a nest transition.
       });
 
       window.CavernGenerator?.init({
@@ -33110,6 +33155,7 @@
         restoreZoneMinedRockState(playerData.minedRockState);
         window.TownMine?.restore?.(playerData.townMineState);
         window.SlagothimTraders?.restore?.(playerData.slagothimTradersState);
+        window.TzatzulNestEncounter?.restore?.(playerData.tzatzulNestState);
         window.CaveSiteSystem?.restore?.(playerData.caveSiteState);
         // Potion items just restored into `inventory` above have no ITEM_DEFS
         // entry yet this page load (ITEM_DEFS starts empty of them every
