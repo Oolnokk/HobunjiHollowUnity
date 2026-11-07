@@ -569,9 +569,16 @@
     window.SharedAttackPose.placeAtMouth(fluteState.root,fluteState.frame,pose,Number(pose.scale)||1,null);
     fluteState.root.visible=true;
   }
+  function fluteHandTarget() {
+    if (!fluteState.active) return null;
+    updateFlute(); // Hand-frame sampling must see the same current mouth-anchored matrix as the rendered flute.
+    return fluteState.root?.visible && fluteState.root?.parent
+      ? { holder: fluteState.root, toolKey: 'flute', gripContext: 'ranged' }
+      : null; // Do not attach invisible hands while its sprite/portrait is loading or the performance is closed.
+  }
   function fluteDiagnostics() {
     return {active:fluteState.active,mounted:!!fluteState.root?.parent,visible:!!fluteState.root?.visible,ready:!!fluteState.root?.children.length,loads:fluteState.loads,failures:fluteState.failures,noteCount:fluteState.noteCount,noteActive:fluteState.noteStartedAt!==null,error:fluteState.lastError};
   }
 
-  window.KurrayaInstrument = { init, buildAssembly, newTwitchState, triggerTwitch, updateTwitch, beginFlute, playFluteNote, endFlute, notePoseAt, fluteDiagnostics, prepareFluteCanvas };
+  window.KurrayaInstrument = { init, buildAssembly, newTwitchState, triggerTwitch, updateTwitch, beginFlute, playFluteNote, endFlute, fluteHandTarget, notePoseAt, fluteDiagnostics, prepareFluteCanvas };
 })();
