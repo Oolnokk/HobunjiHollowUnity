@@ -54,7 +54,7 @@
       state.rig = null;
       debug.unmounts++;
     }
-    if (state.group?.userData) delete state.group.userData.tzatzulFlyingRig;
+    if (state.group?.userData) { delete state.group.userData.tzatzulFlyingRig; delete state.group.userData.skeeriFlyingRig; }
     debug.lastBird = String(actor?.id || kind(actor) || 'tzatzul') + ':' + reason;
     return true;
   }
@@ -67,8 +67,9 @@
   }
   function present(actor, state, camera) {
     if (!state.rig) return;
-    const pose = kind(actor) === window.TzatzulRegistration?.HATCHLING_KIND ? 'perched' : actor.tzatzulFlightPose === 'perched' || actor.tzatzulFlightPose === 'glide'
-      || actor.tzatzulFlightPose === 'flap' ? actor.tzatzulFlightPose
+    const flightPose = actor.isRuinSkeeri ? actor.skeeriFlightPose : actor.tzatzulFlightPose; // Both species use the same authored wing assembly and pose timeline.
+    const pose = kind(actor) === window.TzatzulRegistration?.HATCHLING_KIND ? 'perched' : flightPose === 'perched' || flightPose === 'glide'
+      || flightPose === 'flap' ? flightPose
       : actor.onBranch ? 'perched'
         : actor._animalAttack || ['chase','patrol-chase','fleeing-low-health'].includes(actor.state) ? 'flap' : 'perched';
     // Ordinary avatar code can re-enable its canonical sprite after a genotype
@@ -99,7 +100,7 @@
         state.rig.update(camera?.getWorldPosition ? camera : fallback,
           pose, seconds, !!actor.tzatzulCarrying, window.CreatureBlink?.isShut?.(actor) === true);
         if (!(Number(actor.hitFlashT) > 0) && state.rig.restoreTint?.()) debug.tintRestores++; // Preserve hit flashes, then recover the bird's individual tint.
-        state.rig.root.rotation.z = pose !== 'perched' ? Number(actor.tzatzulDivePitchRad) || 0 : 0; // Pitch the authored body/head into its 3D swoop; restore level glide and perch poses.
+        state.rig.root.rotation.z = pose !== 'perched' ? Number(actor.isRuinSkeeri ? actor.skeeriDivePitchRad : actor.tzatzulDivePitchRad) || 0 : 0; // Shared headfirst swoop pitch.
       } catch (error) { debug.lastError = String(error); }
     }
     state.lastPose = pose;
@@ -110,7 +111,7 @@
     const group = actor.avatarRef?.group;
     if (!group?.add || !group.parent || actor._wildlifeVisualsReleased) return;
     state.loading = true;
-    const create = window.TzatzulRegistration?.createRig;
+    const create = actor.isRuinSkeeri ? window.SkeeriRuins?.createRig : window.TzatzulRegistration?.createRig; // The configured species supplies its own three sprite PNGs.
     if (!create) { state.loading = false; return; }
     Promise.resolve().then(() => create(actor.tzatzulIdentity)).then(rig => {
       if (!rig?.root || !rig?.dispose) throw new Error('Flying rig renderer did not return a disposable root');
@@ -136,7 +137,7 @@
       rig.root.rotation.y = Math.PI / 2; // Flying side sprite inherits the same orientation as the native animal front plane.
       group.add(rig.root);
       group.userData ||= {};
-      group.userData.tzatzulFlyingRig = true;
+      group.userData[actor.isRuinSkeeri ? 'skeeriFlyingRig' : 'tzatzulFlyingRig'] = true; // One native avatar owns the corresponding rig.
       debug.mounts++;
       debug.lastBird = String(actor.id || 'tzatzul') + ':mounted';
     }).catch(error => {
@@ -165,9 +166,10 @@
       scanT = SCAN_PERIOD_S;
       debug.scans++;
       for (const actor of deps.hostileObjects) {
-        if (![window.TzatzulRegistration?.KIND, window.TzatzulRegistration?.HATCHLING_KIND].includes(kind(actor)) || actor.areaId !== area || !(actor.health > 0)) continue;
+        const isSkeeri = actor.isRuinSkeeri === true && Object.values(window.SkeeriRuins?.SPECIES || {}).some(spec => spec.key === kind(actor)); // Only the ruin encounter owns Skeeri rigs; generic creatures cannot impersonate them.
+        if (!isSkeeri && ![window.TzatzulRegistration?.KIND, window.TzatzulRegistration?.HATCHLING_KIND].includes(kind(actor)) || actor.areaId !== area || !(actor.health > 0)) continue;
         if (tracked.has(actor)) continue;
-        actor.tzatzulIdentity ||= window.TzatzulRegistration.identityFor(area, stableIndex(actor)); // Distinct, stable fallback until each nest assigns its persistent family ID.
+        if (!isSkeeri) actor.tzatzulIdentity ||= window.TzatzulRegistration.identityFor(area, stableIndex(actor)); // Skeeri keeps its authored, untinted sprite.
         tracked.set(actor, { rig: null, loading: false, removed: false, originals: [],
           group: null, retryAt: 0, lastPose: null });
       }
