@@ -229,6 +229,25 @@ function test(seed,size=24){
     assert(block.mesh.position.y+.41<=lowRoof-.17,'No block may clip through a real V50 ceiling: '+block.name);
   tight.dispose();
   assert.equal(state.controls.length,0,'A short-roof reroll must also release every control');
+  if(seed===0){
+    const elevated=[]; // Test the separate collision authority used only in layered dungeon stories.
+    const wingKit={...kit,registerBlocker:blocker=>elevated.push(blocker)};
+    const upper=env.DevRuinFindBlocks.create({
+      THREE,kit:wingKit,context:{seed,ceilingY:20.5},room:{id:'floor1-N-room1',x:0,z:0,w:18,d:18},y:16,
+      showGate:false,isActive:()=>true,onSolved:()=>{}
+    });
+    assert(elevated.length>=3,'Pillars and block obstacles use height-aware collision in upper stories');
+    for(const obstacle of elevated){
+      const mx=(obstacle.bounds.minX+obstacle.bounds.maxX)/2;
+      const mz=(obstacle.bounds.minZ+obstacle.bounds.maxZ)/2;
+      assert.equal(obstacle.blocksAt(mx,mz,1,null,0,{worldY:16}),true,
+        'Raised stone obstacles block movement and pushes on their own story');
+      assert.equal(obstacle.blocksAt(mx,mz,1,null,0,{worldY:0}),false,
+        'Raised stone obstacles never produce invisible blockers at ground level');
+    }
+    upper.dispose();
+    assert.equal(state.controls.length,0,'Elevated chamber cleanup removes all interactive controls');
+  }
   return room.variant+'/'+room.netVariant;
 }
 const combinations=new Set(Array.from({length:16},(_,seed)=>test(seed,24)));
