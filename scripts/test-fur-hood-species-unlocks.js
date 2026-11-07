@@ -126,7 +126,7 @@ async function run(masterFirst) {
     groupsFor:()=>[{variant:'hide:one',count:1,stars:3,hideRecord:hide}],
     consume(){consumption++;return {ok:true,records:[hide]};},
   };
-  context.ClothingWeavingSystem={renderClothingLayers:async()=>({canvas:{width:1,height:1}})};
+  context.ClothingWeavingSystem={renderClothingLayers:async()=>({canvas:{width:1,height:1,toDataURL:()=> 'data:image/png;base64,mock'}})};
   context.EquipmentPanel={buildPackClothingSection(){}};
   const deps={
     inventory, getPackClothing:()=>pack, saveMemberWorldData(){}, buildInventoryGrid(){},
