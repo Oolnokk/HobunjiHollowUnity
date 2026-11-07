@@ -210,7 +210,11 @@
         locations.forEach(([px,pz],index)=>{
           const column=cube('find-blocks-target-pillar-'+index,px,pz,floorY,.95,1.75,.95,COLOR.stone);
           solid('target-pillar-'+index,px,pz,.47,.47);
-          const marker=cube('find-blocks-projectile-glyph-'+index,px,pz,floorY+1.45,.56,.5,.56,COLOR.fire,0x452300);
+          const alongX=Math.abs(px-cx)>=Math.abs(pz-cz); // Aimable face points toward the central floor, not into the opaque stone column.
+          const faceX=alongX?px+Math.sign(cx-px)*.535:px;
+          const faceZ=alongX?pz:pz+Math.sign(cz-pz)*.535;
+          const marker=cube('find-blocks-projectile-glyph-'+index,faceX,faceZ,floorY+.86,
+            alongX?.15:.56,.57,alongX?.56:.15,COLOR.fire,0x452300); // Thin exposed wall plaque hits before the pillar in the actual ranged sweep.
           const target={id:id+'-target-'+index,object:marker,hitMesh:marker,active:false,
             hittable:()=>alive()&&!target.active,
             onHit:()=>{
