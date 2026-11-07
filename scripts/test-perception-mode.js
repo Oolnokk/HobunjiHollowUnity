@@ -162,8 +162,8 @@ const denAt24 = entity({ x: 24, z: 0 }, entrances); denAt24.userData.denCaveEntr
 const localeCave = entity({ x: 22, z: 1 }, entrances); localeCave.userData.localeCave = true;
 const denBeyond24 = entity({ x: 24.01, z: 0 }, entrances); denBeyond24.userData.denCaveEntrance = true;
 entity({ x: 2, z: 0 }, entrances); // Den furniture without a cave-mouth flag must not glow.
-const banditCampAt24 = entity({ x: 0, z: 24 });
-const banditCampBeyond24 = entity({ x: 0, z: 24.01 });
+const banditCampAt24 = entity({ x: 0, z: 26 }); // A peripheral tent beyond 24 still glows when the camp center reaches the boundary.
+const banditCampBeyond24 = entity({ x: 0, z: 23 }); // A nearby tent does not glow when its camp center is outside the boundary.
 const porakanekiCamp = entity({ x: 18, z: 0 });
 const omgurkuCamp = entity({ x: 21, z: 0 });
 const cliffDoorAt12 = entity({ x: 12, z: 0 });
@@ -171,7 +171,10 @@ const cliffDoorBeyond12 = entity({ x: 12.01, z: 0 });
 const herbAt12 = entity({ x: 0, z: 12 });
 const herbBeyond12 = entity({ x: 0, z: 12.01 });
 const staleHerb = entity({ x: 2, z: 0 }, otherScene);
-sandbox.window.BanditCamps = { senseTargets: () => [banditCampAt24, banditCampBeyond24] };
+sandbox.window.BanditCamps = { senseTargets: () => [
+  { root: banditCampAt24, anchor: { x: 0, z: 24 } },
+  { root: banditCampBeyond24, anchor: { x: 0, z: 24.01 } },
+] }; // The camp's center, not a prop's position, controls the whole landmark boundary.
 sandbox.window.PorakanekiCamps = { senseTargets: () => [porakanekiCamp] };
 sandbox.window.OmgurkuCamps = { senseTargets: () => [omgurkuCamp] };
 sandbox.window.PuzzleCaveEntrances = { senseTargets: () => [cliffDoorAt12, cliffDoorBeyond12] };
@@ -179,6 +182,7 @@ sandbox.window.CliffRouteNetwork = { senseTargets: () => [herbAt12, herbBeyond12
 PM.update(7000);
 const landmarkSnap = PM.debugSnapshot();
 assert.equal(landmarkSnap.byCategory.landmark, 7, 'two cave mouths, three camps, one cliffdoor and one herb glow at their individual distance boundaries');
+assert.equal(landmarkSnap.landmarkSources.camps, 4, 'both near and far camp tents reach source collection before site-centered range filtering');
 assert.equal(landmarkSnap.byCategory.hostile, 5, 'ordinary creature range stays unchanged');
 assert.equal(landmarkSnap.byCategory.interact, 10, 'ordinary interactables retain their existing 14-tile radius');
 assert.deepStrictEqual(JSON.parse(JSON.stringify(landmarkSnap.landmarkRanges)), { caves: 24, camps: 24, cliffDoors: 12, herbClusters: 12 });
