@@ -1452,10 +1452,23 @@
     const angle=Number(d?.getAimAngle?.()??p?.angle??0);
     return {x:Math.cos(angle),z:Math.sin(angle),source:'player-aim'};
   }
+  function resolveShatterCover(target,origin=null){
+    if(!target)return null;
+    const p=playerPosition(),d=deps();
+    const hand=origin||held?.group?.getWorldPosition?.(new THREE.Vector3())
+      ||(p?{x:p.x,y:thrownGround(p.x,p.z)+1.05,z:p.z}:null);
+    const requested={x:target.x,y:thrownGround(target.x,target.z),z:target.z}; // Shared world-height landing representation.
+    const result=window.ThrowCoverTrajectory?.resolve?.(hand,requested,{
+      deps:d,tile:tileSize(),groundAt:thrownGround,
+      flightPosition:window.AlchemyFlasks?.flightPosition,
+    });
+    if(aimingThrow){aimingThrow.coverBlocked=!!result?.blocked;aimingThrow.coverKind=result?.kind||null;}
+    return result?.target||requested;
+  }
   function throwTarget(){
     const p=playerPosition(),d=deps();
     if(!p)return null;
-    if(aimingThrow?.manualTarget)return aimingThrow.manualTarget;
+    if(aimingThrow?.manualTarget)return resolveShatterCover(aimingThrow.manualTarget);
     const heading=throwHeading();
     let x=p.x+heading.x*3,z=p.z+heading.z*3;
     const ray=d?.getPlayerInteractionRay?.()||carryDeps()?.getPlayerInteractionRay?.()
@@ -1487,7 +1500,7 @@
       dx=x-p.x;dz=z-p.z;len=Math.hypot(dx,dz);
     }
     if(len>MAX_THROW_RADIUS){x=p.x+dx*MAX_THROW_RADIUS/len;z=p.z+dz*MAX_THROW_RADIUS/len;}
-    return {x,y:thrownGround(x,z),z};
+    return resolveShatterCover({x,y:thrownGround(x,z),z});
   }
   function showThrowRing(target){
     if(!target||!THREE.RingGeometry||!THREE.MeshBasicMaterial)return;
@@ -1501,6 +1514,7 @@
       throwRing.rotation.x=-Math.PI/2;
       throwRing.renderOrder=40;
       throwRing.name='shattercask_ground_projected_throw_reticle';
+      window.ThrowCoverTrajectory?.attachOutline?.(throwRing,THREE); // Same black splash boundary as alchemy flasks.
     }
     const active=scene();if(!active)return;
     if(throwRing.parent!==active)active.add(throwRing);
@@ -1521,6 +1535,7 @@
         positions.needsUpdate=true;
         throwRing.geometry.computeBoundingSphere?.();
       }
+      window.ThrowCoverTrajectory?.projectOutline?.(throwRing,previewRadius,groundY,thrownGround); // Both rings drape over elevated terrain.
       Object.assign(throwRing.userData,{targetX:target.x,targetZ:target.z,groundY,radius:previewRadius});
     }
     throwRing.visible=true;
@@ -1539,8 +1554,8 @@
     const vx=right.x*dx-forward.x*dy,vz=right.z*dx-forward.z*dy;
     const length=Math.hypot(vx,vz)||1;
     const x=p.x+vx/length*range,z=p.z+vz/length*range;
-    aimingThrow.manualTarget={x,y:thrownGround(x,z),z};
-    aimingThrow.target=aimingThrow.manualTarget;
+    aimingThrow.manualTarget={x,y:thrownGround(x,z),z}; // Store raw drag aim; cover can change before release.
+    aimingThrow.target=resolveShatterCover(aimingThrow.manualTarget);
     showThrowRing(aimingThrow.target);
   }
   function startShatterAim(){
@@ -1580,6 +1595,7 @@
       target={x:origin.x+heading.x*distance,z:origin.z+heading.z*distance};
       target.y=thrownGround(target.x,target.z);
     }
+    target=resolveShatterCover(target,origin); // Live release socket and current cover own the final physical impact point.
     const active=records.get(c.mapId)?.scene||scene();
     if(!active)return false;
     if(c.kind==='shattercask') c._flaskmasterSource = {power:flaskmasterFactor('shatterPower'),radius:flaskmasterFactor('shatterRadius'),rootId:c.id,origin:'player-throw'}; // Capture launch-time bonus before the equipment can change in flight.
@@ -1610,6 +1626,8 @@
     }
     if(flight){
       const f=flight,c=f.vase;
+      const before=Math.min(1,f.t/f.duration);
+      const from=c.group.position.clone(); // Previous real world position, not a new camera-ray approximation.
       f.t+=dt;
       const ratio=Math.min(1,f.t/f.duration);
       if(window.AlchemyFlasks?.flightPosition)
@@ -1620,7 +1638,17 @@
           f.origin.y+(f.target.y-f.origin.y)*ratio+arc,
           f.origin.z+(f.target.z-f.origin.z)*ratio);
       }
+      const coverHit=window.ThrowCoverTrajectory?.sweep?.(from,c.group.position,{
+        deps:deps(),tile:tileSize(),groundAt:thrownGround,progressStart:before,progressEnd:ratio,
+      });
       c.group.rotation.set(f.t*8,0,f.t*5);
+      if(coverHit){
+        c.group.position.set(coverHit.x,thrownGround(coverHit.x,coverHit.z)+.12,coverHit.z); // Impact on the near side, never on the far side of cover.
+        flight=null;
+        detonate(c,'throw-cover-impact');
+        if(!c.exploded){c.flying=false;refreshMeshBounds(c);}
+        return;
+      }
       // There is no heldHandTarget after launch: hands stay on the player.
       if(ratio>=1) {
         flight=null;
@@ -2591,9 +2619,9 @@
         activePileDrawCalls:records.get(area())?.pileVisuals.size||0,
         activeDebrisInstances:[...(records.get(area())?.pileVisuals.values()||[])].reduce((sum,state)=>sum+state.mesh.count,0),
         cachedPlacementAreas:placementCache.size},
-      throwPreview:{visible:!!throwRing?.visible,radius:RADIUS,terrainProjected:!!throwRing?.userData.environmentGroundProjection},
+      throwPreview:{visible:!!throwRing?.visible,radius:RADIUS,terrainProjected:!!throwRing?.userData.environmentGroundProjection,blackOutline:!!throwRing?.userData?.throwCoverOutline},
       throwAim:aimingThrow?{phase:aimingThrow.phase,target:aimingThrow.target,manual:!!aimingThrow.manualTarget,
-        heading:throwHeading(),sharedPose:aimingThrow.sharedPose}:null,
+        heading:throwHeading(),sharedPose:aimingThrow.sharedPose,coverBlocked:!!aimingThrow.coverBlocked,coverKind:aimingThrow.coverKind||null}:null,
       throwFlight:flight?{origin:{x:flight.origin.x,y:flight.origin.y,z:flight.origin.z},target:flight.target,
         progress:flight.t/flight.duration,distance:flight.distanceTiles}:null,
       interactionClaim:window.WorldActionInputClaims?.claimFor?.('interact')?.ownerId||null}),
