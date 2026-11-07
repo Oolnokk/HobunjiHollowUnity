@@ -1942,6 +1942,12 @@
     pileHistory.get(mapId).set(id,{col,row,kind,woodKey,oreKey,x,z}); // Persist once after the full blast, not once per pile.
   }
   function destroyTerrain(mapId,rec,x,z) {
+    // A blast may remove dozens of adjacent cave-wall tiles: regenerate their fused
+    // geometry once after the complete destruction pass, not after every tile.
+    const batch=window.CavernOreRocks?.withBatchedCuts;
+    return batch ? batch(()=>destroyTerrainTiles(mapId,rec,x,z)) : destroyTerrainTiles(mapId,rec,x,z);
+  }
+  function destroyTerrainTiles(mapId,rec,x,z) {
     const g=grid(),types=deps()?.TileType || {};
     if(!g)return 0;
     let count=0;
@@ -2005,6 +2011,11 @@
     }
   }
   function restoreSceneHistory(mapId,rec) {
+    // Restoring a saved rubble field must likewise avoid a full rock-wall re-mesh for every removed cell.
+    const batch=window.CavernOreRocks?.withBatchedCuts;
+    return batch ? batch(()=>restoreSceneHistoryTiles(mapId,rec)) : restoreSceneHistoryTiles(mapId,rec);
+  }
+  function restoreSceneHistoryTiles(mapId,rec) {
     const savedTerrain=terrainHistory.get(mapId),savedPiles=pileHistory.get(mapId),savedFruit=looseFruitHistory.get(mapId);
     if(!savedTerrain?.size&&!savedPiles?.size&&!savedFruit?.size)return;
     const g=grid(),types=deps()?.TileType||{},chunks=new Map();
