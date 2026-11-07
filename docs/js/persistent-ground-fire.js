@@ -9,30 +9,73 @@
   let deps=null; // AlchemyFlasks.init supplies the established combat/terrain entity adapters.
   const zones=[]; // One scene-owned patch per recent impact; removed on expiry or area transition.
   let lastIgnition=null; // Mobile-accessible impact diagnostic, no console required.
+  let campfireTemplatePromise=null; // One async load of the authored campfire flame emitter, shared by patches and cave sconces.
+  let campfireTemplate=null; // Cached original campfire particle settings; every instance receives an independent copy.
 
-  function dispose(zone) {
-    zone.mesh?.parent?.remove?.(zone.mesh);
-    for(const child of zone.mesh?.children||[]){
-      child.geometry?.dispose?.();
-      child.material?.dispose?.();
+  function ensureCampfireTemplate() {
+    const authored=window.AuthoredFurniture; // The ordinary campfire's furniture emitter remains the sole visual authority for all puzzle flames.
+    const pick=data=>data?.particleEmitters?.find(record=>record?.enabled!==false&&record.type==='fire')||null;
+    if(campfireTemplate)return Promise.resolve(campfireTemplate);
+    const cached=pick(authored?.peek?.('campfire'));
+    if(cached){campfireTemplate=cached;return Promise.resolve(cached);}
+    if(!campfireTemplatePromise){
+      campfireTemplatePromise=Promise.resolve().then(()=>authored?.load?.('campfire')).then(data=>{
+        campfireTemplate=pick(data);
+        if(!campfireTemplate)window.__farmLog?.('[puzzle-fire] authored campfire flame unavailable','warn');
+        return campfireTemplate;
+      }).catch(error=>{
+        campfireTemplatePromise=null; // A late furniture-loader recovery can retry rather than leave invisible fires permanently.
+        window.__farmLog?.('[puzzle-fire] campfire flame load failed: '+String(error?.message||error),'warn');
+        return null;
+      });
     }
+    return campfireTemplatePromise;
+  }
+  function attachCampfireFlame(anchor,{scale=1,rateScale=1}={}) {
+    if(!anchor?.add)return null;
+    const state={anchor,visual:null,disposed:false}; // One independent renderer for each attached patch location or stone sconce.
+    ensureCampfireTemplate().then(source=>{
+      if(state.disposed||!source||!window.AuthoredFurniture?.createEmitterVisual)return;
+      const emitter=JSON.parse(JSON.stringify(source)); // Do not mutate the campfire authoring shared with the player's campfire.
+      delete emitter.attachedPartId; // An independent fire anchor does not contain the campfire ash furniture part.
+      emitter.id='puzzle_campfire_flame';
+      emitter.position={x:0,y:0,z:0};
+      emitter.radius=Math.max(.025,Number(source.radius||.13)*scale);
+      emitter.size=Math.max(.04,Number(source.size||.19)*scale);
+      emitter.speed=Math.max(.05,Number(source.speed||.7)*scale);
+      emitter.spread=Number(source.spread||.3)*scale;
+      emitter.rate=Math.max(3,Math.round(Number(source.rate||38)*rateScale));
+      const capacity=Math.max(8,Math.ceil(emitter.rate*Number(source.lifetime||.72))+3);
+      state.visual=window.AuthoredFurniture.createEmitterVisual(anchor,emitter,capacity);
+      state.visual?.update?.(Math.min(.05,1/emitter.rate),true); // Show particles promptly even immediately after the torch is lit.
+    }).catch(error=>window.__farmLog?.('[puzzle-fire] flame renderer failed: '+String(error?.message||error),'warn'));
+    return {
+      update(dt){if(!state.disposed&&anchor.visible!==false)state.visual?.update?.(dt,true);},
+      dispose(){state.disposed=true;state.visual?.dispose?.();state.visual=null;},
+    };
+  }
+  function dispose(zone) {
+    for(const visual of zone.flameVisuals||[])visual?.dispose?.(); // Authored emitter disposes its own GPU buffers; never double-dispose shared assets.
+    zone.flameVisuals=[];
+    zone.mesh?.parent?.remove?.(zone.mesh);
+    zone.mesh=null;
+    zone.scene=null;
   }
   function buildVisual(zone) {
     const THREE=window.THREE,scene=deps?.getActiveScene?.();
-    if(!THREE?.Group||!scene)return;
+    if(!THREE?.Group||!scene||zone.mesh)return;
     const group=new THREE.Group();
     group.name='persistent_ground_fire';
     group.position.set(zone.x,zone.y+.03,zone.z);
-    const disc=new THREE.Mesh(new THREE.CylinderGeometry(zone.radius,zone.radius,.012,18),
-      new THREE.MeshBasicMaterial({color:0xff5b20,transparent:true,opacity:.36,depthWrite:false}));
-    disc.position.y=.012;group.add(disc);
-    for(let i=0;i<5;i++){
-      const a=i*Math.PI*2/5,dist=zone.radius*(i===0?0:.47);
-      const flame=new THREE.Mesh(new THREE.ConeGeometry(.10+i*.01,.42+(i%3)*.13,5),
-        new THREE.MeshBasicMaterial({color:i%2?0xff7622:0xffce43,transparent:true,opacity:.83,depthWrite:false}));
-      flame.position.set(Math.sin(a)*dist,.2+(i%3)*.06,Math.cos(a)*dist);
-      flame.userData.fireIndex=i;
-      group.add(flame);
+    const ring=Math.max(.12,zone.radius*.62); // Fire coverage matches the same radius used for damage and sconce ignition.
+    const points=[[0,0],[.85,.08],[-.62,.5],[-.32,-.78],[.45,-.65],[-.95,-.1],[.15,1]];
+    zone.flameVisuals=[]; // Per-patch emitters reuse the same authored particle shader instead of opaque cones and a flat disc.
+    for(let i=0;i<points.length;i++){
+      const anchor=new THREE.Group();
+      anchor.position.set(points[i][0]*ring,0,points[i][1]*ring);
+      group.add(anchor);
+      const visual=attachCampfireFlame(anchor,{scale:i===0?1.1:.85,rateScale:i===0?.38:.23});
+      if(visual)zone.flameVisuals.push(visual);
     }
     scene.add(group);zone.mesh=group;zone.scene=scene;
   }
@@ -70,12 +113,8 @@
       patch.age+=elapsed;
       if(patch.age>=patch.seconds){dispose(patch);zones.splice(index,1);continue;} // Expire before applying fresh damage on a frame after the fire is gone.
       patch.damageTimer+=elapsed;
-      if(patch.mesh){
-        const pulse=Math.sin(patch.age*11)*.12+1;
-        for(const child of patch.mesh.children){
-          if(child.userData?.fireIndex!=null)child.scale.y=pulse*(.95+.08*child.userData.fireIndex);
-        }
-      }
+      if(!patch.mesh)buildVisual(patch); // A patch created before the cave scene is ready still gains visible flames once mounted.
+      for(const visual of patch.flameVisuals||[])visual?.update?.(Math.min(.05,elapsed));
       if(patch.damageTimer>=DAMAGE_INTERVAL) {
         patch.damageTimer=0;
         const nearby=deps?.getSplashEntities?.(area,patch.x*tile,patch.z*tile,patch.radius*tile)||[];
@@ -93,8 +132,8 @@
     }
   }
   window.PersistentGroundFire=Object.freeze({
-    init(injected){deps=injected||null;},ignite,intersects,update,clear,
-    debugSnapshot:()=>({count:zones.length,lastIgnition,zones:zones.map(z=>({
+    init(injected){deps=injected||null;},ignite,intersects,update,clear,attachCampfireFlame,
+    debugSnapshot:()=>({count:zones.length,campfireTemplateReady:!!campfireTemplate,lastIgnition,zones:zones.map(z=>({
       area:z.area,x:z.x,z:z.z,remaining:+(z.seconds-z.age).toFixed(1),source:z.source
     }))}),
   });
