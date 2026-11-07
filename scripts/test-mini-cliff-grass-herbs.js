@@ -77,33 +77,43 @@ routes.restoreRewards({[area]:{[herb.id]:{claimed:true,revealed:true}}});
 assert.equal(herbs.visible,false,'load never respawns a picked herb reward');
 routes.restoreRewards({});
 
-const registry={};
-const windowStub={
-  CliffRouteNetwork:routes, AlchemySystem:globalThis.AlchemySystem,
+// Exercise the actual game.js mini-cliff reward handler with a minimal game
+// context; it must win over ground-floor reagent objects on the same tile.
+const game = fs.readFileSync('docs/game.js', 'utf8');
+const handlerStart=game.indexOf('function getCliffBalconyResourceAt(col, row) {');
+const handlerEnd=game.indexOf('function getWorldObjectAt(col, row) {',handlerStart);
+assert(handlerStart>=0 && handlerEnd>handlerStart,'the actual game entry point still owns cliff rewards');
+const inventory={};
+let xp=0;
+const handlerWindow={
+  CliffRouteNetwork:{...routes,forArea:()=>network},
   InventoryStacks:{MAX_TOTAL:20}, PerkSystem:{rank:()=>0},
+  AlchemySystem:globalThis.AlchemySystem,
+  SkillSystem:{bonusYieldChance:()=>0,XP_GAINS:{forage:4},award:()=>{xp++;}},
+  HobunjiActivityEvents:{emit(){}},
   AudioSystem:{playObjectSfx(){},objectSfxConfig:()=>({harvest:'pick'})},
 };
-const ctx={window:windowStub,THREE:T,console};
-vm.runInNewContext(fs.readFileSync('docs/js/reagent-plants.js','utf8'),ctx);
-const objects=new Map(), inventory={};
-let xp=0;
-windowStub.ReagentPlants.init({
-  _zoneReagentObjects:new Map([[area,objects]]),
-  getCurrentArea:()=>area,inventory,random:()=>0.99,bonusYieldChance:()=>0,
-  awardForagingXp:()=>{xp++;},refreshItemScroll(){},
-});
-assert.equal(windowStub.ReagentPlants.registerMiniCliffHerbClusters(area,network),1,
-  'ledge rewards register as ordinary reagent objects');
-const pick=objects.get('4,5');
-assert(pick,'registered forage object is at a cap tile');
-assert.equal(pick.onAction('obj_pick_reagent').ok,true);
-assert.equal(inventory.nativeHerb,1,'harvest grants the native reagent');
-assert.equal(xp,1,'harvest awards ordinary foraging XP');
-assert.equal(routes.getRewardState(area,herb.id).claimed,true,'harvest persists through existing cliff reward state');
-assert.equal(herbs.visible,false,'harvest removes visual cluster');
-assert.equal(windowStub.ReagentPlants.registerMiniCliffHerbClusters(area,network),0,
-  'picked cliff herbs are not recreated when zone plants refresh');
-
+const ctx={
+  window:handlerWindow,currentArea:area,player:{onCliffBalcony:herb.id},
+  _isZoneArea:()=>true,inventory,rnd:()=>0.99,refreshItemScroll(){},
+  buildInventoryGrid(){},buildPackClothingSection(){},
+};
+vm.runInNewContext(game.slice(handlerStart,handlerEnd)
+  + '\\nthis.getCliffResource = getCliffBalconyResourceAt;',ctx);
+const pick=ctx.getCliffResource(4,5);
+assert(pick,'elevated herb receives an interactable with the existing reward priority');
+assert.equal(pick.getButtons()[0].action,'obj_balcony_pick','herb picking is neither mining nor digging');
+assert.equal(pick.onAction('obj_balcony_dig').ok,false,'herbs cannot be dug into treasure chests');
+assert.equal(pick.onAction('obj_balcony_pick').ok,true,'picking harvests the real elevated reward');
+assert.equal(inventory.nativeHerb,1,'picking grants native reagents');
+assert.equal(xp,1,'picking grants ordinary foraging experience');
+assert.equal(routes.getRewardState(area,herb.id).claimed,true,'picking persists in cliff reward state');
+assert.equal(herbs.visible,false,'picking hides the entire clustered model');
+assert.equal(ctx.getCliffResource(4,5),null,'claimed ledges do not create duplicate forage actions');
+ctx.player.onCliffBalcony=ore.id;
+assert.equal(ctx.getCliffResource(10,5).getButtons()[0].action,'obj_balcony_mine','ore still uses a pick');
+ctx.player.onCliffBalcony=chest.id;
+assert.equal(ctx.getCliffResource(16,5).getButtons()[0].action,'obj_balcony_dig','buried treasure still uses a shovel');
 routes.restoreRewards({});
 const grassContext={window:{CliffRouteNetwork:routes},THREE:T,console};
 vm.runInNewContext(fs.readFileSync('docs/js/zone-grass-billboards.js','utf8'),grassContext);
