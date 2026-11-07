@@ -94,7 +94,22 @@ for (const [name, body, flag] of [['held', held, 'scissored'], ['shell', shell, 
   assert(restore > depth, name + ': union scissor is restored after grouped depth clear');
   assert.match(body, new RegExp('if \\(' + flag + '\\) \\{[\\s\\S]*?glState\\.scissor\\(scissorRect\\)'), name + ': restore is guarded by active scissor state');
 }
+// The previous implementation accidentally disabled scissoring for each held color
+// pass while leaving only that actor's smaller depth rectangle reconstructed.
+const heldGroup = held.slice(held.indexOf('for (const group of groups)'), held.indexOf('// The final ground and translucent-cover restores'));
+const heldOverlayAt = heldGroup.indexOf("window.PerfProfiler?.begin('held-overlay: elevation overlay render')");
+assert(heldOverlayAt >= 0, 'held group still draws its source color and stencil');
+assert.equal(heldGroup.indexOf('glState.setScissorTest(false)'), -1,
+  'held source colors and water stencil may not escape the depth-reconstructed group scissor');
 const entry = src.slice(src.indexOf('  function wrappedRender('), src.indexOf('  function snapshot('));
+const baseRefresh = entry.lastIndexOf('refreshHeldMatrices?.(held)');
+const baseFilter = entry.indexOf('filterOffscreenReplayMeshes(camera, held)');
+assert(entry.indexOf('const baseRenderEndedAt = performance.now()') < baseRefresh && baseRefresh < baseFilter,
+  'active procedural hand matrices must refresh before camera rejection');
+const shellRefresh = entry.indexOf('refreshHeldMatrices?.(shellCandidates)');
+const shellFilter = entry.indexOf('filterOffscreenReplayMeshes(camera, shellCandidates)');
+assert(shellRefresh >= 0 && shellRefresh < shellFilter,
+  'shell-source hand matrices must refresh before conservative shell rejection');
 assert(entry.indexOf('const baseRenderEndedAt = performance.now()') < entry.indexOf('filterOffscreenReplayMeshes(camera, held)'),
   'source meshes are frustum-checked only after the base render updates matrices');
 assert(entry.indexOf('filterOffscreenReplayMeshes(camera, held)') < entry.indexOf('replaySelectiveHeldOverlay(this, scene, camera, visibleHeld'),
