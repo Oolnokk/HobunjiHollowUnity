@@ -83,7 +83,7 @@
     // ONLY puzzle families backed by an implemented real runtime may be
     // selected. Advanced rope/defence/fire variants will be added as their
     // actual mechanics are integrated, never disguised as plain floor plates.
-    const puzzles=PLAYABLE_PUZZLES.filter(type=>type!=='statueDefense'); // Ordinary-size rooms cannot fit the authored enemy pillars, so they exclude the oversized objective.
+    const puzzles=PLAYABLE_PUZZLES.filter(type=>type!=='statueDefense'&&type!=='findBlocks'); // Oversized compound rooms are selected before dimensions are calculated, not from the small solo-room pool. // Ordinary-size rooms cannot fit the authored enemy pillars, so they exclude the oversized objective.
     const rangedPuzzles=RANGED_PUZZLES;
     for(let floor=0;floor<floorCount;floor++){
       const y=floor*o.floorHeight; // Physical y datum for this otherwise ordinary 2D map.
