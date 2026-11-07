@@ -163,6 +163,7 @@
       // resolvedMaxTier and choosePlateauBlobTargetArea.
       lowProfilePlateaus: false,
       plateauAreaMul: 1,
+      plateauSteepness: 1, // Cliff-specific terrain-tier multiplier; neutral unless overridden by a cliff zone.
       // See widenRampLineAtTightCorners — continuous 3-tile-wide ramps
       // instead of the default mostly-1-tile-with-occasional-2-tile-shoulder.
       wideRamps: false,
@@ -613,6 +614,28 @@
       + result.stats.landTiles + ' land, ' + result.stats.waterTiles
       + ' sea, ' + result.stats.coastlineTiles
       + ' coastline tiles, peak tier ' + result.stats.peakTier);
+  }
+
+  // Only the cliff-biome terrain is exaggerated; Cloud Forest's shallow terraces and Eastern Mire's islands retain their authored profiles.
+  function applyCliffPlateauSteepness() {
+    const multiplier = Number(settings.plateauSteepness); // Applied to tier elevations after height scanning but before borders, climbing routes and ramps are generated.
+    if (settings.preset !== 'cliffs' || !Number.isFinite(multiplier) || multiplier <= 1) return;
+    const originalMaxTier = settings.maxTier; // Logged for reproducible seed/terrain comparisons.
+    const raisedMaxTier = clamp(Math.round(originalMaxTier * multiplier), 1, MAX_VERTICAL_TIER); // Later boundary/ramp generation must use the new true tier ceiling.
+    let tallerTiles = 0; // Counts actual elevated tiles changed by the remapping.
+    for (const tile of allTiles()) {
+      if (Number.isFinite(tile.canyonOriginalElevation) && tile.canyonOriginalElevation > 0)
+        tile.canyonOriginalElevation = clamp(Math.round(tile.canyonOriginalElevation * multiplier), 1, raisedMaxTier);
+      if (tile.elevation <= 0) continue;
+      const raisedTier = clamp(Math.round(tile.elevation * multiplier), 1, raisedMaxTier); // One consistent mapping keeps same-tier plateau tops flat and neighboring heights ordered.
+      if (raisedTier === tile.elevation) continue;
+      tile.elevation = raisedTier;
+      tile.height = raisedTier;
+      tallerTiles++;
+    }
+    settings.maxTier = raisedMaxTier;
+    map.plateauSteepnessReport = { multiplier, tallerTiles, originalMaxTier, raisedMaxTier }; // Included in exported workspace for mobile generation diagnostics.
+    logDebug(`cliff plateau steepness x${multiplier}: lifted ${tallerTiles} tiles, max tier ${originalMaxTier} -> ${raisedMaxTier}`);
   }
 
   function generatePlateaus() {
@@ -6590,6 +6613,7 @@
       boundaryMode: map.boundaryMode || settings.boundaryMode,
       boundaryModeLabel: map.boundaryModeLabel || settings.boundaryModeLabel,
       boundaryCliffBoost: Number.isFinite(map.boundaryCliffBoost) ? map.boundaryCliffBoost : settings.boundaryCliffBoost,
+      plateauSteepness: Number(settings.plateauSteepness) || 1, // Mirrors the generation recipe in exported root-map metadata.
       stepCurve: map.stepCurve || settings.stepCurve,
       stepCurveLabel: map.stepCurveLabel || settings.stepCurveLabel,
       greatBasinHorseshoe: !!map.greatBasinHorseshoe,
@@ -6749,6 +6773,7 @@
       boundaryMode: map.boundaryMode || settings.boundaryMode,
       boundaryModeLabel: map.boundaryModeLabel || settings.boundaryModeLabel,
       boundaryCliffBoost: Number.isFinite(map.boundaryCliffBoost) ? map.boundaryCliffBoost : settings.boundaryCliffBoost,
+      plateauSteepness: Number(settings.plateauSteepness) || 1, // Mirrors the generation recipe in exported root-map metadata.
       stepCurve: map.stepCurve || settings.stepCurve,
       stepCurveLabel: map.stepCurveLabel || settings.stepCurveLabel,
       greatBasinHorseshoe: !!map.greatBasinHorseshoe,
@@ -6882,7 +6907,7 @@
   // combination each zone renders with; everything else is the tool's own
   // default (see defaultSettings).
   const ZONE_CONFIG = {
-    map_northern_cliffs: { entrySide: 'south', preset: 'cliffs', boundaryMode: 'followMapHeight', boundaryCliffBoost: 5 },
+    map_northern_cliffs: { entrySide: 'south', preset: 'cliffs', boundaryMode: 'followMapHeight', boundaryCliffBoost: 5, plateauSteepness: 1.75 },
     // trees/bushes well above the shared default (130/75) — this zone is
     // meant to read as an actual dense rainforest, not a scattering of
     // copses, now that FoliageGenerator gives it real full-size trees (with
@@ -6932,7 +6957,7 @@
       // more so the rainforest reliably has honeyfuzzle hives like every other zone.
       beehives: 30,
     },
-    map_western_slope: { entrySide: 'east', preset: 'cliffs', boundaryMode: 'entrySideDistantLandscape', boundaryCliffBoost: 0, beehives: 0 }, // Honeyfuzzle hive stumps (and their swarms) live everywhere except here.
+    map_western_slope: { entrySide: 'east', preset: 'cliffs', boundaryMode: 'entrySideDistantLandscape', boundaryCliffBoost: 0, beehives: 0, plateauSteepness: 1.75 }, // Honeyfuzzle hive stumps (and their swarms) live everywhere except here.
     map_eastern_mire: {
       entrySide: 'west', preset: 'custom', boundaryMode: 'entrySideDistantLandscape',
       boundaryCliffBoost: 0, entryGateWidthMul: 0.4,
@@ -8686,6 +8711,7 @@
       applyGreatInclineMountainsideProfile();
       applyGreatBasinHorseshoeProfile(); // Great Basin linear height lerp
       syncTileHeights();
+      applyCliffPlateauSteepness(); // Taller plateau transitions are real terrain, so every later ramp, boundary, and climbing route sees them.
       map.preselectedEntrySide = resolveGenerationEntrySide();
       generateBorderEscarpments();
       generateRamps();
@@ -8725,6 +8751,7 @@
     workspace.entry = map.entry ? { col: map.entry.x, row: map.entry.y, side: map.entry.side } : null;
     workspace.tradeExit = map.tradeExit ? { col: map.tradeExit.x, row: map.tradeExit.y, side: map.tradeExit.side } : null;
     workspace.warnings = map.warnings.slice();
+    workspace.plateauSteepnessReport = map.plateauSteepnessReport || null; // Small optional debug record, readable in downloaded wilderness lab exports.
     workspace.hydrologyReport = map.hydrologyReport || null; // Mobile-friendly regression summary for final river/pond grading.
     // Stumps/logs are generated in the normal object pass but rendered at
     // runtime from authored furniture definitions. Export their exact final
