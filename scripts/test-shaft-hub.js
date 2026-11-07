@@ -232,9 +232,12 @@ for(let seed=1;seed<=1000;seed++){
       assert.equal(wing.rooms.filter(r=>r.kind==='brazier-chamber').length,1,'exactly one brazier endpoint');
       assert.equal(wing.corridors.length,wing.rooms.length,'hallway per progression stage');
       if(wing.rooms.length===3){
-        assert.equal(wing.rooms[0].challenge,'pressurePlate','a two-puzzle wing starts with the real stone plate');
-        assert(['glyphObelisk','ceilingRailTargets'].includes(wing.rooms[1].challenge),
-          'a two-puzzle wing has the real ranged challenge before its brazier');
+        assert(['pressurePlate','findBlocks'].includes(wing.rooms[0].challenge),
+          'a two-puzzle wing begins with a real stone plate or the full four-block compound puzzle');
+        assert(['glyphObelisk','ceilingRailTargets','findBlocks'].includes(wing.rooms[1].challenge),
+          'its second chamber uses the ranged family or Find the Blocks without skipping a progression gate');
+        assert(!(wing.rooms[0].challenge==='findBlocks'&&wing.rooms[1].challenge==='findBlocks'),
+          'consecutive large block puzzles would make a short wing repetitive');
       }else assert(Plan.DEFAULTS.minChallenges===1 && wing.rooms[0].challenge,
         'single-puzzle branches still require an implemented mechanism');
       assert(wing.corridors.every(h=>h.length>0&&h.rects.length>=1),'variable-length halls must have footprint');
