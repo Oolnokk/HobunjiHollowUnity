@@ -61,7 +61,8 @@ const gates=Entrances.mount(zone,{balconies:shelves},{add(){},getObjectByName(){
 assert.equal(gates.length,independent.length);
 assert.equal(layout.transitions.length,gates.length);
 assert.equal(scene.transitions.length,gates.length);
-assert(layout.transitions.every(t=>t.puzzleCaveOnly&&t.target==='puzzle_cave_locked'));
+assert(layout.transitions.every(t=>t.puzzleCaveOnly&&t.target==='puzzle_cave_locked'&&t.targetSpotId==='den_exit'),
+  'every independent outdoor transition points to its cavern\'s real entrance, including cached re-entry');
 assert.equal(layout.dens.length,ordinaryDens.length,'independent doors never become pack or barbarian home anchors');
 Entrances.clear(zone);
 assert.equal(layout.transitions.length,0);
@@ -111,9 +112,39 @@ assert(hidden>0,'at least one of eight eligible ordinary caves gets a rock-hidde
 assert.equal(Cave.debugSnapshot(zone).rockPuzzleCaveCount,hidden);
 const childMap=Cave.decorateCavernMapData(sampleChild.mapId,caveMap(sampleChild.mapId));
 assert(childMap.cavePuzzle,'the secret destination has its own actual one-room puzzle');
+assert.equal(childMap.entrySpots?.den_exit?.col,childMap.exitCol,'named entrance uses real generated cave column');
+assert.equal(childMap.entrySpots?.den_exit?.row,childMap.exitRow,'named entrance uses real generated cave row');
+assert(childMap.floor.some(([col,row])=>col===childMap.exitCol&&row===childMap.exitRow),
+  'cached cave entry is a genuine walkable floor tile, not the synthetic 0,0 fallback');
 assert.equal(childMap.creatureSpawns.length,0,'Puzzle Caves have no den encounters');
 assert.equal(childMap.exits[0].targetMap,sampleParent,'returning goes to the parent cave, not the wilderness');
 assert.equal(childMap.exits[0].targetSpotId,sampleDoor.id,'reciprocal return finds the hidden doorway');
 assert.equal(childMap.exits[0].spawnCol,sampleDoor.col);
 assert.equal(childMap.exits[0].spawnRow,sampleDoor.row);
-console.log('Independent Puzzle Caves: ordinary counts, dense mini-cliff gates, inert NPC slots, mined secret doors and reciprocal exits passed.');
+// Execute the actual cached-room entry function from game.js, rather than trusting
+// just the new map metadata: previously a cached Puzzle Cave spawned at solid 0,0.
+{
+  const gameSource=fs.readFileSync('docs/game.js','utf8'); // The production entry function is the authority for cached scene behavior.
+  const start=gameSource.indexOf('      function enterBuilding(');
+  const end=gameSource.indexOf('\n      // Resolves once _buildingScenes',start);
+  assert(start>=0&&end>start,'production cached building-entry function is available to regression tests');
+  const cached={cols:childMap.cols,rows:childMap.rows,entrySpots:childMap.entrySpots,transitions:[],grid:null,scene:null};
+  const player={x:0,y:0,vx:0,vy:0};
+  const runtime={
+    window:{BuildingEntrySpawn:{fromExit:()=>({col:0,row:0}),arrivalAngle:()=>null},MapLayoutSystem:{resolveActiveLayout:()=>null,currentSnapshot:()=>({})}},
+    _buildingScenes:new Map([[sampleChild.mapId,cached]]),_rawMapDataByMapId:new Map(),
+    _activeLayoutByMap:new Map([[sampleChild.mapId,'default']]),_isBuildingArea:id=>String(id).startsWith('map_i_'),
+    _isCavernBuildingArea:()=>true,
+    currentArea:sampleParent,_currentBuildingMapId:'',_pendingEntrySpotId:'',
+    _pendingEntrySpawnFromExit:false,_pendingArrivalFromArea:null,
+    loadBuildingScene(){throw Error('cached scene unexpectedly regenerated');},
+    player,TILE:1,farmPlayerSave:null,buildingSpawnFromExit:()=>({col:0,row:0}),
+    setPlayerFacingInstant(){},_snapCameraTarget(){},refreshActionBar(){},logMapSwap(){},
+  }; // Cached destination still has the original map's generated SDF entrance.
+  vm.createContext(runtime);
+  vm.runInContext(gameSource.slice(start,end)+
+    '\nenterBuilding('+JSON.stringify(sampleChild.mapId)+',0,0,"den_exit");',runtime);
+  assert.equal(player.x,childMap.exitCol+0.5,'cached entry ignores incorrect 0,0 override and uses the named SDF entrance');
+  assert.equal(player.y,childMap.exitRow+0.5,'cached entry is positioned on the guaranteed cave entrance row');
+}
+console.log('Independent Puzzle Caves: ordinary counts, dense mini-cliff gates, inert NPC slots, mined secret doors, safe cached arrivals and reciprocal exits passed.');
