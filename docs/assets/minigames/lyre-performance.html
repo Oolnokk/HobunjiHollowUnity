@@ -2618,6 +2618,7 @@
     const restStep = () => ({type:'rest'});
     const strumStep = (direction = 'down', velocity = .82, gate = .42, voicing = 'full') => ({type:'strum',direction,velocity,gate,voicing});
     const boomStep = (velocity = .82, gate = .55) => ({type:'boom',velocity,gate});
+    if (definition.kind === 'direct') return {steps:[noteStep(fretMidi)],label:'single note'}; // Single Note never generates a bar-long repetition, regardless of Lab meter.
     if (state.game.labAdaptiveAutoPick && KURRAYA_LAB_PATTERN_CHOICES.some(choice => choice.id === mode)) {
       const harmonyClock = clock || sharedTransportData(); // Lab figures follow the sounding meter instead of a fixed number of notes per pattern.
       const meter = harmonyClock.meter;
@@ -2637,7 +2638,6 @@
         const groupStart = accentSlots.has(slot);
         const velocity = slot === 0 ? 1 : groupStart ? .98 : slot % 2 === 0 ? .82 : .7; // Audible meter accents without changing note timing.
         const progress = slot / Math.max(1,barSlots - 1);
-        if (mode === 'direct') return noteStep(fretMidi,velocity);
         if (mode === 'tremolo-8') return noteStep(fretMidi,velocity);
         if (mode === 'strum-alternating-8') {
           if (slot === 0) return noteStep(fretMidi,velocity);
@@ -2658,7 +2658,6 @@
       });
       return {steps,label:KURRAYA_LAB_PATTERN_CHOICES.find(choice=>choice.id===mode)?.label.toLowerCase() || 'adaptive figure'};
     }
-    if (definition.kind === 'direct') return {steps:[noteStep(fretMidi)],label:'single note'};
     if (definition.kind === 'tremolo') {
       if (definition.tremStyle === 'burst') return {steps:[noteStep(fretMidi),noteStep(fretMidi,.94),noteStep(fretMidi,.9),restStep()],label:'three-stroke tremolo burst'};
       return {steps:[noteStep(fretMidi)],label:definition.division === 3 ? 'triplet tremolo' : `${definition.division === 4 ? 'rapid' : 'measured'} tremolo`};
