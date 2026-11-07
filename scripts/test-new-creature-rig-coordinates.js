@@ -18,6 +18,8 @@ assert.match(authorSource, /animationAuthor\.attachmentRigProfiles\.creatures\[k
   'Rig Coordinates must keep creating per-creature profiles for repository creature actors');
 assert.match(bridgeSource, /\.\.\/\.\.\/js\/voorg-ass-registration\.js/,
   'Animation Author must load the canonical Voorg-Ass registration owner before gameplay genetics');
+assert.match(bridgeSource, /\.\.\/\.\.\/js\/moot-registration\.js/,
+  'Animation Author must load the shared Moot registration owner before gameplay genetics');
 assert.match(bridgeSource, /\.\.\/\.\.\/js\/creature-genetics\.js/,
   'Animation Author must then load the same gameplay genetics extension that registers post-renderer creature species');
 assert.match(bridgeSource, /getElementById\('maaCreatureSpecies'\)/,
@@ -131,6 +133,14 @@ const document = {
             return true;
           },
         };
+      } else if (script.src.includes('/moot-registration.js?')) {
+        window.MootRegistration = {
+          ensureRendererSpecies(species) {
+            species.moot = { base: { idle: 'assets/creaturesprites/moot_idle.png' } };
+            return true;
+          },
+        };
+        window.MootRegistration.ensureRendererSpecies(window.CreatureGeneticsRender.SPECIES);
       } else if (script.src.includes('/creature-genetics.js?')) {
         const reinstallRendererExtensions = () => {
           window.CreatureGeneticsRender.SPECIES.puktuk = { base: { idle: 'assets/creaturesprites/puktuk_idle.png' } };
@@ -165,24 +175,27 @@ vm.runInContext(bridgeSource, context, { filename: 'animal-chathead-frame.js' })
 
 const registrySync = window.HobunjiAnimationAuthorCreatureRegistrySync;
 assert.ok(registrySync, 'creature target registry sync debug API must be exposed');
-assert.strictEqual(requestedRegistryScripts.length, 2, 'Animation Author should request exactly the two post-renderer registration modules');
+assert.strictEqual(requestedRegistryScripts.length, 3, 'Animation Author must load both registration owners and then gameplay genetics');
 assert.match(requestedRegistryScripts[0], /\/docs\/js\/voorg-ass-registration\.js\?v=/, 'Voorg-Ass registration owner must load first');
-assert.match(requestedRegistryScripts[1], /\/docs\/js\/creature-genetics\.js\?v=/, 'Gameplay genetics must load after its Voorg-Ass dependency');
+assert.match(requestedRegistryScripts[1], /\/docs\/js\/moot-registration\.js\?v=/, 'Moot registration must load after Voorg-Ass');
+assert.match(requestedRegistryScripts[2], /\/docs\/js\/creature-genetics\.js\?v=/, 'Gameplay genetics must load after both registration owners');
 for (const listener of listeners.get('DOMContentLoaded') || []) listener();
 document.readyState = 'complete';
 assert.match(window.CreatureGeneticsRender.SPECIES.puktuk.base.idle, /\/docs\/assets\/creaturesprites\/puktuk_idle\.png$/, 'post-DOM retry must leave Puktuk with a docs-root asset URL instead of a broken nested-tool relative path');
 assert.match(window.CreatureGeneticsRender.SPECIES['voorg-ass'].base.idle, /\/docs\/assets\/creaturesprites\/voorg-ass_idle\.png$/, 'post-DOM retry must leave Voorg-Ass with a docs-root asset URL');
+assert.match(window.CreatureGeneticsRender.SPECIES.moot.base.idle, /\/docs\/assets\/creaturesprites\/moot_idle\.png$/, 'Moot art must resolve from the docs root inside Animation Author');
 assert.deepStrictEqual(Array.from(registrySync.missingRendererKinds()), [], 'runtime-extended Puktuk and Vorg-ass renderer definitions must be present after sync');
 assert.deepStrictEqual(Array.from(registrySync.missingPickerKinds()), [], 'Add creature target picker must contain Puktuk and Vorg-ass after sync');
-assert.deepStrictEqual(creatureSelect.options.map(option => option.value), ['gar-wolf', 'uumkaoii', 'puktuk', 'voorg-ass']);
+assert.deepStrictEqual(creatureSelect.options.map(option => option.value), ['gar-wolf', 'uumkaoii', 'moot', 'puktuk', 'voorg-ass']);
 assert.strictEqual(creatureSelect.options.find(option => option.value === 'puktuk').textContent, 'Puktuk');
 assert.strictEqual(creatureSelect.options.find(option => option.value === 'voorg-ass').textContent, 'Vorg-Ass');
+assert.strictEqual(creatureSelect.options.find(option => option.value === 'moot').textContent, 'Moot');
 assert.strictEqual(creatureSelect.value, 'gar-wolf', 'background picker repair must preserve the current creature selection');
 assert.strictEqual(registrySync.getStatus().state, 'clean', 'registry diagnostics should report a fully synchronized picker');
 
 const sync = window.HobunjiAnimationAuthorNewCreatureRigSync;
 assert.ok(sync, 'new-creature Rig Coordinates sync debug API must be exposed');
-assert.deepStrictEqual(Array.from(sync.missingKinds()).sort(), ['puktuk', 'voorg-ass'], 'both new livestock species must initially be detected as missing');
+assert.deepStrictEqual(Array.from(sync.missingKinds()).sort(), ['moot', 'puktuk', 'voorg-ass'], 'all three extended livestock species must initially be detected as missing');
 assert.strictEqual(sync.repairNow(), true, 'missing new creature profiles should dispatch one Rig import');
 assert.strictEqual(importInput.dispatchCount, 1, 'repair should use the editor import surface exactly once');
 assert.strictEqual(importInput.files.length, 1, 'repair should attach one synthetic Rig JSON file');
@@ -190,9 +203,14 @@ assert.strictEqual(importInput.files.length, 1, 'repair should attach one synthe
 const payload = JSON.parse(importInput.files[0].parts.join(''));
 const puktuk = payload.profiles.creatures.puktuk;
 const voorgAss = payload.profiles.creatures['voorg-ass'];
-assert.ok(puktuk && voorgAss, 'synthetic Rig import must contain both Puktuk and Vorg-ass');
+const moot = payload.profiles.creatures.moot; // The third seeded rig must remain editable, not inferred to be authored.
+assert.ok(puktuk && voorgAss && moot, 'synthetic Rig import must contain Puktuk, Vorg-ass, and Moot');
 assert.strictEqual(puktuk.kind, 'puktuk');
 assert.strictEqual(voorgAss.kind, 'voorg-ass');
+assert.strictEqual(moot.kind, 'moot');
+assert.strictEqual(moot.authoringSeed.sourceKind, 'uumkaoii');
+assert.strictEqual(moot.authoringSeed.status, 'needs-authoring');
+assert.strictEqual(moot.shoulderGripRule.authoredFixed, false);
 assert.strictEqual(puktuk.authoringSeed.sourceKind, 'gar-wolf', 'Puktuk starts from the approved size/shape analogue');
 assert.strictEqual(voorgAss.authoringSeed.sourceKind, 'uumkaoii', 'Vorg-ass starts from the approved size/shape analogue');
 assert.strictEqual(puktuk.authoringSeed.status, 'needs-authoring');
@@ -201,6 +219,7 @@ assert.strictEqual(puktuk.saddleRule.authoredFixed, false, 'seeded Puktuk saddle
 assert.strictEqual(voorgAss.shoulderGripRule.authoredFixed, false, 'seeded Vorg-ass grip must remain editable rather than masquerading as approved');
 assert.ok(!Object.hasOwn(puktuk, 'chatheadFrame'), 'Puktuk must not inherit Gar-wolf dialogue framing');
 assert.ok(!Object.hasOwn(voorgAss, 'chatheadFrame'), 'Vorg-ass must not inherit Uumkaoii dialogue framing');
+assert.ok(!Object.hasOwn(moot, 'chatheadFrame'), 'Moot must not inherit Uumkaoii dialogue framing');
 assert.deepStrictEqual(puktuk.anchors.saddle.position, sourceProfiles['gar-wolf'].anchors.saddle.position, 'Puktuk should receive a usable first-pass saddle position');
 assert.deepStrictEqual(voorgAss.anchors.saddle.position, sourceProfiles.uumkaoii.anchors.saddle.position, 'Vorg-ass should receive a usable first-pass saddle position');
 assert.strictEqual(sourceProfiles['gar-wolf'].saddleRule.authoredFixed, true, 'seeding must not mutate the source profile');
@@ -208,6 +227,7 @@ assert.strictEqual(sourceProfiles.uumkaoii.shoulderGripRule.authoredFixed, true,
 
 liveProfiles.creatures.puktuk = { ...puktuk, anchors: { ...puktuk.anchors, saddle: { position: { x: 9, y: 8, z: 7 } } } };
 liveProfiles.creatures['voorg-ass'] = voorgAss;
+liveProfiles.creatures.moot = moot;
 assert.deepStrictEqual(Array.from(sync.missingKinds()), [], 'existing authored profiles must no longer be considered repair targets');
 assert.strictEqual(sync.repairNow(), false, 'once both species exist, sync must leave edited coordinates untouched');
 assert.strictEqual(importInput.dispatchCount, 1, 'clean re-check must not dispatch another import');
@@ -216,4 +236,4 @@ const debug = sync.getStatus();
 assert.strictEqual(debug.state, 'clean', 'mobile-safe debug status should report a clean Rig library after seeding');
 assert.deepStrictEqual(Array.from(debug.missing), []);
 
-console.log('Puktuk/Vorg-ass Rig Coordinates picker and profile integration guards passed');
+console.log('Puktuk/Vorg-ass/Moot Rig Coordinates picker and profile integration guards passed');
