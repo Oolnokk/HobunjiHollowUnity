@@ -217,14 +217,15 @@
           const idx = clamp(Math.max(Math.round(spans * (j + 1) / (count + 1)), minIndex), 1, spans - 2), anchor = nodes[idx];
           if (anchor.y - c.y0 < MIN_MINI_CLIFF_HEIGHT + 0.12) continue; // No usable place below this cliff's lip.
           const shapeRoll = hash(c.a.c, c.a.r, 60 + j) % 100; // Usually a narrow pillar; occasionally a long, winding contour strip.
-          const width = shapeRoll < 22
-            ? 4.2 + (hash(c.a.c, c.a.r, 63 + j) % 7) * 0.55
-            : 1.7 + (hash(c.a.c, c.a.r, 64 + j) % 7) * 0.16; // Long caps follow more parent boundary tiles.
+          const narrowWidth = 1.7 + (hash(c.a.c, c.a.r, 64 + j) % 7) * 0.16; // Default narrow, pillar-like footprint.
+          const longWidth = 4.2 + (hash(c.a.c, c.a.r, 63 + j) % 7) * 0.55; // Occasional noodle following more cliff boundary.
+          const widthOptions = shapeRoll < 22 ? [longWidth, narrowWidth] : [narrowWidth]; // Retry compact form when a long body blocks other routes.
           const baseDepth = 1.0 + (hash(c.a.c, c.a.r, 67 + j) % 5) * 0.13; // Old cap depth, retained on the shortest portion of this overhang.
           const profiles = [[0, 0.5, 1], [1, 0.5, 0], [0.5, 1, 0], [0, 1, 0.5]]; // Three different overhang lengths along each cap.
           const overhangDepths = profiles[hash(c.a.c, c.a.r, 97 + j) % profiles.length].map(extra => baseDepth + extra);
           const depth = baseDepth + 1; // Maximum profile depth: one extra tile, used for bounds/obstacle broadphase.
           const preferredSide = j % 2 ? -1 : 1; // Alternate sides on tall routes.
+          placement: for (const width of widthOptions) {
           for (const side of [preferredSide, -preferredSide]) {
             const along = side * (width / 2 + 0.65); // Center offset leaves space for the climber at the side edge.
             const face = opts.sampleFace?.(c, anchor.x + tan.x * along, anchor.y, anchor.z + tan.z * along);
@@ -240,7 +241,7 @@
               z: faceZ + normal.z * (depth / 2 - 0.32),
               y: anchor.y,
               width, depth, overhangDepths, // Left, center, right front-edge depths drive geometry and walkable support.
-              contourOffsets: shapeRoll < 22 ? [0, ((hash(c.a.c, c.a.r, 69 + j) % 7) - 3) * 0.085, 0] : [0, 0, 0], // Noodle centerline bends toward the parent's irregular boundary.
+              contourOffsets: width > 4 ? [0, ((hash(c.a.c, c.a.r, 69 + j) % 7) - 3) * 0.085, 0] : [0, 0, 0], // Only longer bodies bend around a contour.
               tangent: tan, normal, footprint: [], // Tile/elevation cells never overwrite the ordinary ground grid.
               reward: hash(c.a.c, c.a.r, 94 + j) % 2 ? 'buriedTreasure' : 'oreRock',
             };
@@ -264,8 +265,8 @@
               return point[0] >= 0.05 && point[2] >= 0.05 && point[0] <= cols - 0.05 && point[2] <= rows - 0.05;
             }));
             if (!fitsMap || !shelf.footprint.length) continue;
-            // The bottom of this upside-down-plateau form must be BURIED in the
-            // upper plateau's rock; it cannot act as a second ledge or collision plane.
+            // The unshifted ground-rooted body must remain embedded in
+            // the upper plateau and must never act as a second walkable surface.
             shelf.base = embeddedMiniCliffBase(c, shelf, grid, component, cols, rows, opts, groundY);
             if (!shelf.base) continue;
             shelf.projectionTiles = shelf.base.projectionTiles; // Exact normal displacement of its original top.
@@ -285,7 +286,7 @@
               return other.nodes.some(from => from.links.some(index => {
                 if (index <= from.id) return false;
                 const to = other.nodes[index];
-                if (Math.min(from.y, to.y) > shelf.y + 0.2 || Math.max(from.y, to.y) < shelf.y - MIN_MINI_CLIFF_HEIGHT - 0.85) return false; // The buried ground-rooted body is visual, not a tall route obstacle.
+                if (Math.min(from.y, to.y) > shelf.y + 0.2 || Math.max(from.y, to.y) < shelf.y - 0.85) return false; // Lower climbing routes may pass underneath the overhanging lid.
                 return crossesObstacle(from, to, capBounds, 0.25);
               }));
             });
@@ -302,7 +303,8 @@
             nodes.push(landing);
             nodes[idx].links.push(shelf.nodeId);
             balconies.push(shelf);
-            break; // Keep one shelf per height, using the first clear side.
+            break placement; // One successful ledge per height; first try the longer body, then a slim fallback.
+          }
           }
         }
       }
