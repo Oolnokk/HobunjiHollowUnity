@@ -36,6 +36,8 @@
   let cropData = null; // Shared runtime cropData mutated in place; read by growth, planting and the farm.
   let itemDefs = null; // Shared ITEM_DEFS mutated in place; read by inventory, trader and cooking.
   let inventory = null; // Current player's seed/harvest stacks used to rehydrate saved hybrids.
+  let storageGetter = null; // The farm's shared storage is checked to display accessible cultivar seeds in the crop brush.
+  let inventoryItems = null; // When supplied, register seed items in the standard pack picker alongside their produce.
   const known = new Set(); // Keys already registered as crops; avoids repeated catalog and UI work.
   const variants = new Map(); // Cached resolved traits: rendering thousands of frames must not rebuild item definitions.
   let lastChange = 'Regional crop varieties are gene-coded; no independent world save is required.';
@@ -107,6 +109,9 @@
         sellPrice: Math.max(1, Math.round((Number(baseSeed.sellPrice) || 4) * 1.4)), varietyColor: traits.color,
         tags: [...new Set([...(baseSeed.tags || []), 'Seed', 'Regional Variety'])],
         desc: 'Plant on suitable soil. Origin: ' + traits.region + '. Prefers ' + Math.round(traits.idealMin * 100) + '–' + Math.round(traits.idealMax * 100) + '% water.' };
+      if (Array.isArray(inventoryItems) && !inventoryItems.some(entry => entry.key === seedKey(id))) {
+        inventoryItems.push({ key: seedKey(id), icon: itemDefs[seedKey(id)].icon, label: (label + ' Seeds').toUpperCase(), max: 999 });
+      } // All seeds, including saved hybrids, remain regular inventory objects.
     }
     const variant = { id, seedKey: seedKey(id), label, ...traits }; // Stable public crop metadata cached until a world rebind.
     known.add(id); variants.set(id, variant);
@@ -114,7 +119,11 @@
   }
   function ensure(key) {
     const parsed = fromItemKey(key);
-    return parsed ? register(parsed.family, parsed.code) : null;
+    if (!parsed) return null;
+    const wasRegistered = !!cropData?.[idFor(parsed.family, parsed.code)]; // Only freshly restored genomes require another cooking catalog sync.
+    const variety = register(parsed.family, parsed.code);
+    if (variety && !wasRegistered) window.CookingSystem?.registerIngredientItems?.();
+    return variety;
   }
   function hydrate(stacks) {
     for (const key of Object.keys(stacks || {})) if (fromItemKey(key)) ensure(key);
@@ -124,15 +133,39 @@
     cropData = deps.cropData || cropData;
     itemDefs = deps.ITEM_DEFS || itemDefs;
     inventory = deps.inventory || inventory;
+    inventoryItems = deps.inventoryItems || inventoryItems;
+    storageGetter = deps.loadStorage || storageGetter;
     if (!cropData) return;
     for (const family of FAMILIES) if (cropData[family]) for (let region = 1; region < REGIONS.length; region++)
       register(family, String(region).repeat(6)); // Every seed offer has a definition before traders roll stock.
     hydrate(inventory);
-    if (itemDefs) window.CookingSystem?.registerIngredientItems?.(); // Populates the real cooking picker without creating a parallel food system.
+    if (itemDefs) window.CookingSystem?.registerIngredientItems?.(); // Populates the real cooking picker without a parallel food system.
+    refreshBrushes();
   }
-  function registered() {
+  function registered({ ownedOnly = false } = {}) {
     hydrate(inventory);
-    return [...known].map(id => ({ id, seedKey: seedKey(id), label: cropData?.[id]?.label || id }));
+    const storage = storageGetter?.() || {}; // Both bag and farm storage are valid sources for delegated farm planting.
+    return [...known].filter(id => !ownedOnly || (Number(inventory?.[seedKey(id)]) || 0) > 0 || (Number(storage[seedKey(id)]) || 0) > 0)
+      .map(id => ({ id, seedKey: seedKey(id), label: cropData?.[id]?.label || id }));
+  }
+  function refreshBrushes() {
+    if (typeof document === 'undefined') return;
+    const holder = document.getElementById('regionalCropBrushes'); // Existing Farm Editor remains the planting UI authority.
+    if (!holder) return;
+    holder.textContent = '';
+    const available = registered({ ownedOnly: true }); // Never flood the Farm Editor with every theoretical genotype.
+    holder.hidden = available.length === 0;
+    for (const variety of available) {
+      const button = document.createElement('button');
+      button.className = 'fed-btn';
+      button.type = 'button';
+      button.dataset.btype = 'crop';
+      button.dataset.bval = variety.id;
+      button.textContent = '🌱 ' + variety.label;
+      button.title = 'Select imported or crossbred seeds for painting farm plots';
+      button.addEventListener('click', () => window._farmEditor?.setBrush('crop', variety.id));
+      holder.append(button);
+    }
   }
   function offers(rng = Math.random) {
     const families = FAMILIES.filter(family => cropData?.[family]); // Selected independently for each caravan; no new shop route.
@@ -156,15 +189,18 @@
     const pick = (code, start) => Number(code[start + (rng() < .5 ? 0 : 1)]);
     const child = '' + pick(first, 0) + pick(second, 0) + pick(first, 2) + pick(second, 2) + pick(first, 4) + pick(second, 4);
     const genes = [...child];
-    if (rng() < .025) { const locus = Math.floor(rng() * 6); genes[locus] = String(Math.floor(rng() * 4)); } // Rare single-allele mutation, as in livestock.
+    if (rng() < .025) { const locus = Math.floor(rng() * 6); genes[locus] = String(Math.floor(rng() * REGIONS.length)); } // Rare single-allele mutation, as in livestock.
     const result = register(a, genes.join(''));
-    if (result) lastChange = 'Crossbred ' + firstKey + ' × ' + secondKey + ' → ' + result.label + '.';
+    if (result) {
+      lastChange = 'Crossbred ' + firstKey + ' × ' + secondKey + ' → ' + result.label + '.';
+      window.CookingSystem?.registerIngredientItems?.(); // The newly invented ingredient keeps its inherited buffs in every recipe picker.
+    }
     return result;
   }
   function details(key) {
     const genes = genesFor(key);
     return genes && genes.genes !== '000000' ? phenotype(genes.family, genes.genes) : null;
   }
-  window.CropVarieties = Object.freeze({ REGIONS, FAMILIES, attach, ensure, hydrate, registered, offers, produceFamily, breed, details,
+  window.CropVarieties = Object.freeze({ REGIONS, FAMILIES, attach, ensure, hydrate, registered, refreshBrushes, offers, produceFamily, breed, details,
     get lastChange() { return lastChange; } }); // Exposed for mobile production diagnostics and regression tests.
 })();
