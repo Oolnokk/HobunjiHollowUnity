@@ -71,6 +71,17 @@ window.DynamicSurfaces = { sampleSupport:(x,_z)=>x>=2.9&&x<=3.3?{y:1.8}:null };
 result = resolver.resolve(origin,desired,opts);
 assert.equal(result.blocked,true,'elevated support floors intercept the throw arc');
 assert.equal(result.kind,'raised-floor-cover');
+window.DynamicSurfaces = { sampleSupport:()=>({y:2}) };
+const elevatedOrigin = { x:.5, y:3.05, z:.5 }; // Player standing on a raised floor, with their hand above the surface.
+const elevatedTarget = { x:8.5, y:2, z:.5 }; // Legitimate destination on that same floor.
+const elevatedOpts = { ...opts, groundAt:()=>2 };
+assert.equal(resolver.resolve(elevatedOrigin,elevatedTarget,elevatedOpts).blocked,false,
+  'the ground supporting an elevated landing must not pull the large reticle backward');
+assert.equal(resolver.sweepFlight(elevatedOrigin,elevatedTarget,0,1,elevatedOpts),null,
+  'an unobstructed throw along an elevated floor must reach its actual target');
+const belowFloor = { x:.5, y:1, z:.5 };
+assert(resolver.sweepFlight(belowFloor,elevatedTarget,0,1,elevatedOpts),
+  'an elevated floor remains genuine cover when a throw approaches from below it');
 delete window.DynamicSurfaces;
 
 const blockedStep = resolver.sweep({x:2.8,y:1,z:.5},{x:3.6,y:.9,z:.5},{
