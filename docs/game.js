@@ -19262,7 +19262,13 @@
           if (grid[Math.floor(z)]?.[Math.floor(x)]?._banditTentCollisionId) return false;
           if (furnitureBlocksMovementAt(currentArea, x, z, feetY + 0.05)) return false;
         }
-        return canOccupyAt(wx, wy, radius, feetY + 0.05);
+        const footprintY = feetY + 0.05; // Height used by authored 3D furniture/footprints, at the player's true feet.
+        if (window.AreaFootprintBlockers?.blocksBox(currentArea, wx / TILE, wy / TILE, radius / TILE, footprintY)) return false;
+        if (window.FurnitureTableSystem?.blocksBox(currentArea, wx / TILE, wy / TILE, radius / TILE, footprintY)) return false;
+        // canOccupyAt subtracts its collision radius from worldY to form a
+        // projectile's underside. Offset by that same radius so the player's
+        // actual feet, not a point below them, clear the top of a low rock.
+        return canOccupyAt(wx, wy, radius, footprintY + radius / TILE);
       }
 
       function canPlayerOccupy(wx, wy) {

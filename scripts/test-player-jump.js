@@ -26,6 +26,39 @@ assert(gameSource.includes('getBaseMoveSpeedTiles: () => MOVE_SPEED / TILE'), 'o
 assert(gameSource.includes('canPlayerOccupyAtHeight, // Jump uses native world collision'), 'jump uses the native height-aware collision authority');
 assert(gameSource.includes('function furnitureBlocksMovementAt(area, x, z, worldY = null)'), 'furniture collision now understands optional height');
 assert(gameSource.includes('furnitureBlocksMovementAt(currentArea, x, z, feetY + 0.05)'), 'non-cover furniture remains solid when jumping');
+
+assert(gameSource.includes('return canOccupyAt(wx, wy, radius, footprintY + radius / TILE)'), 'tile cover tests physical feet instead of a radius below feet');
+
+// Execute the real game-owned height probe in isolation, not a mock that
+// accidentally skips the player's collision-radius conversion.
+{
+  const begin = gameSource.indexOf('      function canPlayerOccupyAtHeight(');
+  const end = gameSource.indexOf('\n      function canPlayerOccupy(wx, wy)', begin);
+  assert(begin >= 0 && end > begin, 'native physical-height probe is present');
+  const func = gameSource.slice(begin, end); // Same source shipped in the main game loop.
+  const world = {
+    GridTileAccessors: { getActiveGrid: () => Array.from({ length: 8 }, () => Array.from({ length: 8 }, () => ({ type: 'floor' }))) },
+    InteriorDoorTiles: { blocksBox: () => false },
+    AreaFootprintBlockers: { blocksBox: () => false },
+    FurnitureTableSystem: { blocksBox: () => false },
+  };
+  let tileFeetY = null; // Captures the native tile collision sample height after radius conversion.
+  const radius = 16 * .72 / 64; // Expected footprint radius in tile units for this isolated probe.
+  const probe = new Function('window', 'currentArea', 'TILE', 'PLAYER_RADIUS', 'furnitureBlocksMovementAt', 'canOccupyAt', 'canPlayerOccupy',
+    func + '\nreturn canPlayerOccupyAtHeight;')(
+      world, 'zone-test', 64, 16, () => false, (_x, _z, pxRadius, worldY) => {
+        tileFeetY = worldY - pxRadius / 64;
+        return tileFeetY > 1.11;
+      }, () => false);
+  assert.equal(probe(3.5 * 64, 3.5 * 64, 1.1), true, 'standing atop a rock is not blocked by a sample below its surface');
+  assert(Math.abs(tileFeetY - 1.15) < .001, 'tile collision samples the intended physical feet');
+  world.FurnitureTableSystem.blocksBox = () => true;
+  assert.equal(probe(3.5 * 64, 3.5 * 64, 1.1), false, 'an independent full-footprint table still blocks');
+  world.FurnitureTableSystem.blocksBox = () => false;
+  world.AreaFootprintBlockers.blocksBox = () => true;
+  assert.equal(probe(3.5 * 64, 3.5 * 64, 1.1), false, 'an independent full-footprint obstacle still blocks');
+}
+
 assert(ruinSource.includes('const freeJump=deps.player?._freeJump;'), 'native ruin floor reconciliation must honor airborne jump state');
 assert(integration.includes('return window.PlayerJump?.start?.() || false; // Empty ground'));
 assert(index.indexOf('js/player-jump.js?') < index.indexOf('js/climb-system.js?'));
