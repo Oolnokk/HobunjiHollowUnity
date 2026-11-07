@@ -236,10 +236,22 @@
     const parent = genesFor(key); // Seed maker preview and regression tests use the same display color.
     return parent ? phenotype(parent.family, parent.genes, parent.colorHex)?.color ?? null : null;
   }
+  function seedColorOf(key) {
+    const id = String(key || ''); // Used to resolve seed-pack pigment without guessing from an icon or localized display label.
+    const cultivar = fromItemKey(id); // Includes serialized, multi-generation blends and pre-pigment six-digit cultivars.
+    if (cultivar && id.endsWith('Seeds')) return colorOf(id);
+    const family = FAMILIES.find(name => {
+      const nativeKey = cropData?.[name]?.seedKey; // Canonical crop registry handles irregular plural/singular native seed IDs.
+      return id === nativeKey || id === name + 'Seeds'
+        || (name.endsWith('berries') && id === name.slice(0, -3) + 'ySeeds')
+        || (name.endsWith('Mustard') && id === name + 'Seed');
+    });
+    return family ? NATIVE_COLORS[family] : null; // Same ripe pigment used by native planted/harvested vegetables.
+  }
   function blendedColor(firstKey, secondKey) {
     const a = produceFamily(firstKey), b = produceFamily(secondKey); // Incompatible crop species cannot mix.
     return a && a === b ? mixHex(colorOf(firstKey), colorOf(secondKey)) : null;
   }
-  window.CropVarieties = Object.freeze({ REGIONS, FAMILIES, attach, ensure, hydrate, registered, refreshBrushes, offers, produceFamily, breed, details, colorOf, blendedColor,
+  window.CropVarieties = Object.freeze({ REGIONS, FAMILIES, attach, ensure, hydrate, registered, refreshBrushes, offers, produceFamily, breed, details, colorOf, seedColorOf, blendedColor,
     get lastChange() { return lastChange; } }); // Exposed for mobile production diagnostics and regression tests.
 })();
