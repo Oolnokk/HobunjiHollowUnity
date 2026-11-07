@@ -131,4 +131,39 @@ assert.match(engine,/if \(!usesAutomaticPluckInput\(\)\) interruptAutoReleaseTai
   'changing melody bank must not prematurely cancel the running automatic figure');
 assert.match(host,/lyre-performance\.html\?v=20261106legatoArpeggios1/,
   'gameplay must use the revised instrument iframe cache key');
+
+const compatibilityState = {
+  sampleObjectUrl:'test-audio', playbackEngine:'compat',sampleImported:true,
+  gestureMediaChannels:new Map(), autoPickCompatChannelIndex:0
+}; // Fake mobile sampler, including the persistent voices that must not be rewound by each melody press.
+const primedChannels = []; // Records which mobile voices require their first user-gesture authorization.
+const compatibility = {
+  state:compatibilityState, AUTO_PICK_COMPAT_VOICES:8,PULSE_LOOKAHEAD_MS:90,
+  nowMs: () => 500,
+  canUseCompatibilitySampler:() => compatibilityState.playbackEngine === 'compat',
+  primeGestureMediaChannel:key => {
+    primedChannels.push(key);
+    compatibilityState.gestureMediaChannels.set(key,{sourceUrl:'test-audio',media:{paused:false}});
+  }
+};
+vm.runInNewContext([
+  extractFunction('primeAutomaticMediaChannels'),
+  extractFunction('nextAutomaticMediaChannel'),
+  extractFunction('automaticPulseTimerDelay')
+].join('\n') + '\nthis.prime = primeAutomaticMediaChannels; this.nextChannel = nextAutomaticMediaChannel; this.timerDelay = automaticPulseTimerDelay;',compatibility);
+compatibility.prime();
+assert.equal(primedChannels.length,8,'a melody gesture should preauthorize all eight compatibility voices');
+compatibility.prime();
+assert.equal(primedChannels.length,8,'another melody must not rewind or re-prime already sounding media voices');
+assert.equal(new Set(Array.from({length:8},() => compatibility.nextChannel())).size,8,
+  'each of eight successive automatic attacks should get a different media channel');
+assert.equal(compatibility.nextChannel(),'touch-left-fretted-pluck-0',
+  'the prepared voice pool should wrap around rather than creating unbounded media nodes');
+assert.equal(compatibility.timerDelay(750),250,'HTMLAudio fallback must fire on the actual subdivision, not 90ms early');
+compatibilityState.playbackEngine = 'webAudio';
+assert.equal(compatibility.timerDelay(750),160,'Web Audio must retain its existing 90ms sample-accurate lookahead');
+assert.match(pulseSource,/nextAutomaticMediaChannel\(\)/,
+  'automated notes and strums must use the rotating mobile media channels rather than one shared voice');
+assert.match(engine,/primeAutomaticMediaChannels\(\); \/\/ The human note press authorizes the entire mobile polyphony pool/,
+  'mobile notes should prepare polyphony within the next real human gesture');
 console.log('Kurraya arpeggio legato regression checks passed.');
