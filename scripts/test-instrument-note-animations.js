@@ -11,6 +11,8 @@ const editor = fs.readFileSync('docs/tools/attack-animation-editor/index.html', 
 const music = fs.readFileSync('docs/js/music-minigame.js', 'utf8'); // Gameplay's postMessage and note routing source.
 const grips = fs.readFileSync('docs/js/hand-tool-grips.js', 'utf8'); // Canonical authored flute grip values.
 const sinkSource = fs.readFileSync('docs/js/weapon-stance-drop-runtime.js', 'utf8'); // Reuses the real body/leg stance runtime.
+const handDriver = fs.readFileSync('docs/js/procedural-hand-frame-driver.js', 'utf8'); // Live hand-grip holder and tool-selection routing.
+const equipment = fs.readFileSync('docs/js/equipment-panel.js', 'utf8'); // Registered instrument must point at its own animation.
 
 const begin = held.indexOf('  const fluteNeutralNotePose ='); // Includes the authored pose factory and strike-only sink constant before flutePlayNote.
 const end = held.indexOf('  window.HeldActionAnimations = Object.freeze', begin); // End of note definitions.
@@ -148,5 +150,33 @@ musician.WeaponStanceDropRuntime.endInstrumentNote();
 sinkCall();
 assert.equal(sinkUnits,0,'closing flute mode must release leg sink');
 assert.equal(composed.has('weapon-stance-drop'),false,'closing flute mode must clear body translation');
+
+
+// The runtime must use the actual mouth-mounted flute and its Ranged grip rather than the last equipped weapon.
+assert(equipment.includes("isInstrument:true, heldAnimationKey:'flutePlayNote'"), 'flute item still references the blowgun animation');
+assert.equal(typeof api.fluteHandTarget,'function','live flute mount must expose a hand target');
+const bridgeStart=handDriver.indexOf('  function playerFluteTarget(record)');
+const bridgeEnd=handDriver.indexOf('  // Bag items',bridgeStart);
+assert(bridgeStart>=0&&bridgeEnd>bridgeStart,'live flute hand bridge absent');
+const avatarRoot={}; // Only the local player should route to the mouth-mounted flute.
+const liveHolder={parent:{},visible:true}; // Same scene object consumed by the hand driver, not an editor-only proxy.
+const fakeWindow={
+  KurrayaInstrument:{fluteHandTarget:()=>({holder:liveHolder,toolKey:'flute',gripContext:'ranged'}),fluteDiagnostics:()=>({active:true})},
+  WeaponToolStances:{getRuntimeState:()=>({itemKey:'hatchet',activeSlot:'weapon'})},
+};
+const handBridge=vm.runInNewContext(
+  handDriver.slice(bridgeStart,bridgeEnd) +
+    '\n({ currentToolKey, currentGripContext, currentToolHolder });',
+  {
+    toolGrips:{toolKeyFor:key=>key,currentGripContext:()=> 'melee'},
+    gameDeps:{playerMesh:avatarRoot,toolHolder:{parent:{},visible:true}},
+    global:fakeWindow,document:{},inAttackEditor:()=>false,
+  });
+const local={rig:{parent:avatarRoot},avatarRoot:{userData:{}}};
+assert.equal(handBridge.currentToolKey(local),'flute','player hands must select flute instead of weapon-slot hatchet');
+assert.equal(handBridge.currentGripContext(local),'ranged','flute hands must use the supplied Ranged primary grip');
+assert.equal(handBridge.currentToolHolder(local),liveHolder,'hand rig must read the actual mouth-mounted flute transform');
+const hostile={rig:{parent:{}},avatarRoot:{userData:{}}};
+assert.equal(handBridge.currentToolKey(hostile),'hatchet','player flute must not leak into NPC hand selection');
 
 console.log('Flute and Kurraya note animations: authored flute grip/pose, strike-only body sink and regression checks passed');
