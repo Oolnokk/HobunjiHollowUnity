@@ -284,7 +284,7 @@
     const old=areas.get(key);
     if(old?.network===network&&old.scene===scene)return old.portals;
     if(old)clear(key);
-    const profiles=sites||root.CaveSiteSystem?.registerOutdoorPuzzleSites?.(key,network?.balconies||[])||[]; // Independent roll, not the ordinary cave/animal-den pool.
+    const profiles=sites||root.CaveSiteSystem?.registerOutdoorPuzzleSites?.(key,network?.balconies||[])||root.CaveSiteSystem?.sitesForZone?.(key)||[]; // Independent roll, not the ordinary cave/animal-den pool.
     const portals=plan(network,profiles).map(p=>({
       ...p,area:key,disposed:false,solved:!p.requiresSong,justSolved:false,
       musicOpened:false,lastDown:false,openWait:0,
