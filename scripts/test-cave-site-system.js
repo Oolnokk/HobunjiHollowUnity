@@ -531,13 +531,31 @@ console.log(`PASS cave-site-system: ${workspace.animalDens.length} anchors -> ${
 {
   const oreSource = fs.readFileSync(path.join(root, 'docs/js/cavern-ore-rocks.js'), 'utf8');
   class Obj {
-    constructor() { this.position = { set() {} }; this.children = []; this.userData = {}; this.parent = null; }
+    constructor(geometry=null,material=null) {
+      this.position = { set() {} };this.scale={set() {}};this.rotation={y:0};
+      this.geometry=geometry;this.material=material;this.children = []; this.userData = {}; this.parent = null;
+    }
     add(c) { this.children.push(c); c.parent = this; }
     remove(c) { this.children = this.children.filter(node => node !== c); c.parent = null; }
     traverse(fn) { fn(this); for (const child of this.children) child.traverse(fn); }
   }
   let fittedFaces = 0; // Verifies both random-cave builds reach the shared ore-rock face fitting helper.
-  const oreCtx = { THREE: { Mesh: Obj, Group: Obj, MeshStandardMaterial: class {} }, TerrainGeometry: { buildRockTileGeo: () => ({ stoneGeo: {} }) }, OreRockTextures: { materialFor: (_three, key) => ({ key, userData: { sharedOreRockMaterial: true } }), fitRockMesh: () => { fittedFaces++; } } };
+  class RockGeometry {
+    constructor(){this.disposed=false;this.positions=Array.from({length:12},(_,i)=>[i/12-.5,(i%3)/4-.25,(i%5)/6-.35]);}
+    getAttribute(key){if(key!=='position')return null;return {count:this.positions.length,
+      getX:i=>this.positions[i][0],getY:i=>this.positions[i][1],getZ:i=>this.positions[i][2],
+      setXYZ:(i,x,y,z)=>{this.positions[i]=[x,y,z];}};}
+    setAttribute(){}
+    computeVertexNormals(){}
+    dispose(){this.disposed=true;}
+  }
+  class RockMaterial {constructor(){this.userData={};}dispose(){}}
+  const oreCtx = { THREE: { Mesh: Obj, Group: Obj, MeshStandardMaterial: RockMaterial,
+      MeshBasicMaterial:RockMaterial,IcosahedronGeometry:RockGeometry,BufferGeometry:RockGeometry,
+      Float32BufferAttribute:class{},DoubleSide:2 },
+    TerrainGeometry: { buildRockTileGeo: () => ({ stoneGeo: new RockGeometry() }) },
+    OreRockTextures: { materialFor: (_three, key) => ({ key, userData: { sharedOreRockMaterial: true } }),
+      fitRockMesh: () => { fittedFaces++; } } };
   oreCtx.window = oreCtx;
   vm.createContext(oreCtx);
   vm.runInContext(oreSource, oreCtx, { filename: 'cavern-ore-rocks.js' });
@@ -559,8 +577,24 @@ console.log(`PASS cave-site-system: ${workspace.animalDens.length} anchors -> ${
   for (const kind of Object.keys(oreCtx.CavernOreRocks.CAVERN_ORE_TINTS)) assert(kind === 'stone' || ORE_DEFS[kind], `cavern tint ${kind} is a real ore`);
   const newGrid = [[{}, {}, {}]];
   oreCtx.CavernOreRocks.build('map_i_new_ores', { oreRocks: [{ col: 0, row: 0, oreKind: 'tinCopper' }, { col: 1, row: 0, oreKind: 'mushistonite' }, { col: 2, row: 0, oreKind: 'tin' }] }, new Obj(), newGrid);
-  assert.equal(fittedFaces, 5, 'Every cave resource rock invokes the compatible UV-preserving helper, including stone-only rocks');
+  assert.equal(fittedFaces, 5, 'Ordinary cave resource rock mounds keep the UV-preserving fitting helper');
   assert.deepEqual(newGrid[0].map(cell => cell.oreKey), ['tinCopper', 'mushistonite', 'tin'], 'Wild-cave rocks preserve all three new ore identities and drops');
+  const separatorScene=new Obj(),separatorGrid=[[{},{}]],separatorMap='map_i_cave_rock_wall';
+  const separatorGroups=oreCtx.CavernOreRocks.build(separatorMap,{oreRocks:[
+    {col:0,row:0,oreKind:'stone',caveSeparator:true,caveSeparatorLayer:1},
+    {col:1,row:0,oreKind:'stone',caveSeparator:true,caveSeparatorLayer:2},
+  ]},separatorScene,separatorGrid); // Adjacent layers share a logical cave wall but each tile is a standalone diggable rock.
+  const rock0=separatorGroups.get('0,0'),rock1=separatorGroups.get('1,0');
+  const masses=group=>{const result=[];group.traverse(node=>{if(node.userData?.caveSeparatorMass)result.push(node);});return result;};
+  assert.equal(masses(rock0).length,3,'each rock-wall tile renders three overlapping irregular stone lobes, not a cube');
+  assert.equal(masses(rock1).length,3,'a deeper barrier tile has its own rock masses');
+  assert.equal(rock0.userData.caveSeparatorCracks,undefined,'fracture markings do not replace the mineable rock surface');
+  assert.equal(separatorGrid[0][0].rockKind,'diggableRockOre','rocky barrier uses the existing pickaxe mining tile contract');
+  assert.equal(separatorGrid[0][1].caveSeparator,true,'adjacent barrier layers preserve the existing Shattercask blast contract');
+  assert.equal(oreCtx.CavernOreRocks.removeVisual(separatorMap,0,0),true,'mining one rock-wall tile removes its entire sculpted mass');
+  assert.equal(separatorGroups.has('0,0'),false,'the mined tile is no longer registered as solid scene rock');
+  assert.equal(separatorGroups.has('1,0'),true,'the neighbouring mineable wall rock remains intact');
+  assert.equal(oreCtx.CavernOreRocks.removeVisual(separatorMap,1,0),true,'a second mining/blast event can independently retire the next wall piece');
   const mineKinds = new Set();
   for (let i = 0; i < 40; i++) {
     for (const rock of decorate(profile(`map_i_test_ores_${i}`, 'ore_mine')).oreRocks) mineKinds.add(rock.oreKind);
