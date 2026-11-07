@@ -45,17 +45,26 @@ const dynamicSurfaces={registerBlocker:record=>{assert(!blockers.has(record.id),
 
 let lit=0,completed=0;
 const hot=new Set(); // Fire patches with the same area-scoped positions that PersistentGroundFire.intersects receives.
+const torchEmitters=[]; // Stand-in for the shared authored campfire renderer; asserts both sconces reuse it and dispose it.
+const puzzleFireVisuals={attachCampfireFlame(anchor,options){
+  assert(anchor instanceof Group,'sconce flames use emitter anchors rather than triangle/cone geometry');
+  assert(options.rateScale>0);
+  const record={anchor,updates:0,disposed:false,update(){this.updates++;},dispose(){this.disposed=true;}};
+  torchEmitters.push(record);return record;
+}};
 const fire=compose({THREE,parent,room,id:'fire-test',kind:'fireSconces',y:0,area,
   isActive:()=>activeArea===area,onSolved:()=>{completed++;},DynamicSurfaces:dynamicSurfaces,AreaFootprintBlockers:areaFootprints,
-  groundFire:{intersects:(scope,x,z)=>scope===area&&hot.has(x+','+z)},
+  groundFire:{intersects:(scope,x,z)=>scope===area&&hot.has(x+','+z)},puzzleFireVisuals,
   onSconceLit:()=>{lit++;},
   getPlayerPosition:()=>({x:0,z:0}),getPlayerY:()=>0,
 });
 assert.equal(fire.sconces.length,2);
+assert.equal(torchEmitters.length,2,'two authored campfire emitters replace the old conical fire visuals');
+assert(torchEmitters.every(record=>record.anchor.visible===false),'unlit torches do not emit fire');
 assert.equal(blockers.size,1,'fire cave registers exactly one authoritative stone gate');
 const fireCollider=[...blockers.values()][0];
 assert(fireCollider.enabled(),'an unsolved fire cave gate blocks movement in its map');
-const gateX=room.x+room.w/2,gateZ=room.z+room.d-1.05; // Authored door's center used by the real game movement occupancy queries.
+const gateX=room.x+room.w/2,gateZ=room.z+room.d-1.28; // The collision target follows the rock-clearance offset of the authored gate.
 assert(areaFootprints.blocksBox(area,gateX,gateZ,.18),'player movement physically collides with a locked fire-sconce gate');
 assert(!areaFootprints.blocksBox('other_map',gateX,gateZ,.18),'other maps can use the same tile coordinates without colliding with this cave');
 assert(!areaFootprints.blocksBox(area,gateX,gateZ,.18,10),'high projectiles pass over the short stone gate');
@@ -77,11 +86,13 @@ assert.equal(completed,1,'second torch unlocks the gate exactly once');
 assert(fire.solved,'the shared challenge records the solve');
 fire.animate(1);
 assert(fire.door.position.y>1.75,'opening raises the physical stone slab visual');
+assert.equal(fire.backdrop.visible,false,'the black doorway plane disappears once the chest can be revealed');
 assert(!fireCollider.enabled(),'the collider opens only after the animated gate clears the threshold');
 assert(!areaFootprints.blocksBox(area,gateX,gateZ,.18),'player movement also clears the opened stone gate');
 fire.tick(.016);
 assert.equal(completed,1,'a solved fire cave cannot award its treasure again');
 fire.dispose();
+assert(torchEmitters.every(record=>record.disposed),'cave teardown disposes both authored flame emitters');
 assert.equal(blockers.size,0,'retiring the scene unregisters its physical collision');
 assert.equal(areaFootprints.providerIds().length,0,'retiring the cave removes its authoritative player and NPC footprint blocker');
 assert.equal(parent.children.length,0,'cave teardown removes mechanism meshes');
@@ -133,6 +144,7 @@ assert(areaFootprints.blocksBox(area,gateX,gateZ,.18),'the gate remains physical
 timed.animate(.52);
 assert(areaFootprints.blocksBox(area,gateX,gateZ,.18),'the still-rising music slab cannot be walked through');
 timed.animate(.35);
+assert.equal(timed.backdrop.visible,false,'the solved instrument gate also reveals its chamber instead of leaving a black plane');
 assert(!areaFootprints.blocksBox(area,gateX,gateZ,.18),'the fully raised music slab no longer blocks player movement');
 assert.equal(closed,2,'the normal instrument overlay closes after the final note');
 timed.dispose();
