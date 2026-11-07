@@ -99,7 +99,7 @@ const ctx={
   buildInventoryGrid(){},buildPackClothingSection(){},
 };
 vm.runInNewContext(game.slice(handlerStart,handlerEnd)
-  + '\\nthis.getCliffResource = getCliffBalconyResourceAt;',ctx);
+  + ';this.getCliffResource = getCliffBalconyResourceAt;',ctx);
 const pick=ctx.getCliffResource(4,5);
 assert(pick,'elevated herb receives an interactable with the existing reward priority');
 assert.equal(pick.getButtons()[0].action,'obj_balcony_pick','herb picking is neither mining nor digging');
