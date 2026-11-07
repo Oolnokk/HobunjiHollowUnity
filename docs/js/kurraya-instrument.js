@@ -295,26 +295,28 @@
   // props and the player's held-item holder each have their own existing
   // hand-attachment convention); only the parts' relative geometry to each
   // other is authored here.
-  function buildAssembly() {
-    const THREE = deps.THREE;
-    const frontTex = deps.toolTextures.kurraya;
-    if (!frontTex) return null;
-    const def = deps.getKurrayaDef?.();
-    const frontW = deps.TOOL_MODEL_WIDTH * 0.92, frontH = frontW * ((def?._imgH || 663) / (def?._imgW || 320));
+  function buildAssembly(preview = null) {
+    const THREE = preview?.THREE || deps?.THREE; // Editor injects the same plane builder's dependencies; gameplay still uses init(deps).
+    const frontTex = preview?.frontTexture || deps?.toolTextures?.kurraya; // The two-plane asset is never replaced by a generic one-plane stand-in.
+    if (!THREE || !frontTex) return null;
+    const def = deps?.getKurrayaDef?.();
+    const width = preview?.frontTexture?.image?.width || def?._imgW || 320; // Front image dimensions size the preview like runtime.
+    const height = preview?.frontTexture?.image?.height || def?._imgH || 663;
+    const frontW = (preview?.toolModelWidth || deps?.TOOL_MODEL_WIDTH || 0.5) * 0.92, frontH = frontW * (height / width);
     const group = new THREE.Group();
     group.name = 'kurraya_assembly';
     const frontGeo = new THREE.PlaneGeometry(frontW, frontH);
     const frontMat = new THREE.MeshBasicMaterial({ map: frontTex, transparent: true, alphaTest: 0.05, side: THREE.DoubleSide });
     const front = new THREE.Mesh(frontGeo, frontMat);
-    front.renderOrder = deps.heldObjectRenderOrder;
+    front.renderOrder = preview?.renderOrder ?? deps?.heldObjectRenderOrder;
     group.add(front);
 
     const topAspect = KURRAYA_TOP_ASSET.height / KURRAYA_TOP_ASSET.width;
     const topW = frontW * KURRAYA_TOP_PART.scaleRelativeToFront;
     const topGeo = new THREE.PlaneGeometry(topW, topW * topAspect);
-    const topMat = new THREE.MeshBasicMaterial({ map: kurrayaTopTexture(), transparent: true, alphaTest: 0.05, side: THREE.DoubleSide });
+    const topMat = new THREE.MeshBasicMaterial({ map: preview?.topTexture || kurrayaTopTexture(), transparent: true, alphaTest: 0.05, side: THREE.DoubleSide });
     const top = new THREE.Mesh(topGeo, topMat);
-    top.renderOrder = deps.heldObjectRenderOrder;
+    top.renderOrder = preview?.renderOrder ?? deps?.heldObjectRenderOrder;
     // The reference mockup builds front/top as siblings with their OWN
     // individual 0.46 mesh scale, while position lives in their shared
     // parent's un-scaled local space — so top.position is already an
@@ -338,40 +340,82 @@
     return group;
   }
 
-  // One twitch-state record per performer (the player, or a given NPC) —
-  // see triggerTwitch/updateTwitch below.
-  function newTwitchState() { return { active: false, axis: KURRAYA_TWITCH_AXIS, base: 0, amplitude: 0.04, startedAt: 0, durationMs: 0, phase: 0, frequency: 16 }; }
+  // The editor and runtime use the identical easing path. Only the neutral
+  // scale is fixed across a note; all other authored channels can animate.
+  function notePoseAt(note, progress) {
+    const phases = note?.poses;
+    if (!phases?.neutral || !phases?.windup || !phases?.strike) return null;
+    const t = Math.max(0, Math.min(1, Number(progress) || 0)); // Progress is clamped for overlapping or delayed sound events.
+    const sample = (key) => {
+      const n = Number(phases.neutral[key]) || 0, w = Number(phases.windup[key]) || 0, s = Number(phases.strike[key]) || 0;
+      if (window.SharedAttackPose?.sequencedPoseLerp) return window.SharedAttackPose.sequencedPoseLerp(note.sequence || 'attack',t,note.windupFrac,note.strikeFrac,note.holdFrac,w,s,n,n);
+      // Test/older-client fallback follows the same endpoint order.
+      const wf = note.windupFrac, sf = note.strikeFrac, hf = note.holdFrac;
+      const blend = (x,y,p) => x + (y-x)*Math.max(0,Math.min(1,p));
+      return t <= wf ? blend(n,w,t/Math.max(wf,1e-6)) : t <= sf ? blend(w,s,(t-wf)/Math.max(sf-wf,1e-6)) : t <= hf ? s : blend(s,n,(t-hf)/Math.max(1-hf,1e-6));
+    };
+    return {
+      x:sample('x'),y:sample('y'),z:sample('z'),
+      pitch:sample('pitch'),yaw:sample('yaw'),roll:sample('roll'),bodyYaw:sample('bodyYaw'),
+      scale:Number(phases.neutral.scale)||1,headRelative:note.headRelative===true,
+    };
+  }
 
+  // One twitch-state record per performer (player or NPC). Existing callbacks
+  // still drive it on each sounded Kurraya note, but the response is now authored.
+  function newTwitchState() { return { active:false,axis:KURRAYA_TWITCH_AXIS,base:0,amplitude:0.04,startedAt:0,durationMs:0,phase:0,frequency:16,basePosition:null,baseRotation:null }; }
+  function restoreNoteTransform(twitchState,group) {
+    if(twitchState.basePosition && group.position) Object.assign(group.position,twitchState.basePosition);
+    if(twitchState.baseRotation) Object.assign(group.rotation,twitchState.baseRotation);
+  }
   function triggerTwitch(twitchState, group) {
     if (!group?.userData.kurrayaAssembly) return;
-    const axis = twitchState.axis;
-    if (twitchState.active) group.rotation[axis] = twitchState.base; // Every retrigger first returns to the exact rest angle, matching restoreKurrayaGameplayTwitch.
-    else twitchState.base = KURRAYA_REST_ROTATION[axis];
-    twitchState.active = true;
-    twitchState.amplitude = Math.min(0.22, (Number(twitchState.amplitude) || 0.04) + 0.06 + Math.random() * 0.025);
-    twitchState.startedAt = performance.now();
-    twitchState.durationMs = 270 + Math.random() * 120;
-    twitchState.phase = Math.random() * Math.PI * 2;
-    twitchState.frequency = 16 + Math.random() * 8;
-  }
-
-  function updateTwitch(twitchState, group) {
-    if (!twitchState.active || !group?.userData.kurrayaAssembly) return;
-    const now = performance.now();
-    const elapsed = now - twitchState.startedAt;
-    const axis = twitchState.axis;
-    if (elapsed >= twitchState.durationMs) {
-      group.rotation[axis] = twitchState.base;
-      twitchState.active = false;
+    const note=window.HeldActionAnimations?.kurrayaPlayNote; // Runtime owns this action's live source, not a duplicated hard-coded motion.
+    if(note) {
+      if(twitchState.active) restoreNoteTransform(twitchState,group); // Rapid notes restart from the resting hold without accumulating drift.
+      twitchState.basePosition={x:group.position.x,y:group.position.y,z:group.position.z};
+      twitchState.baseRotation={x:group.rotation.x,y:group.rotation.y,z:group.rotation.z};
+      twitchState.active=true;
+      twitchState.startedAt=performance.now();
+      twitchState.durationMs=Math.max(50,(Number(note.durationS)||0.32)*1000);
       return;
     }
-    const progress = elapsed / twitchState.durationMs;
-    const envelope = Math.pow(1 - progress, 1.35);
-    const offset = Math.sin((elapsed / 1000) * twitchState.frequency + twitchState.phase) * twitchState.amplitude * envelope;
-    group.rotation[axis] = twitchState.base + offset;
+    const axis=twitchState.axis; // Compatible fallback for pages not yet loading the new held-animation asset.
+    if(twitchState.active)group.rotation[axis]=twitchState.base;
+    else twitchState.base=KURRAYA_REST_ROTATION[axis];
+    twitchState.active=true;
+    twitchState.amplitude=Math.min(0.22,(Number(twitchState.amplitude)||0.04)+0.06+Math.random()*0.025);
+    twitchState.startedAt=performance.now();
+    twitchState.durationMs=270+Math.random()*120;
+    twitchState.phase=Math.random()*Math.PI*2;
+    twitchState.frequency=16+Math.random()*8;
+  }
+  function updateTwitch(twitchState,group) {
+    if(!twitchState.active||!group?.userData.kurrayaAssembly)return;
+    const elapsed=performance.now()-twitchState.startedAt;
+    const note=window.HeldActionAnimations?.kurrayaPlayNote;
+    if(note && twitchState.baseRotation) {
+      if(elapsed>=twitchState.durationMs){
+        restoreNoteTransform(twitchState,group);
+        twitchState.active=false;
+        return;
+      }
+      const pose=notePoseAt(note,elapsed/twitchState.durationMs);
+      const rest=note.poses.neutral;
+      for(const axis of ['x','y','z'])group.position[axis]=twitchState.basePosition[axis]+pose[axis]-(Number(rest[axis])||0);
+      const deg=Math.PI/180;
+      for(const [axis,channel] of [['x','pitch'],['y','yaw'],['z','roll']])
+        group.rotation[axis]=twitchState.baseRotation[axis]+(pose[channel]-(Number(rest[channel])||0))*deg;
+      return;
+    }
+    const axis=twitchState.axis;
+    if(elapsed>=twitchState.durationMs){group.rotation[axis]=twitchState.base;twitchState.active=false;return;}
+    const progress=elapsed/twitchState.durationMs;
+    const envelope=Math.pow(1-progress,1.35);
+    group.rotation[axis]=twitchState.base+Math.sin((elapsed/1000)*twitchState.frequency+twitchState.phase)*twitchState.amplitude*envelope;
   }
 
-  const fluteState = {active:false,root:null,texture:null,frame:null,loads:0,failures:0,lastError:''}; // Persistent, mobile-readable flute mount state.
+  const fluteState = {active:false,root:null,texture:null,frame:null,loads:0,failures:0,lastError:'',noteStartedAt:null,noteCount:0}; // Persistent, mobile-readable flute mount state.
   let fluteUpdaterInstalled = false; // Prevents repeat init() calls from accumulating per-frame callbacks.
   function installFluteUpdater() {
     if (fluteUpdaterInstalled || typeof window.DynamicSurfaces?.addBeforeRenderClient !== 'function') return;
@@ -487,11 +531,20 @@
   function beginFlute() {
     installFluteUpdater();
     fluteState.active=true;
+    fluteState.noteStartedAt=null;
     ensureFluteMount();
     updateFlute();
   }
+  function playFluteNote() {
+    if(!fluteState.active)return false;
+    fluteState.noteStartedAt=performance.now(); // Each genuine sounded note restarts the mouth/hand animation, not the overlapping audio.
+    fluteState.noteCount++;
+    updateFlute();
+    return true;
+  }
   function endFlute() {
     fluteState.active=false;
+    fluteState.noteStartedAt=null;
     if(fluteState.root)fluteState.root.visible=false; // The cached geometry can be reused without fetching the sprite for every note.
   }
   function updateFlute() {
@@ -499,7 +552,12 @@
     const avatar=window.Combat?.deps?.playerMesh || window.PlayerBodyTransformComposer?.getPlayerMesh?.(); // Live skinned player with the authored head/mouth rig.
     if(!avatar?.parent||!fluteState.root.children.length)return;
     if(fluteState.root.parent!==avatar.parent)avatar.parent.add(fluteState.root); // Follows the player between farm/town/ruin scenes without an orphaned prop.
-    const pose=window.HeldActionAnimations?.blowgunReady?.poses?.strike; // Reuse the authored head-relative blowgun AIM, not a fabricated hand animation.
+    const note=window.HeldActionAnimations?.flutePlayNote; // Own authored note action; blowgun pose remains a legacy fallback only.
+    const elapsed=fluteState.noteStartedAt===null ? Infinity : performance.now()-fluteState.noteStartedAt;
+    if(note && elapsed >= (Number(note.durationS)||0.32)*1000) fluteState.noteStartedAt=null;
+    const pose=note
+      ? (fluteState.noteStartedAt===null ? note.poses.neutral : notePoseAt(note,elapsed/((Number(note.durationS)||0.32)*1000)))
+      : window.HeldActionAnimations?.blowgunReady?.poses?.strike;
     if(!pose||!window.SharedAttackPose?.headFrame?.(fluteState.frame,avatar)){
       fluteState.root.visible=false;
       return;
@@ -508,8 +566,8 @@
     fluteState.root.visible=true;
   }
   function fluteDiagnostics() {
-    return {active:fluteState.active,mounted:!!fluteState.root?.parent,visible:!!fluteState.root?.visible,ready:!!fluteState.root?.children.length,loads:fluteState.loads,failures:fluteState.failures,error:fluteState.lastError};
+    return {active:fluteState.active,mounted:!!fluteState.root?.parent,visible:!!fluteState.root?.visible,ready:!!fluteState.root?.children.length,loads:fluteState.loads,failures:fluteState.failures,noteCount:fluteState.noteCount,noteActive:fluteState.noteStartedAt!==null,error:fluteState.lastError};
   }
 
-  window.KurrayaInstrument = { init, buildAssembly, newTwitchState, triggerTwitch, updateTwitch, beginFlute, endFlute, fluteDiagnostics, prepareFluteCanvas };
+  window.KurrayaInstrument = { init, buildAssembly, newTwitchState, triggerTwitch, updateTwitch, beginFlute, playFluteNote, endFlute, notePoseAt, fluteDiagnostics, prepareFluteCanvas };
 })();
