@@ -124,6 +124,7 @@ function testRuntime() {
     worldSurfaceY:()=>0,refreshActionBar(){},showToast(){},hostileObjects:new Set(),npcWalkers:new Set()};
   const bodyRoot=new Group();bodyRoot.name='player_body_root'; // Canonical composer root for back attachment.
   bodyRoot.userData={speciesId:'nuhongan',gender:'female',portraitModelHeight:.46}; // Short Nuhongan fixture reproduces the misplaced Mao'ao-height stow.
+  bodyRoot.scale.setScalar(.72); // A shorter whole-character rig scale must also apply to the shared posterior mount.
   const headJoint=new Group();headJoint.name='player_neck_joint'; // Held burden continues to use this preexisting dependency unchanged.
   bodyRoot.add(headJoint);
   headJoint.position.set(.25,.3,.15);
