@@ -227,29 +227,32 @@
       topY:placed.grid.baseY,priority:1}));
     ruin.shaftConnection.supportRects=corridorSupportRects.length;
     const unmountVisual=visual(route.tiles.filter(([c,r])=>!oldFloor.has(key(c,r))),THREE,rec.scene,placed.grid.baseY,rec.floorSet);
-    let layerRuntime=null,nativeRuntime=null,obeliskRuntime=null,styleCleanup=null; // Gameplay mechanisms share the shaft session lifecycle.
-    ruin.shaftConnectorCleanup=()=>{styleCleanup?.();nativeRuntime?.dispose();layerRuntime?.dispose();obeliskRuntime?.dispose();ruin.shaftObeliskRuntime=null;unmountVisual();DS.clearScope(scope);};
+    let layerRuntime=null,nativeRuntime=null,obeliskRuntime=null,styleCleanup=null,skeeriRuntime=null; // Gameplay mechanisms and aerial enemies share the shaft session lifecycle.
+    ruin.shaftConnectorCleanup=()=>{skeeriRuntime?.dispose?.();styleCleanup?.();nativeRuntime?.dispose();layerRuntime?.dispose();obeliskRuntime?.dispose();ruin.shaftObeliskRuntime=null;unmountVisual();DS.clearScope(scope);};
     const registered=ShaftHub.mount(placed,{THREE,parent:rec.scene,ClimbSurfaces,DynamicSurfaces:DS,DevRandomRuin});
+    const onMechanismStateChange=()=>{root.SkeeriRuins?.signalMechanism?.();onStateChange?.();}; // Existing puzzle/obelisk completions can open nearby hidden wall hatches.
     if(placed.obelisks){
       if(!RuinReachingObelisks?.mount)throw new Error('Selected Reaching Obelisks module is not loaded.');
       obeliskRuntime=RuinReachingObelisks.mount(placed.obelisks,{
         scope:'shaft-obelisks',THREE,parent:rec.scene,DynamicSurfaces:DS,ClimbSurfaces,
-        tradition:ruin.theme,getPlayerPosition,getPlayerY,projectileBus:root.DevRandomRuinSimplePuzzles,onStateChange,
+        tradition:ruin.theme,getPlayerPosition,getPlayerY,projectileBus:root.DevRandomRuinSimplePuzzles,onStateChange:onMechanismStateChange,
       });
     }
     ruin.shaftObeliskRuntime=obeliskRuntime; // Height-aware fall, switch updates and mobile badge all reuse this one runtime.
     layerRuntime=RuinLayerPlayable.mount({
       rec,ruin,plan,hub:placed,makeTile,THREE,DynamicSurfaces:DS,CellGrid3D,
-      RuinShaftCorridor,RuinLayerChallenges,RuinLayerDefense,DevRandomRuin,getPlayerPosition,getPlayerY,showToast,onStateChange
+      RuinShaftCorridor,RuinLayerChallenges,RuinLayerDefense,DevRandomRuin,getPlayerPosition,getPlayerY,showToast,onStateChange:onMechanismStateChange
     }); // Mounts 1–4 stone puzzle wings and one interactive brazier per story-side.
     ruin.shaftLayerRuntime=layerRuntime;
     nativeRuntime=plan.nativeFloorCount?RuinV50NativeFloors.mount({
       rec,ruin,plan,hub:placed,records:nativeFloors,makeTile,THREE,
       DynamicSurfaces:DS,CellGrid3D,RuinShaftCorridor,RuinLayerChallenges,
-      RuinLayerPlayable,DevRandomRuin,getPlayerPosition,getPlayerY,showToast,onStateChange,
+      RuinLayerPlayable,DevRandomRuin,getPlayerPosition,getPlayerY,showToast,onStateChange:onMechanismStateChange,
       prepareMaterials,tileScale,
     }):null; // Each real upper V50 graph gets its own collision, stage gates, brazier and render root.
     ruin.nativeV50Runtime=nativeRuntime;
+    try { skeeriRuntime=root.SkeeriRuins?.mount?.({rec,plan,seed,getPlayerY,difficulty:ruin.difficulty??plan.floorCount})||null; }
+    catch(error) {root.__farmLog?.('[skeeri] Ruin encounter initialization failed: '+error,'warn');} // A missing optional creature asset must never invalidate an otherwise playable ruin.
     if(plan.options.groundEntranceSide)
       styleCleanup=root.RuinMultifloorV50Style?.apply?.({rec,ruin,hub:placed,seed,THREE,getPlayerY,routeTiles:route.tiles})||null;
     ruin.shaftStyleTick=styleCleanup?.tick||null; // The existing frame client keeps higher-story engravings hidden with the puzzle-wing visuals.
