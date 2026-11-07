@@ -84,6 +84,14 @@ const frame = gate.root.children.filter(child => child !== gate.object);
 assert.ok(frame.length >= 4 && frame.every(child => child.visible), 'frame stays up when the gate opens');
 assert.equal(Pieces.buildPassageGate({ span: 3, normalAxis: 'z' }).root.rotation.y, 0, "normalAxis 'z' keeps the authored +Z facing");
 
+// An older cached furniture profile must not recreate the black mesh during generation.
+const previous = data.ruinPassageDoor.parts; // Restored after the runtime sanitizer regression.
+data.ruinPassageDoor.parts = [...previous, { id:'recess', name:'Legacy Black Backing', kind:'box' }];
+const cachedGate = Pieces.buildPassageGate({ span:3 }); // The same builder handles stale cache and fresh authored JSON.
+assert(cachedGate && !cachedGate.root.userData.meshById.has('recess'), 'cached old passage data cannot recreate the black plane');
+assert(data.ruinPassageDoor.parts.some(part => part.id === 'recess'), 'sanitizing the runtime copy must not mutate editor-authoring data');
+data.ruinPassageDoor.parts = previous;
+
 // Transition doors intentionally retain their darkness; only walk-through gates lose the backing.
 assert(JSON.parse(read('docs/config/furniture-authored/cliffDoor.json')).parts.some(part => part.id === 'cliff_door_darkness'));
 assert(JSON.parse(read('docs/config/furniture-authored/ruinEntranceDoor.json')).parts.some(part => part.id === 'recess'));
