@@ -24,11 +24,13 @@ function testWorld(masterFirst) {
     const select = {value:'0',options:[],appendChild(option){this.options.push(option);}};
     const kind = {value:'fur_hood'}; // This legacy trophy-specific test explicitly selects the mastery-gated recipe.
     const status = {textContent:''};
-    const canvas = {width:1,height:1,getContext(){return {clearRect(){},drawImage(){},imageSmoothingEnabled:false};}};
+    const previewImage = {hidden:true,src:'',removeAttribute(name){if(name==='src')this.src='';}}; // The loom now displays a bounded image of the compositor rather than a mutable full-size canvas.
+    const previewMessage = {hidden:false,textContent:''}; // Real UI message for the no-sprite or loading case.
     const controls = {
       '[data-field="hide"]':select, '[data-field="hood-kind"]':kind,
       '[data-field="dye"]':{value:'',appendChild(){}}, '[data-dye-row]':{hidden:false},
-      '[data-field="status"]':status, '[data-view="preview"]':canvas,
+      '[data-field="status"]':status, '[data-view="preview"]':previewImage,
+      '[data-view="message"]':previewMessage,
       '[data-action="unlock"]':{hidden:false,disabled:false,textContent:''},
       '[data-action="craft"]':{disabled:false},
       '[data-action="close"]':{}, '[data-action="cloth"]':{}, '[data-action="view"]':{},
@@ -52,6 +54,7 @@ function testWorld(masterFirst) {
   };
   const context = {
     console, document, URL,
+    addEventListener(){}, removeEventListener(){}, // Simulate window key-listener registration/cleanup for the modal's Escape path.
     fetch:async()=>({ok:true,json:async()=>manifest}),
     localStorage:{
       getItem(key){return storage.get(key) || null;},
@@ -123,7 +126,7 @@ async function run(masterFirst) {
     groupsFor:()=>[{variant:'hide:one',count:1,stars:3,hideRecord:hide}],
     consume(){consumption++;return {ok:true,records:[hide]};},
   };
-  context.ClothingWeavingSystem={renderClothingLayers:async()=>({canvas:{width:1,height:1}})};
+  context.ClothingWeavingSystem={renderClothingLayers:async()=>({canvas:{width:1,height:1,toDataURL:()=> 'data:image/png;base64,mock'}})};
   context.EquipmentPanel={buildPackClothingSection(){}};
   const deps={
     inventory, getPackClothing:()=>pack, saveMemberWorldData(){}, buildInventoryGrid(){},
