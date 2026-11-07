@@ -23,6 +23,7 @@
 
   const LAYER = 25; // Unused elsewhere (see the layer list in outline-render-performance.js / held-object-render-order.js).
   const RANGE_TILES = 14; // Highlight radius for ordinary actors and interactables.
+  const SHAFT_SWITCH_RANGE_TILES = 26; // Large 45-tile shaft: gallery players can locate the two distant ascent switches before crossing the pit.
   const LANDMARK_RANGE_TILES = Object.freeze({ caves: 24, camps: 24, cliffDoors: 12, herbClusters: 12 }); // Distinct radii used by collectTargets for discoverable wilderness features.
   const INFO_RANGE_TILES = 6; // Info lists only for close objects, so a full farm doesn't drown in text.
   const MAX_INFO_LISTS = 10;
@@ -243,7 +244,8 @@
       shaftObeliskSwitches: window.RuinReachingObelisks?.senseTargets?.(scene) || [], // Only ascent switches, not unrelated ruin projectile targets.
     };
     lastStats.specialSources = Object.fromEntries(Object.entries(specialSources).map(([name, roots]) => [name, roots.length]));
-    for (const roots of Object.values(specialSources)) for (const root of roots) consider(root, 'interact'); // Shaft glyphs reuse the standard near-range green mask and do not disclose other puzzles.
+    for (const [source,roots] of Object.entries(specialSources)) for (const root of roots)
+      consider(root, 'interact', undefined, source==='shaftObeliskSwitches'?SHAFT_SWITCH_RANGE_TILES:RANGE_TILES); // Only obelisk switches receive the larger, gallery-visible sense radius.
     for (const crop of sources.crops || []) {
       consider(crop.root, crop.tile?.cropReady ? 'interact' : 'friendly', { crop });
     }
@@ -541,6 +543,7 @@
     COLORS,
     RANGE_TILES,
     LANDMARK_RANGE_TILES,
+    SHAFT_SWITCH_RANGE_TILES,
     debugSnapshot: () => ({
       active,
       ...lastStats,
