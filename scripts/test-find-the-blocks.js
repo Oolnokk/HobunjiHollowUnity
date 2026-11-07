@@ -40,12 +40,13 @@ function test(seed,size=24){
   const fireTargets=[],projectileTargets=[],breakablePillars=[],registeredBlocks=[],unregisteredBlocks=[],surfaces=[],cleared=[],barriers=[]; // Retain native registration and cleanup records along with authored obstruction centers.
   const soloGroup=new Object3D(); // Parent scene has the same lifetime as one Puzzle Lab reroll.
   const subpuzzles=[]; // Every nested melody/glyph/rail challenge must be solved and disposed through its real callback seam.
-  let solved=0;
+  let solved=0,playerFloor=16; // Simulates transitions between independently stacked dungeon stories for height-aware blockers.
   const env={
     THREE,
     DevRandomRuin:{
       registerLabPushBlock(mesh){registeredBlocks.push(mesh);return true;},
       unregisterLabPushBlock(mesh){unregisteredBlocks.push(mesh);return true;},
+      getPlayerGroundSupportY(){return playerFloor;},
       isSlidingPushBlock(){return false;}
     },
     DevRandomRuinTileOccupancy:{
@@ -240,6 +241,8 @@ function test(seed,size=24){
       showGate:false,isActive:()=>true,onSolved:()=>{}
     });
     assert(elevated.length>=3,'Pillars and block obstacles use height-aware collision in upper stories');
+    const permanent=elevated.find(item=>item.id.endsWith('normal-pillar-0')); // Must remain solid even after the external progress gate opens.
+    assert(permanent&&permanent.enabled(),'The current story has physical stone columns');
     for(const obstacle of elevated){
       const mx=(obstacle.bounds.minX+obstacle.bounds.maxX)/2;
       const mz=(obstacle.bounds.minZ+obstacle.bounds.maxZ)/2;
@@ -248,6 +251,15 @@ function test(seed,size=24){
       assert.equal(obstacle.blocksAt(mx,mz,1,null,0,{worldY:0}),false,
         'Raised stone obstacles never produce invisible blockers at ground level');
     }
+    playerFloor=0;
+    assert.equal(permanent.enabled(),false,'Upper-story stone does not block actors exploring below');
+    playerFloor=16;
+    upper.blocks.forEach((block,i)=>{
+      block.phase='ready';block.mesh.position.set(upper.plates[i].x,16+.41,upper.plates[i].z);
+    });
+    upper.tick(.05);
+    assert.equal(upper.solved,true,'Four filled plates can complete an elevated chamber');
+    assert.equal(permanent.enabled(),true,'Visible permanent stone remains solid after the wing progression gate opens');
     upper.dispose();
     assert.equal(unregisteredBlocks.length,12,'An elevated chamber unregisters its four native push blocks');
     assert.equal(state.controls.length,0,'Elevated chamber cleanup removes all interactive controls');
