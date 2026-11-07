@@ -260,6 +260,9 @@
   function remember(entry) {
     if (!initial.has(entry.entity)) initial.set(entry.entity, {
       colors: clone(appearance(entry)?.bodyColors),
+      editedColors: new Set(), // Reset only portrait slots deliberately edited by this inspector; external character changes survive.
+      editedAxes: new Set(), // Other game systems may resize untouched body axes while the dev panel is open.
+      coatEdited: false, // Genetic coats are restored only after an explicit inspector coat edit.
       hadNpcAppearance: entry.kind === 'npc' ? !!entry.entity.rec?.appearance : null, // Reset can remove a temporary appearance block on legacy NPCs.
       coat: entry.entity.genotype?.base?.color,
       scale: { x: entry.root.scale.x, y: entry.root.scale.y, z: entry.root.scale.z },
@@ -337,8 +340,8 @@
     const state = settings.get(entry.entity);
     const saved = initial.get(entry.entity);
     if (state && saved && entry.kind !== 'creature') {
-      for (const axis of ['x', 'y', 'z'])
-        entry.root.scale[axis] = saved.scale[axis] * state.scale[axis] / 100; // Reapply live sizing after an avatar rebuild resets rig transforms.
+      for (const axis of saved.editedAxes)
+        entry.root.scale[axis] = saved.scale[axis] * state.scale[axis] / 100; // Leave axes controlled by other live systems untouched.
     }
     if (state && (state.tint !== '#ffffff' || state.opacity !== 100)) applyFilters(entry);
     scene()?.updateMatrixWorld?.(true);
@@ -379,7 +382,7 @@
       if (!owner) throw new Error('This character has no editable appearance.');
       const previous = owner.bodyColors;
       owner.bodyColors = { ...(owner.bodyColors || {}), [slot]: newColor };
-      try { await refresh(entry); }
+      try { await refresh(entry); saved.editedColors.add(slot); }
       catch (error) {
         if (previous === undefined) delete owner.bodyColors;
         else owner.bodyColors = previous;
@@ -391,7 +394,7 @@
         throw new Error('This creature has no editable base coat.');
       const previous = entry.entity.genotype.base.color; // Failed texture recomposes must not leave a hidden gameplay genotype mutation.
       entry.entity.genotype.base.color = validHex(value);
-      try { await refresh(entry); }
+      try { await refresh(entry); saved.coatEdited = true; }
       catch (error) { entry.entity.genotype.base.color = previous; throw error; }
     } else if (action.startsWith('scale:')) {
       const axis = action.slice(6);
@@ -407,6 +410,7 @@
         }, entry.entity.scaleY);
       } else entry.root.scale[axis] = saved.scale[axis] * n / 100;
       entry.root.updateMatrixWorld?.(true);
+      saved.editedAxes.add(axis); // Includes explicit 100% reverts, without restoring axes the editor never touched.
     } else if (action === 'tint') {
       if (!validHex(value)) throw new Error('Enter a six-digit hex color.');
       state.tint = validHex(value);
@@ -424,11 +428,16 @@
     const saved = initial.get(entry.entity);
     if (!saved) return { ok: true };
     const owner = appearance(entry);
-    if (entry.kind === 'npc' && !saved.hadNpcAppearance) {
-      delete entry.entity.rec.appearance;
-    } else if (owner) {
-      if (saved.colors === undefined) delete owner.bodyColors;
-      else owner.bodyColors = clone(saved.colors);
+    if (owner && saved.editedColors.size) {
+      const colors = { ...(owner.bodyColors || {}) }; // Restore touched channels only; preserve changes from gameplay and other dev tools.
+      for (const slot of saved.editedColors) {
+        if (Object.hasOwn(saved.colors || {}, slot)) colors[slot] = clone(saved.colors[slot]);
+        else delete colors[slot];
+      }
+      if (saved.colors === undefined && !Object.keys(colors).length) delete owner.bodyColors;
+      else owner.bodyColors = colors;
+      if (entry.kind === 'npc' && !saved.hadNpcAppearance && !Object.keys(owner).length)
+        delete entry.entity.rec.appearance; // Remove only an inspector-created empty legacy appearance object.
     }
     if (entry.kind === 'player' && saved.garments) {
       for (const [, original] of saved.garments) {
@@ -440,11 +449,11 @@
       }
     }
     if (entry.kind === 'npc') window.NpcWardrobe?.clearDevClothingVisual?.(entry.entity.rec?.id);
-    if (entry.kind === 'creature' && entry.entity.genotype?.base) {
+    if (saved.coatEdited && entry.kind === 'creature' && entry.entity.genotype?.base) {
       if (saved.coat === undefined) delete entry.entity.genotype.base.color;
       else entry.entity.genotype.base.color = saved.coat;
     }
-    for (const axis of ['x', 'y', 'z']) {
+    for (const axis of saved.editedAxes) {
       entry.root.scale[axis] = saved.scale[axis];
       if (entry.kind === 'creature') {
         const key = 'visualScale' + axis.toUpperCase();
