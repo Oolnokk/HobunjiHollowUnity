@@ -80,7 +80,7 @@
         max:{x:hitbox.box.max.x,y:hitbox.box.max.y,z:hitbox.box.max.z}}
       :{min:{x:p.x-.42,y:base,z:p.z-.42},max:{x:p.x+.42,y:base+1.1,z:p.z+.42}};
     const swept=window.TzatzulFlightRuntime?.sweptBodyHit; // Shared 3D body-only, frame-rate-independent dive collider.
-    if(swept?.(from,to,{x:.22,y:.28,z:.22},box)===null)return;
+    if(!swept || swept(from,to,{x:.22,y:.28,z:.22},box)===null)return; // If the shared swept-body provider isn't loaded, never award automatic contact.
     state.struck=true;debug.hits++;
     const amount=Math.max(2,Number(actor.def?.attackDamage)||6);
     const damage=window.Combat?.deps?.damageCreature;
@@ -218,11 +218,10 @@
       c.areaId===area&&c.health>0&&String(c.creatureKey||'').startsWith('drenkirra'));
     const player=tilePos(deps.player);
     const origins=nearby.length?nearby.map(tilePos):[player];
-    let attempts=0;
-    for(let i=0;i<MAX_FLOCKS&&attempts<32;attempts++){
+    for(let i=0;i<32&&session.nests.length<MAX_FLOCKS;i++){ // Bounded retries skip water, steep rock and already-occupied nesting sites.
       const base=origins[hash(area+':'+i)%origins.length];
       const angle=(hash(area+':nest-angle:'+i)%628)/100;
-      const radius=5+(hash(area+':nest-radius:'+i)%5);
+      const radius=5+(hash(area+':nest-radius:'+i)%8);
       const x=Math.floor(base.x+Math.cos(angle)*radius)+.5;
       const z=Math.floor(base.z+Math.sin(angle)*radius)+.5;
       if(!validSite(session,x,z)||session.nests.some(n=>dist(n,{x,z})<9))continue;
@@ -236,7 +235,9 @@
     return session.nests.length;
   }
   function updateWild(dt){
-    const area=activeArea(),session=sessions.get(area);
+    const area=activeArea();
+    for(const old of [...sessions.values()])if(old.area!==area)cleanupSession(old); // Release unloaded flocks and nest visuals without leaking another area's actors.
+    const session=sessions.get(area);
     if(!session||session.disposed)return;
     for(const state of session.birds){
       const a=state.actor;
@@ -303,12 +304,13 @@
       scene.traverse?.(node=>{if(node.isMesh && /ceiling|roof|overhang|cavern-vault/i.test(node.name||''))ceilings.push(node);});
       if(ceilings.length)return ray.intersectObjects(ceilings,false).length>0;
     }
-    return !window.DevRandomRuin?.hasShaftHub?.(); // Conservative interior fallback; a full-height shaft stays valid for bombing.
+    return window.DevRandomRuin?.getRuntimeContext?.()?.shaftHub!==true; // Interior fallback; an actual full-height shaft still allows bombing.
   }
   function bodySweep(actor,target,from,to){
     const p=tilePos(target),ground=groundAt(p.x,p.z);
     const box={min:{x:p.x-.42,y:ground,z:p.z-.42},max:{x:p.x+.42,y:ground+1.3,z:p.z+.42}};
-    return window.TzatzulFlightRuntime?.sweptBodyHit?.(from,to,{x:.24,y:.3,z:.24},box)!==null;
+    const sweep=window.TzatzulFlightRuntime?.sweptBodyHit; // Shared torso contact function is optional in stripped test realms.
+    return typeof sweep==='function' && sweep(from,to,{x:.24,y:.3,z:.24},box)!==null;
   }
   function restoreCompanion(actor,state){
     if(state.boulder && state.phase!=='dropped'){
