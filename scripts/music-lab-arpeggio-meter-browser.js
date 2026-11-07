@@ -33,10 +33,12 @@ async function run() {
       const meter = document.getElementById('auditionMeterSelect');
       return pattern && meter && !pattern.disabled && !meter.disabled;
     },null,{timeout:30000});
-    assert.equal(await page.locator('#auditionPatternSelect option').count(),20,
-      'the picker must contain Single Note and all nineteen real rolls, tremolos and strums');
+    assert.equal(await page.locator('#auditionPatternSelect option').count(),8,
+      'the Lab must expose eight broad, meter-adaptive choices instead of every rigid gameplay pattern');
     assert.equal(await page.locator('#auditionMeterSelect option').count(),9,
       'the Lab must offer the original meter and eight alternatives');
+    const labels = await page.locator('#auditionPatternSelect option').allTextContents(); // Guards against genre or person labels returning to the simplified selector.
+    assert.deepEqual(labels,['Single Note','Rise','Fall','Wave','Alternate','Weave','Pulse','Chord Strokes']);
     await page.locator('#auditionPatternSelect').selectOption('arp-forward-reverse-16');
     await page.locator('#auditionMeterSelect').selectOption('7/8');
     const selected = await page.evaluate(() => {
@@ -54,6 +56,7 @@ async function run() {
     assert.match(selected.labels[0],/7\/8/,'intro timeline must show the selected meter');
     assert.match(selected.labels[4],/7\/8/,'melody timeline must show the selected meter');
     assert.match(selected.description,/accents 2\+2\+3/,'mobile explanation must expose the seven-eight accent grouping');
+    assert.match(await page.locator('#auditionPatternDescription').textContent(),/reshaped to every bar/,'pattern description must explain adaptive timing');
     await page.locator('#playBtn').click();
     await page.waitForFunction(() => {
       const bridge = document.querySelector('#engine').contentWindow.HobunjiMusicControlBridge;
@@ -64,7 +67,7 @@ async function run() {
       return {meter:bridge.scaleAuditionState().currentTimeSignature,pattern:bridge.ambientPerformanceState().pattern,status:document.querySelector('#status').textContent};
     });
     assert.equal(playing.meter,'7/8','real audition transport must run the selected meter');
-    assert.equal(playing.pattern,'arp-forward-reverse-16','real audition must use selected continuous roll instead of direct notes');
+    assert.equal(playing.pattern,'arp-forward-reverse-16','real audition must use the selected wave-shaped roll instead of direct notes');
     assert.match(playing.status,/7\/8/,'mobile playback status must report the meter');
     await page.locator('#stopBtn').click();
     await page.locator('#auditionMeterSelect').selectOption('original');
