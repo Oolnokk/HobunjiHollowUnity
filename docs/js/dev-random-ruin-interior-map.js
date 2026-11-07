@@ -1938,6 +1938,7 @@
       ' cells'+(ruin.shaftConnection.straightVestibule?' · direct vestibule ✓':'')+
       ' · V50 motifs '+(ruin.shaftConnection.patternedWallPanels||0)+' panels/'+(ruin.shaftConnection.patternedPilasters||0)+' pillars · '+layers.wings+' wings · gates '+layers.challengesSolved+'/'+layers.challengesTotal+
       ' · braziers '+layers.lit+'/'+layers.braziers+
+      ' · roofs '+layers.ceilingMeshes+' wing / '+(nativeState?.ceilingMeshes||0)+' native'+ // Existing mobile shaft badge now confirms roof geometry for both generators.
       ' · rope '+layers.ropeChainsLinked+' ('+layers.floorlessCells+' void tiles)'+
       ' · statue '+layers.defenseRoomsReady+' ready'+
       (nativeState?' · V50 '+nativeState.rooms+' native rooms / '+nativeState.hallways+' halls · reserved '+nativeState.perFloor.filter(f=>f.reservationVerified).length+'/'+nativeState.floors:'')+
