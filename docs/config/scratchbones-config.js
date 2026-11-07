@@ -4191,12 +4191,6 @@ window.SCRATCHBONES_CONFIG = {
               "url": "cosmetics/appearance/shared/splayedknot-behind.png"
             },
             {
-              "_comment": "Fur-lined Hood reuses Fine Hood's entire rear silhouette, so its front-only fur trim must not cover that behind sprite.",
-              "idIncludes": ["fur-lined-hood"],
-              "urlIncludes": ["furlinedhood-trim"],
-              "hide": true
-            },
-            {
               "_comment": "Fine hood's face-opening trim isn't visible from behind the head at all -- the single finehood-back sprite below stands in for the whole hood.",
               "idIncludes": ["fine-hood"],
               "urlIncludes": ["trim"],
