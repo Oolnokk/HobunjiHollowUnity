@@ -32230,6 +32230,16 @@
         };
       };
 
+      window.FallSystem?.init({ // Landing/edge/grip rules shared by climbing, ledges and cliff falls (js/fall-system.js).
+        PLATEAU_UNIT: typeof PLATEAU_UNIT === "number" ? PLATEAU_UNIT : 2.5,
+        enterProneIfDepleted: (entity, dirX, dirY) => {
+          if (!entity) return false;
+          const isPlayerEntity = entity === player;
+          const direction = hitDirectionRelativeToFacing(isPlayerEntity ? entity.angle : (entity.facing || 0), entity.x, entity.y, entity.x - (dirX || 0) * TILE, entity.y - (dirY || 0) * TILE);
+          enterProneIfFootingDepleted(entity, isPlayerEntity, direction);
+          return !!entity.prone;
+        },
+      });
       window.ClimbSystem?.init({
         _isZoneArea,
         getCurrentArea: () => currentArea,

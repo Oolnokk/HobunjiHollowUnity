@@ -320,6 +320,7 @@
     player._climbCancelable = cancelable;
     player._climbCancelHoldS = 0;
     player._climbDropped = false;
+    player._climbFall = null; // Starters that are falls set this after calling us.
   }
 
   function startScriptedWorldClimb(config = {}) {
@@ -385,6 +386,7 @@
     player._climbTargetBranch = null; player._climbJumpDownAxis = null;
     player._cliffLandingShelf = null;
     resetClimbTiming(player, { cancelable: false });
+    window.FallSystem?.resetGrip?.(player); // Every route starts with a full grip.
     return true;
   }
 
@@ -456,6 +458,7 @@
     player._climbLastHopIndex = -1;
     if (descending) resetClimbTiming(player, { activeS: CLIFF_JUMP_DOWN_ACTIVE_S, pauseS: 0, bounce: CLIFF_JUMP_DOWN_BOUNCE_UNITS });
     else resetClimbTiming(player, { cancelable: true });
+    player._climbFall = descending ? { dropWorld: Math.max(0, player.climbSurfaceStartY - player.climbSurfaceEndY), deliberate: true, rolled: true, source: 'cliff jump down', dirX: climb.dir.x, dirY: climb.dir.y } : null;
     climbSafetyDebug.lastJumpMode = descending ? 'cliff' : null;
     climbSafetyDebug.lastBlockReason = null;
     climbSafetyDebug.lastBlockRideState = 'none';
@@ -678,7 +681,55 @@
 
   // Only selected exterior handhold routes use the surface crawl. Dungeon
   // ladders, trees, jumps and legacy scripted climbs keep their own timings.
+  // Shared fall: let go of the cliff face and drop to the route's base. The
+  // animation is the ordinary scripted crossing (so camera/renderer/landing
+  // code is unchanged); FallSystem decides the landing cost on arrival.
+  const GRIP_WARN_TOAST_COOLDOWN_MS = 6000;
+  function fallFromClimb(player, why = 'slipped') {
+    const session = player._cliffRouteSession;
+    const base = session?.route?.nodes?.[0];
+    if (!session || !base) return false;
+    const fromY = player.climbSurfaceY;
+    player._cliffRouteSession = null;
+    player.climbing = false;
+    player.onCliffBalcony = null;
+    if (!startScriptedWorldClimb({
+      endX: base.x * deps.TILE, endY: base.z * deps.TILE,
+      startWorldY: fromY, endWorldY: base.y, hopCount: 2, shortHops: true,
+      facingAngle: player.angle,
+    })) return false;
+    const dropWorld = Math.max(0, fromY - base.y);
+    const tiers = window.FallSystem?.dropTiers?.(dropWorld) ?? dropWorld / 2.5;
+    player.climbHopCount = 1; // One uninterrupted drop, not a stagger of hops.
+    resetClimbTiming(player, { activeS: Math.max(0.2, Math.min(0.55, 0.18 + tiers * 0.07)), pauseS: 0, bounce: 0 });
+    player._climbFall = { dropWorld, deliberate: false, rolled: false, source: 'climb ' + why };
+    climbSafetyDebug.lastJumpMode = 'fall-' + why;
+    deps.showToast?.('You lose your grip!', false);
+    window.__farmLog?.('[climb] grip lost; falling ' + dropWorld.toFixed(2) + ' units to the base', 'wildlife');
+    return true;
+  }
+
+  // Grip only drains while hanging from a mid-route handhold; resting nodes
+  // (base, summit, ledges) recover it. See FallSystem.CONFIG for the numbers.
+  function tickRouteGrip(player, session, dt) {
+    const FS = window.FallSystem;
+    if (!FS) return false;
+    const node = session.route.nodes[session.nodeIndex];
+    const atRest = !session.moving && (session.nodeIndex === 0 || session.nodeIndex === session.route.upperNode || !!node?.balconyId);
+    const state = FS.tickGrip(player, dt, !atRest);
+    player._gripWarn = state === 'warn';
+    if (state === 'warn') {
+      const now = Date.now();
+      if (!(now - (player._gripWarnToastAt || 0) < GRIP_WARN_TOAST_COOLDOWN_MS)) {
+        player._gripWarnToastAt = now;
+        deps.showToast?.('Your grip is slipping - find a ledge to rest.', false);
+      }
+    }
+    return state === 'slip' && fallFromClimb(player, 'slipped');
+  }
+
   function updateRouteCrawl(player, session, dt) {
+    if (tickRouteGrip(player, session, dt)) return;
     if (!session.moving) {
       const raw = deps.getMovementInput?.() || { x: 0, y: 0 };
       const next = window.CliffRouteNetwork?.nextHop?.(session.route, session.nodeIndex, { x: raw.x, z: raw.y });
@@ -794,6 +845,9 @@
       player.climbing = false;
       player._climbCancelable = false;
       player._climbDropped = false;
+      const fall = player._climbFall;
+      player._climbFall = null;
+      if (fall) window.FallSystem?.land?.(player, fall);
       if (player._climbTargetBranch) {
         const branch = player._climbTargetBranch;
         player._climbTargetBranch = null;
@@ -857,6 +911,7 @@
     player._cliffLandingShelf = destination.balconyId;
     player._climbJumpDownAxis = dir;
     resetClimbTiming(player, { activeS: 0.42, pauseS: 0, bounce: 0.32 });
+    player._climbFall = { dropWorld: Math.max(0, shelf.y - destination.surfaceY), deliberate: true, rolled: true, source: 'ledge jump', dirX: dir.x, dirY: dir.y };
     return true;
   }
 
@@ -888,14 +943,26 @@
       }
       if(supported&&!blocked) {
         player.x = x * deps.TILE; player.y = z * deps.TILE;
-      } else if(!blocked) jumpFromBalcony(raw); // A locked gate stops movement; reaching a genuine ledge edge still initiates a fall.
-    }
+      } else if(!blocked) {
+        // A locked gate stops movement. At a genuine ledge edge the player
+        // stops at the lip and must hold outward briefly to step off, so
+        // brushing the edge never drops you (FallSystem.edgeIntent).
+        const FS = window.FallSystem;
+        if (!FS) jumpFromBalcony(raw);
+        else {
+          const intent = FS.edgeIntent(player, dt, true);
+          player._edgeToe = intent.progress;
+          if (intent.state === 'commit') { player._edgeToe = 0; jumpFromBalcony(raw); }
+        }
+      }
+      if (supported && !blocked) { window.FallSystem?.clearEdgeIntent?.(player); player._edgeToe = 0; }
+    } else if (player._edgeCommitS) { window.FallSystem?.edgeIntent?.(player, dt, false); player._edgeToe = 0; }
     player.vx = 0; player.vy = 0;
     return true;
   }
 
   window.ClimbSystem = {
-    updateBalcony, jumpFromBalcony,
+    updateBalcony, jumpFromBalcony, fallFromClimb,
     init,
     getClimbTarget,
     getAimedNest,
