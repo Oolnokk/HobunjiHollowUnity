@@ -18,6 +18,7 @@
   const debug={flocks:0,spawned:0,dives:0,hits:0,flees:0,nestsHarvested:0,eggsCollected:0,
     bombingRuns:0,bouldersDropped:0,lowCeilingDives:0,lastError:null}; // Console-free finite counters for mobile.
   let deps=null; // WildlifeSpawn's factory, hostile/companion sets and current map.
+  let nestButton=null; // One mobile-friendly in-world pickup button for nest interactions outside the farm's worldObjects targeting.
   let registeredBomb=false,registeredAttack=false,serial=0; // Idempotent combat/burden registration and unique burden ids.
 
   function activeArea(){return String(deps?.getCurrentArea?.()||'')}
@@ -102,9 +103,34 @@
     if(leg.elapsed<leg.duration)return false;
     state.leg=null;return true;
   }
+  function updateNestButton(session,position){
+    if(typeof document==='undefined'||!document.body)return; // Node fixtures and non-browser worlds do not need HUD controls.
+    const nearby=session&&position ? session.nests.filter(n=>!n.harvested&&dist(position,n)<=2.5)
+      .sort((a,b)=>dist(position,a)-dist(position,b))[0] : null; // Player must physically approach an intact fertile clutch.
+    if(!nearby){if(nestButton)nestButton.style.display='none';return;}
+    if(!nestButton){
+      nestButton=document.createElement('button'); // Independent fallback for zones where farm worldObjects are not eligible wilderness targets.
+      nestButton.type='button';nestButton.id='pingdortNestTakeButton';
+      nestButton.textContent='🥚 Take Pingdort Eggs';
+      nestButton.setAttribute('aria-label','Take fertile Pingdort eggs from nearby nest');
+      nestButton.style.cssText='position:fixed;right:12px;bottom:120px;z-index:1000;min-height:44px;padding:8px 12px;border:1px solid #bd9a60;border-radius:9px;background:rgba(37,29,20,.94);color:#fbe8bf;font:600 14px sans-serif;cursor:pointer;pointer-events:auto;box-shadow:0 3px 12px #0008';
+      nestButton.addEventListener('click',()=>{
+        const area=activeArea(),active=sessions.get(area),player=tilePos(deps?.player);
+        const closest=active?.nests.filter(n=>!n.harvested&&dist(player,n)<=2.5)
+          .sort((a,b)=>dist(player,a)-dist(player,b))[0];
+        if(!closest)return;
+        const outcome=collectNest(closest.id);
+        deps?.showToast?.(outcome.message, outcome.ok);
+        updateNestButton(active,player);
+      });
+      document.body.appendChild(nestButton);
+    }
+    nestButton.style.display=''; // Accessible without DevTools on desktop, touch and controller-using mobile browser builds.
+  }
   function cleanupSession(session){
     if(!session||session.disposed)return;
     session.disposed=true;
+    if(nestButton)nestButton.style.display='none'; // A scene swap immediately removes the old nest action.
     for(const state of session.birds){
       const a=state.actor;window.TzatzulLiveVisuals?.release?.(a,'flock unloaded');
       window.PerchSupport?.forget?.(a);a.onBranch=null;
@@ -238,7 +264,8 @@
     const area=activeArea();
     for(const old of [...sessions.values()])if(old.area!==area)cleanupSession(old); // Release unloaded flocks and nest visuals without leaking another area's actors.
     const session=sessions.get(area);
-    if(!session||session.disposed)return;
+    if(!session||session.disposed){if(nestButton)nestButton.style.display='none';return;}
+    updateNestButton(session,tilePos(deps?.player)); // Keep the pickup affordance synced with living nests.
     for(const state of session.birds){
       const a=state.actor;
       if(!alive(a,area))continue;
