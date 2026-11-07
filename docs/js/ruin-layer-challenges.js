@@ -409,7 +409,7 @@
         t.phase=i*Math.PI;t.speed=1.2+i*.35;
       }
     }
-    if(kind==='timedMelody'||kind==='fireSconces'){
+    if(options.authoredCliffDoor&&(kind==='timedMelody'||kind==='fireSconces')){
       // The playable cave gate occupies a genuine rough-hewn hole in a single
       // roof-height rock wall. The slab rises independently; after opening the
       // exposed jambs/lintel remain stone, not clipped boulders or a black card.
