@@ -588,6 +588,7 @@
         label:'Reveal Safe Path',
         onPress:() => {
           grid.revealUntil = performance.now() + GRID_REVEAL_MS;
+          window.RuinInteractionAudio?.activator?.(button); // The stone reveal switch clicks only when deliberately pressed.
           if (grid.entryMechanismId) {
             if (window.DevRandomRuin?.mechanismInfo?.(grid.entryMechanismId)?.locked) window.DevRandomRuin.unlockMechanism?.(grid.entryMechanismId, true);
             else window.DevRandomRuin?.setMechanismTarget?.(grid.entryMechanismId, 1);
@@ -2238,6 +2239,7 @@
       const topY=elevator.topTopY+(elevator.bottomTopY-elevator.topTopY)*elevator.progress;
       elevator.currentTopY=topY;
       elevator.mesh.position.y=topY-elevator.height*.5;
+      if(elevator.active)window.RuinInteractionAudio?.watchMovement?.(elevator.mesh,elevator.progress); // Continuous stone lift sounds once per ascent/descent, not every frame.
       if(wasRiding&&Math.abs(topY-previousTopY)>.0001){
         window.DevRandomRuin?.syncPlayerPresentationHeight?.(topY); // Vertical-only rider transfer stays in the canonical ruin elevation authority while X/Z remain ordinary player movement.
       }
@@ -2357,6 +2359,7 @@
         }
         if (!set.solved && !down) plate.material.color.setHex(CHORD_PLATE_IDLE_COLOR);
         plate.down=down;
+        window.RuinInteractionAudio?.watchPlate?.(plate.mesh,down); // The real chord plate press/release drives the shared stone activator sound.
         set.inscription?.setVisible?.(down);
       }
     }
