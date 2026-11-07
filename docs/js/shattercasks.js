@@ -1626,8 +1626,7 @@
     }
     if(flight){
       const f=flight,c=f.vase;
-      const before=Math.min(1,f.t/f.duration);
-      const from=c.group.position.clone(); // Previous real world position, not a new camera-ray approximation.
+      const before=Math.min(1,f.t/f.duration); // Preserve progress so live cover follows the entire thrown arc on slow frames.
       f.t+=dt;
       const ratio=Math.min(1,f.t/f.duration);
       if(window.AlchemyFlasks?.flightPosition)
@@ -1638,9 +1637,10 @@
           f.origin.y+(f.target.y-f.origin.y)*ratio+arc,
           f.origin.z+(f.target.z-f.origin.z)*ratio);
       }
-      const coverHit=window.ThrowCoverTrajectory?.sweep?.(from,c.group.position,{
-        deps:deps(),tile:tileSize(),groundAt:thrownGround,progressStart:before,progressEnd:ratio,
-      });
+      const coverHit=window.ThrowCoverTrajectory?.sweepFlight?.(f.origin,f.target,before,ratio,{
+        deps:deps(),tile:tileSize(),groundAt:thrownGround,
+        flightPosition:window.AlchemyFlasks?.flightPosition,
+      }); // Same ballistic arc as the ground preview, even after a long frame.
       c.group.rotation.set(f.t*8,0,f.t*5);
       if(coverHit){
         c.group.position.set(coverHit.x,thrownGround(coverHit.x,coverHit.z)+.12,coverHit.z); // Impact on the near side, never on the far side of cover.
