@@ -46,6 +46,8 @@ const gifting = windowStub.NpcGifting; // Wrapped public API used by the game's 
 const rapport = windowStub.NpcRapport; // Existing daily/rollover authority.
 const hunterA = { rec: { id: 'hunter_a', species: 'porakaneki' }, isPorakanekiHunter: true }; // Two unrelated camps must share one gift quota.
 const hunterB = { rec: { id: 'hunter_b', species: 'porakaneki' }, isPorakanekiHunter: true };
+assert.equal(gifting.getNpcGiftOfferAction(hunterA), null, 'missing position authority must never enable a remote Porakaneki gift');
+assert.equal(gifting.offerGift(hunterA), false, 'uninitialized world targeting cannot consume the gift');
 windowStub.FurnitureTableSystem = { npcDistance: () => 2.1 }; // Production world-position authority: both named chief and procedural hunter are outside the two-tile reach.
 assert.equal(gifting.getNpcGiftOfferAction(hunterA), null, 'distant hunter cannot advertise a gift action');
 assert.equal(gifting.getNpcGiftOfferAction({ rec: chief }), null, 'distant chief uses the same proximity rule');
