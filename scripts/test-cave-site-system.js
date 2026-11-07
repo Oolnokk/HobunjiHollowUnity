@@ -586,11 +586,24 @@ console.log(`PASS cave-site-system: ${workspace.animalDens.length} anchors -> ${
   ]},separatorScene,separatorGrid); // Adjacent layers share a logical cave wall but each tile is a standalone diggable rock.
   const rock0=separatorGroups.get('0,0'),rock1=separatorGroups.get('1,0');
 
+  const assertSealedStone=mesh=>{
+    const vertices=mesh.geometry.attributes.position.array;
+    const edges=new Map(); // Every triangulated cut must have both matching sides; an unmatched edge would reveal a literal hole.
+    for(let i=0;i<vertices.length;i+=9){
+      const corners=[0,3,6].map(offset=>[0,1,2].map(j=>Math.round(vertices[i+offset+j]*1e5)).join(','));
+      for(let j=0;j<3;j++){
+        const edge=[corners[j],corners[(j+1)%3]].sort().join('|');
+        edges.set(edge,(edges.get(edge)||0)+1);
+      }
+    }
+    assert([...edges.values()].every(count=>count===2),'fused stone is a sealed manifold with no open intersection or cut edges');
+  };
   const fused=()=>separatorScene.children.filter(child=>child.userData?.caveSeparatorFused);
   assert.equal(fused().length,1,'touching rocks fuse into exactly one rendered rock wall, without overlapping clipped lobes');
   const oldMesh=fused()[0],oldGeo=oldMesh.geometry;
   assert.equal(oldMesh.userData.caveSeparatorLiveTiles,2,'shared wall tracks both independently mineable tiles');
   assert(oldGeo.userData.caveFusedRockTriangles>0,'the wall is an actual triangulated solid');
+  assertSealedStone(oldMesh);
   assert.equal(oldGeo.attributes.position.array.length,oldGeo.attributes.uv.array.length/2*3,'each fused stone vertex receives continuous stone UVs');
   assert(oreCtx.CavernOreRocks.probeRock(separatorMap,1,1,.5)<0,'the shared seam inside neighboring tiles is filled with uninterrupted rock');
   assert(oreCtx.CavernOreRocks.probeRock(separatorMap,.55,1,.5)<0,'the left mineable tile is initially solid');
@@ -608,6 +621,7 @@ console.log(`PASS cave-site-system: ${workspace.animalDens.length} anchors -> ${
   assert(oreCtx.CavernOreRocks.probeRock(separatorMap,.55,1,.5)>0,'the mined gap is genuinely open, not an invisible overlapping mesh');
   assert(oreCtx.CavernOreRocks.probeRock(separatorMap,1.5,1,.5)<0,'remaining rock has a freshly sealed exposed rock face');
   assert.equal(oreCtx.CavernOreRocks.removeVisual(separatorMap,1,0),true,'blast events can retire the next rock independently');
+  assert.equal(fused().length,0,'a completely mined barrier leaves no empty rock mesh');
 
   const doorScene=new Obj(),doorMap='map_i_fused_secret_door',doorGrid=[[{},{},{},{}]];
   oreCtx.CavernOreRocks.build(doorMap,{oreRocks:[
@@ -620,6 +634,7 @@ console.log(`PASS cave-site-system: ${workspace.animalDens.length} anchors -> ${
   assert(oreCtx.CavernOreRocks.probeRock(doorMap,3.5,1,1.03)<0,'cutting the door heals the exposed stone jamb');
   assert(oreCtx.CavernOreRocks.probeRock(doorMap,3.5,2.6,.5)<0,'the carved passage has a solid stone lintel above the doorway');
   assert(doorMesh.geometry.userData.caveFusedRockTriangles>0,'the healed doorway is triangulated into the rock rather than a texture mask');
+  assertSealedStone(doorMesh); // The rough stone donut must have a complete closed inner surface around its hole.
   assert.equal(oreCtx.CavernOreRocks.debugSnapshot(doorMap)[0].doorOpening,true,'the mobile diagnostics identify a carved door');
   const stagedScene=new Obj(),stagedMap='map_i_batch_wall',stagedGrid=[[{},{},{}]];
   oreCtx.CavernOreRocks.build(stagedMap,{oreRocks:[0,1,2].map(col=>({
@@ -649,6 +664,7 @@ console.log(`PASS cave-site-system: ${workspace.animalDens.length} anchors -> ${
     'the gate geometry advertises its carved door for mobile visual diagnostics');
   assert.equal(stoneGate.userData.caveSeparatorHeight,9,'the stone gate rises through the cavern ceiling');
   assert.equal(gateScene.children.length,1,'one fused rock wall replaces a cluster of intersecting doorframe boulders');
+  assertSealedStone(stoneGate);
 
   const mineKinds = new Set();
   for (let i = 0; i < 40; i++) {
