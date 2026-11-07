@@ -223,9 +223,13 @@
     }
     candidates.push({x:shelf.x,z:shelf.z}); // Last supported option; never fall back to hovering above unspecified terrain.
     const half=layout.width/2+.04;
-    const safe=candidates.find(p=>supports(p.x,p.z)&&
-      supports(p.x+t.x*half,p.z+t.z*half)&&supports(p.x-t.x*half,p.z-t.z*half)&&
-      (Math.hypot(p.x-portal.door.x,p.z-portal.door.z)>.43||p===candidates[candidates.length-1]));
+    const depth=.16; // Covers the stone backing on both sides; the surface must support its actual footprint.
+    const clearOfControls=p=>Math.hypot(p.x-portal.plate.x,p.z-portal.plate.z)>.48
+      &&Math.hypot(p.x-(portal.entry.c+.5),p.z-(portal.entry.r+.5))>.42
+      &&Math.hypot(p.x-portal.door.x,p.z-portal.door.z)>.32; // Even the shelf-center fallback must not sit directly on a plate or door.
+    const supportedCorners=p=>[-1,1].every(side=>[-1,1].every(front=>
+      supports(p.x+t.x*half*side+n.x*depth*front,p.z+t.z*half*side+n.z*depth*front)));
+    const safe=candidates.find(p=>supports(p.x,p.z)&&supportedCorners(p)&&clearOfControls(p));
     if(!safe)return null;
     return {kind:'pillar',x:safe.x,y:shelf.y+(layout.height+.14)/2+.015,z:safe.z,
       yaw:Math.atan2(portal.plate.x-safe.x,portal.plate.z-safe.z),surface:'supported-cliff-balcony'};
