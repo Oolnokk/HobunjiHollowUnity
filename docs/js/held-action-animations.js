@@ -254,35 +254,33 @@
       strike: { ...copyFluteNotePose(), bodySink: FLUTE_STRIKE_BODY_SINK_PCT }, // Only the body's downward bend distinguishes the sounded note.
     },
   };
-  const kurrayaHoldTransform = { // All three phases use this exact instrument placement; a note moves fingers, not the lute body.
+  const kurrayaHoldTransform = { // The supplied Kurraya placement stays fixed; the independent right hand plucks the strings.
     x: 0.27, y: 0.08, z: 0.02, pitch: 0, yaw: 0, bodyYaw: 0, roll: 0,
   };
+  const kurrayaWindupNotePose = { // Authored plucking posture; also the stationary Neutral/rest stance.
+    ...kurrayaHoldTransform, headRelative: false,
+    shoulderAim: { grip: false, palmNormal: false },
+    secondaryGrip: { enabled: true, percent: 50, primaryPercent: 50 },
+    dualWield: { enabled: false },
+    elbows: { left: { x: 0.155, y: -0.195, z: 0 } },
+    rightHand: { enabled: true, x: -0.13, y: 0.47, z: 0.025, roll: 52 },
+  };
+  const copyKurrayaWindupPose = () => JSON.parse(JSON.stringify(kurrayaWindupNotePose)); // Keyframes must not alias nested elbows, free hand or grip settings.
   const kurrayaPlayNote = {
     version: 1, kind: 'hobunji_held_action_animation', name: 'Kurraya — Play Note',
     actionId: 'kurraya_play_note', style: 'thrust', sequence: 'attack',
     durationS: 0.32, windupFrac: 0.18, strikeFrac: 0.34, holdFrac: 0.62,
     headRelative: false, toolEndFlip: false, gripMode: 'palm-parallel',
     poses: {
-      neutral: {
-        ...kurrayaHoldTransform,
-        scale: 1, bodySink: 0,
-        shoulderAim: { grip: true, palmNormal: true },
-        secondaryGrip: { enabled: false, percent: 50, primaryPercent: 50 },
-        dualWield: { enabled: false },
-        elbows: { right: { x: -0.08, y: -0.2, z: 0.085 } },
-        offhandIdle: { enabled: false },
-      },
-      windup: {
-        ...kurrayaHoldTransform, // Preserve Neutral placement and tilt while the hand animation begins.
-        shoulderAim: { grip: false, palmNormal: true },
-        secondaryGrip: { enabled: true, percent: 50, primaryPercent: 50 },
-        dualWield: { enabled: false },
-      },
+      neutral: { ...copyKurrayaWindupPose(), scale: 1, bodySink: 0 }, // Windup's complete hand pose is the idle pose; these neutral-only defaults preserve sizing and standing height.
+      windup: copyKurrayaWindupPose(),
       strike: {
-        ...kurrayaHoldTransform, // The string-plucking strike is independent of the Kurraya's fixed held transform.
-        shoulderAim: { grip: false, palmNormal: true },
+        ...kurrayaHoldTransform, headRelative: false,
+        shoulderAim: { grip: false, palmNormal: false },
         secondaryGrip: { enabled: true, percent: 50, primaryPercent: 50 },
         dualWield: { enabled: false },
+        elbows: { left: { x: 0.155, y: -0.195, z: 0 } },
+        rightHand: { enabled: true, x: -0.13, y: 0.5, z: 0.025, roll: 52 },
       },
     },
   };
