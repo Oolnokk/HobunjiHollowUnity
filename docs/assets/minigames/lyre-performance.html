@@ -2665,9 +2665,7 @@
     state.pluckTimer = setTimeout(() => {
       state.pluckTimer = null;
       void playFrettedPluckPulse(generation);
-    }, state.autoReleaseTail && targetAt >= state.autoReleaseTail.stopAt - 2
-      ? Math.max(0,targetAt - nowMs()) // Silent cleanup must wait for the actual boundary, leaving the tail available for a last-moment melody handoff.
-      : automaticPulseTimerDelay(targetAt));
+    }, automaticPulseTimerDelay(targetAt)); // A silent tail cleanup remains armed until its actual beat boundary.
   }
 
   function beginAutoReleaseTail(fret,sourceId) {
@@ -3892,7 +3890,9 @@
   }
 
   function automaticPulseTimerDelay(targetAt) {
-    return Math.max(0,targetAt - nowMs() - (canUseCompatibilitySampler() ? 0 : PULSE_LOOKAHEAD_MS)); // Media elements cannot schedule a future start; Web Audio can.
+    const silentTailEnd = state.autoReleaseTail && targetAt >= state.autoReleaseTail.stopAt - 2; // A cleanup cannot run early, or a last-moment legato press would restart the roll.
+    const lookahead = canUseCompatibilitySampler() || silentTailEnd ? 0 : PULSE_LOOKAHEAD_MS;
+    return Math.max(0,targetAt - nowMs() - lookahead); // HTMLAudio starts on the subdivision; Web Audio plucks start precisely on their scheduled time.
   }
 
   function pluckIntervalMs(mode) {
