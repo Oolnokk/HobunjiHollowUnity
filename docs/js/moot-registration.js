@@ -8,6 +8,7 @@
   const ZONE_ID = 'map_northern_cliffs'; // Only the Northern Cliffs get the natural Moot population.
   const BABY_ITEM_KEY = 'mootBaby'; // The Ranch starting baby and future livestock offspring use this existing save key.
   const SPRITE_ASPECT = 1000 / 1617; // Authored 1617x1000 PNG dimensions, used by the world-space animal card.
+  const COAT_SOURCE_COLOR = '#9CBD9E'; // The existing mint-green coat art is the keyed shade-fill reference; protects teeth, hooves, and heavy black linework.
   const SPRITES = Object.freeze({
     idle: 'assets/creaturesprites/moot_idle.png',
     run1: 'assets/creaturesprites/moot_run1.png',
@@ -54,7 +55,11 @@
     species[KIND] = {
       ...(species[KIND] || {}),
       prefix: KIND,
-      fullBaseRecolor: true, // No Moot-specific region mask is authored yet; coat colors use the existing whole-base fallback.
+      baseShadeReferenceHex: COAT_SOURCE_COLOR, // Normalize all coat shading against the authored mint color.
+      baseRecolorKeyHex: COAT_SOURCE_COLOR, // Restrict tinting to the green coat family, preserving neutral teeth/hooves and outlines.
+      baseRecolorHueTolerance: 20,
+      baseRecolorMinSaturationRatio: 0.45,
+      fullBaseRecolor: false, // A full-sprite fill would recolor the Moot's teeth, claws, hooves and black outlines.
       base: { idle: SPRITES.idle, run1: SPRITES.run1, run2: SPRITES.run2 },
       patterns: [], // No unauthored coat overlays or imaginary pattern sprites.
       eyes: { open: SPRITES.eyes, blink: SPRITES.blink },
