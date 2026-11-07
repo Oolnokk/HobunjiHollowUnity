@@ -619,8 +619,8 @@
         ...[...groups.entries()].map(([group, actions]) => el('div', { class: 'group' },
           group ? el('span', { class: 'group-label', text: group }) : null,
           ...actions.map(action => action.input ? el('label', { class: 'group' }, action.label,
-            el('input', { type: 'number', value: action.value, min: action.input.min, max: action.input.max, step: action.input.step,
-              'aria-label': action.label, disabled: !state.connected, style: 'width:90px',
+            el('input', { type: action.input.type === 'color' ? 'color' : 'number', value: action.value, min: action.input.min, max: action.input.max, step: action.input.step,
+              'aria-label': action.label, disabled: !state.connected, style: action.input.type === 'color' ? 'width:64px;height:32px;cursor:pointer' : 'width:90px',
               onchange: async event => {
                 const input = event.target; // Sends one completed edit rather than applying a setting on each keystroke.
                 const ok = await run('panel-action', { panel: panel.id, action: action.id, args: { ...action.args, value: input.value } });
