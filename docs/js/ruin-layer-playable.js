@@ -141,7 +141,7 @@
     // engraving atlas per mesh, so each must be a connected wall, and the count is capped to bound GPU memory). Atlases
     // are capped at 512 px, so a long corridor wall is cut into pieces of at most WING_FEATURE_MAX units first: one
     // engraving over 86 units would get a few pixels per unit and read as mush.
-    const WING_FEATURE_RUN=4,WING_FEATURE_MAX=10,WING_FEATURES_PER_WING=4,WALL_HEIGHT=2.3,WALL_THICKNESS=.14,PATCH={h:6,v:6};
+    const WING_FEATURE_RUN=4,WING_FEATURE_MAX=10,WING_FEATURES_PER_WING=4,WALL_HEIGHT=4.5,WALL_THICKNESS=.14,PATCH={h:6,v:6};
     function masonry(wingName,y,floorCells,wallsX,wallsZ){
       const Faces=root.RuinWallFaces;
       const add=(name,data,parent=activeRoot)=>{
@@ -224,7 +224,7 @@
           minX:Math.min(a.minX,x),maxX:Math.max(a.maxX,x),minZ:Math.min(a.minZ,z),maxZ:Math.max(a.maxZ,z)
         }),{minX:Infinity,maxX:-Infinity,minZ:Infinity,maxZ:-Infinity});
         const grid=CG.create({originX:localBounds.minX-1,originZ:localBounds.minZ-1,baseY:floor.y,
-          cols:localBounds.maxX-localBounds.minX+3,rows:localBounds.maxZ-localBounds.minZ+3,levels:3});
+          cols:localBounds.maxX-localBounds.minX+3,rows:localBounds.maxZ-localBounds.minZ+3,levels:5}); // Tall visible walls meet the 4.5-unit puzzle ceiling; the uppermost voxel stays open to avoid a phantom roof.
         const side=SIDES[wing.side],entryKey=key(wing.entry.x,wing.entry.z);
         // A thin voxel boundary matches the actually drawn stone walls.
         // Filling the entire room's rectangular allocation with SOLID created
@@ -241,7 +241,7 @@
         }
         for(const next of border){
           const [x,z]=next.split(',').map(Number),c=grid.xToCol(x+.5),r=grid.zToRow(z+.5);
-          grid.fillBox(c,r,0,c,r,1,CG.KIND.SOLID); // Exactly two wall cells tall; no invisible ceiling.
+          grid.fillBox(c,r,0,c,r,3,CG.KIND.SOLID); // Four solid wall levels (below the visible 4.5-unit stone), with an open top and no phantom roof.
         }
         // The wing portal shares the shaft's outward threshold on the proper story; avoid closing its inward face.
         const wallsX=[],wallsZ=[];
@@ -257,8 +257,8 @@
         if(root.RuinWallFaces)masonry(wingName,floor.y,supportedCells,wallsX,wallsZ);
         else{ // Loaded without the face mesher: the original one-unit boxes.
           instance(wingName+'-floor',new THREE.BoxGeometry(1,.12,1),supportedCells,material,([x,z])=>({x:x+.5,y:floor.y-.06,z:z+.5}));
-          instance(wingName+'-wall-ns',new THREE.BoxGeometry(1,2.3,.14),wallsX,material,([x,z])=>({x,y:floor.y+1.15,z}));
-          instance(wingName+'-wall-ew',new THREE.BoxGeometry(.14,2.3,1),wallsZ,material,([x,z])=>({x,y:floor.y+1.15,z}));
+          instance(wingName+'-wall-ns',new THREE.BoxGeometry(1,WALL_HEIGHT,.14),wallsX,material,([x,z])=>({x,y:floor.y+WALL_HEIGHT/2,z}));
+          instance(wingName+'-wall-ew',new THREE.BoxGeometry(.14,WALL_HEIGHT,1),wallsZ,material,([x,z])=>({x,y:floor.y+WALL_HEIGHT/2,z}));
         }
         const rectangles=Corridors.rectangles(supportedCells); // The abyss has NO physical floor and NO DynamicSurfaces standing rectangle.
         rectangles.forEach((r,i)=>{
