@@ -137,6 +137,19 @@ patternState.game.labAdaptiveAutoPick=false;
 const legacyPattern=patternScope.pattern(60,{},'arp-forward-8',{meter:meterContext.meter([7,8])});
 assert.equal(legacyPattern.steps.length,4,'the existing gameplay figure must remain unchanged when the Lab is not active');
 
+const labelsState = {game:{labAdaptiveAutoPick:true}};
+const labelsScope = {
+  state:labelsState,
+  KURRAYA_LAB_PATTERN_CHOICES:patternScope.figures,
+  automaticPatternDefinition:mode=>({label:'historical: '+mode})
+};
+vm.runInNewContext(sourceOf('automaticPluckLabel') + '\nthis.label=automaticPluckLabel;',labelsScope);
+assert.equal(labelsScope.label('arp-alberti-16'),'Weave','Lab playback banners should use the neutral figure name');
+assert.equal(labelsScope.label('strum-alternating-8'),'Chord Strokes','Lab chord-stroke banners should also use the neutral name');
+labelsState.game.labAdaptiveAutoPick=false;
+assert.equal(labelsScope.label('arp-alberti-16'),'historical: arp-alberti-16',
+  'existing gameplay and NPC pattern names must not change with the Lab-only picker');
+
 const previewState = {
   game:{active:true,demoActive:true,demoMode:'arp-forward-reverse-16',labAdaptiveAutoPick:true,
     quarterBeatMs:500,beatMs:250,countInMs:0,endAt:1800,
@@ -144,19 +157,51 @@ const previewState = {
   demoGeneration:1,demoTimers:new Set(),paused:false,previewCounter:0
 };
 const previewTimers = [];
+const previewVoices = []; // Captures each audible note's explicitly scheduled attack time and its selected chord.
+const previewClockRefs = []; // Checks that callbacks use the beat's intended transport time, even when JavaScript wakes late.
+let previewElapsedMs = 0; // Simulated song elapsed time controls late timer execution in the scheduler test.
+let previewStrum = false; // Reuses the same actual callback for both single notes and multi-string chord strokes.
 const previewScope = {
   state:previewState,
   FRETTED_PLUCK_MODES:{'arp-forward-reverse-16':{kind:'arp',division:4}},
   demoAutomaticPattern:()=>({melodyMidi:60,fret:{},steps:[{type:'note',midi:60}],label:'wave'}),
-  automaticPatternSteps:()=>({steps:[{type:'note',midi:60}],label:'wave'}),
+  automaticPatternSteps:(midi,fret,mode,clock)=>({
+    steps:[previewStrum ? {type:'strum',direction:'down',velocity:.82} : {type:'note',midi:clock.harmonyMidi,velocity:1}],label:'wave'
+  }),
+  melodyTopStrumMidis:(midi,voicing,clock)=>[clock.harmonyMidi-12,clock.harmonyMidi],
+  sharedTransportData:referenceMs=>{
+    previewClockRefs.push(referenceMs);
+    return {harmonyMidi:referenceMs >= 10500 ? 72 : 60};
+  },
+  nowMs:()=>10000+previewElapsedMs,
   setTimeout:(callback,delay)=>{previewTimers.push({callback,delay});return previewTimers.length;},
-  gameTime:()=>0,playAuditoryOnlyMidi:()=>{}
+  gameTime:()=>previewElapsedMs,
+  playAuditoryOnlyMidi:(...args)=>{previewVoices.push(args);return Promise.resolve();}
 };
 vm.runInNewContext(sourceOf('scheduleSuccessfulPreviewContinuation') +
   '\nthis.schedule = scheduleSuccessfulPreviewContinuation;',previewScope);
 previewScope.schedule(previewState.game.events[0],0);
 assert.equal(previewTimers.map(item=>item.delay).join(','),'250,500,750,1000,1250',
   'the Lab wave must use the selected meter-aware eighth-note pulse grid, not its former fixed sixteenths');
+previewElapsedMs = 610; // A callback intended for 250 ms wakes after the later 500 ms chord boundary.
+previewTimers[0].callback();
+assert.equal(previewClockRefs[0],10250,'late preview callbacks must revoice against their scheduled 250 ms beat');
+assert.equal(previewVoices[0][0],60,'late callbacks must not steal the chord from the later 500 ms beat');
+assert.equal(previewVoices[0][5],10250,'sample playback must also target the exact scheduled beat');
+previewTimers[1].callback();
+assert.equal(previewClockRefs[1],10500,'the next preview note must use the 500 ms chord');
+assert.equal(previewVoices[1][0],72,'scheduled chord changes should revoice the arpeggio');
+previewElapsedMs = 900;
+previewStrum = true;
+previewTimers[2].callback();
+const chordCallbacks = previewTimers.slice(5);
+assert.equal(chordCallbacks.length,2,'the chord stroke should schedule two separate timed string attacks');
+assert.equal(chordCallbacks[0].delay,0);
+chordCallbacks[0].callback();
+assert.equal(previewVoices[2][5],10750,'the first string of a delayed chord must retain its scheduled beat');
+previewState.game.demoActive=false;
+chordCallbacks[1].callback();
+assert.equal(previewVoices.length,3,'stopping a demo must prevent unplayed chord strings from sounding');
 
 const engineVersion = /lyre-performance\.html\?v=([A-Za-z0-9_-]+)/; // Matches any bumped cache token.
 assert.equal(host.match(engineVersion)?.[1],lab.match(engineVersion)?.[1],'gameplay and Music Lab must use the same engine revision');
