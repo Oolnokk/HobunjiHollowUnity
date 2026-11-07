@@ -48,6 +48,7 @@ const sandbox = {
   isFrettedPluckLayout: () => false,
   isLatchedAutoBankLayout: () => true,
   playImmediateAutomaticMelody: fret => { attacks.push(fret.noteIndex); },
+  primeAutomaticMediaChannels: () => {}, // Input transport test stubs out mobile audio activation; the pool itself is tested below.
   restartActiveFrettedPluck: () => { restarts.push(state.pluckStep); },
   triggerNote: () => {},
   releaseNote: (index, sourceId) => state.noteSources[index].delete(sourceId),
