@@ -2166,13 +2166,145 @@
       ]
     },
     "puzzleCave": {
-      "label": "Puzzle Cave Loot (unpopulated)",
-      "note": "Reserved for future puzzle-cave rewards. Intentionally has no entries yet; this is not permission to invent items. The mixed pool skips unpopulated sources until their entries are authored.",
-      "entries": []
+      "label": "Puzzle Cave — Double-edged Trinkets",
+      "note": "A completed Puzzle Cave awards exactly one benefit-and-drawback trinket from the tier determined by song length and rhythmic complexity; depends on specialized-combat-trinkets PR #1421.",
+      "kind": "exclusive",
+      "entries": [
+        {
+          "id": "trinket_unstableBalance",
+          "itemKey": "trinket_unstableBalance",
+          "min": 1,
+          "max": 1,
+          "chance": 1,
+          "weight": 1,
+          "tier": 1,
+          "conditions": {}
+        },
+        {
+          "id": "trinket_ironAnchor",
+          "itemKey": "trinket_ironAnchor",
+          "min": 1,
+          "max": 1,
+          "chance": 1,
+          "weight": 1,
+          "tier": 1,
+          "conditions": {}
+        },
+        {
+          "id": "trinket_hollowLungs",
+          "itemKey": "trinket_hollowLungs",
+          "min": 1,
+          "max": 1,
+          "chance": 1,
+          "weight": 1,
+          "tier": 1,
+          "conditions": {}
+        },
+        {
+          "id": "trinket_falseCourage",
+          "itemKey": "trinket_falseCourage",
+          "min": 1,
+          "max": 1,
+          "chance": 1,
+          "weight": 1,
+          "tier": 2,
+          "conditions": {}
+        },
+        {
+          "id": "trinket_leadKnuckles",
+          "itemKey": "trinket_leadKnuckles",
+          "min": 1,
+          "max": 1,
+          "chance": 1,
+          "weight": 1,
+          "tier": 2,
+          "conditions": {}
+        },
+        {
+          "id": "trinket_fracturedGuard",
+          "itemKey": "trinket_fracturedGuard",
+          "min": 1,
+          "max": 1,
+          "chance": 1,
+          "weight": 1,
+          "tier": 2,
+          "conditions": {}
+        },
+        {
+          "id": "trinket_glassFang",
+          "itemKey": "trinket_glassFang",
+          "min": 1,
+          "max": 1,
+          "chance": 1,
+          "weight": 1,
+          "tier": 3,
+          "conditions": {}
+        },
+        {
+          "id": "trinket_venomousBlood",
+          "itemKey": "trinket_venomousBlood",
+          "min": 1,
+          "max": 1,
+          "chance": 1,
+          "weight": 1,
+          "tier": 3,
+          "conditions": {}
+        },
+        {
+          "id": "trinket_bloodrush",
+          "itemKey": "trinket_bloodrush",
+          "min": 1,
+          "max": 1,
+          "chance": 1,
+          "weight": 1,
+          "tier": 3,
+          "conditions": {}
+        },
+        {
+          "id": "trinket_shatterheart",
+          "itemKey": "trinket_shatterheart",
+          "min": 1,
+          "max": 1,
+          "chance": 1,
+          "weight": 1,
+          "tier": 4,
+          "conditions": {}
+        },
+        {
+          "id": "trinket_berserkersBargain",
+          "itemKey": "trinket_berserkersBargain",
+          "min": 1,
+          "max": 1,
+          "chance": 1,
+          "weight": 1,
+          "tier": 4,
+          "conditions": {}
+        },
+        {
+          "id": "trinket_deathsMomentum",
+          "itemKey": "trinket_deathsMomentum",
+          "min": 1,
+          "max": 1,
+          "chance": 1,
+          "weight": 1,
+          "tier": 5,
+          "conditions": {}
+        },
+        {
+          "id": "trinket_gamblersEye",
+          "itemKey": "trinket_gamblersEye",
+          "min": 1,
+          "max": 1,
+          "chance": 1,
+          "weight": 1,
+          "tier": 5,
+          "conditions": {}
+        }
+      ]
     },
     "mixedCrateTreasurePuzzle": {
       "label": "Mixed Crate / Treasure / Puzzle Cave Loot",
-      "note": "Reusable mixed loot for victim remains and future encounters. Each of two draws picks a populated source by weight. The treasureChest source uses its full existing bundle generators. The empty puzzleCave source becomes eligible automatically once rewards are authored.",
+      "note": "Each of two draws picks a populated source by weight. Puzzle Cave source awards one double-edged trinket from its configured tier; standalone cave rewards are delivered only on solve.",
       "kind": "mixed",
       "rolls": 2,
       "sourcePools": [

@@ -868,15 +868,27 @@
     const raw = deps.getMovementInput?.() || { x: 0, y: 0 };
     const length = Math.hypot(raw.x, raw.y);
     if (length > 0.22) {
-      const distance = Math.min(1, length) * 2.1 * Math.max(0, dt);
+      const distance = Math.min(1, length) * 2.1 * Math.max(0, dt); // Travel in tiles for both the destination and the blocker sweep.
       const x = player.x / deps.TILE + raw.x / length * distance;
       const z = player.y / deps.TILE + raw.y / length * distance;
       const supported = window.CliffElevatedSurfaces?.canStandOn
         ? window.CliffElevatedSurfaces.canStandOn(net, shelf.id, x, z, -0.12)
         : window.CliffRouteNetwork.shelfContains(shelf, x, z, -0.12);
-      if (supported) {
+      const DS=window.DynamicSurfaces; // Shared generic world blocker registry; used by authored cliff doors without introducing a second pathing system.
+      const fromX=player.x/deps.TILE,fromZ=player.y/deps.TILE;
+      const probes=Math.max(1,Math.min(6,Math.ceil(distance/.12))); // Sweep across the thin raised slab on mobile frames, not only at the destination endpoint.
+      let blocked=false;
+      for(let step=1;step<=probes;step++){
+        const fraction=step/probes;
+        const sampleX=fromX+(x-fromX)*fraction,sampleZ=fromZ+(z-fromZ)*fraction;
+        if(DS?.blockerAt?.(sampleX,sampleZ,{
+          scope:'puzzle-cave-cliff-door:'+deps.getCurrentArea(),worldY:shelf.y,
+          actorHeight:1.55,radius:.09,
+        })){blocked=true;break;}
+      }
+      if(supported&&!blocked) {
         player.x = x * deps.TILE; player.y = z * deps.TILE;
-      } else jumpFromBalcony(raw);
+      } else if(!blocked) jumpFromBalcony(raw); // A locked gate stops movement; reaching a genuine ledge edge still initiates a fall.
     }
     player.vx = 0; player.vy = 0;
     return true;

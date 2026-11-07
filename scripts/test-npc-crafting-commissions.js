@@ -401,4 +401,3 @@ async function runRealNpcDialogueRoute({ npcId, readyTask = null, tutorialActive
 
   console.log('npc crafting commissions regression: ok (including real NPC dialogue routing)');
 })().catch(error => { console.error(error); process.exitCode = 1; });
-

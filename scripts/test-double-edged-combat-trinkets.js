@@ -22,7 +22,7 @@ w.Combat.init(deps);
 const T=w.TrinketSystem,E=w.DoubleEdgedCombatTrinkets;
 const names=['unstableBalance','glassFang','leadKnuckles','bloodrush','ironAnchor','hollowLungs',
   'falseCourage','fracturedGuard','venomousBlood','berserkersBargain','shatterheart','deathsMomentum','gamblersEye'];
-const loot=read('docs/config/loot/loot-pools.json');
+const loot=JSON.parse(read('docs/config/loot/loot-pools.json'));
 const game=read('docs/game.js'); // Extracts the real Health/Footing routing rather than treating modifier fields as sufficient proof.
 const gameHitMarker='function hitResourceDamage(amount, dmgOpts) {'; // Exact utility invoked by actual damageCreature and damagePlayer.
 const gameHitStart=game.indexOf(gameHitMarker); // Finds the shared routing helper inside the large game closure.
@@ -33,7 +33,10 @@ const gameHitSource=game.slice(gameHitStart,gameHitEnd+8); // Self-contained fun
 const realHitResources=vm.runInNewContext(gameHitSource+'\n hitResourceDamage;', {window:w,Number}); // Executes the real damage-to-Footing formula after trinket modification.
 for(const name of names){const def=T.DEFINITIONS[name];assert(def,'missing '+name);
   assert.equal(def.category,'combat');assert(def.attunementCost>=1&&def.attunementCost<=2);
-  assert.equal(def.source,undefined);assert(!loot.includes('trinket_'+name),'no loot entries for '+name);}
+  assert.equal(def.source,undefined);
+  const lootSources=Object.entries(loot.pools).filter(([,pool])=>
+    pool.entries?.some(entry=>entry.itemKey==='trinket_'+name)).map(([id])=>id);
+  assert.deepEqual(lootSources,['puzzleCave'],name+' is only awarded by Puzzle Cave completion');}
 const wear=id=>{const uid=T.grant(id,'dev');assert(T.equip(uid).ok);return uid;};
 const unwear=id=>assert(T.unequip(id));
 const hit=(options={},target={health:100,prone:false},sourceX=0,sourceY=0)=>{

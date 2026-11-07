@@ -1,0 +1,56 @@
+name: Puzzle Cave browser gameplay smoke
+
+on:
+  pull_request:
+    paths:
+      - 'docs/game.js'
+      - 'docs/index.html'
+      - 'docs/js/puzzle-cave-*.js'
+      - 'docs/js/cave-site-system.js'
+      - 'docs/js/ruin-layer-challenges.js'
+      - 'docs/js/persistent-ground-fire.js'
+      - 'docs/js/alchemy-flasks.js'
+      - 'docs/js/shattercasks.js'
+      - 'docs/js/cliff-route-network.js'
+      - 'docs/js/climb-system.js'
+      - 'docs/js/area-footprint-blockers.js'
+      - 'docs/js/locale-cliff-wall-mounts.js'
+      - 'scripts/test-puzzle-cave-*.js'
+      - 'scripts/smoke-puzzle-caves-browser.js'
+      - '.github/workflows/smoke-puzzle-caves.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  puzzle-cave-browser:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate the puzzle and reward modules
+        run: |
+          node --check docs/js/cave-site-system.js
+          node --check docs/js/puzzle-cave-entrances.js
+          node --check docs/js/ruin-layer-challenges.js
+          node --check docs/js/persistent-ground-fire.js
+          node scripts/test-puzzle-cave-melody.js
+          node scripts/test-puzzle-cave-challenges.js
+          node scripts/test-puzzle-cave-exterior.js
+          node scripts/test-puzzle-cave-fire.js
+          node scripts/test-puzzle-cave-reward-escrow.js
+          node scripts/test-puzzle-cave-dev-clock.js
+          node scripts/test-cliff-startup-parse.js
+          node scripts/test-game-shop-stock-startup-order.js
+      - name: Install real Three.js and Chromium
+        run: |
+          npm install --no-save --package-lock=false playwright@1.55.1 three@0.128.0
+          npx playwright install --with-deps chromium
+      - name: Start the actual game web server
+        run: python3 -m http.server 8000 --directory docs >/tmp/hobunji-cave-http.log 2>&1 &
+      - name: Simulate fire and music puzzles against the real game renderer and mobile viewport
+        run: node scripts/smoke-puzzle-caves-browser.js

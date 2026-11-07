@@ -387,6 +387,8 @@
       tileY: t => deps.tileSurfaceYInArea(t, mapId), // Same Y authority used by the player, creatures and scheduled NPCs.
     });
     if (network) {
+      window.PuzzleCaveEntrances?.mount?.(mapId,network,zScene); // Reserve a reachable mini-cliff for each generated entrance.
+      window.LocaleCliffWallMounts?.mount?.(mapId,network,zScene,deps?._zoneLayouts?.get?.(mapId)?.localeInstances||[]); // Resolve every authored unknown-wall furniture binding against the same exact cliff faces.
       // The dungeon's registered-support system is authoritative for all
       // mini-cliffs, including overlapping X/Z across multiple Y levels.
       window.CliffElevatedSurfaces?.mount?.(network, {

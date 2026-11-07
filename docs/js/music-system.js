@@ -1128,6 +1128,7 @@
   }
 
   function isNightTime() {
+    if (!deps) return undefined; // Early performance snapshots fall back to the calendar until music initializes.
     const hour = deps.getHour();
     return hour < 7 || hour >= 19;
   }

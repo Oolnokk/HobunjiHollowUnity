@@ -558,6 +558,13 @@
   }
   function releaseArea(area) {
     const id = String(area), network = activeByArea.get(id);
+    // Retire scene-bound cliff doorway/locale meshes at the same authoritative
+    // lifecycle boundary as the terrain graph; do not retain inactive zone
+    // THREE objects in either of the small mounting registries.
+    if(typeof globalThis==='object'){
+      globalThis.PuzzleCaveEntrances?.clear?.(id);
+      globalThis.LocaleCliffWallMounts?.clear?.(id);
+    }
     if (network) cache.delete(network.grid); // Unload retires this area's topology, not persistent reward state.
     activeByArea.delete(id);
     rewardMeshesByArea.delete(id); // No retained references to disposed THREE instances.
@@ -728,8 +735,8 @@
     };
     const cap = makeMiniCliffRockMesh(THREE, scene, network, rockMaterial || _stoneMaterial, topMaterial);
     if (cap) meshes.push(cap); // Already generated as one fused mesh across all inverted profiles.
-    const ores = shelves.filter(s => s.reward === 'oreRock');
-    const chests = shelves.filter(s => s.reward !== 'oreRock');
+    const ores = shelves.filter(s => s.reward === 'oreRock' && !s.puzzleCavePortal); // Avoid a protruding ore boulder across the entrance.
+    const chests = shelves.filter(s => s.reward !== 'oreRock' && !s.puzzleCavePortal); // The rock-door occupies this ledge; a hidden treasure chest would overlap the player's pressure plate.
     const oreMesh = makeInstanced(new THREE.DodecahedronGeometry(1, 0), _stoneMaterial, ores.length, 'cliff-balcony-ores');
     const chestWood = makeInstanced(new THREE.BoxGeometry(1, 1, 1),
       _chestWoodMaterial, chests.length, 'cliff-balcony-chest-bodies');
@@ -749,7 +756,9 @@
     };
     let oi = 0, ci = 0;
     for (let i = 0; i < shelves.length; i++) {
-      const s = shelves[i], yaw = Math.atan2(-s.tangent.z, s.tangent.x);
+      const s = shelves[i];
+      if(s.puzzleCavePortal)continue; // The entrance reserves this shelf's decorative reward slot.
+      const yaw = Math.atan2(-s.tangent.z, s.tangent.x);
       const state = getRewardState(network.area, s.id);
       const visible = !state.claimed && (s.reward === 'oreRock' || state.revealed);
       if (s.reward === 'oreRock') {
