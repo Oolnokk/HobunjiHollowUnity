@@ -743,16 +743,28 @@
   let comboFinisherSlashSource = null; // Tracks the decoded original to invalidate both independently processed clips when the asset changes.
   let comboFinisherSlashClips = null; // Ready-to-schedule audio; reused across impacts to avoid combat-time DSP.
   let comboFinisherSlashPending = null; // Prevents duplicate render jobs while the two pitch variants prepare.
+  let comboFinisherSlashRetryTimer = null; // A queued startup retry while the independently loaded WSOLA module initializes.
+  let comboFinisherSlashRetryCount = 0; // Bounded retries let the first combat finisher use the processed sound whenever startup finishes normally.
   function prepareComboFinisherSlashClips(entry) {
     if (!entry?.buffer || !combatPositionalContext) return;
-    const renderer = window.AnimalVoiceIndependentPlayback?.renderDecodedIndependentBuffer; // The existing WSOLA pipeline changes tempo independently of pitch.
-    if (typeof renderer !== 'function') return;
     if (comboFinisherSlashSource !== entry.buffer) {
       comboFinisherSlashSource = entry.buffer;
       comboFinisherSlashClips = null;
       comboFinisherSlashPending = null;
+      comboFinisherSlashRetryCount = 0;
     }
     if (comboFinisherSlashClips || comboFinisherSlashPending) return;
+    const renderer = window.AnimalVoiceIndependentPlayback?.renderDecodedIndependentBuffer; // The existing WSOLA pipeline changes tempo independently of pitch.
+    if (typeof renderer !== 'function') {
+      if (!comboFinisherSlashRetryTimer && comboFinisherSlashRetryCount < 40) {
+        comboFinisherSlashRetryCount++; // The vocal playback script loads asynchronously, sometimes after this audio clip has decoded.
+        comboFinisherSlashRetryTimer = setTimeout(() => {
+          comboFinisherSlashRetryTimer = null;
+          if (combatDecodedByUrl.get(entry.url)?.buffer === entry.buffer) prepareComboFinisherSlashClips(entry);
+        }, 250);
+      }
+      return;
+    }
     const pending = Promise.all(COMBO_FINISHER_SLASH_PITCHES.map(pitchSemitones =>
       renderer(entry.buffer, combatPositionalContext, {
         tempo: COMBO_FINISHER_SLASH_TEMPO, pitchSemitones, trimSilence: false, tailPadS: 0, edgeFadeS: 0,
