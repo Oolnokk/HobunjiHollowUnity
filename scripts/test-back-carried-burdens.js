@@ -109,7 +109,7 @@ function testCarryableTabBoot() {
   assert.match(html,/id="tab-carry"[^>]*class="hidden"/,'the Carryable fallback panel exists without JavaScript');
   assert.match(html,/id="carryAuthorLoadStatus"/,'loading failures have visible mobile-safe diagnostics');
   assert.match(html,/'avatar','carry','base','io'/,'base mode switches include the Carryable pane');
-  assert.match(html,/carryable-objects\.js\?v=20261107autoAvatarPreview4[^>]+onerror=/,'the separate authoring script exposes load errors');
+  assert.match(html,/carryable-objects\.js\?v=[A-Za-z0-9_-]+[^>]+onerror=/,'the separate authoring script exposes load errors');
   assert.match(author,/getElementById\('carryModeTab'\)\|\|document\.createElement\('button'\)/,'authoring reuses the static tab');
   assert.match(author,/getElementById\('tab-carry'\)\|\|document\.createElement\('div'\)/,'authoring reuses the static panel');
 }
