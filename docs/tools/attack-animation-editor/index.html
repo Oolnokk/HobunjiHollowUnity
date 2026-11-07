@@ -1324,8 +1324,9 @@ function renderActivePosePanel() {
     $('poseFreeRightHand_' + channel).addEventListener('input', event => {
       const value = Number(event.target.value);
       if (!Number.isFinite(value)) return;
+      const limit = ['pitch','yaw','roll'].includes(channel) ? 360 : 5; // Guard against a mobile typo teleporting the hand out of view.
       const right = anim.poses[editPhase].rightHand ||= {};
-      right[channel] = value;
+      right[channel] = Math.max(-limit, Math.min(limit, value));
       focusPreviewOnPhase(editPhase);
       window.ProceduralHandFrameDriver?.syncNow?.(); refreshJsonView();
     });
