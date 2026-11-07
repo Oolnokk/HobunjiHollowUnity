@@ -161,7 +161,7 @@
     }
     function climbingSource(){
       const x=cx-offset,z=cz+offset,top=floorY+2.52;
-      const block=makeBlock('climb',x,z,top);
+      const block=makeBlock('climb',x,z,top,true);
       block.mesh.userData.findBlocksCanDrop=true; // Allows one supported block to be pushed off a ledge without bypassing other V50 courses.
       // A narrow winding walkable route, not invisible stairs or an interaction that teleports the player.
       // Each tile is separated by at most the normal step-up threshold.
@@ -371,7 +371,6 @@
         for(const stop of disposers)stop();
         for(const item of controls){const i=kit.state.controls.indexOf(item);if(i>=0)kit.state.controls.splice(i,1);}
         root.DevRandomRuinTileOccupancy?.clearSolids?.('find-the-blocks');
-        root.MusicMinigame?.close?.(); // Only the active native flute overlay, not the player's saved instrument state.
         group.parent?.remove(group); // SimplePuzzles' shared group disposal releases meshes and materials on reroll.
       },
     };
