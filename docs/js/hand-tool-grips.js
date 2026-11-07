@@ -382,6 +382,30 @@
     return { x: axis.start.x + dx*t, y: axis.start.y + dy*t, z: axis.start.z + dz*t };
   }
 
+  function sampleFreeRightHand(poses, timing, progress, sequence = 'attack') {
+    const phases = ['neutral', 'windup', 'strike'].map(key => poses?.[key]?.rightHand || null);
+    if (!phases.some(p => p?.enabled === true)) return null; // Legacy animations retain ordinary weapon-bound primary hand positioning.
+    const t = clamp01(progress);
+    const wf = clamp01(timing?.windupFrac ?? 0.18), sf = Math.max(wf, clamp01(timing?.strikeFrac ?? 0.34));
+    const hf = Math.max(sf, clamp01(timing?.holdFrac ?? 0.62));
+    const lerp = (a, b, k) => a + (b - a) * clamp01(k);
+    const sample = key => {
+      const n = key === 'influence' ? Number(phases[0]?.enabled === true) : numberOrZero(phases[0]?.[key]);
+      const w = key === 'influence' ? Number(phases[1]?.enabled === true) : numberOrZero(phases[1]?.[key]);
+      const strike = key === 'influence' ? Number(phases[2]?.enabled === true) : numberOrZero(phases[2]?.[key]);
+      if (sequence === 'load') return t <= wf ? lerp(n, w, t / Math.max(wf, 1e-6)) : lerp(w, n, (t - wf) / Math.max(1 - wf, 1e-6));
+      if (sequence === 'fire') return t <= sf ? lerp(n, strike, t / Math.max(sf, 1e-6)) : t <= hf ? strike : lerp(strike, n, (t - hf) / Math.max(1 - hf, 1e-6));
+      return t <= wf ? lerp(n, w, t / Math.max(wf, 1e-6))
+        : t <= sf ? lerp(w, strike, (t - wf) / Math.max(sf - wf, 1e-6))
+        : t <= hf ? strike : lerp(strike, n, (t - hf) / Math.max(1 - hf, 1e-6));
+    };
+    return {
+      influence: sample('influence'),
+      x: sample('x'), y: sample('y'), z: sample('z'), // All coordinates are avatar-local, *not* moving with the instrument's holder.
+      pitch: sample('pitch'), yaw: sample('yaw'), roll: sample('roll'),
+    };
+  }
+
   function normalizeData(raw) {
     const next = clone(raw || DEFAULT_DATA);
     const previousPrimaryRotationPreset = next.primaryRotationPreset; // Missing/older marker means saved grip rotations need the new authoritative weapon table once.
@@ -1569,7 +1593,7 @@
     clone: cleanClone,
     toolKeyFor, isDualWieldWeapon, weaponHandModeForTool, setEditorIdlePreview, setEditorSingleHandPreview, getEditorIdlePreview: () => editorHandPreview === 'pair', editorToolChanged, ensureTool, toolScaleForTool, apertureForTool, apertureHolderPointForTool, primaryGripHolderPointForTool, heightMultiplierForTool, characterHeightRatio, characterHeightReady, heightFactorForTool, effectiveToolScaleForTool,
     heldItemPlacementForTool, itemPointToHolder, holderPointToItem, applyHeldItemPlacement, DEFAULT_HEIGHT_MULTIPLIER, normalizeGripContext, currentGripContext,
-    authoredPrimaryGripForTool, customGripAxisForTool, gripPointOnAxis, primaryGripForTool, offhandPrimaryGripForTool, dualWieldOffhandGripOffsetForTool, spinPivotOffsetForTool, primaryGripSpanForTool, secondaryGripSpanForTool, secondaryGripForTool, dualWieldStateForTool, offhandIdleStateForTool, usesLegacyOffhandIdle,
+    authoredPrimaryGripForTool, customGripAxisForTool, gripPointOnAxis, sampleFreeRightHand, primaryGripForTool, offhandPrimaryGripForTool, dualWieldOffhandGripOffsetForTool, spinPivotOffsetForTool, primaryGripSpanForTool, secondaryGripSpanForTool, secondaryGripForTool, dualWieldStateForTool, offhandIdleStateForTool, usesLegacyOffhandIdle,
     currentSecondaryGripAnimationState, currentDualWieldAnimationState, animationGripAt, gripModeForTool, setGripMode, replace, mutate, saveLocal, loadLocal, clearLocal, applyPrimaryGripVisuals, debugForTool,
     editorSecondaryGripStateSnapshot, restoreEditorSecondaryGripState, loadEditorAnimationGrip,
     getDebug() {
