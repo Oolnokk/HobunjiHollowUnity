@@ -160,8 +160,8 @@
         <select id="auditionMeterSelect" disabled><option>Loading meters…</option></select>
       </label>
     </div>
-    <p class="note" id="auditionPatternDescription">Choose one of the real instrument picking patterns, including continuous arpeggios, tremolos, and strums. The song preview will use that pattern.</p>
-    <p class="note" id="auditionMeterDescription">Original 6/8 intro → 3/4 melody. Other choices re-space each of the twenty chord bars and stretch the melody proportionally; only this audition changes.</p>
+    <p class="note" id="auditionPatternDescription">Eight broad picking shapes follow the selected time signature, including the length of each bar and its beat-group accents.</p>
+    <p class="note" id="auditionMeterDescription">Changing meter reshapes both the melody and the arpeggio. All picking shapes follow the bar length and grouped accents.</p>
     <div id="scaleButtons" class="scale-grid" aria-label="Scale choices"></div>
     <div class="actions">
       <button id="playBtn" class="primary" type="button" disabled>▶ Play from start</button>
@@ -835,8 +835,8 @@
   function refreshAuditionDescriptions() {
     const pattern = auditionPatterns.find(entry => entry.id === selectedAuditionPattern);
     auditionPatternDescription.textContent = pattern
-      ? `${pattern.description} · ${pattern.tradition} · ${pattern.kind === 'direct' ? 'one shot' : pattern.division + ' subdivisions per quarter note'}`
-      : 'Select a picking pattern to hear it in the song.';
+      ? `${pattern.description} · ${pattern.kind === 'direct' ? 'Melody only.' : 'One eighth-note step at a time, reshaped to every bar.'}`
+      : 'Select a figure to hear it in the song.';
     const meter = selectedAuditionMeter;
     const selected = meter === 'original' ? null : meter.split('/').map(Number);
     const barQuarterBeats = selected ? selected[0] * 4 / selected[1] : 3;
@@ -844,8 +844,8 @@
       ? Array.from({length:selected[0] / 3},()=>3)
       : selected[0] === 5 ? [3,2] : selected[0] === 7 ? [2,2,3] : [selected[0]]);
     auditionMeterDescription.textContent = selected
-      ? `Experiment: four ${meter} intro bars, then sixteen ${meter} melody bars · ${barQuarterBeats} quarter notes/bar · accents ${grouping.join('+')}. Melody and chords stretch together. This does not change the saved song.`
-      : 'Original: four bars of 6/8 intro, then sixteen bars of 3/4 melody. Original melody length, chords, and downbeats are preserved.';
+      ? `Experiment: four ${meter} intro bars, then sixteen ${meter} melody bars · ${barQuarterBeats} quarter notes/bar · accents ${grouping.join('+')}. The arpeggio reshapes to these groups; melody and chords stretch together.`
+      : 'Original: four bars of 6/8 intro, then sixteen bars of 3/4 melody. The selected figure follows each bar’s natural accents.';
   }
 
   async function changeAuditionPattern(mode) {
