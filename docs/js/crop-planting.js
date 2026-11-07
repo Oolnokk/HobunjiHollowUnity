@@ -52,7 +52,7 @@
     tile.cropReady = false;
     tile.stress = '';
     window.AudioSystem?.playObjectSfx(window.AudioSystem?.objectSfxConfig().harvest);
-    return { ok: true, message: msg };
+    return { ok: true, message: msg, stars, amount };
   }
 
   window.CropPlanting = { init, plantCrop, harvestCrop };

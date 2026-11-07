@@ -286,6 +286,10 @@ class PortraitPixelCache extends Map {
   }
 }
 const IMG_CACHE = new PortraitPixelCache(48 * 1024 * 1024);
+const PORTRAIT_IMAGE_RETRY_BASE_MS = 1000; // First failed image retries on demand after a one-second cooldown.
+const PORTRAIT_IMAGE_RETRY_MAX_MS = 30000; // Persistent missing optional art backs off instead of retrying every portrait frame.
+const portraitImageLoadDebug = { failures: 0, retries: 0, recoveries: 0,
+  latestChange: 'Failed portrait images retry with a bounded cooldown when rendered again.' }; // Included in existing mobile pixel-cache diagnostics.
 
 const DEFAULT_BEHIND_LAYER_ORDER = [
   'sideLeft', 'rightSideHair',
@@ -352,7 +356,9 @@ function loadImg(relPath) {
   // Fast path: image already resolved — return a pre-resolved promise so callers
   // can still await it uniformly, but the microtask queue is not involved.
   if (cached instanceof Image) return Promise.resolve(cached);
-  if (cached !== undefined) return cached;  // pending or failed promise
+  if (cached !== undefined && (!cached.portraitRetryAtMs || Date.now() < cached.portraitRetryAtMs)) return cached;
+  const previousFailures = cached?.portraitFailureCount || 0; // A retry replaces only an expired failure; pending loads still deduplicate.
+  if (previousFailures) portraitImageLoadDebug.retries++;
 
   const ensureTrailingSlash = (base) => String(base || './assets/').replace(/\/?$/, '/');
   const baseHref = (typeof document !== 'undefined' && document.baseURI)
@@ -413,8 +419,16 @@ function loadImg(relPath) {
   // Once the image resolves, upgrade the cache entry from Promise → Image so
   // subsequent calls get a synchronous hit and renderProfile can skip await.
   promise.then(img => {
-    if (IMG_CACHE.get(relPath) === promise) IMG_CACHE.set(relPath, img); // Cleared/evicted requests cannot resurrect their cache entries.
-  }, () => { /* leave failed promise as-is */ });
+    if (IMG_CACHE.get(relPath) !== promise) return; // Cleared/evicted requests cannot resurrect their cache entries.
+    IMG_CACHE.set(relPath, img);
+    if (previousFailures) portraitImageLoadDebug.recoveries++;
+  }, () => {
+    if (IMG_CACHE.get(relPath) !== promise) return;
+    promise.portraitFailureCount = previousFailures + 1;
+    promise.portraitRetryAtMs = Date.now() + Math.min(PORTRAIT_IMAGE_RETRY_MAX_MS,
+      PORTRAIT_IMAGE_RETRY_BASE_MS * 2 ** Math.min(previousFailures, 5));
+    portraitImageLoadDebug.failures++;
+  });
 
   IMG_CACHE.set(relPath, promise);
   return promise;
@@ -822,6 +836,7 @@ const _AUTHORED_SURFACE_TONE_CACHE = new PortraitPixelCache(4 * 1024 * 1024);
 window.__portraitPixelCacheDebug = () => ({
   images: IMG_CACHE.snapshot(), hueSat: _HUESAT_FILL_CACHE.snapshot(),
   shade: _SHADE_FILL_CACHE.snapshot(), surfaceTone: _AUTHORED_SURFACE_TONE_CACHE.snapshot(),
+  imageLoads: { ...portraitImageLoadDebug },
 });
 function _surfaceToneConfig() {
   const cfg = window.SCRATCHBONES_CONFIG?.game?.portrait?.tinting || {};

@@ -1,0 +1,389 @@
+// Find the Blocks — four-stage compound Puzzle Lab room.
+// The ordinary V50 pusher/occupancy owns every block's horizontal motion;
+// DungeonFire, KurrayaPuzzle and HronalWitchBombs own their existing triggers.
+(function(root,factory){
+  const api=factory(root);
+  if(typeof module==='object'&&module.exports)module.exports=api;
+  else root.DevRuinFindBlocks=api;
+})(typeof self!=='undefined'?self:globalThis,function(root){
+  'use strict';
+  const MAP_ID='map_i_dev_random_ruin';
+  const BLOCK_SIZE=.82; // Used for the native push face and four pressure-plate landing checks.
+  const FALL_ACCEL=14; // Shared vertical acceleration for freed ceiling and ledge blocks.
+  const PLATE_REACH=.29; // Requires the block's center to settle on the actual plate tile.
+  const STAIR_RISE=.36; // Individual winding-tile steps remain within ordinary ruin step-up height.
+  const COLOR={stone:0x77736b,block:0x8c8880,plate:0xb79b56,solved:0x56cb8b,
+    fire:0xff8e20,ice:0xbceeff,rope:0x6e4b30,mark:0xf3d78c}; // Shared visual palette for this room only.
+
+  function create(options={}){
+    const {THREE,kit,context,room,y:floorY,onSolved,isActive}=options;
+    if(!THREE||!kit||!context||!room||typeof onSolved!=='function'||typeof isActive!=='function')
+      throw new Error('Find the Blocks requires an active Puzzle Lab and native ruin services.');
+    if(room.w<18||room.d<18)throw new Error('Find the Blocks needs a very-large (18 x 18 or larger) room.');
+    const occupancy=root.DevRandomRuinTileOccupancy,game=root.DevRandomRuin;
+    if(!occupancy?.addSolidBox||!game?.registerLabPushBlock)
+      throw new Error('The native sliding-block collision adapter is unavailable.');
+    const group=new THREE.Group(); // Owns the entire compound puzzle and all temporary meshes.
+    group.name='dev_ruin_find_the_blocks';kit.group().add(group);
+    const id='find-blocks-'+String(context.seed);
+    const cx=Math.floor(room.x+room.w*.5)+.5,cz=Math.floor(room.z+room.d*.5)+.5; // Grid-centered origin shared by the four stages and plates.
+    const offset=Math.max(4,Math.min(5,Math.floor(Math.min(room.w,room.d)*.29))); // Leaves walkable perimeter around every source.
+    const roof=Number(context.ceilingY); // The actual V50 ceiling, not a raised artificial anchor that could hide a hanging target above the stone.
+    const ceiling=context.ceilingY!=null&&Number.isFinite(roof)?roof:floorY+3.5;
+    if(ceiling-floorY<2.65)throw new Error('Find the Blocks needs at least 2.65 units of ceiling clearance.');
+    const stairRise=Math.min(STAIR_RISE,(ceiling-floorY-BLOCK_SIZE-.22)/7); // Seven actual walkable steps end below the ceiling with space for the block.
+    const initialPillarHeight=Math.min(3.35,ceiling-floorY-BLOCK_SIZE-.22); // The pillar is as tall as the chamber permits without clipping its carried block.
+    const variant=['melody','projectiles','witchBomb'][(Number(context.seed)>>>0)%3]; // Only the tall pillar's unlocking mechanism rotates between seeds.
+    const blocks=[],plates=[],targets=[],controls=[],disposers=[],burnIds=[],chips=[]; // Session-local ownership; no world save or drops.
+    let disposed=false,solved=false,sinking=false,pillarHeight=initialPillarHeight,pillarBroken=false,pillarLowered=false;
+    let melody=null,iceLayer=null,iceMelt=0,bombTube=null,hitCount=0; // Driven by tick, never by artificial completion switches.
+    const fire=root.DungeonFire,bombs=root.HronalWitchBombs;
+    const alive=()=>!disposed&&isActive();
+    const mat=(color,emissive=0)=>new THREE.MeshStandardMaterial({
+      color,roughness:.82,metalness:.06,emissive,emissiveIntensity:emissive?.46:0
+    });
+    const newMesh=(name,geo,material,x,cy,z,parent=group)=>{
+      const mesh=new THREE.Mesh(geo,material);
+      mesh.name=name;mesh.position.set(x,cy,z);
+      mesh.userData.devRuinFootprintIgnore=true; // The registered dynamic support/blocker owns collision, not a stale mesh scan.
+      parent.add(mesh);return mesh;
+    };
+    const cube=(name,x,z,bottom,w,h,d,color=COLOR.stone,emissive=0,parent=group)=>
+      newMesh(name,new THREE.BoxGeometry(w,h,d),mat(color,emissive),x,bottom+h*.5,z,parent);
+    const cylinder=(name,x,z,bottom,rad,h,color)=>
+      newMesh(name,new THREE.CylinderGeometry(rad,rad,h,12),mat(color),x,bottom+h*.5,z);
+    const solid=(name,x,z,halfX,halfZ,enabled=()=>alive())=>
+      occupancy.addSolidBox(id+'-'+name,{cx:x,cz:z,halfX,halfZ},enabled,'find-the-blocks'); // Blocking is live and no larger than its visible stone.
+    const control=record=>{controls.push(record);kit.state.controls.push(record);return record;};
+    const support=(name,x,z,w,d,topY,enabled=()=>alive())=>kit.registerSurface({
+      id:id+'-'+name,bounds:{minX:x-w*.5,maxX:x+w*.5,minZ:z-d*.5,maxZ:z+d*.5},
+      topY,enabled,priority:23
+    }); // Native DynamicSurfaces is authoritative for climbable tile and pillar tops.
+
+    function makeBlock(name,x,z,bottom,available=false){
+      const mesh=cube('find-block-'+name,x,z,bottom,BLOCK_SIZE,BLOCK_SIZE,BLOCK_SIZE,COLOR.block);
+      const rune=cube('find-block-inset-'+name,0,0,BLOCK_SIZE*.5-.02,.32,.035,.32,COLOR.mark,0,mesh);
+      rune.position.set(0,BLOCK_SIZE*.5+.008,0); // Slightly raised square top mark follows the moving block.
+      mesh.userData.findBlocksAvailable=available;
+      mesh.userData.findBlocksFalling=false;
+      mesh.userData.findBlocksCanDrop=false;
+      mesh.userData.findBlocksFloorY=floorY;
+      if(!game.registerLabPushBlock(mesh,1))throw new Error('Could not register native sliding block '+name+'.');
+      const record={name,mesh,phase:available?'ready':'locked',fallSpeed:0,landed:available};
+      blocks.push(record);return record;
+    }
+    function startFall(block){
+      if(!alive()||block.phase==='falling'||(block.phase==='ready'&&!block.mesh.userData.findBlocksCanDrop))return false;
+      block.phase='falling';block.fallSpeed=0;
+      block.mesh.userData.findBlocksFalling=true;
+      block.mesh.userData.findBlocksAvailable=false;
+      return true;
+    }
+    function finishFall(block){
+      block.mesh.position.y=floorY+BLOCK_SIZE*.5;
+      block.mesh.userData.findBlocksFalling=false;
+      block.mesh.userData.findBlocksCanDrop=false;
+      block.mesh.userData.findBlocksAvailable=true;
+      block.phase='ready';block.landed=true;
+    }
+    function fireSource(){
+      const x=cx,z=cz-3;
+      const asset=root.DevRandomRuinFurniturePieces?.build?.('ruinStandingBrazier');
+      const bowl=asset||cylinder('find-blocks-brazier',x,z,floorY,.48,.67,0x655345);
+      if(asset){asset.position.set(x,floorY,z);asset.userData.devRuinFootprintIgnore=true;group.add(asset);}
+      const flame=newMesh('find-blocks-brazier-flame',new THREE.ConeGeometry(.18,.49,7),
+        new THREE.MeshBasicMaterial({color:COLOR.fire,transparent:true,opacity:.9}),x,floorY+1.05,z);
+      control({kind:'findBlocksBrazier',object:bowl,promptRoot:bowl,point:{x,y:floorY,z},
+        range:1.6,priority:36,claimAction1:true,touchIcon:'🔥',label:'Ignite Next Shot',
+        onPress:()=>{
+          if(!alive())return;
+          const ready=fire?.armNextProjectile?.()===true;
+          kit.deps?.showToast?.(ready?'Your next shot is aflame.':'Equip a ranged weapon first.',ready);
+        }});
+      return {bowl,flame};
+    }
+    function registerBurn(idSuffix,object,onBurn){
+      const targetId=id+'-'+idSuffix; // Unregistered when the lab is rerolled or left.
+      const target=fire?.registerTarget?.({
+        id:targetId,object,active:true,contactPadding:.24,
+        isActive:alive,
+        onBurn:()=>{
+          if(!alive())return false;
+          return onBurn()!==false;
+        }
+      });
+      if(!target)throw new Error('Could not register Dungeon Fire target '+idSuffix+'.');
+      burnIds.push(targetId);
+    }
+    function netSource(){
+      const x=cx-offset,z=cz-offset;
+      const block=makeBlock('net',x,z,ceiling-1.66);
+      const net=new THREE.Group();net.name='find-blocks-burnable-net';
+      net.position.set(x,ceiling-.12,z);net.userData.devRuinFootprintIgnore=true;group.add(net);
+      const skin=root.DungeonRopeArt?.createNetFrustum?.(.98,.98,1.0);
+      if(skin){skin.userData.devRuinFootprintIgnore=true;net.add(skin);}
+      else{
+        const rope=mat(COLOR.rope);
+        for(const dx of [-.45,.45])for(const dz of [-.45,.45])
+          newMesh('net-cord',new THREE.CylinderGeometry(.026,.026,1.08,5),rope,dx,-.56,dz,net);
+        cube('find-blocks-net-beam',0,0,-.12,1.1,.12,.12,COLOR.rope,0,net);
+      }
+      const hit=cube('find-blocks-net-fire-hit',x,z,ceiling-1.18,.95,1.12,.95,0x8c7551);
+      hit.material.transparent=true;hit.material.opacity=0;hit.material.depthWrite=false;
+      registerBurn('net',hit,()=>{net.visible=false;hit.visible=false;return startFall(block);});
+      return block;
+    }
+    function iceSource(){
+      const x=cx+offset,z=cz-offset;
+      const block=makeBlock('ice',x,z,ceiling-1.85);
+      const iceRoot=new THREE.Group();
+      iceRoot.name='find-blocks-ceiling-icicles';iceRoot.position.set(x,ceiling-.1,z);
+      iceRoot.rotation.x=Math.PI;iceRoot.userData.devRuinFootprintIgnore=true;group.add(iceRoot);
+      const builder=root.IceStalagmiteCoverage,recipe=root.DungeonDoorIceCoverage?.scaledRecipe?.(2.2,id+'-ceiling',{
+        count:16,density:1,iceHeightMin:1.15,iceHeightMax:1.7,radius:.25,iceFootprintPadding:.08
+      });
+      if(builder?.build&&recipe){
+        const source=new THREE.Group(); // The furniture-editor ice builder receives the same invisible source geometry as its normal door treatment.
+        const proxy=new THREE.Mesh(new THREE.BoxGeometry(.96,1.65,.96),new THREE.MeshBasicMaterial());
+        proxy.userData.authoredPartId='find_blocks_ceiling_ice_source';proxy.position.y=.83;source.add(proxy);
+        try{iceLayer=builder.build(THREE,source,recipe);}
+        finally{proxy.geometry.dispose();proxy.material.dispose();}
+        if(iceLayer?.userData?.surfaceGrowthStats?.spikes){
+          iceLayer.traverse(node=>{node.userData.devRuinFootprintIgnore=true;});
+          iceRoot.add(iceLayer);
+        }else iceLayer=null;
+      }
+      if(!iceLayer)newMesh('fallback-icicle',new THREE.ConeGeometry(.55,1.65,7),mat(COLOR.ice),
+        0,.9,0,iceRoot);
+      const hit=cube('find-blocks-ice-fire-hit',x,z,ceiling-1.92,1.05,1.65,1.05,COLOR.ice);
+      hit.material.transparent=true;hit.material.opacity=0;hit.material.depthWrite=false;
+      registerBurn('ice',hit,()=>{
+        hit.visible=false;iceMelt=.001; // Retraction starts on real flaming-projectile contact.
+        return true;
+      });
+      block.iceRoot=iceRoot;return block;
+    }
+    function climbingSource(){
+      const x=cx-offset,z=cz+offset,top=floorY+stairRise*7;
+      const block=makeBlock('climb',x,z,top,true);
+      block.mesh.userData.findBlocksCanDrop=true; // Allows one supported block to be pushed off a ledge without bypassing other V50 courses.
+      // A narrow winding walkable route, not invisible stairs or an interaction that teleports the player.
+      // Each tile is separated by at most the normal step-up threshold.
+      const path=[
+        [x+4,z+1],[x+4,z],[x+3,z],[x+3,z-1],
+        [x+2,z-1],[x+2,z],[x+1,z]
+      ];
+      path.forEach(([sx,sz],i)=>{
+        const topY=floorY+stairRise*(i+1);
+        cube('find-blocks-winding-step-'+i,sx,sz,floorY,.92,topY-floorY,.92,COLOR.stone);
+        support('winding-step-'+i,sx,sz,.92,.92,topY);
+      });
+      cube('find-blocks-high-platform',x,z,floorY,2.2,top-floorY,2.2,COLOR.stone);
+      support('climb-dais',x,z,2.2,2.2,top);
+      return block;
+    }
+    function pillarSource(){
+      const x=cx+offset,z=cz+offset;
+      const block=makeBlock('pillar',x,z,floorY+pillarHeight);
+      block.mesh.userData.findBlocksCanDrop=false;
+      const stone=cube('find-blocks-tall-pillar',x,z,floorY,1.9,pillarHeight,1.9,
+        variant==='witchBomb'?0x5f554c:COLOR.stone,variant==='witchBomb'?0x622600:0);
+      solid('tower',x,z,.95,.95,()=>alive()&&!pillarBroken&&pillarHeight>.16);
+      support('tower-top',x,z,1.9,1.9,()=>floorY+pillarHeight,()=>alive()&&!pillarBroken&&pillarHeight>.1);
+      const triggerSink=()=>{
+        if(!alive()||sinking||pillarLowered||pillarBroken)return false;
+        sinking=true;kit.deps?.showToast?.('The tall stone pillar is sinking!',true);return true;
+      };
+      if(variant==='melody'){
+        const challenge=root.RuinLayerChallenges?.compose?.({
+          THREE,parent:group,room:{x:cx+1.5,z:cz-4.5,w:3,d:3},y:floorY, // Away from all four block plates and their pushing approaches.
+          id:id+'-pillar-song',kind:'melodyEcho',mapId:MAP_ID,
+          isActive:alive,onSolved:triggerSink,
+          getPlayerPosition:kit.playerWorld,
+          getPlayerY:()=>game.getPlayerGroundSupportY?.()??kit.playerWorld()?.y??floorY,
+          music:root.MusicMinigame
+        });
+        if(!challenge)throw new Error('Could not compose the native melody echo for the tall pillar.');
+        melody=challenge; // Its own flute judge, event subscriptions, note decals and cleanup stay authoritative.
+      }else if(variant==='projectiles'){
+        const locations=[[cx+1,cz+3],[cx+3,cz+1],[cx+5,cz+1]];
+        locations.forEach(([px,pz],index)=>{
+          const column=cube('find-blocks-target-pillar-'+index,px,pz,floorY,.95,1.75,.95,COLOR.stone);
+          solid('target-pillar-'+index,px,pz,.47,.47);
+          const alongX=Math.abs(px-cx)>=Math.abs(pz-cz); // Aimable face points toward the central floor, not into the opaque stone column.
+          const faceX=alongX?px+Math.sign(cx-px)*.535:px;
+          const faceZ=alongX?pz:pz+Math.sign(cz-pz)*.535;
+          const marker=cube('find-blocks-projectile-glyph-'+index,faceX,faceZ,floorY+.86,
+            alongX?.15:.56,.57,alongX?.56:.15,COLOR.fire,0x452300); // Thin exposed wall plaque hits before the pillar in the actual ranged sweep.
+          const target={id:id+'-target-'+index,object:marker,hitMesh:marker,active:false,
+            hittable:()=>alive()&&!target.active,
+            onHit:()=>{
+              if(!alive()||target.active)return;
+              target.active=true;hitCount++;marker.material.color.setHex(COLOR.solved);
+              marker.material.emissive.setHex(0x155a32);
+              if(hitCount===3)triggerSink();
+            }};
+          targets.push(target);kit.registerProjectileTarget(target);
+        });
+      }else{
+        // No timed self-detonation: only a real Hronal witch-bomb explosion calls the native breakable callback.
+        const crackMaterial=new THREE.MeshBasicMaterial({color:0xff7a17,depthTest:true});
+        for(const n of [-1,0,1]){
+          const crack=newMesh('find-blocks-orange-crack-'+n,new THREE.BoxGeometry(.045,1.28,.056),
+            crackMaterial,(n*.2),0,.96,stone);
+          crack.rotation.z=n*.27;
+        }
+        const unregister=bombs?.registerBreakable?.(stone,{
+          id:id+'-cracked-pillar',mapId:MAP_ID,radius:3.7,
+          onBreak:()=>{
+            if(!alive()||pillarBroken)return false;
+            pillarBroken=true;pillarHeight=0;stone.visible=false;startFall(block);
+            // Small falling stone chips mark the blast; only the real bomb damages actors or the pillar.
+            for(let i=0;i<12;i++){
+              const a=i*Math.PI*2/12;
+              const chip=cube('find-blocks-shattered-stone-'+i,x,z,floorY+1,
+                .22,.16,.23,COLOR.stone);
+              chips.push({mesh:chip,vx:Math.cos(a)*(1.8+i%3*.28),vz:Math.sin(a)*(1.8+i%2*.3),
+                vy:1.7+(i%4)*.3,life:1.3});
+            }
+            kit.deps?.showToast?.('The cracked pillar shattered. Push its block to a plate!',true);
+            return true;
+          }
+        });
+        if(typeof unregister!=='function')throw new Error('Hronal witch-bomb breakable runtime is unavailable.');
+        disposers.push(unregister);
+        const tubeId=id+'-dispenser';
+        const bx=x-5.6,bz=z+1.5; // Outside the actual blast radius: the player must pick up and throw a real witch-bomb.
+        bombTube=new THREE.Group();bombTube.position.set(bx,ceiling-.08,bz);
+        bombTube.name='find-blocks-witch-bomb-tube';
+        bombTube.userData={devRuinFootprintIgnore:true,puzzleInstanceId:tubeId,
+          authoredFurnitureData:{bombTubeExit:{x:0,y:-.9,z:0}}};
+        group.add(bombTube);
+        newMesh('find-blocks-tube-body',new THREE.CylinderGeometry(.46,.46,.85,12),
+          mat(0x5b4d46),0,-.42,0,bombTube);
+        const registered=bombs?.registerDispenser?.(MAP_ID,tubeId,bombTube,{bombFuseSeconds:18});
+        if(!registered)throw new Error('Could not register the native Hronal witch-bomb dispenser.');
+        disposers.push(()=>bombs.unregisterDispenser(MAP_ID,tubeId));
+        control({kind:'findBlocksBombTube',object:bombTube,promptRoot:bombTube,
+          point:{x:bx,y:floorY,z:bz},range:1.7,priority:35,claimAction1:true,
+          touchIcon:'💣',label:'Release Witch-bomb',
+          onPress:()=>{if(alive())bombs.dispenseFromMechanism(bombTube);}});
+      }
+      block.pillar=stone;return block;
+    }
+    function createPlates(){
+      const positions=[[cx-1,cz-1],[cx+1,cz-1],[cx-1,cz+1],[cx+1,cz+1]]; // Plate centers share the blocks' 1-unit slide lattice; half-tile offsets make a plate impossible to fill.
+      positions.forEach(([x,z],index)=>{
+        const mesh=cube('find-blocks-pressure-plate-'+index,x,z,floorY-.025,.91,.06,.91,COLOR.plate);
+        const line=cube('find-blocks-plate-frame-'+index,x,z,floorY+.04,.64,.04,.64,COLOR.mark);
+        mesh.userData.findBlocksPressurePlate=index;line.userData.devRuinFootprintIgnore=true;
+        plates.push({mesh,x,z,filled:false,block:null});
+      });
+    }
+    // Fixed sparse columns make real, visible obstructions rather than hard-coded block lanes.
+    function ordinaryPillars(){
+      for(const [n,x,z] of [[0,cx-3,cz-.5],[1,cx+3,cz-.5],[2,cx+.5,cz+4]]){
+        cube('find-blocks-blocker-'+n,x,z,floorY,.94,2.05,.94,COLOR.stone);
+        solid('normal-pillar-'+n,x,z,.46,.46);
+      }
+    }
+    function openGate(){
+      if(solved)return;
+      solved=true;
+      onSolved();
+    }
+    const gateX=cx,gateZ=room.z+room.d-1.1; // The far-side sealed doorway visibly rises on completion.
+    const gate=cube('find-blocks-gate',gateX,gateZ,floorY,2.2,2.9,.3,COLOR.stone);
+    const gateStart=gate.position.y;
+    solid('gate',gateX,gateZ,1.1,.18,()=>alive()&&!solved);
+    createPlates();
+    ordinaryPillars();
+    fireSource();
+    netSource();
+    iceSource();
+    climbingSource();
+    pillarSource();
+
+    const result={id,kind:'findBlocks',ready:true,linked:true,variant,blocks,plates,
+      get solved(){return solved;},
+      tick(dt){
+        if(!alive())return;
+        const step=Math.max(0,Math.min(.05,Number(dt)||0));
+        melody?.tick?.(step);
+        melody?.animate?.(step);
+        if(sinking){
+          pillarHeight=Math.max(0,pillarHeight-step*1.45);
+          const pillar=blocks[3].pillar;
+          if(pillar){
+            pillar.scale.y=Math.max(.001,pillarHeight/initialPillarHeight);
+            pillar.position.y=floorY+pillarHeight*.5;
+          }
+          blocks[3].mesh.position.y=floorY+pillarHeight+BLOCK_SIZE*.5;
+          if(pillarHeight<=.08){
+            sinking=false;pillarLowered=true;pillarHeight=0;
+            blocks[3].mesh.position.y=floorY+BLOCK_SIZE*.5;
+            blocks[3].phase='ready';blocks[3].landed=true;
+            blocks[3].mesh.userData.findBlocksAvailable=true;
+          }
+        }
+        if(iceMelt>0&&iceMelt<1){
+          iceMelt=Math.min(1,iceMelt+step/.85);
+          if(iceLayer)root.IceStalagmiteCoverage?.setGrowth?.(iceLayer,1-iceMelt);
+          if(iceMelt>=1){
+            blocks[1].iceRoot.visible=false;
+            startFall(blocks[1]);
+          }
+        }
+        for(const b of blocks){
+          if(b.phase==='ready'&&b.mesh.userData.findBlocksCanDrop&&!game.isSlidingPushBlock?.(b.mesh)){
+            const high=Number(b.mesh.userData.findBlocksFloorY)+.55;
+            const supportAtHeight=root.DynamicSurfaces?.sampleSupport?.(b.mesh.position.x,b.mesh.position.z,{
+              minY:high,maxY:b.mesh.position.y+.05,pad:.01});
+            if(!supportAtHeight)startFall(b);
+          }
+          if(b.phase!=='falling')continue;
+          b.fallSpeed+=FALL_ACCEL*step;
+          b.mesh.position.y=Math.max(floorY+BLOCK_SIZE*.5,b.mesh.position.y-b.fallSpeed*step);
+          if(b.mesh.position.y<=floorY+BLOCK_SIZE*.5+.0001)finishFall(b);
+        }
+        for(const chip of chips){
+          if(chip.life<=0)continue;
+          chip.life-=step;chip.vy-=FALL_ACCEL*step;
+          chip.mesh.position.x+=chip.vx*step;chip.mesh.position.z+=chip.vz*step;
+          chip.mesh.position.y=Math.max(floorY+.07,chip.mesh.position.y+chip.vy*step);
+          if(chip.life<=0)chip.mesh.visible=false;
+        }
+        let weighted=0; // Plate state is recalculated from live block positions, not latched when a block merely passes across.
+        for(const plate of plates){
+          const found=blocks.find(b=>b.phase==='ready'&&!game.isSlidingPushBlock?.(b.mesh)
+            &&Math.abs(b.mesh.position.y-BLOCK_SIZE*.5-floorY)<.12
+            &&Math.abs(b.mesh.position.x-plate.x)<PLATE_REACH
+            &&Math.abs(b.mesh.position.z-plate.z)<PLATE_REACH);
+          plate.block=found?.name||null;
+          plate.filled=!!found;
+          plate.mesh.material.color.setHex(found?COLOR.solved:COLOR.plate);
+          if(found)weighted++;
+        }
+        if(weighted===4)openGate();
+        if(solved)gate.position.y=Math.min(gateStart+3.2,gate.position.y+step*3.6);
+      },
+      snapshot(){return {id,variant,solved,ceilingY:ceiling,stairRise,initialPillarHeight,weighted:plates.filter(p=>p.filled).length,
+        blocks:blocks.map(b=>({name:b.name,phase:b.phase,x:b.mesh.position.x,z:b.mesh.position.z,
+          y:b.mesh.position.y,available:b.mesh.userData.findBlocksAvailable})),
+        targets:targets.map(t=>({id:t.id,hit:t.active})),pillarHeight,
+        iceMelt,fireReady:!!fire,witchBombReady:!!bombs};},
+      dispose(){
+        if(disposed)return;disposed=true;
+        melody?.dispose?.();
+        for(const burn of burnIds)fire?.unregisterTarget?.(burn);
+        for(const stop of disposers)stop();
+        for(const item of controls){const i=kit.state.controls.indexOf(item);if(i>=0)kit.state.controls.splice(i,1);}
+        root.DevRandomRuinTileOccupancy?.clearSolids?.('find-the-blocks');
+        kit.disposeObject(group); // Release the chamber meshes/materials now; removing the root alone would leak GPU resources on reroll.
+      },
+    };
+    return result;
+  }
+
+  return Object.freeze({create});
+});
