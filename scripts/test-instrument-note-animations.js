@@ -251,8 +251,8 @@ assert.equal(api.playerRightHandPose(),null,'closing player music releases the f
 assert.equal(api.playerKurrayaHandTarget(),null,'closing player music releases the captured holder');
 assert.equal(api.playPlayerKurrayaNote(),false,'no player hand notes outside a session');
 
-assert(editor.includes('handCustomGripAxisPickStart'),'editor exposes moveable Nut marker');
-assert(editor.includes('handCustomGripAxisPickEnd'),'editor exposes moveable Bridge marker');
+assert(grips.includes('handCustomGripAxisPickStart') && editor.includes('gripAxisMarkers'),'editor exposes moveable Nut marker');
+assert(grips.includes('handCustomGripAxisPickEnd') && editor.includes('gripAxisMarkers'),'editor exposes moveable Bridge marker');
 assert(editor.includes('poseFreeRightHandEnabled'),'editor offers a per-pose free-right-hand switch');
 assert(editor.includes("setGizmoMode('translate', 'rightHand')"),'free hand can be dragged in avatar space');
 assert(editor.includes("setGizmoMode('rotate', 'rightHand')"),'free hand can be rotated in avatar space');
