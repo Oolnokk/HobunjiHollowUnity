@@ -328,7 +328,7 @@
   const DISPLAY_LABELS = Object.freeze({ puktuk: 'Puktuk', 'voorg-ass': 'Vorg-Ass', moot: 'Moot' }); // Used only when the picker needs an option appended before its ordinary population pass.
   const EXTENSION_SCRIPTS = Object.freeze([ // Loaded in dependency order so gameplay genetics can delegate Voorg-Ass registration to its canonical owner.
     Object.freeze({ name: 'voorg-ass-registration', path: '../../js/voorg-ass-registration.js?v=20261027h7e25ded' }),
-    Object.freeze({ name: 'moot-registration', path: '../../js/moot-registration.js?v=20261107moot1' }), // Register Moot's authored base/run/eye layers in the same picker as all other animals.
+    Object.freeze({ name: 'moot-registration', path: '../../js/moot-registration.js?v=20261107mootreview1' }), // Register Moot's authored base/run/eye layers in the same picker as all other animals.
     Object.freeze({ name: 'creature-genetics', path: '../../js/creature-genetics.js?v=20261107moot2' }),
   ]);
   const STATUS_KEY = 'animationAuthorCreatureRegistrySync'; // Used by the mobile-safe debug object exposed below.
