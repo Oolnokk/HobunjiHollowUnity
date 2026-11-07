@@ -2191,6 +2191,7 @@
         if(on&&cell.safe)cell.proven=true;
         if(Math.abs(player.x-cell.x)<=1.2&&Math.abs(player.z-cell.z)<=1.2)near=true;
         if(cell.renderDown!==on){
+          window.RuinInteractionAudio?.watchPlate?.(cell,on,{size:.65}); // Each individual safe-path stone plate clicks only when physically pressed or released.
           plateInstanceDummy.position.set(cell.x,cell.y+.028-(on?.032:0),cell.z);
           plateInstanceDummy.rotation.set(0,0,0);
           plateInstanceDummy.scale.set(1,1,1);
