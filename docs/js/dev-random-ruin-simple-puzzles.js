@@ -1952,7 +1952,7 @@
     if(selection.mode==='mechanism')return buildSingleMechanism(context,source,selection.kind,rng);
     const Challenge=window.RuinLayerChallenges; // Reuses the multi-floor game's actual puzzle implementation.
     const nativeKind=window.DevRuinSingleRoomTrial?.NATIVE_VARIANTS?.[selection.kind]||null; // Native V50 trial fixtures keep their own authoritative controls and mechanism state.
-    if(!nativeKind&&!Challenge?.TYPES?.includes(selection.kind))throw new Error('Missing playable puzzle type '+selection.kind);
+    if(!nativeKind&&selection.kind!=='findBlocks'&&!Challenge?.TYPES?.includes(selection.kind))throw new Error('Missing playable puzzle type '+selection.kind);
     if(nativeKind){
       const fixture=context.meta?.singleRoomNative,mechanism=window.DevRandomRuin?.mechanismInfo?.(fixture?.mechanismId);
       if(fixture?.kind!==nativeKind||!mechanism?.root||!mechanism.gated)
@@ -1979,6 +1979,18 @@
     const side=({north:'S',south:'N',east:'W',west:'E'})[entry]||'E'; // The far bank / targets face away from the room entrance.
     const centerX=room.x+room.w*.5,centerZ=room.z+room.d*.5;
     const floorY=Number(sampleSupport(centerX,centerZ)?.y??context.meta?.floorSurfaceY??0);
+    if(selection.kind==='findBlocks'){
+      const owner=state; // The compound room must not write a solved result after a reroll.
+      const challenge=window.DevRuinFindBlocks?.create?.({
+        THREE,kit:state.kit,context,room,y:floorY,
+        isActive:()=>state===owner&&inRuin(),
+        onSolved:()=>{owner.singleRoomSolved=true;deps?.showToast?.('Find the Blocks complete! No loot awarded.',true);},
+      });
+      if(!challenge)throw new Error('Find the Blocks runtime was not loaded.');
+      state.singleRoomChallenge=challenge;
+      window.DevRandomRuinTileOccupancy?.scanSolids?.(state.group,SCOPE);
+      return;
+    }
     if(selection.kind==='statueDefense'&&(room.w<18||room.d<18))throw new Error('Key Statue defense needs an 18 x 18 room.');
     if(selection.kind==='ropeChain'){
       const pit=Challenge.ropePitForRoom(room,side); // The identical pit-bank sizing used by playable shaft wings.
@@ -2521,7 +2533,7 @@
     return {
       active:true,
       seed:state.buildSeed,
-      singleRoomChallenge:state.context.singleRoomTrial?{...state.context.singleRoomTrial,solved:state.singleRoomSolved,ready:!!state.singleRoomChallenge&&state.singleRoomChallenge.ready!==false,error:state.singleRoomError||state.singleRoomChallenge?.error||null,ropeError:lastExternalRopeError,attempts:state.singleRoomChallenge?.attempts||0,linked:state.singleRoomChallenge?.linked??false,ropeLinked:state.singleRoomChallenge?.ropeLinked??false,fireLinked:state.singleRoomChallenge?.fireLinked??false,noteCount:state.singleRoomChallenge?.notes?.length||0,targetCount:state.singleRoomChallenge?.targetCount||0}:null, // Defense readiness/errors are asynchronous; don't claim it is ready before authored assets finish loading.
+      singleRoomChallenge:state.context.singleRoomTrial?{...state.context.singleRoomTrial,solved:state.singleRoomSolved,ready:!!state.singleRoomChallenge&&state.singleRoomChallenge.ready!==false,error:state.singleRoomError||state.singleRoomChallenge?.error||null,ropeError:lastExternalRopeError,attempts:state.singleRoomChallenge?.attempts||0,linked:state.singleRoomChallenge?.linked??false,ropeLinked:state.singleRoomChallenge?.ropeLinked??false,fireLinked:state.singleRoomChallenge?.fireLinked??false,findBlocks:state.singleRoomChallenge?.kind==='findBlocks'?state.singleRoomChallenge.snapshot?.():null,noteCount:state.singleRoomChallenge?.notes?.length||0,targetCount:state.singleRoomChallenge?.targetCount||0}:null, // Defense readiness/errors are asynchronous; don't claim it is ready before authored assets finish loading.
       safeGrids:state.safeGrids.map(grid=>({
         hallId:grid.hallId,
         axis:grid.axis,

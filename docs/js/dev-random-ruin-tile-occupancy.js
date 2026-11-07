@@ -501,6 +501,13 @@
       revision:0,
       refresh:() => rebuild(model),
       blocksAt:(x, z, radius = 0, options = {}) => blocksAt(model, x, z, radius, options),
+      // Lab-only movable blocks join the same runtime collision map as V50-authored push blocks.
+      registerSlidingPushBlock:block=>{
+        if(!block?.isObject3D||!block.userData?.previewMotion||block.userData.previewMotion.type!=='pushPuzzleBlock')return false;
+        block.userData.__devRuinOccupancySource ||= 'push:'+block.id; // Used by swept pushes to ignore only their own collider.
+        if(!model.slidingPushBlocks.has(block))model.slidingPushBlocks.set(block,{});
+        return true;
+      },
       pushBlockBox:block => pushBlockBox(model, block),
       snapshot:() => snapshot(model),
       scanSolids:(root, tag) => model.footprints.scan(root, tag),
@@ -561,6 +568,7 @@
     getSnapshot:() => snapshot(),
     refresh:() => activeModel?.refresh?.() || false,
     blocksAt:(x,z,radius=.22,options={}) => activeModel?.blocksAt?.(x,z,radius,options) === true, // Traversal modules use the exact same generated occupancy that is stamped into the ordinary interior grid.
+    registerSlidingPushBlock:block=>activeModel?.registerSlidingPushBlock?.(block)===true, // Late-built lab blocks move with the native V50 pusher and still block player/world movement.
     scanSolids:(root, tag = 'dynamic-scan') => activeModel?.scanSolids?.(root, tag) || 0, // Later-built puzzle modules add their visible solids to the same footprint set.
     clearSolids:tag => activeModel?.clearSolids?.(tag),
     addSolidBox:(id, box, enabled = null, tag = 'dynamic') => activeModel?.addSolidBox?.(id, box, enabled, tag) || null,
