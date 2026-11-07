@@ -117,7 +117,7 @@
       spawners: (options.spawners || []).map((s, i) => ({ index: i, x: Number(s.x), z: Number(s.z), facing: s.facing || null })),
       schedule: [...(options.schedule || [])].sort((a, b) => a.t - b.t), tier: Number(options.tier) || 0, maxAlive: Number(options.maxAlive) || CONFIG.maxAlive,
       surfaceY: options.surfaceY || null, retry: options.retry !== false, noLoot:options.noLoot===true, // An encounter only suppresses loot when explicitly requested.
-      state: 'waiting', clock: 0, next: 0, enemies: [], pending: 0, stats: { spawned: 0, planted: 0, failures: 0, successes: 0 },
+      state: 'waiting', clock: 0, next: 0, enemies: [], pending: 0, attempt: 0, stats: { spawned: 0, planted: 0, failures: 0, successes: 0 }, // Attempt identity isolates asynchronous enemy builds across retries.
       proxy: { id: id + '_statue_proxy', x: 0, y: 0, health: 1e9, maxHealth: 1e9, areaId: String(options.mapId || ''), creatureKey: 'encounterStatueProxy', invulnUntil: Infinity, isEncounterProxy: true, facing: CONFIG.proxyFacing, angle: 0 },
       statuePoint() { const p = plinthState(this).payload; if (!p?.group) return null; const v = p.group.getWorldPosition ? p.group.getWorldPosition(this._v ||= (window.THREE ? new window.THREE.Vector3() : { x: 0, y: 0, z: 0 })) : p.group.position; return { x: v.x, y: v.y, z: v.z }; },
       removeEnemy(enemy, reason) { removeEnemy(this, enemy, reason); },
@@ -141,6 +141,7 @@
   function clearEnemies(enc, reason) { for (const enemy of [...enc.enemies]) removeEnemy(enc, enemy, reason); }
 
   function start(enc) {
+    enc.attempt++;
     enc.state = 'running'; enc.clock = 0; enc.next = 0; enc.pending = 0; enc.statueDestroyed = false;
     emit('encounter:start', { scope: enc.mapId, encounterId: enc.id, waves: enc.schedule.length });
   }
@@ -153,15 +154,18 @@
   async function spawnEntry(enc, entry) {
     const kind = kinds.get(entry.kind), spawner = enc.spawners[entry.spawner % Math.max(1, enc.spawners.length)];
     if (!kind || !spawner) return 0;
+    const attempt = enc.attempt; // Keep this entire wave attached to the attempt that scheduled it.
+    const isCurrentAttempt = () => encounters.get(enc.id) === enc && enc.state === 'running' && enc.attempt === attempt; // Replacement encounters may reuse the same ID.
     let spawned = 0;
     for (let i = 0; i < Math.max(1, entry.count | 0); i++) {
+      if (!isCurrentAttempt()) break;
       if (enc.enemies.length + enc.pending >= enc.maxAlive) break;
       enc.pending++;
       let entity = null;
       try { entity = await kind.spawn(enc, entry, spawner); } catch (error) { console.warn('[RuinEncounters] spawn failed', error); }
-      enc.pending--;
+      if (enc.attempt === attempt) enc.pending--;
+      if (!isCurrentAttempt()) { disposeEntity(entity); break; }
       if (!entity) continue;
-      if (enc.state !== 'running' || !encounters.has(enc.id)) { disposeEntity(entity); continue; } // The encounter ended while the enemy was being built.
       if(enc.noLoot)entity.ruinNoLoot=true; // Only explicitly loot-free encounters mark their corpses; normal spawns keep existing entity loot metadata.
       attachSurface(enc, entity);
       const enemy = { kind: entry.kind, entry, entity, spawner: spawner.index, bornAt: enc.clock, released: false, planted: false };
@@ -217,7 +221,9 @@
       for (const enc of encounters.values()) {
         if (enc.state !== 'running' || enc.mapId !== p.scope || enc.objective.fragileStatue === false) continue;
         const plinth = plinthState(enc), statue = enc.statuePoint();
-        if (!plinth.seated || !statue || dist(statue.x, statue.z, p.x, p.z) > Number(p.radius || 0)) continue;
+        if (!plinth.seated || !statue) continue;
+        const distance = Number.isFinite(p.y) ? Math.hypot(statue.x - p.x, statue.y - p.y, statue.z - p.z) : dist(statue.x, statue.z, p.x, p.z); // Height-aware blasts cannot reach statues on another story; legacy events may omit height.
+        if (distance > Number(p.radius || 0)) continue;
         enc.statueDestroyed = true; // the plinth empties either way; this tells a destroyed statue from one the player took back
         emit('encounter:statue-destroyed', { scope: enc.mapId, encounterId: enc.id, sourceId: p.sourceId || null });
         window.Shattercasks?.discardBurden?.(plinth.payload); // the plinth's own payload watch then reverses the press; the dispenser returns a statue
@@ -229,7 +235,7 @@
     schedulerUnsub = window.RuntimeFrameScheduler.register('ruin-encounters', ({ deltaMs }) => tick((Number(deltaMs) || 0) / 1000), { phase: 'pre-game', owner: 'RuinEncounters', description: 'Spawns and steers encounter enemies and watches the objective.' });
   }
 
-  const debugSnapshot = () => ({ encounters: [...encounters.values()].map(e => ({ id: e.id, mapId: e.mapId, state: e.state, clock: +e.clock.toFixed(1), next: e.next, waves: e.schedule.length, alive: e.enemies.length, stats: { ...e.stats } })) });
+  const debugSnapshot = () => ({ encounters: [...encounters.values()].map(e => ({ id: e.id, mapId: e.mapId, state: e.state, attempt: e.attempt, pending: e.pending, clock: +e.clock.toFixed(1), next: e.next, waves: e.schedule.length, alive: e.enemies.length, stats: { ...e.stats } })) });
   const configure = o => { Object.assign(CONFIG, o || {}); return { ...CONFIG }; };
 
   window.RuinEncounters = Object.freeze({ installed: true, CONFIG, create, remove, clearScope, tick, registerEnemyKind, configure, debugSnapshot, get encounters() { return [...encounters.values()]; } });
