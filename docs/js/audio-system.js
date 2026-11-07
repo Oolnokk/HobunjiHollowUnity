@@ -1553,7 +1553,8 @@
     // Native HTML audio cannot transpose independently of tempo. Prefer the specified one-third duration with its
     // original pitch when pitch preservation is supported; otherwise keep the requested lower notes without
     // inadvertently producing a high-pitched slash. The decoded WSOLA path above satisfies both specifications.
-    const nativePitchModes = []; // Recorded in mobile diagnostics so fallback limitations are never mistaken for exact DSP.
+    const nativePitchModes = []; // Debug keeps the audible pitch/speed mode for each part of the native sequence.
+    const nativePlaybackRates = []; // Distinguishes exact 3x tempo from lower-pitch but slower playback.
     const playNativePart = index => {
       if (gameAudioConfig().enabled === false || combatSfxConfig().enabled === false) return;
       const snd = trackActiveSfx(new Audio(cfgEntry.url)); // New element per part avoids pool reuse cutting a previous attack short.
@@ -1564,10 +1565,11 @@
       if ('mozPreservesPitch' in snd) snd.mozPreservesPitch = true;
       snd.playbackRate = rate;
       nativePitchModes.push(preservesPitch ? 'original-pitch-fast' : 'lower-pitch-slow'); // Used by debug to distinguish the two unavoidable limitations.
+      nativePlaybackRates.push(rate); // Effective native rate is visible alongside the requested pitch/tempo.
       if (index === 0) snd.addEventListener?.('ended', () => playNativePart(1), { once: true }); // True end-to-start sequencing, not two overlapping play() calls.
       playSfxAudioElement(snd, volume, Number(cfgEntry.gainBoost) || 1);
     };
-    recordCombatSfx('comboFinisherDoubleSlash', cfgEntry, { requestedTempo: COMBO_FINISHER_SLASH_TEMPO, requestedSemitones: COMBO_FINISHER_SLASH_PITCHES, volumeScale: COMBO_FINISHER_SLASH_VOLUME, backend: 'native-limited-fallback', actualPitchMode: 'unavailable-independently', actualTempo: null });
+    recordCombatSfx('comboFinisherDoubleSlash', cfgEntry, { requestedTempo: COMBO_FINISHER_SLASH_TEMPO, requestedSemitones: COMBO_FINISHER_SLASH_PITCHES, volumeScale: COMBO_FINISHER_SLASH_VOLUME, backend: 'native-limited-fallback', actualPitchModes: nativePitchModes, actualPlaybackRates: nativePlaybackRates });
     playNativePart(0);
   }
 
