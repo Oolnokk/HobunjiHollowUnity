@@ -244,6 +244,7 @@
         elapsed+=step;
         while(elapsed>=beatSeconds){elapsed-=beatSeconds;pulse();}
       }
+      if(!active)return; // Leaving for an offshoot room suspends the cycle and all motion until the shaft is reentered.
       for(const pillar of columns.values()){
         if(Math.abs(pillar.y-pillar.desiredY)>.0001){
           const oldY=pillar.y;
