@@ -72,7 +72,9 @@ assert.equal(totalEye, eyeLocations.length);
 assert.equal(totalTang, 19, 'Torch-Staff adds both independently authored B\'shuakauitl tang copies');
 assert.equal(Object.keys(committed.shafts).length * Object.keys(committed.heads).length, 272);
 assert.deepEqual(plain(committed.heads['pick-shovel-pick'].mount), { type: 'blade',
-  start: { x: 207, y: 319 }, end: { x: 207, y: 239 } }, 'Pick arrow stays straight and unrotated');
+  start: { x: 193.7686592344786, y: 313.0526330990026 },
+  end: { x: 192.22762058461228, y: 248.07090335994735 } },
+  'Pick arrow preserves the latest independently authored offset and rotation');
 
 // Preserve other independent artist calibration changes included in the uploaded editor export.
 assert.deepEqual(plain(committed.heads['work-hammer'].mount),
