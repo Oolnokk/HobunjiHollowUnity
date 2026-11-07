@@ -224,7 +224,9 @@
     if (bird?._tzFlight) bird._tzFlight.delivered = false; // Completion is set only by the actual cave transition or victim store.
     if (bird?._tzFlight?.captive === prey) bird._tzFlight.captive = null;
     if (bird) bird.tzatzulCarrying = false;
+    const fellFromTalons = reason === 'fled carrying prey' || reason === 'carrier knocked from perch'; // A real interruption drops prey where the bird was flying.
     window.TzatzulLiveVisuals?.restoreCaptive?.(prey); // Revert the talon-payload rotation before ground/prone animation owns this actor again.
+    if (fellFromTalons) window.PerchSupport?.release?.(prey, 'dropped by Tzatzul'); // Existing elevated-perch fall injury and footing, exactly once.
     window.PerchSupport?.forget?.(prey); // Restore native ground movement, never leave a dangling synthetic branch.
     prey.onBranch = null; prey.branchT = 0; prey.branchSurfaceY = 0;
     prey.tzatzulCapturedBy = null;
@@ -246,16 +248,16 @@
           stats.lastCapture = { event: 'entry-failed', reason, prey: 'player', error: String(error) };
           window.__farmLog?.('[tzatzul] Nest entry failed: ' + String(error), 'warn', 'wildlife');
         }
-      } else {
-        prey.x = n(record.pickupX, prey.x); prey.y = n(record.pickupY, prey.y); // Dead carrier releases player at known ground.
+      } else if (!fellFromTalons) {
+        prey.x = n(record.pickupX, prey.x); prey.y = n(record.pickupY, prey.y); // Missing carrier/scene uses the known safe pickup location.
       }
     } else if (prey.health > 0 && reason === 'returned to roost' && record.areaId === deps?.getCurrentArea?.()) {
       prey.x = n(record.pickupX, prey.x); prey.y = n(record.pickupY, prey.y);
       const stored = window.TzatzulNestEncounter?.storeVictim?.(prey, bird, record.rendered === true);
       if (bird?._tzFlight) bird._tzFlight.delivered = stored === true; // Never claim unseen or rejected prey reached hatchlings.
-    } else if (!record.player && prey.health > 0) {
+    } else if (!record.player && prey.health > 0 && !fellFromTalons) {
       prey.x = n(record.pickupX, prey.x); prey.y = n(record.pickupY, prey.y);
-    } // Unseen prey and interrupted carries return alive to their known original ground.
+    } // A genuine aerial drop uses its live position; all other interrupted carries use the known safe ground.
     stats.releases++;
     if (!record.player) stats.lastCapture = { event: 'released', reason, prey: prey.creatureKey || prey.name || 'npc' };
     return true;
