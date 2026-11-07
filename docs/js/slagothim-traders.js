@@ -615,6 +615,10 @@
     for (const key of shuffled(rng, outOfSeasonProduce(season)).slice(0, intRoll(rng, 1, 2))) {
       stock.push(itemEntry(key, intRoll(rng, 2, 4), itemPrice(key), { note: 'Out of season here' }));
     }
+    // Regional crop seeds are drawn from Khymeryya's distinct climates and keep normal item-stack purchase/save semantics.
+    for (const offer of window.CropVarieties?.offers?.(rng) || []) {
+      stock.push(itemEntry(offer.key, offer.qty, Math.max(16, itemPrice(offer.key, 3)), { note: offer.region + ' seed variety' }));
+    }
     // Rare imported spices from far-ranging trade routes; every caravan has at least one.
     const importedSpices = ['cloudSaffron','starpepper','nightCardamom']; // Sold alongside the established foreign fish and seasonal crops.
     for (const key of shuffled(rng, importedSpices).slice(0,intRoll(rng,1,2))) {
