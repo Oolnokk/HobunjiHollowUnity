@@ -1127,6 +1127,14 @@
     const sameArea = !target.areaId || !c?.areaId || target.areaId === c.areaId;
     if (alive && sameArea) return target;
     c._chunkCombatTarget = null;
+    // The ecology fight is over. This clear happens before porakaneki-camps-runtime's
+    // setHumanoidEcologyTarget(null) can see a `prior` target, so its "don't leave the
+    // actor in 'chase' with no target" reset never ran. The actor was left in 'chase'
+    // (then 'searching') for the player it never fought, which isPlayerInCombat reads
+    // as the player being in combat and starts the combat music. Stand down instead;
+    // the ordinary hostile loop re-aggros the player at once if they are really in
+    // aggro range and visible.
+    if (c.state === 'chase' || c.state === 'searching') c.state = 'return';
     return fallbackTarget;
   } // Keeps ordinary player combat unchanged whenever no local faction target is assigned.
   function damageBanditCombatTarget(c, target, amount, fromX, fromY, knockbackPxS, opts = {}) {

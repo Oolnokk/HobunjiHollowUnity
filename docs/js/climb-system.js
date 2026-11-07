@@ -390,6 +390,29 @@
     return true;
   }
 
+  function findAirRouteGrab(pos, direction, radius = 0.45, reachY = 0.5) {
+    const network = currentCliffNetwork(); // Shared search for free jumps and existing scripted falls.
+    let best = null, distance = Infinity; // Nearest actual handhold at the body's physical height.
+    for (const route of network?.routes || []) {
+      if (direction && direction.x * route.normal.x + direction.z * route.normal.z > -0.2) continue;
+      for (const node of route.nodes) {
+        if (node.id === 0 || node.id === route.upperNode || node.balconyId || Math.abs(node.y - pos.y) > reachY) continue;
+        const d = Math.hypot(node.x - pos.x, node.z - pos.z); // Never redirect an airborne player to a distant route entrance.
+        if (d < radius && d < distance) { best = { route, node }; distance = d; }
+      }
+    }
+    return best;
+  }
+
+  function tryAirGrab(pos, direction) {
+    const player = deps?.player; // Movement ownership transfers only after finding a real grip.
+    if (!player || player.climbing || player.onBranch || player.onClimbSurface) return false;
+    const hit = findAirRouteGrab(pos, direction); // Same authority as falling off a scripted cliff route.
+    if (!hit) return false;
+    window.PlayerJump?.reset?.();
+    return startRouteClimb({ route: hit.route, entry: hit.node.id });
+  }
+
   function startClimb(climb) {
     const mountRideState = deps.getMountRideState?.() || 'none'; // Used to keep scripted climbing mutually exclusive with every mount transition phase.
     if (mountRideState !== 'none') {
@@ -799,18 +822,8 @@
     const fall = player._climbFall;
     if (!fall || player._cliffRouteSession || player.climbElapsed < AUTO_GRAB_GRACE_S) return false;
     if (fall.noGrab) return false;
-    const net = currentCliffNetwork();
-    if (!net?.routes?.length) return false;
-    const px = player.x / deps.TILE, pz = player.y / deps.TILE, py = player.climbSurfaceY;
-    let best = null, bestD = Infinity;
-    for (const route of net.routes) {
-      for (const node of route.nodes) {
-        if (node.id === 0 || node.id === route.upperNode || node.balconyId) continue; // Rest points are landings, not grabs.
-        if (Math.abs(node.y - py) > AUTO_GRAB_REACH_Y) continue;
-        const d = Math.hypot(node.x - px, node.z - pz);
-        if (d < AUTO_GRAB_RADIUS_TILES && d < bestD) { best = { route, node }; bestD = d; }
-      }
-    }
+    const best = findAirRouteGrab({ x: player.x / deps.TILE, z: player.y / deps.TILE,
+      y: player.climbSurfaceY }, null, AUTO_GRAB_RADIUS_TILES, AUTO_GRAB_REACH_Y); // Scripted falls share the free-jump handhold search.
     if (!best) return false;
     const grip = player._grip;
     player.climbing = false; player._climbFall = null; player._climbCancelable = false;
@@ -1070,7 +1083,7 @@
   }
 
   window.ClimbSystem = {
-    cliffDodge, jumpAction,
+    cliffDodge, jumpAction, tryAirGrab,
     updateBalcony, jumpFromBalcony, fallFromClimb,
     init,
     getClimbTarget,

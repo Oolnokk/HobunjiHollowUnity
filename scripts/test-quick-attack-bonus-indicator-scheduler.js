@@ -164,6 +164,18 @@ deps.hostileObjects = [near, offscreen];
 scheduledFrame({ timestamp: 1048 });
 assert.deepEqual([...context.QuickAttackBonusIndicator.snapshot().visibleTargetIds], ['near'], 'hostiles outside the camera view get no reticle');
 
+// Elevation: only hostiles at the player's terrain level are cued; a ledge above or a shelf below is not.
+const ledge = hostile('ledge', 96);
+ledge.avatarRef.group.id = 'ledge';
+const rampFoot = hostile('ramp-foot', 128);
+rampFoot.avatarRef.group.id = 'ramp-foot';
+deps.worldSurfaceY = (x) => (x === 96 ? 2.5 : (x === 128 ? 0.6 : 0)); // One plateau tier up for the ledge; a gentle ramp rise for the other.
+deps.hostileObjects = [near, ledge, rampFoot];
+scheduledFrame({ timestamp: 1052 });
+assert.deepEqual([...context.QuickAttackBonusIndicator.snapshot().visibleTargetIds], ['near', 'ramp-foot'], 'a hostile a full tier above gets no reticle, but one on the same slope still does');
+delete deps.worldSurfaceY;
+deps.hostileObjects = [near];
+
 // Hidden avatars (or hidden ancestors) are not in view.
 near.avatarRef.group.visible = false;
 scheduledFrame({ timestamp: 1064 });

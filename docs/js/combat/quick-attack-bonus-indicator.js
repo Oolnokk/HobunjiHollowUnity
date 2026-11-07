@@ -51,6 +51,7 @@
   const viewMatrix = new THREE.Matrix4(); // Camera projection × view, rebuilt once per frame for the in-view test.
   const viewFrustum = new THREE.Frustum(); // Camera field of view the cue is limited to.
   const viewSphere = new THREE.Sphere(); // Target body bounds tested against the frustum.
+  const SAME_ELEVATION_MAX_DELTA = 1.25; // World units of terrain-height difference tolerated; half of game.js's 2.5 plateau tier, so ramps/slopes still count but a different tier does not.
 
   function currentQuickAttack() {
     const attackId = window.Combat.loadout?.getSlot?.('tap2') || null; // Used to resolve the currently equipped Quick Attack.
@@ -96,8 +97,20 @@
     return viewFrustum.setFromProjectionMatrix(viewMatrix);
   }
 
-  // Every live, attackable hostile in this area whose body is inside the
-  // camera's view, nearest first. Same eligibility as Quick Attack strike
+  // True when the target stands at the player's terrain elevation. Uses the same
+  // worldSurfaceY the combat deps expose (plateau tiers + ramps), so a hostile on
+  // a cliff ledge above or a shelf below never gets a cue the player cannot act on.
+  // Without the lookup (early boot, test stubs) every target counts as level.
+  function sameElevationAsPlayer(deps, target) {
+    if (typeof deps?.worldSurfaceY !== 'function' || !deps.player) return true;
+    const playerY = Number(deps.worldSurfaceY(Number(deps.player.x) || 0, Number(deps.player.y) || 0));
+    const targetY = Number(deps.worldSurfaceY(Number(target.x) || 0, Number(target.y) || 0));
+    if (!Number.isFinite(playerY) || !Number.isFinite(targetY)) return true;
+    return Math.abs(targetY - playerY) <= SAME_ELEVATION_MAX_DELTA;
+  }
+
+  // Every live, attackable hostile in this area, at the player's elevation, whose
+  // body is inside the camera's view, nearest first. Same eligibility as Quick Attack strike
   // resolution (deps.hostileObjects in the current area), without any reach
   // or aim requirement.
   function visibleCandidates(deps) {
@@ -108,6 +121,7 @@
     for (const target of deps.hostileObjects || []) {
       if (!target || !(target.health > 0) || (area && target.areaId !== area)) continue;
       if (target.isCompanion || target._denHidden || target._grehlrBurrowProtected) continue;
+      if (!sameElevationAsPlayer(deps, target)) continue;
       const root = targetRoot(target);
       const scene = root && shownScene(target, root);
       if (!scene) continue;
@@ -438,7 +452,7 @@
     if (!event?.quickBonusEffectProc || event.attackCategory !== 'quickAttack') return;
     const deps = window.Combat.deps; // Current area and HUD suppression remain authoritative at impact.
     const target = event.target; // The hit event identifies each cleaved enemy independently.
-    if (!deps || !target || cueSuppressed(deps) || (deps.getCurrentArea?.() && target.areaId !== deps.getCurrentArea())) return;
+    if (!deps || !target || cueSuppressed(deps) || (deps.getCurrentArea?.() && target.areaId !== deps.getCurrentArea()) || !sameElevationAsPlayer(deps, target)) return;
     let sight = sights.get(target); // Reuse the visible cue so the burst starts exactly where it was floating.
     if (!sight) {
       const root = targetRoot(target); // A hit between readiness frames can still create its impact cue.

@@ -186,6 +186,24 @@ const assert = require('assert');
   combatDeps.damageCreature(bandit, 20, 0, 0, 0, {});
   assert.equal(gear.toolMastery.sword.xp, 2.5, 'weapon-only melee kill should get double XP');
 
+  // Kills by anyone but the player earn nothing, even when the player is standing next to the fight.
+  combatDeps.player = { id: 'player' };
+  const beforeNonPlayer = gear.toolMastery.sword.xp;
+  const hunterKill = { health: 10, def:{label:'Grehlr',health:60,damage:8} };
+  combatDeps.damageCreature(hunterKill, 20, 0, 0, 0, { friendlyFire: true, factionCombat: true, attacker: { isPorakanekiHunter: true } });
+  const companionKill = { health: 10, def:{label:'Grehlr',health:60,damage:8} };
+  combatDeps.damageCreature(companionKill, 20, 0, 0, 0, { attacker: { isCompanion: true } });
+  const fromCompanionKill = { health: 10, def:{label:'Grehlr',health:60,damage:8} };
+  combatDeps.damageCreature(fromCompanionKill, 20, 0, 0, 0, { fromCompanion: true });
+  const meleeFriendly = { health: 10, def:{label:'Grehlr',health:60,damage:8} };
+  combatDeps.damageCreature(meleeFriendly, 20, 0, 0, 0, { friendlyFire: true });
+  assert.equal(gear.toolMastery.sword.xp, beforeNonPlayer, 'hunter, companion and friendly-fire melee kills must not award the player mastery');
+  assert.equal(policy.getDebug().suppressedNonPlayerKills, 4, 'each refused award is counted in the debug readout');
+  const playerKill = { health: 10, def:{label:'Bandit',health:60,damage:8} };
+  combatDeps.damageCreature(playerKill, 20, 0, 0, 0, { attacker: combatDeps.player });
+  assert.equal(gear.toolMastery.sword.xp, beforeNonPlayer + 2.5, 'a kill that names the player as attacker still awards mastery');
+  delete combatDeps.player;
+
   // A post-lethal exception must not leave the target red/frozen between
   // the living registry and corpse registry.
   const interrupted = { id:'interrupted-wolf', health:10, throwAfterLethal:true, def:{label:'Gar-wolf',health:60,damage:8} };

@@ -29,7 +29,8 @@ const THREE = { Group: class extends Obj {}, Mesh: class extends Obj { construct
   CircleGeometry: class { constructor() { THREE.created.geometry++; } rotateX() {} }, MeshBasicMaterial: class { constructor() { THREE.created.material++; } }, created: { geometry: 0, material: 0 } };
 
 const TILE = 32;
-function makeWorld(config) {
+function makeWorld(config, { farRule = false } = {}) {
+  if (!farRule) config = { ...(config || {}), game: { ...(config?.game || {}), banditCorpseRetire: { farTiles: 0, ...(config?.game?.banditCorpseRetire || {}) } } }; // Count/near rules are tested with the distance rule off; it has its own test below.
   THREE.created.geometry = 0; THREE.created.material = 0;
   const scene = new Obj(); scene.name = 'zone';
   const corpseObjects = new Set();
@@ -151,6 +152,30 @@ const NOW = 60_000; // Well past minSettledS for corpses that settled at 0.
   assert.ok(gameTag < 0 || tag < gameTag, 'and loads it before game.js');
   assert.match(game, /window\.BanditCorpseRetirement\.init\(\{/, 'game.js initialises it');
   assert.match(game, /window\.BanditCorpseRetirement\.tick\(/, 'game.js ticks it');
+}
+
+// 7. Distance rule: a settled body past farTiles is swapped even inside the newest keepFull, a nearer one is not.
+{
+  const w = makeWorld(undefined, { farRule: true });
+  assert.equal(w.mod.config().farTiles, 24, 'default far distance matches the Porakaneki release radius');
+  const far = w.corpse('far', { x: 30 * TILE, y: 0, _corpseSettledAt: 0 }); // Settled long ago.
+  const mid = w.corpse('mid', { x: 20 * TILE, y: 0, _corpseSettledAt: 0 });
+  const fresh = w.corpse('fresh', { x: 40 * TILE, y: 0, _corpseSettledAt: NOW + 1500 }); // Settled a moment before the tick: protected by minSettledS.
+  assert.equal(w.mod.tick(NOW + 2000), 1, 'one body is far enough and settled enough');
+  assert.equal(far._banditCorpseRetired, true, 'a far body goes to a flat marker although only 3 bodies exist (< keepFull)');
+  assert.equal(mid._banditCorpseRetired, undefined, 'a body inside farTiles keeps its rig while under the keepFull cap');
+  assert.equal(fresh._banditCorpseRetired, undefined, 'a just-settled body is never swapped');
+  w.player.x = 35 * TILE; // Walk toward the far body: retired markers stay, the rest keep their rigs.
+  assert.equal(w.mod.tick(NOW + 4000), 0);
+  w.player.x = -30 * TILE; // Now 50 tiles from mid.
+  assert.equal(w.mod.tick(NOW + 6000), 1);
+  assert.equal(mid._banditCorpseRetired, true);
+  const looted = makeWorld(undefined, { farRule: true });
+  const lootedBody = looted.corpse('looted', { x: 90 * TILE, y: 0, corpseLooted: true, _corpseSettledAt: 0 });
+  assert.equal(looted.mod.tick(NOW), 0, 'looted and revivable bodies are still excluded');
+  const off = makeWorld({ game: { banditCorpseRetire: { farTiles: 0 } } }, { farRule: true });
+  off.corpse('off', { x: 90 * TILE, y: 0, _corpseSettledAt: 0 });
+  assert.equal(off.mod.tick(NOW), 0, 'farTiles: 0 disables the distance rule');
 }
 
 console.log('bandit corpse retirement: ok');
