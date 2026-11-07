@@ -256,14 +256,31 @@
   };
   const kurrayaPlayNote = {
     version: 1, kind: 'hobunji_held_action_animation', name: 'Kurraya — Play Note',
-    style: 'thrust', sequence: 'attack', headRelative: false,
+    actionId: 'kurraya_play_note', style: 'thrust', sequence: 'attack',
     durationS: 0.32, windupFrac: 0.18, strikeFrac: 0.34, holdFrac: 0.62,
+    headRelative: false, toolEndFlip: false, gripMode: 'palm-parallel',
     poses: {
-      // Local offsets from the existing held Kurraya assembly. Runtime
-      // applies the note's delta from Neutral to its already equipped hold.
-      neutral: { x: 0, y: 0, z: 0, pitch: 0, yaw: 0, roll: 0, bodyYaw: 0, scale: 1, secondaryGrip: { enabled: true, percent: 50, primaryPercent: 50 }, dualWield: { enabled: false } },
-      windup: { x: -0.012, y: 0.013, z: 0, pitch: -2, yaw: 0, roll: -3, bodyYaw: 0, secondaryGrip: { enabled: true, percent: 50, primaryPercent: 50 }, dualWield: { enabled: false } },
-      strike: { x: 0.018, y: -0.011, z: 0, pitch: 3, yaw: 0, roll: 5, bodyYaw: 0, secondaryGrip: { enabled: true, percent: 50, primaryPercent: 50 }, dualWield: { enabled: false } },
+      neutral: {
+        x: 0.27, y: 0.08, z: 0.02, pitch: 0, yaw: 0, bodyYaw: 0, roll: 0,
+        scale: 1, bodySink: 0,
+        shoulderAim: { grip: true, palmNormal: true },
+        secondaryGrip: { enabled: false, percent: 50, primaryPercent: 50 },
+        dualWield: { enabled: false },
+        elbows: { right: { x: -0.08, y: -0.2, z: 0.085 } },
+        offhandIdle: { enabled: false },
+      },
+      windup: {
+        x: -0.012, y: 0.013, z: 0, pitch: -2, yaw: 0, bodyYaw: 0, roll: -3,
+        shoulderAim: { grip: false, palmNormal: true },
+        secondaryGrip: { enabled: true, percent: 50, primaryPercent: 50 },
+        dualWield: { enabled: false },
+      },
+      strike: {
+        x: 0.018, y: -0.011, z: 0, pitch: 3, yaw: 0, bodyYaw: 0, roll: 5,
+        shoulderAim: { grip: false, palmNormal: true },
+        secondaryGrip: { enabled: true, percent: 50, primaryPercent: 50 },
+        dualWield: { enabled: false },
+      },
     },
   };
   window.HeldActionAnimations = Object.freeze({ blowgunReady, drink, heldItemSmall, heldItemLarge, throwFlask, weaponThrowSpin, weaponThrowSpearSpin, counterShield, flutePlayNote, kurrayaPlayNote });
