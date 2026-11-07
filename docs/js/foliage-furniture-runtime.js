@@ -221,12 +221,16 @@
       const tracked = deps.zoneDecorFurnitureGroups?.get?.(mapId) || [];
       if (!deps.zoneDecorFurnitureGroups?.has?.(mapId)) deps.zoneDecorFurnitureGroups?.set?.(mapId, tracked);
       for (const record of records) {
+        if (state.cancelled) break; // The zone was evicted or rebuilt while an earlier record was loading.
         try {
           const { instance, data } = await root.FoliageFurnitureRenderer.buildInstance(record, zoneData, deps);
-          if (spawnStatesByMapId.get(mapId) !== state || deps.zoneScenes?.get?.(mapId)?.scene !== scene) break;
+          // Reads the scene from the state, not from a captured variable: this loop can sit on a slow or failing
+          // generator for a long time, and a captured scene would keep an evicted zone alive for all of it.
+          const liveScene = state.scene;
+          if (state.cancelled || !liveScene || spawnStatesByMapId.get(mapId) !== state || deps.zoneScenes?.get?.(mapId)?.scene !== liveScene) break;
           deps.markOutline?.(instance);
           deps.markFurnitureEdgeId?.(instance);
-          scene.add(instance);
+          liveScene.add(instance);
           tracked.push(instance);
           built.push(instance);
           state.instances.set(record.id, instance);
@@ -249,6 +253,8 @@
   }
 
   function disposeMap(mapId) {
+    const spawning = spawnStatesByMapId.get(mapId);
+    if (spawning) { spawning.cancelled = true; spawning.scene = null; } // Stops a spawn loop that is still awaiting a record and releases the scene it was filling.
     spawnStatesByMapId.delete(mapId);
     recordsByMapId.delete(mapId);
     objectsByMapId.delete(mapId);
