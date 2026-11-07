@@ -90,6 +90,22 @@ async function main() {
   assert.equal(kurrayaFirst.released,false,'Kurraya chords must remain polyphonic');
   assert.equal(kurrayaFirst.source.loop,false,'Kurraya must preserve its normal pluck sample');
 
+  const registry = {voices:new Map(),voiceSequence:0,game:{backupAccompaniment:false}}; // Checks an interrupted flute's delayed async callback cannot re-add its silent voice.
+  const sounded = []; // Mocked host relay confirms only the surviving flute note announces itself.
+  const register = new Function('state','activeVoiceCount','stopVoice','log','parent','performance',
+    extractFunction(engine,'registerVoice') + '\\nreturn registerVoice;')(
+      registry,()=>Array.from(registry.voices.values()).reduce((sum,group)=>sum+group.length,0),
+      ()=>{},()=>{},{postMessage:message=>sounded.push(message)},{now:()=>100});
+  register('late-flute',{released:true,midi:60});
+  assert.equal(registry.voices.size,0,'superseded flute notes must not reappear after an asynchronous audio wake');
+  register('current-flute',{released:false,midi:64});
+  assert.equal(registry.voices.size,1,'a live note still registers normally');
+  assert.deepEqual(sounded.map(message=>message.midi),[64],'only the current flute note reaches the live sounded-note relay');
+  assert.match(engine,/if \\(!HOSTED_FLUTE_PERFORMANCE && state\\.playMode === 'pluck'\\)/,
+    'saved pluck settings must never bypass the flute single-voice interrupter');
+  assert.match(engine,/if \\(HOSTED_FLUTE_PERFORMANCE && state\\.fluteVoice\\) stopVoice\\(state\\.fluteVoice,0\\.025\\)/,
+    'Clear Notes must also silence a flute that has not reached the voice registry yet');
+
   const synthetic = puzzleHarness(false);
   assert.equal(await synthetic.sampler.play(60),true);
   assert.equal(await synthetic.sampler.play(62),true);
