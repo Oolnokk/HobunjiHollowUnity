@@ -23,6 +23,50 @@
     // back inside, rather than being dropped at the spawn by an interaction.
     return {x:Math.floor(x+side.dx*.5),z:Math.floor(z+side.dz*.5),side:e.side};
   }
+  function sanctumDoorSite(hub,width=3.2){
+    // The Great Door is a teleporting endgame seal on the REAL shaft's inner
+    // wall, not a spare fifth passage through a wall already used by four exits.
+    const grid=hub?.grid,o=hub?.options;
+    if(!hub?.ok||!grid||!o?.octagon)return null;
+    const lo=o.wall,hi=lo+o.shaft-1,mid=lo+(o.shaft-1)/2;
+    const half=Math.max(2,Math.ceil((Number(width)||3.2)/2+.4)); // Door plus stone frame must sit entirely on one solid wall.
+    const directions=[
+      {side:'N',dx:0,dz:1},{side:'S',dx:0,dz:-1},
+      {side:'W',dx:1,dz:0},{side:'E',dx:-1,dz:0},
+    ]; // Prefer a floor-zero wall; never take another shaft exit or upper-story balcony.
+    for(const facing of directions)for(const shift of [-11,-12,-10,-13,-9,-14,-8,-15]){
+      const across=mid+shift;
+      const cell=step=>{
+        if(facing.side==='N')return{c:across,r:lo+step};
+        if(facing.side==='S')return{c:across,r:hi-step};
+        if(facing.side==='W')return{c:lo+step,r:across};
+        return{c:hi-step,r:across};
+      };
+      let clear=true;
+      for(let lateral=-half;lateral<=half&&clear;lateral++)for(let depth=0;depth<=3;depth++){
+        const at=cell(depth),c=at.c+(facing.dx?0:lateral),r=at.r+(facing.dz?0:lateral);
+        if(!grid.canStand(c,r,0))clear=false;
+        if(depth===0){
+          const behind=cell(-1),bc=behind.c+(facing.dx?0:lateral),br=behind.r+(facing.dz?0:lateral);
+          if(!grid.isSolid(bc,br,0))clear=false; // Back the prop with actual shaft masonry, not a portal hole or missing wall.
+        }
+      }
+      if(!clear)continue;
+      const occupied=[...(hub.wingPortals||[]).filter(port=>port.floor===0),
+        ...(hub.entrance?[{side:hub.entrance.side,col:hub.entrance.col,row:hub.entrance.row}]:[])];
+      if(occupied.some(port=>port.side===facing.side&&Math.abs(
+        (facing.dz?port.col:port.row)-across)<half+4))continue;
+      const edge=cell(0);
+      const x=facing.dx?grid.colToX(facing.dx>0?lo:hi+1):grid.colToX(edge.c+.5);
+      const z=facing.dz?grid.rowToZ(facing.dz>0?lo:hi+1):grid.rowToZ(edge.r+.5);
+      return {x,z,floorY:grid.levelToY(0),height:3.1,side:facing.side,
+        normal:{x:facing.dx,z:facing.dz},
+        tangent:{x:-facing.dz,z:facing.dx},
+        shaft:true}; // World-space wall face; the existing Great Door controls handle the fade teleport.
+    }
+    return null; // Never silently mount the Great Door back inside the old V50 room.
+  }
+
   function stoneMaterial(THREE){
     return root.ProceduralFurniture?.makePartMaterial?.({materialTexture:'carved_smooth.png',materialLighting:'unlit',materialFillMode:'never',color:'#7a746b'})
       ||new THREE.MeshBasicMaterial({color:0x7a746b}); // Shared V50 ruin stone, not untextured shaft gray.
@@ -81,6 +125,8 @@
     const originX=plan.shaft.anchor.x-Math.floor(hub.cols/2),originZ=plan.shaft.anchor.z-Math.floor(hub.rows/2); // The pre-generation anchor owns every portal and wing, including the rendered shaft.
     const placed=ShaftHub.compose({...shaftOptions,originX,originZ});
     if(!placed.ok)throw new Error('Octagonal shaft failed: '+placed.checks.filter(c=>!c.ok).map(c=>c.name).join(', '));
+    const greatDoorSite=sanctumDoorSite(placed); // Ground-story inner shaft wall is reserved for the final teleporting door.
+    if(!greatDoorSite&&!ruin.hachutu&&!ruin.storyVault)throw new Error('Shared shaft has no unobstructed Great Door wall face');
     const oldCols=rec.cols,oldRows=rec.rows,oldFloor=new Set(rec.floorSet); // Original geometry stays fixed and remains the gameplay entry.
     const authoredExit=ruin.storyVault?rec.exits?.[0]?.tiles?.[0]:null; // The fixed Harlyao vault has an authored south-facing open doorway, but no V50 entrance metadata.
     const entrance=authoredExit?{x:authoredExit[0],z:authoredExit[1]+1,side:'south'}:entranceOutside(meta,pad,tileScale);
@@ -166,6 +212,7 @@
     rec.mapData.cols=cols;rec.mapData.rows=rows;
     ruin.cols=cols;ruin.rows=rows;
     ruin.sanctumMapSize={cols:oldCols,rows:oldRows}; // Boss wings retain their original reserved coordinates.
+    ruin.shaftSanctumDoorSite=greatDoorSite; // Public runtime exposes the same validated wall face to the sanctum composer.
     ruin.shaftHub=true;ruin.shaftWing=true;ruin.shaftHubPlan=plan;
     ruin.shaftConnection={length:route.length,corners:route.corners,physical:true,entrance,mouth,
       floorCount:plan.floorCount,totalWingsPlanned:plan.totalWings,braziersPlanned:plan.totalBraziers,
@@ -233,5 +280,5 @@
     }
     return {plan,hub:placed,route,registered,layerRuntime,nativeRuntime};
   }
-  return Object.freeze({entranceOutside,connect});
+  return Object.freeze({entranceOutside,sanctumDoorSite,connect});
 });
