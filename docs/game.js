@@ -825,6 +825,10 @@
         // (no stamina cost, no terrain collision) rendered as a chain of
         // staggered hops rather than a continuous slide; climbSurfaceY/
         // climbHopBounce are consumed by updatePlayerMesh for the vertical rise.
+        physicalFeetY: null, // Jump's physical foot elevation, used by the renderer and height-aware traversal.
+        heightAboveGround: 0, // Actual distance above the local terrain, including raised furniture support.
+        jumpHeightAboveGround: 0, // Debug-compatible alias consumed by the jump system.
+        _freeJump: null, // Transient airborne/elevated-support motion, never part of save data.
         climbing: false, climbElapsed: 0, climbHopCount: 0,
         climbStartX: 0, climbStartY: 0, climbEndX: 0, climbEndY: 0,
         climbSurfaceStartY: 0, climbSurfaceEndY: 0, climbSurfaceY: 0, climbHopBounce: 0,
@@ -3311,9 +3315,9 @@
           && c < obj.col + bounds.fw && r < obj.row + bounds.fd;
       }
 
-      function furnitureBlocksMovementAt(area, x, z) {
-        if (window.AreaFootprintBlockers?.blocksPoint(area, x, z)) return true;
-        if (window.FurnitureTableSystem?.blocksBox(area, x, z)) return true; // Exterior and locale furniture share the normal NPC/player movement authority.
+      function furnitureBlocksMovementAt(area, x, z, worldY = null) {
+        if (window.AreaFootprintBlockers?.blocksBox(area, x, z, 0, worldY)) return true;
+        if (window.FurnitureTableSystem?.blocksBox(area, x, z, 0, worldY)) return true; // Exterior and locale furniture share the normal NPC/player movement authority.
         if (_isZoneArea(area) && window.FoliageFurnitureRuntime?.blocksPoint(area, x, z)) return true;
         if (interiorFurnitureObjects.some(obj => obj.area === area && decorativeFurnitureBlocksPoint(obj, x, z))) return true;
         if (area === 'interior' && _derivedHearthMeshes.some(h => {
@@ -18847,6 +18851,7 @@
 
         const _fsPrevX = player.x, _fsPrevY = player.y;
 
+        if (window.PlayerJump?.tick?.(dt)) return; // Free-jump movement owns its physical elevation without impersonating a wall climb.
         if (player.climbing) {
           window.ClimbSystem.updateClimb(dt);
           return;
@@ -19243,6 +19248,32 @@
             && tileSpeedAt(wx + radius, wy - radius, tileWorldY) !== null
             && tileSpeedAt(wx - radius, wy + radius, tileWorldY) !== null
             && tileSpeedAt(wx + radius, wy + radius, tileWorldY) !== null;
+      }
+
+      function canPlayerOccupyAtHeight(wx, wy, feetY) {
+        if (!Number.isFinite(feetY)) return canPlayerOccupy(wx, wy);
+        const radius = PLAYER_RADIUS * 0.72; // Physical free-jump footprint matches normal walking.
+        if (window.InteriorDoorTiles?.blocksBox(currentArea, wx / TILE, wy / TILE, radius / TILE)) return false;
+        // Projectile-height occupancy skips some legacy 2D-only colliders.
+        // Check those at each player-collider corner, separately from the
+        // providers that already understand furniture and footprint height.
+        const grid = window.GridTileAccessors.getActiveGrid();
+        for (const [dx, dy] of [[-radius, -radius], [radius, -radius], [-radius, radius], [radius, radius]]) {
+          const x = (wx + dx) / TILE, z = (wy + dy) / TILE;
+          if (grid[Math.floor(z)]?.[Math.floor(x)]?._banditTentCollisionId) return false;
+          if (furnitureBlocksMovementAt(currentArea, x, z, feetY + 0.05)) return false;
+        }
+        const footprintY = feetY + 0.05; // Native footprint providers sample the actual foot height, not the projectile's radius-offset value.
+        // A narrow blocker can touch the middle of the player footprint while
+        // missing all four sampled corners. Test the FULL box at real feet Y.
+        // canOccupyAt checks tile cover separately with a projectile underside
+        // offset and must not be the sole authority for narrow 3D furniture.
+        if (window.AreaFootprintBlockers?.blocksBox(currentArea, wx / TILE, wy / TILE, radius / TILE, footprintY)) return false;
+        if (window.FurnitureTableSystem?.blocksBox(currentArea, wx / TILE, wy / TILE, radius / TILE, footprintY)) return false;
+        // canOccupyAt subtracts its collision radius from worldY to form a
+        // projectile's underside. Offset by that same radius so the player's
+        // actual feet, not a point below them, clear the top of a low rock.
+        return canOccupyAt(wx, wy, radius, footprintY + radius / TILE);
       }
 
       function canPlayerOccupy(wx, wy) {
@@ -25438,6 +25469,7 @@
         const ordinaryStandY = player.onBranch ? player.branchSurfaceY
           : player.onCliffBalcony ? player._cliffBalconyY
           : player.onClimbSurface ? player.wallClimbY
+          : player._freeJump ? player.physicalFeetY // Jump is an independently grounded/airborne motion, not a scripted climb.
           : player.climbing ? player.climbSurfaceY
           : Number.isFinite(ruinStandY) ? ruinStandY
           : (_isZoneArea(currentArea) ? surfaceYAtWorld(currentArea, wx, wz) : tileSurfaceYInArea(tile, currentArea));
@@ -32338,6 +32370,14 @@
         getPlayerInteractionRay: currentPlayerInteractionRay,
         worldSurfaceY: (x, y) => activeSurfaceYAtWorld(x / TILE, y / TILE),
         getMovementInput: climbMovementInput,
+        getBaseMoveSpeedTiles: () => MOVE_SPEED / TILE, // Jump travel reuses normal walking distance per second, not a separate hard-coded pace.
+        canStartFreeJump: () => gameStarted && !paused && !dialogueOpen && !sitInteraction &&
+          !window.Fishing?.state?.active && !window.MusicMinigame?.state?.active &&
+          !window.BedLiePose?.isActive?.() && !window.FarmAnimals?.isHarvesting?.() &&
+          !window.PlayerSocialPoses?.active, // Actions/minigames that own the player must not secretly queue a jump.
+        canPlayerOccupy, // Normal grounded movement authority.
+        canPlayerOccupyAtHeight, // Jump uses native world collision at the physical foot height.
+        furnitureBlocksMovementAt, // Allows only finite-height cover to be jumped; otherwise retains normal furniture collision.
       });
 
       // Climbable wall surfaces (js/climb-surfaces.js): attach on a forward dodge via
