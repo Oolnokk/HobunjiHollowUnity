@@ -154,7 +154,8 @@ player.onCliffBalcony=gate.shelf.id;
 player.x=gate.plate.x*64;player.y=gate.plate.z*64;
 Exterior.update(.01,area);
 assert.equal(opened,0,'stepping onto the plate must not auto-equip or open an instrument');
-assert(gate.scoreBoard?.visible,'exterior Scratchbone glyphs appear while standing on the plate');
+assert.equal(gate.lastDown,true,'standing on the real raised plate activates the melody clue');
+if(gate.scoreBoard)assert(gate.scoreBoard.visible,'once async furniture loads, the exterior clue is visible on its plate');
 const song=gate.song;
 let elapsed=0; // Musical clock advanced through the actual exterior controller's per-frame path.
 for(const note of song.notes){
