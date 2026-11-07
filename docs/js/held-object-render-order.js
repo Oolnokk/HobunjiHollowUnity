@@ -891,6 +891,8 @@
     while (typeof current === 'function' && !seen.has(current)) {
       seen.add(current);
       const next = current.__hobunjiTerrainChunkOriginal
+        || current.__hobunjiTerrainSurfaceOriginal
+        || current.__hobunjiNaturalSurfacePostJigsawOriginal
         || current.__hobunjiOutlineRenderPerfOriginal
         || current.__hobunjiHeldRenderOrderOriginal
         || current.__hobunjiPlayerBodyComposerOriginal
