@@ -3737,7 +3737,7 @@
   }
 
   function registerVoice(voiceKey, voice) {
-    if (!voice) return;
+    if (!voice || voice.released) return; // A flute attack may be superseded while an earlier async caller is still awaiting audio; do not resurrect the silent old voice.
     if (!Number.isFinite(voice.sequence)) voice.sequence = ++state.voiceSequence;
     const group = state.voices.get(voiceKey) || [];
     group.push(voice); // Pedal sustain deliberately retains older attacks, even when pitch and physical source are identical.
@@ -3768,6 +3768,7 @@
 
   function clearRingingVoices(reason = 'manual') {
     const count = activeVoiceCount();
+    if (HOSTED_FLUTE_PERFORMANCE && state.fluteVoice) stopVoice(state.fluteVoice,0.025); // Also stop a just-scheduled flute note not yet registered by its awaiting caller.
     for (const voices of state.voices.values()) voices.forEach(voice => stopVoice(voice, Math.max(0.04, state.release)));
     state.voices.clear();
     refs.transportStatus.innerHTML = `<strong>Cleared.</strong> Fading ${count} ringing sample voice${count === 1 ? '' : 's'}.`;
@@ -3882,7 +3883,7 @@
         refs.transportStatus.innerHTML = '<strong>Paused.</strong> Press Start to resume, or choose Free Play.';
         return;
       }
-      if (state.playMode === 'pluck') {
+      if (!HOSTED_FLUTE_PERFORMANCE && state.playMode === 'pluck') { // Flute replacement is handled by the shared precise single-voice interrupter; do not pre-fade and overlap breaths.
         const previous = state.voices.get(voiceKey);
         if (previous) previous.forEach(voice => stopVoice(voice, 0.04));
         state.voices.delete(voiceKey);
