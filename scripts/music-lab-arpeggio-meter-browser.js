@@ -70,6 +70,15 @@ async function run() {
     assert.equal(playing.pattern,'arp-forward-reverse-16','real audition must use the selected wave-shaped roll instead of direct notes');
     assert.match(playing.status,/7\/8/,'mobile playback status must report the meter');
     await page.locator('#stopBtn').click();
+    await page.locator('#auditionPatternSelect').selectOption('arp-alberti-16');
+    await page.locator('#playBtn').click();
+    await page.waitForFunction(() => document.querySelector('#engine').contentWindow.HobunjiMusicControlBridge.getState().gameDemoActive);
+    const instrumentBanner = await page.evaluate(() =>
+      document.querySelector('#engine').contentWindow.document.querySelector('#transportStatus').textContent);
+    assert.match(instrumentBanner,/Weave/,'the audible instrument banner must use the Music Lab figure name');
+    assert.doesNotMatch(instrumentBanner,/Alberti|Baroque|Romantic|reggae|bossa/i,
+      'historical names and real-world genres must not appear in the Lab playback status');
+    await page.locator('#stopBtn').click();
     await page.locator('#auditionMeterSelect').selectOption('original');
     const reset = await page.evaluate(() => ({
       meter:document.querySelector('#engine').contentWindow.HobunjiMusicControlBridge.autoPickAuditionState().selectedMeter,
