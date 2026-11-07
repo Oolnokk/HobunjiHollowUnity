@@ -23,10 +23,12 @@ const env={
     create(options){
       created++;puzzleOptions=options;
       options.kit.registerSurface({id:'find-blocks-test-platform',topY:2});
-      options.kit.addControl({kind:'findBlocksTest'});
+      const control={kind:'findBlocksTest'}; // The real compound room registers and releases its controls as one owned unit.
+      options.kit.addControl(control);
       options.kit.registerProjectileTarget({id:'findBlocksTestTarget'});
       return {variant:'projectiles',netVariant:'movingTargets',ready:true,linked:true,
-        tick(){},snapshot:()=>({weighted:2}),dispose(){disposed++;}};
+        tick(){},snapshot:()=>({weighted:2}),
+        dispose(){disposed++;options.kit.removeControl(control);}};
     }
   }
 };
