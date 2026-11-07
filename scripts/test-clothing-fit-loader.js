@@ -63,6 +63,18 @@ assert.equal(number.value,'0.835','Leaving an invalid number field restores the 
 assert.equal(saves,1,'Only the valid change should persist');
 assert.equal(renders,1,'Only the valid change should redraw');
 
+// A pasted grid with zero scale is ambiguous and must fail visibly instead of exporting a line.
+const parseDiagnostics=new Function('GRID_SIZE',
+  extractEditorFunction(parts[9]+parts[10],'function parseDiagnostics(', 'async function importPastedDiagnostics(')+
+  '\nreturn parseDiagnostics;')(6);
+const invalidReport=[
+  'gridSize: 6x6','warp model: bilinear 6x6 quads',
+  'target grid: headwear::tletingan_male','garment: fine_hood',
+  'base transform: {"scaleX":0,"scaleY":0.835,"translateX":-3.5,"translateY":-11.25}'
+].join('\n');
+assert.throws(()=>parseDiagnostics(invalidReport),/zero\/negative base scale/,
+  'Importing a collapsed report must direct the author to repair the original fit');
+
 const key='from::tletingan_male::headwear::tletingan_male';
 const offsets=Array.from({length:36},()=>({x:0,y:0}));
 const state={baseTransforms:{[key]:{scaleX:0,scaleY:.835,translateX:-3.5,translateY:-11.25}},localOffsets:{[key]:offsets}};
