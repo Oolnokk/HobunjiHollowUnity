@@ -1429,6 +1429,8 @@
     ensureStarterFlute,
     dispelCurse,
     getEquippedWeaponPreviewPlane,
+    refreshPlayerAvatar: () => deps?.refreshPlayerAvatar?.(), // Dev Companion uses the game's existing complete in-place portrait/rig rebuild.
+    devWornClothing: () => deps?.getGearInventory?.()?.clothing || null, // Appearance inspector edits only visual fields on the actual currently equipped gear objects.
     squareToolIcon,
     getIconDebug: () => ({ ...toolIconDebug, cached: toolIconFrames.size }),
     setEquipmentSlot,

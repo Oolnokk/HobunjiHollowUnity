@@ -153,14 +153,22 @@
       <label>Tonic
         <select id="tonicSelect" disabled></select>
       </label>
+      <label>Auto Pick / arpeggio
+        <select id="auditionPatternSelect" disabled><option>Loading patterns…</option></select>
+      </label>
+      <label>Time signature
+        <select id="auditionMeterSelect" disabled><option>Loading meters…</option></select>
+      </label>
     </div>
+    <p class="note" id="auditionPatternDescription">Eight broad picking shapes follow the selected time signature, including the length of each bar and its beat-group accents.</p>
+    <p class="note" id="auditionMeterDescription">Changing meter reshapes both the melody and the arpeggio. All picking shapes follow the bar length and grouped accents.</p>
     <div id="scaleButtons" class="scale-grid" aria-label="Scale choices"></div>
     <div class="actions">
       <button id="playBtn" class="primary" type="button" disabled>▶ Play from start</button>
       <button id="stopBtn" class="stop" type="button" disabled>■ Stop</button>
     </div>
     <div id="status" class="status" aria-live="polite">Loading the shared Kurraya song engine…</div>
-    <p class="note">Audition choices are temporary: this tool does not overwrite the instrument's saved tonic or scale. The melody changes scale; the requested major/major/minor/minor chord qualities do not.</p>
+    <p class="note">Audition choices are temporary: this tool does not overwrite gameplay's tonic, scale, or four Auto Pick slots. Its time signature and arpeggio selection change actual note timing and accents, not just labels.</p>
   </section>
 
   <section class="panel">
@@ -239,7 +247,7 @@
     <pre id="diagnostics">engine=loading</pre>
   </details>
 
-  <iframe id="engine" src="../../assets/minigames/lyre-performance.html?v=20261103flutePerformance1" title="Kurraya song audition audio engine" aria-hidden="true"></iframe>
+  <iframe id="engine" src="../../assets/minigames/lyre-performance.html?v=20261107auditionClock6" title="Kurraya song audition audio engine" aria-hidden="true"></iframe>
 
   </section>
 
@@ -484,6 +492,10 @@
   const engineFrame = document.getElementById('engine'); // Used to reach the same-origin Kurraya control bridge without duplicating its song/audio logic.
   const scaleSelect = document.getElementById('scaleSelect'); // Used for keyboard-friendly scale selection alongside the quick buttons.
   const tonicSelect = document.getElementById('tonicSelect'); // Used to transpose the fixed progression and melody together for comparison.
+  const auditionPatternSelect = document.getElementById('auditionPatternSelect'); // Lists the real engine's Auto Pick figures for a whole-song audition.
+  const auditionMeterSelect = document.getElementById('auditionMeterSelect'); // Reinterprets the twenty authored bars into a selectable uniform meter.
+  const auditionPatternDescription = document.getElementById('auditionPatternDescription'); // Explains the currently chosen roll, strum or tremolo without opening devtools.
+  const auditionMeterDescription = document.getElementById('auditionMeterDescription'); // Explains meter/phrase scaling and displays its beat grouping on mobile.
   const scaleButtons = document.getElementById('scaleButtons'); // Used to render one tap-sized audition shortcut per engine scale.
   const playBtn = document.getElementById('playBtn'); // Used to start the authored song's automatic successful-playthrough preview.
   const stopBtn = document.getElementById('stopBtn'); // Used to stop the current audition immediately.
@@ -531,6 +543,9 @@
   let bridge = null; // Set after the iframe exposes HobunjiMusicControlBridge; all controls remain disabled until then.
   let selectedScale = 'Major'; // Mirrors the temporary engine scale so Play can pass an explicit override.
   let selectedTonic = 48; // Mirrors the temporary engine tonic; MIDI 48 is C3 in the shared engine's naming convention.
+  let selectedAuditionPattern = 'direct'; // Current Lab-only accompaniment pattern, passed to the authoritative engine preview.
+  let selectedAuditionMeter = 'original'; // Current Lab-only meter selection, with the song's 6/8→3/4 original as its default.
+  let auditionPatterns = []; // Current engine definitions, used for the explanatory note beside the dropdown.
   let pollTimer = 0; // Used to refresh the visible diagnostics while a song audition is running.
   let labFootstepsReady = false; // Prevents repeated decode/fetch of the three metronome recordings after first Play/Preview.
   let labFootstepsPromise = null; // Coalesces concurrent Play/Preview requests while the footstep set is still decoding.
@@ -708,7 +723,8 @@
     ).join('');
     const barLabels = Array.from({length:arrangement.totalBars},(_,bar) => {
       const intro = bar < arrangement.introBars;
-      return `<div class="arrangement-bar-label ${intro ? 'intro' : 'body'}">${bar + 1} · ${intro ? '6/8' : '3/4'}</div>`;
+      const barMeter = selectedAuditionMeter === 'original' ? (intro ? '6/8' : '3/4') : selectedAuditionMeter;
+      return `<div class="arrangement-bar-label ${intro ? 'intro' : 'body'}">${bar + 1} · ${barMeter}</div>`;
     }).join('');
     const gridLines = Array.from({length:arrangement.totalBars},() => '<span></span>').join('');
     const melodyDegrees = arrangement.melodyNotes.map(note => Number(note.degree) || 0);
@@ -735,7 +751,7 @@
       <div class="arrangement-melody">
         <div class="arrangement-grid">${gridLines}</div>
         <div class="arrangement-section-divider"></div>
-        <div class="arrangement-intro-label">6/8 intro · melody starts at bar 5</div>
+        <div class="arrangement-intro-label">${selectedAuditionMeter === 'original' ? '6/8' : selectedAuditionMeter} intro · melody starts at bar 5</div>
         ${melodyNotes}
       </div>
       <div class="arrangement-chords">
@@ -776,7 +792,7 @@
   async function copyArrangement() {
     const arrangement = arrangementSnapshot?.arrangement;
     if (!arrangement) return;
-    const melodyNotes = arrangement.melodyNotes.map(note => [note.degree,note.durationQuarterBeats]);
+    const melodyNotes = arrangement.melodyNotes.map(note => [note.degree,note.authoredDurationQuarterBeats ?? note.durationQuarterBeats]);
     const payload = JSON.stringify({introSteps:arrangement.introSteps,bodySteps:arrangement.bodySteps,melodyNotes});
     try {
       await navigator.clipboard.writeText(payload);
@@ -784,6 +800,80 @@
     } catch {
       arrangementReadout.textContent = `Copy unavailable; song draft payload: ${payload}`;
     }
+  }
+
+  function refreshAuditionChoices(selection = bridge?.autoPickAuditionState?.()) {
+    if (!selection) return;
+    selectedAuditionPattern = selection.selectedMode;
+    selectedAuditionMeter = selection.selectedMeter;
+    auditionPatterns = selection.patterns;
+    const categories = [...new Set(selection.patterns.map(pattern => pattern.category))]; // Groups the same roll/tremolo/strum categories used by gameplay.
+    auditionPatternSelect.innerHTML = '';
+    for (const category of categories) {
+      const group = document.createElement('optgroup');
+      group.label = category;
+      for (const pattern of selection.patterns.filter(pattern => pattern.category === category)) {
+        const option = document.createElement('option');
+        option.value = pattern.id;
+        option.textContent = pattern.label;
+        group.appendChild(option);
+      }
+      auditionPatternSelect.appendChild(group);
+    }
+    auditionMeterSelect.innerHTML = '';
+    for (const meter of selection.meters) {
+      const option = document.createElement('option');
+      option.value = meter.id;
+      option.textContent = meter.label;
+      auditionMeterSelect.appendChild(option);
+    }
+    auditionPatternSelect.value = selectedAuditionPattern;
+    auditionMeterSelect.value = selectedAuditionMeter;
+    refreshAuditionDescriptions();
+  }
+
+  function refreshAuditionDescriptions() {
+    const pattern = auditionPatterns.find(entry => entry.id === selectedAuditionPattern);
+    auditionPatternDescription.textContent = pattern
+      ? `${pattern.description} · ${pattern.kind === 'direct' ? 'Melody only.' : 'One eighth-note step at a time, reshaped to every bar.'}`
+      : 'Select a figure to hear it in the song.';
+    const meter = selectedAuditionMeter;
+    const selected = meter === 'original' ? null : meter.split('/').map(Number);
+    const barQuarterBeats = selected ? selected[0] * 4 / selected[1] : 3;
+    const grouping = selected && (selected[1] >= 8 && selected[0] >= 6 && selected[0] % 3 === 0
+      ? Array.from({length:selected[0] / 3},()=>3)
+      : selected[0] === 5 ? [3,2] : selected[0] === 7 ? [2,2,3] : [selected[0]]);
+    auditionMeterDescription.textContent = selected
+      ? `Experiment: four ${meter} intro bars, then sixteen ${meter} melody bars · ${barQuarterBeats} quarter notes/bar · accents ${grouping.join('+')}. The arpeggio reshapes to these groups; melody and chords stretch together.`
+      : 'Original: four bars of 6/8 intro, then sixteen bars of 3/4 melody. The selected figure follows each bar’s natural accents.';
+  }
+
+  async function changeAuditionPattern(mode) {
+    if (!bridge) return;
+    try {
+      await stopIfPlaying(); // A fresh figure begins at a song boundary rather than splicing one pattern's step indices into another.
+      const selection = bridge.setAutoPickAuditionPattern(mode);
+      selectedAuditionPattern = selection.selectedMode;
+      auditionPatternSelect.value = selectedAuditionPattern;
+      refreshAuditionDescriptions();
+      renderDiagnostics(bridge.scaleAuditionState());
+      setStatus(`Auto Pick: ${auditionPatterns.find(pattern => pattern.id === selectedAuditionPattern)?.label || selectedAuditionPattern}. Press Play to hear the full song.`, 'good');
+    } catch (error) { setStatus(`Could not set arpeggio: ${error.message}`, 'warn'); renderDiagnostics(null,error.message); }
+  }
+
+  async function changeAuditionMeter(mode) {
+    if (!bridge) return;
+    try {
+      await stopIfPlaying();
+      const selection = bridge.setSongAuditionMeter(mode);
+      selectedAuditionMeter = selection.selectedMeter;
+      auditionMeterSelect.value = selectedAuditionMeter;
+      refreshAuditionDescriptions();
+      const snapshot = bridge.scaleAuditionState(); // Redraws the actual note spans so the melody remains aligned with its re-metered chord bars.
+      renderArrangement(snapshot);
+      renderDiagnostics(snapshot);
+      setStatus(`Time signature: ${selectedAuditionMeter === 'original' ? 'original mixed meter' : selectedAuditionMeter}. Press Play to audition the re-spaced melody.`, 'good');
+    } catch (error) { setStatus(`Could not set meter: ${error.message}`, 'warn'); renderDiagnostics(null,error.message); }
   }
 
   function renderDiagnostics(snapshot = null, error = null) {
@@ -794,6 +884,7 @@
       `song=${snapshot?.songTitle || 'When the Kininjis Bloom'}`,
       `scale=${snapshot?.scaleName || selectedScale}`,
       `tonic=${snapshot?.tonicName || midiName(selectedTonic)} (MIDI ${snapshot?.tonicMidi ?? selectedTonic})`,
+      `audition figure=${auditionPatterns.find(figure => figure.id === selectedAuditionPattern)?.label || 'Single Note'} · meter=${selectedAuditionMeter}`,
       `progression=${(snapshot?.progression || []).map(step => step.chordName).join(' → ') || 'waiting'}`,
       `meter now=${snapshot?.currentTimeSignature || (snapshot?.timeSignature || [6,8]).join('/')} · intro=6/8×4 → melody=3/4×16`,
       `cadence=${snapshot?.harmonyCadence ? `${snapshot.harmonyCadence.sixEightChords} intro bars × 6/8 → ${snapshot.harmonyCadence.threeFourChords} melody bars × 3/4 · default ending F→G→C→C` : 'waiting'}`,
@@ -860,7 +951,7 @@
       renderChords(snapshot);
       renderArrangement(snapshot);
       renderDiagnostics(snapshot);
-      setStatus(`Playing ${snapshot.songTitle} in ${snapshot.scaleName} from ${snapshot.tonicName}.`, 'good');
+      setStatus(`Playing ${snapshot.songTitle} in ${snapshot.scaleName} from ${snapshot.tonicName} · ${auditionPatterns.find(pattern => pattern.id === selectedAuditionPattern)?.label || selectedAuditionPattern} · ${selectedAuditionMeter === 'original' ? '6/8 → 3/4' : selectedAuditionMeter}.`, 'good');
       stopBtn.disabled = false;
     } catch (error) {
       setStatus(`Could not start audition: ${error.message}`, 'warn');
@@ -890,7 +981,7 @@
 
   function initializeFromBridge() {
     try { bridge = engineFrame.contentWindow?.HobunjiMusicControlBridge || null; } catch { bridge = null; }
-    if (!bridge?.scaleAuditionState || !bridge?.setKurrayaSongArrangement || !bridge?.resetKurrayaSongArrangement || !bridge?.setKurrayaSongMelody || !bridge?.randomizeKurrayaSongMelody || !bridge?.resetKurrayaSongMelody || !bridge?.mixState || !bridge?.setMixLevels || !bridge?.importKurrayaSample || !bridge?.importPadSample || !bridge?.useLabFootstepMetronome) {
+    if (!bridge?.scaleAuditionState || !bridge?.setKurrayaSongArrangement || !bridge?.resetKurrayaSongArrangement || !bridge?.setKurrayaSongMelody || !bridge?.randomizeKurrayaSongMelody || !bridge?.resetKurrayaSongMelody || !bridge?.mixState || !bridge?.setMixLevels || !bridge?.importKurrayaSample || !bridge?.importPadSample || !bridge?.useLabFootstepMetronome || !bridge?.autoPickAuditionState || !bridge?.setAutoPickAuditionPattern || !bridge?.setSongAuditionMeter) {
       setStatus('The music engine loaded, but the Music Lab audio bridge is incomplete.', 'warn');
       renderDiagnostics(null,'Music Lab bridge methods missing');
       return;
@@ -909,6 +1000,9 @@
     tonicSelect.value = String(selectedTonic);
     scaleSelect.disabled = false;
     tonicSelect.disabled = false;
+    refreshAuditionChoices(bridge.autoPickAuditionState());
+    auditionPatternSelect.disabled = false;
+    auditionMeterSelect.disabled = false;
     playBtn.disabled = false;
     stopBtn.disabled = false;
     [kurrayaMix,padMix,metronomeMix,padSampleRoot,importKurrayaBtn,bundledKurrayaBtn,importPadBtn,previewPadBtn,clearPadBtn,previewMetronomeBtn,randomMelodyBtn,melodyResetBtn,arrangementResetBtn,arrangementCopyBtn].forEach(control => control.disabled = false);
@@ -993,6 +1087,8 @@
 
     scaleSelect.addEventListener('change', () => void chooseScale(scaleSelect.value));
   tonicSelect.addEventListener('change', () => void chooseTonic(tonicSelect.value));
+  auditionPatternSelect.addEventListener('change', () => void changeAuditionPattern(auditionPatternSelect.value));
+  auditionMeterSelect.addEventListener('change', () => void changeAuditionMeter(auditionMeterSelect.value));
   arrangementPalette.addEventListener('click',event => {
     const button = event.target.closest('[data-arr-step]');
     if (button) selectArrangementBrush(button.dataset.arrStep);
@@ -1018,7 +1114,7 @@
     try {
       await stopIfPlaying();
       arrangementSnapshot = bridge.randomizeKurrayaSongMelody(); // Calls the shared engine composer used by Foroji, so tool previews and ambient NPC performances follow identical melody rules.
-      const melody = (arrangementSnapshot?.arrangement?.melodyNotes || []).map(note => [note.degree,note.durationQuarterBeats]);
+      const melody = (arrangementSnapshot?.arrangement?.melodyNotes || []).map(note => [note.degree,note.authoredDurationQuarterBeats ?? note.durationQuarterBeats]);
       saveMelodyDraft(melody);
       renderArrangement(arrangementSnapshot);
       renderDiagnostics(arrangementSnapshot);

@@ -156,10 +156,23 @@ function decorate(p) {
 const CONTENTS = ['ore_mine', 'trapped_cache', 'catacomb', 'ruin_entrance', 'mushroom_cave', 'puzzle_cave'];
 const INHABITANTS = ['animal_den', 'bandit_hideout', 'none'];
 const rolled = Array.from({ length: 400 }, (_, i) => Cave.__test.rollProfile('map_roll_zone', { id: `animalDen_${i}`, x: i * 7, y: i * 3 }));
-for (const type of CONTENTS) assert(rolled.some(p => p.contents === type), `contents ${type} can roll`);
+for (const type of CONTENTS.filter(type => type !== 'puzzle_cave')) assert(rolled.some(p => p.contents === type), 'ordinary contents '+type+' can roll');
 for (const type of INHABITANTS) assert(rolled.some(p => p.inhabitant === type), `inhabitant ${type} can roll`);
 assert(rolled.every(p => CONTENTS.includes(p.contents) && INHABITANTS.includes(p.inhabitant)), 'every cave has exactly one contents and one inhabitant');
-assert(rolled.filter(p => p.contents === 'puzzle_cave').every(p => p.inhabitant === 'none'), 'one-room puzzle caves contain no bandit or Den-Mother inhabitants');
+assert(rolled.every(p => p.contents !== 'puzzle_cave'), 'Puzzle Caves never consume an ordinary cave contents slot');
+const independentShelves = Array.from({length:30},(_,i)=>({
+  id:'mini_'+i,base:{footprint:[[1,1]]},
+  footprint:[{c:i*5+2,r:10},{c:i*5+3,r:10},{c:i*5+2,r:11},{c:i*5+3,r:11}],
+  x:i*5+2.5,z:10.5,y:2,width:2.2,depth:1.5,normal:{x:0,z:1},tangent:{x:1,z:0},
+})); // Independent ledge fixtures: no animal den or ordinary cave anchor accompanies them.
+const outdoor = Cave.registerOutdoorPuzzleSites('map_test_wilds',independentShelves);
+assert(outdoor.length>=4 && outdoor.length<=24, 'generous independent cliff door population respects the cap');
+assert(outdoor.every(site=>site.contents==='puzzle_cave'&&site.inhabitant==='none'&&site.source==='independent_cliff'),
+  'outdoor sites are player-only puzzle caves without wildlife ownership');
+assert.deepEqual(Cave.registerOutdoorPuzzleSites('map_test_wilds',independentShelves),outdoor,
+  'independent cliff door rolls are stable within a world and Tothal cycle');
+assert.equal(Cave.sitesForZone('map_test_wilds').length,workspace.animalDens.length,
+  'outdoor puzzle density does not consume or duplicate ordinary cave anchors');
 assert.equal(Cave.__test.caveTitle('mushroom_cave', 'animal_den'), 'Mushroom Cave — Animal Den', 'label names both layers');
 assert.equal(Cave.__test.caveTitle('ore_mine', 'none'), 'Ore-rich Cave', 'uninhabited caves are named by contents only');
 

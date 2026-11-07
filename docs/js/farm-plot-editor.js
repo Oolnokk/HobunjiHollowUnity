@@ -12,6 +12,7 @@
 
   const KIND_FOR_BRUSH = { tilled: 'till', trench: 'dig' };
   const CROPS = ['needlegrain', 'heftroot', 'garlink', 'ongyums', 'redberries', 'blueberries', 'yellowberries', 'whiteberries', 'blackberries', 'blackMustard', 'greenMustard'];
+  const allCrops = () => [...new Set([...CROPS, ...(window.CropVarieties?.registered?.({ ownedOnly: true }) || []).map(variety => variety.id), ...plots.flatMap(plot => [plot.crop, ...(plot.seedBlocks || []).flatMap(block => block.seeds || [])]).filter(Boolean)])]; // Owned cultivars and previously assigned seeds stay selectable without listing 55 unowned imports. // Adds known hybrid varieties to family-plot planting choices.
   const SLOTS = 3;
   let deps = null;
   let plots = []; // { id, label, kind, tiles: [[c, r]], crop, workers: [npcId], hours: [from, to] }
@@ -43,7 +44,7 @@
         label: String(block.label || 'Seed block').slice(0, 48),
         tiles: Array.isArray(block.tiles) ? block.tiles.filter(t => Array.isArray(t) && t.length >= 2 && Number.isInteger(Number(t[0])) && Number.isInteger(Number(t[1]))).map(t => [Number(t[0]), Number(t[1])]) : [],
         seeds: (Array.isArray(block.seeds) ? block.seeds : []).filter(crop => {
-          if (!CROPS.includes(crop) || seen.has(crop)) return false;
+          if (!allCrops().includes(crop) && !window.CropVarieties?.ensure?.(crop) || seen.has(crop)) return false;
           seen.add(crop); return true;
         }),
       });
@@ -173,7 +174,7 @@
     const next = { ...p }; // Stage and validate all fields before updating the persisted plot; rejected edits are atomic.
     if (patch.label !== undefined) next.label = String(patch.label).trim().slice(0, 48) || p.label;
     if (patch.crop !== undefined && p.kind === 'till') {
-      if (patch.crop && !CROPS.includes(patch.crop)) return false;
+      if (patch.crop && !allCrops().includes(patch.crop) && !window.CropVarieties?.ensure?.(patch.crop)) return false;
       next.crop = patch.crop;
     }
     if (patch.hours !== undefined) {
@@ -236,7 +237,7 @@
     const p = plots.find(entry => entry.id === plotId && entry.kind === 'till');
     const b = p?.seedBlocks?.find(entry => entry.id === blockId);
     if (!b || !patch || typeof patch !== 'object') return false;
-    if (patch.seeds !== undefined && (!Array.isArray(patch.seeds) || patch.seeds.some(crop => !CROPS.includes(crop)) || new Set(patch.seeds).size !== patch.seeds.length)) return false;
+    if (patch.seeds !== undefined && (!Array.isArray(patch.seeds) || patch.seeds.some(crop => !allCrops().includes(crop) && !window.CropVarieties?.ensure?.(crop)) || new Set(patch.seeds).size !== patch.seeds.length)) return false;
     if (patch.label !== undefined) b.label = String(patch.label).trim().slice(0, 48) || b.label;
     if (patch.seeds !== undefined) b.seeds = [...patch.seeds]; // Ordered crop keys are the worker's seed preference, from Farm Storage.
     loaded = true; sync(); render(); return true;
@@ -273,7 +274,7 @@
       html += `<div style="margin-top:6px;display:grid;gap:4px">
         <input data-fplotfield="label" value="${esc(ap.label)}" aria-label="Group name">`;
       if (ap.kind === 'till') {
-        html += `<select data-fplotfield="crop" aria-label="Crop to seed"><option value="">No seeding</option>${CROPS.map(c => `<option value="${c}" ${ap.crop === c ? 'selected' : ''}>${esc(deps?.cropLabel?.(c) || c)}</option>`).join('')}</select>`;
+        html += `<select data-fplotfield="crop" aria-label="Crop to seed"><option value="">No seeding</option>${allCrops().map(c => `<option value="${c}" ${ap.crop === c ? 'selected' : ''}>${esc(deps?.cropLabel?.(c) || c)}</option>`).join('')}</select>`;
       }
       html += `<div style="display:flex;gap:4px"><input data-fplotfield="from" type="number" min="0" max="24" step="0.5" value="${ap.hours[0]}" aria-label="From hour" style="width:50%"><input data-fplotfield="to" type="number" min="0" max="24" step="0.5" value="${ap.hours[1]}" aria-label="Until hour" style="width:50%"></div>`;
       if (!people.length) html += '<div style="font-size:11px;opacity:.7">Marry, or have a child old enough to walk, to assign someone.</div>';
@@ -309,5 +310,5 @@
     }));
   }
 
-  window.FarmPlotEditor = { init, onTerrainPaint, beginStroke, endStroke, serialize, restore, render, plots: () => plots, family, cropOptions: () => CROPS.map(c => ({ value: c, label: deps?.cropLabel?.(c) || c })), createFamilyPlot, selectFamilyPlot, deleteFamilyPlot, updateFamilyPlot, setFamilyTile, createSeedBlock, deleteSeedBlock, updateSeedBlock, setSeedBlockTile, commitFamilyEdits, activeFamilyPlot };
+  window.FarmPlotEditor = { init, onTerrainPaint, beginStroke, endStroke, serialize, restore, render, plots: () => plots, family, cropOptions: () => allCrops().map(c => ({ value: c, label: window.CropVarieties?.ensure?.(c)?.label || deps?.cropLabel?.(c) || c })), createFamilyPlot, selectFamilyPlot, deleteFamilyPlot, updateFamilyPlot, setFamilyTile, createSeedBlock, deleteSeedBlock, updateSeedBlock, setSeedBlockTile, commitFamilyEdits, activeFamilyPlot };
 })();
