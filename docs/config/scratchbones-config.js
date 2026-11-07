@@ -3681,6 +3681,10 @@ window.SCRATCHBONES_CONFIG = {
             "volume": 0.95,
             "preload": true
           },
+          "igniteLarge": { "url": "assets/audio/sfx/sfx_ignite_big.m4a", "volume": 0.85, "preload": true },
+          "igniteSmall": { "url": "assets/audio/sfx/sfx_ignite_small.m4a", "volume": 0.78, "preload": true },
+          "stoneActivator": { "url": "assets/audio/sfx/sfx_stone_activator.m4a", "volume": 0.8, "preload": true },
+          "stoneMechanism": { "url": "assets/audio/sfx/sfx_stone_mechanism.m4a", "volume": 0.86, "preload": true },
           "uiClick": {
             "url": "assets/audio/sfx/ui/sfx_ui_click.mp3",
             "placeholderUrl": "assets/audio/sfx/placeholders/placeholder_ui_click.wav",
