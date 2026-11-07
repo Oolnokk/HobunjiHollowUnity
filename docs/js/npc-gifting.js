@@ -43,7 +43,7 @@
   function withinPorakanekiGiftReach(walker) {
     if (!isPorakaneki(walker)) return true;
     const distance = window.FurnitureTableSystem?.npcDistance?.(walker); // The same two-tile reach applies to named chiefs and generated hunters, including stale button presses.
-    return distance == null || distance <= 2; // Standalone gifting tests without a world-position provider preserve their existing isolated behavior.
+    return Number.isFinite(distance) && distance <= 2; // A missing/uninitialized distance authority must never allow a stale remote gift press.
   }
   function relationshipId(walker) {
     const tribe = tribeOf(walker);
