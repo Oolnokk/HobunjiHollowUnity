@@ -242,7 +242,7 @@
       caveFeatures: window.CaveSiteSystem?.senseTargets?.(scene) || [],
     };
     lastStats.specialSources = Object.fromEntries(Object.entries(specialSources).map(([name, roots]) => [name, roots.length]));
-    for (const roots of Object.values(specialSources)) for (const root of roots) consider(root, 'interact'); // Only independent living feature providers glow.
+    for (const roots of Object.values(specialSources)) for (const root of roots) consider(root, 'interact');
     for (const crop of sources.crops || []) {
       consider(crop.root, crop.tile?.cropReady ? 'interact' : 'friendly', { crop });
     }
