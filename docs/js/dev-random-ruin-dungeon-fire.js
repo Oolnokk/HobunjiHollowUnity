@@ -22,15 +22,28 @@
   const distanceSq = (a,b) => (a.x-b.x)**2 + (a.z-b.z)**2;
 
   function material(color, options = {}) {
+    const hex='#'+(Number(color)>>>0).toString(16).padStart(6,'0'); // Source tint for reused Furniture Editor PNG textures.
+    const file=options.texture||(options.metalness>.4?'iridescent_sheen.png':'carved_smooth.png'); // Authored bronze sheen or carved stone; nets request boards.png.
+    const authored=window.ProceduralFurniture?.makePartMaterial?.({
+      materialTexture:file,materialLighting:'lit',materialFillEnabled:true,
+      materialFillColor:hex,materialFillMode:'always',color:hex,
+    }); // Avoid introducing a parallel untextured dungeon furniture material system.
+    if(authored){
+      if(authored.emissive)authored.emissive.setHex(options.emissive??0x000000);
+      if('emissiveIntensity' in authored)authored.emissiveIntensity=options.emissiveIntensity??0;
+      if('metalness' in authored)authored.metalness=options.metalness??0;
+      if('roughness' in authored)authored.roughness=options.roughness??.78;
+      authored.transparent=options.transparent===true;
+      authored.opacity=options.opacity??1;
+      authored.depthWrite=options.depthWrite!==false;
+      authored.side=THREE.DoubleSide;
+      return authored;
+    }
     return new THREE.MeshStandardMaterial({
-      color, metalness:options.metalness ?? 0,
-      roughness:options.roughness ?? .78,
-      transparent:options.transparent === true,
-      opacity:options.opacity ?? 1,
-      emissive:options.emissive ?? 0x000000,
-      emissiveIntensity:options.emissiveIntensity ?? 0,
-      depthWrite:options.depthWrite !== false,
-      side:THREE.DoubleSide,
+      color,metalness:options.metalness??0,roughness:options.roughness??.78,
+      transparent:options.transparent===true,opacity:options.opacity??1,
+      emissive:options.emissive??0x000000,emissiveIntensity:options.emissiveIntensity??0,
+      depthWrite:options.depthWrite!==false,side:THREE.DoubleSide,
     });
   }
 
@@ -75,12 +88,22 @@
     coals.scale.set(1,.32,1);coals.position.y=.37;group.add(coals);
     const ember = new THREE.Mesh(new THREE.SphereGeometry(.085,8,6),amber);
     ember.scale.set(1,.35,1);ember.position.y=.41;ember.name='brazier_ember';group.add(ember);
-    const pilot = new THREE.Mesh(new THREE.ConeGeometry(.065,.23,7),amber);
-    pilot.position.y=.54;pilot.visible=false;pilot.name='brazier_armed_pilot';group.add(pilot);
+    const pilot = new THREE.Mesh(new THREE.SphereGeometry(.065,8,6),amber);
+    pilot.position.y=.54;pilot.visible=false;pilot.name='brazier_armed_pilot';group.add(pilot); // A simple glowing ember marker, not a second fake flame.
     const collider = new THREE.Mesh(new THREE.BoxGeometry(.75,.68,.75),new THREE.MeshBasicMaterial({transparent:true,opacity:0,depthWrite:false,colorWrite:false}));
     collider.position.y=.34;collider.name='brazier_fire_contact';group.add(collider);
     group.userData.dungeonFireParts={bronze,darkBronze,coal,amber,ember,pilot,collider};
     return group;
+  }
+
+  function attachBrazierFire(group,{colorA=null,colorB=null,lit=true}={}) {
+    const anchor=new THREE.Group(); // Reuses the player's campfire_fire emitter, attached to the physical bronze bowl.
+    anchor.name='dungeon_fire_authored_campfire';anchor.position.y=.48;anchor.visible=lit;group.add(anchor);
+    const flame=window.PersistentGroundFire?.attachCampfireFlame?.(anchor,{
+      scale:.78,rateScale:.62,colorA,colorB,
+    }); // Theme recolors affect particles but never replace the campfire's authored speed, size or shape.
+    if(flame)world?.flames?.push(flame);
+    return anchor; // Cleansing braziers keep this hidden until their plasm is burned away.
   }
 
   function floorPoints(kit,context,room) {
@@ -126,6 +149,7 @@
     const group=basketBrazier(point.x,point.y,point.z,'source');
     group.name='dungeon_fire_source_brazier_'+index;
     world.group.add(group);
+    attachBrazierFire(group); // Every lit dungeon ignition source has real authored campfire particles.
     const record=addMechanismRecord({id:'dungeon-fire-source-'+index,kind:'source',group,point,armed:false});
     record.control={
       kind:'dungeonFireSource',object:group,promptRoot:group,
@@ -146,19 +170,18 @@
     const group=new THREE.Group();
     group.name='dungeon_fire_burden_net_'+index;
     group.position.set(point.x,ceilingY-.05,point.z);
-    const beamMat=material(0x59432d,{roughness:.92});
+    const beamMat=material(0x59432d,{roughness:.92,texture:'boards.png'}); // Use the author's wooden PNG on the actual net ceiling spars.
     const width=.82,depth=.68,drop=.92;
     addRod(group,{x:-width*.5,y:0,z:0},{x:width*.5,y:0,z:0},.035,beamMat,'net_top_beam');
     addRod(group,{x:0,y:0,z:-depth*.5},{x:0,y:0,z:depth*.5},.025,beamMat,'net_top_crossbeam');
     // One open, four-sided upside-down transparent frustum replaces 25+ rod meshes.
     // Its PNG atlas contains separated full-length rope stripes and crossing strands, never UV-tiled.
     const netSkin=window.DungeonRopeArt?.createNetFrustum?.(width,depth,drop);
-    if(netSkin)group.add(netSkin);
-    else { // Preserve functional, visible nets when opened from an old cached HTML shell.
-      const ropeMat=material(0x60472e,{roughness:.95});
-      for(const x of [-width*.5,width*.5])for(const z of [-depth*.5,depth*.5])
-        addRod(group,{x,y:0,z},{x:x*.28,y:-drop,z:z*.28},.016,ropeMat,'net_hanging_cord');
+    if(!netSkin){
+      group.traverse(node=>node.geometry?.dispose?.());beamMat.dispose?.();
+      lastEvent='rope_long net art unavailable';return null; // Do not create an out-of-style cord net that differs from the furniture-authored PNG.
     }
+    group.add(netSkin);
     const anchor=new THREE.Group();
     anchor.name='net_burden_attachment';
     anchor.position.set(0,-drop*.8,0);
@@ -359,6 +382,7 @@
     const group=basketBrazier(point.x,point.y,point.z,'cleansing');
     group.name='kanthic_cleansing_brazier_'+index;
     world.group.add(group);
+    const cleansingFire=attachBrazierFire(group,{colorA:'#72ffbd',colorB:'#19896b',lit:false}); // Green campfire variant is lit only after cleansing.
     const targetMesh=group.userData.dungeonFireParts.collider;
     const record=addMechanismRecord({id:'dungeon-fire-cleansing-brazier-'+index,kind:'cleansingBrazier',group,hitObject:targetMesh,point,radius:CLEANSING_RADIUS,cleansed:0});
     registerFireTarget(record,brazier=>{
@@ -368,6 +392,7 @@
       const parts=group.userData.dungeonFireParts;
       parts.ember.material.color.setHex(0x72ffbd);
       parts.pilot.visible=true;
+      cleansingFire.visible=true; // The same player campfire particles announce a successful cleansing.
       lastEvent='Kanthic plasm cleansed '+brazier.cleansed+' tiles';
       return true;
     });
@@ -406,7 +431,7 @@
     if(!rooms.length)return;
     world={
       context,kit,theme:String(context.theme||'').toLowerCase(),
-      group:new THREE.Group(),records:[],walls:[],icedDoorIds:new Set(),iceEligibleCount:0,iceScanTries:0,iceScanElapsed:0,source:null,
+      group:new THREE.Group(),records:[],walls:[],flames:[],icedDoorIds:new Set(),iceEligibleCount:0,iceScanTries:0,iceScanElapsed:0,source:null,
       ceilingY:Number(context.ceilingY)||(Number(context.meta?.floorSurfaceY)||0)+(Number(context.meta?.wallHeight)||3),
       startedAt:performance.now(),
     };
@@ -447,6 +472,7 @@
 
   function update(_kit,_now,dt) {
     if(!world||dt<=0)return;
+    for(const flame of world.flames)flame.update?.(Math.max(0,Math.min(.05,dt))); // Existing composer tick owns the authored GPU particles.
     if(!world.isolated&&world.theme==='tothal'&&world.walls.length<2&&world.iceScanTries<6){
       world.iceScanElapsed+=dt;
       if(world.iceScanTries===0||world.iceScanElapsed>=.5){
@@ -497,6 +523,7 @@
       icicles:world.records.filter(record=>record.kind==='icicle').map(record=>({id:record.id,phase:record.phase,payload:record.burden?.id||null,payloadPending:record.payloadPending})),
       cleansers:world.records.filter(record=>record.kind==='cleansingBrazier').map(record=>({id:record.id,cleansed:record.cleansed,radius:record.radius})),
       ropeArt:window.DungeonRopeArt?.debugSnapshot?.() || null, // Exposes actual PNG-loading state in the mobile Dungeon Fire debug report.
+      authoredCampfireEmitters:world.flames.length, // Mobile-only diagnostic: every lit source and cleanser uses the shared player effect.
       lastEvent,
     };
   }
@@ -513,6 +540,7 @@
       wall.blocking=false;
       window.DungeonDoorIceCoverage?.clear?.(wall.icePlacement); // Borrowed authored ice remains intact across rerolls/scene teardown.
     }
+    for(const flame of world.flames)flame.dispose?.(); // Release cached campfire renderer state before removing puzzle geometry.
     window.DevRandomRuinTileOccupancy?.clearSolids?.('dungeon-fire-ice-walls');
     window.DevRandomRuinTileOccupancy?.clearSolids?.('dungeon-fire-mechanisms');
     window.DevRandomRuinTileOccupancy?.refresh?.();
