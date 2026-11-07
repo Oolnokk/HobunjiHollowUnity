@@ -19,7 +19,7 @@ const waterTypes = new Set(['river', 'stream', 'waterfall']); // Matches all pos
 
 assert.equal(compact.riverOutlet, 'southeastToMire', 'Northern Cliffs owns the explicitly configured outlet');
 assert.equal(generator.zoneSettings('map_eastern_mire').riverOutlet, undefined, 'Mire does not inherit the Cliffs outlet');
-assert.equal(generator.defaultSettings().riverOutlet, null, 'unconfigured biomes retain random river borders');
+assert.equal(generator.defaultSettings().riverOutlet, 'none', 'unconfigured biomes retain random river borders');
 
 for (const seed of ['mire-outlet-one', 'mire-outlet-two', 'mire-outlet-three']) {
   const workspace = generator.generateWorkspace(seed, compact); // Runs the actual generation/export pipeline, not a mocked river path.
@@ -50,7 +50,7 @@ for (const seed of ['mire-outlet-one', 'mire-outlet-two', 'mire-outlet-three']) 
   assert(edgeTile && waterTypes.has(edgeTile.type), `${seed}: the southeast border has visible river water`);
 }
 
-const ordinary = generator.generateWorkspace('ordinary-cliff-rivers', { ...compact, riverOutlet: null }); // Control case keeps the original multi-border river rules.
+const ordinary = generator.generateWorkspace('ordinary-cliff-rivers', { ...compact, riverOutlet: 'none' }); // Control case keeps the original multi-border river rules.
 assert.equal(ordinary.waterwayOutlet, null, 'unconfigured river generation does not fabricate an outlet');
 assert(ordinary.maps.find(map => !map.isSubmap).rivers.every(river => !river.outletZoneId),
   'other zones do not point their rivers toward the Mire');
