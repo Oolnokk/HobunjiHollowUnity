@@ -69,7 +69,7 @@
       blocks.push(record);return record;
     }
     function startFall(block){
-      if(!alive()||block.phase==='falling'||block.phase==='ready')return false;
+      if(!alive()||block.phase==='falling'||(block.phase==='ready'&&!block.mesh.userData.findBlocksCanDrop))return false;
       block.phase='falling';block.fallSpeed=0;
       block.mesh.userData.findBlocksFalling=true;
       block.mesh.userData.findBlocksAvailable=false;
@@ -166,8 +166,8 @@
       // A narrow winding walkable route, not invisible stairs or an interaction that teleports the player.
       // Each tile is separated by at most the normal step-up threshold.
       const path=[
-        [x+3,z+1],[x+3,z],[x+2,z],[x+2,z-1],[x+1,z-1],[x+1,z],
-        [x,z-1]
+        [x+4,z+2],[x+3,z+2],[x+3,z+1],[x+2,z+1],[x+2,z],
+        [x+2,z-1],[x+1,z-2]
       ];
       path.forEach(([sx,sz],i)=>{
         const topY=floorY+STAIR_RISE*(i+1);
@@ -282,7 +282,6 @@
     function openGate(){
       if(solved)return;
       solved=true;
-      kit.deps?.showToast?.('Find the Blocks complete! All four plates are weighted. No loot awarded.',true);
       onSolved();
     }
     const gateX=cx,gateZ=room.z+room.d-1.1; // The far-side sealed doorway visibly rises on completion.
