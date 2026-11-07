@@ -69,6 +69,15 @@ function test(seed,size=24){
       unregisterDispenser(){cleared.push('dispenser');},
       dispenseFromMechanism(){return true;}
     },
+    ProceduralFurniture:{
+      makePartMaterial(spec){
+        assert.equal(spec.materialTexture,'carved_smooth.png','Every requested authored stone material uses the dungeon texture');
+        assert.equal(spec.materialLighting,'unlit','Stone follows the native ruin wall lighting');
+        const textured=new Material();
+        textured.userData={materialTexture:spec.materialTexture}; // Inspectable marker for geometry-specific texture coverage assertions.
+        return textured;
+      }
+    },
     RuinLayerChallenges:{
       compose(options){
         const challenge={kind:options.kind,id:options.id,tick(){},animate(){},dispose(){cleared.push('challenge:'+options.id);},solve:options.onSolved};
@@ -92,6 +101,18 @@ function test(seed,size=24){
   });
   assert.equal(room.blocks.length,4);
   assert.equal(room.plates.length,4);
+  const named=new Map();
+  soloGroup.traverse(object=>{if(object?.isMesh&&object?.name)named.set(object.name,object);});
+  for(const name of ['find-block-net','find-block-inset-net','find-blocks-pressure-plate-0',
+    'find-blocks-plate-frame-0','find-blocks-winding-step-0','find-blocks-high-platform',
+    'find-blocks-tall-pillar','find-blocks-blocker-0','find-blocks-gate']){
+    const mesh=named.get(name);
+    assert(mesh,'Required gameplay mesh exists: '+name);
+    assert.equal(mesh.material?.userData?.materialTexture,'carved_smooth.png',
+      'All major Find the Blocks stone surfaces, plates, trim and marks must be carved smooth: '+name);
+  }
+  assert.notEqual(named.get('find-blocks-ice-fire-hit')?.material?.userData?.materialTexture,
+    'carved_smooth.png','The invisible ice contact target must retain ice behavior rather than stone texture');
   assert.equal(registeredBlocks.length,4);
   // Native block pushes are whole world-unit steps. Every plate must lie on that same lattice.
   for(const plate of room.plates){
