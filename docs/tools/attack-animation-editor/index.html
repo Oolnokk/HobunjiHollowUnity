@@ -1705,7 +1705,7 @@ function applyPreset(preset) {
   // The selected Action owns hand-follow and elbow pose fields too. Reload the
   // hand adapter every time so state from the previously selected Action cannot leak.
   window.HobunjiAttackEditorHandShoulderControls?.loadFromAnimationObject?.({ poses: anim.poses });
-  window.HobunjiHandToolGrips?.loadEditorAnimationGrip?.({ sequence: preset.sequence || 'attack', style: preset.style, still: preset.still, poses: anim.poses }); // Switching Actions reloads 2H/Dual state instead of leaking the prior Action's mode.
+  window.HobunjiHandToolGrips?.loadEditorAnimationGrip?.({ actionId: currentActionId, toolKey: preset.toolKey, sequence: preset.sequence || 'attack', style: preset.style, still: preset.still, poses: anim.poses }); // Switching Actions reloads 2H/Dual state instead of leaking the prior Action's mode.
   anim.windupFrac = preset.windupFrac;
   anim.strikeFrac = preset.strikeFrac;
   // Presets predate holdFrac, so derive it the same way game.js's HF auto-
@@ -2559,7 +2559,7 @@ function loadAnimObject(data) {
   // Restore them on every load path (file import, Undo/Redo, programmatic restore),
   // not only the file-input handler.
   window.HobunjiAttackEditorHandShoulderControls?.loadFromAnimationObject?.(data);
-  window.HobunjiHandToolGrips?.loadEditorAnimationGrip?.({ sequence: anim.sequence, style: anim.style, poses: anim.poses });
+  window.HobunjiHandToolGrips?.loadEditorAnimationGrip?.({ actionId: currentActionId, toolKey: currentAction().toolKey, sequence: anim.sequence, style: anim.style, poses: anim.poses });
   $('animName').value = action.label;
   $('animStyle').value = anim.style;
   $('playbackSequence').value = anim.sequence;
