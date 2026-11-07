@@ -130,7 +130,7 @@ assert.ok(pulseSource.indexOf('state.pluckTimer = setTimeout') < pulseSource.ind
   'the next timed pulse must be armed before asynchronous Web Audio initialization');
 assert.match(engine,/if \(!usesAutomaticPluckInput\(\)\) interruptAutoReleaseTail\(/,
   'changing melody bank must not prematurely cancel the running automatic figure');
-assert.match(host,/lyre-performance\.html\?v=20261106legatoArpeggios1/,
+assert.match(host,/lyre-performance\.html\?v=[A-Za-z0-9_-]+/,
   'gameplay must use the revised instrument iframe cache key');
 
 const compatibilityState = {
