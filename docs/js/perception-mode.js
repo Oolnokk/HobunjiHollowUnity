@@ -185,11 +185,11 @@
     }
     const seenRoots = new Set();
     const rejected = { noRoot: 0, offScene: 0, outOfRange: 0 }; // Diagnostics only (debugSnapshot).
-    const consider = (root, category, extra, rangeTiles = RANGE_TILES) => {
+    const consider = (root, category, extra, rangeTiles = RANGE_TILES, anchor = null) => {
       if (!root) { rejected.noRoot++; return; }
       if (seenRoots.has(root)) return;
       if (sceneOf(root) !== scene) { rejected.offScene++; return; }
-      const p = worldPos(root);
+      const p = Number.isFinite(anchor?.x) && Number.isFinite(anchor?.z) ? anchor : worldPos(root); // Camp sites use their actual center rather than each individual tent's position.
       const dist = Math.hypot(p.x - player.x, p.z - player.z);
       if (dist > rangeTiles) { rejected.outOfRange++; return; }
       seenRoots.add(root);
@@ -210,8 +210,10 @@
       herbClusters: window.CliffRouteNetwork?.senseTargets?.(scene) || [],
     };
     lastStats.landmarkSources = Object.fromEntries(Object.entries(landmarkSources).map(([kind, roots]) => [kind, roots.length])); // Mobile diagnostics for each source, before distance filtering.
-    for (const [kind, roots] of Object.entries(landmarkSources))
-      for (const root of roots) consider(root, 'landmark', undefined, LANDMARK_RANGE_TILES[kind]); // Landmarks take priority over any overlapping generic interactable.
+    for (const [kind, roots] of Object.entries(landmarkSources)) for (const entry of roots) {
+      const root = entry?.root || entry; // Camps supply a mesh plus its shared site center; caves, doors and herbs supply just a mesh.
+      consider(root, 'landmark', undefined, LANDMARK_RANGE_TILES[kind], entry?.anchor); // Landmarks take priority over any overlapping generic interactable.
+    }
 
     const sources = deps.getSources();
     const count = list => (list ? (list.size ?? list.length ?? 0) : 0);
