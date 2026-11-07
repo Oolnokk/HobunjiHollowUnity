@@ -492,6 +492,9 @@
     }
     positions.needsUpdate = true;
     geometry.computeVertexNormals();
+    geometry.computeBoundingSphere();
+    geometry.boundingSphere.center.set(0, 0.25, 0);
+    geometry.boundingSphere.radius = 0.85; // Includes the entire rotated rosette, not just the source leaf card.
     mushtardGeometries.set(shape, geometry);
     return geometry;
   }
@@ -548,7 +551,7 @@
       const batch = new THREE.InstancedMesh(_mushtardCardGeometry(shape), _mushtardMaterial(family, shape), counts[shape]);
       batch.castShadow = false;
       batch.receiveShadow = false;
-      batch.frustumCulled = false; // Instances extend radially beyond the shared single-plane bounding sphere.
+      batch.frustumCulled = true; // Expanded shared geometry bounds safely cull entire offscreen plants.
       batch.userData.hobunjiMustardLeaf = true; // The dev companion can identify the source shape and leaf instance IDs.
       batch.userData.hobunjiMustardShape = shape;
       batches[shape] = batch;
