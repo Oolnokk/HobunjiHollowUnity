@@ -64,6 +64,12 @@ assert.notEqual(inscription.group.position.z,plate.z,'the clue is near the plate
 assert.equal(inscription.diagnostics().fallback,false);
 assert.equal(inscription.diagnostics().rows,1);
 assert.equal(glyphs().every(glyph=>glyph.raycast()===undefined),true,'decal art never steals gameplay hits');
+assert(glyphs().every(glyph=>glyph.children?.some(child=>child.name?.startsWith('ruin-melody-scratchbone-glow'))),
+  'every black-ink Scratchbone glyph must own an additive Witch-bomb-style glow pass');
+const glowShader={fragmentShader:'#include <map_fragment>'};
+glyphs()[0].children[0].material.onBeforeCompile(glowShader);
+assert(glowShader.fragmentShader.includes('diffuseColor.a *= texture2D(map, vUv).a'),
+  'glyph glow must use only PNG transparency, never its black RGB color');
 assert.equal(inscription.setNotes(first.slice()),true);
 assert.equal(inscription.matchesNotes(first),true,'an unchanged generated sequence is recognized without allocations');
 assert.equal(inscription.matchesNotes([0,7,1,2,7]),false,'note order determines the inscription');
