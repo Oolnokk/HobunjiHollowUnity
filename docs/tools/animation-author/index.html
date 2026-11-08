@@ -14436,11 +14436,26 @@ syncMultiAvatarFullBodiesV1548 = function(time = animationAuthor.currentTime, dt
         const targets = window.SpouseKissMotion.posteriorStraddleFootTargets(
           state.three.THREE, taller.rigFeetPreview, jumperFeet, solution, jumpFraction, scratch,
         );
-        jumperFeet?.setExternalFootTargets?.(targets, { allowDeepFold: true }); // The two existing leg IK chains grip opposite sides of the actual posterior.
-        if (targets) jumperFeet.applyWorldFootTargets?.(targets, null, false, true); // Update at scrub time, not one render frame late.
-        shorter.rigPantsPreview?.update?.(); // Real garment renderer tracks both IK-driven hips, knees, ankles and waist on touch scrubs.
+        let reachExcess = 0; // Mobile-readable proof that the planted soles can reach the taller posterior without stretching legs.
+        if (targets && jumperFeet?.group) {
+          const anatomy = jumperFeet.motionAnatomy?.() || [];
+          const legLength = anatomy.length ? Math.min(...anatomy.map(item => Number(item.length) || 0)) *
+            Math.max(.001, Math.abs(Number(shorter.visualOffset?.scale?.y) || 1)) : 0;
+          const stance = jumperFeet.getRestStance?.();
+          if (legLength > 0 && stance) for (const side of ['left', 'right']) {
+            const hip = stance[side]?.hip; // Each individual leg's authored hip socket, not the sprite-plane center.
+            if (!hip) continue;
+            const source = new state.three.THREE.Vector3(hip.x, hip.y, hip.z);
+            jumperFeet.group.localToWorld(source);
+            reachExcess = Math.max(reachExcess, source.distanceTo(targets[side]) - legLength); // Positive means the requested foot target is unreachable.
+          }
+        }
+        jumperFeet?.setExternalFootTargets?.(targets, { allowDeepFold: true }); // Each genuine leg IK chain grips its own side of the posterior.
+        if (targets) jumperFeet.applyWorldFootTargets?.(targets, null, false, true); // Update on scrub, not one render frame late.
+        shorter.rigPantsPreview?.update?.(); // Worn garment follows both real knee and ankle bones.
         shorter.previewAnatomyV1548.jumpFeetAnchored = !!targets;
         shorter.previewAnatomyV1548.jumpFootDistance = targets ? targets.left.distanceTo(targets.right) : 0;
+        shorter.previewAnatomyV1548.jumpFootReachExcessWorld = Number(reachExcess.toFixed(5)); // 0 means the posterior feet fit the species' real leg lengths.
       } else {
         for (const actor of [leader, partner]) actor.rigFeetPreview?.setExternalFootTargets?.(null); // A new non-jump preset must release old foot targets.
       }
