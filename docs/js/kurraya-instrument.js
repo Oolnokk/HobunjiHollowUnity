@@ -650,6 +650,14 @@
     window.SharedAttackPose.placeAtMouth(fluteState.root,fluteState.frame,pose,Number(pose.scale)||1,null);
     fluteState.root.visible=true;
   }
+  function playerInstrumentProgress(key) {
+    if (key === 'kurraya') return playerNoteProgress(); // Right-hand, grip and elbow timelines must share the same sounded-note clock.
+    if (key !== 'flute' || !fluteState.active || fluteState.noteStartedAt === null) return 0;
+    const durationMs = Math.max(50, (Number(window.HeldActionAnimations?.flutePlayNote?.durationS) || 0.32) * 1000);
+    const elapsedMs = performance.now() - fluteState.noteStartedAt;
+    return elapsedMs >= 0 && elapsedMs < durationMs ? elapsedMs / durationMs : 0;
+  }
+
   function fluteHandTarget() {
     if (!fluteState.active) return null;
     updateFlute(); // Hand-frame sampling must see the same current mouth-anchored matrix as the rendered flute.
@@ -665,6 +673,7 @@
     beginPlayerKurraya, playPlayerKurrayaNote, endPlayerKurraya, playerHeldPose, applyPlayerHeldPose, playerRightHandPose, playerGripAnimationState, playerKurrayaHandTarget,
     beginFlute, playFluteNote, endFlute, fluteHandTarget, notePoseAt, fluteDiagnostics, prepareFluteCanvas,
     activePlayerInstrument: () => fluteState.active ? 'flute' : playerKurrayaNote.active ? 'kurraya' : null, // Allocation-free neutral-stance owner for the pre-render body composer.
+    playerInstrumentProgress, // Shared progress for instrument elbow/shoulder poses and the two authored note actions.
     kurrayaHandDiagnostics: () => ({ active: playerKurrayaNote.active, noteCount: playerKurrayaNote.noteCount, notePlaying: playerKurrayaNote.startedAt !== null && performance.now() - playerKurrayaNote.startedAt < Math.max(50,(Number(window.HeldActionAnimations?.kurrayaPlayNote?.durationS)||0.32)*1000) }),
   };
 })();
