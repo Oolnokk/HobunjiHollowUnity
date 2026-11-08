@@ -162,8 +162,8 @@ assert.equal(pillars.length,2,'the doorway has two equally sized permanent carve
 assert.equal(pillars[0].geometry.dimensions[1],pillars[1].geometry.dimensions[1]);
 assert(Math.abs(pillars[0].position.x+pillars[1].position.x)<.0001,
   'the two pillar centres mirror around the authored doorway axis');
-assert(Math.abs(pillars[0].position.z+pillars[1].position.z)<.0001,
-  'the physical pillar pair stays centred on the authored doorway even when the musician stands off-axis');
+assert(Math.abs((pillars[0].position.z+.10)+(pillars[1].position.z+.10))<.0001,
+  'both posts share the same ten-centimetre setback from their mirrored score anchors');
 assert(gate.scoreStone.children.filter(mesh=>mesh.name.includes('-cap-')).length===2,
   'both pillars have identical stone capitals');
 assert(gate.scoreStone.children.filter(mesh=>mesh.name.includes('-plinth-')).length===2,
