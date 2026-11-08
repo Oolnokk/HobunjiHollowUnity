@@ -1135,13 +1135,13 @@
         if(singleVestibule&&meta.rooms?.length!==1)throw new Error('V50 failed to generate exactly one vestibule room.');
         const placement=singleVestibule&&!singleRoomTrial?window.RuinV50Vestibule?.compose?.({
           meta,seed:candidateSeed,LayerPlan:window.RuinLayerPlan,ShaftHub:window.ShaftHub,
-          Connector:window.RuinShaftConnector,tileScale:RUIN_TILE_SCALE,plinthTrial:trialRequested,tier:opts.tier||null,
+          Connector:window.RuinShaftConnector,tileScale:RUIN_TILE_SCALE,plinthTrial:trialRequested,tier:opts.tier||null,theme,
         }):null; // Derived from the V50 entrance face, not a post-hoc exterior corridor.
         if(singleVestibule&&!singleRoomTrial&&!placement)throw new Error('Ruin V50 vestibule placement module missing.');
         entryPadX=placement?.padX??PAD;entryPadZ=placement?.padZ??PAD;
         const planned=singleRoomTrial?null:placement?.plan||window.RuinLayerPlan?.compose?.({
           seed:candidateSeed,spacing:64,anchorX:320,anchorZ:320,
-          shaftSize:45,floorHeight:16,shaftTraversal:requestedRuinType==='hachutu'?'buttress':null,nativeV50:requestedRuinType!=='hachutu',plinthTrial:trialRequested,
+          shaftSize:45,floorHeight:16,shaftTraversal:requestedRuinType==='hachutu'?'buttress':null,nativeV50:requestedRuinType!=='hachutu',plinthTrial:trialRequested,theme,
         });
         if(!singleRoomTrial&&!planned?.ok)throw new Error('Pre-generation shaft reservation is invalid.');
         api.snapMechanismState(0); api.pausePreviewLoop();

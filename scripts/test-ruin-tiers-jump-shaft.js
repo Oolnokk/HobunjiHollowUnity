@@ -67,4 +67,20 @@ for (const [tier, spec] of Object.entries(SPEC)) {
     }
   }
 }
+// A room is a room: every puzzle room draws from the whole set; fire and ice belong to Tothal only; no back-to-back repeats.
+{
+  const seen = { tothal: new Set(), hronal: new Set(), kanthic: new Set() };
+  for (const theme of Object.keys(seen)) for (const tier of ['hole', 'lich']) for (let seed = 1; seed <= 150; seed++) {
+    const plan = Plan.compose({ seed: seed * 7919, spacing: 64, anchorX: 256, anchorZ: 256, groundEntranceSide: 'W', theme, ...Plan.tierOptions(tier) });
+    assert.ok(plan.ok, `${theme}/${tier}/${seed}: ${plan.checks.filter(c => !c.ok).map(c => c.name)}`);
+    for (const floor of plan.floors) for (const wing of floor.wings) {
+      const kinds = wing.rooms.slice(0, -1).map(r => r.challenge);
+      kinds.forEach((k, i) => { seen[theme].add(k); if (i && !plan.trialRoomId) assert.notEqual(k, kinds[i - 1], 'no back-to-back repeat'); });
+    }
+  }
+  assert.ok(!seen.hronal.has('dungeonFire') && !seen.kanthic.has('dungeonFire'), 'fire and ice puzzles only appear in Tothal ruins');
+  assert.ok(seen.tothal.has('dungeonFire'), 'Tothal ruins do get fire and ice');
+  for (const theme of Object.keys(seen)) for (const kind of ['pressurePlate', 'glyphObelisk', 'ceilingRailTargets', 'melodyEcho', 'ropeChain', 'findBlocks'])
+    assert.ok(seen[theme].has(kind), `${theme} ruins can now roll ${kind} in any room`);
+}
 console.log('ruin tiers + jump shaft: ok');

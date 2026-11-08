@@ -288,6 +288,13 @@
         new THREE.PlaneGeometry(pit.maxX-pit.minX,pit.maxZ-pit.minZ),
         basic(0x08090b),centerX,y-.15,centerZ);
       fog.rotation.x=-Math.PI/2;fog.userData.devRuinBottomlessFog=true;
+      // The abyss shows the ruin's own hazard: lava (Hronal), ice (Tothal) or plasm-dark oil (Kanthic) far below the ropes.
+      const hazardColor={hronal:0xff4215,tothal:0xb7ecfa,kanthic:0x2a1a4a}[options.theme];
+      if(hazardColor){
+        const sheet=body('ruin-abyss-hazard-'+(options.theme||'')+'-'+id,
+          new THREE.PlaneGeometry(pit.maxX-pit.minX,pit.maxZ-pit.minZ),basic(hazardColor),centerX,y-2.4,centerZ);
+        sheet.rotation.x=-Math.PI/2;sheet.userData.devRuinAbyssHazard=options.theme;
+      }
       rec.pit=pit;rec.ropesRequested=count;
       rec.ropeSpec={id,roomId:id,bounds:pit,entry,exit,floorY:y,anchors,
         yaw:Math.atan2(side==='S'?1:side==='N'?-1:0,side==='E'?1:side==='W'?-1:0),
