@@ -8,6 +8,7 @@
   'use strict';
   const MAX_CASTERS=240,MAX_SHADOWS_PER_LIGHT=14,SCAN_INTERVAL_MS=1800; // Bounds the mobile draw cost; scene discovery is never repeated per torch.
   let cachedScene=null,cachedAt=-Infinity,cachedCandidates=[]; // Reused until a new dungeon/scene is mounted or the scene's props change.
+  const boxCache=new WeakMap(); // Cache world-space bounds across sources; moving pillars refresh much more often than static masonry.
   const stats={candidates:0,lights:0,shadows:0}; // Readable through the mobile debug console or Pixel Probe.
   const BLOCKER_NAME=/obelisk-.*-stone|pillar|column|wall|stone.door|push.*block|boulder|statue/i;
   const DECORATION_NAME=/ladder|rung|engraving|glyph|pattern|light|flame|sconce|roof|floor|ceiling|seal|shadow/i;
@@ -15,6 +16,7 @@
   function candidates(scene,now){
     if(scene===cachedScene&&now-cachedAt<SCAN_INTERVAL_MS)return cachedCandidates;
     cachedScene=scene;cachedAt=now;cachedCandidates=[];
+    stats.lights=stats.shadows=0; // Mobile diagnostics describe the latest discovery window, rather than rising forever.
     scene?.traverse?.(node=>{
       if(cachedCandidates.length>=MAX_CASTERS||!node.isMesh||node.isInstancedMesh||node.visible===false)return;
       const name=String(node.name||''),parentName=String(node.parent?.name||'');
@@ -55,15 +57,23 @@
   }
   function projectedShadows({scene,source,radiusTiles,project,THREE,now=Date.now()}={}){
     if(!scene||!source||!(radiusTiles>0)||typeof project!=='function'||!THREE?.Box3)return [];
-    const casters=candidates(scene,now),boxes=[],position=new THREE.Vector3(),box=new THREE.Box3();
+    const casters=candidates(scene,now),boxes=[];
     stats.lights++;
     for(const node of casters){
       if(!node.parent||node.visible===false)continue;
-      node.getWorldPosition?.(position);
-      if(Math.hypot(position.x-source.x,position.z-source.z)>radiusTiles+8)continue;
-      node.updateWorldMatrix?.(true,false);
-      box.setFromObject(node);
+      let cached=boxCache.get(node);
+      const mobile=/obelisk|moving|door|push/i.test(String(node.name||'')+' '+String(node.parent?.name||''));
+      if(!cached||now-cached.at>(mobile?30:1200)){
+        node.updateWorldMatrix?.(true,false);
+        cached={at:now,box:new THREE.Box3().setFromObject(node)};
+        boxCache.set(node,cached);
+      }
+      const box=cached.box;
       if(box.isEmpty()||box.max.y-box.min.y<.35)continue;
+      // Mesh origins are not necessarily centered on their world-space masonry geometry.
+      const nearestX=Math.max(box.min.x,Math.min(source.x,box.max.x));
+      const nearestZ=Math.max(box.min.z,Math.min(source.z,box.max.z));
+      if(Math.hypot(nearestX-source.x,nearestZ-source.z)>=radiusTiles)continue;
       const hit=shadowPolygon(box,source,radiusTiles,project);
       if(hit)boxes.push(hit);
     }
