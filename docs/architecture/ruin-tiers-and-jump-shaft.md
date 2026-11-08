@@ -62,3 +62,11 @@ Hronal. Sphere art is `config/furniture-authored/{hronal,tothal,kanthic}WitchBom
 
 Bombs now resolve their landing height through `DynamicSurfaces` inside ruins
 (`fallGroundY` receives `y`), so a bomb dropped over the shaft lands on a platform or gallery.
+
+## Wall coffins (`js/ruin-wall-coffins.js`, mounted from `ruin-multifloor-v50-style.js`)
+
+A few of the V50 wall panels on the shaft/gallery walls (2 / 4 / 6 per cave / hole / lich ruin, spread over the stories) are disguised coffins. The real panel mesh (engraving included) is the lid. Standing within ~2.7 tiles on the same story makes it fall forward onto the floor, revealing a black plane on the wall; a Harlyao skeleton climbs out of it over the dark spawn tile (which fades). Only one coffin skeleton is alive at a time; the next coffin stays shut until it is beaten. Test: `scripts/test-ruin-wall-coffins.js`. Debug lighting switch: `RuinLightOcclusion.setEnabled(false)`.
+
+## Emblem decals (`js/ruin-emblem.js`)
+
+Inside a ruin the generic round rune/seal decals resolve to the tradition's motif PNG (`assets/patterns/motif_harlyao_glyph_*`).
