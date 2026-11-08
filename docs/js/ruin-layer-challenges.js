@@ -362,6 +362,7 @@
       // The generated score's beat clock advances only while the player stays on the large plate.
       const composer=options.puzzleCaveMelody||root.PuzzleCaveMelody; // One generator/judge for both exterior and interior puzzle cave doors.
       if(!composer?.generate||!composer?.createSession)throw new Error('PuzzleCaveMelody is not installed.');
+      rec.scoreComposer=composer; // The shared frame-tick callback runs outside this challenge branch and reads the same injected song/glow adapter.
       const song=composer.generate(id,options.songOptions||{}); // The cave's stable ID fixes the tune and reward tier on reload.
       const plate=body('puzzle-cave-music-plate-'+id,
         new THREE.CylinderGeometry(1.18,1.18,.15,32),plateMat,cx,y+.08,cz-1.6);
@@ -678,7 +679,7 @@
         const glowState=rec.session.snapshot(); // Shared beat clock controls current score note, rests and accepted-note feedback.
         for(let i=0;i<rec.glyphs.length;i++){
           const glyph=rec.glyphs[i],rejected=rec.flashRemaining>0&&i===rec.flashGlyphIndex;
-          if(composer.advanceGlyphGlow)composer.advanceGlyphGlow(glyph,{
+          if(rec.scoreComposer?.advanceGlyphGlow)rec.scoreComposer.advanceGlyphGlow(glyph,{
             current:i===glowState.activeIndex,accepted:i<glowState.progress,rejected,dt,
           });
           else glyph.material?.color?.setHex?.(rejected?0xff6666:i<glowState.progress?0x80ffbb:
