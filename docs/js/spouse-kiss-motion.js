@@ -183,7 +183,7 @@
     const playerNeck = player.userData?.neckRig?.neckJoint || null;
     const npcNeck = walker.avatarGroup?.userData?.neckRig?.neckJoint || null;
     const lock = window.CharacterActionLocks?.acquire?.({
-      owner: SOURCE, reason: 'Kissing spouse', timeoutMs: 5000,
+      owner: SOURCE, reason: 'Kissing spouse', timeoutMs: 20000, // The world lock outlives low-FPS playback; normal cleanup releases it in 2.4 simulation seconds.
       participants: [
         { id: 'player', channels: ['movement', 'tools', 'facing', 'head'] }, // A pose lock bypasses PlayerBodyTransformComposer; keep its kiss channel active.
         { id: window.NpcCharacterState?.participantId?.(walker.rec.id) || 'npc:' + walker.rec.id,
