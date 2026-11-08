@@ -13,13 +13,17 @@
   const BLOCKER_NAME=/obelisk-.*-stone|pillar|column|wall|stone.door|push.*block|boulder|statue/i;
   const DECORATION_NAME=/ladder|rung|engraving|glyph|pattern|light|flame|sconce|roof|floor|ceiling|seal|shadow/i;
   const angularDifference=(a,b)=>Math.atan2(Math.sin(a-b),Math.cos(a-b));
+  function visibleThroughParents(node){
+    for(let owner=node;owner;owner=owner.parent)if(owner.visible===false)return false;
+    return true; // Hidden upper floors and unmounted decoration must not create black shadows.
+  }
   function candidates(scene,now){
     if(scene===cachedScene&&now-cachedAt<SCAN_INTERVAL_MS)return cachedCandidates;
     cachedScene=scene;cachedAt=now;cachedCandidates=[];
     stats.lights=stats.shadows=0; // Mobile diagnostics describe the latest discovery window, rather than rising forever.
     const pillars=[],ordinary=[]; // Reserve shadow-caster capacity for tall moving obelisks, even if room walls traverse first.
     scene?.traverse?.(node=>{
-      if(!node.isMesh||node.isInstancedMesh||node.visible===false)return;
+      if(!node.isMesh||node.isInstancedMesh||!visibleThroughParents(node))return;
       const name=String(node.name||''),parentName=String(node.parent?.name||'');
       const role=String(node.userData?.interiorRuinRole||node.parent?.userData?.interiorRuinRole||'');
       const physics=node.userData||{};
@@ -66,7 +70,7 @@
     const casters=candidates(scene,now),boxes=[];
     stats.lights++;
     for(const node of casters){
-      if(!node.parent||node.visible===false)continue;
+      if(!node.parent||!visibleThroughParents(node))continue;
       let cached=boxCache.get(node);
       const mobile=/obelisk|moving|door|push/i.test(String(node.name||'')+' '+String(node.parent?.name||''));
       if(!cached||now-cached.at>(mobile?30:1200)){
