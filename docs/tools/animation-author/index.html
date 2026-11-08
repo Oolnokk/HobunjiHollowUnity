@@ -14107,6 +14107,7 @@ serializeAnimationProject = function() {
       initiator: animationAuthor.kissHeightSolutionV1546?.firstMouthHeightWorld ?? null,
       recipient: animationAuthor.kissHeightSolutionV1546?.secondMouthHeightWorld ?? null,
     }, // Serialized actual standing mouth coordinates for editable and mobile-readable exports.
+    mouthContactCorrectionXZ: clone(animationAuthor.kissMouthCorrectionV1552 || null), // Baked into the partner's authored track from the actual two lip frames.
     maxBodySinkPct: window.SpouseKissMotion.MAX_SINK_PCT,
     deepKneelLegFraction: window.SpouseKissMotion.KNEEL_LEG_FRACTION,
     maxTorsoBowDeg: window.SpouseKissMotion.MAX_BOW_DEG,
@@ -14542,10 +14543,57 @@ tickAnimationAuthor = function(dt) {
   return result;
 };
 
+// Use B'shuakauitl's skinned lip positions to calibrate the *actual*
+// horizontal contact point after the knee/neck/bow has been posed. A guessed
+// center-to-center spacing makes long-nosed and short-nosed species miss each
+// other, even when their true mouth heights are correct.
+function calibrateKissMouthXZV1552() {
+  const { leader, partner } = configuredKissPairV1550(); // Stable initiator and recipient, independent of selected timeline row.
+  const mouthAPI = window.SpouseKissMotion; // The same skinned pixel resolver that seats the ranged mouthpiece.
+  const THREE = state.three.THREE; // Used for the two actual world-space mouth vectors and facing cushion.
+  if (!leader?.model || !partner?.model || !mouthAPI?.mouthWorldPoint || !THREE) return false;
+  const previousTime = animationAuthor.currentTime; // Temporarily sample real kiss contact, then return the scrubber exactly.
+  const contactTime = 1.12; // Known shared kiss contact frame, after all knee/bow/hand transforms have been evaluated.
+  setAnimationTime(contactTime, { pause: true });
+  const source = new THREE.Vector3(); // Initiator mouth coordinate in absolute world space.
+  const target = new THREE.Vector3(); // Recipient mouth coordinate in absolute world space.
+  const scratchA = leader.kissMouthScratchV1552 || (leader.kissMouthScratchV1552 = { THREE }); // Canonical mouth frames reused by diagnostics.
+  const scratchB = partner.kissMouthScratchV1552 || (partner.kissMouthScratchV1552 = { THREE }); // Separate mouth-frame cache for the other actor.
+  const ready = mouthAPI.mouthWorldPoint(leader.model, source, scratchA) &&
+    mouthAPI.mouthWorldPoint(partner.model, target, scratchB);
+  if (!ready) { setAnimationTime(previousTime, { pause: true }); return false; }
+  const forward = new THREE.Vector3(0, 0, 1).applyQuaternion(
+    leader.root.getWorldQuaternion(new THREE.Quaternion())
+  ); // Initiator's forward axis leaves a small lip cushion while mouth X/Z align.
+  forward.y = 0;
+  forward.normalize();
+  const desired = source.clone().addScaledVector(forward, .012); // Tiny intentional lip gap rather than a sprite intersection.
+  const correction = desired.sub(target); // Required x/z translation of the partner's authored root track.
+  correction.y = 0; // Vertical contact belongs to actual legs, neck and bow, never a fake root lift.
+  const magnitude = correction.length(); // Caps pathological offsets from a malformed portrait or missing world transform.
+  if (magnitude > .65) correction.multiplyScalar(.65 / magnitude);
+  for (const key of partner.keyframes) {
+    const blend = mouthAPI.samplePose(key.time).blend; // Timed approach and separation keep the original standing positions.
+    key.transform.position.x += correction.x * blend;
+    key.transform.position.z += correction.z * blend;
+  }
+  partner.baseTransform = clone(partner.keyframes[0].transform); // Root's authoring baseline follows the corrected first key.
+  animationAuthor.kissMouthCorrectionV1552 = {
+    x: correction.x, z: correction.z, initialMouthGapXZ: magnitude,
+  }; // Shown in exports and mobile diagnostics to explain why the root track shifted.
+  setAnimationTime(previousTime, { pause: true }); // Reevaluate feet/hands after the corrected target-relative placement.
+  return true;
+}
+
 const beforeMultiKissApplyV1548 = applyKissPresetV1546;
 applyKissPresetV1546 = function() {
   const result = beforeMultiKissApplyV1548();
-  if (result) syncMultiAvatarFullBodiesV1548(0);
+  if (result) {
+    syncMultiAvatarFullBodiesV1548(0);
+    if (!calibrateKissMouthXZV1552()) {
+      setStatus('Kiss mouths could not be aligned because a skinned mouth anchor is unavailable.', 'warn');
+    }
+  }
   return result;
 };
 
