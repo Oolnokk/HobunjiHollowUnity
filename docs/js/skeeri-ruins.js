@@ -203,8 +203,14 @@
     const unit=Number(deps?.TILE)||64;
     return {x:location.x*unit,y:location.z*unit,worldY:location.y};
   }
+  function lineClear(a,b){return window.DevRandomRuin?.flightClear?.(a.x,a.y,a.z,b.x,b.y,b.z)!==false;}
   function flightTo(session,state,to,phase,speed) {
     const actor=state.actor,start=actorLocation(actor,session);
+    if(!lineClear(start,to)){ // Never fly through stone: attacks wait for a clear line; a retreat backtracks along the line the bird came by.
+      if((phase==='return'||phase==='retreat')&&state.attackFrom&&lineClear(start,state.attackFrom))to=state.attackFrom;
+      else return false;
+    }
+    if(phase==='dive'||phase==='approach')state.attackFrom={x:start.x,y:start.y,z:start.z};
     const spatial=Math.hypot(to.x-start.x,to.z-start.z,to.y-start.y); // 3D distance determines consistent travel speed for multi-story drops.
     const line=window.PerchSupport?.line?.(state.id+':flight:'+state.serial++,point(session,start),point(session,to));
     if(!line || !window.PerchSupport.attach(actor,line,0))return false;
@@ -467,6 +473,7 @@
     if(state.cooldown>0||Math.abs(playerY-room.y)>3.5||distance(player,room)>9)return;
     const to={x:player.x,z:player.z,y:playerY+.48};
     if(flightTo(session,state,to,'dive',state.spec.speed)){snapshot.dives++;}
+    else state.cooldown=.8; // No clear line through the walls yet: try again shortly.
   }
   function updateBomber(session,state,dt,player,playerY) {
     if(state.segment){
@@ -487,7 +494,7 @@
     const to={x:player.x+(state.home.x-session.nest.x)*.15,
       z:player.z,y:playerY+5};
     if(overheadBlocked(to.x,to.z,playerY,to.y+.5)||overheadBlocked(player.x,player.z,playerY,session.nest.y)){state.cooldown=1.5;return;} // Roofed over by a balcony: hold at the nest and retry shortly. // A fast attack pass descends to player height, then immediately retreats to the inaccessible balcony.
-    flightTo(session,state,to,'approach',state.spec.speed);
+    if(!flightTo(session,state,to,'approach',state.spec.speed))state.cooldown=1.2; // Walls in the way: hold at the nest.
   }
   function update(dt=0) {
     const session=owner;

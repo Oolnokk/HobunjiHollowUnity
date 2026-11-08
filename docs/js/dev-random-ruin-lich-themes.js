@@ -17,6 +17,8 @@
   const ICE_PHYSICS=Object.freeze({accelerationFactor:.28,turningFactor:.22,retention20Hz:.892});
   const PLASM_DEPTH = 0.22; // Match Western Slope snow's visibly raised cap and .22-wide curved perimeter lip.
   const PLASM_PULL_TILES_S = 0.72; // Player drift toward the nearest patch's interior.
+  const PLASM_COLOR = 0x6a3fa8, PLASM_OPACITY = .9;
+  const PLASM_WORLD_UV_TILES = 3.2; // World tiles one repeat of the plasm PNG covers on explicit-tile patches (about the scale of a ground puddle).
   const PLASM_SINK_SECONDS = 2.8; // Time immersed in the pull before a full-body fatal sink.
   const ROCK_SFX = 'assets/audio/sfx/sfx_break_rock.mp3'; // Existing rock-break sample used for the three warning pulses.
   const OIL_TEXTURE = 'assets/textures/canvas.png'; // Same petroleum-surface texture as HarlyaoLichCombat.
@@ -805,7 +807,7 @@
     world.ownedTexture=texture;
     // Snow-style curved edges; an individual patch is contiguous at birth and
     // remains in place until the entire ruin is left or regenerated.
-    world.plasmMaterial=new THREE.MeshBasicMaterial({color:0x251c34,map:texture,transparent:true,opacity:.88,depthWrite:false});
+    world.plasmMaterial=new THREE.MeshBasicMaterial({color:PLASM_COLOR,map:texture,transparent:true,opacity:PLASM_OPACITY,depthWrite:false}); // The lighter violet the bomb puddles had: now the one look of ALL plasm (ground, platforms, pit).
     updatePlasmMesh(kit);
   }
   // Mirrors EnvironmentSurfaceMicroPlateau's snow: assemble the whole
@@ -867,12 +869,12 @@
     const t=nearest/.22; // Smooth curved shoulder without independently tapering the adjoining tiles.
     return t*t*(3-2*t);
   }
-  function makePlasmSurface(kit,room,withSeam=false) {
+  function makePlasmSurface(kit,room,withSeam=false,worldUv=false) {
     const patch=room.plasm;
     if(!patch?.size)return null;
     const axis=[0,.11,.22,.78,.89,1],width=axis.length;
     const pos=[],idx=[],uv=[],seam=[];
-    const {corners,mapping}=plasmTextureCorners(patch,room);
+    const {corners,mapping}=worldUv?{corners:new Map(),mapping:'world-tiled'}:plasmTextureCorners(patch,room); // Explicit-tile patches (platforms, the pit, bomb puddles) tile the PNG at a fixed world scale: stretching one texture over a big patch looked nothing like the ground plasm.
     const coordBounds=[Infinity,Infinity,-Infinity,-Infinity];
     if(mapping!=='edge-preserving-nine-slice'){
       for(const key of patch){
@@ -891,12 +893,13 @@
         const u=axis[i],v=axis[j];
         const factor=plasmHeightFactor(x+u,z+v,patch); // Concave corners use the same perimeter distance from either neighboring tile.
         pos.push(x+u,(room.plasmFloorY.get(key)??floorY(kit,x+.5,z+.5))+.006+PLASM_DEPTH*factor,z+v);
-        if(withSeam){const rim=Math.pow(1-factor,2);seam.push(.5*rim,.16*rim,.9*rim);} // Glow lives only on the sloped seam where the puddle meets the floor.
+        if(withSeam){const rim=Math.pow(1-factor,2);seam.push(.85*rim,.3*rim,1.4*rim);} // Glow lives only on the sloped seam where the puddle meets the floor.
         if(mapped){
           uv.push(a[0]*(1-u)*(1-v)+b[0]*u*(1-v)+c[0]*(1-u)*v+d[0]*u*v,
             a[1]*(1-u)*(1-v)+b[1]*u*(1-v)+c[1]*(1-u)*v+d[1]*u*v);
         }else{
-          uv.push((x+u-coordBounds[0])/Math.max(1,coordBounds[2]-coordBounds[0]),
+          if(worldUv)uv.push((x+u)/PLASM_WORLD_UV_TILES,(z+v)/PLASM_WORLD_UV_TILES);
+          else uv.push((x+u-coordBounds[0])/Math.max(1,coordBounds[2]-coordBounds[0]),
             (z+v-coordBounds[1])/Math.max(1,coordBounds[3]-coordBounds[1]));
         }
       }
@@ -1003,7 +1006,7 @@
     }
     if(!patch.plasm.size)return null;
     const ttl=Number(opts.ttl);
-    patch.mesh=makePlasmSurface(kit,patch,ttl>0);
+    patch.mesh=makePlasmSurface(kit,patch,ttl>0,true);
     if(!patch.mesh)return null;
     if(ttl>0){ // Temporary plasm is the SAME material as the permanent kind; only a faint violet glow along its seam tells them apart.
       patch.timed=true;patch.life=ttl;patch.ttl=ttl;
@@ -1053,7 +1056,7 @@
     for(const patch of [...world.timedPlasm]){
       patch.life-=dt;
       if(patch.life<=0){patch.dispose?.();continue;}
-      if(patch.material&&patch.life<1){const k=Math.max(0,patch.life);patch.material.opacity=.88*k;if(patch.glowMaterial)patch.glowMaterial.opacity=k;} // One-second fade, then gone.
+      if(patch.material&&patch.life<1){const k=Math.max(0,patch.life);patch.material.opacity=PLASM_OPACITY*k;if(patch.glowMaterial)patch.glowMaterial.opacity=k;} // One-second fade, then gone.
     }
   }
 
@@ -1136,8 +1139,7 @@
   function restorePlasmPresentation() {
     if(!world?.presentationSunk)return;
     world.presentationSunk=false;
-    const ground=window.DevRandomRuin?.getPlayerGroundSupportY?.();
-    if(Number.isFinite(ground))window.DevRandomRuin?.syncPlayerPresentationHeight?.(ground);
+    window.DevRandomRuin?.setPresentationSink?.(0);
   }
   function updatePlasm(kit,dt) {
     const player=kit.deps.player,tile=kit.deps.TILE;
@@ -1182,7 +1184,7 @@
     }
     const bodyHeight=Math.max(.9,Number(kit.deps.playerMesh?.userData?.portraitModelHeight)||1.8);
     world.presentationSunk=true;
-    window.DevRandomRuin?.syncPlayerPresentationHeight?.(baseY-world.sink*bodyHeight);
+    window.DevRandomRuin?.setPresentationSink?.(world.sink*bodyHeight); // Visible on EVERY plasm, shaft platforms included (they re-publish their own stand height each frame).
     if(world.sink>=1){
       world.sink=0;
       player.health=0;

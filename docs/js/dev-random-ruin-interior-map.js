@@ -56,6 +56,7 @@
 
   function clearRuinPresentationHeight() {
     lastPresentationElevation = null;
+    presentationSink = 0;
   }
 
   function syncRuinPresentationHeight(worldY) {
@@ -65,9 +66,13 @@
     return true;
   }
 
+  // Plasm immersion: a cosmetic depth subtracted from the presented stand height. A separate offset (not a rewrite of the
+  // stand height) because shaft platforms re-publish their own support height every frame, which used to erase the sink.
+  let presentationSink = 0;
+  function setPresentationSink(depth) { presentationSink = Math.max(0, Number(depth) || 0); }
   function getPlayerSupportY() {
     if (!ruin || deps?.getCurrentArea?.() !== MAP_ID) return null;
-    return Number.isFinite(lastPresentationElevation) ? lastPresentationElevation : null;
+    return Number.isFinite(lastPresentationElevation) ? lastPresentationElevation - presentationSink : null;
   }
   function getPlayerGroundSupportY() {
     if (!ruin || deps?.getCurrentArea?.() !== MAP_ID) return null;
@@ -1646,6 +1651,21 @@
     return floor<0?null:grid.levelToY(floor);
   }
 
+  // Flying creatures (ruin Skeeri): true when the straight segment between two world points (x/z in tiles, y in world
+  // units) stays out of every solid voxel of the shaft hub and the wing grids. Flight used to ignore walls entirely.
+  function flightClear(ax,ay,az,bx,by,bz){
+    if(!ruin?.shaftGrids?.size||deps.getCurrentArea?.()!==MAP_ID)return true;
+    const steps=Math.max(1,Math.ceil(Math.hypot(bx-ax,by-ay,bz-az)/.35));
+    for(let i=1;i<=steps;i++){
+      const t=i/steps,x=ax+(bx-ax)*t,y=ay+(by-ay)*t,z=az+(bz-az)*t;
+      for(const entry of ruin.shaftGrids.values()){
+        const g=entry.grid,c=g.xToCol(x),r=g.zToRow(z),l=g.yToLevel(y);
+        if(g.inBounds(c,r,l)&&g.isSolid(c,r,l))return false;
+      }
+    }
+    return true;
+  }
+
   function shaftCreatureCanEnter(actor,wx,wz,walkingPath=false){
     if(!ruin?.shaftGrids?.size||deps.getCurrentArea?.()!==MAP_ID)return true;
     const x=wx/deps.TILE,z=wz/deps.TILE; // Convert game pixels to grid world coordinates.
@@ -2245,7 +2265,7 @@
     },
     isShaftNetworkComplete:()=>ruin?.shaftLayerRuntime?ruin.shaftNetworkComplete===true:true, // No allocation in the hot Sanctum Great Door update path.
     isSlidingPushBlock:block=>ruin?.blockSlide?.block===block, // Keeps the separate floor-settling pass from adjusting a block mid-slide.
-    getGenerationProgress:()=>({phase:generationPhase,elapsedS:+((performance.now()-generationStartedMs)/1000).toFixed(1),attempts:lastGenerationAudit?.attempts?.length||0}),getDarknessSettings,setDebugBadgePart,getOcclusionMeshes:()=>ruin?.occlusionMeshes||null,setPlayerWorldPoint,getPlayerSupportY,getPlayerGroundSupportY,shaftSegmentHit,shaftCreatureCanEnter,syncShaftCreatureFloor,registerShaftGrid,unregisterShaftGrid:scope=>ruin?.shaftGrids?.delete(scope),setLevelRelativeSupport:on=>{if(ruin)ruin.levelRelativeSupport=on!==false;return !!ruin?.levelRelativeSupport;},getGroundSupportYAt,acceptFreeJumpLanding,setMechanismTarget,lockMechanism,unlockMechanism,mechanismInfo,syncPlayerPresentationHeight:syncRuinPresentationHeight,getState:()=>ruin?{mapId:MAP_ID,storyVault:ruin.storyVault ? {footprints:ruin.storyVaultFootprintCount,doorBlocks:false,puzzles:0,decalReady:ruin.storyVaultDecalReady,decalError:ruin.storyVaultDecalError||null} : null,seed:ruin.seed,theme:ruin.theme,specialBoss:ruin.specialBoss,ruinName:ruin.ruinName,hachutu:!!ruin.hachutu,shaftHub:!!ruin.shaftHub,singleRoomTrial:ruin.singleRoomTrial||null,noLoot:ruin.noLoot===true,shaftConnection:ruin.shaftConnection||null, // The mobile debug snapshot reports the laboratory's chosen puzzle and reward policy.shaftLayerRuntime:ruin.shaftLayerRuntime?.getState?.()||null,
+    getGenerationProgress:()=>({phase:generationPhase,elapsedS:+((performance.now()-generationStartedMs)/1000).toFixed(1),attempts:lastGenerationAudit?.attempts?.length||0}),getDarknessSettings,setDebugBadgePart,getOcclusionMeshes:()=>ruin?.occlusionMeshes||null,setPlayerWorldPoint,getPlayerSupportY,getPlayerGroundSupportY,shaftSegmentHit,shaftCreatureCanEnter,syncShaftCreatureFloor,registerShaftGrid,unregisterShaftGrid:scope=>ruin?.shaftGrids?.delete(scope),setLevelRelativeSupport:on=>{if(ruin)ruin.levelRelativeSupport=on!==false;return !!ruin?.levelRelativeSupport;},getGroundSupportYAt,acceptFreeJumpLanding,setMechanismTarget,lockMechanism,unlockMechanism,mechanismInfo,syncPlayerPresentationHeight:syncRuinPresentationHeight,setPresentationSink,flightClear,getState:()=>ruin?{mapId:MAP_ID,storyVault:ruin.storyVault ? {footprints:ruin.storyVaultFootprintCount,doorBlocks:false,puzzles:0,decalReady:ruin.storyVaultDecalReady,decalError:ruin.storyVaultDecalError||null} : null,seed:ruin.seed,theme:ruin.theme,specialBoss:ruin.specialBoss,ruinName:ruin.ruinName,hachutu:!!ruin.hachutu,shaftHub:!!ruin.shaftHub,singleRoomTrial:ruin.singleRoomTrial||null,noLoot:ruin.noLoot===true,shaftConnection:ruin.shaftConnection||null, // The mobile debug snapshot reports the laboratory's chosen puzzle and reward policy.shaftLayerRuntime:ruin.shaftLayerRuntime?.getState?.()||null,
     nativeV50Runtime:ruin.nativeV50Runtime?.getState?.()||null,
     runtimeWallPlanes:ruin.entranceWallPlanes||null,
     runtimeHallways:ruin.entranceHallways||null, // Persist the authoritative floor-zero generated audit after V50's iframe has detached every upper-floor preview root.
