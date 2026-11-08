@@ -30600,6 +30600,7 @@
           return tile ? tileSurfaceYInArea(tile, currentArea) : 0;
         },
         canOccupyAt,
+        creatureCanEnterTile, // NPC ranged/melee decisions use the same incline and cliff-step restrictions as live movement.
         damageCreature,
         damagePlayer,
         angleDiff,
