@@ -39,6 +39,24 @@
     return glyphGeometry;
   }
 
+  function makeInkMaterial(texture,options={},debugName='ruin-melody-scratchbone'){
+    const appearance={...options,transparent:true,depthWrite:false,side:THREE.DoubleSide};
+    const material=pngSurface?.makeMaterial
+      ? pngSurface.makeMaterial(THREE,texture,debugName,appearance)
+      : new THREE.MeshBasicMaterial({map:texture,alphaTest:pngSurface?.alphaTest?.() ?? .001,...appearance});
+    const previousCompile=material.onBeforeCompile; // Preserve the canonical sprite material's shader customization.
+    material.onBeforeCompile=shader=>{
+      previousCompile?.call(material,shader);
+      shader.fragmentShader=shader.fragmentShader.replace('#include <map_fragment>',`
+        #ifdef USE_MAP
+          diffuseColor.a *= texture2D(map, vUv).a;
+        #endif
+      `); // Same alpha-only shader used by Witch-bomb engraving glow: BLACK Scratchbone ink must not multiply emitted light to zero.
+    };
+    material.userData ||= {};
+    material.userData.scratchboneAlphaGlow=true; // Mobile diagnostic/debug test can identify actual alpha-only glowing materials.
+    return material;
+  }
   function candidatePoints(plate, layout, axis, hallway) {
     const along = axis === 'z' ? {x:0,z:1} : {x:1,z:0}; // The inscription reads along the hall's long axis, or X in a room.
     const across = axis === 'z' ? {x:1,z:0} : {x:0,z:1}; // Room plaques sit to one side of the trigger, not on its working surface.
@@ -141,8 +159,13 @@
     function clearParts() {
       for (const part of [...group.children]) {
         group.remove(part);
-        part.material?.dispose?.();
-        if (part.geometry && !part.geometry.userData?.devRuinSharedPrimitive) part.geometry.dispose?.();
+        const stack=[part]; // Additive note halos are children of each glyph; all owned material passes must retire on reroll.
+        while(stack.length){
+          const node=stack.pop();
+          if(node.children?.length)stack.push(...node.children);
+          node.material?.dispose?.();
+          if(node.geometry && !node.geometry.userData?.devRuinSharedPrimitive)node.geometry.dispose?.();
+        }
       }
     }
 
@@ -171,9 +194,7 @@
         const texture=getGlyphTexture(note); // Reuses the authored Scratchbone silhouette through the canonical sprite pipeline.
         const appearance={color:0xffda70,transparent:true,side:THREE.DoubleSide,
           depthWrite:false,polygonOffset:true,polygonOffsetFactor:-1,polygonOffsetUnits:-2};
-        const material=pngSurface?.makeMaterial
-          ? pngSurface.makeMaterial(THREE,texture,'ruin-melody-scratchbone-' + (index+1),appearance)
-          : new THREE.MeshBasicMaterial({map:texture,alphaTest:pngSurface?.alphaTest?.() ?? .001,...appearance});
+        const material=makeInkMaterial(texture,appearance,'ruin-melody-scratchbone-' + (index+1));
         const glyph = new THREE.Mesh(getGlyphGeometry(),material);
         glyph.name = 'dev_ruin_melody_scratchbone_' + (index+1);
         glyph.scale.set(.26,.28,1);
@@ -185,6 +206,24 @@
         glyph.userData.hobunjiGroundSurface = true;
         glyph.userData.melodyNoteIndex = note;
         glyph.raycast = () => {}; // The glyph is a clue, not a separate activator.
+        const glowMaterial=makeInkMaterial(texture,{
+          color:0xffbb62,transparent:true,opacity:.16,depthTest:true,depthWrite:false,
+          blending:THREE.AdditiveBlending,polygonOffset:true,polygonOffsetFactor:-2,polygonOffsetUnits:-2,
+        },'ruin-melody-additive-glow-' + (index+1));
+        const halo=new THREE.Mesh(getGlyphGeometry(),glowMaterial); // Matching engraving-style light pass, never dark sprite pixels.
+        halo.name='ruin-melody-scratchbone-glow-'+index;
+        halo.scale.set(1.6,1.65,1);
+        halo.position.z=.005;
+        halo.raycast=()=>{};
+        halo.renderOrder=(glyph.renderOrder||0)+1;
+        halo.frustumCulled=false;
+        halo.onBeforeRender=()=>{
+          const active=!!glyph.userData.melodyGlowActive;
+          const seconds=Number(window.performance?.now?.()??Date.now())/1000;
+          glowMaterial.opacity=(active?1.15:.16)*(active?(.82+.18*Math.sin(seconds*8)):1);
+        }; // The Witch-bomb's persistent additive pulse remains visible without relying on scene lighting.
+        glyph.userData.melodyGlowMaterial=glowMaterial;
+        glyph.add(halo);
         group.add(glyph);
       }
       group.position.set(nextPlacement.x,nextPlacement.y,nextPlacement.z);
@@ -211,5 +250,5 @@
     };
   }
 
-  window.RuinMelodyGlyphDecal = Object.freeze({create,layoutFor});
+  window.RuinMelodyGlyphDecal = Object.freeze({create,layoutFor,makeInkMaterial});
 })();
