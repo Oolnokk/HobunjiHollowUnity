@@ -40,6 +40,8 @@ const makeCanvas=()=>{
   const paint={operations:[],globalCompositeOperation:'source-over',fillStyle:'',
     clearRect(){this.operations.push('clear');},
     drawImage(){this.operations.push('draw');},
+    set filter(value){this.operations.push('filter:'+value);},
+    get filter(){return 'none';},
     fillRect(){this.operations.push('fill:'+this.globalCompositeOperation+':'+this.fillStyle);}};
   maskPaints.push(paint);
   return {width:0,height:0,getContext:()=>paint};
@@ -53,7 +55,11 @@ const context={console,THREE,Math,Promise,Number,Map,Set,Date,
 };
 context.window=context;context.globalThis=context;
 const sounds=[]; // Captures the shipped audio adapter's real semantic SFX calls in this no-speaker gameplay fixture.
-context.AudioSystem={playObjectSfxKey:(key,volume,pitch)=>sounds.push({key,volume,pitch})};
+context.AudioSystem={
+  objectSfxConfig:()=>({pick:{url:'assets/audio/sfx/sfx_pick.mp3',preload:true}}),
+  objectSfxDebugSnapshot:()=>({last:{key:'pick',found:true,url:'assets/audio/sfx/sfx_pick.mp3',preloaded:true,readyState:4}}),
+  playObjectSfxKey:(key,volume,pitch)=>sounds.push({key,volume,pitch}),
+};
 function load(file) {
   const module={exports:{}};context.module=module;
   vm.runInNewContext(read(file),context,{filename:file});
@@ -183,15 +189,17 @@ const alphaShader={fragmentShader:'#include <map_fragment>'};
 gate.glyphOuterGlows[0].material.onBeforeCompile(alphaShader);
 assert(alphaShader.fragmentShader.includes('diffuseColor.a *= texture2D(map, vUv).a'),
   'the additive exterior glow must sample glyph alpha instead of multiplying by the dark PNG RGB');
-assert(gate.glyphGlows.every(glow=>glow.material.opacity===.07),
-  'inactive notes retain only a faint inner glow');
+assert(gate.glyphGlows.every(glow=>glow.material.opacity===.11),
+  'inactive carved notes retain a soft white inner glow');
 assert.equal(gate.glyphOuterGlows.length,gate.song.notes.length,'every note has a broader additive halo');
-assert(maskPaints.length>0&&maskPaints.every(p=>p.operations.includes('fill:source-in:#ffffff')),
-  'black Scratchbone PNG ink is replaced by a white alpha mask that can actually glow');
+assert(maskPaints.some(p=>p.operations.includes('fill:source-in:#ffffff')),
+  'black Scratchbone PNG ink is replaced by a white alpha mask');
+assert(maskPaints.some(p=>p.operations.includes('filter:blur(7px)')),
+  'the outer light radius uses a blurred alpha canvas, not a giant crisp glyph copy');
 assert(gate.glyphOuterGlows.every(glow=>glow.material.map?.needsUpdate),
   'every outdoor halo receives the completed white-alpha canvas texture');
-assert(gate.glyphOuterGlows.every(glow=>glow.material.opacity===.02),
-  'the broad halo remains dim until its timed note is active');
+assert(gate.glyphOuterGlows.every(glow=>glow.material.opacity===.045),
+  'the broad halo remains dim and white until its timed note is active');
 assert.equal(originalFacade.visible,false,'the original den facade is concealed by the cliff door');
 const lateFacade=new Mesh(new Geometry(),new Material({color:0x888888}));
 lateFacade.userData.denId='den1';denFacades.add(lateFacade);
@@ -216,17 +224,22 @@ Exterior.update(.01,area);
 assert.equal(opened,0,'stepping onto the plate must not auto-equip or open an instrument');
 assert.equal(gate.lastDown,true,'standing on the real raised plate activates the melody clue');
 assert(gate.scoreBoard.visible,'the exterior Scratchbone score lights up on the active raised plate');
-assert(sounds.some(event=>event.key==='pick'),'the occupied outdoor song plate starts the recorded mine-pick beat');
+assert(sounds.some(event=>event.key==='pick'&&event.volume===.72&&event.pitch===1),
+  'the first timed beat dispatches the configured recorded mine-pick at a clear downbeat volume and normal playback rate');
+assert(context.RuinInteractionAudio.debugSnapshot().metronomeSource==='assets/audio/sfx/sfx_pick.mp3',
+  'mobile audio diagnostics expose the actual recorded pick file');
 assert.equal(sounds.filter(event=>event.key==='stoneActivator').length,1,
   'stepping onto the outdoor melody plate plays exactly one recorded activator cue');
-assert(gate.glyphGlows.some(glow=>glow.material.opacity===.98),
-  'the active beat is nearly fully illuminated, not an imperceptible tint change');
-assert(gate.glyphOuterGlows.some(glow=>glow.material.opacity===.6),
-  'a wider additive halo visibly lights the current note while its window is open');
+assert(gate.glyphGlows.some(glow=>glow.material.opacity>.11&&glow.material.opacity<.80),
+  'the current yellow beat starts a smooth brightness transition from white');
+assert(gate.glyphOuterGlows.some(glow=>glow.material.opacity>.045&&glow.material.opacity<.56),
+  'the visible glow radius smoothly expands via static blurred outer light, not scale');
+const immutableInkGeometry=gate.glyphs.map(glyph=>glyph.geometry); // No beat may replace or scale a carved note mesh.
+const immutableHaloGeometry=gate.glyphOuterGlows.map(glow=>glow.geometry); // Wide blurred light uses fixed-size geometry.
 const wrong=(gate.song.notes[0].index+1)%8; // Deliberately incorrect sounded pitch: test input feedback without granting progress.
 for(const handler of handlers.get('hobunji-kurraya-puzzle-note')||[])
   handler({detail:{area,noteIndex:wrong}});
-assert(gate.flashRemaining>0&&gate.glyphs[0].material.color.hex===0xff6a65,
+assert(gate.flashRemaining>0&&gate.glyphs[0].material.color.hex===0xff6666,
   'wrong notes flash the current beat red rather than failing silently');
 Exterior.update(.5,area);
 assert.equal(gate.flashRemaining,0,'error feedback clears without requiring another note');
@@ -234,6 +247,8 @@ const initialPickCount=sounds.filter(event=>event.key==='pick').length;
 Exterior.update(gate.song.secondsPerTick*4.02,area);
 assert.equal(sounds.filter(event=>event.key==='pick').length,initialPickCount+1,
   'each actual quarter-note boundary adds exactly one mine-pick click');
+assert(sounds.some(event=>event.key==='pick'&&event.volume===.54&&event.pitch===1),
+  'the subsequent quarter-note strikes use the unpitched mining pick recording with a softer accent');
 
 const scoreHeight=gate.scoreBoard.position.y; // The exterior score must remain pinned to its wall or pillar during door animation.
 player.x=(gate.plate.x+1.2)*64;player.y=(gate.plate.z+1.2)*64;
@@ -253,8 +268,8 @@ for(const handler of handlers.get('hobunji-kurraya-puzzle-note')||[])
   handler({detail:{area,noteIndex:wrong}});
 assert(gate.flashRemaining>0&&gate.glyphs[0].material.color.hex===0xff6a65,
   'a note sounded during the silent measure flashes the expected glyph red');
-assert(gate.glyphGlows[0].material.opacity===.98,
-  'error feedback remains bright even when no score glyph is currently active');
+assert(gate.glyphGlows[0].material.opacity===.86,
+  'red error feedback remains bright even during a rest while the white/yellow focus is eased');
 player.x=(gate.plate.x+1.2)*64;player.y=(gate.plate.z+1.2)*64;
 Exterior.update(.01,area);
 player.x=gate.plate.x*64;player.y=gate.plate.z*64;
@@ -270,6 +285,10 @@ for(const note of song.notes){
     handler({detail:{area,noteIndex:note.index}});
 }
 assert(gate.solved,'the procedural one/two-measure outdoor score opens the gate');
+assert(gate.glyphs.every((glyph,i)=>glyph.geometry===immutableInkGeometry[i]&&glyph.scale.x===1&&glyph.scale.y===1),
+  'ink plane geometry and scale stay constant across every musical note, success and failure');
+assert(gate.glyphOuterGlows.every((glow,i)=>glow.geometry===immutableHaloGeometry[i]&&glow.scale.x===1&&glow.scale.y===1),
+  'outer halo geometry stays fixed while alpha changes the apparent glow radius');
 assert.equal(opened,0,'the entire outdoor song must be played with an instrument the player opened themselves');
 assert.equal(closed,0,'solving an outdoor melody must not dismiss a manually opened instrument');
 assert(saved.get(mapId).tier>=1,'the outside difficulty tier persists with the cave signature');
