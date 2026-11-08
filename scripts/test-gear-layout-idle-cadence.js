@@ -23,6 +23,7 @@ const info = {
   nodeType: 1,
   style: { setProperty() { styleWrites++; } },
   querySelector() { return null; },
+  querySelectorAll() { return []; },
   getBoundingClientRect() { layoutReads++; return { width: 100 }; },
   closest(selector) { return selector.includes('#invInfo') ? this : null; },
 };
