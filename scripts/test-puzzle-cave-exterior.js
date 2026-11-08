@@ -266,7 +266,7 @@ Exterior.update(song.totalTicks*song.secondsPerTick+.10,area);
 assert.equal(gate.session.snapshot().activeIndex,-1,'the repeated outdoor melody has a silent measure');
 for(const handler of handlers.get('hobunji-kurraya-puzzle-note')||[])
   handler({detail:{area,noteIndex:wrong}});
-assert(gate.flashRemaining>0&&gate.glyphs[0].material.color.hex===0xff6a65,
+assert(gate.flashRemaining>0&&gate.glyphs[0].material.color.hex===0xff6666,
   'a note sounded during the silent measure flashes the expected glyph red');
 assert(gate.glyphGlows[0].material.opacity===.86,
   'red error feedback remains bright even during a rest while the white/yellow focus is eased');
