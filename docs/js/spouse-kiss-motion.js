@@ -9,7 +9,7 @@
   const MOUTH_HEIGHT_FRACTION = .82; // Floor-relative portrait mouth proxy; scaled by actual rig height.
   const MAX_SINK_PCT = 82; // Upper safety cap; the actual knee limit is based on the leg rig, not this percent alone.
   const KNEEL_LEG_FRACTION = .95; // Spouse-only deep-kneel limit; regular stances retain their original 55%.
-  const MAX_BOW_DEG = 85; // A very large height difference may require the taller partner to nearly lie forward.
+  const MAX_BOW_DEG = 89.5; // At extreme height ratios the larger spouse must nearly lie forward, without sinking below the floor.
   const MAX_DISTANCE = .95; // A deliberate close-range action; avoids sliding partners through distant obstacles.
   const SOURCE = 'spouse-kiss'; // Composer/input-claim ownership; never replaces other effect owners.
   const clamp = (n, lo, hi) => Math.min(hi, Math.max(lo, n));
@@ -154,6 +154,25 @@
     const approach = Math.max(0, dist - contactGap); // Move only the spouse, so player collider and camera stay stable.
     const approachX = dist > .0001 ? (playerPoint.x - npcPoint.x) * approach / dist : 0;
     const approachZ = dist > .0001 ? (playerPoint.z - npcPoint.z) * approach / dist : 0;
+    // A bow swings the mouth forward. The taller body needs room to retreat
+    // instead of sweeping its head through walls or a second character.
+    const tallerPoint = isPlayerTaller ? playerPoint : npcPoint;
+    const retreatHeading = isPlayerTaller
+      ? Math.atan2(npcPoint.x - playerPoint.x, npcPoint.z - playerPoint.z)
+      : Math.atan2(playerPoint.x - npcPoint.x, playerPoint.z - npcPoint.z);
+    const walkable = window.NpcPathfinding?.isNpcPositionWalkable;
+    if (height.tallerBowForwardWorld > .05 && typeof walkable === 'function' && walker.area) {
+      const distance = height.tallerBowForwardWorld;
+      const steps = Math.max(1, Math.ceil(distance / .3)); // One-time corridor clearance check, not a frame-loop path search.
+      for (let i = 1; i <= steps; i++) {
+        const length = distance * i / steps;
+        if (walkable(walker.area, tallerPoint.x - Math.sin(retreatHeading) * length,
+          tallerPoint.z - Math.cos(retreatHeading) * length) === false) {
+          lastError = 'not-enough-clear-floor-for-deep-bow';
+          return false;
+        }
+      }
+    }
 
     const npcSink = { legs: npcLegs, lower: [{ obj: npcRigRoot, factor: () => npcRigRoot.scale?.y || 1 }] };
     const npcTiltPivot = walker._npcRunLeanPivot || (walker.avatarGroup?.parent?.name === 'npc_run_lean_visual'
