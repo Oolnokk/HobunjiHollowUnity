@@ -83,6 +83,7 @@
     const brazierMat=tintedStone('#665346',0x665346);
     const materials=[material,plateMat,gateMat,brazierMat]; // Disposed together with the geometry and owned interactive controls.
     const wingFlameVisuals=[]; // Owns the player's campfire particle emitters for every ignited wing brazier.
+    const brazierLights=[]; // Kanthic-only completed-wing flames feed the shared darkness overlay without adding real Three.js lights.
     const states=[],gridScopes=[],added=new Set(),surfaces=[]; // Runtime gate/puzzle records, registered voxel scopes, map floor keys and terrain rectangles.
     const ownedControls=new Set(); // Every wing brazier, fire-source and authored puzzle control is released on reroll or failed setup.
     function addControl(control){ruin.controls.push(control);ownedControls.add(control);}
@@ -94,6 +95,7 @@
     let activeRoot=group; // Mesh batching writes into the currently composed story's subscene.
     const owner={group,states,disposed:false,complete:false,lit:0,total:plan.totalBraziers,
       nativeTotal:plan.nativeFloorCount||0,nativeLit:0,geometryCount:0}; // The Great Door requires BOTH composed wings and real V50 floor braziers. // Exposed to mobile diagnostics.
+    owner.lightSources=()=>owner.disposed?[]:brazierLights; // Exposes already-created light records without scene traversals during the compositor's 60 Hz pass.
     owner.updateCompletion=()=>{
       owner.complete=owner.lit+owner.nativeLit===owner.total+owner.nativeTotal;
       ruin.shaftNetworkComplete=owner.complete;
@@ -307,6 +309,9 @@
         flame.position.set(bx,floor.y+1.27,bz);flame.visible=false;activeRoot.add(flame);
         const flameVisual=root.PersistentGroundFire?.attachCampfireFlame?.(flame,{scale:1.1,rateScale:.95});
         if(flameVisual)wingFlameVisuals.push(flameVisual); // Uses the exact player-placeable campfire emitter recipe.
+        const brazierLight={x:bx,y:floor.y+1.4,z:bz,floorY:floor.y,radius:10,strength:.98,
+          color:[255,139,61],active:false}; // A solved Kanthic wing brightens its chamber; other lich themes keep their original atmosphere.
+        if(ruin.theme==='kanthic')brazierLights.push(brazierLight);
         const brazier={id:wing.goalBrazierId,wingId:wing.id,lit:false,flame,pedestal};
         record.braziers.push(brazier);
         addControl({
@@ -315,8 +320,9 @@
           onPress:()=>{
             if(brazier.lit||Math.abs(Number(getPlayerY?.())-floor.y)>.8)return; // A brazier on floor 4 cannot be lit through the deck from a lower floor.
             if(record.solved<record.challenges.length){options.showToast?.('Complete the wing challenges first.',false);return;}
-            brazier.lit=true;flame.visible=true;owner.lit++;
+            brazier.lit=true;flame.visible=true;brazierLight.active=true;owner.lit++; // Illumination follows the existing completion interaction, never a parallel trigger.
             owner.updateCompletion();
+            if(ruin.theme==='kanthic')root.CloudForestFog?.refreshLightingOverlay?.(); // The lit wing becomes visible on the first rendered frame, including mobile.
             options.showToast?.(owner.complete?'All shaft braziers are lit.':'Wing brazier ignited.',true);
             options.onStateChange?.();
           }
