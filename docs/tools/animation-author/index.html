@@ -13808,13 +13808,14 @@ function kissTransformV1546(who, time, solution) {
   const first = who === 'leader';
   const taller = first ? solution.taller === 'first' : solution.taller === 'second';
   const bend = pose.blend * (taller ? 1 : .35);
+  const bowRetreat = taller ? solution.tallerBowForwardWorld * pose.blend : 0; // Tall actor steps back while their upper body bows into the kiss.
   return {
     position: {
       x: 0,
       y: taller ? -solution.tallerSinkWorld * pose.blend : 0,
-      z: first ? .09 * pose.blend : .52 - .09 * pose.blend,
+      z: first ? -bowRetreat : .52 - .18 * pose.blend + bowRetreat,
     },
-    rotationDeg: { x: (first ? 1 : -1) * 9 * bend, y: first ? 0 : 180, z: 0 },
+    rotationDeg: { x: taller ? solution.tallerBowDeg * pose.blend : 3 * bend, y: first ? 0 : 180, z: 0 },
     scale: { x: 1, y: 1, z: 1 },
   };
 }
@@ -13893,8 +13894,10 @@ function updateKissHeightReadoutV1546() {
     solution.secondHeight.toFixed(2) + ' model units. ' +
     (solution.taller === 'first' ? 'First' : 'Second') + ' actor ' +
     solution.pose + 's ' + solution.tallerSinkPct.toFixed(1) +
-    '%; remaining lip-height gap ' + solution.remainingGap.toFixed(3) +
-    '. The knee/body-sink channel is separate from collision and adapts even to extreme height ratios.';
+    '% and bows ' + solution.tallerBowDeg.toFixed(1) + '°. Tall spouse steps back ' +
+    solution.tallerBowForwardWorld.toFixed(2) + ' units to make room for the head. ' +
+    'Remaining estimated lip-height gap ' + solution.remainingGap.toFixed(3) +
+    '. The runtime keeps procedural feet grounded and refuses physically unreachable pairs.';
 }
 
 function installKissPresetUiV1546() {
@@ -13953,6 +13956,8 @@ serializeAnimationProject = function() {
     adaptation: 'floor-relative-mouth-heights-and-authored-body-sink-percent',
     mouthHeightRatio: window.SpouseKissMotion.MOUTH_HEIGHT_FRACTION,
     maxBodySinkPct: window.SpouseKissMotion.MAX_SINK_PCT,
+    deepKneelLegFraction: window.SpouseKissMotion.KNEEL_LEG_FRACTION,
+    maxTorsoBowDeg: window.SpouseKissMotion.MAX_BOW_DEG,
     contactAtSeconds: 1.02, durationSeconds: window.SpouseKissMotion.DURATION_S,
     heightSolution: clone(animationAuthor.kissHeightSolutionV1546 || null),
   };
