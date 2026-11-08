@@ -113,7 +113,7 @@
     state.loading = true;
     const create = actor.isRuinSkeeri ? window.SkeeriRuins?.createRig : kind(actor)==='pingdort' ? window.PingdortRegistration?.createRig : window.TzatzulRegistration?.createRig; // The configured species supplies its own three sprite PNGs.
     if (!create) { state.loading = false; return; }
-    Promise.resolve().then(() => create(actor.tzatzulIdentity)).then(rig => {
+    Promise.resolve().then(() => create(actor.isRuinSkeeri ? actor : actor.tzatzulIdentity)).then(rig => { // Skeeri receive their ruin/lich palette; Tzatzul retain their existing individual tint identity.
       if (!rig?.root || !rig?.dispose) throw new Error('Flying rig renderer did not return a disposable root');
       if (state.removed || tracked.get(actor) !== state || actor.health <= 0
         || actor.avatarRef?.group !== group || !group.parent || actor._wildlifeVisualsReleased) {
