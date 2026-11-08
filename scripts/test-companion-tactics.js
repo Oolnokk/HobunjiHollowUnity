@@ -87,7 +87,7 @@ const victim = { health: 1000, maxHealth: 1000, stamina: 100, maxStamina: 100, f
 resources.initEntity(victim);
 context.CompanionOffense.damageCreature((target, amount, x, y, kb, opts) => resources.applyDamage(target, amount, opts), actor, victim, 10, 0, 0, 0, { afflictionBonuses: { bleedingHealth: 1 } });
 const tacticBuildup = resources.getAffliction(victim, 'bleedingHealth'); // Independent Attack Power replaces the previous final-Health-damage status formula.
-assert.ok(tacticBuildup > 0 && tacticBuildup < resources.attackPowerForAttack({}), 'Power's affliction focus reduces status buildup without using its damage boost');
+assert.ok(tacticBuildup > 0 && tacticBuildup < resources.attackPowerForAttack({}), 'Power focus reduces status buildup without using its damage boost');
 const removeStackedProvider = context.CompanionOffense.registerProvider('stacked-test', () => ({ damage: 1.3, affliction: 1.4 })); // Simulates existing Whistle/training bonuses alongside a tactical focus.
 resources.removeAffliction(victim, 'bleedingHealth', 1000);
 context.CompanionOffense.damageCreature((target, amount, x, y, kb, opts) => resources.applyDamage(target, amount, opts), actor, victim, 10, 0, 0, 0, { afflictionBonuses: { bleedingHealth: 1 } });
