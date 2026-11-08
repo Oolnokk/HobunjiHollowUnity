@@ -1404,6 +1404,11 @@
       // only fragments at this actor's actual standing elevation. Unknown actor
       // ownership and unsupported shaders deliberately retain full occlusion.
       overlayHidden = hideObjects([...overlayMeshes, ...(tintOverlay ? tintCovers : [])]);
+      // Multiple actor-elevation groups use the same depth-occluder registries.
+      // Resolve visible entries once after hiding overlay participants; their
+      // visibility is restored between groups, but membership does not change.
+      const cutoutDepthMeshes = canLockColorMask ? collectVisible(pngDepthRegistry, scene) : null; // Reused by every grouped depth replay in this render.
+      const protectedDepthMeshes = canLockColorMask ? collectVisible(protectedCoverRegistry, scene) : null; // Same occluders, independent of actor elevation.
       if (scissored) glState.setScissorTest(false);
       renderer.clearStencil?.(); // Clear the full stencil buffer so stale bits outside this frame's scissor cannot leak into later consumers.
       if (scissored) glState.setScissorTest(true);
@@ -1414,7 +1419,7 @@
         renderer.clearDepth();
         const prepPerf = window.PerfProfiler?.begin('held-overlay: depth material prep');
         const depthMaterialStates = canLockColorMask
-          ? prepareCutoutDepthMaterials(collectVisible(pngDepthRegistry, scene), collectVisible(protectedCoverRegistry, scene))
+          ? prepareCutoutDepthMaterials(cutoutDepthMeshes, protectedDepthMeshes)
           : prepareNonGroundDepthMaterials(scene);
         if (canLockColorMask) {
           colorBuffer.setMask(false);
