@@ -1,0 +1,34 @@
+name: Animation Author URL scene browser smoke
+
+on:
+  pull_request:
+    paths:
+      - 'docs/tools/animation-author/index.html'
+      - 'docs/js/spouse-kiss-motion.js'
+      - 'docs/config/npcs/hobunji-starter-npc-database.json'
+      - 'scripts/smoke-animation-author-scene-url.js'
+      - '.github/workflows/smoke-animation-author-scene-url.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  animation-url-scene:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate the browser smoke script
+        run: node --check scripts/smoke-animation-author-scene-url.js
+      - name: Install real Chromium
+        run: |
+          npm install --no-save --package-lock=false playwright@1.55.1 three@0.128.0
+          npx playwright install --with-deps chromium
+      - name: Serve local editor and NPC assets
+        run: python3 -m http.server 8000 --directory docs >/tmp/hobunji-anim-author-http.log 2>&1 &
+      - name: Rebuild Pahu and Leaf from URL and exercise real Three.js author/exports
+        run: node scripts/smoke-animation-author-scene-url.js
