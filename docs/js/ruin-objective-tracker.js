@@ -21,7 +21,7 @@
   const POLL_MS = 250;
   const STORAGE_KEY = 'hobunjiRuinTracker';
 
-  let root = null, titleEl = null, hintEl = null, listEl = null;
+  let root = null, titleEl = null, hintEl = null, listEl = null, seedEl = null;
   let lastAt = -Infinity;
   let lastSignature = '';
   let visible = false;
@@ -43,6 +43,7 @@
         opacity:0;transform:translateX(-12px);transition:opacity .35s ease,transform .35s ease;}
       #ruinObjectiveTracker.show{opacity:1;transform:none;}
       #ruinObjectiveTracker .rot-title{color:#f9e28a;font-size:14px;margin-bottom:4px;letter-spacing:.02em;}
+      #ruinObjectiveTracker .rot-seed{font-size:9px;opacity:.5;margin-top:5px;letter-spacing:.04em;font-weight:500;}
       #ruinObjectiveTracker .rot-hint{font-weight:500;font-style:italic;font-size:12px;color:#d9e6d4;margin:-2px 0 5px;white-space:normal;}
       #ruinObjectiveTracker .rot-row{display:flex;justify-content:space-between;gap:14px;white-space:nowrap;}
       #ruinObjectiveTracker .rot-row.done{color:#9fe0a6;}
@@ -59,7 +60,9 @@
     hintEl = document.createElement('div');
     hintEl.className = 'rot-hint';
     listEl = document.createElement('div');
-    root.append(titleEl, hintEl, listEl);
+    seedEl = document.createElement('div');
+    seedEl.className = 'rot-seed';
+    root.append(titleEl, hintEl, listEl, seedEl);
     document.body.appendChild(root);
     return root;
   }
@@ -101,13 +104,15 @@
     return '';
   }
 
-  function render(title, rows) {
+  function render(title, rows, seed = null) {
     ensureDom();
     if (!root) return;
-    const signature = title + '|' + rows.map(r => r.key + ':' + (r.text ?? (r.have + '/' + r.need))).join('|');
+    const signature = title + '|' + seed + '|' + rows.map(r => r.key + ':' + (r.text ?? (r.have + '/' + r.need))).join('|');
     if (signature === lastSignature) return;
     lastSignature = signature;
     titleEl.textContent = title || 'Ancient Ruin';
+    seedEl.textContent = seed == null ? '' : 'seed ' + seed;
+    seedEl.style.display = seed == null ? 'none' : '';
     const hint = nextHint(rows);
     hintEl.textContent = hint;
     hintEl.style.display = hint ? '' : 'none';
@@ -147,7 +152,7 @@
     try { sanctum = window.DevRandomRuinSanctum?.getState?.() || null; } catch (_) {}
     const rows = buildRows({ shaft, sanctum });
     if (!rows.length) { setVisible(false); return; }
-    render(window.DevRandomRuin?.getTitle?.() || '', rows);
+    render(window.DevRandomRuin?.getTitle?.() || '', rows, window.DevRandomRuin?.getSeed?.() ?? null);
     setVisible(true);
   }
 
