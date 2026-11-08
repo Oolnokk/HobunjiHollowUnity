@@ -13828,7 +13828,19 @@ function kissActorHeightV1546(actor) {
 function kissPairHeightV1546() {
   const pair = romanticDancePair(); // Uses the same selected-actor pairing rules as the romantic dance.
   if (!pair.leader || !pair.partner) return { ...pair, solution: null };
-  const solution = window.SpouseKissMotion?.solveHeights?.(kissActorHeightV1546(pair.leader), kissActorHeightV1546(pair.partner)) || null;
+  const firstHeight = kissActorHeightV1546(pair.leader);
+  const secondHeight = kissActorHeightV1546(pair.partner);
+  const tallerActor = firstHeight >= secondHeight ? pair.leader : pair.partner; // The actual taller model supplies the anatomical knee limit.
+  const feet = tallerActor.rigFeetPreview; // Reuses exactly the procedural leg solver that drives the visible preview.
+  const scaleY = Math.max(.001, Math.abs(Number(tallerActor.visualOffset?.scale?.y) || 1));
+  const anatomy = feet?.motionAnatomy?.() || [];
+  const lengths = anatomy.map(record => Number(record?.length)).filter(length => Number.isFinite(length) && length > 0);
+  const legWorld = lengths.length ? Math.min(...lengths) * scaleY : undefined;
+  const hipWorld = Number.isFinite(Number(feet?.standingPosteriorY)) ? feet.standingPosteriorY * scaleY : undefined;
+  const solution = window.SpouseKissMotion?.solveHeights?.(firstHeight, secondHeight, {
+    ...(legWorld ? { tallerLegLengthWorld: legWorld } : {}),
+    ...(hipWorld ? { tallerHipHeightWorld: hipWorld } : {}),
+  }) || null; // The author and gameplay now agree about physically reachable knees.
   return { ...pair, solution };
 }
 
