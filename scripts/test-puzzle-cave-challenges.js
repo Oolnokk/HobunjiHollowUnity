@@ -114,6 +114,16 @@ const timed=compose({THREE,parent,room,id:'music-test',kind:'timedMelody',y:0,ar
   music,events,puzzleCaveMelody:Song,songOptions:{difficulty:5},DynamicSurfaces:dynamicSurfaces,AreaFootprintBlockers:areaFootprints,
 });
 assert.equal(timed.song.measures,2);
+const chamber=parent.children.find(child=>child.name==='ruin-layer-challenge-music-test');
+const musicPosts=chamber.children.filter(child=>/^puzzle-cave-melody-pillar-\\d+$/.test(child.name));
+assert.equal(musicPosts.length,2,'a cave melody has two symmetrical freestanding carved pillars');
+assert.equal(musicPosts[0].position.y,musicPosts[1].position.y,'both music posts have identical heights');
+assert(Math.abs(musicPosts[0].position.x+musicPosts[1].position.x-2*gateX)<.001,
+  'both musical pillars are equally spaced on opposite sides of the cave doorway');
+assert(timed.scorePanel?.children.length===timed.song.notes.length,
+  'headless fallback still places every numbered note on the paired pillars');
+for(let i=0;i<timed.song.notes.length;i++)assert.equal(timed.glyphs[i].position.x,musicPosts[i%2].position.x,
+  'all fallback glyphs use authored pillar columns in their real melody order');
 assert.equal(blockers.size,2,'music cave registers both the lockable slab and permanently unbreakable stone flanks');
 const timedCollider=[...blockers.values()].find(record=>!record.id.endsWith(':permanent-rock'));
 assert(timedCollider.enabled(),'the music gate starts physically locked');
