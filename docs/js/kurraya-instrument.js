@@ -664,6 +664,7 @@
   window.KurrayaInstrument = { init, buildAssembly, newTwitchState, triggerTwitch, updateTwitch,
     beginPlayerKurraya, playPlayerKurrayaNote, endPlayerKurraya, playerHeldPose, applyPlayerHeldPose, playerRightHandPose, playerGripAnimationState, playerKurrayaHandTarget,
     beginFlute, playFluteNote, endFlute, fluteHandTarget, notePoseAt, fluteDiagnostics, prepareFluteCanvas,
+    activePlayerInstrument: () => fluteState.active ? 'flute' : playerKurrayaNote.active ? 'kurraya' : null, // Allocation-free neutral-stance owner for the pre-render body composer.
     kurrayaHandDiagnostics: () => ({ active: playerKurrayaNote.active, noteCount: playerKurrayaNote.noteCount, notePlaying: playerKurrayaNote.startedAt !== null && performance.now() - playerKurrayaNote.startedAt < Math.max(50,(Number(window.HeldActionAnimations?.kurrayaPlayNote?.durationS)||0.32)*1000) }),
   };
 })();
