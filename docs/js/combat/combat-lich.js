@@ -54,12 +54,6 @@
   const TYPE_ORDER = Object.freeze(['tothal', 'hronal', 'kanthic']); // Stable order used by the dev-spawner buttons and diagnostics.
   const HUE_VARIANTS = Object.freeze(['pure', 'muted', 'dusty', 'dark_muted']); // Existing authored dye variants combined with each tradition's hue families.
 
-  const LICH_EPITHETS = Object.freeze({ // Ordinary lich epithets match planar traditions; authored guardians keep their exclusive epithets.
-    hronal: Object.freeze(['Smoldering', 'Scorching', 'Ashen', 'Searing', 'Molten', 'Charred', 'Blazing', 'Cinderbound', 'Emberclad', 'Singeing']),
-    tothal: Object.freeze(['Frozen', 'Rimebound', 'Glacial', 'Hoarfrosted', 'Frostbound', 'Hailstruck', 'Icebound', 'Shivering', 'Winterbound', 'Snowdrifted']),
-    kanthic: Object.freeze(['Umbral', 'Voidbound', 'Withering', 'Dissolving', 'Gloaming', 'Hollow', 'Abyssal', 'Eclipsed', 'Unraveling', 'Twisted']),
-  });
-
   const TYPE_DEFS = Object.freeze({
     tothal: Object.freeze({
       id: 'tothal', label: 'Tothal Lich',
@@ -165,7 +159,7 @@
     if (typeof generate !== 'function') return null; // Isolated editor/test harnesses may omit culture scripts.
     const occupied = new Set([...(deps?.hostileObjects || [])]
       .filter(actor => actor?.isHarlyaoLich && Number(actor.health) > 0)
-      .map(actor => String(actor.lichGivenName || actor.name || '').split(/ the /i)[0].toLowerCase())); // Distinct single-word given names remain unique even when full overhead labels have epithets.
+      .map(actor => String(actor.lichGivenName || actor.name || '').split(/\s+/)[0].toLowerCase())); // Given names remain unique even when the visible label includes a surname.
     let fallback = null; // Last valid culturally generated name, used if a deterministic test RNG repeats a single value.
     for (let attempt = 0; attempt < 24; attempt++) {
       const name = generate(random); // Use GameRandom, the same RNG as the lich's robe/appearance.
@@ -173,11 +167,6 @@
       fallback = name;
     }
     return fallback;
-  }
-
-  function rollOrdinaryLichEpithet(type) {
-    const pool = LICH_EPITHETS[typeDef(type).id]; // Theme-specific descriptive adjectives, never named-boss epithets.
-    return pool[Math.min(pool.length - 1, Math.floor(random() * pool.length))];
   }
 
   function rosterFor(type, gender = null) {
@@ -337,8 +326,9 @@
     const tier = Math.max(0, Math.min(3, Math.round(Number(options.tier) || 0))); // Existing dev tier selector remains meaningful for lich base stats.
     const areaId = currentLichArea(); // Spawn area; every spell/summon below follows its owner's area.
     const generatedGivenName = !special && !options.roster && !options.nameOverride && /^[A-Z][a-z]{4,11}$/.test(roster.name || '') ? roster.name : null; // One Harlyao given name; custom rosters and authored liches retain their original identities.
-    const generatedEpithet = generatedGivenName ? rollOrdinaryLichEpithet(def.id) : null; // Display-only planar adjective, separate from the character's personal name.
-    const lichDisplayName = special?.name || options.nameOverride || (generatedEpithet ? `${generatedGivenName} the ${generatedEpithet}` : roster.name || def.label); // Overhead combat label uses one given name plus an epithet, never a surname.
+    const surnameGenerator = window.SCRATCHBONES_NAME_GENERATOR?.generateHarlyaoSurname; // Use the same Harlyao family-name rules as seeded culture identities.
+    const generatedSurname = generatedGivenName && typeof surnameGenerator === 'function' ? surnameGenerator(random, generatedGivenName) : null; // Ordinary liches have one given name and a distinct surname.
+    const lichDisplayName = special?.name || options.nameOverride || (generatedSurname ? `${generatedGivenName} ${generatedSurname}` : roster.name || def.label); // Overhead label is first + last name; authored bosses keep their titled epithets.
     const entity = await window.BanditCombat.makeEntity({
       ...cfg,
       speciesWeights: { 'harlyao-skeleton': 1 },
@@ -347,7 +337,7 @@
       zoneId: areaId,
       rosterOverride: roster,
       enemyClass: CLASS_ID,
-      nameOverride: lichDisplayName, // One personal name + a planar epithet, except authored guardians and custom identities.
+      nameOverride: lichDisplayName, // Ordinary liches use two Harlyao words; authored guardians and explicit editor names stay unchanged.
       avatarRigScale: options.avatarRigScale || (special ? window.SpecialHarlyaoLiches?.rigScaleFor?.(def.id) : null), // Exact 20/30% dimensions relative to the existing skeleton defaults, unless a Workshop rule overrides them.
       defOverride: {
         weaponKey: special?.weapon || LICH_CAST_WEAPON_KEY, // Azgarlu wields a visible warhammer; baseline liches keep invisible Light Weapon casting.
@@ -367,7 +357,7 @@
     });
     if (!entity) return null;
     if (generatedGivenName) entity.lichGivenName = generatedGivenName; // The unadorned Harlyao first name is used for future uniqueness checks and diagnostics.
-    if (generatedEpithet) entity.lichEpithet = generatedEpithet; // The planar adjective is stored separately from the character's personal name.
+    if (generatedSurname) entity.lichSurname = generatedSurname; // Family name is separate from personal identity and available to debug/HUD integrations.
     if (special?.weapon) {
       entity._specialWeaponKey = special.weapon; // The warhammer remains in its existing animated holder for melee combat.
       entity._specialWarhammerGlyph = special.glyph; // The boss's entropy pattern identifier for metadata and debugging.
@@ -2043,7 +2033,7 @@
     const grace = entrancedGraceDisplay(playerCommandState);
     return {
       classId: CLASS_ID, arenaOnly: ARENA_ID, wrappersInstalled,
-      activeLiches: liches.map(lich => ({ id: lich.id, name: lich.name, givenName: lich.lichGivenName || null, epithet: lich.lichEpithet || null, type: lich.lichType, dye: lich.lichDyeId, resolvedDyes: lich.avatarRef?.resolvedRosterDyes || null, command: lich._lichCommand, casting: lich._lichCastingAbility || null, hovering: !!lich.avatarRef?.legs?.isHoverMode?.(), hoverOffset: Number(lich._lichHoverOffsetWorld) || 0, aerialOffset: Number(lich._specialHoverOffsetWorld)||0, comboStep: Number(lich._specialComboStep)||0, comboLeftMs: Math.max(0,(Number(lich._specialComboUntilMs)||0)-performance.now()), strikeHoldLeftMs: Math.max(0,(Number(lich._specialStrikeHoldUntilMs)||0)-performance.now()), specialMode: lich._specialMode||null, dodging: !!lich.dodging, lunging: !!lich._specialLunge, handRig: !!handRigForLich(lich), emptyLightWeapon: !!lich._lichCastWeaponSocket, primaryCd: lich._lichPrimaryCooldownS, summonCd: lich._lichSummonCooldownS, summons: [...(lich._lichSummons || [])].filter(isLiveActor).length })),
+      activeLiches: liches.map(lich => ({ id: lich.id, name: lich.name, givenName: lich.lichGivenName || null, surname: lich.lichSurname || null, type: lich.lichType, dye: lich.lichDyeId, resolvedDyes: lich.avatarRef?.resolvedRosterDyes || null, command: lich._lichCommand, casting: lich._lichCastingAbility || null, hovering: !!lich.avatarRef?.legs?.isHoverMode?.(), hoverOffset: Number(lich._lichHoverOffsetWorld) || 0, aerialOffset: Number(lich._specialHoverOffsetWorld)||0, comboStep: Number(lich._specialComboStep)||0, comboLeftMs: Math.max(0,(Number(lich._specialComboUntilMs)||0)-performance.now()), strikeHoldLeftMs: Math.max(0,(Number(lich._specialStrikeHoldUntilMs)||0)-performance.now()), specialMode: lich._specialMode||null, dodging: !!lich.dodging, lunging: !!lich._specialLunge, handRig: !!handRigForLich(lich), emptyLightWeapon: !!lich._lichCastWeaponSocket, primaryCd: lich._lichPrimaryCooldownS, summonCd: lich._lichSummonCooldownS, summons: [...(lich._lichSummons || [])].filter(isLiveActor).length })),
       specialLiches: window.SpecialHarlyaoLiches?.snapshot?.() || null, // Mobile debug source for named-boss effects and current stage.
       projectiles: projectiles.size,
       tothalFogOrbs: [...projectiles].filter(projectile => projectile.type === 'tothal').length,
@@ -2062,7 +2052,7 @@
   }
 
   window.HarlyaoLichCombat = {
-    CLASS_ID, ARENA_ID, TYPE_ORDER, TYPE_DEFS, LICH_EPITHETS, // Expose epithet pools to editor previews and mobile diagnostics.
+    CLASS_ID, ARENA_ID, TYPE_ORDER, TYPE_DEFS,
     debugProjectileColliders: () => [...projectiles].map(p => ({ x: p.x / deps.TILE, y: p.worldY, z: p.y / deps.TILE, radius: p.payload.radiusWorld })),
     allowArea: areaId => { if (areaId) allowedAreas.add(String(areaId)); }, // Opt another area in (e.g. the Random Test Ruin's boss sanctum).
     disallowArea: areaId => { if (areaId && areaId !== ARENA_ID) allowedAreas.delete(String(areaId)); },
