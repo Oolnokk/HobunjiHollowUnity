@@ -129,7 +129,7 @@
   // prompted/forward-air grab, facing direction is irrelevant: the character
   // reaches for a ladder already within arm's reach.
   function findFallGrabTarget(pos, previousY = pos?.y) {
-    if (!pos || ![pos.x, pos.z, pos.y, previousY].every(Number.isFinite) || pos.y > previousY + 1e-6) return null;
+    if (!pos || ![pos.x, pos.z, pos.y, previousY].every(Number.isFinite) || pos.y >= previousY - 1e-6) return null;
     let best = null; // The closest reachable ladder band wins when several vertical strips overlap the swept fall.
     for (const s of surfaces.values()) {
       if (!s.enabled || !s.autoCatch) continue; // Natural cliffs, ordinary walls and non-ladder props preserve their old controls.
@@ -359,7 +359,7 @@
   function tryFallGrab(pos, previousY = pos?.y) {
     if (!deps || deps.player.onClimbSurface || deps.player.climbing || deps.player.onBranch || deps.player._freeJump?.noGrab) return false;
     const hit = findFallGrabTarget(pos, previousY);
-    if (!hit || isEasyRuinJump(hit, { ...pos, y: hit.y })) return false;
+    if (!hit) return false; // These are explicit ladder grips, even when the top happens to be jump-height from the falling body.
     fallCatchCount++;
     return attachAirborne(hit.surface, { ...pos, y: hit.y });
   }
