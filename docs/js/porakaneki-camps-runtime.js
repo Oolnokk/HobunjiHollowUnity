@@ -1255,7 +1255,7 @@
 
   function weaponRoll(rng = rand) {
     const authored = Array.isArray(cfg?.equipment?.weaponShapes) && cfg.equipment.weaponShapes.length ? cfg.equipment.weaponShapes : ['fishingspear', 'hatchet', 'dagger']; // Cultural Porakaneki club is allowed only if its held shape is registered.
-    const shapes = authored.filter(shape => combatDeps?.HELD_SHAPE_DEFS?.[shape]?.slots?.includes('weapon')); // Avoid spawning invisible weapons for stale save/config shapes.
+    const shapes = combatDeps?.HELD_SHAPE_DEFS ? authored.filter(shape => combatDeps.HELD_SHAPE_DEFS[shape]?.slots?.includes('weapon')) : authored; // Data-only camps can roll before combat deps arrive; active actors validate registered weapon shapes.
     return shapes[Math.floor(rng() * shapes.length)] || 'fishingspear';
   }
   function weaponDef(shapeKey) {
