@@ -14459,6 +14459,16 @@ installKissPresetUiV1546(); // The author initialized earlier in the same script
 if (window.MultiAvatarAnimationAuthor) {
   window.MultiAvatarAnimationAuthor.version = '15.50';
   window.MultiAvatarAnimationAuthor.fullBodyDiagnostics = fullCharacterPreviewDiagnosticsV1548;
+  window.MultiAvatarAnimationAuthor.kissPairDiagnostics = () => {
+    const pair = romanticDancePair(); // Exposes true initiator vs partner selection for mobile and reversed-height browser tests.
+    return {
+      initiator: pair.leader?.source?.id || null,
+      partner: pair.partner?.source?.id || null,
+      taller: animationAuthor.kissHeightSolutionV1546?.taller || null,
+      firstHeight: animationAuthor.kissHeightSolutionV1546?.firstHeight || null,
+      secondHeight: animationAuthor.kissHeightSolutionV1546?.secondHeight || null,
+    };
+  };
   window.MultiAvatarAnimationAuthor.kissFacingDiagnostics = () => animationAuthor.actors
     .filter(actor => actor.source?.type === 'npc')
     .map(actor => {
