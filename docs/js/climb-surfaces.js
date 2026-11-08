@@ -195,17 +195,42 @@
     for (let y = 0.3; y < h; y += 0.45) for (let x = 0.25; x < w; x += 0.5) { const hold = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.1, 0.1), mat); hold.position.set(x + (rnd() - 0.5) * 0.2, y + (rnd() - 0.5) * 0.15, 0.05); group.add(hold); }
     return group;
   }
+  function buildRuinV50Ladder(THREE, surface) {
+    // The verified V50 constructor is the visual authority. This decoration is not a second gameplay ladder.
+    const author=globalThis.document?.getElementById?.('devRandomRuinGeneratorFrame')?.contentWindow?.DebrisifierV50;
+    if(typeof author?.createRuntimeStoneLadder!=='function')return null;
+    const width=surface.u1-surface.u0,height=surface.y1-surface.y0;
+    let ladder=null;
+    try { ladder=author.createRuntimeStoneLadder(Math.max(.5,height),Math.max(.5,Math.min(1.2,width)),.12); }
+    catch(error) {globalThis.__farmLog?.('[ruin climb] V50 ladder visual unavailable: '+(error?.message||error),'warn');return null;} // A failed optional decoration cannot block entry.
+    if(!ladder?.traverse)return null;
+    ladder.name='ruin-v50-climb-ladder-visual';
+    ladder.position.set(width/2,height,.08); // V50 roots ladders at their upper lip, extending down the wall.
+    ladder.traverse(node=>{
+      node.userData=node.userData||{};
+      delete node.userData.generatedAccessType; // No duplicate climb prompt, occupancy solid, or ladder-mount animation.
+      delete node.userData.devRuinInteractionType;
+      delete node.userData.interactive3D;
+      delete node.userData.runtimeRecoveryEgress;
+      node.userData.devRuinFootprintIgnore=true;
+    });
+    return ladder;
+  }
   // Returns an Object3D placed in world space (tile units / world y), oriented to the wall's normal.
   // The caller owns adding it to a scene and disposing it.
   function buildVisual(THREE, raw) {
     const surface = normalize(raw); // The shaft composer passes raw CellGrid3D faces; visual orientation needs the same tangent as registered climb surfaces.
     const style = getStyle(surface.style), holder = new THREE.Group();
-    const inner = style.build ? style.build(THREE, surface, style) : null;
-    const body = buildPlane(THREE, surface, style.color, inner ? 0.35 : 0.85);
+    const v50Ladder = raw?.ruin === true ? buildRuinV50Ladder(THREE, surface) : null; // Ruin-specific, leaving natural cliff/vine climbing visuals unchanged.
+    const inner = v50Ladder || (style.build ? style.build(THREE, surface, style) : null);
     // Local frame: +x runs along u, +y up, +z along the wall normal.
     const local = new THREE.Group();
-    body.position.set((surface.u1 - surface.u0) / 2, (surface.y1 - surface.y0) / 2, 0.02);
-    local.add(body); if (inner) local.add(inner);
+    if(!v50Ladder){
+      const body = buildPlane(THREE, surface, style.color, inner ? 0.35 : 0.85); // Fallback for headless tests before the V50 author frame loads.
+      body.position.set((surface.u1 - surface.u0) / 2, (surface.y1 - surface.y0) / 2, 0.02);
+      local.add(body);
+    }
+    if(inner)local.add(inner);
     holder.add(local);
     // Right-handed local frame: +x = up x normal, +y = up, +z = normal (so the overlay sits on the open side).
     // For some facings +x runs against `u`, so the frame starts from the far end of the wall.

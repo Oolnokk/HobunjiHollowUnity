@@ -323,7 +323,7 @@
     for(let r=0;r<grid.rows;r++) for(let c=0;c<grid.cols;c++)
       if(grid.canStand(c,r,0)&&!(result.obelisks&&Math.abs(c-(lo+hi)/2)<(result.options.shaft-10)/2&&Math.abs(r-(lo+hi)/2)<(result.options.shaft-10)/2)&&(!result.options.octagon||inOctagon(c,r,lo,hi,cut)||result.entrance.side==='N'&&c===result.entrance.col&&r<lo||result.entrance.side==='S'&&c===result.entrance.col&&r>hi||result.entrance.side==='W'&&r===result.entrance.row&&c<lo||result.entrance.side==='E'&&r===result.entrance.row&&c>hi)) floorMask[r*grid.cols+c]=1;
     part('shaft-hub-octagonal-floor', Faces.mergeMask(floorMask, grid.cols, grid.rows).map(rect => ({ axis:'y', side:1, plane:0, a0:rect.i0, a1:rect.i1, b0:rect.j0, b1:rect.j1 })));
-    if (climb?.buildVisual) for (const surface of result.surfaces) shell.add(climb.buildVisual(THREE,surface));
+    if (climb?.buildVisual) for (const surface of result.surfaces) shell.add(climb.buildVisual(THREE,{...surface,ruin:true})); // Real V50 ladder art replaces the old colored climb tile overlays.
     return shell;
   }
 

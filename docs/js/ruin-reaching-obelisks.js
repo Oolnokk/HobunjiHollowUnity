@@ -15,7 +15,8 @@
   const SIZE=4; // Every obelisk is a four-cell-wide solid rectangular column with a four-cell mantle top.
   const DEATH_DEPTH=8; // Pit bottom sits below the entire ground-story gallery.
   const TRAVERSAL='reachingObelisks';
-  const BEAT_SECONDS=1.2,BEATS_PER_MEASURE=4,MEASURES_PER_CYCLE=4; // A readable 4/4 cycle: beat one changes heights, beats two-four turn the columns.
+  const BEAT_SECONDS=3,BEATS_PER_MEASURE=4,MEASURES_PER_CYCLE=4; // Three seconds per beat; the four-beat/four-measure shaft sequence is unchanged.
+  const ROTATION_SECONDS=BEAT_SECONDS*(.7/1.6); // Preserve the eased turn's fraction of a beat so the slower machinery does not snap early.
   const SIDES={N:{inX:0,inZ:1,tX:1,tZ:0},E:{inX:-1,inZ:0,tX:0,tZ:1},
     S:{inX:0,inZ:-1,tX:-1,tZ:0},W:{inX:1,inZ:0,tX:0,tZ:-1}};
   const clamp=(n,a,b)=>Math.max(a,Math.min(b,n));
@@ -182,12 +183,12 @@
     for(const pillar of plan.pillars){
       const holder=new THREE.Group();holder.name=pillar.id;holder.position.set(pillar.x,pillar.topY,pillar.z);group.add(holder);
       const shaft=mesh(new THREE.BoxGeometry(SIZE,1,SIZE),stone,pillar.id+'-stone',holder);
-      const record={...pillar,holder,shaft,y:pillar.lowY,desiredY:pillar.lowY,worldFaces:[],baseY:pillar.bottomY,rotation:0};
+      const record={...pillar,holder,shaft,y:pillar.lowY,desiredY:pillar.lowY,worldFaces:[],baseY:pillar.bottomY,rotation:0,rotationDisplay:0,rotationStart:0,rotationTarget:0,rotationElapsed:0,rotationPending:false};
       columns.set(pillar.id,record);
       DS.registerSurface({id:scope+'-'+pillar.id,scope,topY:()=>record.y,priority:4,
         bounds:{minX:pillar.x-SIZE/2,maxX:pillar.x+SIZE/2,minZ:pillar.z-SIZE/2,maxZ:pillar.z+SIZE/2}});
       const updateShape=()=>{
-        holder.position.y=record.y;holder.rotation.y=record.rotation*Math.PI/2;
+        holder.position.y=record.y;holder.rotation.y=record.rotationDisplay*Math.PI/2;
         const height=Math.max(.1,record.y-record.baseY);shaft.scale.y=height;shaft.position.y=-height/2;
       };
       record.updateShape=updateShape;updateShape();
@@ -195,15 +196,40 @@
     // The climb registrations keep their normalized references, so a moving
     // pillar can carry climbable faces without unregister/re-register churn.
     const refreshFaces=record=>{
+      const session=CS.getAttachedSession?.(); // Retargets an active climber rather than orphaning a removed grip on a turn.
+      const attached=session&&record.worldFaces.some(entry=>entry.surface===session.surface);
+      const previous=attached?{surface:session.surface,u:session.u,v:session.v}:null;
       for(const entry of record.worldFaces){CS.remove(entry.id);entry.visual?.parent?.remove(entry.visual);
         entry.visual?.traverse(n=>{n.geometry?.dispose();if(n.material&&!materials.includes(n.material))n.material.dispose();});}
       record.worldFaces=[];
       for(const [i,face] of climbFaces(record,Math.round(record.y),record.rotation).entries()){
         const id=scope+'-climb-'+record.id+'-'+i;
         const normalized=CS.register({...face,id,scope});
-        const visual=CS.buildVisual?.(THREE,normalized);
-        if(visual){visual.name=id;group.add(visual);} // buildVisual is already in world coordinates.
+        const visual=CS.buildVisual?.(THREE,{...normalized,ruin:true});
+        if(visual){
+          visual.name=id;
+          if(record.holder.attach){ // Keep the V50 ladder artwork on the rotating/ascending pillar rather than leaving a world-space ghost.
+            record.holder.updateWorldMatrix?.(true,false);
+            record.holder.attach(visual);
+          }else group.add(visual);
+        }
         record.worldFaces.push({id,surface:normalized,visual});
+      }
+      if(previous&&record.worldFaces.length){
+        const oldX=previous.surface.axis==='x'?previous.u:previous.surface.plane;
+        const oldZ=previous.surface.axis==='x'?previous.surface.plane:previous.u;
+        let chosen=null,score=Infinity;
+        for(const entry of record.worldFaces){
+          const face=entry.surface;
+          const u=clamp(face.axis==='x'?oldX:oldZ,face.u0,face.u1);
+          const px=face.axis==='x'?u:face.plane,pz=face.axis==='x'?face.plane:u;
+          const delta=Math.hypot(oldX-px,oldZ-pz)+Math.abs(clamp(previous.v,face.y0,face.y1)-previous.v)*2;
+          if(delta<score){chosen=face;score=delta;}
+        }
+        if(chosen){
+          session.surface=chosen;session.u=clamp(chosen.axis==='x'?oldX:oldZ,chosen.u0,chosen.u1);
+          session.v=clamp(previous.v,chosen.y0,chosen.y1);
+        }
       }
     };
     for(const record of columns.values())refreshFaces(record);
@@ -222,8 +248,9 @@
       }else{
         for(const pillar of columns.values()){
           pillar.rotation=(pillar.rotation+1)%4;
-          pillar.rotationTarget=pillar.rotation;
-          refreshFaces(pillar);pillar.updateShape(); // Rotated bands, mesh and registered climb faces remain aligned.
+          pillar.rotationStart=pillar.rotationDisplay; // Continuous turns avoid wrapping 270° back through zero.
+          pillar.rotationTarget=pillar.rotationDisplay+1;
+          pillar.rotationElapsed=0;pillar.rotationPending=true; // Refresh axis-aligned grabs once the visible quarter-turn finishes.
         }
       }
       const first=columns.values().next().value; // One synchronized stone cue per beat, not a dozen stacked recordings.
@@ -240,9 +267,16 @@
       if(!active){active=true;elapsed=0;applyBeat();}
       else{
         elapsed+=elapsedStep;
-        if(elapsed>=BEAT_SECONDS){elapsed-=BEAT_SECONDS;applyBeat();}
+        if(elapsed+1e-9>=BEAT_SECONDS){elapsed=Math.max(0,elapsed-BEAT_SECONDS);applyBeat();} // Avoid a whole-frame late beat when 60 × 0.05 rounds just below three seconds.
       }
       for(const pillar of columns.values()){
+        if(pillar.rotationPending){
+          pillar.rotationElapsed=Math.min(ROTATION_SECONDS,pillar.rotationElapsed+elapsedStep);
+          const t=pillar.rotationElapsed/ROTATION_SECONDS,eased=t*t*(3-2*t); // Smoothstep eases both ends without stretching the beat.
+          pillar.rotationDisplay=pillar.rotationStart+(pillar.rotationTarget-pillar.rotationStart)*eased;
+          if(t>=1){pillar.rotationDisplay=pillar.rotationTarget;pillar.rotationPending=false;pillar.updateShape();refreshFaces(pillar);}
+          else pillar.updateShape();
+        }
         if(Math.abs(pillar.y-pillar.desiredY)>.0001){
           const oldY=pillar.y;
           pillar.y+=clamp(pillar.desiredY-pillar.y,-elapsedStep*2.5,elapsedStep*2.5);
@@ -251,7 +285,7 @@
           // Keep the SAME surface objects while the obelisk moves: an attached
           // climber never loses its handhold when the supporting pillar rises.
           for(const entry of pillar.worldFaces){entry.surface.y0+=delta;entry.surface.y1+=delta;
-            if(entry.visual)entry.visual.position.y+=delta;}
+            if(entry.visual&&entry.visual.parent!==pillar.holder)entry.visual.position.y+=delta;}
         }
       }
     };
@@ -282,5 +316,5 @@
         moving:[...columns.values()].filter(p=>Math.abs(p.y-p.desiredY)>.01).length,
         pit:tradition,gravity:GRAVITY,fallPerTile:plan.physics.fallPerTile})};
   }
-  return Object.freeze({TRAVERSAL,BEAT_SECONDS,BEATS_PER_MEASURE,MEASURES_PER_CYCLE,GRAVITY,UNBUFFED_SPEED,SIZE,DEATH_DEPTH,fallDistanceForTiles,catchDepthForGap,climbFaces,compose,verify,mount,traditionOf});
+  return Object.freeze({TRAVERSAL,BEAT_SECONDS,BEATS_PER_MEASURE,MEASURES_PER_CYCLE,ROTATION_SECONDS,GRAVITY,UNBUFFED_SPEED,SIZE,DEATH_DEPTH,fallDistanceForTiles,catchDepthForGap,climbFaces,compose,verify,mount,traditionOf});
 });

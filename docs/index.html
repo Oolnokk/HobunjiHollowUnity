@@ -616,10 +616,10 @@
   <script src="js/cliff-elevated-surfaces.js?v=20261106miniplateau1"></script> <!-- Wilderness balconies reuse CellGrid3D and scoped DynamicSurfaces; terrain heightfield stays intact. -->
   <!-- Climbable wall surfaces (window.ClimbSurfaces): attach + move along a wall.
        Needs ClimbSystem (registered as a world-climb provider by game.js). -->
-  <script src="js/climb-surfaces.js?v=20261107contactBody1"></script>
+  <script src="js/climb-surfaces.js?v=20261108v50ladder1"></script>
   <script src="js/ruin-wall-faces.js?v=20261106walls1"></script> <!-- Merged stretch-to-fit wall faces; shaft-hub.js builds its stone from them. -->
-  <script src="js/ruin-reaching-obelisks.js?v=20261108hf41f370"></script> <!-- Complete stateful vertical traversal, after CellGrid3D and the climb pipeline. -->
-  <script src="js/shaft-hub.js?v=20261106h0b61a44"></script>
+  <script src="js/ruin-reaching-obelisks.js?v=20261108rhythm3s"></script> <!-- Complete stateful vertical traversal, after CellGrid3D and the climb pipeline. -->
+  <script src="js/shaft-hub.js?v=20261108v50ladder1"></script>
   <script src="js/ruin-layer-plan.js?v=20261107integrationBlocks1"></script>
   <script src="js/dev-ruin-single-room-trial.js?v=20261108witchBombExtern1"></script> <!-- One-room developer puzzle chooser and normal-plan weighted odds. -->
   <script src="js/dev-ruin-find-blocks.js?v=20261108witchBombExtern1"></script> <!-- Four-block compound lab fixture, using native ruin push, fire, flute and bomb mechanics. -->
@@ -2809,7 +2809,7 @@
        time, and must load before game.js, which calls
        window.Music.init(...) during its own setup. Depends on
        window.AudioSystem (gameAudioConfig/playObjectSfx), so loads after it. -->
-  <script src="js/music-system.js?v=20261106h2933e1c"></script>
+  <script src="js/music-system.js?v=20261108shaftfade1"></script>
   <script src="js/audio-track-gain-settings.js?v=20260920trackgain2"></script>
   <!-- Shared local-transform dump utility (window.HobunjiTransformDump) —
        also loaded by the Attack Animation Editor, so a probed character's
