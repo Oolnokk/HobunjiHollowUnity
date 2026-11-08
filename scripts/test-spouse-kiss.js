@@ -63,6 +63,8 @@ class ShoulderVector {
   sub(v){this.x-=v.x;this.y-=v.y;this.z-=v.z;return this;}
   multiplyScalar(s){this.x*=s;this.y*=s;this.z*=s;return this;}
   add(v){this.x+=v.x;this.y+=v.y;this.z+=v.z;return this;}
+  lengthSq(){return this.x*this.x+this.y*this.y+this.z*this.z;}
+  addScaledVector(v,scalar){this.x+=v.x*scalar;this.y+=v.y*scalar;this.z+=v.z*scalar;return this;}
 }
 const sourceShoulder = new ShoulderVector(0,.7,0);
 const tallShoulder = new ShoulderVector(.15,2,0);
@@ -73,6 +75,12 @@ assert.ok(sourceShoulder.distanceTo(gripPoint) <= grip.armReach + 1e-6,
   'short initiator hand never extends beyond actual arm reach');
 assert.ok(gripPoint.distanceTo(tallShoulder) < sourceShoulder.distanceTo(tallShoulder),
   'clamped grip is the nearest possible point toward the shoulder');
+const torsoContact = solver.resolveShoulderGripWorld(sourceShoulder,tallShoulder,.38,gripPoint,
+  new ShoulderVector(0,-1.2,0)); // Authored shoulder-to-upper-chest segment on the taller spouse.
+assert.equal(torsoContact.onTorso, true, 'short initiator touches the closest reachable part of the partner torso, not midair');
+assert.ok(gripPoint.distanceTo(sourceShoulder) <= torsoContact.armReach + .00001);
+assert.equal(gripPoint.x, tallShoulder.x, 'contact remains on the actual target shoulder/upper-body surface');
+assert.equal(gripPoint.z, tallShoulder.z, 'contact remains on the actual target torso depth plane');
 const nearShoulder = new ShoulderVector(0,.8,0);
 const exactGrip = solver.resolveShoulderGripWorld(sourceShoulder,nearShoulder,.38,gripPoint);
 assert.ok(exactGrip.exactShoulder && gripPoint.distanceTo(nearShoulder) < 1e-6,
