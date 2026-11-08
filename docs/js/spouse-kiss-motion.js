@@ -202,6 +202,7 @@
       originalNpcNeck: npcNeck?.quaternion?.clone?.() || null,
       originalNpcYaw: walker.root.rotation.y,
       npcParent: walker.root.parent, // Prevents scene transfers from restoring an obsolete local world position.
+      characterId: window.__hobunjiPlayerProfile?.characterId || null, // Prevents a delayed contact from buffing the next selected character.
       originalNpcPosition: { x: walker.root.position.x, z: walker.root.position.z },
       approachX, approachZ, height, lock, onContact, touched: false, elapsed: 0,
       // Tall torso bows forward around the posterior. The partner's feet retreat by
@@ -223,6 +224,8 @@
     if (!session.player?.parent || session.walker?.root?.parent !== session.npcParent ||
         session.composer?.getPlayerMesh?.() !== session.player ||
         session.walker.legs !== session.npcLegs ||
+        (window.__hobunjiPlayerProfile?.characterId || null) !== session.characterId ||
+        (Number.isFinite(Number(window.Combat?.deps?.player?.health)) && Number(window.Combat.deps.player.health) <= 0) ||
         window.RomanceSystem?.getSpouse?.()?.npcId !== session.walker.rec.id) {
       clearMotion('partner-or-rig-changed');
       return;
