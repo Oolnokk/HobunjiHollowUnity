@@ -235,7 +235,7 @@
     if (flight?.phase === 'air' && flight.source !== 'free jump') return false; // Rope falls retain their own handhold catches.
     const takeoffY = flight?.phase === 'air' ? Number(flight.takeoffY) : pos.y;
     const rise = hit.surface.y1 - takeoffY; // Compare the landing height with the physical takeoff, not current midair height.
-    if (!Number.isFinite(easyRise) || rise <= 0 || rise > easyRise) return false;
+    if (!Number.isFinite(easyRise) || !Number.isFinite(rise) || rise <= 0 || rise > easyRise) return false;
     const exit = topExitPoint(hit.surface, hit.u);
     return !!deps.canStandAt(exit.x, exit.z, exit.y); // Never disable a climb without a safe surface to stand on.
   }
