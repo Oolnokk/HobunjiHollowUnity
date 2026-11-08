@@ -156,7 +156,7 @@ npcRoot.getObjectByName = name => name === 'npc_character_rig_root' ? npcRigRoot
 const playerLegs = legHandle(1);
 const partnerLegs = legHandle(5);
 const sceneWalker = {
-  rec: { id: 'spouse' }, root: npcRoot,
+  rec: { id: 'spouse' }, area: 'farm', root: npcRoot,
   avatarGroup: { userData: { portraitModelHeight: 5 }, rotation: { x: 0 } }, legs: partnerLegs,
 };
 let renderFrame = null;
