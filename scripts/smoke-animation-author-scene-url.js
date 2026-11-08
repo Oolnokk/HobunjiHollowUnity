@@ -296,6 +296,41 @@ async function main() {
       return { pair, frames, exportedJump: exported.project.kiss.posteriorJump };
     });
     console.log('Height-adaptive posterior-straddle jump PASS:', JSON.stringify(jumpPreview));
+
+    // Repeat with the shortened Pahu as INITIATOR. Early hand gestures must
+    // precede Leaf's knee bend even when a later hop is needed to reach lips.
+    const shortInitiatorHop = await page.evaluate(() => {
+      const api = window.MultiAvatarAnimationAuthor;
+      const pahu = api.getActors().find(actor => actor.source.id === 'pahu');
+      api.selectActor(pahu.id);
+      if (!api.applyKissPreset()) throw Error('Could not rebuild a short-initiator jump kiss');
+      const pair = api.kissPairDiagnostics();
+      if (pair.initiator !== 'pahu' || pair.taller !== 'second' || !pair.posteriorJump) {
+        throw Error('Height-adaptive kiss lost the intended short initiator: ' + JSON.stringify(pair));
+      }
+      const slider = document.getElementById('maaScrubber');
+      const seek = t => {
+        slider.value = String(t);
+        slider.dispatchEvent(new Event('input', { bubbles: true }));
+        return api.fullBodyDiagnostics();
+      };
+      const early = seek(.37);
+      if (early.find(actor => actor.name === 'Leaf')?.kneeDrop > .001) {
+        throw Error('Tall recipient knelt before the short initiator reached up: ' + JSON.stringify(early));
+      }
+      const contact = seek(1.12);
+      if (!contact.find(actor => actor.name === 'Pahu')?.preview.jumpFeetAnchored ||
+          !(contact.find(actor => actor.name === 'Leaf')?.kneeDrop > .005)) {
+        throw Error('Short initiator never reached the posterior-supported kiss: ' + JSON.stringify(contact));
+      }
+      const finished = seek(2.4);
+      if (finished.find(actor => actor.name === 'Pahu')?.preview.jumpFeetAnchored) {
+        throw Error('Short initiator did not put both feet back on the floor');
+      }
+      return { pair, handsBeforeKneel: early.find(actor => actor.name === 'Pahu')?.initiatorHands,
+        contact: contact.find(actor => actor.name === 'Pahu')?.preview };
+    });
+    console.log('Shorter initiator posterior hop PASS:', JSON.stringify(shortInitiatorHop));
   } catch (error) {
     let snapshot;
     try {
