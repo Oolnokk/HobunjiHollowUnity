@@ -1012,7 +1012,7 @@ window.SCRATCHBONES_CONFIG = {
           "harlyaoRules": {
             "firstParts": ["na", "az", "im", "kril", "am", "nar", "gar", "mal", "il", "ur", "zan", "hal", "dran", "gril", "kal", "an", "zen", "mar", "lor", "rak", "ir", "ran", "kar", "zul", "orl", "ga", "va", "ha"],
             "middleParts": ["na", "gar", "la", "ri", "ra", "ha", "mi", "nar", "nu", "ril", "ar", "ma", "zul", "va", "gal", "lu", "n"],
-            "lastParts": ["hi", "lu", "lao", "larg", "nao", "ri", "ra", "na", "aru", "ar", "an", "il", "ir", "or", "ur", "gar", "ga", "nir", "kal", "arg", "lar", "ma", "ha", "no", "za"],
+            "lastParts": ["hi", "lu", "lao", "larg", "nao", "ri", "ra", "na", "aru", "ar", "an", "il", "ir", "or", "ur", "gar", "ga", "nir", "kal", "arg", "lar", "ma", "ha", "no", "za", "ai"],
             "threePartChance": 0.38,
             "bridgeConsonants": ["n", "l", "r", "g", "k", "m", "h"],
             "reservedNames": ["Nanahi", "Azgarlu", "Imlao"]
