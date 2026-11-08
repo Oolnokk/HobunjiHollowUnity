@@ -273,6 +273,7 @@ async function main() {
         frames.push({ t, jump: jumper?.preview.jumpHeightWorld || 0,
           feetAnchored: !!jumper?.preview.jumpFeetAnchored,
           footSeparation: jumper?.preview.jumpFootDistance || 0,
+          reachExcess: jumper?.preview.jumpFootReachExcessWorld || 0,
           knee: standing?.kneeDrop || 0, pants: jumper?.pants, arms: jumper?.handRig });
         if (!jumper?.pants || !jumper?.feet || !standing?.feet) {
           throw Error('Missing actual feet/pants in jump: ' + JSON.stringify(all));
@@ -283,6 +284,10 @@ async function main() {
             throw Error('Shorter partner does not plant both feet around the taller posterior at contact: ' + JSON.stringify(all));
           }
           if (jumper.preview.feetGrounded) throw Error('Jumping spouse incorrectly diagnosed as grounded');
+          if (jumper.preview.jumpFootReachExcessWorld > .005) {
+            throw Error('Posterior foot targets exceed the real smaller leg lengths by ' +
+              jumper.preview.jumpFootReachExcessWorld.toFixed(5) + ' units: ' + JSON.stringify(all));
+          }
         }
         if (t === 2.4 && (jumper.preview.jumpHeightWorld > .0001 || jumper.preview.jumpFeetAnchored)) {
           throw Error('Jump did not recover to the floor: ' + JSON.stringify(all));
@@ -320,7 +325,8 @@ async function main() {
       }
       const contact = seek(1.12);
       if (!contact.find(actor => actor.name === 'Pahu')?.preview.jumpFeetAnchored ||
-          !(contact.find(actor => actor.name === 'Leaf')?.kneeDrop > .005)) {
+          !(contact.find(actor => actor.name === 'Leaf')?.kneeDrop > .005) ||
+          (contact.find(actor => actor.name === 'Pahu')?.preview.jumpFootReachExcessWorld || 0) > .005) {
         throw Error('Short initiator never reached the posterior-supported kiss: ' + JSON.stringify(contact));
       }
       const finished = seek(2.4);
