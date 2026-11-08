@@ -12,9 +12,11 @@ const THREE = { Group:Obj, Mesh, MeshBasicMaterial:class{constructor(o){Object.a
 const blockers = new Map(), scopes = [];
 const DS = { registerBlocker: d => { if (!d?.id) throw new Error('DynamicSurfaces blocker requires an id'); blockers.set(d.id, d); return d; }, clearScope: s => { scopes.push(s); for (const [k,v] of blockers) if (v.scope === s) blockers.delete(k); } };
 const Challenges = require(path.join(__dirname, '..', 'docs/js/ruin-layer-challenges.js'));
+const footprints = new Map();
+const Footprint = { register: (id, p) => { footprints.set(id, p); return () => footprints.delete(id); } };
 const bus = { registerExternalProjectileTarget: () => () => {}, hasActiveRuinState: () => true };
 const rec = Challenges.compose({ THREE, parent: new Obj(), room: { x: 10, z: 10, w: 16, d: 16 }, id: 'room-a', kind: 'glyphObelisk', y: 0,
-  isActive: () => true, onSolved: () => {}, getPlayerPosition: () => ({ x: 18, z: 18 }), getPlayerY: () => 0, projectileBus: bus, DynamicSurfaces: DS });
+  isActive: () => true, onSolved: () => {}, getPlayerPosition: () => ({ x: 18, z: 18 }), getPlayerY: () => 0, projectileBus: bus, DynamicSurfaces: DS, AreaFootprintBlockers: Footprint });
 assert.equal(rec.targets.length, 3, 'three hidden glyph targets');
 assert.ok(blockers.size >= 6, 'every pillar is solid: ' + blockers.size);
 for (const b of blockers.values()) {
@@ -25,6 +27,14 @@ for (const b of blockers.values()) {
   assert.equal(b.blocksAt(0, 0, 1.25, b, .2, { worldY: 50 }), false, 'a different story is not blocked');
   assert.equal(b.blocksAt(0, 0, 1.25, b, .2, { worldY: 0.1 }), true, 'this story is blocked');
 }
+// Walking, dodges and lunges consult AreaFootprintBlockers, not DynamicSurfaces: the pillars must be solid there too.
+assert.equal(footprints.size, 1, 'pillars also register a ground-movement footprint');
+const fp = [...footprints.values()][0], any = [...blockers.values()][0];
+const bb = typeof any.bounds === 'function' ? any.bounds(any) : any.bounds, cx = (bb.minX + bb.maxX) / 2, cz = (bb.minZ + bb.maxZ) / 2;
+assert.equal(fp.blocksBox(cx, cz, .2, null), true, 'a walker cannot enter a pillar');
+assert.equal(fp.blocksBox(cx, cz, .2, 40), false, 'another height is clear');
+assert.equal(fp.blocksBox(cx + 5, cz + 5, .2, null), false, 'open floor stays open');
 rec.dispose();
+assert.equal(footprints.size, 0, 'dispose removes the footprint');
 assert.equal(blockers.size, 0, 'dispose clears the pillar blockers');
 console.log('glyph pillar hall: ok');

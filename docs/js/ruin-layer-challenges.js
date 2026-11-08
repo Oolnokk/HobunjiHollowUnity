@@ -489,14 +489,15 @@
       }
       for(let i=slots.length-1;i>0;i--){const j=Math.floor(rnd()*(i+1));[slots[i],slots[j]]=[slots[j],slots[i]];}
       const hidden=Math.min(3,Math.max(1,slots.length-1));
+      const footprintBoxes=[]; // Same boxes for ground movement (AreaFootprintBlockers): walking, dodges and lunges query THAT registry, not DynamicSurfaces.
       let blockerSerial=0;
-      const block=(px,pz,height)=>DS?.registerBlocker?.({id:scope+'-pillar-'+(blockerSerial++),scope,
+      const block=(px,pz,height)=>{footprintBoxes.push({minX:px-.4,maxX:px+.4,minZ:pz-.4,maxZ:pz+.4,top:y+height});return DS?.registerBlocker?.({id:scope+'-pillar-'+(blockerSerial++),scope,
         bounds:{minX:px-.4,maxX:px+.4,minZ:px-.4,maxZ:px+.4}, // DynamicSurfaces reads the footprint from `bounds`; bare minX/maxX meant an infinite, map-wide wall.
         enabled:()=>!rec.disposed&&isActive(),
         blocksAt:(_x,_z,_h,_r,_radius,query)=>{ // Solid only from the floor up to the pillar top, and only on this story.
           const elevation=Number(query?.y??query?.floorY??query?.worldY);
           return !Number.isFinite(elevation)||(elevation>=y-.4&&elevation<=y+height);
-        }});
+        }});};
       slots.forEach((slot,index)=>{
         if(index<hidden){
           const t=target(id+'-glyph'+index,slot.x,y+1.5,slot.z,false,Math.floor(rnd()*4));
@@ -509,6 +510,20 @@
         block(slot.x,slot.z,height);
       });
       rec.pillarScope=DS?scope:null;
+      const footprint=options.AreaFootprintBlockers||root.AreaFootprintBlockers;
+      const footprintArea=options.area||options.mapId||'map_i_dev_random_ruin';
+      rec.removePillarFootprints=footprint?.register?.(scope,{area:footprintArea,
+        enabled:()=>!rec.disposed&&isActive(),
+        blocksBox:(bx,bz,half,worldY)=>{
+          const feet=Number(getPlayerY?.());
+          for(const b of footprintBoxes){
+            if(bx+half<=b.minX||bx-half>=b.maxX||bz+half<=b.minZ||bz-half>=b.maxZ)continue;
+            if(worldY!=null){if(worldY<y-.4||worldY>b.top+.05)continue;}
+            else if(Number.isFinite(feet)&&Math.abs(feet-y)>2.5)continue; // A walker on another story is not on this floor's pillars.
+            return true;
+          }
+          return false;
+        }});
     }else if(kind==='ceilingRailTargets'){
       // Both targets physically traverse a rail beneath the room ceiling.
       // They must be aimed at while moving, like the existing V50 target rail.
@@ -796,6 +811,7 @@
       for(const remove of linkDisposers)remove();
       if(fireTargetId)fire?.unregisterTarget?.(fireTargetId);
       if(fireControl)options.removeControl?.(fireControl);
+      rec.removePillarFootprints?.();
       if(rec.pillarScope)(options.DynamicSurfaces||root.DynamicSurfaces)?.clearScope?.(rec.pillarScope); // The pillar hall's solid blockers.
       rec.removeStoneFlanks?.(); // Unregister permanent stone flanks along with their carved scene mesh.
       if(rec.stoneColliderId)(options.DynamicSurfaces||root.DynamicSurfaces)?.remove?.(rec.stoneColliderId);
