@@ -8,6 +8,7 @@
   const DEFAULT_FUSE_SECONDS = 10;
   const BLAST_RADIUS = 4.4;
   const BLAST_DAMAGE = 42;
+  const BLAST_SFX_KEY = 'witchBombBlast'; // Used once for every successful Witch-bomb detonation.
   const BLAST_KNOCKBACK_PX_S = 860;
   const BURNING_HEALTH = 6.5;
   const dispensers = new Map(); // Stable furniture id -> one live bomb slot.
@@ -162,7 +163,7 @@
     window.Shattercasks?.triggerBurdenBlastAt?.(mapId,x,z,BLAST_RADIUS,bomb.id);
     breakNearby(mapId,x,z,BLAST_RADIUS);
     buildEffect(scene,x,y,z);
-    window.AudioSystem?.playObjectSfxKey?.('shattercaskBlast'); // Reuses the existing positional explosive cue until a dedicated fire-bomb clip is authored.
+    window.AudioSystem?.playObjectSfxKey?.(BLAST_SFX_KEY); // Dedicated lowblast recording; Shattercasks retain their separate cue.
     clearEnemyGrip(bomb); // An explosion must release the carrier's procedural two-hand target before its mesh is removed.
     window.Shattercasks?.discardBurden?.(bomb);
     window.__farmLog?.('[hronal-witch-bomb] '+bomb.id+' exploded via '+cause,'world');
@@ -368,7 +369,8 @@
   }
   function debugSnapshot() {
     return {
-      latestChange:'Hronal Witch-bombs fuse from physical spawn; glyph glow accelerates near detonation; breaking props leaves the ceiling tube ready for another payload.',
+      latestChange:'Witch-bomb detonation uses the lowblast SFX; the spawn-time fuse, glyph acceleration and dispenser recycle behavior are unchanged.',
+      blastSfxKey:BLAST_SFX_KEY,
       dispensers:[...dispensers.values()].map(item=>({id:item.id,mapId:item.mapId,activeBombId:item.activeBombId,dispensing:item.dispensing,fuseSeconds:item.fuseSeconds})),
       activeBombs:(window.Shattercasks.activeBurdenRecords?.(currentArea())||[]).filter(item=>item.kind===KIND).map(item=>({
         id:item.id,remainingSeconds:Math.max(0,(Number(item.fuseSeconds)||DEFAULT_FUSE_SECONDS)-(now()-Number(item.spawnedAtMs||now()))/1000),
