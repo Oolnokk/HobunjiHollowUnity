@@ -68,6 +68,7 @@ async function main() {
       if (project.project.loop !== false || project.project.durationSeconds !== 2.4)
         throw Error('Kiss must be a 2.4-second one-shot');
       if (project.actors.some(actor => actor.keyframes.length < 6)) throw Error('Kiss clip has missing keyframes');
+      document.getElementById('maaPlayBtn').click(); // The URL intentionally opens paused for editing; tests must actually start playback.
       for (let frame = 0; frame < 69; frame++) api.tick(1 / 60);
       const contactBodies = api.fullBodyDiagnostics();
       if (contactBodies.some(body => !body.hands || !body.feet)) {
