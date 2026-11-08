@@ -441,8 +441,11 @@
     playerKurrayaNote.heldAssembly = null; playerKurrayaNote.nextResolveAtMs = 0;
   }
   function playerKurrayaHandTarget() {
-    if (!playerKurrayaNote.active) return null;
-    if (!playerKurrayaNote.heldAssembly?.parent && performance.now() >= playerKurrayaNote.nextResolveAtMs) {
+    // The held instrument's Neutral stance belongs to the editor even before
+    // performance starts. Only a visible assembly in the player's OWN body may
+    // claim the hands; never borrow a hidden bag prop or an NPC's Kurraya.
+    if ((!playerKurrayaNote.heldAssembly?.parent || !playerKurrayaNote.heldAssembly.parent.visible)
+        && performance.now() >= playerKurrayaNote.nextResolveAtMs) {
       playerKurrayaNote.nextResolveAtMs = performance.now() + 500; // Avoid traversing the portrait subtree every render frame on slow mobile devices.
       const player = window.Combat?.deps?.playerMesh || window.PlayerBodyTransformComposer?.getPlayerMesh?.();
       player?.traverse?.(node => {
@@ -452,8 +455,8 @@
       });
     }
     const assembly = playerKurrayaNote.heldAssembly;
-    if (!assembly?.parent) return null;
-    return { holder: assembly.parent, toolKey: 'kurraya', gripContext: 'melee' }; // Parent is the real held-tool transform; grip points are item-local, not in the tilted decorative plane group.
+    if (!assembly?.parent || assembly.parent.visible === false) return null;
+    return { holder: assembly.parent, toolKey: 'kurraya', gripContext: 'melee' }; // Neutral remains gripped when merely carrying the instrument; active notes still own independent plucking.
   }
   function playerNoteProgress() {
     const note = window.HeldActionAnimations?.kurrayaPlayNote;
