@@ -266,9 +266,9 @@
   <script src="js/furniture-surface-png-runtime.js?v=20261103materialv3"></script> <!-- Opt-in per-face PNG tiling, alpha padding and opacity from Furniture Editor. -->
   <script src="js/authored-furniture-runtime.js?v=20261105stoneSyntaxFix2"></script>
   <!-- Preserve authored sign decals when house fixtures render at town load. -->
-  <script src="js/furniture-decal-runtime.js?v=20261003h3fbafdb"></script>
-  <script src="js/furniture-pattern-surfaces.js?v=20261104hb3db90a"></script>
-  <script src="js/ruin-pattern-surface-rules.js?v=20261016haa382d2"></script>
+  <script src="js/furniture-decal-runtime.js?v=20261107ruinpngglow1"></script>
+  <script src="js/furniture-pattern-surfaces.js?v=20261107ruinpngglow1"></script>
+  <script src="js/ruin-pattern-surface-rules.js?v=20261107ruinpngglow1"></script>
   <!-- Shared plateau/ramp fold math (Map Editor preview + Tothal Shift) and the
        headless Wilderness Map Generator core (Tothal Shift wilderness reroll) -->
   <script src="js/map-boundary-guard.js?v=1"></script>
@@ -622,19 +622,19 @@
   <script src="js/shaft-hub.js?v=20261106h0b61a44"></script>
   <script src="js/ruin-layer-plan.js?v=20261107integrationBlocks1"></script>
   <script src="js/dev-ruin-single-room-trial.js?v=20261107findblocks1"></script> <!-- One-room developer puzzle chooser and normal-plan weighted odds. -->
-  <script src="js/dev-ruin-find-blocks.js?v=20261107combined1520_1524_1"></script> <!-- Four-block compound lab fixture, using native ruin push, fire, flute and bomb mechanics. -->
+  <script src="js/dev-ruin-find-blocks.js?v=20261107ruinpngglow1"></script> <!-- Four-block compound lab fixture, using native ruin push, fire, flute and bomb mechanics. -->
   <script src="js/ruin-shaft-corridor.js?v=20261104directVestibule1"></script>
   <script src="js/ruin-layer-defense.js?v=20261104soloNoLoot1"></script>
   <script src="js/puzzle-cave-melody.js?v=20261105puzzleCaves1"></script><!-- Reusable rhythm grid and timed plate-gated cave songs. -->
-  <script src="js/puzzle-cave-plate-art.js?v=20261107haoUun1"></script><!-- Carved-smooth Tankan lettering, reused by interior and exterior melody plates. -->
+  <script src="js/puzzle-cave-plate-art.js?v=20261107ruinpngglow1"></script><!-- Carved-smooth Tankan lettering, reused by interior and exterior melody plates. -->
   <script src="js/ruin-melody-glyph-decal.js?v=20261107integratedDungeon1"></script><!-- Plate-revealed Scratchbone clues outside the dev ruin bootstrap. -->
-  <script src="js/ruin-layer-challenges.js?v=20261107combined1520_1524_1"></script>
+  <script src="js/ruin-layer-challenges.js?v=20261107ruinpngglow1"></script>
   <script src="js/ruin-layer-playable.js?v=20261107combined1520_1524_1"></script>
   <script src="js/ruin-v50-native-mechanisms.js?v=20261107wingDoorSoftlock2"></script>
   <script src="js/ruin-v50-native-floors.js?v=20261107integratedDungeon1"></script>
   <script src="js/ruin-shaft-connector.js?v=20261107planeSkeeri1"></script>
   <script src="js/ruin-v50-vestibule.js?v=20261105reachVest1"></script>
-  <script src="js/ruin-multifloor-v50-style.js?v=20261106h753f499"></script> <!-- Vertical hub room composed on a CellGrid3D: balconies, doors, climbable buttresses; see docs/architecture/vertical-grid.md -->
+  <script src="js/ruin-multifloor-v50-style.js?v=20261107ruinpngglow1"></script> <!-- Vertical hub room composed on a CellGrid3D: balconies, doors, climbable buttresses; see docs/architecture/vertical-grid.md -->
   <!-- Wilderness fog-of-war, discovered-locale tracking, and map rendering
        (window.WildernessMap) — reads window.BanditCamps/window.BountyBoard
        at draw time (already global by then), so load order relative to the
@@ -930,7 +930,7 @@
   <script src="js/locale-cave-runtime.js?v=20261010h40fea5e"></script>
   <!-- Promotes wilderness den anchors into generic cave sites; wraps WildlifeSpawn/CavernGenerator/DevSpawner, all loaded above. -->
   <script src="js/locale-cliff-wall-mounts.js?v=20261105cliffPortal1"></script><!-- Mount editor-authored furniture on the resolved procedural wall normal and elevation. -->
-  <script src="js/puzzle-cave-entrances.js?v=20261107combined1520_1524_1"></script><!-- Real mini-cliff cliffDoor placement, exterior timed plate, and authoritative gated transition. -->
+  <script src="js/puzzle-cave-entrances.js?v=20261107ruinpngglow1"></script><!-- Real mini-cliff cliffDoor placement, exterior timed plate, and authoritative gated transition. -->
   <script src="js/cave-site-system.js?v=20261107caveStone1"></script>
   <!-- Two-necked Shattercask runtime. Loaded after Combat/DevSpawner/CaveSiteSystem so their
        hooks bind before game.js initializes the subsystems; also handles touch prompts. -->
@@ -2969,7 +2969,7 @@
   <!-- Camera-safe utility spyglass: capture Fishing/ActionArcUI init before game.js boots; action-arch prompt and lens are created at DOM ready. -->
   <script src="js/utility-spyglass.js?v=20261103spyglassControls3"></script>
   <!-- Dev-only Random Test Ruin runtime; injects nothing unless Dev Mode is on. -->
-  <script src="js/dev-random-ruin-bootstrap.js?v=20261107wingDoorProximity3"></script>
+  <script src="js/dev-random-ruin-bootstrap.js?v=20261107ruinpngglow1"></script>
   <!-- Dev Testing Switchbox: dev-only performance kill switches (audio,
        NPC/creature AI, water sim, low-poly foliage). Must load after
        audio-system.js/water-system.js/foliage-generator.js (wraps their

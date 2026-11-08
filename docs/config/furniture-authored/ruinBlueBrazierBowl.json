@@ -146,7 +146,7 @@
       "liquidLevel": 0.5,
       "wonkiness": 0,
       "materialRole": "stone",
-      "materialTexture": null,
+      "materialTexture": "carved_smooth.png",
       "materialRotationDeg": 0,
       "materialCapTexture": null,
       "materialCapRotationDeg": 0,

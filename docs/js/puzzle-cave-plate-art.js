@@ -32,10 +32,10 @@
 
   function decorate(THREE, plate, {radius = 1, thickness = .15, toward = {x:0,z:1}} = {}) {
     if (!THREE?.Mesh || !THREE?.PlaneGeometry || !plate?.add) return null;
-    const part = { color:'#8a8171', materialRole:'stone', materialTexture:'carved_smooth.png',
+    const part = { color:'#7a746b', materialRole:'stone', materialTexture:'carved_smooth.png',
       materialLighting:'unlit', materialFillMode:'never' };
     const stone = window.ProceduralFurniture?.makePartMaterial?.(part)
-      || new THREE.MeshBasicMaterial({color:0x8a8171});
+      || new THREE.MeshBasicMaterial({color:0x7a746b});
     plate.material = stone; // The actual plate uses the Furniture Author's carved_smooth texture/material pipeline.
     plate.userData ||= {};
     plate.userData.puzzleCavePlateTexture = 'carved_smooth.png'; // Mobile scene inspection can distinguish the authored finish.

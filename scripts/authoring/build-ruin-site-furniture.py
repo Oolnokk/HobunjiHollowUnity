@@ -154,17 +154,17 @@ piece('ruinBurrowHole', 'Ruin Burrow Hole',
       'Opened when a buried treasure turns out to be a way into a ruin. The shaft stays until that ruin is cleared or the next Tothal Shift, then fills in.',
       [part('shaft', 'Dark Shaft', kind='cylinder', x=0, y=-.02, z=0, sx=.86, sy=.06, sz=.86, color='#050505', texture=None),
        part('rim', 'Broken Rim', kind='hoop', x=0, y=.02, z=0, sx=1.02, sy=.08, sz=1.02, color=STONE_DARK),
-       part('rail_left', 'Ladder Rail', x=-.2, y=.35, z=-.18, sx=.06, sy=1.1, sz=.06, rx=-14, color='#7a5a3a', texture=None, materialRole='wood'),
-       part('rail_right', 'Ladder Rail', x=.2, y=.35, z=-.18, sx=.06, sy=1.1, sz=.06, rx=-14, color='#7a5a3a', texture=None, materialRole='wood'),
-       part('rung_a', 'Ladder Rung', x=0, y=.55, z=-.13, sx=.44, sy=.05, sz=.05, color='#8c6a45', texture=None, materialRole='wood'),
-       part('rung_b', 'Ladder Rung', x=0, y=.25, z=-.2, sx=.44, sy=.05, sz=.05, color='#8c6a45', texture=None, materialRole='wood')])
+       part('rail_left', 'Ladder Rail', x=-.2, y=.35, z=-.18, sx=.06, sy=1.1, sz=.06, rx=-14, color='#7a5a3a', texture='boards.png', materialRole='wood'),
+       part('rail_right', 'Ladder Rail', x=.2, y=.35, z=-.18, sx=.06, sy=1.1, sz=.06, rx=-14, color='#7a5a3a', texture='boards.png', materialRole='wood'),
+       part('rung_a', 'Ladder Rung', x=0, y=.55, z=-.13, sx=.44, sy=.05, sz=.05, color='#8c6a45', texture='boards.png', materialRole='wood'),
+       part('rung_b', 'Ladder Rung', x=0, y=.25, z=-.2, sx=.44, sy=.05, sz=.05, color='#8c6a45', texture='boards.png', materialRole='wood')])
 
 # ── Random Test Ruin props (previously built procedurally in the ruin modules) ─
 WOOD = '#5a3b22'; WOOD_LID = '#6b4728'
 bowl_parts = lambda y=0, s=1: [
     part('bowl', 'Stone Bowl', kind='cylinder', x=0, y=y + .08 * s, z=0, sx=.46 * s, sy=.16 * s, sz=.46 * s, bottomScaleX=.42, bottomScaleZ=.42),
     part('rim', 'Rim', kind='hoop', x=0, y=y + .155 * s, z=0, sx=.5 * s, sy=.045 * s, sz=.5 * s, color=STONE_LIGHT),
-    part('coals', 'Cold Coals', kind='disc', x=0, y=y + .158 * s, z=0, sx=.36 * s, sy=.01, sz=.36 * s, color='#141a24', texture=None)]
+    part('coals', 'Cold Coals', kind='disc', x=0, y=y + .158 * s, z=0, sx=.36 * s, sy=.01, sz=.36 * s, color='#141a24', texture='carved_smooth.png')]
 piece('ruinBlueBrazierBowl', 'Ruin Blue Brazier Bowl',
       'Stone bowl set on puzzle-goal pedestals and coffin altars. Striking it lights blue fire (fire is added by the sanctum runtime at the bowl centre).',
       bowl_parts())
@@ -194,8 +194,8 @@ for tier, (label, band, glow) in TIERS.items():
            part('lid_band', 'Lid Band', x=0, y=.59, z=.01, sx=.82, sy=.05, sz=.56, color=band, **wood),
            part('lock', 'Lock', x=0, y=.45, z=.29, sx=.12, sy=.14, sz=.04, color=glow, **wood)])
 piece('ruinRewardPlate', 'Ruin Reward Pressure Plate',
-      'Rope-payoff pressure plate. Sinks and turns its pressed colour when stepped on (runtime).',
-      [part('plate', 'Plate', x=0, y=.035, z=0, sx=.74, sy=.07, sz=.74, color='#b08a3c')])
+      'Rope-payoff pressure plate. Neutral carved_smooth stone; the interactive glyph alone changes colour.',
+      [part('plate', 'Plate', x=0, y=.035, z=0, sx=.74, sy=.07, sz=.74, color=STONE, materialFillMode='never')])
 
 # ── Skins for V50's fixed-size display props (scaled to the V50 bounds) ─────
 piece('ruinDisplayPedestal', 'Ruin Display Pedestal',
