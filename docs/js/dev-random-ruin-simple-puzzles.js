@@ -1925,10 +1925,25 @@
       puzzle.unregisterNode(MAP_ID,id);
       return null;
     }
-    state.controls.push({
+    if(bombTube){
+      const stand=naturalizeStone(new THREE.Mesh(sharedBoxGeometry(.68,.92,.68),makeBasic(0x7a746b))); // A waist-high stone mount places the projectile switch where a player can aim.
+      stand.name='lab-witch-bomb-target-pedestal';
+      stand.position.set(center.x,floor+.46,center.z-1.35);
+      stand.userData.devRuinFootprintIgnore=true;state.group.add(stand);
+      const marker=naturalizeStone(new THREE.Mesh(sharedBoxGeometry(.56,.54,.12),makeBasic(0x7a746b)));
+      marker.name='lab-witch-bomb-projectile-target';
+      marker.position.set(0,.16,-.375);marker.userData.devRuinFootprintIgnore=true;stand.add(marker);
+      window.FurniturePatternSurfaces?.attachStoneSignal?.(marker,{
+        face:'front',width:.42,height:.42,idleColor:'#ffae62',activeColor:'#65ffaf',
+      }); // The glyph stays recognizable as a repeatable ranged trigger.
+      const owner=state; // A projectile from a previous lab generation cannot activate a later room's tube.
+      state.projectileTargets.push({id:id+'-projectile-target',object:marker,hitMesh:marker,active:false,
+        hittable:()=>state===owner&&inRuin(),
+        onHit:()=>{if(state===owner&&inRuin())window.HronalWitchBombs?.dispenseFromMechanism?.(group);}
+      });
+    }else state.controls.push({
       kind:id,object:group,promptRoot:group,point:{...center,y:floor},range:2,priority:35,claimAction1:true,
-      label:bombTube?'Release Witch-bomb':'Toggle Pillar Bridge',
-      onPress:()=>bombTube?window.HronalWitchBombs.dispenseFromMechanism(group):puzzle.toggleMechanism(MAP_ID,id),
+      label:'Toggle Pillar Bridge',onPress:()=>puzzle.toggleMechanism(MAP_ID,id),
     });
     return {id,dispose:()=>puzzle.unregisterNode(MAP_ID,id)};
   }
