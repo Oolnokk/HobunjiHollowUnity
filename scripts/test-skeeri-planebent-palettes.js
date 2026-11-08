@@ -131,8 +131,13 @@ catalog.push({id:'dye:CLOTH:gray',hex:'#808080'});
 for(const [theme,def] of Object.entries(families)){
   const before=hueOrder[(hueOrder.indexOf(def.hues[0])+hueOrder.length-1)%hueOrder.length];
   const after=hueOrder[(hueOrder.indexOf(def.hues[def.hues.length-1])+1)%hueOrder.length];
-  const allowedFur=new Set([...def.hues,before,after]); // One neighboring hue on either edge, never two.
-  const outside=new Set([before,after].filter(hue=>!def.hues.includes(hue))); // Eye colors must never enter this set.
+  const hueAngle={red:0,red_orange:15,orange:30,yellow_orange:45,yellow:60,yellow_green:90,
+    green:120,green_blue:180,blue:240,blue_indigo:255,indigo:270,indigo_violet:285,violet:300};
+  const withinDrift=(hue,edge)=>Math.abs((hueAngle[hue]-hueAngle[edge]+540)%360-180)<=30;
+  const outside=new Set([before,after].filter((hue,i)=>!def.hues.includes(hue)
+    && withinDrift(hue,i===0?def.hues[0]:def.hues[def.hues.length-1]))); // No 60-degree jump masquerades as a slight color drift.
+  const allowedFur=new Set([...def.hues,...outside]); // Actual slightly expanded fur palette.
+  const forbidden=new Set([before,after].filter(hue=>!def.hues.includes(hue)&&!outside.has(hue)));
   let outsideFur=0;
   for(let index=0;index<160;index++){
     const palette=api.paletteFor(theme,'specimen:'+index);
@@ -148,6 +153,8 @@ for(const [theme,def] of Object.entries(families)){
     assert(allowedFur.has(pattern.id.slice(pattern.id.indexOf('_')+1).replace(/^(dusty|muted|dark_muted)_/,'')) || def.neutralDyes?.includes(pattern.id),
       'pattern colors may use only the immediate neighboring hue or their own group');
     if([...outside].some(hue=>pattern.id.endsWith('_'+hue)))outsideFur++;
+    assert(![...forbidden].some(hue=>pattern.id.endsWith('_'+hue)),
+      'fur markings cannot jump across an unusually wide adjacent hue gap');
     assert(def.hues.some(hue=>eye.id.endsWith('_'+hue)),
       'uncanny eye dye belongs STRICTLY to the lich tradition, even when fur drifts');
     assert(![...outside].some(hue=>eye.id.endsWith('_'+hue)),
