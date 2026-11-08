@@ -150,7 +150,7 @@
   // ── Hit-stop ───────────────────────────────────────────────────────────
   function hitStop(seconds) {
     const s = Math.max(0, Math.min(0.14, Number(seconds) || 0));
-    if (!s || reveal) return;
+    if (!s || reveal || !shakeEnabled()) return;
     hitStopUntil = Math.max(hitStopUntil, performance.now() + s * 1000);
     debug.hitStops++;
   }
@@ -410,9 +410,17 @@
     });
   }
 
+  function bindSettingsToggle() {
+    const box = typeof document !== 'undefined' ? document.getElementById('settingScreenShake') : null;
+    if (!box || box.dataset.gameFeelBound) return;
+    box.dataset.gameFeelBound = '1';
+    box.checked = shakeEnabled();
+    box.addEventListener('change', () => setShakeEnabled(box.checked));
+  }
   function init(injected) {
     deps = injected || null;
     wire();
+    bindSettingsToggle();
   }
 
   window.GameFeel = Object.freeze({

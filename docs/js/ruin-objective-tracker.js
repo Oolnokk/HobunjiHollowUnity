@@ -133,6 +133,18 @@
     setVisible(true);
   }
 
+  function bindSettingsToggle() {
+    const box = typeof document !== 'undefined' ? document.getElementById('settingRuinTracker') : null;
+    if (!box || box.dataset.trackerBound) return;
+    box.dataset.trackerBound = '1';
+    box.checked = enabled();
+    box.addEventListener('change', () => window.RuinObjectiveTracker.setEnabled(box.checked));
+  }
+  if (typeof document !== 'undefined') {
+    if (document.readyState === 'loading') document.addEventListener?.('DOMContentLoaded', bindSettingsToggle, { once: true });
+    else bindSettingsToggle();
+  }
+
   function install() {
     if (!window.RuntimeFrameScheduler?.register) return false;
     window.RuntimeFrameScheduler.register('ruin-objective-tracker', () => poll(), { phase: 'post-game', owner: 'ruin-objective-tracker', description: '4 Hz ruin checklist HUD; DOM writes only on change.' });
