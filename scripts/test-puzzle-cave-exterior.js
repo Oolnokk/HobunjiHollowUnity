@@ -217,10 +217,6 @@ assert.equal(opened,0,'stepping onto the plate must not auto-equip or open an in
 assert.equal(gate.lastDown,true,'standing on the real raised plate activates the melody clue');
 assert(gate.scoreBoard.visible,'the exterior Scratchbone score lights up on the active raised plate');
 assert(sounds.some(event=>event.key==='pick'),'the occupied outdoor song plate starts the recorded mine-pick beat');
-const initialPickCount=sounds.filter(event=>event.key==='pick').length;
-Exterior.update(gate.song.secondsPerTick*4.02,area);
-assert.equal(sounds.filter(event=>event.key==='pick').length,initialPickCount+1,
-  'each actual quarter-note boundary adds exactly one mine-pick click');
 assert.equal(sounds.filter(event=>event.key==='stoneActivator').length,1,
   'stepping onto the outdoor melody plate plays exactly one recorded activator cue');
 assert(gate.glyphGlows.some(glow=>glow.material.opacity===.98),
@@ -234,6 +230,11 @@ assert(gate.flashRemaining>0&&gate.glyphs[0].material.color.hex===0xff6a65,
   'wrong notes flash the current beat red rather than failing silently');
 Exterior.update(.5,area);
 assert.equal(gate.flashRemaining,0,'error feedback clears without requiring another note');
+const initialPickCount=sounds.filter(event=>event.key==='pick').length;
+Exterior.update(gate.song.secondsPerTick*4.02,area);
+assert.equal(sounds.filter(event=>event.key==='pick').length,initialPickCount+1,
+  'each actual quarter-note boundary adds exactly one mine-pick click');
+
 const scoreHeight=gate.scoreBoard.position.y; // The exterior score must remain pinned to its wall or pillar during door animation.
 player.x=(gate.plate.x+1.2)*64;player.y=(gate.plate.z+1.2)*64;
 Exterior.update(.01,area);
