@@ -205,6 +205,7 @@
       mesh.position.set(x,y,z);mesh.rotation.y=aroundY;
       group.add(mesh);
       if(isPillar){pillars++;counts.pilasters++;}else{faces++;counts.panels++;}
+      return mesh; // Callers that turn a panel into a coffin lid animate this very mesh.
     }
     rec.scene.updateMatrixWorld?.(true);
     rec.scene.traverse(node=>{
@@ -239,7 +240,7 @@
           point.z+(alongX?direction*.17:0),yaw,true,story);
       }
     });
-    const grid=hub.grid;
+    const grid=hub.grid,coffinSites=[]; // Candidate wall spots for the upright coffins (root/ruin-wall-coffins.js).
     for(let story=0;story<hub.options.floors;story++){
       const level=story*hub.options.spacing;
       for(let r=1;r<grid.rows-1;r++)for(let c=1;c<grid.cols-1;c++){
@@ -249,16 +250,19 @@
           if(((c*31+r*17+story*13+seed)>>>0)%9!==0)continue;
           const x=grid.colToX(c+.5+dx*.52),z=grid.rowToZ(r+.5+dz*.52);
           const y=grid.levelToY(level+1.1),yaw=dx?Math.PI/2:0;
-          panel(x,y,z,yaw,false,story);
+          const wallPanel=panel(x,y,z,yaw,false,story);
+          if(wallPanel&&grid.isSolid(c+dx,r+dz,level-1)&&!grid.isSolid(c+dx,r+dz,level+1)) // Only walls with real floor in front can hold a coffin.
+            coffinSites.push({key:story+':'+c+','+r+','+dx+','+dz,story,x,z,dx,dz,floorY:grid.levelToY(level),panel:wallPanel});
           if(((c+r+story) % 4)===0)panel(x+dx*.055,y,z+dz*.055,yaw,true,story);
         }
       }
     }
+    const traditionGlyph=root.SpecialHarlyaoLiches?.defFor?.(ruin.theme)?.glyph;
     const special=ruin.specialBoss?{
       specialBoss:true,
       patternId:ruin.specialGlyph,
       ink:ruin.specialBodyColor3,
-    }:undefined; // Named-lich masonry shares the original wall-ink selection.
+    }:traditionGlyph?{tradition:true,patternId:traditionGlyph,ink:ruin.lichColor||null}:undefined; // Named-lich masonry shares the original wall-ink selection; every other ruin carries its own tradition's glyph.
     const ids=root.FurniturePatternSurfaces?.decorateRuin?.(accents,seed,special)||[];
     // Broad walls of the shaft and the puzzle wings: real flat faces (js/ruin-wall-faces.js), one mesh each in a group
     // flagged ruinFeatureWalls, engraved exactly like the older V50 rooms. Only those groups, never the plain strips or
@@ -275,7 +279,15 @@
     ruin.shaftConnection.patternedPilasters=pillars;
     ruin.shaftConnection.patternIds=ids.length;
     ruin.shaftConnection.patternedFeatureWalls=wallIds.length; // Engraving motifs placed on the shaft's and wings' broad merged stone walls.
+    const playerPoint=()=>{const d=root.Combat?.deps,t=Number(d?.TILE)||64;return d?.player?{x:d.player.x/t,z:d.player.y/t}:null;};
+    const coffins=root.RuinWallCoffins?.mount?.({THREE,sites:coffinSites,seed,tier:ruin.tier||'hole',
+      getPlayerY,getPlayerPosition:playerPoint,isActive:()=>root.GridTileAccessors?.getCurrentArea?.()==='map_i_dev_random_ruin'});
+    ruin.shaftConnection.wallCoffins=coffins?.coffins?.length||0;
+    let lastCoffinMs=performance.now();
     const tick=()=>{
+      const nowMs=performance.now(),coffinDt=Math.min(.1,(nowMs-lastCoffinMs)/1000);lastCoffinMs=nowMs;
+      coffins?.update(coffinDt); // Lids open as you approach; one skeleton at a time.
+      {const feet=Number(getPlayerY?.());if(coffins&&Number.isFinite(feet))for(const c of coffins.coffins){const show=c.site.floorY<=feet+.8;c.wall.visible=show&&c.state!=='closed';}}
       kanthicFire?.tick(); // Update optional brazier particles and light positions on the existing shaft update cadence.
       const y=Number(getPlayerY?.()); // Match the existing shaft wing rule: floors above the player's feet cannot cover the camera.
       if(!Number.isFinite(y))return;
@@ -284,6 +296,7 @@
     };
     tick(); // Hide upper-story decorations from the first displayed frame.
     const cleanup=()=>{
+      coffins?.dispose();
       kanthicFire?.dispose(); // Remove Kanthic interaction controls, lights and tower fixtures before scene geometry teardown.
       const engravings=[];for(const group of featureGroups)group.traverse?.(node=>{if(node.userData?.furniturePattern)engravings.push(node);}); // Collected first: removing while traversing would skip siblings.
       for(const node of engravings){ // Engravings are overlay children of the shaft stone; release their own geometry and atlas textures.

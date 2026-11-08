@@ -4,6 +4,7 @@
 const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const Shadows=require('../docs/js/ruin-light-occlusion.js');
+Shadows.setEnabled(true);Shadows.setWallShadows(true); // Both are off by default (they drew a dark plane over the player); this test covers the geometry itself.
 const read=path=>fs.readFileSync(path,'utf8');
 
 const source={x:0,y:2,z:0};

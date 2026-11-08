@@ -50,7 +50,7 @@
   <!-- Input-binding load/save/label helpers extracted out of game.js; must
        load before game.js, which calls window.InputBindings.init(...) and
        window.InputBindings.loadInputBindings() during its own setup. -->
-  <script src="js/input-bindings.js?v=20261104puzzleModeMigration1"></script>
+  <script src="js/input-bindings.js?v=20261108h170c5a5"></script>
   <!-- Shared contextual input-ownership registry. World interactions may explicitly claim Action 1/2/etc.; game.js consults it before combat/tool dispatch so one physical input has exactly one owner. -->
   <script src="js/world-action-input-claims.js?v=20260927interactionpriority1"></script>
   <script src="js/activity-events.js?v=20261026hd11b0b1"></script>
@@ -255,7 +255,8 @@
   <!-- Procedural furniture (replaces GLB-based furniture rendering) -->
   <script src="js/procedural-furniture.js?v=20261106hlantern9"></script>
   <script src="js/furniture-puzzle-properties.js?v=20261103h9f3db40"></script>
-  <script src="js/ruin-interaction-audio.js?v=20261108cliffWhiteYellowGlowPick3"></script> <!-- Shared, size-pitched stone mechanisms and ignition cues; loaded before shaft mechanisms. -->
+  <script src="js/game-feel.js?v=20261108feel1"></script> <!-- Camera shake, hit-stop, hurt flash, puzzle-solve chime and reveal shot. -->
+  <script src="js/ruin-interaction-audio.js?v=20261108h6329763"></script> <!-- Shared, size-pitched stone mechanisms and ignition cues; loaded before shaft mechanisms. -->
   <script src="js/furniture-puzzle-runtime.js?v=20261107combined1520_1524_1"></script>
   <script src="js/interior-door-tiles.js?v=20261104crossheightAudit2"></script>
 <script src="js/farmhouse-room-planner.js?v=20261029roomspace3"></script> <!-- Saved farmhouse wall segments and movable one-tile door slots. -->
@@ -266,8 +267,9 @@
   <script src="js/furniture-surface-png-runtime.js?v=20261103materialv3"></script> <!-- Opt-in per-face PNG tiling, alpha padding and opacity from Furniture Editor. -->
   <script src="js/authored-furniture-runtime.js?v=20261105stoneSyntaxFix2"></script>
   <!-- Preserve authored sign decals when house fixtures render at town load. -->
-  <script src="js/furniture-decal-runtime.js?v=20261107ruinpngglow1"></script>
-  <script src="js/furniture-pattern-surfaces.js?v=20261107ruinpngglow1"></script>
+  <script src="js/ruin-emblem.js?v=20261108emblem1"></script>
+  <script src="js/furniture-decal-runtime.js?v=20261108h4717d33"></script>
+  <script src="js/furniture-pattern-surfaces.js?v=20261108h66ae7a9"></script>
   <script src="js/ruin-pattern-surface-rules.js?v=20261107ruinpngglow1"></script>
   <!-- Shared plateau/ramp fold math (Map Editor preview + Tothal Shift) and the
        headless Wilderness Map Generator core (Tothal Shift wilderness reroll) -->
@@ -317,7 +319,7 @@
   <script src="onboarding.js?v=20261104weaponfamily1"></script>
   <!-- Combat system modules (windup/strike pipeline, loadout, abilities) -->
   <script src="js/combat/resource-system.js?v=20261106trinkets20"></script>
-  <script src="js/sacred-ground.js?v=20261026sacred1"></script> <!-- Global sacred-ground provider registry for totems, temple and future blessings. -->
+  <script src="js/sacred-ground.js?v=20261108h9e2416f"></script> <!-- Global sacred-ground provider registry for totems, temple and future blessings. -->
   <script src="js/combat/knockback-collision-impact.js?v=20261105aerialAudit2"></script>
   <!-- Burning Health presentation: reuses the authored campfire fire emitter on afflicted player/enemy avatar roots. -->
   <script src="js/combat/burning-affliction-vfx.js?v=20261017h6377740"></script>
@@ -374,7 +376,8 @@
   <!-- Finite projectile cover heights for rock/tree/cavern tiles (extracted from game.js; init(deps) from game.js). -->
   <script src="js/projectile-tile-cover.js?v=20261015a"></script>
   <!-- Sub-tile prop footprints consulted by game.js canOccupyAt()/furnitureBlocksMovementAt(); must load before game.js. -->
-  <script src="js/area-footprint-blockers.js?v=20260929shotfloor1"></script>
+  <script src="js/movement-block-debug.js?v=20261108mbd1"></script>
+  <script src="js/area-footprint-blockers.js?v=20261108h908e581"></script>
   <!-- Sub-stepped sliding move extracted out of game.js; must load before game.js. -->
   <script src="js/swept-move.js?v=20260927footprints1"></script>
   <script src="js/combat/ranged-weapons.js?v=20261106charge879"></script>
@@ -501,7 +504,7 @@
        time, not at load time, so script order relative to them doesn't
        matter; must load before game.js, which calls
        window.HousePieces.init(...) during its own setup. -->
-  <script src="js/house-pieces.js?v=20261107nearbySocial2&surfaceUv=20261026orequad1"></script>
+  <script src="js/house-pieces.js?v=20261108haddacc7&surfaceUv=20261026orequad1"></script>
   <!-- Death ragdoll → lootable corpse (window.CreatureDeath) —
        self-contained aside from deps injected via init(), so load order
        relative to the other systems above doesn't matter; must load
@@ -616,11 +619,12 @@
   <script src="js/cliff-elevated-surfaces.js?v=20261106miniplateau1"></script> <!-- Wilderness balconies reuse CellGrid3D and scoped DynamicSurfaces; terrain heightfield stays intact. -->
   <!-- Climbable wall surfaces (window.ClimbSurfaces): attach + move along a wall.
        Needs ClimbSystem (registered as a world-climb provider by game.js). -->
-  <script src="js/climb-surfaces.js?v=20261108shaftfallgrab1"></script>
+  <script src="js/climb-surfaces.js?v=20261108h4c58289"></script>
   <script src="js/ruin-wall-faces.js?v=20261106walls1"></script> <!-- Merged stretch-to-fit wall faces; shaft-hub.js builds its stone from them. -->
   <script src="js/ruin-reaching-obelisks.js?v=20261108shaftfallgrab1"></script> <!-- Complete stateful vertical traversal, after CellGrid3D and the climb pipeline. -->
-  <script src="js/shaft-hub.js?v=20261108shaftfallgrab1"></script>
-  <script src="js/ruin-layer-plan.js?v=20261107integrationBlocks1"></script>
+  <script src="js/ruin-jump-shaft.js?v=20261108jump1"></script> <!-- Free-jump platform staircase shaft traversal (replaces the reaching obelisks for generated ruins); before shaft-hub.js. -->
+  <script src="js/shaft-hub.js?v=20261108h1e00563"></script>
+  <script src="js/ruin-layer-plan.js?v=20261108h7c950b1"></script>
   <script src="js/dev-ruin-single-room-trial.js?v=20261108witchBombExtern1"></script> <!-- One-room developer puzzle chooser and normal-plan weighted odds. -->
   <script src="js/dev-ruin-find-blocks.js?v=20261108witchBombExtern1"></script> <!-- Four-block compound lab fixture, using native ruin push, fire, flute and bomb mechanics. -->
   <script src="js/ruin-shaft-corridor.js?v=20261104directVestibule1"></script>
@@ -628,13 +632,14 @@
   <script src="js/puzzle-cave-melody.js?v=20261108cliffWhiteYellowGlowPick3"></script><!-- Reusable rhythm grid and timed plate-gated cave songs. -->
   <script src="js/puzzle-cave-plate-art.js?v=20261107ruinpngglow1"></script><!-- Carved-smooth Tankan lettering, reused by interior and exterior melody plates. -->
   <script src="js/ruin-melody-glyph-decal.js?v=20261108cliffWhiteYellowGlowPick3"></script><!-- Plate-revealed Scratchbone clues outside the dev ruin bootstrap. -->
-  <script src="js/ruin-layer-challenges.js?v=20261108cliffWhiteYellowGlowPick3"></script>
-  <script src="js/ruin-layer-playable.js?v=20261108he284639"></script>
+  <script src="js/ruin-layer-challenges.js?v=20261108ha4cd8ba"></script>
+  <script src="js/ruin-layer-playable.js?v=20261108hf0f7943"></script>
   <script src="js/ruin-v50-native-mechanisms.js?v=20261107wingDoorSoftlock2"></script>
-  <script src="js/ruin-v50-native-floors.js?v=20261108hb863f6e"></script>
-  <script src="js/ruin-shaft-connector.js?v=20261108h89b74cd"></script>
-  <script src="js/ruin-v50-vestibule.js?v=20261105reachVest1"></script>
-  <script src="js/ruin-multifloor-v50-style.js?v=20261108h7deac26"></script> <!-- Vertical hub room composed on a CellGrid3D: balconies, doors, climbable buttresses; see docs/architecture/vertical-grid.md -->
+  <script src="js/ruin-v50-native-floors.js?v=20261108h232d4e7"></script>
+  <script src="js/ruin-shaft-connector.js?v=20261108h41e2e48"></script>
+  <script src="js/ruin-v50-vestibule.js?v=20261108h61ad699"></script>
+  <script src="js/ruin-wall-coffins.js?v=20261108coffin1"></script>
+  <script src="js/ruin-multifloor-v50-style.js?v=20261108h3bb5d6e"></script> <!-- Vertical hub room composed on a CellGrid3D: balconies, doors, climbable buttresses; see docs/architecture/vertical-grid.md -->
   <!-- Wilderness fog-of-war, discovered-locale tracking, and map rendering
        (window.WildernessMap) — reads window.BanditCamps/window.BountyBoard
        at draw time (already global by then), so load order relative to the
@@ -651,7 +656,7 @@
   <script src="js/animal-shoulder-spline.js?v=20261105tzFlight1"></script> <!-- Required by the actual seven-point flying rig perch deformation. -->
   <script src="js/flying-animal-rig.js?v=20261108planebentFur1"></script> <!-- Canonical authored two-bone bird wing/body assembly. -->
   <script src="js/tzatzul-registration.js?v=20261107eye1"></script> <!-- Tzatzul dev species, hatchling peck, stable individual tint and flying-rig JSON. -->
-  <script src="js/skeeri-ruins.js?v=20261108planebentFur1"></script> <!-- Three authored Skeeri sizes, concealed ruin hatches and shaft witch-bomb runs. -->
+  <script src="js/skeeri-ruins.js?v=20261108hb17c172"></script> <!-- Three authored Skeeri sizes, concealed ruin hatches and shaft witch-bomb runs. -->
   <script src="js/tzatzul-live-visuals.js?v=20261108ha635d1e"></script>
   <script src="js/tzatzul-cliff-sites.js?v=20261107h4239d09"></script> <!-- Separate rock-textured, non-climbable Tzatzul spires. -->
   <script src="js/tzatzul-flight-runtime.js?v=20261107scoutbound3"></script> <!-- Shared swept-body dive for exterior and nest mothers. -->
@@ -805,8 +810,8 @@
   <!-- Player-centered white mist cylinders, shown only in the Southern
        Cloud Forest — see EXTERIOR_ZONES.map_southern_cloud_forest's
        fogDensity/vegCullRadiusTiles comments in game.js for why. -->
-  <script src="js/ruin-light-occlusion.js?v=20261108shadow1"></script> <!-- Screen-space ruin torch masks clip behind physical columns, walls and props. -->
-  <script src="js/cloud-forest-fog.js?v=20261108shadow1"></script>
+  <script src="js/ruin-light-occlusion.js?v=20261108hac6d00e"></script> <!-- Screen-space ruin torch masks clip behind physical columns, walls and props. -->
+  <script src="js/cloud-forest-fog.js?v=20261108hb59f42e"></script>
   <!-- Farm tab hub (header, grid glance, buildings list, processor status
        tiles, livestock roster + breeding, farm<->stable transfers, storage,
        farmhands) and the Stable tab (window.FarmPanel) — reads
@@ -939,9 +944,9 @@
        dependencies; must load before shattercasks.js, which feeds them. See docs/architecture/ruin-capabilities.md. -->
   <script src="js/world-events.js?v=1"></script>
   <script src="js/targetables.js?v=1"></script>
-  <script src="js/shattercasks.js?v=20261107burdenCombined1"></script>
+  <script src="js/shattercasks.js?v=20261108h9110afe"></script>
   <script src="js/crate-piles.js?v=20261105hf6df591"></script>
-  <script src="js/hronal-witch-bombs.js?v=20261107lowblast1"></script>
+  <script src="js/hronal-witch-bombs.js?v=20261108hf7dc41b"></script>
   <script src="js/pingdort-flocks.js?v=20261108elevatednests1"></script> <!-- Wild Drenkirra-hunting flocks, fertile nests, and companion rock-bomber attacks. -->
   <!-- Hanging ropes: the shared rope swing arithmetic (pure) and the rope component burdens hang from. Needs Shattercasks at
        call time only. See docs/architecture/ruin-capabilities.md. -->
@@ -960,8 +965,8 @@
   <script src="js/ruin-site-locales.js?v=20261002hb4d3f2d"></script>
   <script src="js/stampable-locale-defs.js?v=20261102h082455e"></script>
   <script src="js/tothal-zone-cache.js?v=20261102a"></script>
-  <script src="js/ruin-sites.js?v=20261107combined1520_1524_1"></script>
-  <script src="js/zone-den-totem-features.js?v=20261106hf29f0b5"></script>
+  <script src="js/ruin-sites.js?v=20261108hc128de7"></script>
+  <script src="js/zone-den-totem-features.js?v=20261108h0ea058e"></script>
   <script src="js/transition-markers.js?v=20261004h46d3bfb"></script>
   <!-- Wilderness-zone grass and rich-foliage-patch billboards
        (window.ZoneGrassBillboards) — pure scene-graph generation, no
@@ -986,7 +991,7 @@
   <script src="js/crop-growth.js?v=20261107cultivar2"></script>
   <!-- Perception Mode: toggleable eagle-vision highlights + crop/livestock
        info lists (window.PerceptionMode; game.js calls init/update/renderOverlay). -->
-  <script src="js/perception-mode.js?v=20261108shaftsense1"></script>
+  <script src="js/perception-mode.js?v=20261108hbb150f1"></script>
   <script src="js/world-portrait-life.js?v=20261031headtakerlife6"></script>
 </head>
 <body>
@@ -2112,6 +2117,20 @@
           <div class="settings-section-title" style="margin-top:10px">Camera</div>
           <label class="settings-row">
             <div class="settings-label">
+              <div class="settings-name">Screen Shake</div>
+              <div class="settings-desc">Camera shake, controller rumble and brief hit-pause on impacts, damage and moving stone</div>
+            </div>
+            <span class="settings-toggle"><input type="checkbox" id="settingScreenShake" checked><span class="toggle-slider"></span></span>
+          </label>
+          <label class="settings-row">
+            <div class="settings-label">
+              <div class="settings-name">Ruin Objective Tracker</div>
+              <div class="settings-desc">Show the dungeon checklist (braziers, trials, Great Door) inside ruins</div>
+            </div>
+            <span class="settings-toggle"><input type="checkbox" id="settingRuinTracker" checked><span class="toggle-slider"></span></span>
+          </label>
+          <label class="settings-row">
+            <div class="settings-label">
               <div class="settings-name">Zoom</div>
               <div class="settings-desc">Camera distance from the player — higher is more zoomed in</div>
             </div>
@@ -2856,7 +2875,7 @@
   <!-- Completed world-space loot and XP rewards move into the five-row, screen-fixed reading queue. -->
   <script src="js/reward-readout.js?v=20261107rewardReadout1"></script>
   <!-- World-space Float+ combat text and centered five-row reward lists. -->
-  <script src="js/world-popup-text.js?v=20261107rewardReadout1"></script>
+  <script src="js/world-popup-text.js?v=20261108h8b7282a"></script>
   <!-- Quick Attack opportunity reticle needs WorldPopupText's avatar centroid
        helper at module evaluation time, so it belongs here rather than in the
        earlier combat-definition block. It still loads before game.js and
@@ -2970,7 +2989,8 @@
   <!-- Camera-safe utility spyglass: capture Fishing/ActionArcUI init before game.js boots; action-arch prompt and lens are created at DOM ready. -->
   <script src="js/utility-spyglass.js?v=20261103spyglassControls3"></script>
   <!-- Dev-only Random Test Ruin runtime; injects nothing unless Dev Mode is on. -->
-  <script src="js/dev-random-ruin-bootstrap.js?v=20261108shaftfallgrab1"></script>
+  <script src="js/ruin-objective-tracker.js?v=20261108tracker1"></script> <!-- Top-left dungeon checklist while inside a generated ruin. -->
+  <script src="js/dev-random-ruin-bootstrap.js?v=20261108h17f07bf"></script>
   <!-- Dev Testing Switchbox: dev-only performance kill switches (audio,
        NPC/creature AI, water sim, low-poly foliage). Must load after
        audio-system.js/water-system.js/foliage-generator.js (wraps their
@@ -3015,7 +3035,7 @@
   <script src="js/delvers-vault-signal.js?v=20261031storyVault1"></script>
   <script src="js/bed-lie-pose.js?v=20261102mattressxray2"></script> <!-- Surface-aligned sleep presentation; game.js injects the live player and calendar. -->
   <script src="js/lunge-targeting.js?v=1"></script>
-  <script src="game.js?v=20261107instrPose1"></script>
+  <script src="game.js?v=20261108h89f89eb"></script>
   <!-- Fresh-character opening story orchestration. Loaded after game.js so it can call the live authored-cutscene wrapper, but before HobunjiOnboarding.init() emits hobunjiPlayerReady. -->
   <script src="js/opening-story-cutscene.js?v=20261029hguild2"></script>
   <!-- Banubu snores indoors around the clock and outdoors at night near his shifted entrance. -->

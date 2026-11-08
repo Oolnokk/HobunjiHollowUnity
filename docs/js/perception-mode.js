@@ -221,7 +221,7 @@
     lastStats.sources = Object.fromEntries(Object.entries(sources).map(([key, list]) => [key, count(list)]));
     lastStats.rejected = rejected;
     for (const c of sources.companions || []) if (isAliveCreature(c)) consider(rootOf(c), 'friendly');
-    for (const c of sources.creatures || []) if (isAliveCreature(c)) consider(rootOf(c), creatureCategory(c), { creature: c });
+    for (const c of sources.creatures || []) if (isAliveCreature(c)) consider(rootOf(c), creatureCategory(c), { creature: c }, Number(c.senseRangeTiles) || RANGE_TILES); // Ruin bombers roost far above the player; they publish a longer reveal radius.
     for (const walker of sources.npcs || []) consider(walker?.root || rootOf(walker), 'friendly');
     for (const animal of sources.livestock || []) consider(rootOf(animal), 'friendly', { livestockId: animal.livestockId || null });
     for (const c of sources.corpses || []) consider(rootOf(c), 'interact');

@@ -625,7 +625,7 @@
       const MOVE_BOB_WALK_AMP = 0.0075;
       const MOVE_BOB_RUN_AMP  = 0.015;
       const ACCEL         = 980;  // px/s²; used by updateMovement() for snappier starts.
-      const TURN_ACCEL    = 1320; // px/s²; used when input reverses or sharply turns.
+      const TURN_ACCEL    = 2000; // px/s²; used when input reverses or sharply turns (a full reversal settles in ~0.18 s, matching the start-up time).
       const DECEL         = 1850; // px/s²; used by updateMovement() to avoid floaty stops.
       const CARDINAL_BIAS = 0.18; // used by updateMovement(); lower keeps diagonals less sticky.
       // Config-backed (docs/config/scratchbones-config.js game.input.touchJoystick)
@@ -5741,6 +5741,7 @@
         if (window.ResourceSystem) window.ResourceSystem.applyDamage(player, resourceDamage.health, dmgOpts || {});
         else player.health = Math.max(0, player.health - resourceDamage.health);
         const appliedImpactHealth = environmentalImpact ? Math.max(0, healthBeforeImpact - Math.max(0, Number(player.health) || 0)) : 0; // Reports actual clamped collision damage to the resolver.
+        if (resourceDamage.health > 0) window.GameFeel?.playerHurt?.(environmentalImpact ? appliedImpactHealth : resourceDamage.health); // Shake, hit-stop and red edge flash (js/game-feel.js).
         if (player.health > 0 && !environmentalImpact && !staggerless) {
           // Every attack staggers its target — same interrupt-plus-knockback
           // rule as damageCreature above, mirrored onto whatever combo/quick-
@@ -5757,25 +5758,7 @@
         if (environmentalImpact) return { applied: appliedImpactHealth, lethal: false };
       }
 
-      // Closest Root Totem (see wilderness-map-generator.js's
-      // placeRootTotems) to a given world position, within one zone only —
-      // totems don't offer a way to reach a different zone's terrain from
-      // where the player actually died, so a death is always recovered
-      // within its own zone or (if that zone has none, or the player wasn't
-      // in a wilderness zone at all) falls back to the farmhouse. Returns
-      // the totem's pathAnchor tile ({x,y}) or null.
-      function nearestRootTotemFor(zoneId, worldX, worldY) {
-        const totems = _zoneLayouts.get(zoneId)?.rootTotems;
-        if (!totems || !totems.length) return null;
-        const px = worldX / TILE, py = worldY / TILE;
-        let best = null, bestDist = Infinity;
-        for (const t of totems) {
-          const anchor = t.pathAnchor || t;
-          const d = Math.hypot(anchor.x - px, anchor.y - py);
-          if (d < bestDist) { bestDist = d; best = anchor; }
-        }
-        return best;
-      }
+      // nearestRootTotemFor (closest zone Root Totem for death recovery) now lives in js/sacred-ground.js as HobunjiSacredGround.nearestRootTotem.
 
       window.HobunjiSacredGround?.init?.({
         tileSize: TILE,
@@ -5840,7 +5823,7 @@
           showToast('Respawned at the Testing Arena entrance.', false);
           return;
         }
-        const totem = _isZoneArea(currentArea) ? nearestRootTotemFor(currentArea, player.x, player.y) : null;
+        const totem = _isZoneArea(currentArea) ? (window.HobunjiSacredGround?.nearestRootTotem?.(currentArea, player.x, player.y) || null) : null;
         if (totem) {
           player.x = (totem.x + 0.5) * TILE;
           player.y = (totem.y + 0.5) * TILE;
@@ -5930,7 +5913,52 @@
       let autoTargetSightObstacles = []; // Cached active-area geometry for all candidate checks in the same frame.
 
       function mobileAutoTargetEnabled() {
-        return !isDesktop && !!window.Combat?.input?.isAutoTargetEnabled?.();
+        return desktopLockOnActive || (!isDesktop && !!window.Combat?.input?.isAutoTargetEnabled?.());
+      }
+      // Desktop/controller Lock-On (Z-targeting): the same persistent target,
+      // red lock ring and camera tracking the mobile auto-target uses, toggled
+      // by the 'lockOn' input (middle click / controller Y). Releases itself when the
+      // target dies, leaves retention range, or the weapon is put away.
+      let desktopLockOnActive = false;
+      const LOCK_ON_ACQUIRE_TILES = 10;
+      const LOCK_ON_ACQUIRE_HALF_CONE = Math.PI * 80 / 180;
+      function autoTargetPlatformAllowed() {
+        return !isDesktop || desktopLockOnActive;
+      }
+      function releaseLockOn() {
+        if (!desktopLockOnActive) return false;
+        desktopLockOnActive = false;
+        manualAutoTarget = null;
+        invalidateAutoTargetCache();
+        window.GameFeel?.blip?.(880, 0.14, 0.35);
+        return true;
+      }
+      function toggleLockOn() {
+        if (releaseLockOn()) return false;
+        const rangedOut = heldMode === 'tool' && activeTool === 'ranged' && !!equipmentSlots.ranged;
+        if (!meleeWeaponOut() && !rangedOut) {
+          if (!equipmentSlots.weapon) return false;
+          heldMode = 'tool';
+          setActiveTool('weapon'); // Zelda-style: locking on readies the sword.
+        }
+        const aimAngle = currentMeleeAimAngle();
+        const maxDist = TILE * LOCK_ON_ACQUIRE_TILES;
+        let best = null, bestScore = Infinity;
+        for (const c of hostileObjects) {
+          if (!autoTargetCandidateValid(c, maxDist)) continue;
+          const dx = c.x - player.x, dy = c.y - player.y;
+          const error = Number.isFinite(aimAngle) ? Math.abs(angleDiff(Math.atan2(dy, dx), aimAngle)) : 0;
+          if (error > LOCK_ON_ACQUIRE_HALF_CONE) continue;
+          const score = error + Math.hypot(dx, dy) / maxDist * 0.6; // Prefer what the camera points at; distance breaks near-ties.
+          if (score >= bestScore || !autoTargetVisible(c)) continue;
+          bestScore = score; best = c;
+        }
+        if (!best) return false;
+        desktopLockOnActive = true;
+        manualAutoTarget = best;
+        invalidateAutoTargetCache();
+        window.GameFeel?.blip?.(1318.5, 0.2, 0.5);
+        return true;
       }
 
       function autoTargetRange() {
@@ -5958,7 +5986,8 @@
 
       function updateMobileAutoTargetCamera(dt) {
         const target = findAutoTarget(); // Keep the selected creature while manual attack-stick input owns camera aim.
-        const suppressed = isDesktop || !target || manualCombatReticleAim() || menuOpen || dialogueOpen || sitInteraction
+        if (desktopLockOnActive && !target) releaseLockOn(); // Target died, escaped retention range, or the weapon was put away.
+        const suppressed = !autoTargetPlatformAllowed() || !target || manualCombatReticleAim() || menuOpen || dialogueOpen || sitInteraction
           || farmEditMode || characterViewMode.enabled || window.AuthoredCutsceneRuntime?.isActive?.()
           || window.__mapEditorOrbitActive; // Scripted/menu/editor camera owners remain authoritative.
         mobileAutoCameraActive = false;
@@ -6048,7 +6077,7 @@
       }
 
       function meleeAttackTargetCandidate(preview = false) {
-        if (isDesktop || (!preview && !mobileAutoTargetEnabled()) || !meleeWeaponOut()) return null;
+        if (!autoTargetPlatformAllowed() || (!preview && !mobileAutoTargetEnabled()) || !meleeWeaponOut()) return null;
         if (autoTargetCandidateValid(manualAutoTarget, autoTargetRetentionRange())) return manualAutoTarget;
         if (!preview) manualAutoTarget = null;
         const aimAngle = currentMeleeAimAngle(); // Live camera/stick/body bearing used for initial acquisition in the front half-plane.
@@ -6075,7 +6104,7 @@
 
       function computeAutoTarget(preview = false) {
         const rangedActive = heldMode === 'tool' && activeTool === 'ranged' && !!equipmentSlots.ranged; // Only equipped mobile combat tools acquire targets.
-        if (isDesktop || (!preview && !mobileAutoTargetEnabled()) || (!meleeWeaponOut() && !rangedActive)) {
+        if (!autoTargetPlatformAllowed() || (!preview && !mobileAutoTargetEnabled()) || (!meleeWeaponOut() && !rangedActive)) {
           if (!preview) manualAutoTarget = null;
           return null;
         }
@@ -6110,7 +6139,7 @@
       }
 
       function findAvailableAutoTarget() {
-        if (isDesktop) return null;
+        if (isDesktop && !desktopLockOnActive) return null;
         if (mobileAutoTargetEnabled()) return findAutoTarget();
         if (availableAutoTargetCacheFrame !== gameFrameSerial) {
           availableAutoTargetCacheValue = computeAutoTarget(true); // Uses ordinary range, visibility, and weapon/cone rules without selecting or turning toward prey.
@@ -26485,7 +26514,8 @@
         // which calls it exactly once per browser frame and keeps calling it
         // even if a given frame throws.
         const gameLoopTotalPerf = window.PerfProfiler?.begin('gameLoop total');
-        const dt = Math.min(0.04, (now - lastTime) / 1000);
+        const rawFrameDt = Math.min(0.04, (now - lastTime) / 1000);
+        const dt = window.GameFeel ? window.GameFeel.frameDt(rawFrameDt) : rawFrameDt; // Melee hit-stop briefly time-scales the simulation (js/game-feel.js).
         lastTime = now;
         gameFrameSerial++;
         window.FestivalSystem?.update?.();
@@ -29040,6 +29070,7 @@
         if (actionId === 'dodge') { performContextAction(); return; }
         if (actionId === 'jump') { performJumpAction(); return; }
         if (actionId === 'toggleMount') { window.Mounts?.toggleMount(); return; }
+        if (actionId === 'lockOn') { toggleLockOn(); return; }
         if (actionId === 'swapTarget') {
           const aimAngle = controllerLookActive ? controllerLookAngle
             : (isDesktop && mouseLookActive) ? mouseLookAngle
@@ -29776,6 +29807,7 @@
         threeContainer.addEventListener('pointerdown', (e) => {
           if (window.PixelProbe?.armed || menuOpen || (farmEditMode && !furniturePlacementModeArmed()) || e.shiftKey || window.__mapEditorGizmoActive) return;
           const mouseAction = getActionForButton('desktop', 'Mouse' + e.button);
+          if (mouseAction === 'lockOn') { e.preventDefault(); runInputAction('lockOn', 'press'); return; } // preventDefault also stops middle-click autoscroll.
           if ((window.WallOrnamentPlacement?.isPlayerReticlePlacementActive?.() || window.DevMapFurniture?.isActive?.()) && (mouseAction === 'action1' || mouseAction === 'action2')) {
             desktopWallFurnitureMousePresses.add(e.button);
             runInputAction(mouseAction, 'press');
@@ -30179,6 +30211,8 @@
         get targetAimAngleDeg() { return targetAimAngle * 180 / Math.PI; },
         get mouseLookAngleDeg() { return mouseLookAngle * 180 / Math.PI; },
         get mouseLookActive() { return mouseLookActive; },
+        get lockOnActive() { return desktopLockOnActive; }, // Desktop/controller Lock-On state for headless checks.
+        toggleLockOn: () => toggleLockOn(),
         get cameraAngleOffsetDeg() { return cameraAngleOffsetDeg; },
         get characterViewMode() { return { ...window.HOBUNJI_CHARACTER_VIEW_STATUS }; },
         setCharacterViewMode: (enabled) => setCharacterViewMode(enabled, 'debug'),
@@ -33099,6 +33133,7 @@
         surfaceY: farmSurfaceYAtWorld, markOutline: _markOutline,
         saveFarmLayout: window.FarmEditor.saveFarmLayout, saveMemberWorldData });
       // Honeyfuzzle House (1x1 egg/swarm slot on a FarmProduction entry) — js/honeyfuzzle-house.js.
+      window.GameFeel?.init({ getCamera: () => camera, getPlayer: () => player, TILE, getCurrentArea: () => currentArea, getPlayerWorldY: () => Number(playerMesh?.position?.y) || 0, isPlayerInCombat: () => isPlayerInCombat() }); // Camera shake, hit-stop, hurt flash and the ruin puzzle reveal shot live in js/game-feel.js.
       window.HoneyfuzzleHouse?.init({ THREE, scene, getWorldId: _tothalWorldId, getCamera: () => camera, getCurrentArea: () => currentArea, inventory,
         loadWorldLivestock: _loadWorldLivestock, saveWorldLivestock: _saveWorldLivestock, hasFarmPermission, showToast,
         saveFarmLayout: window.FarmEditor.saveFarmLayout, saveMemberWorldData, surfaceY: farmSurfaceYAtWorld,

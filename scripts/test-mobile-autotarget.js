@@ -232,3 +232,22 @@ for (const area of ['map_i_den_test','map_i_story_cave']) {
   }
 }
 console.log('cave resident auto-target acquisition checks passed');
+
+// Desktop/controller Lock-On reuses the same selector: off by default on
+// desktop, a toggle acquires what the camera points at, and it releases.
+{
+  const area = 'map_i_dev_random_ruin';
+  Object.assign(targetContext, { currentArea: area, isDesktop: true, enabled: false, activeTool: 'weapon', heldMode: 'tool', manualAutoTarget: null, setActiveTool() {} });
+  const ahead = { id: 'ahead', health: 10, x: 40, y: 2, areaId: area };
+  const behind = { id: 'behind', health: 10, x: -15, y: 0, areaId: area };
+  targetContext.hostileObjects = [ahead, behind];
+  assert.equal(targetContext.computeAutoTarget(), null, 'desktop has no target until lock-on is pressed');
+  assert.equal(targetContext.toggleLockOn(), true, 'lock-on acquires');
+  assert.equal(targetContext.manualAutoTarget, ahead, 'lock-on picks the enemy the camera faces, not the nearer one behind');
+  assert.equal(targetContext.computeAutoTarget(), ahead, 'the shared selector keeps the lock');
+  assert.equal(targetContext.toggleLockOn(), false, 'pressing again releases');
+  assert.equal(targetContext.computeAutoTarget(), null, 'released lock clears the target');
+  targetContext.hostileObjects = [behind];
+  assert.equal(targetContext.toggleLockOn(), false, 'nothing in front: no lock');
+}
+console.log('desktop lock-on checks passed');

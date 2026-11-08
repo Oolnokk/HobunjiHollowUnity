@@ -72,7 +72,7 @@ function setup(theme, playerX = 3.1, playerZ = 3.1, options = {}) {
     },
     KnockbackCollisionImpact:{resolveStrength() { impactCount++; }},
     ResourceSystem:{addAffliction() { afflictionCount++; }, spendFooting() { afflictionCount++; }},
-    DevRandomRuin:{syncPlayerPresentationHeight(y) {presentationHeights.push(y);}},
+    DevRandomRuin:{syncPlayerPresentationHeight(y) {presentationHeights.push(y);},setPresentationSink(d) {presentationHeights.push(-d);}},
     DevRandomRuinSanctum:{getState:()=>options.arena ? {layout:{arena:options.arena}} : null}, // Only the boss-emitter tests opt into a real sanctum boundary.
     AudioSystem:{gameAudioConfig:() => ({sfxVolume:1})},
     CloudForestFog:{getKanthicLanternRadiusTiles:()=>options.lanternRadius??.9}, // Default: 2.4 × .375. Cap stress tests may suppress visibility without changing production logic.
@@ -169,7 +169,7 @@ function assertPlasmSeams(t) {
   assert.equal(t.player.health,50,'A bridge above the original plasm is safe');
   t.kit.deps.playerMesh.position.y=0;t.tick(13,.25);
   assert.equal(t.player.health,0,'Sustained contact at floor level still causes sinking death');
-  assert.ok(t.presentationHeights.length>0,'The same plasm immersion presentation remains active');
+  assert.ok(t.presentationHeights.some(v=>v<0),'The plasm sink is published as a separate immersion offset (shaft platforms overwrite stand heights every frame)');
   t.composer.clear();
 }
 

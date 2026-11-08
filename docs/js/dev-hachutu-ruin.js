@@ -177,7 +177,7 @@
     weed.done=true;weed.group.visible=false;weed.rings.forEach(r=>r.setActive(false));
     session.weedsKilled++;
     session.deps?.showToast?.('Binding weed severed — a burning root retreats from the Temple Heart.',true);
-    window.AudioSystem?.playObjectSfxKey?.('puzzleComplete');
+    (window.RuinInteractionAudio?.puzzleComplete?.()||window.AudioSystem?.playObjectSfxKey?.('puzzleComplete'));
     return true;
   }
   function takeRing(weed,index){
@@ -662,7 +662,7 @@
     if(session.bulbs.every(item=>item.litUntil>now)){
       trial.resonance=true;session.bulbs.forEach(item=>{item.target.active=true;});
       session.deps?.showToast?.('The sap bulbs sing in unison — the Binding Weed stirs.',true);
-      window.AudioSystem?.playObjectSfxKey?.('puzzleComplete');
+      (window.RuinInteractionAudio?.puzzleComplete?.()||window.AudioSystem?.playObjectSfxKey?.('puzzleComplete'));
     }else session.deps?.showToast?.(session.bulbs.filter(item=>item.litUntil>now).length+' of 3 sap bulbs lit — strike them all within '+BULB_LIT_MS/1000+' seconds.',false);
     return true;
   }

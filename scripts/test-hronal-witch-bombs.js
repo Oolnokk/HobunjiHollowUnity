@@ -57,8 +57,8 @@ assert(bombs.includes('if (active&&!active.exploded) return false'),'each ceilin
 assert(bombs.includes('dispenser.dispensing=true'),'concurrent activator signals cannot start overlapping async spawns');
 assert(bombs.includes('fuseSeconds:clamp(options.fuseSeconds??DEFAULT_FUSE_SECONDS,1,120)'));
 assert(bombs.includes('bomb.spawnedAtMs=now()'),'the fuse begins at physical spawn time');
-assert(bombs.includes('BLAST_KNOCKBACK_PX_S'));
-assert(bombs.includes('BURNING_HEALTH'));
+assert(bombs.includes('knockbackPxS'),'each variant carries its own blast knockback');
+assert(bombs.includes('burningHealth'),'the Hronal variant keeps its burning Health');
 assert(bombs.includes('triggerBurdenBlastAt'),'nearby burdens participate in chain reactions');
 assert(bombs.includes('registerBreakable'),'breakable props have an explicit, opt-in destruction registration');
 assert(bombs.includes('spawnCarriedByEnemy'));
@@ -82,7 +82,7 @@ assert(bombs.includes('bomb.onPickup=record=>{try{previousPickup?.(record);}fina
 assert(bombs.includes('bomb.onLost=(record,cause)=>{try{previousLost?.(record,cause);}finally{clearEnemyGrip(record);}}'),'burden loss clears the previous carrier hand target');
 assert(bombs.includes("clearEnemyGrip(bomb); // An explosion must release the carrier's procedural two-hand target"),'detonation clears enemy hand state before removing the mesh');
 assert(bombs.includes("tileHazard(tileAt(mapId,position.x,position.z))"),'water, lava and void also destroy a dropped bomb');
-assert(bombs.includes("color:'#ff7417'"));
+assert(bombs.includes("glow:'#ff7417'"),'the Hronal glyph glow colour is unchanged');
 
 const carry=read('docs/js/shattercasks.js');
 assert(carry.includes('onPickup:typeof options.onPickup'));

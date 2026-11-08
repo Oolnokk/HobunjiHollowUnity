@@ -1027,7 +1027,7 @@
     burden.col=Math.floor(position.x);burden.row=Math.floor(position.z);
     burden.carried=false;burden.hanging=false;burden.flying=true;burden.hangingMechanismId=null;
     burden.plinthAttached=false;burden.plinthAnchor=null;burden.plinthSurfaceId=null;
-    const resolvedGroundY=burden.fallGroundY?.({x:position.x,z:position.z,mapId:burden.mapId,cause});
+    const resolvedGroundY=burden.fallGroundY?.({x:position.x,y:position.y,z:position.z,mapId:burden.mapId,cause}); // y lets multi-story ruins land a bomb on the platform/gallery under it, not the ground story.
     const groundY=Number.isFinite(Number(resolvedGroundY))?Number(resolvedGroundY):thrownGround(position.x,position.z)+.30; // Special Burdens can fall through void tiles; ordinary ceiling payloads keep the Shattercask landing height.
     const launched=!!velocity&&[velocity.x,velocity.y,velocity.z].every(v=>Number.isFinite(Number(v)));
     downwardFalls.set(burden.id,{burden,velocity:launched?Number(velocity.y):0,vx:launched?Number(velocity.x):0,vz:launched?Number(velocity.z):0,horizontal:launched,cause:String(cause||'dungeon-fire'),groundY});
@@ -1065,7 +1065,7 @@
       const nextY=from.y+state.velocity*step;
       const endX=from.x+(state.vx||0)*step,endZ=from.z+(state.vz||0)*step;
       if(state.horizontal){ // A launched burden crosses ground of varying height: re-resolve it under the new position each step.
-        const resolved=burden.fallGroundY?.({x:endX,z:endZ,mapId:burden.mapId,cause:state.cause});
+        const resolved=burden.fallGroundY?.({x:endX,y:from.y,z:endZ,mapId:burden.mapId,cause:state.cause});
         state.groundY=Number.isFinite(Number(resolved))?Number(resolved):thrownGround(endX,endZ)+.30;
       }
       const end=new THREE.Vector3(endX,Math.max(state.groundY,nextY),endZ);
@@ -2118,7 +2118,7 @@
     let count=0;
     for(const burden of hit) {
       if(burden.kind==='shattercask'||burden.kind==='flameShattercask'){if(detonate(burden,'chain-blast',source))count++;} // Witch-bomb and other non-Shattercask secondary effects never inherit the trinket.
-      else if(burden.kind==='hronalWitchBomb') {
+      else if(window.HronalWitchBombs?.isWitchBombKind?.(burden.kind)||burden.kind==='hronalWitchBomb') {
         const handler=burden.impactHandler||BURDEN_IMPACT_HANDLERS.get(burden.kind);
         if(typeof handler==='function'&&handler(burden,'witch-bomb-chain')!==false)count++;
       }
@@ -2556,7 +2556,7 @@
   // Burdens as Targetables (js/targetables.js). The registry reads our records on demand, so burdens
   // are not tracked twice. Capabilities are derived from live burden state; 'lungeStop' is opt-in
   // (burden.lungeStop === true), so nothing changes for existing burdens until a system sets it.
-  const TARGETABLE_EXPLOSIVE_KINDS=new Set(['shattercask','hronalWitchBomb']);
+  const TARGETABLE_EXPLOSIVE_KINDS=new Set(['shattercask','hronalWitchBomb','tothalWitchBomb','kanthicWitchBomb']);
   const targetableEntries=new WeakMap(),targetableCenter=THREE.Vector3&&new THREE.Vector3();
   function targetableFor(burden) {
     let entry=targetableEntries.get(burden);

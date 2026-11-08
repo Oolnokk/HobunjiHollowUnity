@@ -182,7 +182,26 @@
       onSolved(rec);
       return true;
     };
-    const target=(name,x,py,z,ceiling=false)=>{
+    // V50 square pillar (docs/tools/debris-ifier createPillarNicheShortObeliskActivator envelope): 0.78 x 1.75 with base, collar,
+    // shaft, collar and capital. With `opening` the shaft is a hollow housing open on that side, so a glyph target sits in a niche.
+    const squarePillar=(name,x,py0,z,opening=null)=>{
+      const part=(w,h,d,ox,oy,oz,label)=>body(name+'-'+label,new THREE.BoxGeometry(w,h,d),stone,x+ox,py0+oy,z+oz);
+      const first=part(.78,.11,.78,0,.055,0,'base');
+      part(.64,.07,.64,0,.145,0,'collar');
+      part(.58,.10,.58,0,1.56,0,'collar-top');
+      part(.76,.14,.76,0,1.68,0,'capital');
+      const SH=1.36,SY=.18+SH/2,W=.48,T=.055;
+      if(!opening){part(W-.02,SH,W-.02,0,SY,0,'shaft');return first;}
+      const dirs={north:[0,-1],south:[0,1],east:[1,0],west:[-1,0]};
+      for(const [side,[dx,dz]] of Object.entries(dirs)){
+        if(side===opening)continue; // The open face is the niche.
+        part(dx?T:W,SH,dz?T:W,dx*(W/2-T/2),SY,dz*(W/2-T/2),'wall-'+side);
+      }
+      return first;
+    };
+    const SIDE_NAMES=['south','east','north','west']; // Matches the side index used by target(): 0:+z, 1:+x, 2:-z, 3:-x.
+    const target=(name,x,py,z,ceiling=false,side=0)=>{
+      const SIDE=[[0,1],[1,0],[0,-1],[-1,0]][side&3],yaw=[0,Math.PI/2,Math.PI,-Math.PI/2][side&3]; // Which pillar face holds the glyph: hidden pillars hide it around the back.
       const kit={ // Reuse the standalone V50 ceiling-sconce geometry and glyph art, not a second hand-built ceiling target.
         sharedBoxGeometry:(w,h,d)=>new THREE.BoxGeometry(w,h,d),
         makeBasic:basic,
@@ -196,13 +215,12 @@
         visualRoot=hanging.object;base=visualRoot;rune=hanging.hitMesh;hitMesh=hanging.hitMesh;
         authoredVisuals.push(visualRoot); // Hanging fixture owns multiple meshes and a shared rune texture.
       }else{
-        const stemHeight=Math.max(.9,py-y+.17); // Grounded stone pillar reaches the glyph height rather than floating in the air.
-        base=body(name+'-stone',new THREE.CylinderGeometry(.35,.43,stemHeight,8),stone,x,y+stemHeight*.5,z);
-        body(name+'-cap',new THREE.BoxGeometry(.85,.13,.85),stone,x,y+stemHeight-.035,z);
-        base.raycast=()=>{};
-        rune=body(name+'-rune-hit',new THREE.BoxGeometry(.62,.5,.2),stone,x,py,z+.43);
+        base=squarePillar(name,x,y,z,SIDE_NAMES[side&3]); // Hollow square pillar, open on one face; the glyph sits inside the niche.
+        rune=body(name+'-rune-hit',new THREE.BoxGeometry(.34,.4,.12),stone,x-SIDE[0]*.06,py,z-SIDE[1]*.06);
+        rune.rotation.y=yaw;
         hitMesh=rune;
-        plaque=authored('ruinGlyphTarget',x,py,z+.55);
+        plaque=authored('ruinGlyphTarget',x+SIDE[0]*.0,py,z+SIDE[1]*.0);
+        if(plaque){plaque.rotation.y=yaw;plaque.position.set(x-SIDE[0]*.03+SIDE[0]*.0,py,z-SIDE[1]*.03);plaque.scale.multiplyScalar(.62);} // Sized to the niche.
         if(plaque){
           // The real rune decal is visible while the transparent box remains the canonical projectile target.
           const invisible=basic(0xffffff);
@@ -270,6 +288,13 @@
         new THREE.PlaneGeometry(pit.maxX-pit.minX,pit.maxZ-pit.minZ),
         basic(0x08090b),centerX,y-.15,centerZ);
       fog.rotation.x=-Math.PI/2;fog.userData.devRuinBottomlessFog=true;
+      // The abyss shows the ruin's own hazard: lava (Hronal), ice (Tothal) or plasm-dark oil (Kanthic) far below the ropes.
+      const hazardColor={hronal:0xff4215,tothal:0xb7ecfa,kanthic:0x2a1a4a}[options.theme];
+      if(hazardColor){
+        const sheet=body('ruin-abyss-hazard-'+(options.theme||'')+'-'+id,
+          new THREE.PlaneGeometry(pit.maxX-pit.minX,pit.maxZ-pit.minZ),basic(hazardColor),centerX,y-2.4,centerZ);
+        sheet.rotation.x=-Math.PI/2;sheet.userData.devRuinAbyssHazard=options.theme;
+      }
       rec.pit=pit;rec.ropesRequested=count;
       rec.ropeSpec={id,roomId:id,bounds:pit,entry,exit,floorY:y,anchors,
         yaw:Math.atan2(side==='S'?1:side==='N'?-1:0,side==='E'?1:side==='W'?-1:0),
@@ -469,12 +494,57 @@
       };
       events?.addEventListener?.('hobunji-kurraya-puzzle-note',melodyListener);
     }else if(kind==='glyphObelisk'){
-      // Three separate real projectile targets spaced around the room.
-      // Each uses the existing ranged weapon's world-space hit sweep.
-      const dx=Math.min(2.8,room.w*.22),dz=Math.min(2.8,room.d*.22);
-      target(id+'-glyph0',cx-dx,y+1.6,cz-dz*.45);
-      target(id+'-glyph1',cx,y+2.1,cz+dz*.52);
-      target(id+'-glyph2',cx+dx,y+1.6,cz-dz*.45);
+      // The old pillar hall: a field of stone pillars, most of them plain. Three hide a
+      // glyph target in a niche on one face (a different face each, so you must walk
+      // around them) and every unstruck target hums, louder the closer you get
+      // (dev-random-ruin-target-hum). Pillars are solid. Each target is a real projectile
+      // target that uses the existing ranged weapon's world-space hit sweep.
+      const DS=options.DynamicSurfaces||root.DynamicSurfaces,scope='ruin-layer-glyph-'+id;
+      let seed=Array.from(String(id)).reduce((h,ch)=>Math.imul(h^ch.charCodeAt(0),16777619)>>>0,2166136261);
+      const rnd=()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296;};
+      const margin=3.2,pitch=2.8; // Wide margin keeps the doorways and their approach clear.
+      const cols=Math.max(2,Math.floor((room.w-margin*2)/pitch)+1),rows=Math.max(2,Math.floor((room.d-margin*2)/pitch)+1);
+      const slots=[];
+      for(let r=0;r<rows;r++)for(let c=0;c<cols;c++){
+        const px=cx+(c-(cols-1)/2)*pitch+(rnd()-.5)*.5,pz=cz+(r-(rows-1)/2)*pitch+(rnd()-.5)*.5;
+        slots.push({x:px,z:pz});
+      }
+      for(let i=slots.length-1;i>0;i--){const j=Math.floor(rnd()*(i+1));[slots[i],slots[j]]=[slots[j],slots[i]];}
+      const hidden=Math.min(3,Math.max(1,slots.length-1));
+      const footprintBoxes=[]; // Same boxes for ground movement (AreaFootprintBlockers): walking, dodges and lunges query THAT registry, not DynamicSurfaces.
+      let blockerSerial=0;
+      const block=(px,pz,height)=>{footprintBoxes.push({minX:px-.4,maxX:px+.4,minZ:pz-.4,maxZ:pz+.4,top:y+height});return DS?.registerBlocker?.({id:scope+'-pillar-'+(blockerSerial++),scope,
+        bounds:{minX:px-.4,maxX:px+.4,minZ:px-.4,maxZ:px+.4}, // DynamicSurfaces reads the footprint from `bounds`; bare minX/maxX meant an infinite, map-wide wall.
+        enabled:()=>!rec.disposed&&isActive(),
+        blocksAt:(_x,_z,_h,_r,_radius,query)=>{ // Solid only from the floor up to the pillar top, and only on this story.
+          const elevation=Number(query?.y??query?.floorY??query?.worldY);
+          return !Number.isFinite(elevation)||(elevation>=y-.4&&elevation<=y+height);
+        }});};
+      slots.forEach((slot,index)=>{
+        if(index<hidden){
+          const t=target(id+'-glyph'+index,slot.x,y+.95,slot.z,false,Math.floor(rnd()*4));
+          block(slot.x,slot.z,2.4);
+          return t;
+        }
+        const height=1.75;
+        squarePillar(id+'-pillar'+index,slot.x,y,slot.z);
+        block(slot.x,slot.z,height);
+      });
+      rec.pillarScope=DS?scope:null;
+      const footprint=options.AreaFootprintBlockers||root.AreaFootprintBlockers;
+      const footprintArea=options.area||options.mapId||'map_i_dev_random_ruin';
+      rec.removePillarFootprints=footprint?.register?.(scope,{area:footprintArea,
+        enabled:()=>!rec.disposed&&isActive(),
+        blocksBox:(bx,bz,half,worldY)=>{
+          const feet=Number(getPlayerY?.());
+          for(const b of footprintBoxes){
+            if(bx+half<=b.minX||bx-half>=b.maxX||bz+half<=b.minZ||bz-half>=b.maxZ)continue;
+            if(worldY!=null){if(worldY<y-.4||worldY>b.top+.05)continue;}
+            else if(Number.isFinite(feet)&&Math.abs(feet-y)>2.5)continue; // A walker on another story is not on this floor's pillars.
+            return true;
+          }
+          return false;
+        }});
     }else if(kind==='ceilingRailTargets'){
       // Both targets physically traverse a rail beneath the room ceiling.
       // They must be aimed at while moving, like the existing V50 target rail.
@@ -762,6 +832,8 @@
       for(const remove of linkDisposers)remove();
       if(fireTargetId)fire?.unregisterTarget?.(fireTargetId);
       if(fireControl)options.removeControl?.(fireControl);
+      rec.removePillarFootprints?.();
+      if(rec.pillarScope)(options.DynamicSurfaces||root.DynamicSurfaces)?.clearScope?.(rec.pillarScope); // The pillar hall's solid blockers.
       rec.removeStoneFlanks?.(); // Unregister permanent stone flanks along with their carved scene mesh.
       if(rec.stoneColliderId)(options.DynamicSurfaces||root.DynamicSurfaces)?.remove?.(rec.stoneColliderId);
       rec.removeFootprintGate?.(); // Release the real player/NPC occupancy blocker before this scene is reused.

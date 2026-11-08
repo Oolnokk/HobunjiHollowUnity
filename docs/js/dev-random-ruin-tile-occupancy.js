@@ -355,8 +355,19 @@
       Math.max(1, scaleX - inset * 2), Math.max(1, scaleY - inset * 2));
   }
 
+  // With Dev Mode off the panel is a player-facing dungeon map (parchment
+  // floor, ink walls, gold switches/targets, blue doors, a facing arrow and
+  // the objective checklist). Dev Mode keeps the original collision colors
+  // and occupancy/voxel diagnostics untouched.
+  function ruinMapDevMode() {
+    try { return localStorage.getItem('hobunjiDevMode') === '1'; } catch (_) { return false; }
+  }
+  const DEV_MAP_COLORS = Object.freeze({ bgUpper:'#090b0d', bg:'#171b1d', floor:'#5d625d', voxelWall:'#e67e22', wall:'#e74c3c', mechanism:'#3498db', activator:'#35c96f', player:'#ffe082' });
+  const PLAYER_MAP_COLORS = Object.freeze({ bgUpper:'#120e09', bg:'#1c1610', floor:'#c9b68c', voxelWall:'#7a5f3d', wall:'#7a5f3d', mechanism:'#4f9bd9', activator:'#f2c94c', player:'#ff5a3c' });
   function renderRuinMapPanel() {
     const model = activeModel;
+    const devMap = ruinMapDevMode();
+    const C = devMap ? DEV_MAP_COLORS : PLAYER_MAP_COLORS;
     const tabs = document.getElementById('wmapZoneTabs');
     const canvas = document.getElementById('wildernessMapCanvas');
     if (!model || !tabs || !canvas) return;
@@ -367,30 +378,30 @@
     const requestedStory=selectedRuinFloor===null?currentStory:selectedRuinFloor;
     const layer=window.DevRandomRuin?.getShaftCollisionMap?.(requestedStory)||null; // The 3D voxel grid owns collision on each story.
     const floorTiles=layer?(layer.floor===0?layer.entryFloor:[]):[...model.floorSet]; // Never draw upper-floor projected tiles as walkable ground.
-    ctx.fillStyle=layer&&layer.floor>0?'#090b0d':'#171b1d';
+    ctx.fillStyle=layer&&layer.floor>0?C.bgUpper:C.bg;
     ctx.fillRect(0,0,canvas.width,canvas.height);
     for(const tileKey of floorTiles){
       const [col,row]=tileKey.split(',').map(Number);
-      ctx.fillStyle='#5d625d';
+      ctx.fillStyle=C.floor;
       ctx.fillRect(col*scaleX,row*scaleY,Math.ceil(scaleX),Math.ceil(scaleY));
     }
     if(layer) {
       for(const tileKey of layer.open){
         const [col,row]=tileKey.split(',').map(Number);
-        ctx.fillStyle='#5d625d';
+        ctx.fillStyle=C.floor;
         ctx.fillRect(col*scaleX,row*scaleY,Math.ceil(scaleX),Math.ceil(scaleY));
       }
       for(const tileKey of layer.blocked){
         const [col,row]=tileKey.split(',').map(Number);
-        fillInset(ctx,col,row,scaleX,scaleY,'#e67e22',Math.max(1,Math.min(scaleX,scaleY)*.12));
+        fillInset(ctx,col,row,scaleX,scaleY,C.voxelWall,Math.max(1,Math.min(scaleX,scaleY)*.12));
       }
     }
     if(!layer||layer.floor===0){
     for (const tileKey of model.blocked) {
       const [col,row]=tileKey.split(',').map(Number);
-      fillInset(ctx,col,row,scaleX,scaleY,'#e74c3c',Math.max(1,Math.min(scaleX,scaleY)*.14));
+      fillInset(ctx,col,row,scaleX,scaleY,C.wall,Math.max(1,Math.min(scaleX,scaleY)*.14));
     }
-    ctx.fillStyle = '#e74c3c';
+    ctx.fillStyle = C.wall;
     for (const block of model.slidingPushBlocks.keys()) {
       const box = pushBlockBox(model, block); // Draw the true moving footprint when the entrance map is inspected.
       if (box) ctx.fillRect(box.min.x*scaleX,box.min.z*scaleY,(box.max.x-box.min.x)*scaleX,(box.max.z-box.min.z)*scaleY);
@@ -405,18 +416,29 @@
     }
     if(!layer||layer.floor===0)for (const tileKey of model.effects) {
       const [col, row] = tileKey.split(',').map(Number);
-      fillInset(ctx, col, row, scaleX, scaleY, '#3498db', Math.max(2, Math.min(scaleX, scaleY) * .27));
+      fillInset(ctx, col, row, scaleX, scaleY, C.mechanism, Math.max(2, Math.min(scaleX, scaleY) * .27));
     }
     if(!layer||layer.floor===0)for (const tileKey of model.causes) {
       const [col, row] = tileKey.split(',').map(Number);
-      fillInset(ctx, col, row, scaleX, scaleY, '#35c96f', Math.max(3, Math.min(scaleX, scaleY) * .38));
+      fillInset(ctx, col, row, scaleX, scaleY, C.activator, Math.max(3, Math.min(scaleX, scaleY) * .38));
     }
     const player=model.getPlayerPosition?.();
     const playerFloor=layer?Math.max(0,Math.min(layer.floorCount-1,
       Math.round((Number.isFinite(playerY)?playerY:0)/layer.floorHeight))):0;
     if(player&&(!layer||layer.floor===playerFloor)) {
-      ctx.beginPath(); ctx.arc(player.x * scaleX, player.z * scaleY, Math.max(3, Math.min(scaleX, scaleY) * .25), 0, Math.PI * 2);
-      ctx.fillStyle = '#ffe082'; ctx.fill(); ctx.strokeStyle = '#111'; ctx.lineWidth = 2; ctx.stroke();
+      const facingDeg=Number(window.__hobunjiFurnitureDebug?.facingAngleDeg);
+      if(!devMap&&Number.isFinite(facingDeg)){ // Dungeon-map arrow points where the player faces.
+        const r=Math.max(5,Math.min(scaleX,scaleY)*.6),a=facingDeg*Math.PI/180,px=player.x*scaleX,pz=player.z*scaleY;
+        ctx.beginPath();
+        ctx.moveTo(px+Math.cos(a)*r,pz+Math.sin(a)*r);
+        ctx.lineTo(px+Math.cos(a+2.5)*r*.75,pz+Math.sin(a+2.5)*r*.75);
+        ctx.lineTo(px+Math.cos(a-2.5)*r*.75,pz+Math.sin(a-2.5)*r*.75);
+        ctx.closePath();
+        ctx.fillStyle=C.player; ctx.fill(); ctx.strokeStyle='#111'; ctx.lineWidth=2; ctx.stroke();
+      }else{
+        ctx.beginPath(); ctx.arc(player.x * scaleX, player.z * scaleY, Math.max(3, Math.min(scaleX, scaleY) * .25), 0, Math.PI * 2);
+        ctx.fillStyle = C.player; ctx.fill(); ctx.strokeStyle = '#111'; ctx.lineWidth = 2; ctx.stroke();
+      }
     }
     if(layer){
       // Rebuild only when the number of floors changes: replacing focused
@@ -438,12 +460,21 @@
         button.classList.toggle('active',active);
         button.setAttribute('aria-pressed',String(active));
       }
-    }else if(tabs.querySelector('[data-ruin-floor]')||tabs.textContent!=='Test Ruin')
-      tabs.innerHTML='<button type="button" class="wmap-zone-tab active">Test Ruin</button>';
+    }else{
+      const tabLabel=devMap?'Test Ruin':(window.DevRandomRuin?.getTitle?.()||'Ancient Ruin');
+      if(tabs.querySelector('[data-ruin-floor]')||tabs.textContent!==tabLabel){
+        tabs.innerHTML='<button type="button" class="wmap-zone-tab active"></button>';
+        tabs.firstChild.textContent=tabLabel;
+      }
+    }
     const legend = document.querySelector('#mpMap .wmap-legend');
     if (legend) {
       if (originalLegendHtml == null) originalLegendHtml = legend.innerHTML;
-      legend.innerHTML = (!layer||layer.floor===0?'<span><i style="background:#e74c3c;border-radius:2px"></i>V50 blocked</span>':'')+
+      legend.innerHTML = !devMap
+        ? '<span><i style="background:'+C.floor+';border-radius:2px"></i>Floor</span><span><i style="background:'+C.wall+';border-radius:2px;outline:1px solid #6b5a40"></i>Wall</span>'+
+          '<span><i style="background:'+C.activator+';border-radius:2px"></i>Switch / target</span><span><i style="background:'+C.mechanism+';border-radius:2px"></i>Door / mechanism</span>'+
+          (player&&(!layer||layer.floor===playerFloor)?'<span><i style="background:'+C.player+'"></i>You</span>':'')
+        : (!layer||layer.floor===0?'<span><i style="background:#e74c3c;border-radius:2px"></i>V50 blocked</span>':'')+
         (layer?'<span><i style="background:#e67e22;border-radius:2px"></i>3D wall · F'+(layer.floor+1)+'</span>':'')+
         (!layer||layer.floor===0?'<span><i style="background:#35c96f;border-radius:2px"></i>Activator</span><span><i style="background:#3498db;border-radius:2px"></i>Mechanism</span>':'')+
         (player&&(!layer||layer.floor===playerFloor)?'<span><i style="background:#ffe082"></i>Player</span>':'');
@@ -452,15 +483,31 @@
     const clear = document.getElementById('wmapWaypointClearBtn');
     const list = document.getElementById('wmapLandmarkList');
     const render = window.DevRandomRuinWallRenderProxy?.snapshot?.() || null; // Shown beside occupancy so mobile testing can distinguish collision from direct-source visibility.
-    if(status)status.textContent=`Full interior · ${layer?'Floor '+(layer.floor+1)+' of '+layer.floorCount:'Ground floor'} · collision revision ${model.revision} · no fog of war`;
+    const floorLabel=layer?'Floor '+(layer.floor+1)+' of '+layer.floorCount:'Ground floor';
+    if(status)status.textContent=devMap?`Full interior · ${floorLabel} · collision revision ${model.revision} · no fog of war`
+      :`${window.DevRandomRuin?.getTitle?.()||'Ancient Ruin'} · ${floorLabel}${layer&&layer.floor===playerFloor?' · you are here':''}`;
     if (clear) clear.hidden = true;
-    if(list){
+    if(list&&!devMap){ // Player map: the same checklist as the in-ruin objective tracker.
+      const rows=window.RuinObjectiveTracker?.buildRows?.({
+        shaft:window.DevRandomRuin?.getShaftNetworkState?.()||null,
+        sanctum:window.DevRandomRuinSanctum?.getState?.()||null,
+      })||[];
+      list.replaceChildren(...(rows.length?rows:[{label:'Explore the ruin',text:''}]).map(row=>{
+        const el=document.createElement('div');
+        el.className='wmap-gathering-empty';
+        const done=row.done??(row.need>0&&row.have>=row.need);
+        el.textContent=(done?'◆ ':'◇ ')+row.label+(row.text!=null?(row.text?' — '+row.text:''):` ${row.have} / ${row.need}`);
+        return el;
+      }));
+    }else if(list){
       const ground=!layer||layer.floor===0;
       const original=ground?`${model.blocked.size} V50 blockers · ${model.footprints.count()} prop footprints · ${model.causes.size} activators · ${model.effects.size} mechanisms`:'';
       const voxel=layer?`${layer.blocked.length} F${layer.floor+1} voxel blockers`:'';
       list.innerHTML=`<div class="wmap-gathering-empty">${[original,voxel].filter(Boolean).join(' · ')}${ground&&render?`<br>${render.visibleDoorSources}/${render.sourceDoorMeshes} door panels · ${render.visibleDoorArchSources}/${render.sourceDoorArchMeshes} arches · ${render.visibleActivatorSources}/${render.sourceActivatorMeshes} activators visible · ${render.totalProxyCount} proxy meshes`:''}</div>`;
     }
-    canvas.setAttribute('aria-label', 'Random Test Ruin occupancy map: red V50 blocked, orange level-specific 3D walls, green activator, blue mechanism; floor '+(layer?layer.floor+1:1));
+    canvas.setAttribute('aria-label', devMap
+      ? 'Random Test Ruin occupancy map: red V50 blocked, orange level-specific 3D walls, green activator, blue mechanism; floor '+(layer?layer.floor+1:1)
+      : 'Dungeon map: parchment floor, dark walls, gold switches and targets, blue doors; floor '+(layer?layer.floor+1:1));
     canvas.dataset.ruinOccupancyRevision=String(model.revision);
     canvas.dataset.ruinFloor=String(layer?.floor??0); // Mobile Pixel Probe can distinguish the selected story without a console.
     canvas.dataset.ruinFog = 'disabled';

@@ -143,18 +143,51 @@
 
   // Blue braziers are the player's authored campfire particles recolored by the
   // sanctum palette. Only the decorative glow halo remains a sprite.
-  function createBlueFire(parent, scale = 1) {
+  function createBlueFire(parent, scale = 1, palette = null) {
     const anchor = new THREE.Group(); // Owns the one campfire particle visual and the ambient colored halo.
     anchor.name = 'dev_ruin_blue_fire';
     anchor.visible = false;
     parent.add(anchor);
-    const halo = glowSprite(0x4fb6ff, 1.2 * scale, .5);
+    const halo = glowSprite(palette?.halo ?? 0x4fb6ff, 1.2 * scale, palette?.haloOpacity ?? .5);
     halo.position.y = .2 * scale;
     anchor.add(halo);
     const emitter = window.PersistentGroundFire?.attachCampfireFlame?.(anchor, {
-      scale:.87 * scale,rateScale:.9,colorA:FIRE_BRIGHT,colorB:FIRE_COLOR,
+      scale:.87 * scale,rateScale:.9,colorA:palette?.bright ?? FIRE_BRIGHT,colorB:palette?.base ?? FIRE_COLOR,
     }) || null; // One authored campfire_fire recipe, not an independent blue-flame particle system.
     return { anchor, halo, emitter, lit:false };
+  }
+
+  // The same stone-bowl brazier the sanctum seals use, scaled up and burning in a
+  // lich's colour, for the shaft wings' goal braziers (js/ruin-layer-playable.js and
+  // js/ruin-v50-native-floors.js). `color` is the lich's body colour, the same one
+  // that tints the named-lich wall glow ('#rrggbb').
+  const mixHex = (hex, toward, t) => {
+    const parse = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
+    const a = parse(hex), b = parse(toward);
+    return '#' + a.map((v, i) => Math.round(v + (b[i] - v) * t).toString(16).padStart(2, '0')).join('');
+  };
+  function buildLichBrazier({ parent, x, y, z, scale = 2.6, color = '#ff8b3d', name = 'ruin_lich_brazier' } = {}) {
+    if (!parent?.add) return null;
+    const hex = /^#[0-9a-f]{6}$/i.test(String(color)) ? String(color) : '#ff8b3d';
+    const palette = { bright: mixHex(hex, '#ffffff', .62), base: hex, halo: new THREE.Color(hex).getHex(), haloOpacity: .6 };
+    const holder = new THREE.Group(); holder.name = name; holder.position.set(x, y, z); parent.add(holder);
+    const plinthMaterial = window.ProceduralFurniture?.makePartMaterial?.({ materialTexture:'carved_smooth.png', materialLighting:'unlit', materialFillMode:'never', color:'#7a746b' }) || new THREE.MeshBasicMaterial({ color:0x7a746b });
+    const plinthHeight = .55 * Math.min(1.25, scale / 2);
+    const plinth = new THREE.Mesh(new THREE.CylinderGeometry(.36 * scale / 2, .5 * scale / 2, plinthHeight, 10), plinthMaterial);
+    plinth.position.y = plinthHeight / 2; plinth.name = name + '-plinth'; holder.add(plinth);
+    const bowl = stoneBowl(null); bowl.scale.setScalar(scale); bowl.position.y = plinthHeight; holder.add(bowl);
+    const fire = createBlueFire(holder, scale * .95, palette); // Flame grows with the bowl: it was left at ~60% of the enlarged bowl's size.
+    fire.anchor.position.y = plinthHeight + .14 * scale;
+    fire.anchor.name = name + '-flame';
+    const rim = new THREE.Mesh(new THREE.TorusGeometry(.2 * scale, .018 * scale, 6, 24), new THREE.MeshBasicMaterial({ color:new THREE.Color(hex).getHex(), transparent:true, opacity:.55 }));
+    rim.rotation.x = Math.PI / 2; rim.position.y = plinthHeight + .16 * scale; rim.name = name + '-lich-rim'; holder.add(rim); // A thin ring in the lich colour keeps an unlit brazier readable as belonging to that tradition.
+    let phase = Math.random() * 6;
+    return {
+      holder, fire, bowl, color: hex, height: plinthHeight + .24 * scale,
+      ignite: () => igniteFire(fire),
+      update: dt => { phase += dt * 5; updateFire(fire, performance.now(), dt); rim.material.opacity = fire.lit ? .85 : .5 + .06 * Math.sin(phase); },
+      dispose: () => { holder.parent?.remove(holder); holder.traverse(n => { n.geometry?.dispose?.(); }); },
+    };
   }
 
   function igniteFire(fire) {
@@ -180,11 +213,12 @@
     const group = new THREE.Group();
     group.name = 'dev_ruin_blue_brazier_bowl';
     const profile = [[.05, 0], [.12, .02], [.2, .07], [.24, .15], [.22, .16], [.17, .09], [0, .08]].map(([x, y]) => new THREE.Vector2(x, y));
-    const bowl = stone(kit, new THREE.LatheGeometry(profile, 18));
-    const rim = stone(kit, new THREE.TorusGeometry(.232, .022, 6, 20));
+    const plain = color => new THREE.MeshBasicMaterial({ color }); // Used when no ruin kit exists (wing braziers).
+    const bowl = kit ? stone(kit, new THREE.LatheGeometry(profile, 18)) : new THREE.Mesh(new THREE.LatheGeometry(profile, 18), plain(0x808080));
+    const rim = kit ? stone(kit, new THREE.TorusGeometry(.232, .022, 6, 20)) : new THREE.Mesh(new THREE.TorusGeometry(.232, .022, 6, 20), plain(0x808080));
     rim.rotation.x = Math.PI / 2;
     rim.position.y = .155;
-    const coals = new THREE.Mesh(new THREE.CircleGeometry(.17, 16), kit.makeBasic(0x141a24));
+    const coals = new THREE.Mesh(new THREE.CircleGeometry(.17, 16), kit ? kit.makeBasic(0x141a24) : plain(0x141a24));
     coals.rotation.x = -Math.PI / 2;
     coals.position.y = .1;
     group.add(bowl, rim, coals);
@@ -207,6 +241,7 @@
     for (const plane of findGoalSprites(context.root)) {
       const parent = plane.parent;
       if (!parent) continue;
+      if (context.tier) { plane.visible = false; continue; } // Sized ruins (cave/hole/lich) open the Great Door with exactly one brazier per wing; no extra local seal.
       const index = braziers.length; // Also this brazier's decal slot on the Great Door.
       plane.visible = false;
       // V50 pedestals put the bowl out of a short character's reach; halve
@@ -309,11 +344,13 @@
     const lit = s.braziers.filter(b => b.lit).length, total = s.braziers.length;
     const decal = s.door?.decals?.[brazier.index];
     if (decal) decal.flashUntil = performance.now() + 900;
+    if (lit < total) window.RuinInteractionAudio?.progress?.(lit, total); // The last seal's solve motif plays from tryAwakenDoor.
+    window.RuinInteractionAudio?.igniteTorch?.();
     deps?.showToast?.(lit < total
       ? `Blue fire takes hold (${lit}/${total}). A seal on the Great Door answers it.`
       : 'The last brazier flares blue — somewhere, the Great Door hums awake.', true);
     window.__farmLog?.(`[random-ruin] brazier ${brazier.id} lit ${lit}/${total}`, 'world');
-    if (lit === total) tryAwakenDoor();
+    if (lit === total && !tryAwakenDoor()) window.RuinInteractionAudio?.progress?.(lit, total); // Seals done but the shaft still binds the door.
     return true;
   }
 
@@ -565,8 +602,9 @@
     const door = s?.door;
     if (!door || door.state !== 'sealed') return;
     door.state = 'awake';
-    window.AudioSystem?.playObjectSfxKey?.('puzzleComplete');
+    (window.RuinInteractionAudio?.puzzleComplete?.()||window.AudioSystem?.playObjectSfxKey?.('puzzleComplete'));
     door.awakeAt = performance.now();
+    if (door.group) window.GameFeel?.beginReveal?.(door.group); // Show the player the door they just woke (skipped in combat / when on screen / too far).
     if (!s.bgs && window.Music?.registerFurnitureSfxSource) {
       s.bgs = window.Music.registerFurnitureSfxSource(MAP_ID, door.group.position.x, door.group.position.z, { url:BGS_URL, rangeTiles:16, volume:.8, semitones:DOOR_SEMITONES });
     }
@@ -1022,7 +1060,8 @@
     const { arena, zc } = s.layout;
     const x = (arena.minX + arena.maxX) / 2 + 2.5, z = zc;
     const tile = deps.TILE || 64;
-    const creature = await combat.makeEntity({ type:s.bossType, special:s.isSpecialBoss, tier:cfg('sanctum.boss.tier', BOSS_TIER), x:x * tile, y:z * tile, extra:{ ruinTheme:s.bossType } }); // The special variant changes boss presentation, but uses the original Harlyao Lich AI host.
+    const ruinLich = !s.isSpecialBoss ? window.DevRandomRuin?.getLichName?.() : null; // The ruin's title names this lich: the same person rises in the sanctum.
+    const creature = await combat.makeEntity({ type:s.bossType, special:s.isSpecialBoss, nameOverride:ruinLich || undefined, tier:cfg('sanctum.boss.tier', BOSS_TIER), x:x * tile, y:z * tile, extra:{ ruinTheme:s.bossType } }); // The special variant changes boss presentation, but uses the original Harlyao Lich AI host.
     s.bossPending = false;
     if (!creature || !s || deps?.getCurrentArea?.() !== MAP_ID) { creature?.avatarRef?.dispose?.(); return; }
     const max = Math.round((Number(creature.maxHealth) || Number(creature.health) || 100) * cfg('sanctum.boss.healthMult', BOSS_HEALTH_MULT));
@@ -1033,7 +1072,7 @@
     deps.hostileObjects?.add?.(creature);
     s.boss = creature;
     wakeCoffins();
-    const label = (s.isSpecialBoss && window.SpecialHarlyaoLiches?.defFor?.(s.bossType)?.name) || combat.TYPE_DEFS?.[s.bossType]?.label || 'Lich';
+    const label = (s.isSpecialBoss && window.SpecialHarlyaoLiches?.defFor?.(s.bossType)?.name) || ruinLich || combat.TYPE_DEFS?.[s.bossType]?.label || 'Lich';
     deps?.showToast?.(`${label} rises from the sanctum floor!`, false);
     window.__farmLog?.(`[random-ruin] sanctum boss ${s.bossType} spawned hp=${max}`, 'world');
   }
@@ -1055,7 +1094,7 @@
     if (!dead) return;
     s.bossDefeated = true;
     if (s.isSpecialBoss) window.SpecialHarlyaoLiches?.onDefeat?.(boss); // Single canonical Key-Stone grant; repeats and old saves cannot duplicate the quest reward.
-    window.AudioSystem?.playObjectSfxKey?.('puzzleComplete');
+    (window.RuinInteractionAudio?.puzzleComplete?.()||window.AudioSystem?.playObjectSfxKey?.('puzzleComplete'));
     s.bossDefeatedAt = now;
     for (const minion of boss._lichSummons || []) if (Number(minion?.health) > 0) deps?.damageCreature?.(minion, minion.health, undefined, undefined, 0, {});
     for (const coffin of [...(s.coffins || []),...(s.roomCoffins || [])]) if (Number(coffin.skeleton?.health) > 0) deps?.damageCreature?.(coffin.skeleton, coffin.skeleton.health, undefined, undefined, 0, {}); // Its skeletons fall with it.
@@ -1085,7 +1124,7 @@
       return rise ? {index:'room-'+index,bounds,rise,open:true,spawned:false,spawnPending:false,skeleton:null} : null;
     }).filter(Boolean); // Every eligible generated room has one sleeping skeleton encounter.
     s.braziers = buildBraziers(kit, context);
-    if (cfg('sanctum.safePathBraziers', true)) buildSafePathBraziers(kit);
+    if (cfg('sanctum.safePathBraziers', true) && !context.tier) buildSafePathBraziers(kit);
     const site=context.shaftHub===true
       ? window.DevRandomRuin?.getShaftSanctumDoorSite?.()
       : chooseDoorSite(kit, context, s.rng); // Normal ruins MUST use a verified inner shaft wall, not a random V50 room wall.
@@ -1188,6 +1227,7 @@
     debugShove:(entity, dirX, dirZ, speedPxS = 900) => { const t = deps?.TILE || 64; if (!entity) return false; deps?.damageCreature?.(entity, 1, entity.x - dirX * t, entity.y - dirZ * t, speedPxS, {}); return true; }, // Headless tests: a 1-damage hit from the opposite side.
     debugKillSkeleton:index => { const sk = s?.coffins?.[index]?.skeleton; if (!sk || !(sk.health > 0)) return false; deps?.damageCreature?.(sk, sk.health + 999, undefined, undefined, 0, {}); return true; }, // Headless tests.
     leave:() => leaveSanctum(),
+    buildLichBrazier,
     getState:() => s,
   });
 })();

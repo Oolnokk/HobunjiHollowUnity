@@ -16,6 +16,7 @@ const expectedController = {
   action7: null,
   action8: null,
   swapTarget: null,
+  lockOn: 'Button3', // Y: Zelda-style lock-on toggle.
   toggleMount: 'Button10',
   perceptionMode: 'Button14',
   weaponSwitch: 'Button11',
