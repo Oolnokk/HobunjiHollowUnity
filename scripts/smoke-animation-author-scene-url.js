@@ -135,12 +135,34 @@ async function main() {
         throw Error('Leaf never kneels after the initiator shoulder grasp: ' + JSON.stringify(afterLowering));
       }
       const afterContact = seek(1.12);
+      const mouthAtContact = api.kissMouthDiagnostics(); // Measures real lip-to-lip separation after the knee, torso bow and neck deformation.
+      if (!Number.isFinite(mouthAtContact.mouthGapWorld)) {
+        throw Error('Kiss contact lost a skinned mouth point: '+JSON.stringify(mouthAtContact));
+      }
       if (!afterContact.find(actor => actor.name === 'Pahu')?.initiatorHands?.applied) {
         throw Error('Initiator wrist anchors must follow the spouse shoulders during contact: ' + JSON.stringify(afterContact));
       }
       scrubber.value = '0';
       scrubber.dispatchEvent(new Event('input', { bubbles: true })); // Reset to the intended kiss opening before testing walking gait.
       const project = api.exportProject();
+      const mouthDiagnostics = api.kissMouthDiagnostics?.(); // Real source-pixel and skinned world coordinates, never the old 82% estimate.
+      if (mouthDiagnostics?.source !== 'shared-attack-pose-skinned-mouth' ||
+          project.project.kiss?.mouthHeightSource !== 'shared-attack-pose-skinned-mouth') {
+        throw Error('Kiss did not use the canonical B\'shuakauitl mouth resolver: ' + JSON.stringify(mouthDiagnostics));
+      }
+      for (const [index, actor] of (mouthDiagnostics.actors || []).entries()) {
+        const expected = window.HobunjiPortraitMouthPoints?.get?.(actor.species, actor.gender);
+        if (!expected || !actor.authored || !actor.pixel || !actor.world) {
+          throw Error('No resolved species mouth point for '+actor.name+': '+JSON.stringify(actor));
+        }
+        const registered = window.SharedAttackPose?.mouthPixel;
+        if (!registered) throw Error('The canonical head-attachment mouth lookup was not loaded');
+        const savedHeight = index === 0
+          ? project.project.kiss.mouthHeightsWorld.initiator : project.project.kiss.mouthHeightsWorld.recipient;
+        if (!Number.isFinite(savedHeight) || Math.abs(savedHeight - actor.neutralHeightWorld) > .002) {
+          throw Error('Saved kiss mouth height differs from the skinned blowgun mouth anchor: '+JSON.stringify({actor,savedHeight}));
+        }
+      }
       const initialPair = api.kissPairDiagnostics?.(); // Ensures initiator/partner anatomy does not silently swap when applying a new preset.
       const initialBodies = api.fullBodyDiagnostics?.() || [];
       if (initialBodies.length !== 2 || initialBodies.some(body => !body.feet)) {
@@ -215,6 +237,7 @@ async function main() {
         facingSamples,
         shoulderGripEarly: earlyInitiator.initiatorHands,
         shoulderGripAtContact: afterContact.find(actor => actor.name === 'Pahu')?.initiatorHands,
+        mouthDiagnostics, mouthAtContact,
         tallerInitiator,
         initialPair,
         reversePair,
