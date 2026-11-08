@@ -47,6 +47,11 @@ load('docs/js/combat/weapon-shape-stats.js');
 load('docs/js/combat/combat-attack-events.js');
 const stats = window.WeaponShapeStats; // Single production resolver for all assertions.
 assert.deepEqual([...Object.keys(stats.DEFAULT)].sort(), ['attackPower', 'efficiency', 'power', 'range', 'speed']);
+const inventoryUi = fs.readFileSync('docs/js/inventory-ui.js', 'utf8'); // Ensures the actual Pack screen exposes the new status stat.
+const loadoutUi = fs.readFileSync('docs/js/combat/combat-loadout-ui.js', 'utf8'); // Same stat should be readable on mobile's combat loadout screen.
+assert.match(inventoryUi, /Attack Power.*afflictions/, 'Pack displays independent melee and ranged Attack Power');
+assert.match(inventoryUi, /parsed\.slot === 'ranged'/, 'ranged weapon inventory includes Attack Power for Bshuakauitl darts');
+assert.match(loadoutUi, /Attack Power.*afflictions/, 'combat loadout shows Attack Power separately from damage Power');
 const foundryConfig = window.ModularWeapons.getConfig(); // All authored donors must have an intentional profile instead of silent neutral fallback.
 const donorShapes = [...new Set([...Object.values(foundryConfig.shafts), ...Object.values(foundryConfig.heads)].map(part => part.sourceShape))]; // Covers forgeable, saved-legacy and editor-only pieces.
 for (const shape of donorShapes) assert(Object.hasOwn(stats.SHAPES, shape), `Foundry donor ${shape} is missing its shape stat profile`);
