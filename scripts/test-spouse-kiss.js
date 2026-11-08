@@ -122,12 +122,17 @@ const smallLegs = {
 };
 const posteriorSolution = solver.solveHeights(1,.5);
 const footTargets = solver.posteriorStraddleFootTargets({Vector3:PosteriorVector},
-  largeLegs,smallLegs,posteriorSolution,1);
+  largeLegs,smallLegs,posteriorSolution,1,{posteriorLocalOffsetY:-.056}); // Editor lowers portrait separately from raised leg group.
 assert.ok(footTargets && footTargets.left.x > 0 && footTargets.right.x < 0,
   'the smaller partner places left and right feet on opposite sides of the larger posterior');
 assert.ok(Math.abs(footTargets.left.y-(.28-.056)) < 1e-6,
   'the target follows the actual sunk posterior, not the floor or unbent torso');
 assert.ok(Math.abs(footTargets.right.y-footTargets.left.y)<1e-6);
+const gameplayTallLegs = { ...largeLegs, group: mkWorld(0,0,0) }; // Live NPC rig lowers as a unit: its hip Y is already lowered.
+const gameplayFootTargets = solver.posteriorStraddleFootTargets({Vector3:PosteriorVector},
+  gameplayTallLegs, smallLegs, posteriorSolution, 1);
+assert.ok(Math.abs(gameplayFootTargets.left.y - footTargets.left.y) < 1e-6,
+  'author and in-world NPC target the same true posterior even though their rig roots sink differently');
 assert.ok(footTargets.left.distanceTo(footTargets.right)>0.01);
 assert.equal(solver.posteriorStraddleFootTargets({Vector3:PosteriorVector},largeLegs,smallLegs,posteriorSolution,0),null,
   'no external foot ownership when the short partner has not taken off');
@@ -136,7 +141,7 @@ assert.equal(solver.posteriorStraddleFootTargets({Vector3:PosteriorVector},large
 // composer lift the two actual soles still land on the taller posterior.
 const composerGroup = {...smallLegs, group: mkWorld(0,0,.08)};
 const playerComposerFeet = solver.posteriorStraddleFootTargets({Vector3:PosteriorVector},
-  largeLegs, composerGroup, posteriorSolution, 1, { composerLift:true });
+  largeLegs, composerGroup, posteriorSolution, 1, { composerLift:true, posteriorLocalOffsetY:-.056 });
 assert.ok(Math.abs(playerComposerFeet.left.y + posteriorSolution.shorterJumpWorld - footTargets.left.y) < 1e-6,
   'player-owned foot target compensates temporary render-only lift');
 assert.ok(Math.abs(playerComposerFeet.right.y + posteriorSolution.shorterJumpWorld - footTargets.right.y) < 1e-6,
