@@ -51,6 +51,13 @@ const taggedProp={...node,name:'authored-collision-box',userData:{pushable:true}
 assert.equal(Shadows.projectedShadows({scene:{traverse(fn){fn(taggedProp);}},source,
   radiusTiles:5,project,THREE:{Box3:Box,Vector3:Vec},now:1200}).length,1,
   'pushable ruin solids must occlude light even when their mesh names are generic');
+const crowdedWalls=Array.from({length:250},(_,i)=>({
+  ...node,name:'ruin-corridor-wall-'+i,
+  testBounds:{min:{x:60+i,y:0,z:-.5},max:{x:61+i,y:4,z:.5}},
+}));
+assert.equal(Shadows.projectedShadows({scene:{traverse(fn){crowdedWalls.forEach(fn);fn(node);}},source,
+  radiusTiles:5,project,THREE:{Box3:Box,Vector3:Vec},now:2200}).length,1,
+  'a maze of walls must not consume the caster budget before the moving obelisk is visited');
 
 const climb=read('docs/js/climb-surfaces.js');
 const reach=read('docs/js/ruin-reaching-obelisks.js');
