@@ -17,11 +17,11 @@
   const ICE_PHYSICS=Object.freeze({accelerationFactor:.28,turningFactor:.22,retention20Hz:.892});
   const PLASM_DEPTH = 0.22; // Match Western Slope snow's visibly raised cap and .22-wide curved perimeter lip.
   const PLASM_PULL_TILES_S = 0.72; // Player drift toward the nearest patch's interior.
-  const PLASM_COLOR = 0x6a3fa8, PLASM_OPACITY = .9;
+  const PLASM_COLOR = 0xb98cff, PLASM_OPACITY = .92; // Violet tint over the (dark) oil PNG.
   const PLASM_WORLD_UV_TILES = 3.2; // World tiles one repeat of the plasm PNG covers on explicit-tile patches (about the scale of a ground puddle).
   const PLASM_SINK_SECONDS = 2.8; // Time immersed in the pull before a full-body fatal sink.
   const ROCK_SFX = 'assets/audio/sfx/sfx_break_rock.mp3'; // Existing rock-break sample used for the three warning pulses.
-  const OIL_TEXTURE = 'assets/textures/canvas.png'; // Same petroleum-surface texture as HarlyaoLichCombat.
+  const OIL_TEXTURE = 'assets/textures/dark_oil.png.png'; // The authored plasm oil PNG: a rimmed puddle designed for the edge-preserving (nine-slice) mapping.
   const LIGHT_CAP = 120; // Bound per-frame 2D light-mask work on large generated sites.
   const BOSS_ICICLE_TRACK_SPEED = 9; // Ceiling emitter pursuit speed in tiles/sec during Nanahi's kneeling attack.
   let world = null; // Active composer state, invalidated on reroll/exit.
@@ -1006,7 +1006,7 @@
     }
     if(!patch.plasm.size)return null;
     const ttl=Number(opts.ttl);
-    patch.mesh=makePlasmSurface(kit,patch,ttl>0,true);
+    patch.mesh=makePlasmSurface(kit,patch,ttl>0); // Same edge-preserving mapping as ground plasm (the oil PNG has its own rim).
     if(!patch.mesh)return null;
     if(ttl>0){ // Temporary plasm is the SAME material as the permanent kind; only a faint violet glow along its seam tells them apart.
       patch.timed=true;patch.life=ttl;patch.ttl=ttl;
