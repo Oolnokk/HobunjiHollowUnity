@@ -24,6 +24,7 @@ jobs:
         run: |
           for path in \
             docs/js/climb-surfaces.js \
+            docs/js/cliff-crawl-presentation.js \
             docs/js/climb-system.js \
             docs/js/player-jump.js \
             docs/js/dev-random-ruin-bootstrap.js \
@@ -41,6 +42,7 @@ jobs:
           done
       - name: Run combined climbing, coffin, target, and light regression coverage
         run: |
+          node scripts/test-cliff-crawl-presentation.js
           node scripts/test-cliff-climb-mechanics.js
           node scripts/test-climb-surfaces.js
           node scripts/test-fall-system.js

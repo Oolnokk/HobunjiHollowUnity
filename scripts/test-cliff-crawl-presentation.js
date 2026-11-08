@@ -29,8 +29,10 @@ const win = {
 };
 vm.runInNewContext(climbSource, { window: win });
 const player = { x: 0, y: 0, angle: 0, climbing: false, vx: 0, vy: 0 }; // Game movement state read by ClimbSystem.
+let rockRelief = 0; // Simulated uneven cliff face used to prove the torso and GLBs track the actual geometry.
 const route = {
   id: 1, normal: { x: -1, z: 0 }, upperNode: 2,
+  project(x, y, z) { return { x: 0.24 + 0.04 * y + rockRelief, z }; }, // Mock of CliffRouteNetwork's actual stone-face sampler.
   nodes: [
     { id: 0, x: 0, z: 0, y: 0, links: [1] },
     { id: 1, x: 0.2, z: 0, y: 0.7, links: [0, 2] },
@@ -206,10 +208,13 @@ assert(!tool.visible && !item.visible && !burden.visible, 'all held visual categ
 assert(stowed.visible, 'stowed equipment remains visible');
 assert.equal(rig.owner, 'cliff-crawl', 'crawl owns the existing procedural hand rig');
 assert.equal(worldHands.length, 2, 'both hands use world-space contact placement, not idle offsets');
-assert(worldHands.every(entry => entry.target.x < 0 && entry.target.y > 0),
-  'hands plant outside the face above the character and in its normal space');
+assert(worldHands.every(entry => entry.target.y > 0 &&
+  Math.abs(entry.target.x - (route.project(entry.target.x, entry.target.y, entry.target.z).x - 0.018)) < 1e-9),
+  'both hand GLB sockets touch the exact sampled rock face, with only depth-fighting clearance');
 assert.equal(footPoseCount, 1, 'real procedural foot solver receives one paired contact update');
-assert(footTargets.left.x < -0.09 && footTargets.right.x < -0.09, 'planted feet clear the cliff surface so their shells are not depth-clipped');
+assert(['left', 'right'].every(side => Math.abs(footTargets[side].x -
+  (route.project(footTargets[side].x, footTargets[side].y, footTargets[side].z).x - 0.018)) < 1e-9),
+  'both feet plant on the same sampled stone face as the hands');
 assert(footTargets.left.y >= 0 && footTargets.right.y >= 0 && footTargets.left.y < 0.2,
   'feet are placed against the rock near the route point rather than buried below ground');
 assert(footOrientation instanceof Q, 'foot IK receives a cliff-relative sole orientation');
@@ -217,7 +222,20 @@ assert(Q.tilts.some(([from, to]) => from.y === 1 && to.x < -0.9), 'foot soles ro
 assert(Q.tilts.some(([from, to]) => from.y === 1 && to.x < -0.1),
   'body leans toward the OUTWARD cliff normal rather than into the rock');
 assert(frame.debug.cliffCrawl.feetPosed && frame.debug.cliffCrawl.handRigOwned);
+assert.equal(frame.debug.cliffCrawl.contactMode, 'route', 'mobile diagnostics identify the correct climbing owner');
+assert(Math.abs((route.project(0, 0.35, 0).x - mesh.position.x) - 0.20) < 1e-9,
+  'avatar root follows the same stone face as its limbs at the authored torso clearance');
+const originalBodyX = mesh.position.x; // Compare the complete body's response to a change in real wall relief.
 restore(frame.undo);
+rockRelief = 0.07;
+const reliefFrame = draw();
+assert(Math.abs(mesh.position.x - originalBodyX - rockRelief) < 1e-9,
+  'the whole body follows the wall geometry when its rock profile changes');
+assert(Math.abs(worldHands.at(-1).target.x -
+  (route.project(worldHands.at(-1).target.x, worldHands.at(-1).target.y, worldHands.at(-1).target.z).x - 0.018)) < 1e-9,
+  'hand GLBs remain planted after the face changes');
+restore(reliefFrame.undo);
+rockRelief = 0;
 assert(tool.visible && item.visible && burden.visible, 'render undo restores all held categories');
 assert.equal(mesh.position.x, 0, 'render undo restores body world position');
 assert.equal(sockets.left.position.y, 0, 'render undo restores the left hand socket');
@@ -319,5 +337,27 @@ for (const [nx, nz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
 route.normal = climbNormalBefore;
 parentWorldYaw = new Q();
 mesh.quaternion = new Q();
+
+// The same render pose must work on registered dungeon/ruin wall planes;
+// their movement is owned separately by ClimbSurfaces.
+area = 'town';
+climb.updateClimb(0.016); // Retire the previous exterior route before testing the wall owner.
+renderWin.ClimbSurfaces = {
+  getAttachedSession: () => ({
+    surface: { id: 'wall-test', axis: 'x', plane: 4, normal: { x: 0, z: 1 } },
+    u: 1.5, v: 2, standOff: 0.34,
+  }),
+};
+const wallFrame = draw();
+assert.equal(wallFrame.debug.cliffCrawl.contactMode, 'wall', 'registered wall climbing reuses the anchored limb pose');
+assert(['left', 'right'].every(side => Math.abs(worldHands.at(side === 'left' ? -2 : -1).target.z - 4.018) < 1e-9),
+  'wall hands plant on the registered plane instead of inheriting an avatar-space float offset');
+assert(Math.abs(footTargets.left.z - 4.018) < 1e-9 && Math.abs(footTargets.right.z - 4.018) < 1e-9,
+  'wall feet share the exact face contact');
+assert(Math.abs(mesh.position.z + 0.14) < 1e-9,
+  'the whole avatar moves toward the wall to maintain the same 0.20-unit torso clearance');
+restore(wallFrame.undo);
+assert.equal(mesh.position.z, 0, 'wall-climb render restores the avatar root');
+assert.equal(sockets.left.position.y, 0, 'wall-climb render restores the hand sockets');
 
 console.log('cliff crawl presentation: all targeted checks passed');
