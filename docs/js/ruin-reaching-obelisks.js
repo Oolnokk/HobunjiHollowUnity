@@ -267,7 +267,7 @@
       if(!active){active=true;elapsed=0;applyBeat();}
       else{
         elapsed+=elapsedStep;
-        if(elapsed>=BEAT_SECONDS){elapsed-=BEAT_SECONDS;applyBeat();}
+        if(elapsed+1e-9>=BEAT_SECONDS){elapsed=Math.max(0,elapsed-BEAT_SECONDS);applyBeat();} // Avoid a whole-frame late beat when 60 × 0.05 rounds just below three seconds.
       }
       for(const pillar of columns.values()){
         if(pillar.rotationPending){
