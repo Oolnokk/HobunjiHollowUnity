@@ -1982,8 +1982,8 @@
       (layers.pendingRuntimeLinks?.length?' · HOOK? '+layers.pendingRuntimeLinks.slice(0,4).map(link=>link.kind+'@'+link.wingId).join(','):''))
       :ruin.shaftConnection?(' · shaft '+ruin.shaftConnection.floorCount+' floors · physical hall '+ruin.shaftConnection.length+' cells')
       :ruin.shaftGrids?.size?' · shaft: elevation-aware walls/climbs':''; // Mobile diagnostic without opening a devtools console.
-    const ob=ruin.shaftObeliskRuntime?.getState?.(); // Visible in mobile mode, including live switch count and gravity/fall telemetry.
-    setDebugBadgePart('shaft',layerBadge+(ob?' · '+ob.method+' · '+ob.pit+' abyss · switches '+ob.activated+'/'+ob.targets+' · rotations '+ob.rotated+' · moving '+ob.moving+(ruin.obeliskFall?' · FALL '+ruin.obeliskFall.y.toFixed(1):''):''));
+    const ob=ruin.shaftObeliskRuntime?.getState?.(); // Show the real shaft rhythm on mobile without needing devtools or console access.
+    setDebugBadgePart('shaft',layerBadge+(ob?' · '+ob.method+' · '+ob.pit+' abyss · '+(ob.active?'beat '+ob.beat+'/4 · measure '+ob.measure+'/4':'cycle paused')+' · moving '+ob.moving+(ruin.obeliskFall?' · FALL '+ruin.obeliskFall.y.toFixed(1):''):''));
     setDebugBadgePart('solo',ruin.singleRoomTrial?(' · LAB '+ruin.singleRoomTrial.kind+' · '+ruin.singleRoomTrial.mode+' · NO LOOT'):''); // Mobile-visible proof of the current isolated challenge.
     setDebugBadgePart('base',MAP_ID+' · seed '+ruin.seed+' · '+(ruin.meta.rooms?.length||0)+' rooms · '+solvabilityLabel+' · puzzles '+maxRoomPuzzles+'/'+capLabel+' max-room · tiles R'+(occupancy?.blocked.length||0)+' G'+(occupancy?.causes.length||0)+' B'+(occupancy?.effects.length||0)+' · cliff '+(ruin.denMaterialMeshCount||0)+' · oldstone '+(ruin.legacyStoneMaterialCount||0)+' · unlit +'+(ruin.unlitConvertedMaterialCount||0)+'/lit '+(ruin.remainingLitMaterialCount||0)+' · combat '+(ruin.wallStyle==='cavern'?'✓':'?')+' · '+ruin.theme+' · dark '+darknessLabel+' · rev '+(occupancy?.revision||0));
     b.style.display='';

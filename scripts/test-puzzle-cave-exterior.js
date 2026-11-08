@@ -26,11 +26,27 @@ class Material {
   dispose(){this.disposed=true;}
 }
 class Geometry {constructor(...dimensions){this.dimensions=dimensions;}dispose(){this.disposed=true;}}
+const maskPaints=[]; // Records the real white-alpha tinting operations without relying on WebGL in the headless test.
+class CanvasTexture {constructor(image){this.image=image;this.needsUpdate=false;}}
+class TextureLoader {
+  load(name,onLoad){
+    const source={name,image:{width:45,height:38},dispose(){this.disposed=true;}};
+    onLoad?.(source);return source; // The production THREE loader invokes this after image bytes load.
+  }
+}
 const THREE={Group,Mesh,MeshBasicMaterial:Material,CylinderGeometry:Geometry,PlaneGeometry:Geometry,BoxGeometry:Geometry,
-  AdditiveBlending:2,
-  TextureLoader:class{load(name){return {name};}},DoubleSide:2,SRGBColorSpace:'srgb'};
+  AdditiveBlending:2,CanvasTexture,TextureLoader,DoubleSide:2,SRGBColorSpace:'srgb'};
+const makeCanvas=()=>{
+  const paint={operations:[],globalCompositeOperation:'source-over',fillStyle:'',
+    clearRect(){this.operations.push('clear');},
+    drawImage(){this.operations.push('draw');},
+    fillRect(){this.operations.push('fill:'+this.globalCompositeOperation+':'+this.fillStyle);}};
+  maskPaints.push(paint);
+  return {width:0,height:0,getContext:()=>paint};
+};
 const handlers=new Map(); // Browser-like instrument event delivery used by the actual exterior melody controller.
 const context={console,THREE,Math,Promise,Number,Map,Set,Date,
+  document:{createElement:kind=>kind==='canvas'?makeCanvas():null},
   addEventListener:(type,handler)=>{if(!handlers.has(type))handlers.set(type,new Set());handlers.get(type).add(handler);},
   removeEventListener:(type,handler)=>handlers.get(type)?.delete(handler),
   __farmLog:()=>{},
@@ -169,8 +185,15 @@ assert(Math.hypot(gate.scoreSurface.x-gate.door.x,gate.scoreSurface.z-gate.door.
 assert(Math.abs(pillarBottom-gate.shelf.y-.015)<.001,
   'the score pillar is rooted into the ledge rather than floating over snow or empty air');
 assert.equal(gate.glyphGlows.length,gate.song.notes.length,'each outdoor note has a shared-visibility additive halo');
-assert(gate.glyphGlows.every(glow=>glow.material.opacity===.35),
-  'the note glows have an initial visible intensity even before the first active beat');
+assert(gate.glyphGlows.every(glow=>glow.material.opacity===.07),
+  'inactive notes retain only a faint inner glow');
+assert.equal(gate.glyphOuterGlows.length,gate.song.notes.length,'every note has a broader additive halo');
+assert(maskPaints.length>0&&maskPaints.every(p=>p.operations.includes('fill:source-in:#ffffff')),
+  'black Scratchbone PNG ink is replaced by a white alpha mask that can actually glow');
+assert(gate.glyphOuterGlows.every(glow=>glow.material.map?.needsUpdate),
+  'every outdoor halo receives the completed white-alpha canvas texture');
+assert(gate.glyphOuterGlows.every(glow=>glow.material.opacity===.02),
+  'the broad halo remains dim until its timed note is active');
 assert.equal(originalFacade.visible,false,'the original den facade is concealed by the cliff door');
 const lateFacade=new Mesh(new Geometry(),new Material({color:0x888888}));
 lateFacade.userData.denId='den1';denFacades.add(lateFacade);
@@ -197,8 +220,17 @@ assert.equal(gate.lastDown,true,'standing on the real raised plate activates the
 assert(gate.scoreBoard.visible,'the exterior Scratchbone score lights up on the active raised plate');
 assert.equal(sounds.filter(event=>event.key==='stoneActivator').length,1,
   'stepping onto the outdoor melody plate plays exactly one recorded activator cue');
-assert(gate.glyphGlows.some(glow=>glow.material.opacity===.65),
-  'the currently active note brightens its halo while the pressure plate is held');
+assert(gate.glyphGlows.some(glow=>glow.material.opacity===.98),
+  'the active beat is nearly fully illuminated, not an imperceptible tint change');
+assert(gate.glyphOuterGlows.some(glow=>glow.material.opacity===.6),
+  'a wider additive halo visibly lights the current note while its window is open');
+const wrong=(gate.song.notes[0].index+1)%8; // Deliberately incorrect sounded pitch: test input feedback without granting progress.
+for(const handler of handlers.get('hobunji-kurraya-puzzle-note')||[])
+  handler({detail:{area,noteIndex:wrong}});
+assert(gate.flashRemaining>0&&gate.glyphs[0].material.color.hex===0xff6a65,
+  'wrong notes flash the current beat red rather than failing silently');
+Exterior.update(.5,area);
+assert.equal(gate.flashRemaining,0,'error feedback clears without requiring another note');
 const scoreHeight=gate.scoreBoard.position.y; // The exterior score must remain pinned to its wall or pillar during door animation.
 player.x=(gate.plate.x+1.2)*64;player.y=(gate.plate.z+1.2)*64;
 Exterior.update(.01,area);
@@ -210,6 +242,19 @@ Exterior.update(.01,area);
 assert.equal(sounds.filter(event=>event.key==='stoneActivator').length,3,
   're-entering the exterior plate is a separate valid activation');
 const song=gate.song;
+// In the gap between repeats, sounding any note must visibly fail, not silently ignore the player.
+Exterior.update(song.totalTicks*song.secondsPerTick+.10,area);
+assert.equal(gate.session.snapshot().activeIndex,-1,'the repeated outdoor melody has a silent measure');
+for(const handler of handlers.get('hobunji-kurraya-puzzle-note')||[])
+  handler({detail:{area,noteIndex:wrong}});
+assert(gate.flashRemaining>0&&gate.glyphs[0].material.color.hex===0xff6a65,
+  'a note sounded during the silent measure flashes the expected glyph red');
+assert(gate.glyphGlows[0].material.opacity===.98,
+  'error feedback remains bright even when no score glyph is currently active');
+player.x=(gate.plate.x+1.2)*64;player.y=(gate.plate.z+1.2)*64;
+Exterior.update(.01,area);
+player.x=gate.plate.x*64;player.y=gate.plate.z*64;
+Exterior.update(.01,area); // Reset the clock for a fair complete performance.
 let elapsed=0; // Musical clock advanced through the actual exterior controller's per-frame path.
 for(const note of song.notes){
   const target=(note.startTick+.10)*song.secondsPerTick;

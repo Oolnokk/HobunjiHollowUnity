@@ -15,6 +15,7 @@
   const SIZE=4; // Every obelisk is a four-cell-wide solid rectangular column with a four-cell mantle top.
   const DEATH_DEPTH=8; // Pit bottom sits below the entire ground-story gallery.
   const TRAVERSAL='reachingObelisks';
+  const BEAT_SECONDS=1.2,BEATS_PER_MEASURE=4,MEASURES_PER_CYCLE=4; // A readable 4/4 cycle: beat one changes heights, beats two-four turn the columns.
   const SIDES={N:{inX:0,inZ:1,tX:1,tZ:0},E:{inX:-1,inZ:0,tX:0,tZ:1},
     S:{inX:0,inZ:-1,tX:-1,tZ:0},W:{inX:1,inZ:0,tX:0,tZ:-1}};
   const clamp=(n,a,b)=>Math.max(a,Math.min(b,n));
@@ -39,7 +40,7 @@
       return {x:base.x+d.inX*(edge+inward)+d.tX*lateral,
         z:base.z+d.inZ*(edge+inward)+d.tZ*lateral};
     };
-    const rng=random(o.seed^0xa487351d),pillars=[],targets=[],plates=[],routes=[];
+    const rng=random(o.seed^0xa487351d),pillars=[],routes=[];
     const toWorld=(point)=>({x:o.originX+point.x,z:o.originZ+point.z});
     for(let story=0;story<o.floors-1;story++){
       const side=o.balconySides[story];if(!SIDES[side])throw new Error('Obelisk ascent missing a balcony side.');
@@ -75,18 +76,12 @@
         p.catchDepth=Math.max(Math.ceil(o.spacing*.55),...flights.filter(f=>f.to===p.id).map(f=>f.requiredCatchDepth));
         p.catchDepth=Math.min(15,p.catchDepth); // Keeps each spiral on the upper half of its own tall body.
       }
-      const plate={id:'obelisk-f'+story+'-rotate-A',pillarId:a.id,story,holdSeconds:.45,rotates:90};
-      const switchA={id:'obelisk-f'+story+'-raise-A',pillarId:b.id,controls:a.id,
-        story,face:'towardC',normal:{x:Math.sign(c.x-b.x),z:Math.sign(c.z-b.z)}};
-      const switchB={id:'obelisk-f'+story+'-raise-B',pillarId:c.id,controls:b.id,
-        story,face:'towardD',normal:{x:Math.sign(d.x-c.x),z:Math.sign(d.z-c.z)}};
-      plates.push(plate);targets.push(switchA,switchB);
       routes.push({story,side,entryY:base,exitY:landing,
-        states:['A lowered: climb from the gallery onto its plate','A rotated: descend through D to C','C: shoot B target from its visible face',
-          'D: grab A rotated strand','A raised: step to the upper gallery'],
-        flights,requires:[plate.id,switchA.id],galleryPillarId:a.id,approachPillarId:c.id});
+        states:['A and B raise and lower together on beat one','Every obelisk turns 90 degrees on beats two, three and four',
+          'The three turns per measure expose each facing over four measures','Catch a moving strand, then jump to the upper gallery'],
+        flights,requires:[],galleryPillarId:a.id,approachPillarId:c.id});
     }
-    const plan={method:TRAVERSAL,options:o,pillars,targets,plates,routes,
+    const plan={method:TRAVERSAL,options:o,pillars,targets:[],plates:[],routes,
       pit:{bottomY:o.baseY-DEATH_DEPTH,style:'tradition',depth:DEATH_DEPTH},
       physics:{gravity:GRAVITY,unbuffedSpeed:UNBUFFED_SPEED,fallPerTile:fallDistanceForTiles(1)}};
     plan.checks=verify(plan);plan.ok=plan.checks.every(c=>c.ok);
@@ -96,9 +91,9 @@
     const checks=[],add=(name,ok,detail)=>checks.push({name,ok:!!ok,detail:detail||''});
     for(const route of plan.routes){
       const p=plan.pillars.filter(p=>p.story===route.story),a=p.find(p=>p.name==='A'),b=p.find(p=>p.name==='B'),c=p.find(p=>p.name==='C'),d=p.find(p=>p.name==='D');
-      add('story'+route.story+'-complete',!!(a&&b&&c&&d&&route.requires.length===2));
+      add('story'+route.story+'-complete',!!(a&&b&&c&&d&&route.requires.length===0));
       add('story'+route.story+'-raise-reaches-gallery',Math.abs(a.highY-route.exitY)<.01);
-      add('story'+route.story+'-hidden-switch',plan.targets.some(t=>t.controls===a.id&&t.pillarId===b.id&&t.normal.x*(a.x-b.x)+t.normal.z*(a.z-b.z)<0));
+      add('story'+route.story+'-automatic-cycle',a.moving&&b.moving&&!c.moving&&!d.moving);
       for(const f of route.flights){
         const dest=plan.pillars.find(p=>p.id===f.to);
         add('catch-'+f.from+'-'+f.to,!!dest&&f.requiredCatchDepth<=dest.catchDepth&&dest.catchDepth<=15,
@@ -142,13 +137,12 @@
     if(!plan?.ok)throw new Error('Cannot mount an unverified obelisk route.');
     const {THREE,DynamicSurfaces:DS,ClimbSurfaces:CS,parent,getPlayerPosition,getPlayerY}=deps;
     if(!THREE?.Group||!parent?.add||!DS?.registerSurface||!CS?.register)throw new Error('Obelisk runtime dependencies are missing.');
-    const scope=deps.scope||'shaft-obelisks',group=new THREE.Group(),owned=[],materials=[],links=[];
+    const scope=deps.scope||'shaft-obelisks',group=new THREE.Group(),owned=[],materials=[];
     const basic=color=>{const mat=new THREE.MeshBasicMaterial({color});materials.push(mat);return mat;};
     const stone=root.ProceduralFurniture?.makePartMaterial?.({materialTexture:'carved_smooth.png',materialLighting:'unlit',materialFillMode:'never',color:'#726d63'})||basic(0x726d63);
     if(!materials.includes(stone))materials.push(stone);
-    const red=basic(0xe93d33),green=basic(0x46e75c),plateMat=basic(0x9b8778);
     group.name='reaching-obelisks';parent.add(group);
-    const columns=new Map(),states=new Map(),plateStates=new Map();let elapsed=0,disposed=false,linked=false;
+    const columns=new Map();let elapsed=0,disposed=false,active=false,beatCount=0; // One scoped clock drives all stories only while the player occupies the shaft room.
     const mesh=(geo,mat,name,holder)=>{
       const node=new THREE.Mesh(geo,mat);node.name=name;(holder||group).add(node);owned.push(node);return node;
     };
@@ -213,65 +207,41 @@
       }
     };
     for(const record of columns.values())refreshFaces(record);
-    for(const plate of plan.plates){
-      const record=columns.get(plate.pillarId);
-      const node=mesh(new THREE.BoxGeometry(2,.15,2),plateMat,plate.id,record.holder);
-      node.position.y=.09;node.userData.devRuinFootprintIgnore=true;
-      plateStates.set(plate.id,{...plate,pillar:record,node,seconds:0,triggered:false});
-    }
-    for(const target of plan.targets){
-      const pillar=columns.get(target.pillarId),controls=columns.get(target.controls);
-      const toward={x:target.normal.x,z:target.normal.z};
-      const length=Math.hypot(toward.x,toward.z)||1;
-      const offset={x:toward.x/length*(SIZE/2+.12),z:toward.z/length*(SIZE/2+.12)};
-      const rune=mesh(new THREE.BoxGeometry(.75,.75,.75),red,target.id,pillar.holder);
-      rune.position.set(offset.x,-1.3,offset.z);
-      rune.userData.devRuinProjectileTarget=true; rune.userData.devRuinFootprintIgnore=true;
-      const state={id:target.id,object:rune,hitMesh:rune,active:false,
-        hittable:()=>{
-          const pos=getPlayerPosition?.(),y=Number(getPlayerY?.());
-          if(disposed||!pos||!Number.isFinite(y)||Math.abs(y-(pillar.y-1.3))>base.spacing*.8)return false;
-          // Targets on B face away from A; this physical front-face test also
-          // prevents the shaft's vertical floors from shooting through walls.
-          return (pos.x-rune.getWorldPosition(new THREE.Vector3()).x)*offset.x+
-            (pos.z-rune.getWorldPosition(new THREE.Vector3()).z)*offset.z>0;
-        },
-        onHit:()=>{
-          if(!state.hittable())return false;
-          state.active=!state.active;controls.desiredY=state.active?controls.highY:controls.lowY;
-          // Play once when a projectile switch commands a physical column to start moving.
-          if(Math.abs(controls.desiredY-controls.y)>.001)
-            root.RuinInteractionAudio?.mechanism?.(controls.holder,{size:Math.max(SIZE,controls.y-controls.baseY)});
-          rune.material=state.active?green:red;
-          deps.onStateChange?.();return true;
-        },
-        controls:controls.id,pillarId:pillar.id};
-      states.set(state.id,state);
-    }
-    const link=()=>{
-      if(linked||disposed)return;
-      const bus=deps.projectileBus||root.DevRandomRuinSimplePuzzles;
-      if(bus?.hasActiveRuinState?.()!==true)return;
-      const next=[];for(const state of states.values()){
-        const remove=bus.registerExternalProjectileTarget?.(state);
-        if(typeof remove!=='function')break;
-        next.push(remove);
-      }
-      if(next.length===states.size){links.push(...next);linked=true;deps.onStateChange?.();}
-      else for(const remove of next)remove();
+    const insideShaft=()=>{
+      const pos=getPlayerPosition?.();
+      if(!pos||!Number.isFinite(pos.x)||!Number.isFinite(pos.z))return false;
+      const inset=2,west=base.originX+side-inset,north=base.originZ+side-inset;
+      return pos.x>=west&&pos.x<=west+base.shaft+2*inset
+        &&pos.z>=north&&pos.z<=north+base.shaft+2*inset; // Do not run mechanisms in distant wings or a different room.
     };
-    const turnPillar=plate=>{
-      const record=plate.pillar;
-      record.rotation=(record.rotation+1)%4;record.rotationTarget=record.rotation;
-      // The pressure plate clicks and the rotating stone column rumbles once, never per animation frame.
-      root.RuinInteractionAudio?.activator?.(plate.node,{size:2});
-      root.RuinInteractionAudio?.mechanism?.(record.holder,{size:Math.max(SIZE,record.y-record.baseY)});
-      refreshFaces(record);record.updateShape();
-      plate.node.material=green;plate.triggered=true;deps.onStateChange?.();
+    const applyBeat=()=>{
+      const beat=(beatCount++)%BEATS_PER_MEASURE;
+      if(beat===0){
+        for(const pillar of columns.values())if(pillar.moving)
+          pillar.desiredY=pillar.desiredY===pillar.lowY?pillar.highY:pillar.lowY; // All elevators toggle on beat one.
+      }else{
+        for(const pillar of columns.values()){
+          pillar.rotation=(pillar.rotation+1)%4;
+          pillar.rotationTarget=pillar.rotation;
+          refreshFaces(pillar);pillar.updateShape(); // Rotated bands, mesh and registered climb faces remain aligned.
+        }
+      }
+      const first=columns.values().next().value; // One synchronized stone cue per beat, not a dozen stacked recordings.
+      if(first)root.RuinInteractionAudio?.mechanism?.(first.holder,{size:Math.max(SIZE,first.y-first.baseY)});
+      deps.onStateChange?.();
     };
     const tick=dt=>{
       if(disposed)return;
-      const elapsedStep=clamp(Number(dt)||0,0,.05);elapsed+=elapsedStep;link();
+      const elapsedStep=clamp(Number(dt)||0,0,.05);
+      if(!insideShaft()){
+        active=false;elapsed=0;beatCount=0; // A new room visit always opens on the elevation downbeat; no lingering partial measure.
+        return; // Neither the rhythm nor any elevator's physical position advances while the room is empty.
+      }
+      if(!active){active=true;elapsed=0;applyBeat();}
+      else{
+        elapsed+=elapsedStep;
+        if(elapsed>=BEAT_SECONDS){elapsed-=BEAT_SECONDS;applyBeat();}
+      }
       for(const pillar of columns.values()){
         if(Math.abs(pillar.y-pillar.desiredY)>.0001){
           const oldY=pillar.y;
@@ -283,14 +253,6 @@
           for(const entry of pillar.worldFaces){entry.surface.y0+=delta;entry.surface.y1+=delta;
             if(entry.visual)entry.visual.position.y+=delta;}
         }
-      }
-      const pos=getPlayerPosition?.(),y=Number(getPlayerY?.());
-      for(const plate of plateStates.values()){
-        if(plate.triggered)continue;
-        const on=pos&&Number.isFinite(y)&&inside(plate.pillar,pos.x,pos.z,.05)
-          &&Math.abs(plate.pillar.y-y)<.65;
-        plate.seconds=on?plate.seconds+elapsedStep:0;
-        if(plate.seconds>=plate.holdSeconds)turnPillar(plate);
       }
     };
     const centerX=basin.position.x,centerZ=basin.position.z;
@@ -305,19 +267,20 @@
     };
     const dispose=()=>{
       if(disposed)return;disposed=true;
-      for(const remove of links)remove();
       DS.clearScope(scope);CS.clearScope(scope);
       group.parent?.remove(group);
       for(const node of owned)node.geometry?.dispose?.();
       const extra=new Set();group.traverse(node=>{if(node.material&&!materials.includes(node.material))extra.add(node.material);});
       extra.forEach(mat=>mat.dispose?.());for(const mat of materials)mat.dispose?.();
-      columns.clear();states.clear();plateStates.clear();
+      columns.clear();
     };
-    return {plan,method:TRAVERSAL,tick,dispose,columns,targets:states,plates:plateStates,
+    return {plan,method:TRAVERSAL,tick,dispose,columns,
       supportAt,isVoidAt,isDeathAt:(x,z,y)=>isVoidAt(x,z)&&Number(y)<=pitY+.15,
-      pitY,tradition,getState:()=>({method:TRAVERSAL,linked,targets:states.size,
-        activated:[...states.values()].filter(t=>t.active).length,rotated:[...plateStates.values()].filter(p=>p.triggered).length,
-        moving:[...columns.values()].filter(p=>Math.abs(p.y-p.desiredY)>.01).length,pit:tradition,gravity:GRAVITY,fallPerTile:plan.physics.fallPerTile})};
+      pitY,tradition,getState:()=>({method:TRAVERSAL,active,beat:beatCount?(beatCount-1)%BEATS_PER_MEASURE+1:0,
+        measure:beatCount?Math.floor((beatCount-1)/BEATS_PER_MEASURE)%MEASURES_PER_CYCLE+1:0,
+        beatsPlayed:beatCount,secondsToNextBeat:active?BEAT_SECONDS-elapsed:null,
+        moving:[...columns.values()].filter(p=>Math.abs(p.y-p.desiredY)>.01).length,
+        pit:tradition,gravity:GRAVITY,fallPerTile:plan.physics.fallPerTile})};
   }
-  return Object.freeze({TRAVERSAL,GRAVITY,UNBUFFED_SPEED,SIZE,DEATH_DEPTH,fallDistanceForTiles,catchDepthForGap,climbFaces,compose,verify,mount,traditionOf});
+  return Object.freeze({TRAVERSAL,BEAT_SECONDS,BEATS_PER_MEASURE,MEASURES_PER_CYCLE,GRAVITY,UNBUFFED_SPEED,SIZE,DEATH_DEPTH,fallDistanceForTiles,catchDepthForGap,climbFaces,compose,verify,mount,traditionOf});
 });

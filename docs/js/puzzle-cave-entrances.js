@@ -234,6 +234,37 @@
     return {kind:'pillar',x:safe.x,y:shelf.y+(layout.height+.14)/2+.015,z:safe.z,
       yaw:Math.atan2(portal.plate.x-safe.x,portal.plate.z-safe.z),surface:'supported-cliff-balcony'};
   }
+  function litGlyphTexture(THREE,number){
+    let texture=glyphTextures.get(number);
+    if(texture)return texture;
+    const url='assets/hud/scratchbone'+number+'.png'; // The authored Scratchbone images contain BLACK RGB ink; tinting that ink alone can never produce a luminous glyph.
+    if(root.document?.createElement&&THREE.CanvasTexture){
+      const canvas=root.document.createElement('canvas');canvas.width=canvas.height=1;
+      texture=root.HobunjiSpritePngSurface?.makeCanvasTexture?.(THREE,canvas,'outdoor-scratchbone-'+number)
+        ||new THREE.CanvasTexture(canvas); // A single reusable white-alpha mask per note preserves the source silhouette.
+      if(THREE.SRGBColorSpace)texture.colorSpace=THREE.SRGBColorSpace;
+      new THREE.TextureLoader().load(url,source=>{
+        const image=source?.image;
+        if(!image?.width||!image?.height)return;
+        canvas.width=image.width;canvas.height=image.height;
+        const ctx=canvas.getContext('2d');
+        if(!ctx)return;
+        ctx.clearRect(0,0,canvas.width,canvas.height);
+        ctx.drawImage(image,0,0);
+        ctx.globalCompositeOperation='source-in';
+        ctx.fillStyle='#ffffff';
+        ctx.fillRect(0,0,canvas.width,canvas.height); // Recolor only opaque/translucent pixels, retaining the PNG's alpha antialiasing.
+        ctx.globalCompositeOperation='source-over';
+        texture.needsUpdate=true;
+        source.dispose?.(); // The original black texture is only an image carrier; its GPU allocation is unnecessary.
+      },undefined,error=>root.__farmLog?.('[puzzle-cave] Scratchbone glow texture failed: '+error,'warn'));
+    }else{
+      texture=new THREE.TextureLoader().load(url); // Minimal non-DOM test/render adapter fallback.
+      if(THREE.SRGBColorSpace)texture.colorSpace=THREE.SRGBColorSpace;
+    }
+    glyphTextures.set(number,texture);
+    return texture;
+  }
   function makeGlyphs(portal,rootGroup){
     const THREE=root.THREE;
     if(!portal.song||!THREE?.TextureLoader)return;
@@ -261,21 +292,22 @@
     }
     for(let index=0;index<count;index++){
       const note=portal.song.notes[index],glyphNumber=note.index+1;
-      let texture=glyphTextures.get(glyphNumber); // One loader per Scratchbone note instead of one GPU texture per generated cave.
-      if(!texture){
-        texture=new THREE.TextureLoader().load('assets/hud/scratchbone'+glyphNumber+'.png');
-        if(THREE.SRGBColorSpace)texture.colorSpace=THREE.SRGBColorSpace;
-        glyphTextures.set(glyphNumber,texture);
-      }
+      const texture=litGlyphTexture(THREE,glyphNumber); // One white-alpha canvas texture per note makes both the ink and additive auras genuinely luminous.
       const column=index%layout.columns,row=Math.floor(index/layout.columns);
       const x=(column-(layout.columns-1)/2)*SCORE_STEP_X;
       const y=(layout.rows-1)/2*SCORE_STEP_Y-row*SCORE_STEP_Y;
-      const glow=new THREE.Mesh(new THREE.PlaneGeometry(.32,.37),
-        new THREE.MeshBasicMaterial({map:texture,color:0xffac37,transparent:true,opacity:.35,
+      const outer=new THREE.Mesh(new THREE.PlaneGeometry(.61,.72),
+        new THREE.MeshBasicMaterial({map:texture,color:0xffdf86,transparent:true,opacity:.02,
+          blending:THREE.AdditiveBlending,depthWrite:false,side:THREE.DoubleSide}));
+      outer.name='puzzle-cave-outdoor-glyph-outer-glow-'+index;
+      outer.position.set(x,y,.063);
+      board.add(outer);portal.glyphOuterGlows.push(outer); // A broad additive aura makes the active beat legible in daylight without bloom.
+      const glow=new THREE.Mesh(new THREE.PlaneGeometry(.37,.46),
+        new THREE.MeshBasicMaterial({map:texture,color:0xffac37,transparent:true,opacity:.07,
           blending:THREE.AdditiveBlending,depthWrite:false,side:THREE.DoubleSide}));
       glow.name='puzzle-cave-outdoor-glyph-glow-'+index;
       glow.position.set(x,y,.07);
-      board.add(glow);portal.glyphGlows.push(glow); // Only shown with the score group while the pressure plate is pressed.
+      board.add(glow);portal.glyphGlows.push(glow); // Both halos remain hidden off the raised plate.
       const material=new THREE.MeshBasicMaterial({map:texture,color:0xffdf86,transparent:true,depthWrite:false,side:THREE.DoubleSide});
       const mesh=new THREE.Mesh(new THREE.PlaneGeometry(.20,.24),material);
       mesh.name='puzzle-cave-outdoor-glyph-'+index;
@@ -286,6 +318,7 @@
     portal.scoreBoard=board;
     portal.scoreSurface=mount; // Mobile diagnostics identify whether real rock or an anchored pillar received the score.
     board.visible=false; // Nothing glows or appears until the player stands on the raised pressure plate.
+    refreshScoreGlow(portal); // The door model can arrive after the clock starts; initialize the newly built glyphs to its current beat.
   }
   function createPresentation(portal,scene){
     const THREE=root.THREE;
@@ -332,6 +365,21 @@
     }
     if(portal.scoreBoard)portal.scoreBoard.visible=!!portal.lastDown&&!portal.solved&&portal.rise<.95; // A surface-bound inscription never travels with the door slab.
   }
+  function refreshScoreGlow(portal){
+    const snap=portal.progress;
+    if(!snap)return;
+    for(let i=0;i<portal.glyphs.length;i++){
+      const active=i===snap.activeIndex,accepted=i<snap.progress,
+        rejected=portal.flashRemaining>0&&i===portal.flashGlyphIndex; // Off-beat input must also flash red during a silent/rest window.
+      const color=rejected?0xff6a65:active?0xffffff:accepted?0xbaffd4:0xffdf86; // Red means mistimed input; green means correctly played; white is the current beat.
+      portal.glyphs[i].material?.color?.setHex?.(color);
+      const halo=portal.glyphGlows[i]?.material,outer=portal.glyphOuterGlows[i]?.material;
+      halo?.color?.setHex?.(rejected?0xff3840:active?0xffe7a0:0xffac37);
+      if(halo)halo.opacity=(rejected||active)? .98 : .07;
+      outer?.color?.setHex?.(rejected?0xff3344:0xffeb9a);
+      if(outer)outer.opacity=(rejected||active)? .6 : .02; // Two additive layers pulse through the exact authored note/rest timing.
+    }
+  }
   function attachMusic(portal){
     if(!portal.requiresSong||!root.PuzzleCaveMelody?.generate||!root.PuzzleCaveMelody?.createSession)return;
     const song=root.PuzzleCaveMelody.generate(portal.site.signature+':outdoor',{difficulty:portal.difficulty});
@@ -343,14 +391,12 @@
         portal.plateSignal?.setActive(true); // Only the illuminated PNG rune changes color, never the stone plate.
       },
       onChanged:snap=>{
+        if(snap.mistakes>(portal.progress?.mistakes||0)){
+          portal.flashRemaining=.4;
+          portal.flashGlyphIndex=snap.activeIndex>=0?snap.activeIndex:Math.min(portal.song.notes.length-1,portal.progress?.progress||0);
+        } // Even during the silent measure, an attempted note visibly fails instead of appearing to do nothing.
         portal.progress=snap;
-        for(let i=0;i<portal.glyphs.length;i++){
-          const active=i===snap.activeIndex;
-          portal.glyphs[i].material?.color?.setHex?.(active?0xffffb4:0xffdf86);
-          const halo=portal.glyphGlows[i]?.material;
-          halo?.color?.setHex?.(active?0xffe795:0xffac37);
-          if(halo)halo.opacity=active?.65:.35; // The current note has a stronger additive glow while the plate is held.
-        }
+        refreshScoreGlow(portal);
       }
     });
     portal.noteHandler=e=>{
@@ -422,7 +468,7 @@
     const portals=plan(network,profiles).map(p=>({
       ...p,area:key,disposed:false,solved:!p.requiresSong,justSolved:false,
       lastDown:false,openWait:0,
-      rise:p.requiresSong?0:1,progress:null,glyphs:[],glyphGlows:[],scoreSurface:null,visualRoot:null,
+      rise:p.requiresSong?0:1,progress:null,glyphs:[],glyphGlows:[],glyphOuterGlows:[],flashRemaining:0,flashGlyphIndex:-1,scoreSurface:null,visualRoot:null,
       blockerId:null,ownedTransitions:[],hiddenDenMeshes:new Map(),facadeCheckElapsed:0, // Captured visibility and slow recheck for asynchronously added den entrance meshes.
     }));
     const state={area:key,network,scene,portals};
@@ -467,6 +513,10 @@
       if(portal.session){
         root.RuinInteractionAudio?.watchPlate?.(portal.plateMesh,down); // Real raised-shelf plate press/release, never a per-frame click.
         portal.session.step(dt,down); // The active plate alone advances the rhythm; the player decides when to equip and play.
+        if(portal.flashRemaining>0){
+          portal.flashRemaining=Math.max(0,portal.flashRemaining-Math.max(0,Number(dt)||0));
+          if(portal.flashRemaining===0)refreshScoreGlow(portal); // Clear the error without waiting for another beat or another played note.
+        }
         portal.lastDown=!!down;
         if(portal.scoreBoard)portal.scoreBoard.visible=!!down&&!portal.solved&&portal.rise<.95;
       }
@@ -508,6 +558,7 @@
         plate:p.plate,entry:p.entry,locked:isGateLocked(p),solved:p.solved,
         progress:p.progress,rewardTier:p.song?.rewardTier||null,modelReady:!!p.doorModel,
         scoreSurface:p.scoreSurface?.kind||null,scoreVisible:!!p.scoreBoard?.visible,
+        activeGlyph:p.progress?.activeIndex??-1,flashRemaining:p.flashRemaining,flashGlyphIndex:p.flashGlyphIndex,scoreBpm:p.song?.bpm||null,
         scorePosition:p.scoreSurface&&{x:p.scoreSurface.x,y:p.scoreSurface.y,z:p.scoreSurface.z}}))}))};
   }
   return Object.freeze({init,plan,mount,update,clear,forgetCave,hasPortal,senseTargets,debugSnapshot,scoreSurfaceKind});
