@@ -13860,10 +13860,13 @@ function applyKissPresetV1546() {
   leader.gaze.mode = 'manual'; // Authored neck curves, not live target gaze, control mouth contact.
 
   setActorTarget(partner, leader.id, false);
-  installGameplayRelativeTrackAsIndependentAuthoring(partner, leader, partnerKeys[0].transform, partnerKeys);
-  // Existing relative-transform bake preserves neckRotationDeg; the explicit
-  // body-sink channel is exported separately as actor metadata below.
-  partner.keyframes.forEach((key, index) => { key.bodySinkPct = (partnerKeys[index] || partnerKeys[partnerKeys.length - 1]).bodySinkPct; });
+  // The partner's timeline is authored independently in workspace coordinates:
+  // the exporter alone converts it to target-relative gameplay transforms.
+  // This prevents the taller leader's kneel from pulling the shorter actor
+  // down too, even when the height difference is extreme.
+  partner.keyframes = partnerKeys.map(key => clone(key));
+  partner.baseTransform = clone(partnerKeys[0].transform);
+  applyTransformSnapshot(partner.root, partner.baseTransform);
   partner.gaze.mode = 'manual';
   leader.kissBodySinkPctAtContact = solution.taller === 'first' ? solution.tallerSinkPct : 0;
   partner.kissBodySinkPctAtContact = solution.taller === 'second' ? solution.tallerSinkPct : 0;
