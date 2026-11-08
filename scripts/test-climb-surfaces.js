@@ -301,6 +301,22 @@ assert.equal(player.onClimbSurface, null, 'bottom event releases the player');
   near(falling.wallClimbY, 5, 'the fast catch stays at a reachable handhold height');
   CS.release();
   CS.clearScope('shaft-obelisks');
+  // Passive catches must still occur beside a reachable pillar crown:
+  // jump-height filtering applies to requested climbs, not to an authored ladder the falling body hits.
+  const crown = CS.register({ id: 'shaft-crown', scope: 'shaft-obelisks', style: 'obelisk-stone',
+    autoCatch: true, axis: 'z', plane: 12, normal: { x: -1, z: 0 },
+    u0: 6, u1: 8, y0: 5, y1: 6 });
+  global.PlayerJump = { easyJumpRise: .7 }; // Simulates the normal easy-ledge guard on a ruin pillar crown.
+  CS.init({ player: falling, TILE, getCurrentArea: () => 'map_i_dev_random_ruin',
+    canStandAt: () => true, setFacingAngle() {}, setTargetAimAngle() {}, setLastMoveAngle() {} });
+  assert.equal(CS.findFallGrabTarget(at(11.55, 5.89), 5.89), null,
+    'being merely adjacent without falling must not attach to a ladder');
+  assert(CS.tryFallGrab(at(11.55, 5.89), 5.97),
+    'a falling player catches the ladder near its crown, even if the top is otherwise jumpable');
+  assert.equal(falling.onClimbSurface?.surface, crown);
+  CS.release();
+  CS.clearScope('shaft-obelisks');
+  delete global.PlayerJump;
   delete global.window;
 }
 
