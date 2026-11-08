@@ -361,7 +361,7 @@
   }
 
   function playStoneUnlockKchunk() {
-    window.AudioSystem?.playObjectSfxKey?.('puzzleComplete');
+    (window.RuinInteractionAudio?.puzzleComplete?.()||window.AudioSystem?.playObjectSfxKey?.('puzzleComplete'));
   }
 
   function disposeObject(root) {

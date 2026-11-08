@@ -649,6 +649,7 @@
       }
       grad.addColorStop(1, 'rgba(0,0,0,0)');
       ctx.fillStyle = grad;
+      const shadows = ruinShadowPolygons(carrier, lanternTuning.radiusTiles * ruinLanternScale * (linearInterior ? INTERIOR_LIGHT_RADIUS_MULTIPLIER : 1)); // Carried light throws stone shadows like a wall torch (was an undefined name that aborted every dark-area overlay frame).
       withRuinShadowClip(ctx,shadows,()=>{ctx.beginPath();ctx.arc(center.x,center.y,shineR,0,Math.PI*2);ctx.fill();});
     }
 

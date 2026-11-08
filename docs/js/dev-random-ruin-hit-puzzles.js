@@ -386,9 +386,9 @@
       if(target.command){
         state.commandTarget=target.command==='ON'?.5:0; // Hold the V50 bridge in the extended midpoint; OFF returns to the retracted zero pose.
         for(const other of state.glyphTargets)if(other.command&&other.command!==target.command)other.active=false;
-        window.AudioSystem?.playObjectSfxKey?.('puzzleComplete');
+        (window.RuinInteractionAudio?.puzzleComplete?.()||window.AudioSystem?.playObjectSfxKey?.('puzzleComplete'));
       }else if(state.target<1){
-        state.target=1;window.AudioSystem?.playObjectSfxKey?.('puzzleComplete');
+        state.target=1;(window.RuinInteractionAudio?.puzzleComplete?.()||window.AudioSystem?.playObjectSfxKey?.('puzzleComplete'));
       }
     }
     const circuit=target.circuitName?`${target.circuitName} `:'';
@@ -780,7 +780,7 @@
       target.lit = true;
       window.RuinInteractionAudio?.igniteTorch?.(); // The actual torch or brazier takes fire, not just a puzzle-complete flag.
       const state = mechanismSignals.get(target.mechanismId);
-      if (state && state.target < 1) { state.target = 1; window.AudioSystem?.playObjectSfxKey?.('puzzleComplete'); }
+      if (state && state.target < 1) { state.target = 1; (window.RuinInteractionAudio?.puzzleComplete?.()||window.AudioSystem?.playObjectSfxKey?.('puzzleComplete')); }
       devDeps?.showToast?.(target.kind === 'brazier' ? 'Brazier lit.' : 'Ruin torch lit.', true);
       window.__farmLog?.(`[random-ruin-hit] lit ${target.kind} ${target.id}`, 'world');
       return true;

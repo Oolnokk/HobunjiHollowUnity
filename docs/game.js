@@ -5741,6 +5741,7 @@
         if (window.ResourceSystem) window.ResourceSystem.applyDamage(player, resourceDamage.health, dmgOpts || {});
         else player.health = Math.max(0, player.health - resourceDamage.health);
         const appliedImpactHealth = environmentalImpact ? Math.max(0, healthBeforeImpact - Math.max(0, Number(player.health) || 0)) : 0; // Reports actual clamped collision damage to the resolver.
+        if (resourceDamage.health > 0) window.GameFeel?.playerHurt?.(environmentalImpact ? appliedImpactHealth : resourceDamage.health); // Shake, hit-stop and red edge flash (js/game-feel.js).
         if (player.health > 0 && !environmentalImpact && !staggerless) {
           // Every attack staggers its target — same interrupt-plus-knockback
           // rule as damageCreature above, mirrored onto whatever combo/quick-
@@ -26485,7 +26486,8 @@
         // which calls it exactly once per browser frame and keeps calling it
         // even if a given frame throws.
         const gameLoopTotalPerf = window.PerfProfiler?.begin('gameLoop total');
-        const dt = Math.min(0.04, (now - lastTime) / 1000);
+        const rawFrameDt = Math.min(0.04, (now - lastTime) / 1000);
+        const dt = window.GameFeel ? window.GameFeel.frameDt(rawFrameDt) : rawFrameDt; // Melee hit-stop briefly time-scales the simulation (js/game-feel.js).
         lastTime = now;
         gameFrameSerial++;
         window.FestivalSystem?.update?.();
@@ -33099,6 +33101,7 @@
         surfaceY: farmSurfaceYAtWorld, markOutline: _markOutline,
         saveFarmLayout: window.FarmEditor.saveFarmLayout, saveMemberWorldData });
       // Honeyfuzzle House (1x1 egg/swarm slot on a FarmProduction entry) — js/honeyfuzzle-house.js.
+      window.GameFeel?.init({ getCamera: () => camera, getPlayer: () => player, TILE, getCurrentArea: () => currentArea, getPlayerWorldY: () => Number(playerMesh?.position?.y) || 0, isPlayerInCombat: () => isPlayerInCombat() }); // Camera shake, hit-stop, hurt flash and the ruin puzzle reveal shot live in js/game-feel.js.
       window.HoneyfuzzleHouse?.init({ THREE, scene, getWorldId: _tothalWorldId, getCamera: () => camera, getCurrentArea: () => currentArea, inventory,
         loadWorldLivestock: _loadWorldLivestock, saveWorldLivestock: _saveWorldLivestock, hasFarmPermission, showToast,
         saveFarmLayout: window.FarmEditor.saveFarmLayout, saveMemberWorldData, surfaceY: farmSurfaceYAtWorld,
