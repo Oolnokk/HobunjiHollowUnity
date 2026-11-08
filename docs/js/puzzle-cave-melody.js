@@ -75,7 +75,7 @@
     const transition=state.melodyGlowTransition||(state.melodyGlowTransition={
       color:GLYPH_COLORS.idle,inner:.11,outer:.045,tone:'idle',
     });
-    const fade=1-Math.exp(-Math.max(0,Number(dt)||0)*GLOW_EASE_RATE);
+    const fade=(rejected||accepted&&transition.tone!=='accepted')?1:1-Math.exp(-Math.max(0,Number(dt)||0)*GLOW_EASE_RATE); // Correct/wrong feedback remains immediate; only musical focus and halo breathing ease.
     transition.color=blendHex(transition.color,target,fade);
     transition.inner+=(targetInner-transition.inner)*fade;
     transition.outer+=(targetOuter-transition.outer)*fade;
