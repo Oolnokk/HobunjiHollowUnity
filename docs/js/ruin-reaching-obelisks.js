@@ -15,8 +15,8 @@
   const SIZE=4; // Every obelisk is a four-cell-wide solid rectangular column with a four-cell mantle top.
   const DEATH_DEPTH=8; // Pit bottom sits below the entire ground-story gallery.
   const TRAVERSAL='reachingObelisks';
-  const BEAT_SECONDS=1.2*(120/90),BEATS_PER_MEASURE=4,MEASURES_PER_CYCLE=4; // Relative 120→90 BPM slowdown: 1.6s beats, unchanged four-beat/four-measure sequence.
-  const ROTATION_SECONDS=.7; // An eased quarter-turn completes before the following beat; collision remains axis-aligned at each landing.
+  const BEAT_SECONDS=3,BEATS_PER_MEASURE=4,MEASURES_PER_CYCLE=4; // Three seconds per beat; the four-beat/four-measure shaft sequence is unchanged.
+  const ROTATION_SECONDS=BEAT_SECONDS*(.7/1.6); // Preserve the eased turn's fraction of a beat so the slower machinery does not snap early.
   const SIDES={N:{inX:0,inZ:1,tX:1,tZ:0},E:{inX:-1,inZ:0,tX:0,tZ:1},
     S:{inX:0,inZ:-1,tX:-1,tZ:0},W:{inX:1,inZ:0,tX:0,tZ:-1}};
   const clamp=(n,a,b)=>Math.max(a,Math.min(b,n));
