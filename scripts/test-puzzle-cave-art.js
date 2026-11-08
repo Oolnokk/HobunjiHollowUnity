@@ -83,7 +83,10 @@ async function main(){
   assert(!caves.includes('beginPlayerSession?.('),'cliff melodies may not automatically launch the instrument');
   assert(!ruin.includes('beginPlayerSession?.('),'interior melodies may not automatically launch the instrument');
   assert(!caves.includes('MusicMinigame?.close?.('),'cliff puzzles cannot close a manually opened instrument');
-  assert(ruin.includes('surfaces:[scoreFace]'),'interior notes must be fixed to a vertical cave-stone face');
+  assert(ruin.includes("name='puzzle-cave-symmetric-note-columns'")||ruin.includes("scoreRoot.name='puzzle-cave-symmetric-note-columns'"),'interior notes must use mirrored authored pillars');
+  assert(ruin.includes('maxColumns:1'),'each carved interior pillar carries a single vertical note column');
+  assert(!ruin.includes('surfaces:[scoreFace]'),'no interior melody glyph is ever decaled onto the rough cave wall');
+  assert(caves.includes('supportedScorePillarPair'),'exterior melodies also use paired standing score pillars');
   assert(ruin.includes('rec.inscription?.setVisible?.(down)'),'interior clue must only appear on the plate');
   assert(caves.includes('portal.scoreBoard.visible=!!down'),'exterior clue must only appear on the plate');
   const gate=JSON.parse(read('docs/config/furniture-authored/cliffGate.json')); // The physical cave gate must be an unobstructed passage once its slab opens.
@@ -92,6 +95,6 @@ async function main(){
   assert(ruin.includes("filter(part=>part.id!=='cliff_gate_darkness')"),'runtime must reject legacy cached black gate parts');
   assert(stone.includes('caveWall?.material'),'rock gate must reuse the actual cave-shell material');
   assert(index.includes('js/puzzle-cave-plate-art.js')&&index.includes('js/ruin-melody-glyph-decal.js'));
-  console.log('PASS Puzzle Cave Tankan plates, shared font loading, async teardown, manual songs and stone-wall clues');
+  console.log('PASS Puzzle Cave Tankan plates, shared font loading, async teardown, manual songs and paired stone-pillar clues');
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});

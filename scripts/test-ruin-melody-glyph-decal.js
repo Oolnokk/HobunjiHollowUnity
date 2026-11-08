@@ -64,6 +64,12 @@ assert.notEqual(inscription.group.position.z,plate.z,'the clue is near the plate
 assert.equal(inscription.diagnostics().fallback,false);
 assert.equal(inscription.diagnostics().rows,1);
 assert.equal(glyphs().every(glyph=>glyph.raycast()===undefined),true,'decal art never steals gameplay hits');
+assert(glyphs().every(glyph=>glyph.children?.some(child=>child.name?.startsWith('ruin-melody-scratchbone-glow'))),
+  'every black-ink Scratchbone glyph must own an additive Witch-bomb-style glow pass');
+const glowShader={fragmentShader:'#include <map_fragment>'};
+glyphs()[0].children[0].material.onBeforeCompile(glowShader);
+assert(glowShader.fragmentShader.includes('diffuseColor.a *= texture2D(map, vUv).a'),
+  'glyph glow must use only PNG transparency, never its black RGB color');
 assert.equal(inscription.setNotes(first.slice()),true);
 assert.equal(inscription.matchesNotes(first),true,'an unchanged generated sequence is recognized without allocations');
 assert.equal(inscription.matchesNotes([0,7,1,2,7]),false,'note order determines the inscription');
@@ -103,7 +109,19 @@ const tight=api.create({root:new Group(),plate,notes:[4,3,2,1],bounds:{minX:-.4,
   sampleSupport,blockedAt:()=>true}); // Cramped generation cannot suppress its sequence clue entirely.
 assert.equal(tight.diagnostics().fallback,true);
 assert.deepEqual(Array.from(tight.diagnostics().notes),[4,3,2,1]);
-console.log('Procedural ruin Scratchbone glyph decals passed.');
+const columnRoot=new Group(); // New cave-column layout is an opt-in feature; ordinary ruin floors retain their legacy placements.
+const column=api.create({root:columnRoot,plate,notes:[0,1,2,3],
+  surfaces:[{x:2,y:2,z:3,yaw:Math.PI}],maxColumns:1,sampleSupport,
+  makeStoneMaterial:()=>new Material({stone:true})});
+const columnGlyphs=column.group.children.filter(child=>Number.isInteger(child.userData.melodyNoteIndex));
+assert.equal(api.layoutFor([0,1,2,3],1).rows,4,'a narrow pillar lays notes out vertically');
+assert.equal(columnGlyphs.length,4);
+assert(columnGlyphs.every(glyph=>Math.abs(glyph.position.x)<.001&&glyph.rotation.x===0),
+  'every glyph sits upright in one narrow, purpose-built stone column');
+assert(columnGlyphs.every((glyph,index)=>index===0||glyph.position.y<columnGlyphs[index-1].position.y),
+  'top-to-bottom Scratchbone notes retain their chronological order');
+column.dispose();
+console.log('Procedural ruin Scratchbone glyph decals and single-column cave pillars passed.');
 
 // Explicit vertical stone faces keep notes upright and appear only on their own trigger.
 const upright=api.create({root:new Group(),plate,notes:first,sampleSupport,

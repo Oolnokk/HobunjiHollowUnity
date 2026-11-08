@@ -67,4 +67,24 @@ assert(Math.abs(slowFrame.snapshot().elapsed-.72)<1e-8,
 slowFrame.step(0,false);
 assert.equal(slowFrame.snapshot().elapsed,0,'stepping off still resets time after a stalled frame');
 
+const beatEvents=[]; // Same callback that game-level cave plates use for the recorded mine-pick metronome.
+const metronome=Song.createSession(first,{onBeat:beat=>beatEvents.push(beat)});
+metronome.step(0,true);
+assert.equal(beatEvents.length,1,'stepping on a timing plate strikes the first metronome beat immediately');
+assert.equal(beatEvents[0].downbeat,true);
+metronome.step(3.9*first.secondsPerTick,true);
+assert.equal(beatEvents.length,1,'the pick must not sound on every sixteenth-note tick');
+metronome.step(.2*first.secondsPerTick,true);
+assert.equal(beatEvents.length,2,'the next pick occurs precisely on the next quarter beat');
+assert.equal(beatEvents[1].beatIndex,1);
+metronome.step(8.1*first.secondsPerTick,true);
+assert.equal(beatEvents.length,3,'lag spikes emit one newest pick instead of stacking missed sounds');
+assert.equal(beatEvents[2].beatIndex,3,'late beat aligns to the actual four-beat clock');
+metronome.step(0,false);
+metronome.step(first.secondsPerTick*20,false);
+assert.equal(beatEvents.length,3,'the metronome must be silent off its pressure plate');
+metronome.step(0,true);
+assert.equal(beatEvents.length,4,'re-entering the plate restarts its first beat immediately');
+assert.equal(beatEvents.at(-1).downbeat,true);
+
 console.log('Puzzle Cave melody: deterministic generation, bounded tempo, timed notes, lag spikes, loop, reset, and exactly-once solve OK');

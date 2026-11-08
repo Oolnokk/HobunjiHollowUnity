@@ -37,7 +37,12 @@ jobs:
             docs/js/ruin-layer-playable.js \
             docs/js/ruin-multifloor-v50-style.js \
             docs/js/ruin-shaft-connector.js \
-            docs/js/ruin-v50-native-floors.js; do
+            docs/js/ruin-v50-native-floors.js \
+            docs/js/puzzle-cave-entrances.js \
+            docs/js/puzzle-cave-melody.js \
+            docs/js/ruin-interaction-audio.js \
+            docs/js/ruin-layer-challenges.js \
+            docs/js/ruin-melody-glyph-decal.js; do
             node --check "$path"
           done
       - name: Run combined climbing, coffin, target, and light regression coverage
@@ -53,3 +58,8 @@ jobs:
           node scripts/test-kanthic-shaft-firelight.js
           node scripts/test-shaft-hub.js
           node scripts/test-overlay-only-lighting.js
+          node scripts/test-puzzle-cave-art.js
+          node scripts/test-puzzle-cave-challenges.js
+          node scripts/test-puzzle-cave-exterior.js
+          node scripts/test-puzzle-cave-melody.js
+          node scripts/test-ruin-melody-glyph-decal.js

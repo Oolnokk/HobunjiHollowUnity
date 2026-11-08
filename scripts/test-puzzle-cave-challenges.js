@@ -106,6 +106,8 @@ assert.equal(areaFootprints.providerIds().length,0,'retiring the cave removes it
 assert.equal(parent.children.length,0,'cave teardown removes mechanism meshes');
 
 const events=eventBus(); // The existing music bridge emits these exact instrument-input events.
+const timedPickBeats=[]; // Actual composed timed cave plates emit the shared mine-pick metronome events.
+globalThis.RuinInteractionAudio={metronomeTick:beat=>timedPickBeats.push(beat)};
 let playing=0,closed=0,awarded=0;
 const music={beginPlayerSession(){playing++;return true;},close(){closed++;}};
 let player={x:room.x+room.w/2,z:room.z+room.d/2-1.6};
@@ -114,12 +116,24 @@ const timed=compose({THREE,parent,room,id:'music-test',kind:'timedMelody',y:0,ar
   music,events,puzzleCaveMelody:Song,songOptions:{difficulty:5},DynamicSurfaces:dynamicSurfaces,AreaFootprintBlockers:areaFootprints,
 });
 assert.equal(timed.song.measures,2);
+const chamber=parent.children.find(child=>child.name==='ruin-layer-challenge-music-test');
+const musicPosts=chamber.children.filter(child=>/^puzzle-cave-melody-pillar-\d+$/.test(child.name));
+assert.equal(musicPosts.length,2,'a cave melody has two symmetrical freestanding carved pillars');
+assert.equal(musicPosts[0].position.y,musicPosts[1].position.y,'both music posts have identical heights');
+assert(Math.abs(musicPosts[0].position.x+musicPosts[1].position.x-2*gateX)<.001,
+  'both musical pillars are equally spaced on opposite sides of the cave doorway');
+assert(timed.scorePanel?.children.length===timed.song.notes.length,
+  'headless fallback still places every numbered note on the paired pillars');
+for(let i=0;i<timed.song.notes.length;i++)assert.equal(timed.glyphs[i].position.x,musicPosts[i%2].position.x,
+  'all fallback glyphs use authored pillar columns in their real melody order');
 assert.equal(blockers.size,2,'music cave registers both the lockable slab and permanently unbreakable stone flanks');
 const timedCollider=[...blockers.values()].find(record=>!record.id.endsWith(':permanent-rock'));
 assert(timedCollider.enabled(),'the music gate starts physically locked');
 assert(areaFootprints.blocksBox(area,gateX,gateZ,.18),'the stone-song gate blocks real player movement until solved');
 assert.equal(events.count('hobunji-kurraya-puzzle-note'),1,'only real instrument notes reach the score');
 timed.tick(0);
+assert.equal(timedPickBeats.length,1,'standing on the music plate starts exactly one mine-pick metronome beat');
+assert.equal(timedPickBeats[0].downbeat,true,'the immediate first pick accent is on beat one');
 assert.equal(playing,0,"the pressure plate must not open or equip the player's instrument");
 assert(timed.scorePanel?.visible||timed.inscription?.group.visible,'the glowing Scratchbone score appears while on the plate');
 const firstNote=timed.song.notes[0].index;

@@ -9,6 +9,19 @@
   'use strict';
   const TYPES=Object.freeze(['pressurePlate','glyphObelisk','ceilingRailTargets','melodyEcho','dungeonFire','ropeChain','statueDefense','findBlocks','timedMelody','fireSconces']);
   const boneTextures=new Map(); // Shared Scratchbone numeral textures for every generated melody decal.
+  function scratchboneMaterial(THREE,texture,options,name){
+    if(root.RuinMelodyGlyphDecal?.makeInkMaterial)
+      return root.RuinMelodyGlyphDecal.makeInkMaterial(texture,options,name);
+    const material=new THREE.MeshBasicMaterial({map:texture,...options});
+    material.onBeforeCompile=shader=>{
+      shader.fragmentShader=shader.fragmentShader.replace('#include <map_fragment>',`
+        #ifdef USE_MAP
+          diffuseColor.a *= texture2D(map, vUv).a;
+        #endif
+      `); // Match the Witch-bomb engraving shader even if the standalone cave test omits the shared decal library.
+    };
+    return material;
+  }
   function melodyFor(id){
     let seed=2166136261; // Deterministic FNV hash; the same generated chamber always has the same note sequence.
     for(const ch of String(id))seed=Math.imul(seed^ch.charCodeAt(0),16777619)>>>0;
@@ -370,6 +383,7 @@
         gate.position.y=baseY+3.6*rec.doorRise;
       };
       rec.session=composer.createSession(song,{
+        onBeat:beat=>root.RuinInteractionAudio?.metronomeTick?.(beat), // Same authoritative quarter-note pick track as the outdoor cave plate.
         onSolved:()=>{
           plateSignal?.setActive(true); // Stone stays carved_smooth while the glyph illuminates.
           complete(); // The player chose to play their instrument; never seize or dismiss it.
@@ -379,6 +393,10 @@
             const material=rec.glyphs[i].material;
             const color=i===snapshot.activeIndex?0xffee89:0xffb35e; // Cycling glow teaches timing without opening any instrument UI.
             material.color?.setHex?.(color); // One glyph glows during its full written duration; silence means none glows.
+            if(rec.glyphs[i]?.userData)rec.glyphs[i].userData.melodyGlowActive=i===snapshot.activeIndex;
+            const halo=rec.glyphs[i]?.userData?.melodyGlowMaterial;
+            if(halo){halo.color?.setHex?.(i===snapshot.activeIndex?0xffd87b:0xff8340);
+              halo.opacity=i===snapshot.activeIndex?1.15:.16;}
           }
           rec.melodyState=snapshot; // Exposed in the existing mobile ruin diagnostics.
         },
@@ -424,8 +442,7 @@
             boneTextures.set(number,texture);
           }
           const appearance={color:0xffda70,transparent:true,depthWrite:false,side:THREE.DoubleSide}; // Unlit glyphs stay luminous in dark ruins.
-          const material=root.HobunjiSpritePngSurface?.makeMaterial?.(THREE,texture,'ruin-melody-'+number,appearance)
-            ||new THREE.MeshBasicMaterial({map:texture,...appearance});
+          const material=scratchboneMaterial(THREE,texture,appearance,'ruin-melody-'+number);
           materials.push(material);
           const decal=body('scratchbone-note-'+id+'-'+i,new THREE.PlaneGeometry(.65,.75),material,
             cx-(i-(rec.notes.length-1)/2)*.8,y+1.8,room.z+.55);
@@ -485,34 +502,51 @@
       if(surround){owned.push(surround);rec.rockSurround=surround;}
     }
     if(options.authoredCliffDoor && kind==='timedMelody'){
-      const notes=rec.song.notes.map(note=>note.index); // Exact eight-key Scratchbone pitch indices, independent of note duration.
-      const side=(melodyFor(id)[0]&1)?-1:1; // Stable side selection: clues don't teleport when the cave reloads.
-      const scoreFace={x:cx+side*3.45,y:y+1.95,z:caveGateZ+.11,yaw:Math.PI,vertical:true,fallback:false}; // Stable carved flank, never the moving slab.
-      if(THREE.Raycaster&&rec.rockSurround?.raycast){
-        const ray=new THREE.Raycaster(new THREE.Vector3(scoreFace.x,scoreFace.y,cz-1.6),
-          new THREE.Vector3(0,0,1),0,10); // One-time snap to the sculpted rock face, not a per-frame performance raycast.
-        const face=ray.intersectObject(rec.rockSurround,false)[0];
-        if(face?.point&&Number.isFinite(face.point.z))scoreFace.z=face.point.z-.025; // Attach ink to the actual surface, avoiding a floating decal.
-      }
-      rec.inscription=root.RuinMelodyGlyphDecal?.create?.({
-        root:group,plate:{x:cx,y,z:cz-1.6},notes,seed:melodyFor(id)[1],
-        surfaces:[scoreFace],sampleSupport:()=>({y}),
+      const notes=rec.song.notes.map(note=>note.index); // Musical timing and sequence remain authored by PuzzleCaveMelody.
+      const rows=Math.ceil(notes.length/2),postHeight=rows*.35+.42; // One vertical glyph column per stone post.
+      const offset=Math.min(room.w/2-.65,Math.max(2.75,4.78/2+.40)); // Mirrored beyond the actual 4.78-wide opening, never in the passage.
+      const postZ=caveGateZ-.45; // Fixed freestanding posts slightly ahead of the irregular cave wall.
+      const posts=[{x:cx+offset,z:postZ},{x:cx-offset,z:postZ}]; // Visual left then right when seen from the south-facing pressure plate.
+      const scoreRoot=new THREE.Group();
+      scoreRoot.name='puzzle-cave-symmetric-note-columns';
+      group.add(scoreRoot);scoreRoot.visible=false; // Only glyphs are revealed by the plate; both stone pillars remain physically present.
+      for(const [index,post] of posts.entries()){
+        body('puzzle-cave-melody-pillar-'+index,
+          new THREE.BoxGeometry(.52,postHeight,.45),stone,post.x,y+postHeight/2,post.z);
+        for(const [part,width,height,depth,dy] of [
+          ['base',.68,.10,.57,.05],
+          ['cap',.66,.11,.55,postHeight-.055],
+        ])body('puzzle-cave-melody-pillar-'+part+'-'+index,
+          new THREE.BoxGeometry(width,height,depth),stone,post.x,y+dy,post.z);
+      } // Matching plinths and capitals identify the paired columns as one deliberately built puzzle fixture.
+      const inscriptions=posts.map((post,column)=>root.RuinMelodyGlyphDecal?.create?.({
+        root:scoreRoot,plate:{x:cx,y,z:cz-1.6},
+        notes:notes.filter((_,index)=>index%2===column),maxColumns:1,
+        surfaces:[{x:post.x,y:y+postHeight/2,z:post.z-.254,yaw:Math.PI}],
+        sampleSupport:()=>({y}),
         makeStoneMaterial:()=>new THREE.MeshBasicMaterial({color:0x777267,transparent:true,opacity:0,depthWrite:false}),
-      })||null; // Reuses the actual Scratchbone decal generator introduced for the newer manual melody puzzle.
-      if(rec.inscription){
-        // The 9-wide chamber leaves just 2.11 tiles of stone on either side of the 4.78-wide hole.
-        // Fit the full score inside the irregular rock flank, including rough-hewn edge variation.
-        rec.inscription.group.scale?.set?.(.82,1,1);
-        rec.inscription.group.userData.puzzleCaveFlankFit=.82; // Fixed visual fit; note order and beat timing are unaffected.
-        rec.glyphs=rec.inscription.group.children.filter(node=>node.userData?.melodyNoteIndex!==undefined);
+      })||null); // Explicit faces on authored standing pillars, never a cave wall or the unpredictable floor.
+      if(inscriptions.every(Boolean)){
+        const columns=inscriptions.map(inscription=>inscription.group.children.filter(node=>
+          node.userData?.melodyNoteIndex!==undefined));
+        rec.glyphs=notes.map((_,index)=>columns[index%2][Math.floor(index/2)]);
+        rec.inscription={
+          group:scoreRoot,
+          setVisible(visible){
+            scoreRoot.visible=!!visible;
+            inscriptions.forEach(inscription=>inscription.setVisible(visible));
+          },
+          dispose(){inscriptions.forEach(inscription=>inscription.dispose());scoreRoot.parent?.remove(scoreRoot);},
+          diagnostics:()=>({kind:'pillarPair',posts:posts.map(post=>({...post})),
+            columns:inscriptions.map(inscription=>inscription.diagnostics?.())}),
+        }; // Keep the existing plate-gated, disposable inscription interface and chronological glyph indices.
       }else{
-        // Standalone puzzle fixtures may omit the shared decal module. Keep the same glowing vertical score and plate-gated reveal.
+        inscriptions.forEach(inscription=>inscription?.dispose?.());
+        // Minimal browser/headless fallback retains the *same paired pillar locations*, never a rock-face decal.
         const board=new THREE.Group();
-        board.name='puzzle-cave-fallback-score';board.position.set(scoreFace.x,scoreFace.y,scoreFace.z);
-        if(board.rotation)board.rotation.y=scoreFace.yaw;
-        else board.rotation={y:scoreFace.yaw}; // Headless Group stubs lack Euler rotation; the rendered THREE.Group has it.
+        board.name='puzzle-cave-fallback-score';
         board.visible=false;group.add(board);rec.scorePanel=board;
-        const columns=Math.min(6,notes.length),rows=Math.ceil(notes.length/6);
+        scoreRoot.parent?.remove(scoreRoot);
         notes.forEach((index,i)=>{
           const number=index+1;
           let texture=boneTextures.get(number);
@@ -521,12 +555,13 @@
             root.HobunjiSpritePngSurface?.configureTexture?.(THREE,texture,'puzzle-cave-note-'+number);
             boneTextures.set(number,texture);
           }
-          const mat=new THREE.MeshBasicMaterial({map:texture||null,color:0xffb35e,transparent:true,
-            depthWrite:false,side:THREE.DoubleSide});
+          const mat=scratchboneMaterial(THREE,texture||null,{color:0xffb35e,transparent:true,
+            depthWrite:false,side:THREE.DoubleSide},'cave-note-'+number);
           materials.push(mat);
           const glyph=new THREE.Mesh(new THREE.PlaneGeometry(.25,.28),mat);
-          const row=Math.floor(i/6),column=i%6,rowLength=Math.min(6,notes.length-row*6);
-          glyph.position.set((column-(rowLength-1)/2)*.31,((rows-1)/2-row)*.35,.028);
+          const column=i%2,row=Math.floor(i/2);
+          glyph.position.set(posts[column].x,y+postHeight/2+(rows-1)/2*.35-row*.35,postZ-.254);
+          if(glyph.rotation)glyph.rotation.y=Math.PI; // The browser mesh always has Euler rotation; headless fixture may not.
           glyph.name='puzzle-cave-timed-note-'+i;glyph.userData.melodyNoteIndex=index;
           glyph.userData.puzzleCaveNote={index,duration:rec.song.notes[i].lengthTicks};
           board.add(glyph);owned.push(glyph);rec.glyphs.push(glyph);

@@ -58,7 +58,7 @@
       // All timing and ranking comes from the stable id: reloading never rerolls a solved cave.
     });
   }
-  function createSession(song,{onSolved=()=>{},onChanged=()=>{}}={}){
+  function createSession(song,{onSolved=()=>{},onChanged=()=>{},onBeat=()=>{}}={}){
     if(!song||!Array.isArray(song.notes)||!song.notes.length)throw new Error('Puzzle Cave song is missing its note sequence.');
     let standing=false,solved=false,elapsed=0,progress=0,mistakes=0,cycle=0,lastSignature='';
     const tickAt=()=>elapsed/song.secondsPerTick;
@@ -84,10 +84,15 @@
       }
       if(!standing){
         standing=true;elapsed=0;progress=0;cycle=0;
+        if(!solved)onBeat({beatIndex:0,absoluteBeat:0,downbeat:true,elapsed:0}); // A pick strike on the first beat establishes the BPM as soon as the plate is occupied.
       }else if(!solved){
         const delta=Number.isFinite(Number(dt))?Math.max(0,Number(dt)):0; // Keep real BPM on slow frames rather than stretching every note by silently truncating elapsed time.
         const previousCycle=Math.floor(tickAt()/song.cycleTicks);
+        const previousBeat=Math.floor(tickAt()/4+1e-8); // Four sixteenth ticks form a quarter-note metronome beat.
         elapsed+=delta;
+        const absoluteBeat=Math.floor(tickAt()/4+1e-8);
+        if(absoluteBeat>previousBeat)onBeat({beatIndex:absoluteBeat%4,absoluteBeat,downbeat:absoluteBeat%4===0,elapsed});
+        // A dropped mobile frame plays only the most recent beat, never a burst of late pick recordings.
         const nextCycle=Math.floor(tickAt()/song.cycleTicks);
         if(nextCycle!==previousCycle){cycle=nextCycle;progress=0;}
         else if(progress<song.notes.length){
