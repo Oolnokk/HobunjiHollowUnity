@@ -59,6 +59,13 @@
     presentationSink = 0;
   }
 
+  // Ordinary (unnamed) ruins: wall engravings use their tradition's own glyph, glowing in its lich's colour.
+  function traditionWalls(theme) {
+    const glyph = window.SpecialHarlyaoLiches?.defFor?.(theme)?.glyph;
+    const ink = window.SpecialHarlyaoLiches?.specialRoster?.(theme)?.appearance?.bodyColors?.C?.hex || null;
+    return glyph ? { tradition:true, patternId:glyph, ink } : undefined;
+  }
+
   function syncRuinPresentationHeight(worldY) {
     const elevation = Number(worldY); // Used to publish one dynamic-floor height without directly repositioning any player presentation object.
     if (!Number.isFinite(elevation)) return false;
@@ -1173,7 +1180,7 @@
         const bossBodyColor3 = specialDef ? window.SpecialHarlyaoLiches?.specialRoster?.(theme)?.appearance?.bodyColors?.C?.hex : null; // Read the named lich's actual Body Color 3, never an independent wall-ink constant.
         ruin.specialBodyColor3 = bossBodyColor3; // Mobile dungeon diagnostics can compare wall glow against the eventual guardian portrait.
         ruin.lichColor = bossBodyColor3 || window.SpecialHarlyaoLiches?.specialRoster?.(theme)?.appearance?.bodyColors?.C?.hex || null; // Wing braziers burn in this lich's colour (named tomb: its exact wall-glow colour; others: their tradition's lich).
-        if(!ruin.hachutu)window.FurniturePatternSurfaces?.decorateRuin?.(ruin.localeRoot, candidateSeed, specialDef ? { specialBoss:true, patternId:specialDef.glyph, ink:bossBodyColor3 } : undefined); // No Harlyao wall glyphs inside the Hachutu temple. // The same C hex colors both emissive wall motifs and the boss's dyed eyes.
+        if(!ruin.hachutu)window.FurniturePatternSurfaces?.decorateRuin?.(ruin.localeRoot, candidateSeed, specialDef ? { specialBoss:true, patternId:specialDef.glyph, ink:bossBodyColor3 } : traditionWalls(theme)); // No Harlyao wall glyphs inside the Hachutu temple. // The same C hex colors both emissive wall motifs and the boss's dyed eyes.
         generationMark('preparing-stone-age');
         if(stoneAgeRequested)await prepareStoneAgeScenery(ruin);
         generationMark('preparing-live-roots');
@@ -1207,7 +1214,7 @@
         if(!ruin.hachutu)for(const item of nativeSnapshots){
           await window.RuinPatternSurfaceRules?.preloadPieces?.(item.roots.localeRoot);
           const ids=window.FurniturePatternSurfaces?.decorateRuin?.(item.roots.localeRoot,candidateSeed,
-            specialDef?{specialBoss:true,patternId:specialDef.glyph,ink:bossBodyColor3}:undefined)||[];
+            specialDef?{specialBoss:true,patternId:specialDef.glyph,ink:bossBodyColor3}:traditionWalls(theme))||[];
           ruin.localeRoot.userData.ruinPatternIds=[...new Set([
             ...(ruin.localeRoot.userData.ruinPatternIds||[]),...ids,
           ])];

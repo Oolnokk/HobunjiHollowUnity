@@ -680,6 +680,8 @@
       while (node && node !== root) { role += ` ${node.name || ''} ${node.userData?.interiorRuinRole || ''} ${node.userData?.ruinFurnitureKey || ''}`; if (node.userData?.ruinInteriorWall) role += ' wall'; node = node.parent; }
       const structural = /wall|pillar|pedestal|platform/i.test(role) && !/seal|glyph|decal|fire|ceiling/i.test(mesh.name || '');
       const namedWall = !!special?.specialBoss && /wall/i.test(role) && !/seal|glyph|decal|fire|ceiling/i.test(mesh.name || ''); // Only the named tomb's walls glow with the guardian's own glyph. // Built-in eligibility when no rules module is loaded.
+      const traditionWall = !namedWall && !!special?.tradition && !!special.patternId && /wall/i.test(role) && !/seal|glyph|decal|fire|ceiling/i.test(mesh.name || ''); // Ordinary ruins: the tradition's own glyph and lich colour on their walls, never a random catalog glyph.
+      const ownGlyph = namedWall || traditionWall;
       if ((!rules && !structural) || !catalog.length) continue;
       for (const child of [...mesh.children]) if (child.userData?.furniturePattern?.mode === 'engraving') { mesh.remove(child); child.geometry?.dispose(); child.material?.map?.dispose(); child.material?.dispose(); } // Re-decoration (rule edits) starts clean, including types now switched off.
       const rule = rules?.resolve?.(mesh, root, structural) || null; // { key, label, context, enabled, scale, partScale, defaultScale, maxAtlasPx, minSurfaceTiles, tilePx }; every ruin mesh gets a type so the Dev Companion can list it.
@@ -702,12 +704,12 @@
       const records = templates.map(template => {
         const slot = template.slot; // Sides and tops of one surface type roll separately.
         const entry = catalog[hash(`${seed}|${category}|${slot}`) % catalog.length]; // Stable per-ruin, per-surface-type selection.
-        const patternId = namedWall && special.patternId ? special.patternId : template.random === false && template.patternId ? template.patternId : entry.id; // Completion grants the actual displayed motif.
+        const patternId = ownGlyph && special.patternId ? special.patternId : template.random === false && template.patternId ? template.patternId : entry.id; // Completion grants the actual displayed motif.
         return { ...template, pattern: template.random === false ? template.pattern : null,
           patterns:template.random === false ? template.patterns : template.patterns?.length > 1 ? [resolvePattern({patternId}),template.patterns[1]] : null, // Keep seeded ruin primaries independent of the authored overpass snapshot.
-          patternId, palette: namedWall ? [special.ink || '#ffd5a3', special.ink || '#ffd5a3'] : (template.palette || ['#b7a185', '#625447']), scale: template.scale || rule?.defaultScale || 1.5,
-          glowColor:template.glowColor || (namedWall ? special.ink || '#ffd5a3' : '#7cebc6'),
-          glowIntensity:template.glowIntensity ?? (namedWall ? 1.5 : .95),
+          patternId, palette: ownGlyph ? [special.ink || '#ffd5a3', special.ink || '#ffd5a3'] : (template.palette || ['#b7a185', '#625447']), scale: template.scale || rule?.defaultScale || 1.5,
+          glowColor:template.glowColor || (ownGlyph ? special.ink || '#ffd5a3' : '#7cebc6'),
+          glowIntensity:template.glowIntensity ?? (namedWall ? 1.5 : traditionWall ? 1.1 : .95),
           glowPulseDepth:template.glowPulseDepth ?? .14,
           ...(rule?.scale > 0 ? { scaleOverride: rule.scale } : {}), ...(rule ? { maxAtlasPx: rule.maxAtlasPx, minSurfaceTiles: template.allowRegions ? 0 : rule.minSurfaceTiles, tilePx: rule.tilePx } : {}) }; // Region-picked faces were size-checked in world space already.
       });

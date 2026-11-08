@@ -257,11 +257,12 @@
         }
       }
     }
+    const traditionGlyph=root.SpecialHarlyaoLiches?.defFor?.(ruin.theme)?.glyph;
     const special=ruin.specialBoss?{
       specialBoss:true,
       patternId:ruin.specialGlyph,
       ink:ruin.specialBodyColor3,
-    }:undefined; // Named-lich masonry shares the original wall-ink selection.
+    }:traditionGlyph?{tradition:true,patternId:traditionGlyph,ink:ruin.lichColor||null}:undefined; // Named-lich masonry shares the original wall-ink selection; every other ruin carries its own tradition's glyph.
     const ids=root.FurniturePatternSurfaces?.decorateRuin?.(accents,seed,special)||[];
     // Broad walls of the shaft and the puzzle wings: real flat faces (js/ruin-wall-faces.js), one mesh each in a group
     // flagged ruinFeatureWalls, engraved exactly like the older V50 rooms. Only those groups, never the plain strips or
