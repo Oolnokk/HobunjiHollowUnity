@@ -275,12 +275,12 @@ assert.equal(musician.WeaponStanceDropRuntime.beginInstrumentNote('flute'),true)
 const noteStart=clock.ms; // Shared monotonic clock makes the strike sample deterministic.
 clock.ms=noteStart+flutePlayNote.durationS*1000*flutePlayNote.strikeFrac;
 sinkCall();
-assert.equal(sinkUnits,0.1,'physical leg handle must sink by 10% of body height');
-assert.equal(composed.get('weapon-stance-drop').translation.y,-0.1,'player body composer must lower the rendered avatar');
+assert(Math.abs(sinkUnits-0.1)<1e-9,'physical leg handle must sink by 10% of body height');
+assert(Math.abs(composed.get('weapon-stance-drop').translation.y+0.1)<1e-9,'player body composer must lower the rendered avatar');
 assert.equal(musician.WeaponStanceDropRuntime.getDebug().reason,'instrument-note');
 stanceActive=true;
 sinkCall();
-assert.equal(sinkUnits,0.1,'a held weapon idle must not hide the flute note');
+assert(Math.abs(sinkUnits-0.1)<1e-9,'a held weapon idle must not hide the flute note');
 musician.WeaponStanceDropRuntime.noteSwingSink(5);
 sinkCall();
 assert.equal(sinkUnits,0.05,'a real combat swing must win');
