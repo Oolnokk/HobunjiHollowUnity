@@ -108,6 +108,79 @@ assert.equal(api.fluteDiagnostics().noteCount, 1, 'flute diagnostics expose actu
 api.endFlute();
 assert.equal(api.playFluteNote(), false, 'an unequipped flute cannot animate an off-screen note');
 
+// The live holder is posed by the same Neutral/Windup/Strike action as the editor,
+// with the original Kurraya geometry left at its un-twitched rest transform.
+api.beginPlayerKurraya();
+assert.equal(api.activePlayerInstrument(),'kurraya','player performance owns the authored Kurraya stance');
+assert.equal(JSON.stringify(api.playerHeldPose()),JSON.stringify(kurrayaPlayNote.poses.neutral),
+  'a held Kurraya must use the editor Neutral before any notes sound');
+assert.equal(api.playerInstrumentProgress('kurraya'),0);
+assert.equal(api.playPlayerKurrayaNote(),true);
+const playerNoteStart=clock.ms; // All visual channels share this exact note timestamp.
+clock.ms=playerNoteStart+kurrayaPlayNote.durationS*1000*kurrayaPlayNote.strikeFrac;
+assert(Math.abs(api.playerInstrumentProgress('kurraya')-kurrayaPlayNote.strikeFrac)<1e-9,'instrument clocks must match');
+assert.equal(api.playerHeldPose().roll,11,'gameplay holder must use the editor Strike roll, not a decorative sprite twitch');
+assert.equal(api.playerHeldPose().bodySink,3,'gameplay holder and legs must sample the same 3% body bend');
+const heldTransform={ // Three.js transform facade: the game must update the holder tracked by hand sockets.
+  position:{set(x,y,z){Object.assign(this,{x,y,z});}},
+  rotation:{set(x,y,z,order){Object.assign(this,{x,y,z,order});}},
+  scale:{setScalar(s){this.x=s;}},
+};
+let speciesPoseOptions=null; // A species/gender-specific authored orbit must pass unchanged to the shared editor scaler.
+window.HobunjiSpeciesPoseScale={transformPosePoint:(_point,options)=>{speciesPoseOptions=options;}};
+const gameSource=fs.readFileSync('docs/game.js','utf8'); // Executes the real player's isKurraya held-item branch rather than a duplicated transform.
+const branchStart=gameSource.indexOf('        if (isKurraya) {\n          // The Attack Editor');
+const branchEnd=gameSource.indexOf('        } else if (isThrowFlaskItem(item)',branchStart);
+assert(branchStart>=0&&branchEnd>branchStart,'game must delegate the held Kurraya pose to the shared instrument owner');
+const playerFacing=Math.PI/3, playerMesh={rotation:{y:0}}; // World-facing player with a real held-item parent.
+vm.runInNewContext(gameSource.slice(branchStart,branchEnd)+'        }',{
+  isKurraya:true,window,heldItemHolder:heldTransform,playerToolBaseX:-0.45,playerToolBaseY:0.45,
+  playerAvatarModelHeight:0.9,playerArmLength:0.558,playerPoseOrbitScale:1,
+  playerFacing,playerMesh,playerPoseIdentity:()=>({speciesId:'mao-ao',gender:'male'}),
+  THREE:{MathUtils:{degToRad:value=>value*Math.PI/180}},
+});
+assert(Math.abs(heldTransform.position.x-(-0.45+0.27))<1e-9,'editor X offset must replace the old hard-coded chest pose');
+assert(Math.abs(heldTransform.position.y-(0.45+0.08))<1e-9,'editor Y offset must replace the old hard-coded chest pose');
+assert(Math.abs(heldTransform.rotation.z-11*Math.PI/180)<1e-9,'editor Strike roll must reach the outer holder');
+assert.equal(heldTransform.rotation.order,'YXZ','editor pose yaw/pitch/roll composition must match the game');
+assert.equal(heldTransform.scale.x,0.85,'authored Neutral scale must apply to the holder');
+assert.equal(playerMesh.rotation.y,playerFacing,'instrument body yaw must not inherit an unrelated weapon swing');
+assert.equal(speciesPoseOptions.speciesId,'mao-ao','live pose must use the editor species scaling path');
+assert.equal(speciesPoseOptions.baseY,0.45,'live pose must use the unscaled floor-relative hand anchor');
+clock.ms=playerNoteStart+kurrayaPlayNote.durationS*1000+1;
+assert.equal(api.playerHeldPose().roll,7,'finished note must return to the editor Neutral rather than retaining Strike');
+api.endPlayerKurraya();
+assert.equal(api.activePlayerInstrument(),null,'ending a performance releases its authored hand/body ownership');
+
+// Hand elbows and shoulder hinges use the same action/timeline, never the last
+// weapon swing; NPC rigs remain isolated from the player's music session.
+const shoulderSource=fs.readFileSync('docs/js/hand-shoulder-pose-runtime.js','utf8');
+const shoulderWindow={
+  HeldActionAnimations:{flutePlayNote,kurrayaPlayNote},KurrayaInstrument:api,
+  Combat:{deps:{playerMesh}},
+  HobunjiHandToolGrips:{secondaryGripForTool:()=>({enabled:true})},
+  setInterval:()=>{},
+};
+vm.runInNewContext(shoulderSource,{window:shoulderWindow,document:{},performance:{now:()=>clock.ms}});
+const shoulder=shoulderWindow.HobunjiHandShoulderPoseRuntime;
+const playerAvatar={parent:playerMesh},npcAvatar={parent:{}};
+api.beginPlayerKurraya();
+assert.equal(shoulder.currentWeights('right',playerAvatar).grip,0,'Kurraya Neutral must honor the editor shoulder grip toggle');
+assert.equal(shoulder.currentWeights('left',playerAvatar).palmNormal,0,'Kurraya Neutral must honor the editor left-hand shoulder toggle');
+assert.equal(shoulder.currentElbow('left',playerAvatar).x,0.155,'Kurraya Neutral must use its authored left elbow');
+assert.equal(shoulder.currentElbow('right',npcAvatar),null,'player musical elbows must not transfer to NPCs');
+assert.equal(shoulder.currentWeights('right',npcAvatar).grip,1,'non-player shoulders remain in their own idle pose');
+api.playPlayerKurrayaNote();
+const elbowStart=clock.ms;
+clock.ms=elbowStart+kurrayaPlayNote.durationS*1000*kurrayaPlayNote.strikeFrac;
+assert.equal(shoulder.currentElbow('right',playerAvatar).y,-0.28,'Kurraya Strike must raise and aim the authored plucking elbow');
+api.endPlayerKurraya();
+api.beginFlute();
+assert.equal(api.activePlayerInstrument(),'flute','Flute must own the same shared elbow/shoulder timeline');
+assert.equal(shoulder.currentWeights('right',playerAvatar).palmNormal,0,'Flute Neutral palm mode matches editor');
+assert.equal(shoulder.currentElbow('right',playerAvatar).z,0.1,'Flute mouth-held posture uses authored elbow offset');
+api.endFlute();
+
 class Group {
   constructor() { this.children=[]; this.rotation={set:(x,y,z)=>Object.assign(this.rotation,{x,y,z})}; this.position={x:0,y:0,z:0}; this.userData={}; this.name=''; }
   add(node) { this.children.push(node); }
@@ -127,7 +200,8 @@ for (const [id,key,tool] of [['flute_play_note','flutePlayNote','flute'],['kurra
 assert(editor.includes('prepareFluteCanvas(tex.image)'), 'editor flute must trim the same art as gameplay');
 assert(editor.includes("buildAssembly?.({"), 'editor Kurraya must use the real shared assembly');
 assert(music.includes("window.KurrayaInstrument?.playFluteNote?.()"), 'sounded flute notes must call the instrument animation');
-assert(music.includes("deps?.triggerPlayerKurrayaTwitch?.()"), 'sounded Kurraya notes must animate the held assembly');
+assert(music.includes("window.KurrayaInstrument?.playPlayerKurrayaNote?.()"), 'sounded Kurraya notes must start the real authored holder animation');
+assert(!music.includes('deps?.triggerPlayerKurrayaTwitch?.()'), 'the retired decorative twitch must never double the real holder animation');
 assert(!/dispatchEvent\(new CustomEvent\('hobunji-kurraya-puzzle-note',[^\n]*\n\s*animatePlayerNote\(/.test(music), 'puzzle note input must not double-trigger the sounded-note animation');
 
 
