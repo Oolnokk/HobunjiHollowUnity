@@ -223,11 +223,14 @@
     for (let y = 0.3; y < h; y += 0.45) for (let x = 0.25; x < w; x += 0.5) { const hold = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.1, 0.1), mat); hold.position.set(x + (rnd() - 0.5) * 0.2, y + (rnd() - 0.5) * 0.15, 0.05); group.add(hold); }
     return group;
   }
+  let ruinLadderRunePath = null;
   let ruinLadderRuneTexture = null; // Shared V50 rune PNG used by ladder edge markings; individual marker geometries are disposable.
   function buildRuinLadderMarks(THREE, surface) {
     if (!THREE.TextureLoader || !THREE.PlaneGeometry) return null;
-    if (!ruinLadderRuneTexture) {
-      ruinLadderRuneTexture = new THREE.TextureLoader().load('assets/textures/decals/ruin_glyph_rune.png');
+    const runePath = window.RuinEmblem?.resolve?.('assets/textures/decals/ruin_glyph_rune.png') || 'assets/textures/decals/ruin_glyph_rune.png';
+    if (!ruinLadderRuneTexture || ruinLadderRunePath !== runePath) {
+      ruinLadderRuneTexture = new THREE.TextureLoader().load(runePath);
+      ruinLadderRunePath = runePath;
       ruinLadderRuneTexture.wrapS = ruinLadderRuneTexture.wrapT = THREE.RepeatWrapping;
       if (THREE.SRGBColorSpace) ruinLadderRuneTexture.colorSpace = THREE.SRGBColorSpace;
     }
