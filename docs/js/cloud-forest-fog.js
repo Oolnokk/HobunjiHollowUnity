@@ -824,7 +824,7 @@
       ruinGlowScene = scene;ruinGlowNextScan = now + 1600;
       ruinGlowMeshes = []; // Filter by the real additive pass, not decorative base stone or procedural wall labels.
       scene.traverse(node => {
-        if (node.name === 'engraving-glyph-glow' && node.isMesh) ruinGlowMeshes.push(node);
+        if ((node.name === 'engraving-glyph-glow' || node.userData?.ruinLadderRuneGlow) && node.isMesh) ruinGlowMeshes.push(node); // Rune strips remain legible under Kanthic's near-black darkness.
       });
       ruinGlowStats.scans++;ruinGlowStats.found=ruinGlowMeshes.length;
     }
