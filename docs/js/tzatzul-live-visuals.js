@@ -99,7 +99,7 @@
       try {
         state.rig.update(camera?.getWorldPosition ? camera : fallback,
           pose, seconds, !!actor.tzatzulCarrying, window.CreatureBlink?.isShut?.(actor) === true);
-        if (!(Number(actor.hitFlashT) > 0) && state.rig.restoreTint?.()) debug.tintRestores++; // Preserve hit flashes, then recover the bird's individual tint.
+        if (!(Number(actor.hitFlashT) > 0) && state.rig.restoreTint?.(kind(actor)==='pingdort' ? actor.genotype?.base?.color : undefined)) debug.tintRestores++; // Repair native hit-flash tint and reflect any live Pingdort genotype edits.
         state.rig.root.rotation.z = pose !== 'perched' ? Number(actor.isRuinSkeeri ? actor.skeeriDivePitchRad : kind(actor)==='pingdort' ? actor.pingdortDivePitchRad : actor.tzatzulDivePitchRad) || 0 : 0; // Shared headfirst swoop pitch.
       } catch (error) { debug.lastError = String(error); }
     }
@@ -113,7 +113,11 @@
     state.loading = true;
     const create = actor.isRuinSkeeri ? window.SkeeriRuins?.createRig : kind(actor)==='pingdort' ? window.PingdortRegistration?.createRig : window.TzatzulRegistration?.createRig; // The configured species supplies its own three sprite PNGs.
     if (!create) { state.loading = false; return; }
-    Promise.resolve().then(() => create(actor.tzatzulIdentity)).then(rig => {
+    const appearance = actor.isRuinSkeeri ? actor
+      : kind(actor) === 'pingdort'
+        ? (actor.genotype ||= window.CreatureGenetics?.makeDefaultGenotype?.('pingdort'))
+        : actor.tzatzulIdentity; // Preserve each species' authored palette source and individual identity.
+    Promise.resolve().then(() => create(appearance)).then(rig => {
       if (!rig?.root || !rig?.dispose) throw new Error('Flying rig renderer did not return a disposable root');
       if (state.removed || tracked.get(actor) !== state || actor.health <= 0
         || actor.avatarRef?.group !== group || !group.parent || actor._wildlifeVisualsReleased) {
@@ -170,7 +174,7 @@
         const isPingdort = kind(actor)==='pingdort' && (actor.isWildPingdort || actor.isCompanion); // Wild flocks and active trained companions get wings, not farm pen renderers.
         if (!isSkeeri && !isPingdort && ![window.TzatzulRegistration?.KIND, window.TzatzulRegistration?.HATCHLING_KIND].includes(kind(actor)) || actor.areaId !== area || !(actor.health > 0)) continue;
         if (tracked.has(actor)) continue;
-        if (!isSkeeri && !isPingdort) actor.tzatzulIdentity ||= window.TzatzulRegistration.identityFor(area, stableIndex(actor)); // Skeeri/Pingdort retain their authored, untinted sprites.
+        if (!isSkeeri && !isPingdort) actor.tzatzulIdentity ||= window.TzatzulRegistration.identityFor(area, stableIndex(actor)); // Tzatzul retain their nest identity; Pingdort genotype tints are supplied on rig mount.
         tracked.set(actor, { rig: null, loading: false, removed: false, originals: [],
           group: null, retryAt: 0, lastPose: null });
       }

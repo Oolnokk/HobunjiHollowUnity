@@ -13,7 +13,7 @@
     wings:'assets/creaturesprites/pingdort_wings.png',
   }); // Authored PNGs also provide the native farm, nursery and companion fallback silhouette.
   const RIG_URL='config/creatures/pingdort-flying-rig.json'; // Authored shared two-bone flying rig with burden socket.
-  const debug={registered:false,rigLoaded:false,failures:0,lastError:null}; // Mobile-readable registration and asset diagnostics.
+  const debug={registered:false,rigLoaded:false,failures:0,tintAssignments:0,lastTint:null,lastError:null}; // Mobile-readable registration, coat tint and asset diagnostics.
   let rigPromise=null; // One image/config decode shared by all wild and pet Pingdorts.
 
   function configureLivestock(){
@@ -39,7 +39,9 @@
       sprites:{idle:SPRITES.perched,run:[SPRITES.flying,SPRITES.flying]}};
     // Wild flocks override their own attack dispatch; personal companions use this special.
     if(render)render[KIND]={...(render[KIND]||{}),prefix:KIND,
-      base:{idle:SPRITES.perched,run1:SPRITES.flying,run2:SPRITES.flying},patterns:[]};
+      base:{idle:SPRITES.perched,run1:SPRITES.flying,run2:SPRITES.flying},patterns:[],
+      baseRecolorKeyHex:'#9dc09c',baseRecolorHueTolerance:24,baseRecolorMinSaturationRatio:.4,
+      baseShadeReferenceHex:'#9dc09c'}; // Key the authored sage body only: never recolor white eyes, black ink or transparent pixels.
     const items=injected.ITEM_DEFS;
     if(items){
       items[FERTILE_EGG]={...(items[FERTILE_EGG]||{}),label:'Fertile Pingdort Egg',
@@ -75,9 +77,68 @@
     }).catch(error=>{rigPromise=null;debug.failures++;debug.lastError=String(error);throw error;});
     return rigPromise;
   }
-  async function createRig(){
+  const SOURCE_COAT_HEX='#9dc09c'; // Approximate native sage-green pigment used as the existing animal shade-fill's luminance anchor.
+  function recoloredImages(images,hex){
+    const shadeFill=window.CreatureGeneticsRender?.recolorPixels; // Reuse the exact body-color math used by CreatureGeneticsRender for Stable and Farm.
+    const colorRgb=window.CreatureGeneticsRender?.hexToRgb?.(hex); // The selected genotype drives all three native flight-pose canvases.
+    if(typeof document==='undefined'||typeof shadeFill!=='function'||!Array.isArray(colorRgb))return null;
+    const out={}; // Allocated only at initial rig mount or when an existing genotype's base color changes.
+    for(const [pose,image] of Object.entries(images)){
+      const width=image.naturalWidth||image.width,height=image.naturalHeight||image.height; // Canvas sources and decoded PNGs share this dimension contract.
+      const canvas=document.createElement('canvas'); // Keep white eye pixels and black outlines on their original sprite, not in a tinted material.
+      canvas.width=width;canvas.height=height;
+      const ctx=canvas.getContext('2d',{willReadFrequently:true});
+      if(!ctx||!width||!height)return null;
+      ctx.drawImage(image,0,0,width,height);
+      const frame=ctx.getImageData(0,0,width,height),rgba=frame.data; // Test the authored green source pixels before recolor alters them.
+      const mask=new Uint8Array(rgba.length>>2); // Only pigments whose green channel exceeds red/blue; white eyes and black ink are excluded.
+      for(let i=0;i<rgba.length;i+=4){
+        const r=rgba[i],g=rgba[i+1],b=rgba[i+2];
+        if(rgba[i+3]&&g>45&&g>r*1.08&&g>b*1.07)mask[i>>2]=1;
+      }
+      shadeFill(rgba,colorRgb,i=>mask[i>>2]===1,SOURCE_COAT_HEX,'pingdort-'+pose); // Existing shade-fill conserves highlights and shadow gradients.
+      ctx.putImageData(frame,0,0);out[pose]=canvas;
+    }
+    return out;
+  }
+  async function createRig(genotype=null){
     const {settings,images}=await loadRig();
-    return window.FlyingAnimalRig.create(settings,images);
+    const requested=genotype?.base?.color; // From wild actor genetics, saved Stable entry, or livestock-to-companion promotion.
+    const initial=/^#[0-9a-f]{6}$/i.test(String(requested||''))?requested:null;
+    let recolored=null; // A fallback to authored PNGs is safer than tinting the white eye when canvas compositing is unavailable.
+    if(initial)try{recolored=recoloredImages(images,initial);}catch(error){debug.failures++;debug.lastError=String(error);}
+    const instance=window.FlyingAnimalRig.create(settings,recolored||images); // Retains the real wing bones, original silhouettes, and native cleanup owner.
+    let displayedColor=recolored?initial:null; // Tracks the exact color already baked into this rig's PNG textures, not a multiplied material tint.
+    const poseMaterials=instance.bodyMaterials; // References the existing flying/perched/wings materials; gripping shares perched.
+    instance.restoreTint=(nextHex=displayedColor)=>{
+      let changed=false;
+      for(const material of Object.values(poseMaterials||{})){
+        if(material?.color?.getHexString?.().toLowerCase()!=='ffffff'){
+          material.color.set('#ffffff');changed=true; // Native damage flashes may temporarily alter the material's multiply color.
+        }
+      }
+      if(!/^#[0-9a-f]{6}$/i.test(String(nextHex||''))||nextHex.toLowerCase()===displayedColor?.toLowerCase())return changed;
+      const png=window.HobunjiSpritePngSurface; // The same GPU texture creator and disposer used by FlyingAnimalRig.
+      if(!png?.makeCanvasTexture||!poseMaterials)return changed;
+      let next=null;
+      try{next=recoloredImages(images,nextHex);}catch(error){debug.failures++;debug.lastError=String(error);return changed;}
+      if(!next)return changed;
+      const pending={}; // Produce every new texture first; if one fails, none of the live pose maps should be partially replaced.
+      try{
+        for(const pose of ['flying','perched','wings'])pending[pose]=png.makeCanvasTexture(window.THREE,next[pose],'pingdort-'+pose+'-'+nextHex);
+      }catch(error){
+        Object.values(pending).forEach(texture=>texture?.dispose?.());
+        debug.failures++;debug.lastError=String(error);return changed;
+      }
+      for(const pose of ['flying','perched','wings']){
+        const material=poseMaterials[pose],prior=material.map;
+        material.map=pending[pose];material.needsUpdate=true;prior?.dispose?.(); // The shared grip mesh still reads perched.material.map.
+      }
+      displayedColor=nextHex;debug.tintAssignments++;debug.lastTint=nextHex;
+      return true;
+    };
+    if(recolored){debug.tintAssignments++;debug.lastTint=initial;}
+    return instance;
   }
   configureLivestock(); // Must run before game.js snapshots LIVESTOCK_ITEM_KINDS and resources.
   window.PingdortRegistration=Object.freeze({KIND,FERTILE_EGG,FARM_EGG,ZONES,SPRITES,register,configureLivestock,loadRig,createRig,

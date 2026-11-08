@@ -270,10 +270,15 @@
           entry.stone.userData.devRuinFootprintIgnore=true;
           entry.cap=cylinder(session.group,'stationary stone mechanism top',1.13,1.15,.13,0,y+.61,0,0x5b5c53);
           entry.cap.userData.devRuinFootprintIgnore=true;
-          entry.plateMesh=cylinder(session.group,'Hachutu pressure plate',.44,.48,.08,0,y+.73,0,0x9d625c);
-          entry.plateMesh.material=new THREE.MeshBasicMaterial({color:0x9d625c});
+          entry.plateMesh=cylinder(session.group,'Hachutu pressure plate',.44,.48,.08,0,y+.73,0,0x7a746b);
+          entry.plateMesh.material=window.ProceduralFurniture?.makePartMaterial?.({
+            materialTexture:'carved_smooth.png',materialLighting:'unlit',materialFillMode:'never',color:'#7a746b'
+          })||new THREE.MeshBasicMaterial({color:0x7a746b}); // The slab never changes color after interaction.
+          entry.plateSignal=window.FurniturePatternSurfaces?.attachStoneSignal?.(entry.plateMesh,{
+            width:.4,height:.4,idleColor:'#edac62',activeColor:'#72ffc7',
+          }); // Only the engraved PNG rune lights when a Hachutu mechanism is activated.
           entry.plateMesh.userData.devRuinFootprintIgnore=true;
-        } // Own material: the shared per-colour one must not recolour all three plates.
+        } // Each platform retains an independent glyph signal without modifying shared stone.
         kit.registerSurface({id:'hachutu-moving-'+ring+'-'+index,
           bounds:()=>({minX:entry.position.x-1.12,maxX:entry.position.x+1.12,minZ:entry.position.z-1.12,maxZ:entry.position.z+1.12}),
           topY:()=>y+.70,priority:30});
@@ -354,7 +359,7 @@
         spawnCoffin(b.minX+1.7,b.minZ+3+session.rng()*(b.maxZ-b.minZ-6),TYPES[Math.floor(session.rng()*3)]);
       }
       if(entry.plate&&!entry.triggered&&p&&Math.hypot(p.x-entry.position.x,entry.position.z-p.z)<.45){
-        entry.triggered=true;entry.plateMesh.material.color.setHex(0x63946a);
+        entry.triggered=true;entry.plateSignal?.setActive(true); // Activate the glyph; carved stone remains unchanged.
         window.RuinInteractionAudio?.activator?.(entry.plateMesh); // The three real Hachutu stone plates sound once when stepped on.
         takeRing(session.weeds[0],entry.ring);
       }

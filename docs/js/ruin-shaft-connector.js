@@ -251,7 +251,7 @@
       prepareMaterials,tileScale,
     }):null; // Each real upper V50 graph gets its own collision, stage gates, brazier and render root.
     ruin.nativeV50Runtime=nativeRuntime;
-    try { skeeriRuntime=root.SkeeriRuins?.mount?.({rec,plan,seed,getPlayerY,difficulty:ruin.difficulty??plan.floorCount})||null; }
+    try { skeeriRuntime=root.SkeeriRuins?.mount?.({rec,plan,seed,getPlayerY,theme:ruin.theme,difficulty:ruin.difficulty??plan.floorCount})||null; }
     catch(error) {root.__farmLog?.('[skeeri] Ruin encounter initialization failed: '+error,'warn');} // A missing optional creature asset must never invalidate an otherwise playable ruin.
     if(plan.options.groundEntranceSide)
       styleCleanup=root.RuinMultifloorV50Style?.apply?.({rec,ruin,hub:placed,seed,THREE,getPlayerY,routeTiles:route.tiles})||null;
