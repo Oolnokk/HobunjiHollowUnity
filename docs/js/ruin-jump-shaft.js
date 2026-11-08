@@ -225,17 +225,19 @@
       || new THREE.MeshBasicMaterial({ color: 0x726d63 });
     materials.push(stone);
     const basic = (color, extra = {}) => { const m = new THREE.MeshBasicMaterial({ color, ...extra }); materials.push(m); return m; };
-    const iceMaterial = basic(0x8bcdf5, { transparent: true, opacity: .42, depthWrite: false });
+    const iceMaterial = basic(0x8bcdf5, { transparent: true, opacity: .42, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
     const tradeTrim = { tothal: 0xb7ecfa, hronal: 0xff7a30, kanthic: 0xa072d8 }[tradition] || 0xb7ecfa;
-    const trimMaterial = basic(tradeTrim, { transparent: true, opacity: .55, depthWrite: false });
+    const trimMaterial = basic(tradeTrim, { transparent: true, opacity: .55, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }); // Offset keeps the sheet from flickering against the slab top.
     const cx = plan.centre.x, cz = plan.centre.z, half = plan.central / 2;
     for (const p of plan.platforms) {
       const holder = new THREE.Group(); holder.name = p.id; holder.position.set(p.x, p.y, p.z); group.add(holder);
       const slab = new THREE.Mesh(new THREE.BoxGeometry(p.w, THICKNESS, p.d), stone);
       slab.position.y = -THICKNESS / 2; slab.name = p.id + '-stone'; holder.add(slab); owned.push(slab);
       // A thin coloured lip tells the player which tradition's trick a platform plays.
-      const lip = new THREE.Mesh(new THREE.BoxGeometry(p.w + .04, .03, p.d + .04), p.kind === 'ice' ? iceMaterial : trimMaterial);
-      lip.position.y = .012; lip.name = p.id + '-trim'; holder.add(lip); owned.push(lip);
+      // Top-facing plane only: a box would show its translucent underside as a floating coloured
+      // sheet to anyone standing on a lower platform.
+      const lip = new THREE.Mesh(new THREE.PlaneGeometry(p.w + .04, p.d + .04), p.kind === 'ice' ? iceMaterial : trimMaterial);
+      lip.rotation.x = -Math.PI / 2; lip.position.y = .014; lip.renderOrder = 2; lip.name = p.id + '-trim'; holder.add(lip); owned.push(lip);
       const record = { ...p, width: Math.max(p.w, p.d), holder, baseY: p.y - THICKNESS, moving: false };
       columns.set(p.id, record);
       DS.registerSurface({ id: scope + '-' + p.id, scope, topY: p.y, priority: 4,
