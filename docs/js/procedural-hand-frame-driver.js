@@ -138,7 +138,11 @@
   function playerKurrayaActive(record) {
     return !inAttackEditor() && !!gameDeps?.playerMesh
       && record?.rig?.parent === gameDeps.playerMesh
-      && global.KurrayaInstrument?.kurrayaHandDiagnostics?.().active === true; // Never allow player music to retarget an NPC's hands.
+      && global.KurrayaInstrument?.activePlayerInstrument?.() === 'kurraya'; // Only the player can release their right hand to pluck; no diagnostic allocations per frame.
+  }
+  function playerKurrayaTarget(record) {
+    if (inAttackEditor() || !gameDeps?.playerMesh || record?.rig?.parent !== gameDeps.playerMesh) return null;
+    return global.KurrayaInstrument?.playerKurrayaHandTarget?.() || null; // Authored Neutral can grip a visible bag Kurraya before music starts.
   }
   function freeRightHandFor(record, toolKey) {
     if (inAttackEditor()) return global.HobunjiAttackEditorRightHand?.currentPose?.() || null;
@@ -153,7 +157,7 @@
     }
     const flute = playerFluteTarget(record); // Live instrument playback owns the player's hand grip while a note is sounding.
     if (flute) return toolGrips.toolKeyFor(flute.toolKey);
-    if (playerKurrayaActive(record)) return 'kurraya'; // The plucking hand no longer inherits the last equipped weapon's shape.
+    if (playerKurrayaActive(record) || playerKurrayaTarget(record)) return 'kurraya'; // Playing OR simply carrying Kurraya uses its own editor-authored grips, not the previous weapon.
     const snapshot = global.WeaponToolStances?.getRuntimeState?.() || global.WeaponToolStances?.debugSnapshot?.() || null;
     return toolGrips.toolKeyFor(snapshot?.itemKey || snapshot?.shape || '');
   }
@@ -163,7 +167,7 @@
     if (ownedContext === 'ranged' || ownedContext === 'melee') return ownedContext;
     const flute = playerFluteTarget(record); // The supplied flute hand calibration is the Ranged grip, not Melee.
     if (flute) return flute.gripContext;
-    if (playerKurrayaActive(record)) return 'melee'; // Virtual nut-to-bridge axes use the melee 2H grip family during performance.
+    if (playerKurrayaActive(record) || playerKurrayaTarget(record)) return 'melee'; // Same nut-to-bridge grip frame while carried or performed.
     if (typeof toolGrips.currentGripContext === 'function') return toolGrips.currentGripContext();
     if (inAttackEditor()) return document.getElementById('handGripContextSelect')?.value === 'ranged' ? 'ranged' : 'melee';
     const snapshot = global.WeaponToolStances?.getRuntimeState?.() || global.WeaponToolStances?.debugSnapshot?.() || null;
@@ -176,8 +180,9 @@
     if (ownedHolder?.parent) return ownedHolder;
     const flute = playerFluteTarget(record); // Actual holder comes from the mouth mount and follows head-relative pose changes.
     if (flute) return flute.holder;
-    if (playerKurrayaActive(record)) {
-      return global.KurrayaInstrument?.playerKurrayaHandTarget?.()?.holder || null; // Never let a Kurraya player note use a hidden last-weapon holder.
+    const kurrayaTarget = playerKurrayaTarget(record); // The actual held assembly is the tool-space grip authority, including authored Neutral.
+    if (playerKurrayaActive(record) || kurrayaTarget) {
+      return kurrayaTarget?.holder || null; // While the music prop loads, do not borrow a hidden last-weapon holder.
     }
     if (gameDeps?.playerMesh && record.rig?.parent === gameDeps.playerMesh) {
       if (global.KurrayaInstrument?.fluteDiagnostics?.().active) return null; // The flute is loading: keep hands idle rather than grabbing the last weapon.
