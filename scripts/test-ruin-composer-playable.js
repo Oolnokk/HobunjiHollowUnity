@@ -26,6 +26,7 @@ const statuary=new Map(), tubes=new Map(); // Verifies Key Statue and Witch-bomb
 const toast=[]; // Captures contextual in-game feedback from action presses.
 const rangedTargets=new Set(); // The existing ranged interception registry owns each composed switch and its cleanup.
 let dispenseRequests=0; // Counts ranged-only activation of the authored witch-bomb factory.
+let rangedRuntimeReady=true; // Simulates the V50 ranged runtime becoming ready after a composed wing has already mounted.
 globalThis.DynamicSurfaces={
   registerSurface(entry){surfaces.set(entry.id,entry);},
   registerPit(entry){pits.set(entry.id,entry);},
@@ -69,7 +70,7 @@ globalThis.HronalWitchBombs={
   dispenseFromMechanism:async()=>{dispenseRequests++;return {id:'witch-bomb-test'};},
 };
 globalThis.DevRandomRuinSimplePuzzles={
-  registerExternalProjectileTarget(target){rangedTargets.add(target);return ()=>rangedTargets.delete(target);},
+  registerExternalProjectileTarget(target){if(!rangedRuntimeReady)return null;rangedTargets.add(target);return ()=>rangedTargets.delete(target);},
 };
 globalThis.KeyStatues={registerDispenser(_map,id,root,_puzzle,options={}){statuary.set(id,{root,feedPlinthId:options.feedPlinthId});return true;}};
 const burdens=new Map(),rewardChests=[]; // Tracks the optional physical Shattercask source and its reward chest.
@@ -161,10 +162,15 @@ const mkTile=walkable=>({type:walkable?'grass':'rock'});
   // The original Burden Plinth is separately authored from the long Key Statue defense plinth.
   // Its own replenishable Key Statue dispenser supplies it; completion (not mere placement) unlocks a bonus chest exactly once.
   const bonusRec=makeRecord(),revealed=[];
+  rangedRuntimeReady=false; // Cover a composed wing mounted before the native projectile interceptors initialize.
   const bonus=await Playable.mount({rec:bonusRec,ruin:{theme:'hronal'},seed,archetype:'trialHall',burdenOffering:true,
     mapId:'map_i_dev_random_ruin',scope:'bonus_test',makeTile:mkTile,DynamicSurfaces,THREE,originX:3,originZ:24,
     addControl:control=>revealed.push(control),isCurrent:()=>true});
   assert(bonus.offering,'full trial can include the separately authored generic Burden Plinth');
+  assert.equal(rangedTargets.size,0,'the bomb target cannot register while V50 projectile handling is unavailable');
+  rangedRuntimeReady=true;
+  bonus.update();
+  assert.equal(rangedTargets.size,1,'the later wing update installs its deferred external ranged target');
   const offering=[...nodes.entries()].find(([id])=>id.startsWith('composed_offering_'));
   assert(offering&&offering[1].group.userData.furniturePuzzle.requiredBurdenKind==='keyStatue');
   const feed=[...statuary.entries()].find(([id])=>id.startsWith('composed_offering_')&&id.endsWith('_dispenser')); // The bonus plinth owns a different statue source from the defense.
