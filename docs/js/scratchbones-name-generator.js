@@ -457,13 +457,15 @@
   }
 
 
-  function buildHarlyaoGivenName(rng, culture) {
-    const rules = culture.harlyaoRules; // Harlyao-only syllable pools; ordinary liches use personal names without surnames.
+  function buildHarlyaoGivenName(rng, culture, surname = false) {
+    const rules = culture.harlyaoRules; // Shared Harlyao phonology for both personal names and surnames.
     const reserved = new Set(rules.reservedNames.map(name => name.toLowerCase())); // Authored keystone guardians cannot be randomly duplicated.
+    const openingPool = surname ? rules.surnameFirstParts : rules.firstParts; // Surnames favor harder initial clusters without introducing a second culture.
+    const endingPool = surname ? rules.surnameLastParts : rules.lastParts; // Distinct family endings keep surnames recognizably separate from given names.
     for (let attempt = 0; attempt < 40; attempt++) {
-      const first = pickFromRng(rng, rules.firstParts); // Opening cluster, sometimes vowel-led or ending in a hard consonant.
-      const middle = rng() < rules.threePartChance ? pickFromRng(rng, rules.middleParts) : ''; // Optional middle unit distinguishes Nanahi/Azgarlu from Imlao/Amnao.
-      const last = pickFromRng(rng, rules.lastParts); // Final vowel or consonant ending shared by the two naming styles.
+      const first = pickFromRng(rng, openingPool); // Opening cluster selected from the requested part of the name.
+      const middle = rng() < rules.threePartChance ? pickFromRng(rng, rules.middleParts) : ''; // Optional middle unit permits both compact and longer names.
+      const last = pickFromRng(rng, endingPool); // Final suffix includes ai and familiar Harlyao consonant codas.
       const parts = [first, middle, last].filter(Boolean); // Only nonempty Harlyao name fragments participate in phonetic joins.
       let joined = parts[0]; // Accumulated name, checked at each fragment boundary to prevent unintended vowel blends.
       for (const part of parts.slice(1)) {
@@ -475,14 +477,26 @@
       const name = applyCasing(joined, culture.casing); // Same casing mechanism as every other culture.
       if (name.length >= 5 && name.length <= 12 && !/(.)\1\1/i.test(name) && !reserved.has(name.toLowerCase())) return name;
     }
-    return 'Narkalu'; // Pathological fixed RNG must never hang or take an authored boss's name.
+    return surname ? 'Garlun' : 'Narkalu'; // A pathological fixed RNG cannot hang or take an authored boss's name.
+  }
+
+  function buildHarlyaoSurname(rng, culture, givenName = '') {
+    for (let attempt = 0; attempt < 24; attempt++) {
+      const surname = buildHarlyaoGivenName(rng, culture, true); // Surnames share vowel-joining and reserved-name validation.
+      if (surname.toLowerCase() !== String(givenName).toLowerCase()) return surname;
+    }
+    return 'Garlun'; // Fixed RNG may repeat the given name; a distinct fallback keeps a valid family name.
   }
 
   function generateCultureNameFromSeed(seedString, gender = 'male', culture, options = {}) {
     const resolvedCulture = culture || {};
     const numericSeed = hashStringToSeed(seedString);
     const rng = mulberry32(numericSeed);
-    if (resolvedCulture.harlyaoRules) return buildHarlyaoGivenName(rng, resolvedCulture);
+    if (resolvedCulture.harlyaoRules) {
+      const givenName = buildHarlyaoGivenName(rng, resolvedCulture); // Single culturally generated Harlyao personal name.
+      const surname = buildHarlyaoSurname(rng, resolvedCulture, givenName); // Second name is a family name, never a planar epithet.
+      return `${givenName} ${surname}`;
+    }
     if (resolvedCulture.enghShoRules) {
       const firstName = buildEnghShoGivenName(rng, resolvedCulture, gender);
       const surname = buildEnghShoSurname(rng, resolvedCulture);
@@ -545,9 +559,16 @@
     return buildHarlyaoGivenName(rng, culture);
   }
 
+  function generateHarlyaoSurname(rng = Math.random, givenName = '') {
+    const culture = resolveConfig().cultures.harlyao; // Use the same configured Harlyao surname phonology for game spawns and seeded identities.
+    if (!culture?.harlyaoRules) throw new Error('Missing Harlyao surname-generation rules.');
+    return buildHarlyaoSurname(rng, culture, givenName);
+  }
+
   root.SCRATCHBONES_NAME_GENERATOR = {
     hashStringToSeed,
     generateIdentityFromSeed,
     generateHarlyaoName,
+    generateHarlyaoSurname,
   };
 })(window);
