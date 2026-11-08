@@ -78,12 +78,10 @@
       const swinging = engaged && now - swingSinkAtMs < SWING_SAMPLE_FRESH_MS && Number.isFinite(swingSinkPct);
       const notePose = swinging ? null : instrumentNotePose(now); // Actual combat attacks win; either sounded instrument note takes priority over idle stance.
       const playingNote = notePose !== null;
-      const instrumentActive = global.KurrayaInstrument?.fluteDiagnostics?.().active === true
-        || global.KurrayaInstrument?.kurrayaHandDiagnostics?.().active === true; // The music session owns its Neutral stance even in the gaps between sounded notes.
-      const neutralAction = global.KurrayaInstrument?.fluteDiagnostics?.().active === true
-        ? global.HeldActionAnimations?.flutePlayNote
-        : global.HeldActionAnimations?.kurrayaPlayNote; // Same source as the Attack Editor; no hard-coded instrument idle sink.
-      const instrumentPose = notePose || (instrumentActive ? neutralAction?.poses?.neutral : null);
+      const instrumentKey = global.KurrayaInstrument?.activePlayerInstrument?.() || null; // Allocation-free session owner; never ask diagnostic snapshot getters on the per-frame path.
+      const neutralAction = instrumentKey === 'flute' ? global.HeldActionAnimations?.flutePlayNote
+        : instrumentKey === 'kurraya' ? global.HeldActionAnimations?.kurrayaPlayNote : null;
+      const instrumentPose = notePose || neutralAction?.poses?.neutral || null; // Editor Neutral takes priority over an equipped weapon's stance during silence.
       const pct = swinging ? swingSinkPct
         : instrumentPose ? Math.max(0, Number(instrumentPose.bodySink) || 0)
         : engaged ? (global.SharedAttackPose?.idleBodySinkPct?.() ?? 0) : 0;
