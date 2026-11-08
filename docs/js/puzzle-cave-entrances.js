@@ -304,6 +304,10 @@
         radius:.55,thickness:.09,
         toward:{x:portal.door.x-portal.plate.x,z:portal.door.z-portal.plate.z}
       })||null; // Furniture Author carved_smooth stone plus hao'uun in the shared Tankan font.
+      portal.plateSignal=root.FurniturePatternSurfaces?.attachStoneSignal?.(plate,{
+        width:.18,height:.18,idleColor:'#a3dcc2',activeColor:'#ffe18a',
+      }); // Small edge rune reports completion without covering the Tankan inscription or recoloring stone.
+      if(portal.plateSignal)portal.plateSignal.glyph.position.x=.37; // Center of the glyph sits safely within the circular plate's outer rim.
     }
     const furniture=root.AuthoredFurniture;
     Promise.resolve(furniture?.load?.('cliffDoor')).then(data=>{
@@ -334,7 +338,7 @@
       onSolved:()=>{
         portal.solved=true;portal.openWait=.95; // Solving never closes or commandeers the player's manually equipped instrument.
         root.CaveSiteSystem?.markExteriorPuzzleSolved?.(portal.mapId,song.rewardTier);
-        if(portal.plateMesh?.material?.color)portal.plateMesh.material.color.setHex(0xa6bf73);
+        portal.plateSignal?.setActive(true); // Only the illuminated PNG rune changes color, never the stone plate.
       },
       onChanged:snap=>{
         portal.progress=snap;
