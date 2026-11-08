@@ -16,13 +16,23 @@
     medium:{key:'skeeri-medium',label:'Skeeri',size:'medium',width:1.15,health:54,damage:13,speed:6.8},
     large: {key:'skeeri-large',label:'Large Skeeri',size:'large',width:2.2,health:125,damage:17,speed:12},
   }); // A single flight engine applies size-specific combat tuning.
-  const BODY_GROUPS = Object.freeze({ // Natural and nearly natural relatives of each ruin's named lich tradition.
-    hronal:Object.freeze(['#705441','#856149','#94715a','#605148']), // Soot, russet and baked earth near Azgarlu's fire.
-    tothal:Object.freeze(['#647079','#808d96','#545e68','#999d9c']), // Cold slate, frost-gray and weathered blue stone.
-    kanthic:Object.freeze(['#5a5567','#746879','#514d5e','#827986']), // Dusty indigo, charcoal-violet and ash.
+  const LICH_HUES = Object.freeze({ // Mirrors HarlyaoLichCombat.TYPE_DEFS, the owner of each tradition's robe dye hue family.
+    hronal:Object.freeze(['red','red_orange','orange','yellow_orange','yellow']),
+    tothal:Object.freeze(['green_blue','blue','blue_indigo']),
+    kanthic:Object.freeze(['indigo','indigo_violet','violet']),
   });
-  const FALLBACK_GLOW = Object.freeze({hronal:'#32e0ff',tothal:'#ff8545',kanthic:'#dfeb45'}); // Color-C fallbacks only if named-lich data is unavailable.
-  const EYE_BRIGHTNESS = Object.freeze([.92,1,1.16]); // Minor per-bird variance in the same unnatural lich glow family.
+  const BODY_VARIANTS = Object.freeze(['dusty','muted','dark_muted']); // Natural-looking entries from the same existing dye families liches use.
+  const EYE_VARIANTS = Object.freeze(['pure','bright']); // Deliberately uncanny vivid dyes within those same families, never a complementary hue from another tradition.
+  const BODY_GROUPS = Object.freeze({ // Fallback natural swatches if the normal dye catalog has not loaded yet.
+    hronal:Object.freeze(['#854e48','#875a42','#967d55','#605052']), // Muted reds, rust orange and ochre, not an unrelated brown dye.
+    tothal:Object.freeze(['#497a75','#5f788d','#555c83','#7d9497']), // Sea-glass green-blue, foggy blue and muted indigo.
+    kanthic:Object.freeze(['#56506b','#6b536d','#514765','#808080']), // Ash-indigo, violet and canonical Kanthic neutral gray.
+  });
+  const EYE_GROUPS = Object.freeze({ // Fallback vivid entries in the actual tradition, rather than the lich's inverse-color glyph.
+    hronal:Object.freeze(['#ff3737','#ff8027','#ffcc19']),
+    tothal:Object.freeze(['#04ffdb','#2b98ff','#5676ff']),
+    kanthic:Object.freeze(['#8b35ff','#d72aff','#ff4ef0']),
+  });
   const EYE_MARKER = '#7F00FF'; // The exact purple source family already used for maskbound mask/lich eye dye.
   const HATCH_OPEN_SECONDS = .65; // Stone hatch slides upward before the concealed enemies emerge.
   const ACTIVATION_RADIUS = 3.3; // Within a few tiles, the proximity compartment opens.
@@ -35,21 +45,25 @@
   let owner = null; // Exactly one disposable generated-ruin encounter session.
   let rigPromise = null; // Shared immutable sprite/JSON download across all three Skeeri sizes.
 
-  function traditionOf(value) {return Object.hasOwn(BODY_GROUPS,String(value))?String(value):'hronal';} // Reject nonexistent lich theme IDs.
-  function glowFor(theme) {
-    const authored=window.SpecialHarlyaoLiches?.specialRoster?.(theme)?.appearance?.bodyColors?.C?.hex; // Same actual Color C as the guardian's eyes and ruin wall.
-    return /^#[0-9a-f]{6}$/i.test(authored||'')?authored:FALLBACK_GLOW[theme];
+  function traditionOf(value) {return Object.hasOwn(LICH_HUES,String(value))?String(value):'hronal';} // Reject nonexistent lich theme IDs.
+  function catalogPalette(theme,variants,addNeutrals=false) {
+    const catalog=window.SCRATCHBONES_CONFIG?.game?.dyes?.catalog || window.ScratchbonesAccount?.getDyeCatalog?.() || []; // Same authored dye swatches as lich wardrobe.
+    const available=new Map(catalog.filter(entry=>/^#[0-9a-f]{6}$/i.test(entry?.hex||'')).map(entry=>[entry.id,entry.hex]));
+    const tradition=window.HarlyaoLichCombat?.TYPE_DEFS?.[theme]; // Prefer the owner of lich color groups, not a second independent range.
+    const hues=tradition?.hues || LICH_HUES[theme];
+    const ids=variants.flatMap(variant=>hues.map(hue=>'dye:CLOTH:'+variant+'_'+hue));
+    if(addNeutrals)ids.push(...(tradition?.neutralDyes || ['dye:CLOTH:white','dye:CLOTH:gray','dye:CLOTH:charcoal']));
+    return ids.filter(id=>available.has(id)).map(id=>({id,hex:available.get(id)}));
   }
-  function brightness(hex,multiplier) {
-    const source=parseInt(hex.slice(1),16); // Preserve the lich eye hue while varying its light intensity.
-    const channel=shift=>Math.round(Math.min(255,(source>>shift&255)*multiplier)).toString(16).padStart(2,'0');
-    return '#'+channel(16)+channel(8)+channel(0);
-  }
-  function paletteFor(theme,identity,glowHex=null) {
+  function paletteFor(theme,identity) {
     const family=traditionOf(theme),slot=hash(String(identity)); // Stable appearance independent of AI RNG and encounter order.
-    const eyes=/^#[0-9a-f]{6}$/i.test(glowHex||'')?glowHex:glowFor(family);
-    return {theme:family,body:BODY_GROUPS[family][slot%BODY_GROUPS[family].length],
-      eyes:brightness(eyes,EYE_BRIGHTNESS[hash(String(identity)+':eye')%EYE_BRIGHTNESS.length])};
+    const bodies=catalogPalette(family,BODY_VARIANTS,family==='kanthic');
+    const eyes=catalogPalette(family,EYE_VARIANTS);
+    const body=bodies.length?bodies[slot%bodies.length]:null;
+    const eye=eyes.length?eyes[hash(String(identity)+':eye')%eyes.length]:null;
+    return {theme:family,body:body?.hex||BODY_GROUPS[family][slot%BODY_GROUPS[family].length],
+      eyes:eye?.hex||EYE_GROUPS[family][hash(String(identity)+':eye')%EYE_GROUPS[family].length],
+      bodyDyeId:body?.id||null,eyeDyeId:eye?.id||null}; // Mobile diagnostics show exactly which lich-family swatches were chosen.
   }
 
   function separateEyeMarker(image) {
@@ -215,7 +229,7 @@
     if(!actor){snapshot.failedSpawns++;return null;}
     actor.areaId=session.mapId;
     actor.isRuinSkeeri=true; // Ground-AI arbitration can distinguish this intentional aerial movement.
-    actor.skeeriPalette=paletteFor(session.theme,session.seed+':'+index,session.glowHex); // Per-instance body/eye palette, never mutate the shared species.
+    actor.skeeriPalette=paletteFor(session.theme,session.seed+':'+index); // Per-instance palette from the actual lich hue family; never mutate the species or shared assets.
     actor.skeeriFlightPose='perched';
     const perch=window.PerchSupport?.point?.('skeeri:'+session.seed+':'+index,x*unit,z*unit,y);
     if(!perch || !window.PerchSupport.attach(actor,perch)){
@@ -302,7 +316,6 @@
     const session={mapId:rec.mapData?.id||MAP_ID,scene:rec.scene,seed:Number(seed)>>>0,
       getPlayerY,theme:traditionOf(options.theme),hatches:[],actors:new Set(),roots:[],materials:new Set(),disposed:false,
       nest:{x:anchor.x,z:anchor.z-20,y:top.y+11},bombers:[],lastSignal:0}; // All actor, hatch, nest and payload lifetime stays inside one generated map.
-    session.glowHex=glowFor(session.theme); // Resolve the named boss's Color C once for the entire ruin.
     session.hatchMaterial=window.ProceduralFurniture?.makePartMaterial?.({
       materialTexture:'carved_smooth.png',materialLighting:'unlit',materialFillMode:'never',color:'#6d6259',
     }) || new THREE.MeshBasicMaterial({color:0x6d6259});
