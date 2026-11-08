@@ -126,6 +126,23 @@ assert.equal(deliberateFalls.length, 1, 'the shared fall-landing logic receives 
 assert.equal(deliberateFalls[0].source, 'climb released');
 assert.equal(ClimbSystem.cliffDodge(), false, 'the same button is not swallowed after landing');
 
+// Authored ruin walls use ClimbSurfaces rather than player.climbing and must also detach.
+let wallReleases = 0; // Counts calls to the same ClimbSurfaces.release used by Jump.
+context.window.ClimbSurfaces = {
+  release: () => {
+    if (!player.onClimbSurface) return false;
+    player.onClimbSurface = null;
+    wallReleases++;
+    return true;
+  },
+};
+player.onClimbSurface = { id: 'ruin-wall', v: 4 };
+assert.equal(ClimbSystem.cliffDodge(), true, 'dodge detaches from an authored climbable ruin wall');
+assert.equal(player.onClimbSurface, null, 'wall climb no longer owns movement');
+assert.equal(wallReleases, 1, 'dodge uses the existing release operation exactly once');
+assert.equal(player.dodging, false, 'detaching never starts a combat dodge');
+assert.equal(ClimbSystem.cliffDodge(), false, 'normal dodge remains available after a wall release');
+
 player.x = TILE * 0.5; player.y = TILE * 0.5; player.angle = 0;
 target = ClimbSystem.getClimbTarget();
 assert.equal(ClimbSystem.startClimb(target), true);
