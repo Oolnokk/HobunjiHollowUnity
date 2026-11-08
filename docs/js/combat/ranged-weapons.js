@@ -1769,7 +1769,7 @@
 
     let ally = null;
     for (const other of (deps.hostileObjects || [])) {
-      if (other === c || (c.id != null && other.id === c.id) || other.health <= 0 || (other.areaId && other.areaId !== deps.getCurrentArea())) continue;
+      if (other === c || other === targetPlayer || (c.id != null && other.id === c.id) || other.health <= 0 || (other.areaId && other.areaId !== deps.getCurrentArea())) continue; // The opposing tribe hunter is the intended target, not an allied blocker.
       const interval = segmentHitboxInterval(segment.start, segment.end, actorHitbox(other), radiusWorld);
       if (!interval || interval.enter <= 0.02 || interval.enter >= 0.985 || (ally && interval.enter >= ally.interval.enter)) continue;
       ally = { actor: other, interval };
@@ -1870,12 +1870,14 @@
     if (Math.abs(fromY - toY) > 0.65) return true;
     const distancePx = Math.hypot(target.x - c.x, target.y - c.y);
     const steps = Math.min(12, Math.max(2, Math.ceil(distancePx / (deps.TILE * 0.4)))); // Bounded local probe only when evaluating close-range melee.
+    let previousX = c.x, previousY = c.y; // The world navigation gate uses the previous support tile to reject abrupt height changes.
     for (let i = 1; i < steps; i++) {
       const t = i / steps;
       const x = c.x + (target.x - c.x) * t, y = c.y + (target.y - c.y) * t;
       const support = deps.worldSurfaceY(x, y);
-      if (Number.isFinite(support) && support < Math.min(fromY, toY) - 0.65) return true; // Open gap between two same-height cliff shelves.
-      if (typeof deps.creatureCanEnterTile === 'function' && !deps.creatureCanEnterTile(c.def, x, y)) return true; // Impassable crossing despite clear air between combatants.
+      if (Number.isFinite(support) && (support < Math.min(fromY, toY) - 0.65 || support > Math.max(fromY, toY) + 0.65)) return true; // Open gaps and intervening raised ridges block direct melee.
+      if (deps.creatureCanEnterTile?.(c.def, x, y, previousX, previousY, c, true) === false) return true; // Reuse the real navigation gate with the actor and prior coordinate, not a directionless tile query.
+      previousX = x; previousY = y;
     }
     return false;
   }
