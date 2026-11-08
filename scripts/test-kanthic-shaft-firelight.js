@@ -86,7 +86,7 @@ assert(connector.includes('routeTiles:route.tiles,showToast,onStateChange:onMech
   'existing shaft control callbacks reach the Kanthic lighting runtime');
 
 const instrumented=fog.replace('  function ordinaryBuildingInterior(area) {',
-  '  window.__probeRuinMasks=(lights,deps)=>{lightingDeps=deps;drawRuinTraditionLightMasks(lights);return {...ruinFireMaskStats};};\\n  function ordinaryBuildingInterior(area) {'); // Test seam exposes only the production lighting function in a disposable VM.
+  '  window.__probeRuinMasks=(lights,deps)=>{lightingDeps=deps;drawRuinTraditionLightMasks(lights);return {...ruinFireMaskStats};};\n  function ordinaryBuildingInterior(area) {'); // Test seam exposes only the production lighting function in a disposable VM.
 assert.notEqual(instrumented,fog,'the test can instrument the shared compositor source');
 const fakeWindow={THREE:{Vector3:Vec},WeatherFX:{init(){}},RuinMultifloorV50Style:style}; // Uses exactly the production mask renderer, not a copied drawing algorithm.
 vm.runInNewContext(instrumented,{window:fakeWindow,performance:{now:()=>1000},console});
