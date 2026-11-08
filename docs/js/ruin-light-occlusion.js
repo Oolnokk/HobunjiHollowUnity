@@ -17,8 +17,9 @@
     if(scene===cachedScene&&now-cachedAt<SCAN_INTERVAL_MS)return cachedCandidates;
     cachedScene=scene;cachedAt=now;cachedCandidates=[];
     stats.lights=stats.shadows=0; // Mobile diagnostics describe the latest discovery window, rather than rising forever.
+    const pillars=[],ordinary=[]; // Reserve shadow-caster capacity for tall moving obelisks, even if room walls traverse first.
     scene?.traverse?.(node=>{
-      if(cachedCandidates.length>=MAX_CASTERS||!node.isMesh||node.isInstancedMesh||node.visible===false)return;
+      if(!node.isMesh||node.isInstancedMesh||node.visible===false)return;
       const name=String(node.name||''),parentName=String(node.parent?.name||'');
       const role=String(node.userData?.interiorRuinRole||node.parent?.userData?.interiorRuinRole||'');
       const physics=node.userData||{};
@@ -27,8 +28,11 @@
       if(!BLOCKER_NAME.test(name+' '+parentName+' '+role)&&!solid)return; // Respect the existing ruin solid-object tags even when a mesh name is generic.
       const material=Array.isArray(node.material)?node.material[0]:node.material;
       if(!material||material.visible===false||material.transparent&&Number(material.opacity)<.5)return;
-      cachedCandidates.push(node);
+      const priority=/obelisk-.*-stone|pillar|column/i.test(name+' '+parentName+' '+role);
+      if(priority&&pillars.length<64)pillars.push(node);
+      else if(ordinary.length<MAX_CASTERS)ordinary.push(node);
     });
+    cachedCandidates=pillars.concat(ordinary.slice(0,MAX_CASTERS-pillars.length));
     stats.candidates=cachedCandidates.length;
     return cachedCandidates;
   }
