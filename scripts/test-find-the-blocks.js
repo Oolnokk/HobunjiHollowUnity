@@ -40,7 +40,7 @@ function test(seed,size=24){
   const fireTargets=[],projectileTargets=[],breakablePillars=[],registeredBlocks=[],unregisteredBlocks=[],surfaces=[],cleared=[],barriers=[]; // Retain native registration and cleanup records along with authored obstruction centers.
   const soloGroup=new Object3D(); // Parent scene has the same lifetime as one Puzzle Lab reroll.
   const subpuzzles=[]; // Every nested melody/glyph/rail challenge must be solved and disposed through its real callback seam.
-  let solved=0,playerFloor=16; // Simulates transitions between independently stacked dungeon stories for height-aware blockers.
+  let solved=0,playerFloor=16,dispenseCount=0; // Count external glyph activations separately from legacy Action 1 prompts. // Simulates transitions between independently stacked dungeon stories for height-aware blockers.
   const env={
     THREE,
     DevRandomRuin:{
@@ -79,7 +79,7 @@ function test(seed,size=24){
       registerBreakable(_stone,options){breakablePillars.push(options);return ()=>cleared.push('breakable');},
       registerDispenser(){return true;},
       unregisterDispenser(){cleared.push('dispenser');},
-      dispenseFromMechanism(){return true;}
+      dispenseFromMechanism(){dispenseCount++;return true;}
     },
     ProceduralFurniture:{
       makePartMaterial(spec){
@@ -189,6 +189,12 @@ function test(seed,size=24){
     assert(room.snapshot().pillarHeight<.1,'All projectile glyphs sink the pillar');
   }else if(room.variant==='witchBomb'){
     assert.equal(breakablePillars.length,1,'Cracked pillar must register with actual bomb explosions');
+    const target=projectileTargets.find(t=>t.id.endsWith('-dispenser-projectile-target')); // A ranged glyph is the only player-operated source for the tube.
+    assert(target&&target.hittable()&&target.hitMesh===named.get('find-blocks-bomb-projectile-target'));
+    assert.equal(target.hitMesh.material?.userData?.materialTexture,'carved_smooth.png','the bomb switch uses carved ruin stone');
+    assert(!state.controls.some(c=>c.kind==='findBlocksBombTube'),'the dispenser never claims Action 1');
+    target.onHit();target.onHit();
+    assert.equal(dispenseCount,2,'repeated ranged hits reach the bomb factory; its live-bomb lock owns refusal');
     breakablePillars[0].onBreak();
     for(let i=0;i<100;i++)room.tick(.05);
     assert.equal(room.blocks[3].phase,'ready','A witch-bomb blast frees the fourth block');
@@ -228,7 +234,7 @@ function test(seed,size=24){
   }
   room.tick(.05);
   assert.equal(room.solved,true);
-  assert.equal(state.controls.length,0,'After four plates settle, completed fire and bomb controls no longer claim Action 1');
+  assert.equal(state.controls.length,0,'After four plates settle, no completed controls claim Action 1');
   assert.equal(solved,1,'The completion event fires only once');
   room.tick(.05);
   assert.equal(solved,1);
