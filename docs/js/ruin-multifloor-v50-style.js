@@ -13,7 +13,7 @@
   function mountKanthicFixtures({accents,rec,ruin,hub,THREE,getPlayerY,showToast,onStateChange}){
     if(ruin.theme!=='kanthic')return null;
     const rootGroup=new THREE.Group(); // Session-owned, non-colliding fire furniture in the actual shaft.
-    rootGroup.name='kanthic-shaft-fire-fixtures';accents.add(rootGroup);
+    rootGroup.name='kanthic-shaft-fire-fixtures';rec.scene.add(rootGroup); // Keep fire furniture outside the engraved-masonry tree: its brackets must not acquire expensive wall-pattern atlases.
     const grid=hub.grid,o=hub.options,lights=[],flames=[],towerFixtures=[],controls=[]; // Shared source list and cleanup handles for sconces and optional hub braziers.
     const stone=root.ProceduralFurniture?.makePartMaterial?.({
       materialTexture:'carved_smooth.png',materialLighting:'unlit',materialFillMode:'never',color:'#766b62'
@@ -108,8 +108,9 @@
       flame.name='kanthic-shaft-brazier-fire';flame.position.y=1.15;flame.visible=false;group.add(flame);
       const visual=root.PersistentGroundFire?.attachCampfireFlame?.(flame,{scale:1.35,rateScale:.9});
       if(visual)flames.push(visual);
-      const source={x,y:floorY+1.4,z,story,floorY,radius:7,strength:.91,
-        color:[255,132,54],active:false}; // Igniting a brazier progressively lifts darkness around its actual floor.
+      else addMesh(flame,'brazier-burning-fallback',flameGeo,fire,0,.52,0); // A lit brazier remains visually obvious even if particle assets are still loading.
+      const source={x,y:floorY+1.4,z,story,floorY,radius:12,strength:.99,
+        color:[255,132,54],active:false}; // A lit brazier clears nearly all darkness within reach and fades gently, revealing a practical part of the shaft.
       lights.push(source);
       const state={lit:false,group,source}; // Shared by the mobile prompt, fire emitter and light mask.
       const control={kind:'kanthicShaftBrazier',object:group,promptRoot:group,floorY,range:2.1,
@@ -124,6 +125,10 @@
         }};
       ruin.controls.push(control);controls.push(control);
     }
+    const sconceCount=lights.filter(light=>!!light.anchor).length; // Fixture diagnostics count sconces only; goal braziers are a separate category.
+    const requiredWingLights=ruin.shaftLayerRuntime?.lightSources?.()||[]; // Existing required wing brazier records, activated by their actual puzzle completion handlers.
+    const nativeGoalLights=ruin.nativeV50Runtime?.lightSources?.()||[]; // Native upper-floor goals reveal stone using their actual support Y.
+    lights.push(...requiredWingLights,...nativeGoalLights);
     activeKanthicLights=lights;
     let lastTick=0; // Particle emitters share the existing shaft-style render tick rather than starting an independent loop.
     const tick=()=>{
@@ -147,7 +152,8 @@
       for(const mat of materials)mat.dispose();
       rootGroup.parent?.remove(rootGroup);
     };
-    return {tick,dispose,lights,braziers:controls.length,sconces:lights.length-controls.length};
+    return {tick,dispose,lights,braziers:controls.length,sconces:sconceCount,
+      requiredBraziers:requiredWingLights.length+nativeGoalLights.length}; // All three lightable brazier families share the same cached overlay source list.
   }
   function apply({rec,ruin,hub,seed,THREE,getPlayerY,routeTiles=[],showToast,onStateChange}={}){
     if(!rec?.scene||!ruin?.localeRoot||!hub?.grid||!THREE?.Mesh)
@@ -156,7 +162,8 @@
     accents.name='ruin-v50-engraved-masonry';rec.scene.add(accents);
     root.FurniturePatternSurfaces?.setRuinAwardTarget?.(accents,ruin.localeRoot); // Late motifs grant to the playable ruin without circular serialized scene data.
     const kanthicFire=mountKanthicFixtures({accents,rec,ruin,hub,THREE,getPlayerY,showToast,onStateChange}); // Adds Kanthic-only hub and moving-tower fire without changing wing progression.
-    if(kanthicFire){ruin.shaftConnection.kanthicSconces=kanthicFire.sconces;ruin.shaftConnection.kanthicOptionalBraziers=kanthicFire.braziers;}
+    if(kanthicFire){ruin.shaftConnection.kanthicSconces=kanthicFire.sconces;ruin.shaftConnection.kanthicOptionalBraziers=kanthicFire.braziers;
+      ruin.shaftConnection.kanthicRequiredBrazierLights=kanthicFire.requiredBraziers;} // Mobile debug counts the expected completion-linked light sources.
     const stone=root.ProceduralFurniture?.makePartMaterial?.({
       materialTexture:'carved_smooth.png',materialLighting:'unlit',
       materialFillMode:'never',color:'#7a746b',
@@ -294,5 +301,7 @@
     cleanup.tick=tick; // Reused by the ruin's existing before-render client; never installs another frame loop.
     return cleanup;
   }
-  return Object.freeze({apply,lightSources:()=>activeKanthicLights}); // Overlay compositor reads only live Kanthic fixture sources.
+  return Object.freeze({apply,lightSources:()=>activeKanthicLights,
+    lightDebug:()=>({total:activeKanthicLights.length,active:activeKanthicLights.filter(source=>source.active!==false).length,
+      litBraziers:activeKanthicLights.filter(source=>!source.anchor&&source.active===true).length})}); // Mobile diagnostics confirm ignition reached the screen-mask data.
 });
