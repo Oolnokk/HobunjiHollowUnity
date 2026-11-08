@@ -41,6 +41,7 @@
     const blocks=[],plates=[],targets=[],controls=[],disposers=[],burnIds=[],chips=[]; // Session-local ownership; no world save or drops.
     let disposed=false,solved=false,sinking=false,pillarHeight=initialPillarHeight,pillarBroken=false,pillarLowered=false;
     let melody=null,netChallenge=null,iceLayer=null,iceMelt=0,bombTube=null,hitCount=0; // Driven by tick, never by artificial completion switches.
+    let bombTargetSignal=null,bombTargetFlash=0; // The reusable projectile switch briefly glows when it requests a bomb.
     const fire=root.DungeonFire,bombs=root.HronalWitchBombs;
     const alive=()=>!disposed&&isActive();
     const mat=(color,emissive=0,surface='carved')=>{
@@ -324,10 +325,21 @@
         const registered=bombs?.registerDispenser?.(MAP_ID,tubeId,bombTube,{bombFuseSeconds:18});
         if(!registered)throw new Error('Could not register the native Hronal witch-bomb dispenser.');
         disposers.push(()=>bombs.unregisterDispenser(MAP_ID,tubeId));
-        control({kind:'findBlocksBombTube',object:bombTube,promptRoot:bombTube,
-          point:{x:bx,y:floorY,z:bz},range:1.7,priority:35,claimAction1:true,
-          touchIcon:'💣',label:'Release Witch-bomb',
-          onPress:()=>{if(alive())bombs.dispenseFromMechanism(bombTube);}});
+        const targetX=bx+1.25,targetZ=bz-.65; // Separate switch beside the tube, aimed toward the open chamber.
+        cube('find-blocks-bomb-target-pedestal',targetX,targetZ,floorY,.66,.95,.66,COLOR.stone);
+        solid('bomb-target-pedestal',targetX,targetZ,.31,.31);
+        const marker=cube('find-blocks-bomb-projectile-target',targetX,targetZ-.375,floorY+.61,
+          .56,.56,.12,COLOR.stone);
+        bombTargetSignal=root.FurniturePatternSurfaces?.attachStoneSignal?.(marker,{
+          face:'front',width:.44,height:.44,idleColor:'#ffae62',activeColor:'#65ffaf',
+        }); // The glowing glyph is applied to carved-smooth stone, never to the tube itself.
+        const target={id:tubeId+'-projectile-target',object:marker,hitMesh:marker,active:false,
+          hittable:()=>alive(),onHit:()=>{
+            if(!alive())return;
+            bombTargetFlash=.3;bombTargetSignal?.setActive(true);
+            bombs.dispenseFromMechanism(bombTube); // Factory still rejects repeats while its previous bomb is live.
+          }};
+        targets.push(target);kit.registerProjectileTarget(target); // No direct Action 1 interaction on the dispenser.
       }
       block.pillar=stone;return block;
     }
@@ -402,6 +414,10 @@
         melody?.animate?.(step);
         netChallenge?.tick?.(step);
         netChallenge?.animate?.(step);
+        if(bombTargetFlash>0){
+          bombTargetFlash=Math.max(0,bombTargetFlash-step);
+          if(bombTargetFlash===0)bombTargetSignal?.setActive(false);
+        }
         if(sinking){
           pillarHeight=Math.max(0,pillarHeight-step*1.45);
           const pillar=blocks[3].pillar;
