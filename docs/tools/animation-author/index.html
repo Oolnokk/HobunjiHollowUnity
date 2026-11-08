@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <script src="../../js/tap-reliability.js?v=20261010a"></script>
-<title>Hobunji Animation Author V15.46</title>
+<title>Hobunji Animation Author V15.47</title>
 <style>
 :root {
   color-scheme: dark;
@@ -1363,7 +1363,7 @@ function readSettings() {
   return {
     owner: String(stored?.owner || $('ownerInput').value || 'Oolnokk').trim(),
     repo: String(stored?.repo || $('repoInput').value || 'HobunjiHollowUnity').trim(),
-    ref: String(stored?.ref || $('refInput').value || 'main').trim(),
+    ref: String(requestedSceneRepositoryRefV1547() || stored?.ref || $('refInput').value || 'main').trim(),
     docsRoot: ensureSlash(stored?.docsRoot || $('docsInput').value || 'docs/'),
     dbPath: normalizePath(stored?.dbPath || $('dbPathInput').value || 'docs/config/npcs/hobunji-starter-npc-database.json'),
   };
@@ -4008,6 +4008,7 @@ function animationUiTemplate() {
         <span class="maaSpacer"></span>
         <button id="maaRepoBtn" class="secondary">Repository</button>
         <button id="maaDiagnosticsBtn" class="secondary">Diagnostics</button>
+        <button id="maaCopySceneUrlBtn" class="secondary maaMultiOnly" title="Copy a link that rebuilds the selected NPCs and applies the relationship preset">Copy scene link</button>
         <button id="maaExportBtn" class="good">Export JSON</button>
         <label class="maaFileButton secondary" for="maaImportInput">Import</label>
         <input id="maaImportInput" class="maaHidden" type="file" accept=".json,application/json">
@@ -4222,6 +4223,7 @@ function prepareMultiAvatarAnimationAuthor() {
   $('maaRepoBtn').addEventListener('click', () => $('leftPanel').open = true);
   $('maaDiagnosticsBtn').addEventListener('click', () => $('debugPanel').classList.toggle('visible'));
   $('maaExportBtn').addEventListener('click', exportAnimationProject);
+  $('maaCopySceneUrlBtn').addEventListener('click', copyCurrentAnimationSceneUrlV1547);
   $('maaImportInput').addEventListener('change', event => importAnimationProjectFile(event.target.files?.[0]));
   $('maaNpcSearch').addEventListener('input', renderAnimationNpcLibrary);
   $('maaCreatureSpecies').addEventListener('change', refreshAnimationCreatureFrames);
@@ -4300,6 +4302,20 @@ async function onAnimationRepositoryReady() {
   renderAnimationActorList();
   renderAnimationInspector();
   renderAnimationTimeline();
+  const urlScene = parseAnimationUrlSceneV1547(location.search); // Explicit shareable scenes outrank the last local autosave.
+  if (urlScene) {
+    animationAuthor.pendingProject = null;
+    try {
+      await installAnimationUrlSceneV1547(urlScene);
+      hideOverlay();
+      setStatus('Scene ready: ' + animationAuthor.projectName, 'good');
+    } catch (error) {
+      hideOverlay();
+      log('Could not open URL animation scene: ' + (error.stack || error.message), 'error');
+      setStatus('Scene URL failed: ' + error.message, 'bad'); // Keep the error visible on mobile, not just in the console.
+    }
+    return; // Never silently restore an unrelated autosave when an explicit URL scene was requested.
+  }
   const pending = animationAuthor.pendingProject;
   animationAuthor.pendingProject = null;
   if (['hobunji.multi-avatar-animation.v1', 'hobunji.multi-avatar-animation.v2', 'hobunji.multi-avatar-animation.v3', 'hobunji.multi-avatar-animation.v4', animationAuthor.schema].includes(pending?.schema) && Array.isArray(pending.actors) && pending.actors.length) {
@@ -6467,6 +6483,7 @@ function applySelectedMultiAvatarPreset() {
     milking: applyMilkingPreset,
     venom: applyVenomExtractionPreset,
     dance: applyDancePreset,
+    kiss: applyKissPresetV1546, // Uses the same standard Apply dispatcher as every other relationship preset.
     festival: applyFestivalDancePreset,
     mount: applyMountPreset,
     shoulderPet: applyShoulderPetPreset,
@@ -9139,6 +9156,7 @@ const MULTI_PRESET_LABELS_V1514 = Object.freeze({
   milking: 'Milking',
   venom: 'Venom extraction',
   dance: 'Romantic dance',
+  kiss: 'Kiss', // Required for the existing dropdown change listener; otherwise it announces an "undefined preset".
   festival: 'Festival wheel dance',
   mount: 'Mount',
   shoulderPet: 'Shoulder pet',
@@ -13916,14 +13934,8 @@ function installKissPresetUiV1546() {
   note.className = 'maaSmall maaMuted';
   note.style.marginTop = '7px';
   apply.insertAdjacentElement('afterend', note);
-  // Old Apply listener captures the original preset dispatcher by reference.
-  // Capture this new choice first; leave every old preset untouched.
-  apply.addEventListener('click', event => {
-    if (select.value !== KISS_PRESET_V1546) return;
-    event.preventDefault();
-    event.stopImmediatePropagation();
-    applyKissPresetV1546();
-  }, true);
+  // The ordinary Apply dispatcher now contains Kiss. Avoid a second capture-phase
+  // listener which could apply the clip twice and hide other preset errors.
   select.addEventListener('change', updateKissHeightReadoutV1546);
   updateKissHeightReadoutV1546();
 }
@@ -13989,6 +14001,143 @@ importAnimationProjectData = async function(data, options = {}) {
   return result;
 };
 
+// -----------------------------------------------------------------------------
+// V15.47: shareable prebuilt scenes, loaded after the repository/NPC database.
+// Examples:
+//   ?scene=pahu-leaf-kiss
+//   ?actors=pahu,leaf&preset=kiss
+//   ?actors=pahu,leaf&preset=kiss&t=1.12
+//   ?ref=<repository-commit>&scene=pahu-leaf-kiss
+// No autosave is overwritten before the requested NPCs have been validated.
+// -----------------------------------------------------------------------------
+const NAMED_ANIMATION_SCENES_V1547 = Object.freeze({
+  'pahu-leaf-kiss': Object.freeze({ actorIds: ['pahu', 'leaf'], preset: 'kiss', name: 'Pahu and Leaf — Kiss' }),
+}); // Named URL shortcuts can grow without modifying bootstrap or the animation serializers.
+
+function requestedSceneRepositoryRefV1547() {
+  const value = new URLSearchParams(location.search).get('ref')?.trim() || '';
+  return /^[a-zA-Z0-9][a-zA-Z0-9_.\/-]{0,119}$/.test(value) && !value.includes('..') ? value : null;
+}
+
+function parseAnimationUrlSceneV1547(search) {
+  const params = new URLSearchParams(search || '');
+  const named = String(params.get('scene') || '').trim().toLowerCase();
+  const preset = String(params.get('preset') || (named === 'kiss' ? 'kiss' : '')).trim();
+  const actorParam = String(params.get('actors') || '').trim();
+  let actorIds;
+  let appliedPreset;
+  let name;
+  if (Object.hasOwn(NAMED_ANIMATION_SCENES_V1547, named)) {
+    const registered = NAMED_ANIMATION_SCENES_V1547[named];
+    actorIds = [...registered.actorIds];
+    appliedPreset = registered.preset;
+    name = registered.name;
+  } else if (actorParam) {
+    actorIds = actorParam.split(',').map(id => id.trim().toLowerCase()).filter(Boolean);
+    appliedPreset = preset || null;
+    name = null;
+  } else if (named) {
+    throw new Error('Unknown scene "' + named + '". Use scene=pahu-leaf-kiss or actors=pahu,leaf&preset=kiss.');
+  } else {
+    return null; // No URL scene requested; keep existing local autosave workflow unchanged.
+  }
+  if (!actorIds.length || actorIds.length > 8 || new Set(actorIds).size !== actorIds.length ||
+      actorIds.some(id => !/^[a-z0-9_'-]{1,80}$/.test(id))) {
+    throw new Error('Scene actors must be 1–8 distinct NPC IDs.');
+  }
+  if (appliedPreset && !Object.hasOwn(MULTI_PRESET_LABELS_V1514, appliedPreset) && appliedPreset !== 'stinkOilGrehlr') {
+    throw new Error('Unsupported scene preset "' + appliedPreset + '".');
+  }
+  if (appliedPreset === 'kiss' && actorIds.length !== 2) {
+    throw new Error('Kiss requires exactly two NPC actors.');
+  }
+  const requestedTime = params.get('t'); // Used to show an exact point on the authored timeline without auto-playing it.
+  const time = requestedTime === null ? 0 : Number(requestedTime);
+  if (!Number.isFinite(time) || time < 0 || time > 3600) throw new Error('Scene t must be a nonnegative number of seconds.');
+  return { actorIds, preset: appliedPreset, name, time };
+}
+
+async function installAnimationUrlSceneV1547(scene) {
+  const npcs = scene.actorIds.map(id => state.npcs.find(npc =>
+    String(npc.id || '').toLowerCase() === id || String(npc.name || '').toLowerCase() === id));
+  const missing = scene.actorIds.filter((id, i) => !npcs[i]);
+  if (missing.length) throw new Error('NPCs not found in this repository: ' + missing.join(', '));
+  if (!state.three.ready || !animationAuthor.workspaceRoot) throw new Error('The animation workspace is not ready.');
+  await setAnimationAuthorMode('multi');
+  // Unlike "New", an explicit URL scene deliberately replaces a local scene.
+  // The old autosave remains untouched if validation fails above.
+  clearTimeout(animationAuthor.saveTimer);
+  clearAnimationActors();
+  animationAuthor.actorSerial = 1;
+  animationAuthor.multiPreset = scene.preset || 'milking';
+  animationAuthor.playing = false;
+  animationAuthor.fps = 12;
+  animationAuthor.duration = 4;
+  animationAuthor.loop = true;
+  animationAuthor.currentTime = 0;
+  animationAuthor.creatureTransformProfiles = {};
+  animationAuthor.projectName = scene.name || ('Scene — ' + npcs.map(npc => npc.name || npc.id).join(' & '));
+  for (const npc of npcs) {
+    await addNpcAnimationActor(npc.id || npc.name, { skipDefaultPlacement: true });
+  }
+  // The selected actor is the relationship leader. Keep links deterministic
+  // regardless of the addNpc default that selects the most recently added NPC.
+  selectAnimationActor(animationAuthor.actors[0].id);
+  if (scene.preset) {
+    setActiveMultiPresetV1514(scene.preset, { save: false });
+    if (scene.preset === 'kiss') {
+      if (!applyKissPresetV1546()) throw new Error('Could not build a physically reachable kiss for these two avatars.');
+    } else {
+      applySelectedMultiAvatarPreset();
+    }
+  }
+  if (scene.name) {
+    animationAuthor.projectName = scene.name;
+    $('maaProjectName').value = scene.name;
+  }
+  setAnimationTime(Math.min(scene.time, animationAuthor.duration), { pause: true });
+  renderAnimationModeChrome();
+  renderAllAnimationUi();
+  frameAllAnimationActors('front'); // Both mouths are visible; the user can rotate or reframe as usual.
+  animationAuthor.playing = false;
+  scheduleAnimationProjectSave();
+  log('URL scene built: ' + scene.actorIds.join(', ') +
+    (scene.preset ? ' · ' + scene.preset : '') + ' · at ' + animationAuthor.currentTime.toFixed(2) + 's');
+  return true;
+}
+
+function currentAnimationSceneUrlV1547() {
+  if (animationAuthor.mode !== 'multi') throw new Error('Open the Multi-Avatar tab to make a shareable scene link.');
+  if (!animationAuthor.actors.length) throw new Error('Add at least one NPC to make a scene link.');
+  if (animationAuthor.actors.some(actor => actor.source?.type !== 'npc')) {
+    throw new Error('Scene links currently support NPCs. Export JSON to preserve creature rigs or mixed scenes.');
+  }
+  const ids = animationAuthor.actors.map(actor => String(actor.source.id || '').toLowerCase());
+  if (new Set(ids).size !== ids.length) throw new Error('A scene URL cannot contain the same NPC twice. Export JSON instead.');
+  const url = new URL(location.href);
+  url.hash = '';
+  url.searchParams.delete('scene');
+  url.searchParams.set('actors', ids.join(','));
+  url.searchParams.set('preset', animationAuthor.multiPreset || 'milking');
+  url.searchParams.set('ref', state.resolvedSha || state.settings?.ref || 'main');
+  url.searchParams.set('t', String(Number(animationAuthor.currentTime.toFixed(2))));
+  return url.href;
+}
+
+async function copyCurrentAnimationSceneUrlV1547() {
+  try {
+    const url = currentAnimationSceneUrlV1547(); // The URL saves actor identities and a preset, not arbitrary hand-edited keyframes.
+    if (!navigator.clipboard?.writeText) throw new Error('clipboard-unavailable');
+    await navigator.clipboard.writeText(url);
+    setStatus('Scene link copied. Opening it rebuilds the NPCs and preset.', 'good');
+  } catch (error) {
+    if (error.message === 'clipboard-unavailable' || error.name === 'NotAllowedError') {
+      const url = currentAnimationSceneUrlV1547();
+      window.prompt('Copy this scene link:', url); // Mobile-safe fallback in browsers that deny clipboard permissions.
+    } else setStatus('Scene link: ' + error.message, 'warn');
+  }
+}
+
 const beforeKissPrepareV1546 = prepareMultiAvatarAnimationAuthor;
 prepareMultiAvatarAnimationAuthor = function() {
   const value = beforeKissPrepareV1546();
@@ -13997,14 +14146,16 @@ prepareMultiAvatarAnimationAuthor = function() {
 };
 installKissPresetUiV1546(); // The author initialized earlier in the same script; install immediately too.
 if (window.MultiAvatarAnimationAuthor) {
-  window.MultiAvatarAnimationAuthor.version = '15.46';
+  window.MultiAvatarAnimationAuthor.version = '15.47';
+  window.MultiAvatarAnimationAuthor.parseSceneUrl = parseAnimationUrlSceneV1547;
+  window.MultiAvatarAnimationAuthor.getSceneLink = currentAnimationSceneUrlV1547;
   window.MultiAvatarAnimationAuthor.applyKissPreset = applyKissPresetV1546;
   window.MultiAvatarAnimationAuthor.importProject = importAnimationProjectData;
 }
-document.title = 'Hobunji Animation Author V15.46';
-animationAuthor.recentChange = 'V15.46 adds a spouse kiss preset with shared runtime/editor height compensation, per-actor body sink, and a one-shot kiss/contact timing.';
+document.title = 'Hobunji Animation Author V15.47';
+animationAuthor.recentChange = 'V15.47 adds shareable URL scenes, including ?scene=pahu-leaf-kiss, and repairs the Kiss dropdown preset label.';
 animationAuthor.modeStates.multi.recentChange = animationAuthor.recentChange;
-log('V15.46 spouse kiss preset installed; body-sink and relative-mouth-height diagnostics available on mobile.');
+log('V15.47 URL scene setup installed; open ?scene=pahu-leaf-kiss to load two NPCs and the Kiss preset.');
 
 })();
 </script>
