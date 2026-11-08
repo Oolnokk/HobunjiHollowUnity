@@ -27,6 +27,7 @@ const sandbox = {
   }) },
 }; // Isolated native-browser canvas and tile-movement dependencies used by the production functions.
 sandbox.globalThis = sandbox;
+sandbox.window = sandbox; // Production LOS helpers read optional world-volume globals through window.
 vm.createContext(sandbox);
 vm.runInContext(`
   const opaqueSpriteBoundsCache = new WeakMap();
@@ -53,15 +54,53 @@ H.thrownRadiusByDefinition.set(def, H.projectileCollisionRadiusWorld(projectile)
 assert.ok(Math.abs(H.projectileAimRadiusWorld(def) - 0.05) < 1e-9, 'after decode, reticle and NPC LOS use the same opaque radius');
 assert.equal(H.opaqueProjectileRadiusWorld({ rangedType: 'crossbow', projectileRadiusPx: 8 }, plane), 0.25, 'ordinary non-thrown shots retain the authored radius');
 
-const c = { x: 0, y: 0, def: {} }, opponent = { x: 128, y: 0 }; // Two combatants on separated four-tile shelves.
+const c = { id: 'omgurku-shooter', x: 0, y: 0, def: {}, health: 20 }, opponent = { id: 'porakaneki-target', x: 128, y: 0, health: 20 }; // Two combatants on separated four-tile shelves.
 assert.equal(H.ledgesBlockMeleeApproach(c, opponent), false, 'clear same-level travel may transition to melee');
 sandbox.deps.worldSurfaceY = x => x > 32 && x < 96 ? -2 : 1;
 assert.equal(H.ledgesBlockMeleeApproach(c, opponent), true, 'intervening low ravine keeps ranged combat active across isolated shelves');
 sandbox.deps.worldSurfaceY = x => x > 64 ? 2 : 1;
 assert.equal(H.ledgesBlockMeleeApproach(c, opponent), true, 'different ledge elevations prevent a false melee transition');
+sandbox.deps.worldSurfaceY = x => x > 32 && x < 96 ? 3 : 1;
+assert.equal(H.ledgesBlockMeleeApproach(c, opponent), true, 'intervening raised terrain also blocks direct melee');
 sandbox.deps.worldSurfaceY = () => 1;
-sandbox.deps.creatureCanEnterTile = (_def, x) => x < 64;
+let navigationChecks = 0; // Verifies the real creature navigation seam receives its required origin tile and actor identity.
+sandbox.deps.creatureCanEnterTile = (_def, x, _y, fromX, fromY, actor, walkingPath) => {
+  assert.ok(Number.isFinite(fromX) && Number.isFinite(fromY), 'cliff movement gate needs the previous tile');
+  assert.equal(actor, c, 'the live actor carries its own cliff-climb and areaGrid state');
+  assert.equal(walkingPath, true, 'pathfinding must test climbable vs impassable faces');
+  navigationChecks++;
+  return x < 64;
+};
 assert.equal(H.ledgesBlockMeleeApproach(c, opponent), true, 'an impassable crossing preserves ranged mode even with clear sight');
+assert.ok(navigationChecks > 0, 'ledge detection actually calls the creature path gate');
+
+vm.runInContext(`
+  const BANDIT_LOS_TERRAIN_STEP_TILES = 0.75;
+  function banditLosSegment(c, target) {
+    return { start: { x: c.x / deps.TILE, y: 0.5, z: c.y / deps.TILE }, end: { x: target.x / deps.TILE, y: 0.5, z: target.y / deps.TILE } };
+  }
+  function shaftCoverT() { return null; }
+  function sceneGeometrySightBlock() { return null; }
+  function dynamicSupportHitT() { return null; }
+  function actorHitbox(actor) { return { actor }; }
+  function segmentHitboxInterval(_start, _end, hitbox) { return hitbox?.actor ? { enter: 0.4 } : null; }
+  ${productionBlock('computeBanditLos', 'banditLosStatus')}
+  globalThis.helpers.computeBanditLos = computeBanditLos;
+`, sandbox);
+sandbox.deps.getCurrentArea = () => 'forest';
+sandbox.deps.worldSurfaceY = () => 0;
+const rayRadii = []; // NPC sight/raycast uses the same pixel-accurate radius as real projectiles.
+sandbox.deps.canOccupyAt = (_x, _y, radius) => { rayRadii.push(radius); return true; };
+sandbox.deps.hostileObjects = [c, opponent]; // Both tribes are hostileObjects, but the target is not an ally blocking its own shot.
+const clearOpponent = H.computeBanditLos(c, opponent, def);
+assert.equal(clearOpponent.clear, true, 'the actual rival tribe target cannot block its own ranged sightline');
+assert.ok(rayRadii.length > 0 && rayRadii.every(radius => Math.abs(radius - 0.05 * sandbox.deps.TILE) < 1e-9), 'NPC LOS occupancy checks use the opaque PNG radius, not the old full-plane radius');
+const ally = { id: 'omgurku-ally', health: 20 }; // A third actor really should obstruct the thrown spear.
+sandbox.deps.hostileObjects.push(ally);
+assert.equal(H.computeBanditLos(c, opponent, def).kind, 'ally', 'a different actor continues to block a friendly-fire shot');
+const game = fs.readFileSync(path.join(__dirname, '../docs/game.js'), 'utf8'); // The production initialization must actually inject the movement callback tested above.
+const rangeInit = game.slice(game.indexOf('window.RangedWeapons?.init({'), game.indexOf('window.Mounts?.init({'));
+assert.match(rangeInit, /creatureCanEnterTile,/, 'live ranged NPCs receive the same cliff-step gate as moving bandits');
 assert.match(code, /const radiusWorld = projectileCollisionRadiusWorld\(p\);/, 'projectile terrain uses the same collision radius');
 assert.match(code, /const projectileRadius = projectileCollisionRadiusWorld\(p\);/, 'actor and cover hits use the same collision radius');
-console.log('Opaque sprite collision, LOS predictor, and ledge-melee fallbacks passed.');
+console.log('Opaque projectile collision, real cliff navigation, tribe LOS and NPC radius parity passed.');
