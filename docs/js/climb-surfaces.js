@@ -200,7 +200,9 @@
     const author=globalThis.document?.getElementById?.('devRandomRuinGeneratorFrame')?.contentWindow?.DebrisifierV50;
     if(typeof author?.createRuntimeStoneLadder!=='function')return null;
     const width=surface.u1-surface.u0,height=surface.y1-surface.y0;
-    const ladder=author.createRuntimeStoneLadder(Math.max(.5,height),Math.max(.5,Math.min(1.2,width)),.12);
+    let ladder=null;
+    try { ladder=author.createRuntimeStoneLadder(Math.max(.5,height),Math.max(.5,Math.min(1.2,width)),.12); }
+    catch(error) {globalThis.__farmLog?.('[ruin climb] V50 ladder visual unavailable: '+(error?.message||error),'warn');return null;} // A failed optional decoration cannot block entry.
     if(!ladder?.traverse)return null;
     ladder.name='ruin-v50-climb-ladder-visual';
     ladder.position.set(width/2,height,.08); // V50 roots ladders at their upper lip, extending down the wall.
