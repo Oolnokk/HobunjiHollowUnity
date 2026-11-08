@@ -230,8 +230,11 @@
   // Keep long walls, unsafe landings, and climbing outside the generated ruin unchanged.
   function isEasyRuinJump(hit, pos) {
     if (deps?.getCurrentArea?.() !== 'map_i_dev_random_ruin' || !hit?.surface || typeof deps.canStandAt !== 'function') return false;
-    const easyRise = Number(globalThis.PlayerJump?.easyJumpRise); // Reuses PlayerJump's physics-derived comfortable rise for both ground grabs and airborne catches.
-    const rise = hit.surface.y1 - pos.y; // Height to the actual mantle top from the player's current physical feet.
+    const easyRise = Number(globalThis.PlayerJump?.easyJumpRise); // Reuses the physical jump's comfortable rise for both ground grabs and airborne catches.
+    const flight = deps.player?._freeJump; // A tall wall never becomes an easy jump just because the player is already near the apex.
+    if (flight?.phase === 'air' && flight.source !== 'free jump') return false; // Rope falls retain their own handhold catches.
+    const takeoffY = flight?.phase === 'air' ? Number(flight.takeoffY) : pos.y;
+    const rise = hit.surface.y1 - takeoffY; // Compare the landing height with the physical takeoff, not current midair height.
     if (!Number.isFinite(easyRise) || rise <= 0 || rise > easyRise) return false;
     const exit = topExitPoint(hit.surface, hit.u);
     return !!deps.canStandAt(exit.x, exit.z, exit.y); // Never disable a climb without a safe surface to stand on.
