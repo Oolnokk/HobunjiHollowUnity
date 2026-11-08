@@ -16,6 +16,8 @@ assert.match(source, /const ROCKS_PER_LAYER = 8/, 'each former PNG layer must be
 assert.match(source, /const RIDGE_LENGTH_MAP_MULTIPLIER = 2/, 'each complete rock ridge must span twice the map north-south edge');
 assert.match(source, /const SNOW_CAP_HEIGHT_FRACTION = 2 \/ 3/, 'snow must cover the upper two-thirds of each rock');
 assert.match(source, /farm-cliff-planar-stretch/, 'snow cap UVs must use the same planar stretch-to-fit method as farm cliffs');
+assert.match(source, /ensureSnowCapMipmaps/, 'faraway caps need a dedicated minification fix without altering ground snow');
+assert.match(source, /snowMesh\.onBeforeRender=\(\)=>ensureSnowCapMipmaps\(record\)/, 'snow mipmaps must be installed when the async ground texture finishes loading');
 assert.match(source, /new T\.LineSegments/, 'the stone/snow boundary must retain a visible outline');
 assert.match(snowSurfaceSource, /getSnowMaterial: \(\) => material\('snow'\)/, 'rock caps must reuse the canonical Western Slope snow material');
 assert.match(snowSurfaceSource, /bindSnowTexture\(target\)/, 'cap material clones must receive the asynchronously loaded snow texture');
@@ -170,6 +172,8 @@ let fitCalls = 0;
 const THREE = {
   Group, Mesh, LineSegments, MeshStandardMaterial, MeshBasicMaterial, LineBasicMaterial,
   DoubleSide: 2, // The distant rock/snow faces render from both camera directions.
+  LinearFilter: 1006, // Used by the backdrop-only snow-texture clone.
+  LinearMipmapLinearFilter: 1008, // Filters distant snow without touching canonical ground snow.
   BufferGeometry: FakeGeometry,
   BufferAttribute: FakeBufferAttribute,
   Float32BufferAttribute: FakeBufferAttribute,
@@ -337,15 +341,40 @@ vm.runInNewContext(source, { window, console, Promise, Map, WeakSet, Object, Mat
   const backgroundShader = { uniforms: {}, vertexShader: 'void main(){ gl_Position = vec4(1.0); }' };
   firstMaterial.onBeforeCompile(backgroundShader);
   const backgroundMax = backgroundShader.uniforms.uBackgroundMaxDepth.value;
-  assert.match(backgroundShader.vertexShader, /min\(gl_Position\.z, gl_Position\.w \* uBackgroundMaxDepth\)/);
+  const backgroundNear = backgroundShader.uniforms.uBackgroundNearDepth.value; // Beginning of the distant-rock depth band.
+  const falloff = backgroundShader.uniforms.uBackgroundDepthFalloff.value; // Simulated eye-space compression scale.
+  const depthFor = (distance, originalDepth = 1.2, bias = 0) => Math.min(originalDepth,
+    backgroundNear + (backgroundMax - backgroundNear) * distance / (distance + falloff) - bias); // Matches the GLSL depth transform.
+  assert.match(backgroundShader.vertexShader, /max\(0\.0, -mvPosition\.z\)/, 'the new shader must use actual camera-relative rock distance');
+  assert.match(backgroundShader.vertexShader, /mix\(uBackgroundNearDepth, uBackgroundMaxDepth, backgroundBlend\)/);
+  assert.match(backgroundShader.vertexShader, /min\(gl_Position\.z, gl_Position\.w \* backgroundDepth\)/);
   assert.equal(backgroundMax, 1 - 5 * (2 / 65535), 'rock ridges must retain the prior sky-depth ordering');
+  assert.equal(backgroundNear, 1 - 256 * (2 / 65535), 'distant ridges must have enough 16-bit depth precision for overlapping faces');
+  assert.equal(falloff, 240, 'distant ridge depth compression scale must remain deterministic');
+  assert.equal(backgroundShader.uniforms.uSnowBoundaryDepthBias.value, 0, 'stone must not receive the seam-only depth bias');
+  assert.equal(depthFor(140, 0.8), 0.8, 'nearer naturally projected geometry must retain its unmodified foreground depth');
+  const rockDistances = [110, 140, 200, 350, 650, 1200]; // Samples cover visible peaks and those beyond the 200-unit far clip.
+  const rockDepths = rockDistances.map(distance => depthFor(distance));
+  assert(rockDepths.every((depth, index) => index === 0 || rockDepths[index - 1] < depth),
+    'the backdrop may not flatten different distant peaks to the same depth');
+  for (const bits of [16, 24]) {
+    const depthSlots = rockDepths.map(depth => Math.round((Math.fround(depth) * 0.5 + 0.5) * (2 ** bits - 1)));
+    assert.equal(new Set(depthSlots).size, rockDistances.length, bits + '-bit buffers must distinguish sampled overlapping peaks');
+  }
   assert(allParts.every(part => part.frustumCulled === false), 'far-plane CPU culling must not discard depth-clamped rock parts');
   const snowShader = { uniforms: {}, vertexShader: 'void main(){ gl_Position = vec4(1.0); }' };
   const capMaterial = root.children[0].children[0].children[1].material;
   assert.equal(capMaterial.depthWrite, true, 'snow caps must depth-occlude nearer faces of other rocks');
   assert.equal(capMaterial.side, THREE.DoubleSide, 'snow caps must have the same two-sided culling policy as stone');
   capMaterial.onBeforeCompile(snowShader);
-  assert.match(snowShader.vertexShader, /uBackgroundMaxDepth/, 'snow cap clones must share the far-background depth ordering');
+  assert.match(snowShader.vertexShader, /uBackgroundNearDepth/, 'snow cap clones must preserve the same distance-based depth ordering as stone');
+  const outlineShader = { uniforms: {}, vertexShader: 'void main(){ gl_Position = vec4(1.0); }' }; // Validates the seam-specific depth bias against the shared geometry.
+  const outlineMaterial = root.children[0].children[0].children[2].material;
+  outlineMaterial.onBeforeCompile(outlineShader);
+  const seamBias = outlineShader.uniforms.uSnowBoundaryDepthBias.value; // The visible snow edge receives a small forward depth offset.
+  assert.equal(seamBias, 2 * (2 / 65535), 'the outline must sit two 16-bit depth slots ahead of its coplanar surface');
+  assert(depthFor(200, 1.2, seamBias) < depthFor(200), 'the snow seam must remain visibly in front of its supporting rock');
+  assert.equal(outlineMaterial.depthWrite, false, 'the depth-biased outline must not cut holes in neighboring scenery');
   assert.equal(sharedSnowMaterial.onBeforeCompile, undefined, 'ground snow must retain its original terrain depth shader');
   for (const depth of [...skyDepth.CLOUD_DEPTH_NDC, skyDepth.CELESTIAL_DEPTH_NDC]) {
     const skyMaterial = { userData: {} }; // Isolates each real sky layer's shader state.
@@ -356,8 +385,8 @@ vm.runInNewContext(source, { window, console, Promise, Map, WeakSet, Object, Mat
     assert.equal(skyShader.uniforms.uSkyLayerDepth.value, depth);
     assert(backgroundMax < depth && depth < 1, 'sky masks must remain behind rocks but inside the far plane');
     for (const originalDepth of [0.9, 0.99999, 1.2]) {
-      assert(Math.min(originalDepth, backgroundMax) < depth, 'near, distant, and beyond-far rocks must pass sky masks');
-      assert(0.8 < Math.min(originalDepth, backgroundMax), 'foreground terrain must still occlude every rock ridge');
+      assert(depthFor(400, originalDepth) < depth, 'near, distant, and beyond-far rocks must pass sky masks');
+      assert(0.8 < depthFor(400, originalDepth), 'immediate foreground terrain must still occlude every rock ridge');
     }
   }
   assert(skyDepth.CLOUD_DEPTH_NDC.every((depth, index, depths) => index === 0 || depths[index - 1] < depth), 'cloud masks must retain their near-to-far order');
@@ -372,6 +401,22 @@ vm.runInNewContext(source, { window, console, Promise, Map, WeakSet, Object, Mat
     assert(depthSlots.every((slot, index) => index === 0 || depthSlots[index - 1] < slot),
       'background, cloud masks, and celestial PNGs must occupy distinct ordered depth slots');
   }
+
+  const snowyRock = root.children[0].children[0].children[1]; // Render-time mipmap hook is exercised without a browser or WebGL context.
+  const sourceSnowTexture = { image: { width: 64, height: 64 }, clone() {
+    return { image: this.image, disposed: false, dispose() { this.disposed = true; } };
+  } }; // Mimics a late-loaded power-of-two shade-filled canvas texture.
+  sharedSnowMaterial.map = sourceSnowTexture;
+  snowyRock.onBeforeRender();
+  const mipmappedSnow = snowyRock.material.map; // Dedicated texture exists solely for the distant cap.
+  assert.notEqual(mipmappedSnow, sourceSnowTexture, 'background snow may not mutate the ground-snow texture');
+  assert.equal(mipmappedSnow.minFilter, THREE.LinearMipmapLinearFilter, 'distant caps must use trilinear minification');
+  assert.equal(mipmappedSnow.generateMipmaps, true, 'distant caps must generate mipmaps to prevent texture shimmer');
+  assert.equal(mipmappedSnow.needsUpdate, true, 'clone must upload its new sampler settings');
+  assert.equal(sharedSnowMaterial.map, sourceSnowTexture, 'canonical ground snow must keep its original texture unchanged');
+  snowyRock.onBeforeRender();
+  assert.equal(snowyRock.material.map, mipmappedSnow, 'rendering another frame must reuse the existing mipmapped texture');
+  assert.equal(api.getDebugState().snowTextureMipmapped, true, 'mobile debug should report whether a cap mipmap was created');
 
   const authored = api.readAuthorConfig();
   authored.layers[0].transform.position = [-40, 180, 95];
@@ -418,6 +463,8 @@ vm.runInNewContext(source, { window, console, Promise, Map, WeakSet, Object, Mat
   assert(ridgeMaterials.every(material => material.disposed), 'destroyZone must dispose every ridge-owned stone and outline material');
   assert.equal(sharedMineMaterial.disposed, false, 'destroyZone must not dispose the shared mine material');
   assert.equal(sharedSnowMaterial.disposed, false, 'destroyZone must not dispose the shared environment snow material');
+  assert.equal(mipmappedSnow.disposed, true, 'destroyZone must dispose the backdrop-owned mipmapped snow texture');
+  assert.equal(sourceSnowTexture.disposed, undefined, 'destroyZone must never dispose the source ground-snow texture');
   assert.equal(snowMaterialBindings.size, 0, 'destroyZone must unbind disposed cap clones from the asynchronous snow texture loader');
   assert.equal(geometries.length, 72, 'all three drawable geometries per rock must be accounted for during cleanup');
 
