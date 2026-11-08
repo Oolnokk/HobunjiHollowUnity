@@ -12,6 +12,7 @@
   const MAX_BOW_DEG = 89.5; // At extreme height ratios the larger spouse must nearly lie forward, without sinking below the floor.
   const MAX_DISTANCE = .95; // A deliberate close-range action; avoids sliding partners through distant obstacles.
   const SOURCE = 'spouse-kiss'; // Composer/input-claim ownership; never replaces other effect owners.
+  const COMFORTABLE_BOW_DEG = 35; // Couples prefer a supported, posterior-straddling hop over an extreme neck-to-waist bow.
   const clamp = (n, lo, hi) => Math.min(hi, Math.max(lo, n));
   const finite = (n, fallback = 0) => Number.isFinite(Number(n)) ? Number(n) : fallback;
   const ease = t => { const x = clamp(t, 0, 1); return x * x * (3 - 2 * x); };
@@ -32,22 +33,51 @@
     const legLength = Math.max(.001, finite(options.tallerLegLengthWorld, hipHeight)); // Anatomical leg length controls actual stance limits.
     const kneeLimit = Math.min(legLength * KNEEL_LEG_FRACTION, tall * MAX_SINK_PCT / 100);
     const requestedDrop = Math.max(0, tallMouth - shortMouth);
-    const kneeDrop = Math.min(requestedDrop, kneeLimit);
+    let kneeDrop = Math.min(requestedDrop, kneeLimit); // Ordinary couples keep the existing grounded kneel.
     const torsoLength = Math.max(.001, tallMouth - hipHeight);
-    const afterKnee = Math.max(0, requestedDrop - kneeDrop);
     const maxBow = MAX_BOW_DEG * Math.PI / 180;
-    const bowRad = Math.acos(clamp(1 - afterKnee / torsoLength, Math.cos(maxBow), 1));
+    let bowRad = Math.acos(clamp(1 - Math.max(0, requestedDrop - kneeDrop) / torsoLength, Math.cos(maxBow), 1));
+    let shorterJumpWorld = 0; // A positive value lifts the shorter pelvis/mouth onto the taller partner's posterior.
+    let shorterPosteriorGrip = false; // Used by the author and gameplay to own the same two independent foot targets.
+    const shorterHip = clamp(finite(options.shorterHipHeightWorld, short * .28), .001, shortMouth); // Real short-partner pelvis where available.
+    const shorterLeg = Math.max(.001, finite(options.shorterLegLengthWorld, shorterHip)); // Bounds physically possible hip-to-foot IK.
+    const posteriorDifference = Math.max(0, hipHeight - shorterHip); // Target lift to put both pelvises at the same height.
+    const straddleBowDrop = requestedDrop - posteriorDifference; // Bending closes the remaining difference between torso lengths.
+    const straddleBow = Math.acos(clamp(1 - Math.max(0, straddleBowDrop) / torsoLength, Math.cos(maxBow), 1));
+    const ratio = short / tall; // Avoid impossible giant-to-speck foot contact; the original deep bow remains the fallback.
+    if (ratio >= .27 && ratio < .72 && bowRad > COMFORTABLE_BOW_DEG * Math.PI / 180 &&
+        posteriorDifference > .02 * tall && straddleBowDrop >= 0 &&
+        straddleBowDrop <= torsoLength * (1 - Math.cos(maxBow))) {
+      // Raising the smaller character's pelvis to the larger posterior makes
+      // both feet capable of straddling that landmark while the tall torso
+      // bends down just enough to align the mouths. Kneeling reduces jump height.
+      const supportingKnee = Math.min(kneeLimit,
+        Math.max(posteriorDifference * .40, posteriorDifference - short * .75)); // Keeps a hop below 75% of the shorter avatar's height.
+      const proposedJump = posteriorDifference - supportingKnee;
+      if (proposedJump > Math.max(.015, short * .035) &&
+          proposedJump <= short * .75 + .00001 && shorterLeg > .03 * tall) {
+        kneeDrop = supportingKnee;
+        bowRad = straddleBow;
+        shorterJumpWorld = proposedJump;
+        shorterPosteriorGrip = true;
+      }
+    }
     const bowDrop = torsoLength * (1 - Math.cos(bowRad));
-    const remainingGap = Math.max(0, requestedDrop - kneeDrop - bowDrop);
+    const remainingGap = Math.max(0, requestedDrop - kneeDrop - bowDrop - shorterJumpWorld);
     return {
       taller, firstHeight: first, secondHeight: second,
       mouthHeightRatio: MOUTH_HEIGHT_FRACTION,
       tallerSinkWorld: kneeDrop, tallerSinkPct: kneeDrop / tall * 100,
       shorterSinkPct: 0, tallerBowDeg: bowRad * 180 / Math.PI,
       tallerBowForwardWorld: torsoLength * Math.sin(bowRad),
+      shorterJumpWorld, shorterPosteriorGrip, shorterLegLengthWorld: shorterLeg,
+      shorterHipHeightWorld: shorterHip, tallerHipHeightWorld: hipHeight,
+      jumpFootSpreadWorld: Math.min(shorterLeg * .36, short * .10, tall * .075), // Feet bracket the actual tall-posterior X coordinate.
+      jumpFootForwardWorld: Math.min(shorterLeg * .15, short * .035), // Surface depth toward the partner's facing side.
       torsoLengthWorld: torsoLength, legLengthWorld: legLength,
       kneeLimitWorld: kneeLimit, remainingGap,
-      pose: bowRad > .72 ? 'deep-bow' : kneeDrop / tall > .18 ? 'deep-kneel' : kneeDrop > .001 ? 'crouch' : 'lean',
+      pose: shorterPosteriorGrip ? 'posterior-hop' :
+        bowRad > .72 ? 'deep-bow' : kneeDrop / tall > .18 ? 'deep-kneel' : kneeDrop > .001 ? 'crouch' : 'lean',
       contactPossible: remainingGap < Math.max(.025, short * .01),
     };
   }
@@ -56,6 +86,44 @@
     const time = clamp(finite(seconds), 0, DURATION_S); // Shared editor/runtime timeline position.
     const blend = time <= .82 ? ease(time / .82) : time <= 1.52 ? 1 : ease((DURATION_S - time) / .88);
     return { time, durationS: DURATION_S, blend, touch: time >= 1.02 && time <= 1.52 };
+  }
+
+  function sampleJumpBlend(seconds) {
+    const time = clamp(finite(seconds), 0, DURATION_S); // Normal-sized partners never use this pose, even though its timeline exists.
+    if (time <= .52 || time >= 2.25) return 0;
+    if (time < 1.02) return ease((time - .52) / .50); // Take off after the earlier shoulder grip and while the partner kneels.
+    if (time <= 1.52) return 1; // Both feet straddle the posterior during mouth contact.
+    return ease((2.25 - time) / .73); // Descend and recover the ordinary grounded stance.
+  }
+
+  function posteriorStraddleFootTargets(THREE, tallerLegs, shorterLegs, solution, jumpBlend, scratch = null) {
+    if (!THREE?.Vector3 || !tallerLegs?.group?.localToWorld || !shorterLegs?.group?.localToWorld ||
+        !solution?.shorterPosteriorGrip || jumpBlend <= 0) return null;
+    const temp = scratch || {}; // Reusable world-space vectors prevent GC during gameplay's pre-render callback.
+    const tallStance = tallerLegs.getRestStance?.();
+    const shortStance = shorterLegs.getRestStance?.();
+    if (!tallStance?.left?.hip || !tallStance?.right?.hip ||
+        !shortStance?.left?.ankle || !shortStance?.right?.ankle) return null;
+    const pelvisX = (tallStance.left.hip.x + tallStance.right.hip.x) / 2; // Authored posterior center between the tall rig's hip pivots.
+    const kneeDrop = tallerLegs.getStanceDrop?.() || 0;
+    const pelvisLocalY = tallerLegs.standingPosteriorY - 2 * kneeDrop; // Leg group rises +drop, while the actual body pelvis descends -drop.
+    tallerLegs.group.updateWorldMatrix?.(true, false);
+    shorterLegs.group.updateWorldMatrix?.(true, false);
+    const out = temp.targets || (temp.targets = { left: new THREE.Vector3(), right: new THREE.Vector3() });
+    for (const side of ['left', 'right']) {
+      const grip = temp[side + 'Grip'] || (temp[side + 'Grip'] = new THREE.Vector3()); // Posterior-straddle target in the larger rig's anatomical frame.
+      const ground = temp[side + 'Ground'] || (temp[side + 'Ground'] = new THREE.Vector3()); // Ground foot at this actor's current horizontal approach position.
+      const otherSide = side === 'left' ? 1 : -1; // Face-to-face actors have mirrored anatomical left/right.
+      grip.set(pelvisX + otherSide * solution.jumpFootSpreadWorld,
+        pelvisLocalY, solution.jumpFootForwardWorld);
+      tallerLegs.group.localToWorld(grip);
+      const ankle = shortStance[side].ankle;
+      ground.set(ankle.x, ankle.y, ankle.z);
+      shorterLegs.group.localToWorld(ground);
+      ground.y -= solution.shorterJumpWorld * jumpBlend; // Remove the body's vertical jump from its originally floor-planted ankle.
+      out[side].copy(ground).lerp(grip, jumpBlend); // Lift into contact, stay on hips, then reverse into a safe floor landing.
+    }
+    return out;
   }
 
   // Used by both the author and live kiss to separate the early hand gesture
@@ -216,12 +284,15 @@
       window.PlayerBodyTransformComposer?.clearChannel?.(SOURCE + '-retreat');
       old.playerHands?.setPoseProvider?.(SOURCE, null);
       old.playerHands?.useIdlePose?.(); // Restores held-tool/idle ownership instead of leaving wrists glued to the spouse's shoulders.
+      old.playerLegs?.setExternalFootTargets?.(null); // Release externally planted posterior feet on cancel, spouse switch, or completion.
+      old.npcLegs?.setExternalFootTargets?.(null);
       old.playerLegs?.setStanceDrop?.(0, true);
       if (old.npcSink && window.ActorBodySink?.apply) window.ActorBodySink.apply(old.npcSink, 0, 0, true);
       old.playerLegs?.setStanceDropLimitFraction?.(old.originalPlayerKneeLimit);
       old.npcLegs?.setStanceDropLimitFraction?.(old.originalNpcKneeLimit);
       if (old.npcTiltPivot?.rotation && Number.isFinite(old.originalNpcTiltX)) old.npcTiltPivot.rotation.x = old.originalNpcTiltX;
       if (old.walker?.root?.parent === old.npcParent) {
+        old.walker.root.position.y = old.originalNpcPosition.y; // Restore world-floor elevation after the small partner's hop.
         old.walker.root.rotation.y = old.originalNpcYaw;
         old.walker.root.position.x = old.originalNpcPosition.x; // Restores the approach displacement, including early dodge.
         old.walker.root.position.z = old.originalNpcPosition.z;
@@ -271,9 +342,12 @@
     const npcAnatomy = anatomyWorld(npcLegs, secondHeight);
     const isPlayerTaller = firstHeight >= secondHeight;
     const tallAnatomy = isPlayerTaller ? playerAnatomy : npcAnatomy;
+    const shortAnatomy = isPlayerTaller ? npcAnatomy : playerAnatomy; // Small partner's real hip height and leg length decide whether a supported jump is feasible.
     const height = solveHeights(firstHeight, secondHeight, {
       tallerLegLengthWorld: tallAnatomy.legLengthWorld,
       tallerHipHeightWorld: tallAnatomy.hipHeightWorld,
+      shorterLegLengthWorld: shortAnatomy.legLengthWorld,
+      shorterHipHeightWorld: shortAnatomy.hipHeightWorld,
     });
     if (!height.contactPossible) { lastError = 'mouth-height-not-reachable'; return false; }
     const contactGap = Math.min(dist, .12 + Math.min(firstHeight, secondHeight) * .10); // Close enough for shoulder grasp after kneeling; shortest partner's head still controls spacing.
@@ -325,7 +399,7 @@
       npcTiltPivot, originalNpcTiltX: npcTiltPivot?.rotation?.x,
       originalPlayerKneeLimit, originalNpcKneeLimit,
       playerAnatomy, npcAnatomy,
-      playerHands, npcHands, shoulderScratch: {}, // Live hand provider uses this pair and its reusable per-side vectors.
+      playerHands, npcHands, shoulderScratch: {}, footScratch: {}, // Cached world targets for posterior-supported foot IK during short-partner jumps.
       lastHandContact: null, // Mobile diagnostics expose reach and timing without requiring DevTools.
       playerNeck, npcNeck,
       originalPlayerNeck: playerNeck?.quaternion?.clone?.() || null,
@@ -333,7 +407,7 @@
       originalNpcYaw: walker.root.rotation.y,
       npcParent: walker.root.parent, // Prevents scene transfers from restoring an obsolete local world position.
       characterId: window.__hobunjiPlayerProfile?.characterId || null, // Prevents a delayed contact from buffing the next selected character.
-      originalNpcPosition: { x: walker.root.position.x, z: walker.root.position.z },
+      originalNpcPosition: { x: walker.root.position.x, y: walker.root.position.y, z: walker.root.position.z },
       approachX, approachZ, height, lock, onContact, touched: false, elapsed: 0,
       // Tall torso bows forward around the posterior. The partner's feet retreat by
       // the head's horizontal reach so the two mouths remain in the same contact spot.
@@ -375,6 +449,8 @@
     const playerIsTaller = session.height.taller === 'first';
     const kneeBlend = sampleKneelBlend(session.elapsed, session.height.taller === 'second'); // Shorter initiators reach for shoulders before the taller spouse kneels.
     const kneeWorld = session.height.tallerSinkWorld * kneeBlend; // Single world-space target shared by both possible taller actors.
+    const jumpBlend = session.height.shorterPosteriorGrip ? sampleJumpBlend(session.elapsed) : 0; // Non-jumping couples remain exactly on their original ground.
+    const shorterJump = session.height.shorterJumpWorld * jumpBlend; // Vertical lift takes the short partner up to the taller posterior.
     const playerLocalKnee = playerIsTaller ? kneeWorld / session.playerAnatomy.worldScale : 0;
     const npcLocalKnee = playerIsTaller ? 0 : kneeWorld / session.npcAnatomy.worldScale;
     const npcPct = npcLocalKnee / Math.max(.001, Number(session.npcLegs.modelHeight) || 0) * 100;
@@ -385,7 +461,7 @@
       priority: 200, absoluteYaw: session.headingPlayer,
       mode: 'override', translationMode: 'override',
       absoluteLegs: true, // The torso bows independently; grounded knees/feet remain in their existing world orientation.
-      translation: { x: 0, y: -playerDrop, z: 0 },
+      translation: { x: 0, y: -playerDrop + (playerIsTaller ? 0 : shorterJump), z: 0 }, // Shorter player hops without translating gameplay collision.
       rotation: { pitch: playerIsTaller ? session.height.tallerBowDeg * Math.PI / 180 * kneeBlend : .025 * pose.blend },
     });
     const npcDrop = window.ActorBodySink.apply(session.npcSink, npcPct, 0, true);
@@ -394,6 +470,7 @@
         (playerIsTaller ? .025 * pose.blend : session.height.tallerBowDeg * Math.PI / 180 * kneeBlend);
     }
     const npcForward = playerIsTaller ? 0 : session.bowRetreatWorld; // Tall NPC steps back to allow its head to bow into the smaller player's space.
+    session.walker.root.position.y = session.originalNpcPosition.y + (playerIsTaller ? shorterJump : 0); // NPC jumps only if they are the shorter partner.
     session.walker.root.position.x = session.originalNpcPosition.x + session.approachX * pose.blend - Math.sin(session.headingNpc) * npcForward * kneeBlend;
     session.walker.root.position.z = session.originalNpcPosition.z + session.approachZ * pose.blend - Math.cos(session.headingNpc) * npcForward * kneeBlend;
     if (playerIsTaller) {
@@ -422,6 +499,13 @@
       session.npcNeck.quaternion.copy(session.originalNpcNeck);
       session.npcNeck.rotateX((playerIsTaller ? .10 : -.14) * pose.blend);
     }
+    if (session.height.shorterPosteriorGrip) {
+      const shortLegs = playerIsTaller ? session.npcLegs : session.playerLegs; // Feet that must straddle the taller posterior rather than step on the ground.
+      const tallLegs = playerIsTaller ? session.playerLegs : session.npcLegs;
+      const footTargets = posteriorStraddleFootTargets(window.THREE, tallLegs, shortLegs, session.height, jumpBlend, session.footScratch);
+      shortLegs.setExternalFootTargets?.(footTargets, { allowDeepFold: true }); // Two real legs bend onto the taller partner's individual left/right pelvis landmarks.
+      if (footTargets) shortLegs.applyWorldFootTargets?.(footTargets, null, false, true);
+    }
     if (!session.touched && pose.touch) {
       session.touched = true;
       try { session.onContact?.(); }
@@ -434,7 +518,7 @@
     if (schedulerInstalled || !window.RuntimeFrameScheduler?.register) return false;
     window.RuntimeFrameScheduler.register(SOURCE, update, {
       phase: 'pre-render', owner: 'SpouseKissMotion',
-      description: 'Locks a spouse pair and applies adaptive kneeling with the existing leg/body sink solvers.',
+      description: 'Locks a spouse pair, adapts kneeling, and allows shorter partners to hop onto real posterior foot anchors.',
     });
     schedulerInstalled = true;
     return true;
@@ -443,12 +527,15 @@
   function diagnostics() {
     return { version: 2, active: !!active, lastError, lastResult,
       session: active ? { npcId: active.walker?.rec?.id, elapsedS: active.elapsed, touched: active.touched,
-        height: { ...active.height }, hands: active.lastHandContact || null } : null };
+        height: { ...active.height }, jumpBlend: sampleJumpBlend(active.elapsed),
+        feetAnchored: !!(active.playerLegs?.hasExternalFootTargets?.() || active.npcLegs?.hasExternalFootTargets?.()),
+        hands: active.lastHandContact || null } : null };
   }
 
   window.SpouseKissMotion = Object.freeze({
     DURATION_S, MAX_SINK_PCT, MOUTH_HEIGHT_FRACTION, KNEEL_LEG_FRACTION, MAX_BOW_DEG,
-    solveHeights, samplePose, sampleKneelBlend, sampleInitiatorHandReach,
+    solveHeights, samplePose, sampleJumpBlend, posteriorStraddleFootTargets,
+    sampleKneelBlend, sampleInitiatorHandReach,
     resolveShoulderGripWorld, shoulderGripWorld, applyInitiatorShoulderHands,
     actorHeight, anatomyWorld, init, start, stop: clearMotion,
     isPartner: walker => !!active && active.walker === walker,
