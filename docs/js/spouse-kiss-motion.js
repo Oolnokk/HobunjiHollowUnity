@@ -7,7 +7,9 @@
 
   const DURATION_S = 2.4; // Used by the editor timeline and the live contact/exit sequence.
   const MOUTH_HEIGHT_FRACTION = .82; // Floor-relative portrait mouth proxy; scaled by actual rig height.
-  const MAX_SINK_PCT = 82; // Extreme-size kneeling limit, measured like Attack Editor bodySink.
+  const MAX_SINK_PCT = 82; // Upper safety cap; the actual knee limit is based on the leg rig, not this percent alone.
+  const KNEEL_LEG_FRACTION = .95; // Spouse-only deep-kneel limit; regular stances retain their original 55%.
+  const MAX_BOW_DEG = 85; // A very large height difference may require the taller partner to nearly lie forward.
   const MAX_DISTANCE = .95; // A deliberate close-range action; avoids sliding partners through distant obstacles.
   const SOURCE = 'spouse-kiss'; // Composer/input-claim ownership; never replaces other effect owners.
   const clamp = (n, lo, hi) => Math.min(hi, Math.max(lo, n));
@@ -19,24 +21,34 @@
   let schedulerInstalled = false; // Avoids duplicate pre-render callbacks on repeated init.
 
   function solveHeights(firstHeight, secondHeight, options = {}) {
-    const first = Math.max(.001, finite(firstHeight, 1)); // First actor's rendered floor-to-head height.
-    const second = Math.max(.001, finite(secondHeight, 1)); // Second actor's rendered floor-to-head height.
-    const taller = first >= second ? 'first' : 'second'; // Selects who kneels, independent of player/NPC ordering.
+    const first = Math.max(.001, finite(firstHeight, 1)); // Real rendered height of the first character.
+    const second = Math.max(.001, finite(secondHeight, 1)); // Real rendered height of the second character.
+    const taller = first >= second ? 'first' : 'second'; // Only the physically taller partner kneels and bows.
     const tall = Math.max(first, second);
     const short = Math.min(first, second);
-    const requestedSink = (tall - short) * MOUTH_HEIGHT_FRACTION;
-    const limitPct = clamp(finite(options.maxSinkPct, MAX_SINK_PCT), 0, MAX_SINK_PCT);
-    const bodySink = Math.min(requestedSink, tall * limitPct / 100);
-    const remainingGap = Math.max(0, requestedSink - bodySink);
+    const tallMouth = tall * MOUTH_HEIGHT_FRACTION;
+    const shortMouth = short * MOUTH_HEIGHT_FRACTION;
+    const hipHeight = clamp(finite(options.tallerHipHeightWorld, tall * .28), .001, tallMouth); // Ground-to-posterior height from the real leg handle.
+    const legLength = Math.max(.001, finite(options.tallerLegLengthWorld, hipHeight)); // Anatomical leg length controls actual stance limits.
+    const kneeLimit = Math.min(legLength * KNEEL_LEG_FRACTION, tall * MAX_SINK_PCT / 100);
+    const requestedDrop = Math.max(0, tallMouth - shortMouth);
+    const kneeDrop = Math.min(requestedDrop, kneeLimit);
+    const torsoLength = Math.max(.001, tallMouth - hipHeight);
+    const afterKnee = Math.max(0, requestedDrop - kneeDrop);
+    const maxBow = MAX_BOW_DEG * Math.PI / 180;
+    const bowRad = Math.acos(clamp(1 - afterKnee / torsoLength, Math.cos(maxBow), 1));
+    const bowDrop = torsoLength * (1 - Math.cos(bowRad));
+    const remainingGap = Math.max(0, requestedDrop - kneeDrop - bowDrop);
     return {
       taller, firstHeight: first, secondHeight: second,
       mouthHeightRatio: MOUTH_HEIGHT_FRACTION,
-      tallerSinkWorld: bodySink,
-      tallerSinkPct: bodySink / tall * 100,
-      shorterSinkPct: 0,
-      remainingGap,
-      pose: bodySink / tall > .5 ? 'deep-kneel' : bodySink / tall > .18 ? 'crouch' : 'lean',
-      contactPossible: remainingGap < .025,
+      tallerSinkWorld: kneeDrop, tallerSinkPct: kneeDrop / tall * 100,
+      shorterSinkPct: 0, tallerBowDeg: bowRad * 180 / Math.PI,
+      tallerBowForwardWorld: torsoLength * Math.sin(bowRad),
+      torsoLengthWorld: torsoLength, legLengthWorld: legLength,
+      kneeLimitWorld: kneeLimit, remainingGap,
+      pose: bowRad > .72 ? 'deep-bow' : kneeDrop / tall > .18 ? 'deep-kneel' : kneeDrop > .001 ? 'crouch' : 'lean',
+      contactPossible: remainingGap < Math.max(.025, short * .01),
     };
   }
 
@@ -47,10 +59,23 @@
   }
 
   function actorHeight(model, legs, root) {
-    const local = Math.max(.05, finite(legs?.modelHeight, finite(model?.userData?.portraitModelHeight, 1)));
+    const local = Math.max(.05, finite(model?.userData?.portraitModelHeight, finite(legs?.modelHeight, 1))); // Render metadata includes species and gender proportions.
     const THREE = window.THREE;
-    const scale = THREE?.Vector3 && root?.getWorldScale ? root.getWorldScale(new THREE.Vector3()) : null;
+    const visualRoot = model?.getWorldScale ? model : legs?.group?.getWorldScale ? legs.group : root; // NPC size scale lives below walker.root.
+    const scale = THREE?.Vector3 && visualRoot?.getWorldScale ? visualRoot.getWorldScale(new THREE.Vector3()) : null;
     return local * Math.max(.01, Math.abs(finite(scale?.y, 1)));
+  }
+
+  function anatomyWorld(legs, fallbackHeight) {
+    const T = window.THREE;
+    const scale = T?.Vector3 && legs?.group?.getWorldScale ? legs.group.getWorldScale(new T.Vector3()) : null;
+    const worldScale = Math.max(.01, Math.abs(finite(scale?.y, 1))); // Converts local procedural-leg lengths to world units.
+    const records = legs?.motionAnatomy?.();
+    const localLegLength = Array.isArray(records) && records.length
+      ? Math.min(...records.map(record => Math.max(.001, finite(record.length, .001))))
+      : Math.max(.001, finite(legs?.standingPosteriorY, fallbackHeight * .28)); // Only used while old rig handles finish attaching.
+    const hip = Math.max(.001, finite(legs?.standingPosteriorY, localLegLength));
+    return { legLengthWorld: localLegLength * worldScale, hipHeightWorld: hip * worldScale, worldScale };
   }
 
   function scenePoint(root) {
@@ -64,8 +89,12 @@
     active = null;
     try {
       window.PlayerBodyTransformComposer?.clearChannel?.(SOURCE);
+      window.PlayerBodyTransformComposer?.clearChannel?.(SOURCE + '-retreat');
       old.playerLegs?.setStanceDrop?.(0, true);
       if (old.npcSink && window.ActorBodySink?.apply) window.ActorBodySink.apply(old.npcSink, 0, 0, true);
+      old.playerLegs?.setStanceDropLimitFraction?.(old.originalPlayerKneeLimit);
+      old.npcLegs?.setStanceDropLimitFraction?.(old.originalNpcKneeLimit);
+      if (old.npcTiltPivot?.rotation && Number.isFinite(old.originalNpcTiltX)) old.npcTiltPivot.rotation.x = old.originalNpcTiltX;
       if (old.walker?.root?.parent === old.npcParent) {
         old.walker.root.rotation.y = old.originalNpcYaw;
         old.walker.root.position.x = old.originalNpcPosition.x; // Restores the approach displacement, including early dodge.
@@ -112,7 +141,14 @@
     if (!npcRigRoot) { lastError = 'spouse-body-rig-not-ready'; return false; }
     const firstHeight = actorHeight(player, playerLegs, player);
     const secondHeight = actorHeight(walker.avatarGroup, npcLegs, walker.root);
-    const height = solveHeights(firstHeight, secondHeight);
+    const playerAnatomy = anatomyWorld(playerLegs, firstHeight);
+    const npcAnatomy = anatomyWorld(npcLegs, secondHeight);
+    const isPlayerTaller = firstHeight >= secondHeight;
+    const tallAnatomy = isPlayerTaller ? playerAnatomy : npcAnatomy;
+    const height = solveHeights(firstHeight, secondHeight, {
+      tallerLegLengthWorld: tallAnatomy.legLengthWorld,
+      tallerHipHeightWorld: tallAnatomy.hipHeightWorld,
+    });
     if (!height.contactPossible) { lastError = 'mouth-height-not-reachable'; return false; }
     const contactGap = Math.min(dist, .2 + Math.min(firstHeight, secondHeight) * .11); // Shortest partner's head width controls mouth proximity.
     const approach = Math.max(0, dist - contactGap); // Move only the spouse, so player collider and camera stay stable.
@@ -120,18 +156,28 @@
     const approachZ = dist > .0001 ? (playerPoint.z - npcPoint.z) * approach / dist : 0;
 
     const npcSink = { legs: npcLegs, lower: [{ obj: npcRigRoot, factor: () => npcRigRoot.scale?.y || 1 }] };
+    const npcTiltPivot = walker._npcRunLeanPivot || (walker.avatarGroup?.parent?.name === 'npc_run_lean_visual'
+      ? walker.avatarGroup.parent : walker.avatarGroup); // The existing portrait lean pivot keeps the legs out of the torso bow.
+    if (height.taller === 'second' && height.tallerBowDeg > 1 && !npcTiltPivot?.rotation) {
+      lastError = 'spouse-bow-rig-not-ready'; return false;
+    }
     const playerNeck = player.userData?.neckRig?.neckJoint || null;
     const npcNeck = walker.avatarGroup?.userData?.neckRig?.neckJoint || null;
     const lock = window.CharacterActionLocks?.acquire?.({
       owner: SOURCE, reason: 'Kissing spouse', timeoutMs: 5000,
       participants: [
-        { id: 'player', channels: ['movement', 'tools', 'pose', 'facing', 'head'] },
+        { id: 'player', channels: ['movement', 'tools', 'facing', 'head'] }, // A pose lock bypasses PlayerBodyTransformComposer; keep its kiss channel active.
         { id: window.NpcCharacterState?.participantId?.(walker.rec.id) || 'npc:' + walker.rec.id,
           channels: ['movement', 'tools', 'actions', 'pose', 'facing', 'head'] },
       ],
     });
+    const originalPlayerKneeLimit = playerLegs.setStanceDropLimitFraction?.(KNEEL_LEG_FRACTION) ?? .55;
+    const originalNpcKneeLimit = npcLegs.setStanceDropLimitFraction?.(KNEEL_LEG_FRACTION) ?? .55;
     active = {
       walker, player, playerLegs, npcLegs, npcRigRoot, npcSink, composer,
+      npcTiltPivot, originalNpcTiltX: npcTiltPivot?.rotation?.x,
+      originalPlayerKneeLimit, originalNpcKneeLimit,
+      playerAnatomy, npcAnatomy,
       playerNeck, npcNeck,
       originalPlayerNeck: playerNeck?.quaternion?.clone?.() || null,
       originalNpcNeck: npcNeck?.quaternion?.clone?.() || null,
@@ -139,6 +185,9 @@
       npcParent: walker.root.parent, // Prevents scene transfers from restoring an obsolete local world position.
       originalNpcPosition: { x: walker.root.position.x, z: walker.root.position.z },
       approachX, approachZ, height, lock, onContact, touched: false, elapsed: 0,
+      // Tall torso bows forward around the posterior. The partner's feet retreat by
+      // the head's horizontal reach so the two mouths remain in the same contact spot.
+      bowRetreatWorld: height.tallerBowForwardWorld,
       headingPlayer: Math.atan2(npcPoint.x - playerPoint.x, npcPoint.z - playerPoint.z),
       headingNpc: Math.atan2(playerPoint.x - npcPoint.x, playerPoint.z - npcPoint.z),
     };
@@ -169,13 +218,36 @@
     session.playerLegs.setStanceDrop(playerPct / 100 * (session.playerLegs.modelHeight || 0), true);
     const playerDrop = session.playerLegs.getStanceDrop?.() || 0;
     session.composer.setChannel(SOURCE, {
-      priority: 20, absoluteYaw: session.headingPlayer,
+      priority: 200, absoluteYaw: session.headingPlayer,
+      mode: 'override', translationMode: 'override',
+      absoluteLegs: true, // The torso bows independently; grounded knees/feet remain in their existing world orientation.
       translation: { x: 0, y: -playerDrop, z: 0 },
-      rotation: { pitch: (playerIsTaller ? -.09 : .035) * pose.blend },
+      rotation: { pitch: playerIsTaller ? session.height.tallerBowDeg * Math.PI / 180 * pose.blend : .025 * pose.blend },
     });
-    window.ActorBodySink.apply(session.npcSink, npcPct, 0, true);
-    session.walker.root.position.x = session.originalNpcPosition.x + session.approachX * pose.blend;
-    session.walker.root.position.z = session.originalNpcPosition.z + session.approachZ * pose.blend;
+    const npcDrop = window.ActorBodySink.apply(session.npcSink, npcPct, 0, true);
+    if (session.npcTiltPivot?.rotation && Number.isFinite(session.originalNpcTiltX)) {
+      session.npcTiltPivot.rotation.x = session.originalNpcTiltX +
+        (playerIsTaller ? .025 : session.height.tallerBowDeg * Math.PI / 180) * pose.blend;
+    }
+    const npcForward = playerIsTaller ? 0 : session.bowRetreatWorld; // Tall NPC steps back to allow its head to bow into the smaller player's space.
+    session.walker.root.position.x = session.originalNpcPosition.x + (session.approachX - Math.sin(session.headingNpc) * npcForward) * pose.blend;
+    session.walker.root.position.z = session.originalNpcPosition.z + (session.approachZ - Math.cos(session.headingNpc) * npcForward) * pose.blend;
+    if (playerIsTaller) {
+      session.composer.setChannel(SOURCE + '-retreat', {
+        space: 'world', priority: 200, translation: {
+          x: -Math.sin(session.headingPlayer) * session.bowRetreatWorld * pose.blend,
+          y: 0, z: -Math.cos(session.headingPlayer) * session.bowRetreatWorld * pose.blend,
+        },
+      }); // Player visuals retreat while real movement/collision remain locked.
+    }
+    const actualKneeWorld = playerIsTaller ? playerDrop * session.playerAnatomy.worldScale
+      : npcDrop * session.npcAnatomy.worldScale;
+    const expectedKneeWorld = session.height.tallerSinkWorld * pose.blend;
+    if (pose.blend > .8 && Math.abs(actualKneeWorld - expectedKneeWorld) > Math.max(.03, expectedKneeWorld * .09)) {
+      lastError = 'actual-knee-limit-prevents-mouth-contact';
+      clearMotion('knee-limit-mismatch');
+      return;
+    }
     session.walker.root.rotation.y = session.originalNpcYaw + 
       Math.atan2(Math.sin(session.headingNpc - session.originalNpcYaw), Math.cos(session.headingNpc - session.originalNpcYaw)) * pose.blend;
     if (session.playerNeck && session.originalPlayerNeck) {
@@ -210,7 +282,9 @@
   }
 
   window.SpouseKissMotion = Object.freeze({
-    DURATION_S, MAX_SINK_PCT, MOUTH_HEIGHT_FRACTION,
-    solveHeights, samplePose, actorHeight, init, start, stop: clearMotion, diagnostics,
+    DURATION_S, MAX_SINK_PCT, MOUTH_HEIGHT_FRACTION, KNEEL_LEG_FRACTION, MAX_BOW_DEG,
+    solveHeights, samplePose, actorHeight, anatomyWorld, init, start, stop: clearMotion,
+    isPartner: walker => !!active && active.walker === walker,
+    diagnostics,
   });
 })();
