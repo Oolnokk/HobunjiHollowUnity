@@ -45,6 +45,8 @@
     }
     return {minX,minZ,maxX,maxZ};
   }
+  const lichRgbWashed=hex=>[1,3,5].map(n=>parseInt(String(hex).slice(n,n+2),16)).map(v=>Number.isFinite(v)?Math.round(v+(255-v)*.45):220);
+  let liveOwner=null; // The mounted wing network, for the lighting compositor's per-room lights.
   function mount(options={}){
     const {rec,ruin,plan,hub,makeTile,getPlayerPosition,getPlayerY}=options;
     const THREE=options.THREE||root.THREE,DS=options.DynamicSurfaces||root.DynamicSurfaces;
@@ -83,6 +85,7 @@
     const brazierMat=tintedStone('#665346',0x665346);
     const materials=[material,plateMat,gateMat,brazierMat]; // Disposed together with the geometry and owned interactive controls.
     const wingFlameVisuals=[]; // Owns the player's campfire particle emitters for every ignited wing brazier.
+    const roomLights=[]; // One light per puzzle room (and, outside Kanthic, each goal room): a room fills with light when its puzzle is solved.
     const brazierLights=[]; // Kanthic-only completed-wing flames feed the shared darkness overlay without adding real Three.js lights.
     const states=[],gridScopes=[],added=new Set(),surfaces=[]; // Runtime gate/puzzle records, registered voxel scopes, map floor keys and terrain rectangles.
     const ownedControls=new Set(); // Every wing brazier, fire-source and authored puzzle control is released on reroll or failed setup.
@@ -95,6 +98,8 @@
     let activeRoot=group; // Mesh batching writes into the currently composed story's subscene.
     const owner={group,states,disposed:false,complete:false,lit:0,total:plan.totalBraziers,
       nativeTotal:plan.nativeFloorCount||0,nativeLit:0,geometryCount:0}; // The Great Door requires BOTH composed wings and real V50 floor braziers. // Exposed to mobile diagnostics.
+    owner.roomLights=()=>owner.disposed?[]:roomLights;
+    liveOwner=owner;
     owner.lightSources=()=>owner.disposed?[]:brazierLights; // Exposes already-created light records without scene traversals during the compositor's 60 Hz pass.
     owner.updateCompletion=()=>{
       owner.complete=owner.lit+owner.nativeLit===owner.total+owner.nativeTotal;
@@ -107,6 +112,7 @@
       owner.updateCompletion();
     };
     owner.dispose=()=>{
+      if(liveOwner===owner)liveOwner=null;
       if(owner.disposed)return;owner.disposed=true;
       // The V50 music composer only closes *its own* echo sessions. A shaft
       // melody can outlive scene removal unless this module releases it too.
@@ -257,6 +263,10 @@
         states.push(record);
         for(let i=0;i<wing.rooms.length-1;i++){
           const room=wing.rooms[i],cx=room.x+room.w/2,cz=room.z+room.d/2;
+          const roomHex=ruin.lichColor||({tothal:'#8fd6ff',hronal:'#ff8a3a',kanthic:'#b47bff'})[ruin.theme]||'#ff8b3d';
+          const roomRgb=[1,3,5].map(n=>parseInt(String(roomHex).slice(n,n+2),16)).map(v=>Number.isFinite(v)?Math.round(v+(255-v)*.45):220); // The lich's colour, washed toward white: a lit room, not a coloured spotlight.
+          const roomLight={x:cx,y:floor.y+1.4,z:cz,floorY:floor.y,floorTolerance:3,radius:Math.max(room.w,room.d)*.7+2,strength:.92,color:roomRgb,active:false};
+          roomLights.push(roomLight);
           let challenge=null; // Created by the shared mechanism runtime; its onSolved opens this chamber's real next gate.
           challenge=Challenges.compose({
             THREE,parent:activeRoot,room,y:floor.y,id:room.id,kind:room.challenge,side:wing.side,
@@ -275,6 +285,8 @@
             onSolved:()=>{
               if(owner.disposed||record.solved!==i)return;
               record.solved++;
+              roomLight.active=true; // The solved room fills with light.
+              options.onStateChange?.();
               root.RuinInteractionAudio?.puzzleComplete?.(); // Chime + reveal window before the gate starts moving.
               setGate(challenge,false);
               options.showToast?.(challenge.kind==='pressurePlate'?'A stone gate opens.'
@@ -323,6 +335,8 @@
           if(flameVisual)wingFlameVisuals.push(flameVisual); // Uses the exact player-placeable campfire emitter recipe.
         }
         const lichRgb=[1,3,5].map(i=>parseInt(String(lichColor).slice(i,i+2),16));
+        const goalLight=ruin.theme==='kanthic'?null:{x:bx,y:floor.y+1.4,z:bz,floorY:floor.y,floorTolerance:3,radius:Math.max(goal.w,goal.d)*.7+2,strength:.92,color:lichRgbWashed(lichColor),active:false}; // Kanthic's goal room is already lit by its brazier record below.
+        if(goalLight)roomLights.push(goalLight);
         const brazierLight={x:bx,y:floor.y+1.4,z:bz,floorY:floor.y,radius:10,strength:.98,
           color:lichRgb.every(Number.isFinite)?lichRgb:[255,139,61],active:false}; // A solved Kanthic wing brightens its chamber in its lich's colour; other lich themes keep their original atmosphere.
         if(ruin.theme==='kanthic')brazierLights.push(brazierLight);
@@ -334,7 +348,7 @@
           onPress:()=>{
             if(brazier.lit||Math.abs(Number(getPlayerY?.())-floor.y)>.8)return; // A brazier on floor 4 cannot be lit through the deck from a lower floor.
             if(record.solved<record.challenges.length){options.showToast?.('Complete the wing challenges first.',false);return;}
-            brazier.lit=true;flame.visible=true;lichBrazier?.ignite?.();brazierLight.active=true;owner.lit++; // ignite() marks the fire lit: without it update() skipped the particle emitter, so the bowl glowed with no flame. // Illumination follows the existing completion interaction, never a parallel trigger.
+            brazier.lit=true;flame.visible=true;brazierLight.active=true;lichBrazier?.ignite?.();if(goalLight)goalLight.active=true;owner.lit++; // ignite() marks the fire lit: without it update() skipped the particle emitter, so the bowl glowed with no flame. // Illumination follows the existing completion interaction, never a parallel trigger.
             owner.updateCompletion();
             if(ruin.theme==='kanthic')root.CloudForestFog?.refreshLightingOverlay?.(); // The lit wing becomes visible on the first rendered frame, including mobile.
             root.RuinInteractionAudio?.igniteTorch?.();
@@ -414,5 +428,5 @@
 
     return owner;
   }
-  return Object.freeze({mount,projectedExtent,collect,selectGrid});
+  return Object.freeze({mount,projectedExtent,collect,selectGrid,roomLights:()=>liveOwner&&!liveOwner.disposed?liveOwner.roomLights():[]});
 });

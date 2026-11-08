@@ -501,6 +501,31 @@
       else updateDiver(session,state,step,player,playerY);
     }
   }
+  // Planebent Skeeri eyes (authored #7F00FF, recoloured to the lich's eye swatch) glow through the ruin's darkness:
+  // each live ruin Skeeri contributes one small light to the shared darkness overlay, so the eyes show from far away
+  // even when the body itself is lost in the dark. Records are reused per actor (read at the 60 Hz compositor pass).
+  const eyeLightRecords=new WeakMap();
+  function eyeLights() {
+    const session=owner;
+    if(!session||session.disposed||!isActive(session))return EMPTY_LIGHTS;
+    const unit=Number(deps?.TILE)||64,out=[];
+    for(const state of session.actors){
+      const a=state.actor;
+      if(!a||!(Number(a.health)>0)||a.state==='corpse')continue;
+      let rec=eyeLightRecords.get(a);
+      if(!rec){
+        const hex=String(a.skeeriPalette?.eyes||'#b07dff'),rgb=[1,3,5].map(i=>parseInt(hex.slice(i,i+2),16));
+        rec={x:0,y:0,z:0,radius:state.size==='large'?1.5:1.0,strength:1,active:true,
+          color:rgb.every(Number.isFinite)?rgb:[176,125,255]};
+        eyeLightRecords.set(a,rec);
+      }
+      rec.x=a.x/unit;rec.z=a.y/unit;
+      rec.y=(Number(a.branchSurfaceY)||session.nest.y)+.6;
+      out.push(rec);
+    }
+    return out;
+  }
+  const EMPTY_LIGHTS=Object.freeze([]);
   function debugSnapshot() {
     return {...snapshot,active:!!owner,theme:owner?.theme||null,hatches:owner?.hatches.map(h=>({
       id:h.id,size:h.size,trigger:h.trigger,opened:h.opened,spawned:h.spawned}))||[],
@@ -508,5 +533,5 @@
       health:s.actor.health,y:Number(s.actor.branchSurfaceY)||0,palette:s.actor.skeeriPalette}))};
   }
   window.SkeeriRuins=Object.freeze({SPECIES,SPRITES,BODY_GROUPS,paletteFor,separateEyeMarker,register,init,createRig,mount,update,
-    activateCompartment,signalMechanism,debugSnapshot,get active(){return owner;}});
+    activateCompartment,signalMechanism,eyeLights,debugSnapshot,get active(){return owner;}});
 })();

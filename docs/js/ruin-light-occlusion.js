@@ -11,7 +11,7 @@
   const boxCache=new WeakMap(); // Cache world-space bounds across sources; moving pillars refresh much more often than static masonry.
   const root=typeof self!=='undefined'?self:globalThis;
   let wallShadowsOn=false; // Grid-wall wedges drew a large dark/purple plane over the player; OFF until they can be made soft. RuinLightOcclusion.setWallShadows(true) re-enables them.
-  let enabled=true; // Debug switch: RuinLightOcclusion.setEnabled(false) removes every projected shadow wedge.
+  let enabled=false; // OFF by default: the projected wedges drew a dark/purple plane over the player on every login. RuinLightOcclusion.setEnabled(true) turns them on. // Debug switch: RuinLightOcclusion.setEnabled(false) removes every projected shadow wedge.
   const stats={candidates:0,lights:0,shadows:0}; // Readable through the mobile debug console or Pixel Probe.
   const BLOCKER_NAME=/obelisk-.*-stone|pillar|column|wall|stone.door|push.*block|boulder|statue/i;
   const DECORATION_NAME=/ladder|rung|engraving|glyph|pattern|light|flame|sconce|roof|floor|ceiling|seal|shadow/i;
