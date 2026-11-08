@@ -135,7 +135,7 @@ const legHandle = height => ({
   getStanceDrop() { return this.sink; },
 });
 const avatarRoot = root(0, 0, 0, 1);
-const npcRoot = root(0, 0, 1, 5);
+const npcRoot = root(0, 0, .8, 5);
 const npcRigRoot = { position: { y: 0 }, scale: { y: 1 }, userData: {} };
 npcRoot.getObjectByName = name => name === 'npc_character_rig_root' ? npcRigRoot : null;
 const playerLegs = legHandle(1);
@@ -179,10 +179,12 @@ assert.equal(visual.start(sceneWalker, () => contacts++), true);
 for (let i = 0; i < 9; i++) renderFrame({ deltaMs: 80 });
 assert.equal(contacts, 0, 'no blessing before the first contact frame');
 assert.ok(partnerLegs.sink > 0 && playerLegs.sink === 0, 'tall NPC kneels and shorter player stays grounded');
+assert.ok(npcRoot.position.z < .8, 'spouse approaches far enough for a visible kiss');
 assert.equal(activeTokens.size, 1);
 assert.equal(visual.stop('dodge'), true);
 assert.equal(partnerLegs.sink, 0, 'cancel must restore both knee sinks');
 assert.equal(npcRigRoot.position.y, 0, 'cancel must restore the NPC visual root');
+assert.equal(npcRoot.position.z, .8, 'cancel must restore the original approach position');
 assert.equal(channels.size, 0, 'cancel must release the player pose channel');
 assert.equal(activeTokens.size, 0, 'cancel must release both characters');
 assert.equal(contacts, 0, 'early dodge must never grant the buff');
