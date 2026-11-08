@@ -354,7 +354,7 @@
   }
 
   function tryFallGrab(pos, previousY = pos?.y) {
-    if (!deps || deps.player.onClimbSurface || deps.player.climbing || deps.player.onBranch) return false;
+    if (!deps || deps.player.onClimbSurface || deps.player.climbing || deps.player.onBranch || deps.player._freeJump?.noGrab) return false;
     const hit = findFallGrabTarget(pos, previousY);
     if (!hit || isEasyRuinJump(hit, { ...pos, y: hit.y })) return false;
     return attachAirborne(hit.surface, { ...pos, y: hit.y });
