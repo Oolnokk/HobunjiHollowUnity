@@ -5881,7 +5881,8 @@ function sampleTransformTrack(baseTransform, keyframes, time) {
     degToRad(right.transform.rotationDeg.z),
     'XYZ'
   ));
-  const quaternion = new THREE.Quaternion().slerpQuaternions(leftQuaternion, rightQuaternion, alpha);
+  const quaternion = new THREE.Quaternion();
+  quaternion.copy(leftQuaternion).slerp(rightQuaternion, alpha); // Three r128's slerpQuaternions may mutate without returning its receiver.
   const rotation = new THREE.Euler().setFromQuaternion(quaternion, 'XYZ');
   return {
     position: {
@@ -5920,7 +5921,9 @@ function sampleNeckTrack(baseRotationDeg, keyframes, time) {
   const alpha = (time - left.time) / Math.max(.000001, right.time - left.time);
   const qa = new THREE.Quaternion().setFromEuler(new THREE.Euler(degToRad(left.neckRotationDeg.x), degToRad(left.neckRotationDeg.y), degToRad(left.neckRotationDeg.z), 'XYZ'));
   const qb = new THREE.Quaternion().setFromEuler(new THREE.Euler(degToRad(right.neckRotationDeg.x), degToRad(right.neckRotationDeg.y), degToRad(right.neckRotationDeg.z), 'XYZ'));
-  const rotation = new THREE.Euler().setFromQuaternion(new THREE.Quaternion().slerpQuaternions(qa, qb, alpha), 'XYZ');
+  const quaternion = new THREE.Quaternion();
+  quaternion.copy(qa).slerp(qb, alpha); // Never pass an r128 slerpQuaternions return value as a quaternion.
+  const rotation = new THREE.Euler().setFromQuaternion(quaternion, 'XYZ');
   return { x: radToDeg(rotation.x), y: radToDeg(rotation.y), z: radToDeg(rotation.z) };
 }
 
