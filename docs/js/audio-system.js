@@ -12,6 +12,7 @@
   const activeSfx = new Set(); // Intro audio cleanup stops one-shots and pooled voices already in flight.
   let introductionMix = null; // Single owner restores audio settings after success/cancellation.
   const objectSfxPreloads = new Map(); // Retains eagerly loaded tool cues for low-latency clones in playObjectSfx.
+  let metronomeSfxVoice = null; // Only the melody metronome owns this transient voice; ordinary mining pick SFX remain untouched.
   const combatSfxPreloads = new Map(); // URL -> bounded ready-element pool used so rapid combat cues cannot queue indefinitely.
   const animalVoicePreloads = new Map(); // Keeps species calls decoded/ready before a semantic vocal intent fires.
   const footstepAudioPools = new Map(); // URL -> reusable preloaded native-audio voices used by every recorded footstep.
@@ -1112,7 +1113,7 @@
     }
   }
 
-  function playObjectSfx(cfgEntry, volumeScale = 1, pitch = 1) {
+  function playObjectSfx(cfgEntry, volumeScale = 1, pitch = 1, metronomeLimitSeconds = null) {
     const audioCfg = gameAudioConfig();
     if (audioCfg.enabled === false || !cfgEntry) return;
     if (objectSfxConfig().enabled === false) return;
@@ -1130,6 +1131,23 @@
     const pitchVariance = Number(cfgEntry.pitchVarianceMul) || 0;
     const rate = Math.max(0.3, pitch * (Number(cfgEntry.pitch) || 1) * (1 + (Math.random() * 2 - 1) * pitchVariance));
     const snd = createObjectSfxAudio(url);
+    if (Number.isFinite(metronomeLimitSeconds) && metronomeLimitSeconds > 0) {
+      if (metronomeSfxVoice) {
+        metronomeSfxVoice.pause?.();
+        activeSfx.delete(metronomeSfxVoice); // A delayed 1.85-second pick tail may not mask the next quarter-note tick.
+      }
+      metronomeSfxVoice = snd;
+      const release = () => {
+        if (metronomeSfxVoice === snd) metronomeSfxVoice = null;
+        snd.pause?.();
+        activeSfx.delete(snd); // A short metronome transient must not leak into the introduction's one-shot registry.
+      };
+      snd.addEventListener?.('timeupdate', () => {
+        if (Number(snd.currentTime) >= metronomeLimitSeconds) release();
+      });
+      snd.addEventListener?.('ended', release, {once:true});
+      snd.addEventListener?.('error', release, {once:true});
+    }
     snd.playbackRate = rate;
     if ('preservesPitch' in snd) snd.preservesPitch = false; // Pitched object cues (including musical ruin plates and lowered cave-collapse sounds) must actually change pitch instead of browser pitch-correction keeping every playback at the source note.
     if ('webkitPreservesPitch' in snd) snd.webkitPreservesPitch = false;
@@ -1210,6 +1228,20 @@
     };
     if (cfgEntry) playObjectSfx(cfgEntry, volumeScale, pitch);
     if (cfgEntry?.generatedStoneKchunk && gameAudioConfig().enabled !== false && objectSfxConfig().enabled !== false && Number(gameAudioConfig().sfxVolume ?? 1) > 0) playGeneratedStoneKchunk(Math.max(0,Number(gameAudioConfig().sfxVolume ?? 1))*Math.max(0,Number(cfgEntry.volume ?? .8))*volumeScale);
+  }
+
+  function playObjectSfxKeyMetronome(volumeScale = 1) {
+    const cfgEntry = objectSfxConfig().pick; // The actual preloaded sfx_pick.mp3 recording, shared with normal mining.
+    const audioCfg = gameAudioConfig();
+    if (!cfgEntry?.url || audioCfg.enabled === false || objectSfxConfig().enabled === false ||
+      Number(audioCfg.sfxVolume ?? 1) <= 0) return false;
+    const preloaded = objectSfxPreloads.get(cfgEntry.url);
+    lastObjectSfxKeyDebug = {
+      key:'pick',found:true,url:cfgEntry.url,preloaded:!!preloaded,readyState:preloaded?.readyState ?? null,
+      metronome:true,maxDurationSec:.36,oneVoice:true,atMs:Math.round(performance.now()),
+    }; // Pixel Probe distinguishes the short metronome transient from an ordinary full-length mining strike.
+    playObjectSfx(cfgEntry,volumeScale,1,.36); // Preserve the original pitch/impact, silence the 1.85-second tail after the click.
+    return true;
   }
 
   // AlchemyFlasks emits semantic events and never imports AudioSystem. This
@@ -1786,6 +1818,7 @@
     objectSfxConfig,
     playObjectSfx,
     playObjectSfxKey,
+    playObjectSfxKeyMetronome,
     playObjectSfxKeyIndependentPitch,
     objectSfxDebugSnapshot,
     playCreatureSfxAt,
