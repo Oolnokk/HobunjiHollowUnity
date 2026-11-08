@@ -953,16 +953,7 @@
       wallStyle:'cavern', // Opts the session ruin into the game's existing combat-interior path so mobile receives Fire/Ammo/Potions and combat/reticle updates exactly like a den.
       devSessionOnly:true,devSeed:seed,devRuinTileScale:RUIN_TILE_SCALE,sourceGenerator:'HobunjiDebrisifierV50'};
     const occlusionMeshes=[]; // Normal map_i_* camera boom reads this array from _buildingScenes; generated walls must participate exactly like authored den/shop walls.
-    roots.localeRoot.traverse(mesh=>{
-      if(!mesh?.isMesh)return;
-      let structural=false;
-      for(let node=mesh;node;node=node.parent){
-        const d=node.userData||{},role=String(d.interiorRuinRole||'');
-        if(d.ruinInteriorWall||d.archFootprint||d.transitDoor||d.squarePillarHousing||/ceiling support pillar|doorway flank pillar/i.test(role)){structural=true;break;}
-        if(node===roots.localeRoot)break;
-      }
-      if(structural)occlusionMeshes.push(mesh);
-    });
+    roots.localeRoot.traverse(mesh=>{if(isCameraStructural(mesh,roots.localeRoot))occlusionMeshes.push(mesh);});
     return {scene,grid:projected.grid,cols:projected.cols,rows:projected.rows,mapData,wallStyle:'cavern',sanctumPlan:projected.sanctumPlan,floorSet:projected.walkable,exits:mapData.exits,spawn,localeRoot:roots.localeRoot,particleRoot:roots.particleRoot,ceilingMesh,occlusionMeshes,ceilingCellCount:Number(ceilingMesh?.userData?.devRandomRuinCeilingCells)||0,ceilingY:Number(ceilingMesh?.userData?.devRandomRuinCeilingY)||null,denMaterialMeshCount:materialStats.stoneMeshes,unlitConvertedMaterialCount:materialStats.convertedMaterials,remainingLitMaterialCount:materialStats.remainingLitMaterials,legacyStoneMaterialCount:materialStats.legacyStoneMaterials,totalRuinMeshCount:materialStats.totalMeshes};
   }
 
@@ -1224,6 +1215,7 @@
           throw error;
         }
         ruin.nativeV50Pending=null; // The mounted native runtime now owns these exact scene roots and their disposal.
+        registerUpperStoryCameraObstacles(ruin);
         lastGenerationAudit.acceptedSeed=candidateSeed;
         generationMark('entering-ruin');
         await enterRuin(); updateBadge();
@@ -1466,6 +1458,38 @@
     const tradition = theme ? theme.charAt(0).toUpperCase() + theme.slice(1) : '';
     const epithet = RUIN_EPITHETS[Math.floor(moduleRoll(entry.seed, 0x7171) * RUIN_EPITHETS.length) % RUIN_EPITHETS.length];
     return tradition ? `${epithet} of ${tradition}` : (entry.ruinName || epithet);
+  }
+
+  // Solid stone the camera boom must not pass through. Raised daises and push
+  // blocks count too: the camera used to sink through a raised dais and hide
+  // the player behind it.
+  function isCameraStructural(mesh,stopAt){
+    if(!mesh?.isMesh)return false;
+    for(let node=mesh;node;node=node.parent){
+      const d=node.userData||{},role=String(d.interiorRuinRole||'');
+      if(d.ruinInteriorWall||d.archFootprint||d.transitDoor||d.squarePillarHousing||d.movingDaisPlatform||d.pushable||/ceiling support pillar|doorway flank pillar/i.test(role))return true;
+      if(node===stopAt)break;
+    }
+    return false;
+  }
+  // Upper shaft stories (layer wings + native V50 floors) mount after the
+  // ground record is registered, so their walls never reached the camera
+  // boom and the camera clipped through every upstairs wall. Gates are left
+  // out on purpose: r128 raycasts ignore visibility, so an opened (hidden)
+  // gate would still push the camera in.
+  const UPPER_WALL_NAME=/(^|-)walls$|^wing-feature-wall$|-wall-(ns|ew)$|^native-v50-corridor-(north-south|east-west)-\d+$/;
+  function registerUpperStoryCameraObstacles(owner){
+    const occlusion=owner?.occlusionMeshes;
+    if(!Array.isArray(occlusion)||!owner.scene)return 0;
+    const known=new Set(occlusion);let added=0;
+    const visit=node=>{
+      if(node===owner.localeRoot)return; // Ground floor was classified when the record was built (and pruned by stone-age/root passes since).
+      if(node.isMesh&&!known.has(node)&&(UPPER_WALL_NAME.test(String(node.name||''))||isCameraStructural(node,owner.scene))){occlusion.push(node);known.add(node);added++;}
+      for(const child of node.children||[])visit(child);
+    };
+    visit(owner.scene);
+    owner.upperStoryCameraObstacles=added;
+    return added;
   }
 
   function enterRuin() {
