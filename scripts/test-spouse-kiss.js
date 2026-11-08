@@ -115,7 +115,7 @@ assert.equal(romance.remainingKissHours(), .5, 'buff survives midnight');
 hour = 10.01;
 assert.equal(romance.remainingKissHours(), 0, 'buff expires at exact 24-hour boundary');
 assert.equal(resourceProviders[0](player, 'staminaRegen'), 1);
-assert.deepEqual(renderedEffects['romance-spouse-kiss'](), []);
+assert.equal(renderedEffects['romance-spouse-kiss']().length, 0, 'expired buff drops off the HUD'); // VM arrays have a distinct prototype realm.
 
 // Exercise the actual paired runtime (not a callback stub). This catches
 // staging and cleanup mistakes without requiring WebGL or browser devtools.
