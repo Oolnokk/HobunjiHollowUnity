@@ -522,8 +522,8 @@ assert.equal(api.playPlayerKurrayaNote(),true,'sounded player note starts the fr
 assert.equal(musician.WeaponStanceDropRuntime.getDebug().instrumentNoteKey,'kurraya','player pluck must start a Kurraya leg/body animation');
 const noteParent={visible:true}; // The real group's immediate held holder is returned as the grip frame.
 const playerAssembly={userData:{kurrayaAssembly:true},position:{x:0,y:0,z:0},rotation:{x:0,y:0,z:0},parent:noteParent};
-api.triggerTwitch(api.newTwitchState(),playerAssembly);
-assert.equal(api.playerKurrayaHandTarget().holder,noteParent,'player hand follows the actual Kurraya holder');
+window.PlayerBodyTransformComposer={getPlayerMesh:()=>({traverse:fn=>fn(playerAssembly)})}; // The player's OWN subtree is the only authority for resolving its Kurraya grip.
+assert.equal(api.playerKurrayaHandTarget().holder,noteParent,'player hand follows the actual Kurraya holder without needing a decorative twitch');
 assert.equal(api.kurrayaHandDiagnostics().noteCount,1);
 const savedFreePhases=kurrayaPlayNote.poses;
 kurrayaPlayNote.poses=freePhases;
@@ -531,6 +531,7 @@ clock.ms += 30;
 assert(api.playerRightHandPose().influence>0,'a genuine note must interpolate the free hand');
 kurrayaPlayNote.poses=savedFreePhases;
 api.endPlayerKurraya();
+delete window.PlayerBodyTransformComposer;
 assert.equal(musician.WeaponStanceDropRuntime.getDebug().instrumentNoteKey,null,'closing music clears the Kurraya body-sink channel');
 assert.equal(api.playerRightHandPose(),null,'closing player music releases the free hand');
 assert.equal(api.playerKurrayaHandTarget(),null,'closing player music releases the captured holder');
