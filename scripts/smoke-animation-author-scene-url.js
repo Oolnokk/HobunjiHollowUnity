@@ -56,13 +56,32 @@ async function main() {
         throw Error('Legacy preset-label bug is still present');
       }
       const project = api.exportProject();
+      const initialBodies = api.fullBodyDiagnostics?.() || [];
+      if (initialBodies.length !== 2 || initialBodies.some(body => !body.feet)) {
+        throw Error('Both Pahu and Leaf must show real gameplay leg/foot rigs: ' + JSON.stringify(initialBodies));
+      }
+      if (!window.ProceduralHandFrameDriver?.syncNow || !window.PantsGarmentRenderer?.attachToLegs) {
+        throw Error('Gameplay hand and pants modules were not loaded');
+      }
       if (!project.actors || project.actors.length !== 2 || project.project.relationshipPreset !== 'kiss')
         throw Error('Scene did not persist a valid kiss clip');
       if (project.project.loop !== false || project.project.durationSeconds !== 2.4)
         throw Error('Kiss must be a 2.4-second one-shot');
       if (project.actors.some(actor => actor.keyframes.length < 6)) throw Error('Kiss clip has missing keyframes');
-      for (let frame = 0; frame < 150; frame++) api.tick(1 / 60);
+      for (let frame = 0; frame < 69; frame++) api.tick(1 / 60);
+      const contactBodies = api.fullBodyDiagnostics();
+      if (contactBodies.some(body => !body.hands || !body.feet)) {
+        throw Error('Missing hands or feet during the kiss: ' + JSON.stringify(contactBodies));
+      }
+      if (!contactBodies.some(body => body.kneeDrop > 0)) {
+        throw Error('The taller NPC must fold their knees at contact: ' + JSON.stringify(contactBodies));
+      }
+      for (let frame = 69; frame < 150; frame++) api.tick(1 / 60);
       const again = api.exportProject();
+      const finishedBodies = api.fullBodyDiagnostics();
+      if (finishedBodies.some(body => body.kneeDrop > 0.0001)) {
+        throw Error('Both actors should stand normally after the kiss: ' + JSON.stringify(finishedBodies));
+      }
       if (again.project.relationshipPreset !== 'kiss') throw Error('Kiss changed during preview');
       return {
         actors: actors.map(a => ({ id: a.source.id, label: a.label })),
@@ -70,6 +89,7 @@ async function main() {
         clipDuration: project.project.durationSeconds,
         keyframes: project.actors.map(a => a.keyframes.length),
         exportable: again.actors.length === 2,
+        fullBodiesAtContact: contactBodies,
         copiedUrlValid: true,
         genericUrlValid: true,
         status: document.getElementById('statusPill')?.textContent || '',
