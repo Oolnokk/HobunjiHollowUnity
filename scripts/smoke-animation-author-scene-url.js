@@ -16,6 +16,23 @@ async function main() {
   page.on('pageerror', e => errors.push(e.stack || String(e)));
   page.on('requestfailed', r => failures.push(r.url() + ': ' + r.failure()?.errorText));
   try {
+    // Test-only hook, inserted into the served HTML but NEVER committed to the
+    // editor: simulate a differently sized spouse without exporting a fake NPC.
+    const authorHtml = fs.readFileSync(path.join(DOCS, 'tools/animation-author/index.html'), 'utf8');
+    const authorMarker = 'window.MultiAvatarAnimationAuthor.fullBodyDiagnostics = fullCharacterPreviewDiagnosticsV1548;';
+    if (!authorHtml.includes(authorMarker)) throw Error('Animation author no longer exposes the full-body diagnostics anchor');
+    const instrumentedHtml = authorHtml.replace(authorMarker, authorMarker + `
+      window.MultiAvatarAnimationAuthor.__testScaleNpcAndRebuildKiss = (npcId, fraction) => {
+        const actor = animationAuthor.actors.find(entry => entry.source?.id === npcId);
+        if (!actor) throw Error('NPC was not loaded: ' + npcId);
+        actor.visualOffset.scale.setScalar(fraction); // Scales the real hands, portrait, legs and pants together.
+        const initiator = actorById(animationAuthor.kissInitiatorActorIdV1550);
+        if (initiator) selectAnimationActor(initiator.id); // Preserve leader identity when rebuilding the preset.
+        return applyKissPresetV1546();
+      };
+    `);
+    await page.route('**/tools/animation-author/index.html**', route =>
+      route.fulfill({ status: 200, contentType: 'text/html', body: instrumentedHtml }));
     await page.route('https://api.github.com/repos/Oolnokk/HobunjiHollowUnity/commits/**', route =>
       route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ sha: 'scene-smoke-fixture' }) }));
     await page.route(RAW_RE, route => {
@@ -237,6 +254,48 @@ async function main() {
       throw Error('Reverse URL did not select Leaf as the explicit initiator: ' + JSON.stringify(tallerFirst));
     }
     console.log('Kiss reversed-role height and shoulder reach:', JSON.stringify(tallerFirst));
+
+    // Pahu at half-size is deliberately beyond the normal kneeling-only
+    // range. Test the actual procedural leg IK, not merely the math solver.
+    const jumpPreview = await page.evaluate(() => {
+      const api = window.MultiAvatarAnimationAuthor;
+      if (!api.__testScaleNpcAndRebuildKiss('pahu', .5)) throw Error('Rescaled kiss preset could not be rebuilt');
+      const pair = api.kissPairDiagnostics();
+      if (!pair.posteriorJump || pair.jumpWorld <= .01) throw Error('A 2x taller spouse must select the posterior-supported hop: ' + JSON.stringify(pair));
+      const slider = document.getElementById('maaScrubber');
+      const frames = [];
+      for (const t of [0, .37, .52, .67, .82, 1.02, 1.12, 1.52, 1.85, 2.25, 2.4]) {
+        slider.value = String(t);
+        slider.dispatchEvent(new Event('input', { bubbles: true }));
+        const all = api.fullBodyDiagnostics();
+        const jumper = all.find(actor => actor.name === 'Pahu');
+        const standing = all.find(actor => actor.name === 'Leaf');
+        frames.push({ t, jump: jumper?.preview.jumpHeightWorld || 0,
+          feetAnchored: !!jumper?.preview.jumpFeetAnchored,
+          footSeparation: jumper?.preview.jumpFootDistance || 0,
+          knee: standing?.kneeDrop || 0, pants: jumper?.pants, arms: jumper?.handRig });
+        if (!jumper?.pants || !jumper?.feet || !standing?.feet) {
+          throw Error('Missing actual feet/pants in jump: ' + JSON.stringify(all));
+        }
+        if (t === 1.12) {
+          if (!jumper.preview.jumpFeetAnchored || jumper.preview.jumpHeightWorld < pair.jumpWorld * .95 ||
+              jumper.preview.jumpFootDistance <= .005) {
+            throw Error('Shorter partner does not plant both feet around the taller posterior at contact: ' + JSON.stringify(all));
+          }
+          if (jumper.preview.feetGrounded) throw Error('Jumping spouse incorrectly diagnosed as grounded');
+        }
+        if (t === 2.4 && (jumper.preview.jumpHeightWorld > .0001 || jumper.preview.jumpFeetAnchored)) {
+          throw Error('Jump did not recover to the floor: ' + JSON.stringify(all));
+        }
+      }
+      const exported = api.exportProject();
+      if (!exported.project?.kiss?.posteriorJump?.enabled ||
+          !exported.actors.some(actor => actor.keyframes?.some(key => key.jumpLiftWorld > .01))) {
+        throw Error('Export did not preserve the posterior jump and vertical lift: ' + JSON.stringify(exported.project?.kiss));
+      }
+      return { pair, frames, exportedJump: exported.project.kiss.posteriorJump };
+    });
+    console.log('Height-adaptive posterior-straddle jump PASS:', JSON.stringify(jumpPreview));
   } catch (error) {
     let snapshot;
     try {
