@@ -867,11 +867,11 @@
     const t=nearest/.22; // Smooth curved shoulder without independently tapering the adjoining tiles.
     return t*t*(3-2*t);
   }
-  function makePlasmSurface(kit,room) {
+  function makePlasmSurface(kit,room,withSeam=false) {
     const patch=room.plasm;
     if(!patch?.size)return null;
     const axis=[0,.11,.22,.78,.89,1],width=axis.length;
-    const pos=[],idx=[],uv=[];
+    const pos=[],idx=[],uv=[],seam=[];
     const {corners,mapping}=plasmTextureCorners(patch,room);
     const coordBounds=[Infinity,Infinity,-Infinity,-Infinity];
     if(mapping!=='edge-preserving-nine-slice'){
@@ -891,6 +891,7 @@
         const u=axis[i],v=axis[j];
         const factor=plasmHeightFactor(x+u,z+v,patch); // Concave corners use the same perimeter distance from either neighboring tile.
         pos.push(x+u,(room.plasmFloorY.get(key)??floorY(kit,x+.5,z+.5))+.006+PLASM_DEPTH*factor,z+v);
+        if(withSeam){const rim=Math.pow(1-factor,2);seam.push(.5*rim,.16*rim,.9*rim);} // Glow lives only on the sloped seam where the puddle meets the floor.
         if(mapped){
           uv.push(a[0]*(1-u)*(1-v)+b[0]*u*(1-v)+c[0]*(1-u)*v+d[0]*u*v,
             a[1]*(1-u)*(1-v)+b[1]*u*(1-v)+c[1]*(1-u)*v+d[1]*u*v);
@@ -907,6 +908,7 @@
     const geometry=new THREE.BufferGeometry();
     geometry.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
     geometry.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2));
+    if(withSeam)geometry.setAttribute('color',new THREE.Float32BufferAttribute(seam,3));
     geometry.setIndex(idx);
     const mesh=new THREE.Mesh(geometry,world.plasmMaterial);
     mesh.name='kanthic_plasm_connected_room_'+room.index;
@@ -999,14 +1001,16 @@
       patch.plasm.add(key);patch.plasmFloorY.set(key,y);
     }
     if(!patch.plasm.size)return null;
-    patch.mesh=makePlasmSurface(kit,patch);
-    if(!patch.mesh)return null;
     const ttl=Number(opts.ttl);
-    if(ttl>0){ // Temporary plasm glows a little purple so it reads differently from the permanent kind.
+    patch.mesh=makePlasmSurface(kit,patch,ttl>0);
+    if(!patch.mesh)return null;
+    if(ttl>0){ // Temporary plasm is the SAME material as the permanent kind; only a faint violet glow along its seam tells them apart.
       patch.timed=true;patch.life=ttl;patch.ttl=ttl;
       patch.material=world.plasmMaterial.clone();
-      patch.material.color.setHex(0x6a3fa8);patch.material.opacity=.9;
       patch.mesh.material=patch.material;
+      patch.glowMaterial=new THREE.MeshBasicMaterial({vertexColors:true,transparent:true,opacity:1,blending:THREE.AdditiveBlending,depthWrite:false,toneMapped:false});
+      const glow=new THREE.Mesh(patch.mesh.geometry,patch.glowMaterial);
+      glow.position.y=.004;glow.frustumCulled=false;glow.name='kanthic_plasm_seam_glow';patch.mesh.add(glow);
       (world.timedPlasm||(world.timedPlasm=new Set())).add(patch);
     }
     world.group.add(patch.mesh);
@@ -1014,7 +1018,7 @@
     const dispose=()=>{
       if(!owner.spellPlasm.delete(patch))return;
       owner.timedPlasm?.delete(patch);
-      patch.mesh?.parent?.remove(patch.mesh);patch.mesh?.geometry?.dispose?.();patch.material?.dispose?.();
+      patch.mesh?.parent?.remove(patch.mesh);patch.mesh?.geometry?.dispose?.();patch.material?.dispose?.();patch.glowMaterial?.dispose?.();
     };
     patch.dispose=dispose;
     return {mesh:patch.mesh,tiles:patch.plasm.size,contains(x,z,y){
@@ -1027,10 +1031,12 @@
   // shaft platform paints that platform, not the ground story below it.
   function createPlasmPuddle(x,z,{radius=3.2,ttl=5,y=null}={}) {
     if(world?.theme!=='kanthic'||!Number.isFinite(x)||!Number.isFinite(z))return null;
-    const DS=window.DynamicSurfaces,tiles=[],range=Math.max(.6,Number(radius)||3.2);
+    const DS=window.DynamicSurfaces,tiles=[],range=Math.max(.6,Number(radius)||3.2),phase=seeded(Math.floor(x*13+z*29),0x77)*6.283;
     for(let tz=Math.floor(z-range);tz<=Math.floor(z+range);tz++)for(let tx=Math.floor(x-range);tx<=Math.floor(x+range);tx++){
       const cx=tx+.5,cz=tz+.5;
-      if(Math.hypot(cx-x,cz-z)>range||protectedPlasmTile(world.kit,tx,tz))continue; // Entrance and checkpoint landings are never plasm.
+      const dxp=cx-x,dzp=cz-z,dist=Math.hypot(dxp,dzp),theta=Math.atan2(dzp,dxp);
+      const wobble=.74+.2*Math.sin(theta*3+phase)+.12*Math.sin(theta*5+phase*1.7)+.1*(seeded(tx*31+tz*17,0x9a5)-.5); // Ragged outline instead of a perfect disc.
+      if(dist>range*Math.min(1,wobble*1.15)||protectedPlasmTile(world.kit,tx,tz))continue; // Entrance and checkpoint landings are never plasm.
       let tileY;
       if(Number.isFinite(y)){
         const support=DS?.sampleSupport?.(cx,cz,{minY:y-2.6,maxY:y+.35,pad:.02});
@@ -1046,7 +1052,7 @@
     for(const patch of [...world.timedPlasm]){
       patch.life-=dt;
       if(patch.life<=0){patch.dispose?.();continue;}
-      if(patch.material&&patch.life<1)patch.material.opacity=.9*Math.max(0,patch.life); // One-second fade, then gone.
+      if(patch.material&&patch.life<1){const k=Math.max(0,patch.life);patch.material.opacity=.88*k;if(patch.glowMaterial)patch.glowMaterial.opacity=k;} // One-second fade, then gone.
     }
   }
 

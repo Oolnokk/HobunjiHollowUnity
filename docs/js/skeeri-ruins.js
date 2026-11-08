@@ -74,7 +74,7 @@
   }
   function paletteFor(theme,identity) {
     const family=traditionOf(theme),slot=hash(String(identity)); // Stable appearance independent of AI RNG and encounter order.
-    const bodies=catalogPalette(family,BODY_VARIANTS,family==='kanthic');
+    const bodies=catalogPalette(family,BODY_VARIANTS,false); // No neutral dyes on the body: a white/gray multiply leaves the green base sprite uncolored so only the shaded markings looked tinted.
     const corePatterns=catalogPalette(family,BODY_VARIANTS,family==='kanthic');
     const neighborPatterns=catalogPalette(family,BODY_VARIANTS,false,patternNeighborHues(family));
     const eyes=catalogPalette(family,EYE_VARIANTS); // Deliberately NO neighboring hues, even if fur markings can use them.
@@ -414,6 +414,8 @@
     if(!isActive(session)||state.dead||state.pendingBomb)return;
     const player=currentPlayer(),bird=actorLocation(state.actor,session);
     if(!player||distance(player,bird)>5)return;
+    if(window.DevRandomRuin?.isPlayerInShaft&&window.DevRandomRuin.isPlayerInShaft()!==true)return; // Never bomb someone standing in a hallway or wing: only inside the shaft footprint.
+    if(Number(session.getPlayerY?.())>bird.y-.4)return; // The bird must actually be above its target.
     const bombs=window.HronalWitchBombs;
     if(!bombs?.spawn||!window.Shattercasks?.releaseBurdenDownward)return;
     state.pendingBomb=true;
