@@ -136,7 +136,7 @@ function harness({ rock = null, furniture = null, wall = null, pit = null, start
     const frames = Math.ceil(seconds * 60);
     for (let i = 0; i < frames; i++) window.PlayerJump.tick(1 / 60);
   }
-  return { window, grid, player, input, advance, setArea: area => { activeArea = area; }, setCanJump: allowed => { canJump = !!allowed; } };
+  return { window, context, grid, player, input, advance, setArea: area => { activeArea = area; }, setCanJump: allowed => { canJump = !!allowed; } };
 }
 
 {
@@ -158,6 +158,42 @@ function harness({ rock = null, furniture = null, wall = null, pit = null, start
   assert.equal(h.player.climbing, false, 'land on flat terrain frees ordinary movement');
   assert.equal(h.player._freeJump, null, 'flat landing clears transient state');
   assert.equal(h.window.DevRandomRuin.groundLandings, 1, 'a confirmed ground landing is reported exactly once');
+}
+
+
+{
+  // Exercise the actual PlayerJump and ClimbSurfaces modules together, with
+  // no movement input and the character facing away from the ladder.
+  const h = harness({ pit: { row: 3, firstCol: 2, lastCol: 8 }, start: { x: 5.52, z: 3.5 } });
+  h.context.self = h.window; // Browser UMD climb owner installs onto the same window as PlayerJump.
+  vm.runInNewContext(read('docs/js/climb-surfaces.js'), h.context, { filename: 'climb-surfaces.js' });
+  h.window.ClimbSurfaces.init({ player: h.player, TILE, getCurrentArea: () => 'zone-test',
+    getFeetY: () => h.player._freeJump?.feetY ?? 0 });
+  h.window.ClimbSurfaces.register({ id: 'shaft-ladder-contact', scope: 'shaft-hub',
+    autoCatch: true, axis: 'z', plane: 5, normal: { x: 1, z: 0 },
+    u0: 3, u1: 4, y0: 0, y1: 4 });
+  const flight = h.window.PlayerJump.beginFlight({ x: 5.52, y: 3.7, z: 3.5,
+    vx: 0, vy: -0.1, vz: 0 }, { source: 'ruin ledge fall', deliberate: false });
+  assert(flight);
+  h.advance(.05);
+  assert(h.player.onClimbSurface, 'passive vertical contact must attach to the shaft ladder in the real jump loop');
+  assert.equal(h.player._freeJump, null, 'catch transfers ownership from the real physical fall');
+  assert(Math.abs(h.player.wallClimbY - 3.7) < .1, 'fall-catch keeps the airborne feet instead of resetting to ground');
+  assert.equal(h.window.PlayerJump.debug.lastEvent, 'caught shaft ladder while falling');
+}
+{
+  const h = harness({ pit: { row: 3, firstCol: 2, lastCol: 8 }, start: { x: 5.52, z: 3.5 } });
+  h.context.self = h.window;
+  vm.runInNewContext(read('docs/js/climb-surfaces.js'), h.context, { filename: 'climb-surfaces.js' });
+  h.window.ClimbSurfaces.init({ player: h.player, TILE, getCurrentArea: () => 'zone-test' });
+  h.window.ClimbSurfaces.register({ id: 'shaft-ladder-release', scope: 'shaft-hub',
+    autoCatch: true, axis: 'z', plane: 5, normal: { x: 1, z: 0 },
+    u0: 3, u1: 4, y0: 0, y1: 4 });
+  h.window.PlayerJump.beginFlight({ x: 5.52, y: 3.7, z: 3.5,
+    vx: 0, vy: -0.1, vz: 0, noGrab: true }, { source: 'wall climb release', deliberate: true });
+  h.advance(.05);
+  assert.equal(h.player.onClimbSurface, undefined, 'deliberate Dodge release cannot be caught immediately');
+  assert(h.player._freeJump, 'the original fall remains active after Dodge');
 }
 
 {
