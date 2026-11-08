@@ -309,11 +309,13 @@
     const lit = s.braziers.filter(b => b.lit).length, total = s.braziers.length;
     const decal = s.door?.decals?.[brazier.index];
     if (decal) decal.flashUntil = performance.now() + 900;
+    if (lit < total) window.RuinInteractionAudio?.progress?.(lit, total); // The last seal's solve motif plays from tryAwakenDoor.
+    window.RuinInteractionAudio?.igniteTorch?.();
     deps?.showToast?.(lit < total
       ? `Blue fire takes hold (${lit}/${total}). A seal on the Great Door answers it.`
       : 'The last brazier flares blue — somewhere, the Great Door hums awake.', true);
     window.__farmLog?.(`[random-ruin] brazier ${brazier.id} lit ${lit}/${total}`, 'world');
-    if (lit === total) tryAwakenDoor();
+    if (lit === total && !tryAwakenDoor()) window.RuinInteractionAudio?.progress?.(lit, total); // Seals done but the shaft still binds the door.
     return true;
   }
 
@@ -567,6 +569,7 @@
     door.state = 'awake';
     (window.RuinInteractionAudio?.puzzleComplete?.()||window.AudioSystem?.playObjectSfxKey?.('puzzleComplete'));
     door.awakeAt = performance.now();
+    if (door.group) window.GameFeel?.beginReveal?.(door.group); // Show the player the door they just woke (skipped in combat / when on screen / too far).
     if (!s.bgs && window.Music?.registerFurnitureSfxSource) {
       s.bgs = window.Music.registerFurnitureSfxSource(MAP_ID, door.group.position.x, door.group.position.z, { url:BGS_URL, rangeTiles:16, volume:.8, semitones:DOOR_SEMITONES });
     }

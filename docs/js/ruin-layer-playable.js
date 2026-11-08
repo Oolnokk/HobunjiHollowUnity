@@ -185,8 +185,10 @@
         // can have a perfectly open room at the same X/Z. Only this wing's
         // height-specific voxel grid owns the door's collision.
       }
-      if(record.gate.object.visible!==blocked)root.RuinInteractionAudio?.mechanism?.(record.gate.object,{size:4}); // The story-wing gate changes collision and sound exactly once, not every tick.
-      record.gate.object.visible=blocked;
+      const gateObject=record.gate.object,wasVisible=gateObject.visible;
+      if(wasVisible!==blocked)root.RuinInteractionAudio?.mechanism?.(gateObject,{size:4}); // The story-wing gate changes collision and sound exactly once, not every tick.
+      if(blocked){root.GameFeel?.cancelSink?.(gateObject);gateObject.visible=true;}
+      else if(!wasVisible||!root.GameFeel?.sinkAway?.(gateObject))gateObject.visible=false; // Collision is already open; the stone visibly sinks into the floor instead of vanishing.
 
     }
     try{
@@ -273,6 +275,7 @@
             onSolved:()=>{
               if(owner.disposed||record.solved!==i)return;
               record.solved++;
+              root.RuinInteractionAudio?.puzzleComplete?.(); // Chime + reveal window before the gate starts moving.
               setGate(challenge,false);
               options.showToast?.(challenge.kind==='pressurePlate'?'A stone gate opens.'
                 :challenge.kind==='melodyEcho'?'The stone answers your melody — a gate opens.'
@@ -323,7 +326,9 @@
             brazier.lit=true;flame.visible=true;brazierLight.active=true;owner.lit++; // Illumination follows the existing completion interaction, never a parallel trigger.
             owner.updateCompletion();
             if(ruin.theme==='kanthic')root.CloudForestFog?.refreshLightingOverlay?.(); // The lit wing becomes visible on the first rendered frame, including mobile.
-            options.showToast?.(owner.complete?'All shaft braziers are lit.':'Wing brazier ignited.',true);
+            root.RuinInteractionAudio?.igniteTorch?.();
+            if(owner.complete)root.RuinInteractionAudio?.puzzleComplete?.();else root.RuinInteractionAudio?.progress?.(owner.lit+owner.nativeLit,owner.total+owner.nativeTotal);
+            options.showToast?.(owner.complete?'All wing braziers are lit — the Great Door\'s binding breaks.':`Wing brazier ignited (${owner.lit+owner.nativeLit}/${owner.total+owner.nativeTotal}).`,true);
             options.onStateChange?.();
           }
         });

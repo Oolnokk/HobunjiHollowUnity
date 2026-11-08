@@ -224,7 +224,9 @@
         const col=grid.xToCol(x+.5),row=grid.zToRow(z+.5);
         grid.fillBox(col,row,lower,col,row,upper,blocked?CG.KIND.SOLID:CG.KIND.AIR);
       }
-      object.visible=blocked;
+      if(blocked){root.GameFeel?.cancelSink?.(object);object.visible=true;}
+      else if(object.visible){root.RuinInteractionAudio?.mechanism?.(object,{size:4});if(!root.GameFeel?.sinkAway?.(object))object.visible=false;} // Sinks into the floor (collision already open) instead of vanishing.
+      else object.visible=false;
     }
     function updateGoals(){
       ruin.shaftLayerRuntime?.setNativeGoalState?.(owner.total,owner.lit);
@@ -430,8 +432,8 @@
               tick:()=>{
                 if(challenge.disposed||challenge.solved||owner.disposed||record.solved!==i
                   ||!record.nativeMechanisms.isSolved(authored.id))return;
-                challenge.solved=true;record.solved++;setGate(challenge,false);
-                options.showToast?.('The V50 mechanism unlocks the chamber.',true);
+                challenge.solved=true;record.solved++;root.RuinInteractionAudio?.puzzleComplete?.();setGate(challenge,false);
+                options.showToast?.('A mechanism grinds — the next chamber unlocks.',true);
                 options.onStateChange?.();
               },
               dispose(){this.disposed=true;},
@@ -444,8 +446,8 @@
               onLink:options.onStateChange,onError:options.onError,
               onSolved:()=>{
                 if(owner.disposed||record.solved!==i)return;
-                record.solved++;setGate(challenge,false);
-                options.showToast?.('The native chamber gate opens.',true);options.onStateChange?.();
+                record.solved++;root.RuinInteractionAudio?.puzzleComplete?.();setGate(challenge,false);
+                options.showToast?.('The chamber gate opens.',true);options.onStateChange?.();
               },
             });
             challenge.x=world.x+world.w/2;challenge.z=world.z+world.d/2;
@@ -486,16 +488,20 @@
         record.goalBrazier={pedestal,flame};
         addControl({kind:'v50NativeBrazier',object:pedestal,promptRoot:pedestal,
           floorY:goalY,range:1.7,priority:20,touchIcon:'🔥',
-          label:()=>record.lit?'Brazier Burning':'Ignite Native Wing Brazier',
+          label:()=>record.lit?'Brazier Burning':'Ignite Wing Brazier',
           onPress:()=>{
             if(owner.disposed||record.lit||!Number.isFinite(Number(getPlayerY?.()))||Math.abs(Number(getPlayerY())-goalY)>.8)return;
             if(record.solved!==record.challenges.length){
-              options.showToast?.('Complete the V50 chambers first.',false);return;
+              options.showToast?.('Clear this wing\'s chambers first.',false);return;
             }
             record.lit=true;flame.visible=true;brazierLight.active=true;owner.lit++; // Kanthic visibility follows the required goal brazier's existing solved state.
             updateGoals();
             if(ruin.theme==='kanthic')root.CloudForestFog?.refreshLightingOverlay?.(); // The completed chamber reveals immediately, including mobile.
-            options.showToast?.('Native V50 floor brazier ignited.',true);
+            root.RuinInteractionAudio?.igniteTorch?.();
+            const network=ruin.shaftLayerRuntime?.getState?.(); // Whole-shaft count (layer + native wings) for the rising progress note.
+            if(network?.complete)root.RuinInteractionAudio?.puzzleComplete?.();
+            else root.RuinInteractionAudio?.progress?.(network?.lit??owner.lit,network?.braziers??Math.max(owner.lit,owner.total||0));
+            options.showToast?.(network?.complete?'All wing braziers are lit — the Great Door\'s binding breaks.':network?.braziers?`Wing brazier ignited (${network.lit}/${network.braziers}).`:'Wing brazier ignited.',true);
           }
         });
         views.push({floor:item.floor,root:group});

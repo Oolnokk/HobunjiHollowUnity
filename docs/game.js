@@ -625,7 +625,7 @@
       const MOVE_BOB_WALK_AMP = 0.0075;
       const MOVE_BOB_RUN_AMP  = 0.015;
       const ACCEL         = 980;  // px/s²; used by updateMovement() for snappier starts.
-      const TURN_ACCEL    = 1320; // px/s²; used when input reverses or sharply turns.
+      const TURN_ACCEL    = 2000; // px/s²; used when input reverses or sharply turns (a full reversal settles in ~0.18 s, matching the start-up time).
       const DECEL         = 1850; // px/s²; used by updateMovement() to avoid floaty stops.
       const CARDINAL_BIAS = 0.18; // used by updateMovement(); lower keeps diagonals less sticky.
       // Config-backed (docs/config/scratchbones-config.js game.input.touchJoystick)

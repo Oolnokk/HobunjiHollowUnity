@@ -102,6 +102,49 @@
     shakeTime += step;
     if (trauma > 0) trauma = Math.max(0, trauma - TRAUMA_DECAY * step);
     if (reveal && performance.now() >= reveal.endsAt) endReveal('timeout');
+    tickSinking(performance.now());
+  }
+
+  // ── Sinking stone (gates/doors that used to pop out of existence) ──────
+  // Presentation only: callers keep owning collision. The object slides down
+  // by its own height with an ease-in, then hides and is restored to its
+  // original Y so a later re-block shows it in place again.
+  const sinking = new Map(); // object -> { baseY, depth, start, ms }
+  function sinkAway(object, options = {}) {
+    if (!object?.isObject3D && !object?.position) return false;
+    cancelSink(object);
+    let depth = Number(options.depth);
+    if (!(depth > 0)) {
+      try {
+        if (!scratchBox) scratchBox = new THREE.Box3();
+        object.updateWorldMatrix?.(true, true);
+        scratchBox.setFromObject(object);
+        depth = scratchBox.isEmpty() ? 2 : (scratchBox.max.y - scratchBox.min.y);
+      } catch (_) { depth = 2; }
+    }
+    sinking.set(object, { baseY: object.position.y, depth: depth + 0.05, start: performance.now(), ms: Math.max(150, Number(options.ms) || 700) });
+    object.visible = true;
+    addTrauma(0.12);
+    return true;
+  }
+  function cancelSink(object) {
+    const rec = sinking.get(object);
+    if (!rec) return false;
+    object.position.y = rec.baseY;
+    sinking.delete(object);
+    return true;
+  }
+  function tickSinking(now) {
+    if (!sinking.size) return;
+    for (const [object, rec] of sinking) {
+      const t = Math.min(1, (now - rec.start) / rec.ms);
+      object.position.y = rec.baseY - rec.depth * t * t; // Ease-in: heavy stone starts slow, then drops.
+      if (t >= 1 || !object.parent) {
+        object.visible = false;
+        object.position.y = rec.baseY;
+        sinking.delete(object);
+      }
+    }
   }
 
   // ── Hit-stop ───────────────────────────────────────────────────────────
@@ -209,6 +252,27 @@
     for (const { el, side } of bars) el.style.transform = on ? 'translateY(0)' : `translateY(${side === 'top' ? '-100%' : '100%'})`;
   }
 
+  // One rising bell per partial success (glyph 2/3, brazier 4/6): you can
+  // hear you are on the right track before the full solve motif plays.
+  const PROGRESS_SCALE = [587.33, 659.25, 739.99, 880.0, 987.77]; // D major pentatonic.
+  function progressNote(step, total) {
+    const vol = sfxVolume();
+    if (vol <= 0) return false;
+    const ctx = audioContext();
+    if (!ctx) return false;
+    if (ctx.state === 'suspended') ctx.resume?.().catch(() => {});
+    const n = Math.max(1, Math.floor(Number(step) || 1));
+    const t = Math.max(n, Math.floor(Number(total) || n));
+    const index = Math.round((n - 1) / Math.max(1, t - 1) * (Math.min(t, 8) - 1)); // Spread any total across at most 8 rungs so long chains still climb.
+    const freq = PROGRESS_SCALE[index % PROGRESS_SCALE.length] * Math.pow(2, Math.floor(index / PROGRESS_SCALE.length));
+    const out = ctx.createGain();
+    out.gain.value = 0.13 * vol;
+    out.connect(ctx.destination);
+    bell(ctx, out, freq, ctx.currentTime + 0.02, 0.7, 0.8);
+    debug.progressNotes = (debug.progressNotes || 0) + 1;
+    return true;
+  }
+
   // ── Reveal camera ──────────────────────────────────────────────────────
   function inRuin() { return deps?.getCurrentArea?.() === RUIN_MAP_ID; }
   function objectCenter(object) {
@@ -272,6 +336,7 @@
     reveal = { lock, endsAt: performance.now() + holdMs };
     letterbox(true);
     debug.reveals++; debug.revealSkipped = null;
+    revealConsumed = true; // A direct reveal (e.g. the Great Door waking) satisfies the current solve's window.
     return true;
   }
   function endReveal() {
@@ -284,6 +349,7 @@
   }
 
   function puzzleSolved() {
+    if (performance.now() - solvedAt < 600) return; // A nested puzzle and its chamber can both report the same solve.
     solvedAt = performance.now();
     revealConsumed = false;
     solveChime();
@@ -337,7 +403,7 @@
   }
 
   window.GameFeel = Object.freeze({
-    init, frameDt, addTrauma, hitStop, playerHurt, puzzleSolved, mechanismMoved, solveChime,
+    init, frameDt, addTrauma, hitStop, playerHurt, puzzleSolved, mechanismMoved, solveChime, progressNote, sinkAway, cancelSink,
     beginReveal, endReveal, isRevealing: () => !!reveal,
     shakeEnabled, setShakeEnabled,
     debugSnapshot: () => ({ ...debug, trauma, revealing: !!reveal, hitStopActive: performance.now() < hitStopUntil }),

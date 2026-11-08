@@ -391,6 +391,8 @@
         state.target=1;(window.RuinInteractionAudio?.puzzleComplete?.()||window.AudioSystem?.playObjectSfxKey?.('puzzleComplete'));
       }
     }
+    if(!complete)window.RuinInteractionAudio?.progress?.(active,required); // Rising bell per glyph; the last one plays the full solve motif above.
+    window.GameFeel?.addTrauma?.(complete?.1:.06);
     const circuit=target.circuitName?`${target.circuitName} `:'';
     const result=target.command?`${target.command} glyph`:'glyph circuit';
     devDeps?.showToast?.(complete

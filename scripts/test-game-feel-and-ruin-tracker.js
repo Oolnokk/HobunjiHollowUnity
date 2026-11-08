@@ -102,6 +102,23 @@ now += 2500; // Outside the reveal window.
 GF.mechanismMoved(door);
 assert.equal(activations.length, 1, 'a late mechanism is not attributed to the solve');
 
+// Sinking gate: slides down, hides, and is restored in place for a later re-block.
+const gate = makeObject([0, 0, 0], [2, 3, 0.4]);
+gate.position = { y: 0 }; gate.visible = true; gate.parent = {};
+assert(GF.sinkAway(gate));
+now += 350; GF.frameDt(0.016);
+assert(gate.visible && gate.position.y < 0, 'gate is mid-sink');
+now += 600; GF.frameDt(0.016);
+assert.equal(gate.visible, false, 'gate hides after sinking');
+assert.equal(gate.position.y, 0, 'gate is restored to its base height');
+GF.sinkAway(gate); now += 100; GF.frameDt(0.016);
+assert(GF.cancelSink(gate) && gate.position.y === 0, 're-blocking mid-sink restores the gate');
+
+// Two solve reports in the same moment chime once.
+const chimesBefore = GF.debugSnapshot().chimes;
+now += 5000; GF.puzzleSolved(); GF.puzzleSolved();
+assert(GF.debugSnapshot().chimes - chimesBefore <= 1, 'duplicate solve reports are debounced');
+
 // Tracker rows.
 const trackerCtx = { console, performance: { now: () => now }, localStorage: ctx.localStorage, addEventListener: () => {} };
 trackerCtx.window = trackerCtx;
