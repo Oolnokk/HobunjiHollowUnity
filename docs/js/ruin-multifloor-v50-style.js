@@ -62,7 +62,7 @@
     const wallNormals=[{side:'N',dx:0,dz:1},{side:'E',dx:-1,dz:0},
       {side:'S',dx:0,dz:-1},{side:'W',dx:1,dz:0}]; // All normals point from the solid wall into the playable shaft.
     for(let story=0;story<o.floors;story++){
-      const height=Math.min(5,Math.max(2,Math.floor(o.spacing*.35))); // Mount the giant fire above doorways without placing it in the roof.
+      const height=Math.max(1,Math.min(5,Math.max(2,Math.floor(o.spacing*.35)),grid.levels-2-story*o.spacing)); // The roof is only two voxels above the top story: clamp the highest fixtures below it.
       const level=story*o.spacing+height;
       if(level>=grid.levels-1)continue;
       for(const normal of wallNormals){
