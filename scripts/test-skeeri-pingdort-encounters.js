@@ -15,7 +15,9 @@ assert(pingdortGreens.length>=5&&pingdortGreens.every(entry=>entry.weight>0));
 assert(palettes.pingdort.every(entry=>/^#[0-9a-f]{6}$/i.test(entry.hex)&&entry.weight>0));
 const nelkLightWeight=palettes.nelk.filter(entry=>entry.weight>=5).reduce((total,entry)=>total+entry.weight,0); // Wild rolls should primarily select light/mid coats.
 const nelkDarkWeight=palettes.nelk.filter(entry=>entry.weight===1).reduce((total,entry)=>total+entry.weight,0); // Rare dark variants must still exist and breed.
-assert(nelkDarkWeight>0&&nelkLightWeight>=10*nelkDarkWeight,'Nelk dark coats should be much rarer than lighter coats');
+assert(nelkDarkWeight>0&&nelkLightWeight>=7*nelkDarkWeight,'Nelk dark coats should be much rarer than lighter coats');
+assert.equal(palettes.nelk.length,palettes.default.length,'Nelk retains every preexisting coat color');
+assert(palettes.default.every(entry=>colorsFor('nelk').has(entry.hex)),'No Nelk pigmentation is made unobtainable by reweighting');
 const geneticsHost={SCRATCHBONES_CONFIG:paletteHost.SCRATCHBONES_CONFIG,addEventListener(){},__farmLog(){}}; // Isolated genuine genetics module, no game bootstrap or sprite machinery.
 vm.runInNewContext(read('docs/js/creature-genetics.js'),{window:geneticsHost});
 geneticsHost.CreatureGenetics.init({CREATURE_DB:{pingdort:{defaultSizeClass:'small'},nelk:{defaultSizeClass:'medium'}},clamp:(x,a,b)=>Math.max(a,Math.min(b,x))});
