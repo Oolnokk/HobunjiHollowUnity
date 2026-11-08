@@ -6,13 +6,14 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 const source = fs.readFileSync('docs/js/dev-random-ruin-simple-puzzles.js', 'utf8');
+assert.match(source,/panel\.userData\.devRuinFootprintIgnore=true/,'sliding coffin panels must not leave permanently solid footprints');
 function shipped(start, next) {
   const a = source.indexOf('  '+start), b = source.indexOf('  '+next, a+start.length);
   assert(a >= 0 && b > a, 'Could not locate shipped '+start);
   return source.slice(a, b);
 }
 function coffin(x, z=0, floorY=0) {
-  return {spawnX:x, spawnZ:z, floorY, spawnStarted:false, activated:false, spawned:false,
+  return {spawnX:x, spawnZ:z, emergeX:x+.82, emergeZ:z, floorY, spawnStarted:false, activated:false, spawned:false,
     spawnError:null, creature:null, released:false, closedY:0, openY:1.62, progress:0,
     panel:{position:{y:0}}};
 }
@@ -73,6 +74,10 @@ async function run() {
   frame.updateSarcophagusModules(.5);
   assert.equal(near.released,true,'skeleton releases after the existing panel animation threshold');
   assert.equal(released.length,1);
+  assert.equal(released[0].x,.82*64,'the skeleton emerges beyond the solid coffin wall');
+  assert.equal(released[0].homeX,released[0].x,'the enemy home anchor follows the exit, not the blocked tomb centre');
+  assert.equal(released[0].avatarRef.group.position.x,.82,'the avatar visual moves with the released entity');
+  assert.equal(released[0].groundShadow.position.x,.82,'the enemy shadow moves with the released entity');
   frame.updateSarcophagusModules(.5);
   assert.equal(released.length,1,'release must happen only once');
   assert.equal(spawned.length,1,'a used coffin does not respawn when revisited');
