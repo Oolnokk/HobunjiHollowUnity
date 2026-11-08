@@ -11,7 +11,8 @@ class Box3 {
   setFromObject(object){
     let x=0,y=0,z=0;
     for(let p=object;p;p=p.parent){x+=p.position?.x||0;y+=p.position?.y||0;z+=p.position?.z||0;}
-    this.min={x:x-.25,y:y-.25,z:z-.25};this.max={x:x+.25,y:y+.25,z:z+.25};
+    const halfX=object.testFootprint?.halfX??.25,halfZ=object.testFootprint?.halfZ??.25; // Model the actual world-axis slab extents so the door-side detector is tested against geometry, not rotation.
+    this.min={x:x-halfX,y:y-.25,z:z-halfZ};this.max={x:x+halfX,y:y+.25,z:z+halfZ};
     return this;
   }
   isEmpty(){return false}
@@ -70,7 +71,9 @@ const fireBridge=create('fire_bridge','bridgeSequence',14,4),brazier=linked('fir
 const stoneStairs=create('stairs','collapsingStairs',17,4);
 stoneStairs.userData.stairTreads=[new Node(0,0,0),new Node(1,0,0)];
 stoneStairs.userData.stairTreads.forEach(t=>stoneStairs.add(t));
-const transit=new Node(20,0,4);transit.userData.transitDoor=true;root.add(transit);
+const transit=new Node(20,0,4);transit.userData.transitDoor=true;
+transit.rotation.y=Math.PI/2;transit.testFootprint={halfX:1.2,halfZ:.12}; // A thin-Z world slab with a misleading local yaw catches the original false-crossing regression.
+root.add(transit);
 const inventoryBefore=Native.inspect(root);
 assert.equal(inventoryBefore.mechanisms.size,6);
 assert.equal(inventoryBefore.activators.length,5);
@@ -122,13 +125,19 @@ runtime.tick(.05);
 assert(runtime.isSolved(glyphBridge.userData.mechanismId),'projectile glyph signal is authoritative');
 assert(runtime.isSolved(fireBridge.userData.mechanismId),'authentic torch ignition signal is authoritative');
 const door=controls.find(c=>c.kind==='v50NativeTransitDoor');
-door.onPress();runtime.tick(.05);assert(transit.children.length===0);
+assert.equal(door.claimAction1,true,'upper-story door owns the same interaction input as a floor-zero hallway door');
+assert.equal(runtime.inventory.transitDoors[0].crossingAxis,'z','crossing axis follows the world-space panel rather than its local yaw');
+player.x=19;player.z=2;door.onPress();runtime.tick(.05);assert(transit.children.length===0);
 assert.equal(runtime.inventory.transitDoors[0].target,1,'native transit door opens from either side on interaction');
 for(let i=0;i<10;i++)runtime.tick(.05);
+player.x=21;runtime.tick(.05);
+assert.equal(runtime.inventory.transitDoors[0].target,1,'walking across the width of a doorway must not falsely close it');
 player.z=6;runtime.tick(.05);
-assert.equal(runtime.inventory.transitDoors[0].target,0,'native exit door closes automatically after the player crosses its threshold');
+assert.equal(runtime.inventory.transitDoors[0].target,0,'native exit door closes automatically after the player crosses its actual threshold');
+assert.equal(runtime.getState().transitDoorStates[0].axis,'z','mobile diagnostics report the same crossing axis as collision');
 for(let i=0;i<10;i++)runtime.tick(.05);
-door.onPress();assert.equal(runtime.inventory.transitDoors[0].target,1,'native transit door can reopen from its opposite side');
+player.y=0;door.onPress();assert.equal(runtime.inventory.transitDoors[0].target,0,'a door cannot be opened through a different story');
+player.y=4;door.onPress();assert.equal(runtime.inventory.transitDoors[0].target,1,'native transit door can reopen from its opposite side');
 player.z=2;for(let i=0;i<12;i++)runtime.tick(.05);
 assert.equal(runtime.inventory.transitDoors[0].target,0,'native exit door also auto-closes on reverse passage');
 assert(blockers.some(record=>record.id.includes('v50-fixed-block')),'immovable native push-route shapers have real upper-story collision');
