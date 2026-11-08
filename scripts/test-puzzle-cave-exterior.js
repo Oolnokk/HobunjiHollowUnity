@@ -64,24 +64,7 @@ context.PuzzleCaveMelody=load('docs/js/puzzle-cave-melody.js');
 context.LocaleCliffWallMounts=load('docs/js/locale-cliff-wall-mounts.js');
 context.RuinInteractionAudio=load('docs/js/ruin-interaction-audio.js'); // Test the actual shared sound adapter alongside the exterior gate.
 const Exterior=load('docs/js/puzzle-cave-entrances.js');
-const classified=kind=>({isMesh:true,userData:{melodyScoreSurface:kind}}); // Only explicitly authored vertical surfaces may bypass generated terrain material checks.
-assert.equal(Exterior.scoreSurfaceKind(classified('wall'),{materialIndex:0}),'wall');
-assert.equal(Exterior.scoreSurfaceKind(classified('pillar'),{materialIndex:0}),'pillar');
-assert.equal(Exterior.scoreSurfaceKind(classified('cliffWall'),{materialIndex:0}),'cliffWall');
-assert.equal(Exterior.scoreSurfaceKind(classified('snow'),{materialIndex:0}),null,
-  'explicit snow tags cannot receive a melody inscription');
-const cliff={isMesh:true,userData:{cliffGenerated:true, hobunjiGroundSurface:true}};
-assert.equal(Exterior.scoreSurfaceKind(cliff,{materialIndex:0}),null,
-  'snow/grass caps of generated mini-cliffs are not decal surfaces');
-assert.equal(Exterior.scoreSurfaceKind(cliff,{materialIndex:1}),'cliffWall',
-  'only the rocky skirt of a generated mini-cliff is eligible');
-const mesa={isMesh:true,name:'wilderness_plateau_mesa_tier0',userData:{hobunjiGroundSurface:true}};
-assert.equal(Exterior.scoreSurfaceKind(mesa,{materialIndex:0}),null,
-  'snow-covered plateau lids never count as a vertical cliff wall');
-assert.equal(Exterior.scoreSurfaceKind(mesa,{materialIndex:1}),'cliffWall');
-assert.equal(Exterior.scoreSurfaceKind({isMesh:true,name:'snow',userData:{}},{materialIndex:1}),null,
-  'unclassified meshes are rejected even when they have a stone-like material index');
-
+// Cave score placement no longer exports a natural wall classifier: inscriptions always use authored paired columns.
 const grid=Array.from({length:28},()=>Array.from({length:14},(_,col)=>({
   type:col===6?'rock':'grass',incline:col===6,elevTier:col<6?0:1,
 })));
@@ -173,18 +156,33 @@ await Promise.resolve();
 await Promise.resolve(); // AuthoredFurniture.load is asynchronous; verify after the visual, glyph board and model exist.
 assert(gate&&gate.requiresSong,'a real supported ledge owns one outdoor music puzzle');
 assert(gate.scoreBoard?.children?.length,'the exterior Scratchbone clue was built after the authored cliff door');
-assert.equal(gate.scoreSurface.kind,'pillar',
-  'when the test scene has no approved cliff-wall faces the exterior score mounts on a real supported pillar');
-const stone=gate.scoreBoard.children.find(child=>child.name==='puzzle-cave-score-pillar');
-assert(stone,'a wall-less ledge receives an actual vertical carved-stone backing for its note decal');
-const pillarBottom=gate.scoreBoard.position.y-stone.geometry.dimensions[1]/2;
-assert(Math.hypot(gate.scoreSurface.x-gate.plate.x,gate.scoreSurface.z-gate.plate.z)>.48,
-  'a freestanding score pillar must not cover the melody pressure plate');
-assert(Math.hypot(gate.scoreSurface.x-gate.door.x,gate.scoreSurface.z-gate.door.z)>.32,
-  'a freestanding score pillar must not sit directly in the doorway');
-assert(Math.abs(pillarBottom-gate.shelf.y-.015)<.001,
-  'the score pillar is rooted into the ledge rather than floating over snow or empty air');
+assert.equal(gate.scoreSurface.kind,'pillarPair','exterior notes must never use cave walls, floors or incidental terrain.');
+const pillars=gate.scoreStone.children.filter(mesh=>/^puzzle-cave-score-pillar-\d+$/.test(mesh.name));
+assert.equal(pillars.length,2,'the doorway has two equally sized permanent carved-smooth stone score pillars');
+assert.equal(pillars[0].geometry.dimensions[1],pillars[1].geometry.dimensions[1]);
+assert(Math.abs(pillars[0].position.x+pillars[1].position.x)<.0001,
+  'the two pillar centres mirror around the authored doorway axis');
+assert(Math.abs((pillars[0].position.z+.10)+(pillars[1].position.z+.10))<.0001,
+  'both posts share the same ten-centimetre setback from their mirrored score anchors');
+assert(gate.scoreStone.children.filter(mesh=>mesh.name.includes('-cap-')).length===2,
+  'both pillars have identical stone capitals');
+assert(gate.scoreStone.children.filter(mesh=>mesh.name.includes('-plinth-')).length===2,
+  'both pillars have identical stone footings');
+const pillarBottom=gate.scoreStone.position.y+pillars[0].position.y-pillars[0].geometry.dimensions[1]/2;
+assert(Math.abs(pillarBottom-gate.shelf.y-.015)<.001,'the pillar bases sit at the real balcony elevation');
+for(let index=0;index<gate.glyphs.length;index++){
+  const glyph=gate.glyphs[index],post=pillars[index%2];
+  assert(Math.abs(glyph.position.x-post.position.x)<.0001,
+    'every Scratchbone note is on its authored column, in alternating left-right reading order');
+}
+assert(gate.scoreStone.visible,'the physical paired pillars remain visible even when their music glyphs are hidden');
 assert.equal(gate.glyphGlows.length,gate.song.notes.length,'each outdoor note has a shared-visibility additive halo');
+assert(gate.glyphs.every(glyph=>typeof glyph.material.onBeforeCompile==='function'),
+  'the exterior glyphs must use the Witch-bomb alpha-only ink shader');
+const alphaShader={fragmentShader:'#include <map_fragment>'};
+gate.glyphOuterGlows[0].material.onBeforeCompile(alphaShader);
+assert(alphaShader.fragmentShader.includes('diffuseColor.a *= texture2D(map, vUv).a'),
+  'the additive exterior glow must sample glyph alpha instead of multiplying by the dark PNG RGB');
 assert(gate.glyphGlows.every(glow=>glow.material.opacity===.07),
   'inactive notes retain only a faint inner glow');
 assert.equal(gate.glyphOuterGlows.length,gate.song.notes.length,'every note has a broader additive halo');
@@ -218,6 +216,7 @@ Exterior.update(.01,area);
 assert.equal(opened,0,'stepping onto the plate must not auto-equip or open an instrument');
 assert.equal(gate.lastDown,true,'standing on the real raised plate activates the melody clue');
 assert(gate.scoreBoard.visible,'the exterior Scratchbone score lights up on the active raised plate');
+assert(sounds.some(event=>event.key==='pick'),'the occupied outdoor song plate starts the recorded mine-pick beat');
 assert.equal(sounds.filter(event=>event.key==='stoneActivator').length,1,
   'stepping onto the outdoor melody plate plays exactly one recorded activator cue');
 assert(gate.glyphGlows.some(glow=>glow.material.opacity===.98),
@@ -231,6 +230,11 @@ assert(gate.flashRemaining>0&&gate.glyphs[0].material.color.hex===0xff6a65,
   'wrong notes flash the current beat red rather than failing silently');
 Exterior.update(.5,area);
 assert.equal(gate.flashRemaining,0,'error feedback clears without requiring another note');
+const initialPickCount=sounds.filter(event=>event.key==='pick').length;
+Exterior.update(gate.song.secondsPerTick*4.02,area);
+assert.equal(sounds.filter(event=>event.key==='pick').length,initialPickCount+1,
+  'each actual quarter-note boundary adds exactly one mine-pick click');
+
 const scoreHeight=gate.scoreBoard.position.y; // The exterior score must remain pinned to its wall or pillar during door animation.
 player.x=(gate.plate.x+1.2)*64;player.y=(gate.plate.z+1.2)*64;
 Exterior.update(.01,area);
@@ -315,6 +319,6 @@ const result=context.LocaleCliffWallMounts.mount(area,network,wallScene,
 assert.equal(result.failed,0);
 assert.equal(result.count,1,'world locates the explicitly associated wall fixture');
 context.LocaleCliffWallMounts.clear(area);
-console.log('Puzzle Cave exterior: rock-only vertical scores, supported carved pillar, plate-lit notes, static mounting, gate collision and elevation return PASS.');
+console.log('Puzzle Cave exterior: permanent symmetrical score pillars, plate-lit notes, static mounting, gate collision and elevation return PASS.');
 }
 verifyExteriorScene().catch(error=>{console.error(error);process.exitCode=1;});

@@ -116,15 +116,18 @@ function hang(nodeIndex) {
   p2._cliffRouteSession = { area: 'zone', route: faceRoute, nodeIndex, moving: false, toIndex: -1, progress: 0, phase: 0, distance: 0 };
   FallSystem.resetGrip(p2);
 }
-// Dodge on the face: sidestep along the rock, never lets go.
-hang(1); moveIn = { x: 0, y: 1 };
-assert.equal(ClimbSystem.cliffDodge(), true, 'dodge on a cliff is handled by the cliff sidestep');
-assert.equal(cliffDodges, 1, 'it pays the normal dodge cost / i-frames once');
-assert.equal(p2._cliffRouteSession.toIndex, 5, 'it traverses to the lateral hold');
-assert.ok(p2.climbing && p2._cliffRouteSession, 'and stays on the wall');
-dodgeAllowed = false; hang(1);
-assert.equal(ClimbSystem.cliffDodge(), true, 'a gated dodge is swallowed, never turned into a leap');
-assert.ok(p2.climbing && !p2._climbFall, 'and the player is still on the wall');
+// Dodge on a handhold lets go, even when an ordinary combat dodge would be gated.
+dodgeAllowed = false; hang(1); moveIn = { x: 0, y: 1 };
+assert.equal(ClimbSystem.cliffDodge(), true, 'dodge on a cliff releases the grip');
+assert.equal(cliffDodges, 0, 'releasing a grip costs no dodge stamina or i-frames');
+assert.equal(p2._cliffRouteSession, null, 'no lateral sidestep is scheduled');
+assert.ok(p2.climbing && p2._climbFall?.deliberate, 'a deliberate fall begins toward the safe base');
+assert.equal(p2._climbFall.source, 'climb released');
+hang(1);
+p2._cliffRouteSession.moving = true; // A second press during a handhold transition must also detach promptly.
+assert.equal(ClimbSystem.cliffDodge(), true, 'dodge also releases a moving handhold climb');
+assert.equal(p2._cliffRouteSession, null);
+assert.equal(cliffDodges, 0, 'neither release uses the defensive dodge effect');
 dodgeAllowed = true;
 p2.climbing = false; p2._cliffRouteSession = null;
 assert.equal(ClimbSystem.cliffDodge(), false, 'off the cliff, dodge is a normal dodge');

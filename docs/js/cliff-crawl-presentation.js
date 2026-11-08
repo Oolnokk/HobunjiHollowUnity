@@ -1,5 +1,5 @@
-// Render-only cliff crawl for the player's authored outdoor handhold routes.
-// No inventory state, collision, saved route data, or other climb types are changed.
+// Render-only climbing pose for authored outdoor handholds and attached wall surfaces.
+// No inventory state, collision, climb speed, saved route data or scripted climb owners are changed.
 (() => {
   'use strict';
 
@@ -11,6 +11,8 @@
   const worldUp = new THREE.Vector3(0, 1, 0); // Shared upright axis for matching the portrait plane to a cliff face.
   const portraitFront = new THREE.Vector3(0, 0, 1); // The PNG avatar's local face normal; used to derive a tangent-aligned world yaw.
   const BODY_LEAN_RAD = 0.16; // Slight outward weight-bearing lean, not the former near-horizontal 60-degree fold.
+  const CONTACT_CLEARANCE = 0.018; // Plant GLB hand/foot sockets just proud of the exact face to prevent depth flicker.
+  const BODY_CLEARANCE_FRACTION = 0.20; // The entire avatar follows the same face with space for its torso and limbs.
   let installed = false; // Guards the one composer render-hook registration.
   let activeHandRig = null; // The current player's rig; invalidated on appearance rebuild or climb exit.
   let activeMesh = null; // Fast path for the current rig without searching every avatar descendant each render.
@@ -18,6 +20,55 @@
   let lastDebug = { active: false, hiddenHeldVisuals: 0 }; // Mobile-readable snapshot of the most recent rendered crawl.
 
   function clamp(value, min = 0, max = 1) { return Math.max(min, Math.min(max, value)); }
+
+  // Read the live owner: either a directional wilderness route or a wall plane.
+  // Rendering never advances the climb session or modifies collision.
+  function currentClimbState() {
+    const crawl = system.getCrawlState?.();
+    if (crawl) return { ...crawl, mode: 'route' };
+    const session = window.ClimbSurfaces?.getAttachedSession?.();
+    const surface = session?.surface;
+    if (!surface?.normal || !Number.isFinite(session.u) || !Number.isFinite(session.v)) return null;
+    const standOff = Number.isFinite(session.standOff) ? session.standOff : 0.34;
+    const x = (surface.axis === 'x' ? session.u : surface.plane) + surface.normal.x * standOff;
+    const z = (surface.axis === 'x' ? surface.plane : session.u) + surface.normal.z * standOff;
+    return {
+      mode: 'wall', tileSize: 1, moving: false, progress: 0, phase: 0,
+      player: { x, y: z, climbSurfaceY: session.v },
+      route: { id: surface.id, normal: surface.normal }, surface,
+    };
+  }
+
+  // The handhold decals already sample the actual uneven cliff at any XYZ.
+  // Wall sessions expose their exact registered contact plane instead.
+  function projectToFace(state, point, outward) {
+    const contact = point.clone();
+    if (state.surface) {
+      if (state.surface.axis === 'x') contact.z = state.surface.plane;
+      else contact.x = state.surface.plane;
+      return contact;
+    }
+    const face = state.route?.project?.(contact.x, contact.y, contact.z);
+    if (Number.isFinite(face?.x) && Number.isFinite(face?.z)) {
+      contact.x = face.x;
+      contact.z = face.z;
+      return contact;
+    }
+    // Graph nodes are generated 0.24 units away from the sampled rock.
+    // Preserve that known stand-off near the crest where the sampler ends.
+    return state.route ? contact.addScaledVector(outward, -0.24) : contact;
+  }
+
+  // Keep the avatar root an anatomical torso depth away from its climbing
+  // face. The actor still moves along the authored route or wall session.
+  function bodyNormalShift(state, outward, modelHeight) {
+    const p = state.player, size = Math.max(1, Number(state.tileSize) || 1);
+    const bodyPoint = new THREE.Vector3(p.x / size, p.climbSurfaceY, p.y / size)
+      .addScaledVector(worldUp, modelHeight * 0.35);
+    const face = projectToFace(state, bodyPoint, outward);
+    const gap = bodyPoint.clone().addScaledVector(face, -1).dot(outward);
+    return clamp(Math.max(0.13, modelHeight * BODY_CLEARANCE_FRACTION) - gap, -0.6, 0.6);
+  }
 
   // Four independently timed grip transfers over each graph edge. A planted
   // hand/foot stays on the FROM hold until its turn, then reaches the TO hold.
@@ -43,10 +94,11 @@
     const tangent = new THREE.Vector3(outward.z, 0, -outward.x); // Positive side of the generated cliff plane.
     const sideSign = isLeft ? -1 : 1; // Separates left and right grips in face-local tangent coordinates.
     const height = kind === 'hand' ? 0.56 : 0.07; // Feet keep the surface contact height; hands reach above the shoulders.
-    return from.lerp(to, reach.progress)
+    const contact = from.lerp(to, reach.progress)
       .addScaledVector(tangent, sideSign * modelHeight * 0.13)
-      .addScaledVector(worldUp, modelHeight * height)
-      .addScaledVector(outward, modelHeight * ((kind === 'foot' ? 0.095 : 0.085) + reach.lift * 0.10)); // Keep planted limb shells in front of cliff depth, not buried inside stone.
+      .addScaledVector(worldUp, modelHeight * height);
+    return projectToFace(state, contact, outward)
+      .addScaledVector(outward, CONTACT_CLEARANCE + reach.lift * modelHeight * 0.10); // Only reaching limbs leave the surface; planted GLBs touch it.
   }
 
   function currentHandRig(mesh) {
@@ -59,7 +111,7 @@
   }
 
   function handsOnCliff(rig) {
-    const state = system.getCrawlState?.();
+    const state = currentClimbState();
     const normal = state?.route?.normal;
     if (!inCrawlRender || !state || !rig || !normal) return; // The pre-render hand driver may invoke our provider outside the temporary tilted body pose.
     const outward = new THREE.Vector3(normal.x, 0, normal.z).normalize(); // World-space away from the rock face.
@@ -181,7 +233,7 @@
   }
 
   function applyCrawlPose(undo, renderDebug) {
-    const state = system.getCrawlState?.();
+    const state = currentClimbState();
     const composer = window.PlayerBodyTransformComposer;
     const mesh = composer?.getPlayerMesh?.();
     const poseLocked = window.CharacterActionLocks?.isLocked?.('player', 'pose') === true; // Paired poses take precedence over the climb presentation.
@@ -216,7 +268,8 @@
     const parentQ = mesh.parent?.getWorldQuaternion?.(new THREE.Quaternion()) || new THREE.Quaternion();
     const localPose = parentQ.clone().invert().multiply(worldLean).multiply(worldYaw).multiply(parentQ);
     const oldPosition = mesh.position.clone(), oldQuaternion = mesh.quaternion.clone();
-    const shifted = mesh.getWorldPosition(new THREE.Vector3()).addScaledVector(outward, h * 0.27);
+    const bodyShift = bodyNormalShift(state, outward, h); // The whole body follows the same sampled rock face as its planted hands.
+    const shifted = mesh.getWorldPosition(new THREE.Vector3()).addScaledVector(outward, bodyShift);
     mesh.position.copy(mesh.parent?.worldToLocal ? mesh.parent.worldToLocal(shifted) : shifted);
     mesh.quaternion.premultiply(localPose);
     mesh.updateWorldMatrix?.(true, true);
@@ -230,7 +283,8 @@
     const hiddenHeldVisuals = hideHeldEquipment(mesh, undo);
     lastDebug = {
       active: true, moving: !!state.moving, phase: Number(state.phase) || 0,
-      routeId: state.route.id, supportNormal: { x: outward.x, z: outward.z },
+      routeId: state.route.id, contactMode: state.mode, bodyNormalShift: bodyShift,
+      supportNormal: { x: outward.x, z: outward.z },
       handRigOwned: !!rig, feetPosed, hiddenHeldVisuals,
       portraitYawCorrectionDeg: yawRad * 180 / Math.PI, bodyLeanDeg: BODY_LEAN_RAD * 180 / Math.PI,
     };

@@ -7,15 +7,16 @@
   const pngSurface = window.HobunjiSpritePngSurface; // Use the game's existing PNG-plane filter, alpha and color pipeline for the Scratchbone sprites.
 
   const MAX_COLUMNS = 6; // Long authored sequences wrap instead of spanning an entire hallway.
-  const GLYPH_STEP = .31; // Distance between consecutive Scratchbone glyph centers on a stone floor inscription.
+  const GLYPH_STEP = .31; // Distance between consecutive Scratchbone glyph centers on an authored stone inscription.
   const LINE_STEP = .35; // Distance between rows for melodies longer than six notes.
   const glyphTextures = new Map(); // Eight PNG textures reused by every generated decal and every subsequent ruin reroll.
   let glyphGeometry = null; // Single shared alpha-plane geometry for every Scratchbone numeral.
 
-  function layoutFor(notes) {
+  function layoutFor(notes, maxColumns=MAX_COLUMNS) {
     if (!Array.isArray(notes) || !notes.length) return null;
-    const columns = Math.min(MAX_COLUMNS, notes.length); // Horizontal capacity of this particular inscription.
-    const rows = Math.ceil(notes.length / MAX_COLUMNS); // Additional lines for a future longer generator sequence.
+    const capacity = Math.max(1,Math.min(MAX_COLUMNS,Math.floor(Number(maxColumns)||MAX_COLUMNS))); // A purpose-built narrow pillar can request a single vertical note column.
+    const columns = Math.min(capacity, notes.length); // Horizontal capacity of this particular inscription.
+    const rows = Math.ceil(notes.length / columns); // Additional lines wrap without spilling past the authored stone face.
     return { columns, rows, width:columns * GLYPH_STEP + .20, depth:rows * LINE_STEP + .20 };
   }
 
@@ -38,6 +39,24 @@
     return glyphGeometry;
   }
 
+  function makeInkMaterial(texture,options={},debugName='ruin-melody-scratchbone'){
+    const appearance={...options,transparent:true,depthWrite:false,side:THREE.DoubleSide};
+    const material=pngSurface?.makeMaterial
+      ? pngSurface.makeMaterial(THREE,texture,debugName,appearance)
+      : new THREE.MeshBasicMaterial({map:texture,alphaTest:pngSurface?.alphaTest?.() ?? .001,...appearance});
+    const previousCompile=material.onBeforeCompile; // Preserve the canonical sprite material's shader customization.
+    material.onBeforeCompile=shader=>{
+      previousCompile?.call(material,shader);
+      shader.fragmentShader=shader.fragmentShader.replace('#include <map_fragment>',`
+        #ifdef USE_MAP
+          diffuseColor.a *= texture2D(map, vUv).a;
+        #endif
+      `); // Same alpha-only shader used by Witch-bomb engraving glow: BLACK Scratchbone ink must not multiply emitted light to zero.
+    };
+    material.userData ||= {};
+    material.userData.scratchboneAlphaGlow=true; // Mobile diagnostic/debug test can identify actual alpha-only glowing materials.
+    return material;
+  }
   function candidatePoints(plate, layout, axis, hallway) {
     const along = axis === 'z' ? {x:0,z:1} : {x:1,z:0}; // The inscription reads along the hall's long axis, or X in a room.
     const across = axis === 'z' ? {x:1,z:0} : {x:0,z:1}; // Room plaques sit to one side of the trigger, not on its working surface.
@@ -121,7 +140,7 @@
     return {...candidates[(Number(seed)>>>0)%candidates.length],vertical:true,fallback:false};
   }
 
-  function create({root,plate,notes,bounds=null,hallway=false,hallAxis='x',sampleSupport,blockedAt,makeStoneMaterial,surfaces=[],surfaceRoot=null,seed=0} = {}) {
+  function create({root,plate,notes,bounds=null,hallway=false,hallAxis='x',sampleSupport,blockedAt,makeStoneMaterial,surfaces=[],surfaceRoot=null,seed=0,maxColumns=MAX_COLUMNS} = {}) {
     if (!root?.add || !plate || typeof sampleSupport !== 'function') return null;
     const noteLimit = window.KurrayaPuzzle?.NOTE_CODES?.length ?? 8; // Only the eight playable pitches have matching Scratchbone number sprites.
     const valid = value => Array.isArray(value) && value.length > 0 &&
@@ -140,8 +159,13 @@
     function clearParts() {
       for (const part of [...group.children]) {
         group.remove(part);
-        part.material?.dispose?.();
-        if (part.geometry && !part.geometry.userData?.devRuinSharedPrimitive) part.geometry.dispose?.();
+        const stack=[part]; // Additive note halos are children of each glyph; all owned material passes must retire on reroll.
+        while(stack.length){
+          const node=stack.pop();
+          if(node.children?.length)stack.push(...node.children);
+          node.material?.dispose?.();
+          if(node.geometry && !node.geometry.userData?.devRuinSharedPrimitive)node.geometry.dispose?.();
+        }
       }
     }
 
@@ -149,7 +173,7 @@
       if (!valid(nextNotes)) return false;
       const nextKey = nextNotes.join(','); // Every arbitrary sequence, including repeats, has a distinct ordered key.
       if (nextKey === sequenceKey) return true;
-      const layout = layoutFor(nextNotes); // Panel length and row wrapping are derived entirely from the new generated notes.
+      const layout = layoutFor(nextNotes,maxColumns); // A narrow purpose-built pillar uses one note per row; other ruin inscriptions retain their existing layout.
       const nextPlacement = chooseSurface(plate,layout,surfaces,surfaceRoot,seed)
         || choosePlacement(plate,layout,axis,hallway,bounds,sampleSupport,blockedAt);
       if(!nextPlacement.vertical)nextPlacement.yaw=Math.atan2(plate.x-nextPlacement.x,plate.z-nextPlacement.z); // Floor fallback reads upright from its own plate.
@@ -165,14 +189,12 @@
 
       for (let index=0; index<nextNotes.length; index++) {
         const note = nextNotes[index]; // Exact generated scale-button index, not a pitch converted back to its nearest numeral.
-        const row = Math.floor(index/MAX_COLUMNS), column=index%MAX_COLUMNS;
-        const rowLength = Math.min(MAX_COLUMNS,nextNotes.length-row*MAX_COLUMNS);
+        const row = Math.floor(index/layout.columns), column=index%layout.columns;
+        const rowLength = Math.min(layout.columns,nextNotes.length-row*layout.columns);
         const texture=getGlyphTexture(note); // Reuses the authored Scratchbone silhouette through the canonical sprite pipeline.
         const appearance={color:0xffda70,transparent:true,side:THREE.DoubleSide,
           depthWrite:false,polygonOffset:true,polygonOffsetFactor:-1,polygonOffsetUnits:-2};
-        const material=pngSurface?.makeMaterial
-          ? pngSurface.makeMaterial(THREE,texture,'ruin-melody-scratchbone-' + (index+1),appearance)
-          : new THREE.MeshBasicMaterial({map:texture,alphaTest:pngSurface?.alphaTest?.() ?? .001,...appearance});
+        const material=makeInkMaterial(texture,appearance,'ruin-melody-scratchbone-' + (index+1));
         const glyph = new THREE.Mesh(getGlyphGeometry(),material);
         glyph.name = 'dev_ruin_melody_scratchbone_' + (index+1);
         glyph.scale.set(.26,.28,1);
@@ -184,6 +206,24 @@
         glyph.userData.hobunjiGroundSurface = true;
         glyph.userData.melodyNoteIndex = note;
         glyph.raycast = () => {}; // The glyph is a clue, not a separate activator.
+        const glowMaterial=makeInkMaterial(texture,{
+          color:0xffbb62,transparent:true,opacity:.16,depthTest:true,depthWrite:false,
+          blending:THREE.AdditiveBlending,polygonOffset:true,polygonOffsetFactor:-2,polygonOffsetUnits:-2,
+        },'ruin-melody-additive-glow-' + (index+1));
+        const halo=new THREE.Mesh(getGlyphGeometry(),glowMaterial); // Matching engraving-style light pass, never dark sprite pixels.
+        halo.name='ruin-melody-scratchbone-glow-'+index;
+        halo.scale.set(1.6,1.65,1);
+        halo.position.z=.005;
+        halo.raycast=()=>{};
+        halo.renderOrder=(glyph.renderOrder||0)+1;
+        halo.frustumCulled=false;
+        halo.onBeforeRender=()=>{
+          const active=!!glyph.userData.melodyGlowActive;
+          const seconds=Number(window.performance?.now?.()??Date.now())/1000;
+          glowMaterial.opacity=(active?1.15:.16)*(active?(.82+.18*Math.sin(seconds*8)):1);
+        }; // The Witch-bomb's persistent additive pulse remains visible without relying on scene lighting.
+        glyph.userData.melodyGlowMaterial=glowMaterial;
+        glyph.add(halo);
         group.add(glyph);
       }
       group.position.set(nextPlacement.x,nextPlacement.y,nextPlacement.z);
@@ -210,5 +250,5 @@
     };
   }
 
-  window.RuinMelodyGlyphDecal = Object.freeze({create,layoutFor});
+  window.RuinMelodyGlyphDecal = Object.freeze({create,layoutFor,makeInkMaterial});
 })();

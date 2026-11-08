@@ -98,6 +98,64 @@ moveInput = { x: 1, y: 0 };
 assert.equal(player.climbing, false);
 moveInput = { x: 0, y: 0 };
 
+// --- Dodge releases a climb rather than spending a defensive sidestep ----
+const deliberateFalls = []; // Captures FallSystem arrivals to verify manual releases keep deliberate landing costs.
+context.window.FallSystem = {
+  dropTiers: height => height / 2,
+  land: (_entity, fall) => deliberateFalls.push(fall),
+  resetGrip() {},
+};
+const handholdRoute = { // Mimics the two holds required for an exterior cliff face and its safe base.
+  id: 'dodge-release-test',
+  normal: { x: 1, z: 0 },
+  tangent: { x: 0, z: 1 },
+  upperNode: 1,
+  nodes: [{ id: 0, x: 0.5, z: 0.5, y: 0 }, { id: 1, x: 1.5, z: 0.5, y: 2 }],
+};
+player.x = TILE * 0.5; player.y = TILE * 0.5; player.angle = 0; player.dodging = false;
+assert.equal(ClimbSystem.startClimb({ type: 'cliffRoute', route: handholdRoute, entry: 1 }), true);
+assert.equal(ClimbSystem.cliffDodge(), true, 'dodge is consumed as a release while hanging on a handhold');
+assert.equal(player._cliffRouteSession, null, 'releasing leaves the handhold route immediately');
+assert.equal(ClimbSystem.debug.lastJumpMode, 'fall-released', 'release uses the existing controlled fall');
+assert.equal(player._climbFall?.deliberate, true, 'intentional release is distinct from accidentally losing grip');
+assert.equal(player.dodging, false, 'release never begins a combat dodge');
+runClimb();
+assert.equal(player.x, TILE * 0.5, 'handhold release lands at the safe route base');
+assert.equal(player.climbing, false, 'release finishes with grounded movement');
+assert.equal(deliberateFalls.length, 1, 'the shared fall-landing logic receives the release');
+assert.equal(deliberateFalls[0].source, 'climb released');
+assert.equal(ClimbSystem.cliffDodge(), false, 'the same button is not swallowed after landing');
+
+// Authored ruin walls use ClimbSurfaces rather than player.climbing and must also detach.
+let wallReleases = 0; // Counts calls to the ClimbSurfaces release handler.
+let wallFallRequested = false; // Confirms Dodge requests physical falling rather than Jump's existing detach.
+context.window.ClimbSurfaces = {
+  release: options => {
+    if (!player.onClimbSurface) return false;
+    player.onClimbSurface = null;
+    wallFallRequested = options?.fall === true;
+    wallReleases++;
+    return true;
+  },
+};
+player.onClimbSurface = { id: 'ruin-wall', v: 4 };
+assert.equal(ClimbSystem.cliffDodge(), true, 'dodge detaches from an authored climbable ruin wall');
+assert.equal(player.onClimbSurface, null, 'wall climb no longer owns movement');
+assert.equal(wallReleases, 1, 'dodge uses the existing release operation exactly once');
+assert.equal(wallFallRequested, true, 'dodge asks the wall climb owner for a physical fall');
+assert.equal(player.dodging, false, 'detaching never starts a combat dodge');
+assert.equal(ClimbSystem.cliffDodge(), false, 'normal dodge remains available after a wall release');
+
+player.x = TILE * 0.5; player.y = TILE * 0.5; player.angle = 0;
+target = ClimbSystem.getClimbTarget();
+assert.equal(ClimbSystem.startClimb(target), true);
+for (let i = 0; i < 20; i++) ClimbSystem.updateClimb(1 / 60);
+assert.equal(ClimbSystem.cliffDodge(), true, 'dodge interrupts a scripted wall ascent');
+assert.equal(ClimbSystem.debug.lastJumpMode, 'cancel-drop', 'the ascent uses the existing safe drop path');
+assert.equal(player.dodging, false, 'scripted wall release does not evade');
+runClimb();
+assert.equal(player.x, TILE * 0.5, 'scripted release returns to the starting ground');
+
 // --- Map boundary escarpments ---------------------------------------------
 player.dodging = false; player.x = TILE * 4.5; player.angle = 0;
 assert.equal(ClimbSystem.getClimbTarget(), null, 'a boundary escarpment wall is never climbable');

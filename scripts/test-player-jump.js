@@ -147,6 +147,7 @@ function harness({ rock = null, furniture = null, wall = null, pit = null, start
   assert(Math.abs(launchSpeed ** 2 / (2 * gravity) - priorApex / 2) < 0.001,
     'base jump must reach half of its former apex without changing gravity');
   assert.equal(gravity, 11.8, 'halving takeoff height must not alter gravity or falling behavior');
+  assert.equal(h.player._freeJump?.takeoffY, 0, 'a fresh jump retains physical takeoff height for ruin wall-grab filtering');
   assert.equal(!!h.player.climbing, false, 'free jump must not lock the wall-climb action state');
   let apex = 0;
   for (let i = 0; i < 85; i++) {
@@ -412,4 +413,64 @@ function harness({ rock = null, furniture = null, wall = null, pit = null, start
   assert(h.player.x / TILE < 4.45, 'falling onto an unclimbable face slides downhill even without input');
   assert(h.player._freeJump.feetY > 0, 'slope contact never falls through the rock shell');
 }
+{
+  const h = harness(); // Uses the real free-fall physics while replacing only the two grab callbacks.
+  let regrabs = 0; // Counts wall/route auto-grab attempts that a deliberate release must suppress.
+  h.window.ClimbSurfaces = { tryAirGrab() { regrabs++; return true; } };
+  h.window.ClimbSystem = { tryAirGrab() { regrabs++; return true; } };
+  const flight = h.window.PlayerJump.beginFlight({
+    x: 2.5, y: 3, z: 3.5, vy: 0, noGrab: true,
+  }, { source: 'wall climb release', deliberate: true });
+  assert(flight, 'a released climb transfers to physical airborne movement');
+  h.advance(0.1);
+  assert.equal(regrabs, 0, 'the released grip cannot immediately reattach during falling');
+  assert(h.player._freeJump?.feetY < 3, 'gravity lowers the player from the original wall height');
+  h.advance(1);
+  assert.equal(h.player._freeJump, null, 'the fall lands and restores ordinary movement');
+}
+
+{
+  const h = harness();
+  const { launchSpeed, gravity } = h.window.PlayerJump.config;
+  const easyRise = h.window.PlayerJump.easyJumpRise; // Shared comfortable apex controls whether short ruin obstacles claim the climb action.
+  assert(Math.abs(easyRise - (launchSpeed ** 2 / (2 * gravity) - 0.12)) < 1e-6,
+    'ruin jump/climb cutoff derives from the current physical jump with room below the apex');
+  assert(easyRise > 0.65 && easyRise < 0.83, 'jumpable 0.65-unit objects should not trigger climbing');
+
+  // Execute the actual ruin ledge scan with a finite, standable dynamic support.
+  const interactions = read('docs/js/dev-random-ruin-interactions.js');
+  const begin = interactions.indexOf('  function nearestLedge(options = {}) {');
+  const end = interactions.indexOf('\n  window.ClimbSystem?.registerWorldClimbProvider?', begin);
+  assert(begin >= 0 && end > begin, 'ruin ledge scan still supplies the native climb provider');
+  const scan = new Function('window', 'deps', 'playerWorldPosition', 'cfg', 'DS', 'openAt',
+    'LEDGE_MAX_RISE', 'LEDGE_MIN_RISE', 'LEDGE_REACH',
+    interactions.slice(begin, end) + '\nreturn nearestLedge;');
+  let topY = 0.65; // Standable object height is changed below to straddle the jump-to-climb threshold.
+  const nearestLedge = scan({
+    PlayerJump: h.window.PlayerJump, DevRandomRuin: { getPlayerSupportY: () => 0 },
+  }, { player: { angle: 0, climbing: false } },
+  () => ({ x: 2.5, y: 0, z: 3.5 }),
+  (_key, fallback) => fallback,
+  { sampleSupport: (x, z) => x >= 3.1 && x < 5 && Math.abs(z - 3.5) < 0.7
+    ? { id: 'standable-low-dais', y: topY } : null },
+  () => true, 1.75, 0.44, 1.35);
+  assert.equal(nearestLedge({ facingOnly: true }), null,
+    'short ruin object is not converted into scripted climb');
+  topY = easyRise + 0.12;
+  const tall = nearestLedge({ facingOnly: true });
+  assert(tall && Math.abs(tall.topY - topY) < 1e-6,
+    'ledge above comfortable jump range still provides a scripted climb');
+  let lavaProbeHeight = null; // Ensures the emergency lava-rim escape shares the climb scanner's physical height.
+  const physicalNearest = scan({ PlayerJump: h.window.PlayerJump,
+    DevRandomRuin: { getPlayerGroundSupportY: () => 0, getPlayerSupportY: () => 0.30 },
+    DevRandomRuinRopeRewards: { lavaClimbRise: position => { lavaProbeHeight = position.y; return 0; } },
+  }, { player: { angle: 0, climbing: false } }, () => ({ x: 2.5, y: 0.30, z: 3.5 }),
+  (_key, fallback) => fallback,
+  { sampleSupport: (x, z) => x >= 3.1 && x < 5 && Math.abs(z - 3.5) < 0.7
+    ? { id: 'raised-dais', y: 0.90 } : null }, () => true, 1.75, 0.44, 1.35);
+  assert(physicalNearest({ facingOnly: true }),
+    'a visually eased player mesh cannot make a physically too-high ledge look jumpable');
+  assert.equal(lavaProbeHeight, 0, 'lava-rim escape and climb selection measure from physical feet');
+}
+
 console.log('player-jump ok');

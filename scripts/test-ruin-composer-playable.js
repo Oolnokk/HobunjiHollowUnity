@@ -24,6 +24,9 @@ const surfaces=new Map(), pits=new Map(); // Verifies solid shore support and ex
 const encounters=new Map(); // Verifies encounter receives world coordinates, not local room coordinates.
 const statuary=new Map(), tubes=new Map(); // Verifies Key Statue and Witch-bomb dispenser registration.
 const toast=[]; // Captures contextual in-game feedback from action presses.
+const rangedTargets=new Set(); // The existing ranged interception registry owns each composed switch and its cleanup.
+let dispenseRequests=0; // Counts ranged-only activation of the authored witch-bomb factory.
+let rangedRuntimeReady=true; // Simulates the V50 ranged runtime becoming ready after a composed wing has already mounted.
 globalThis.DynamicSurfaces={
   registerSurface(entry){surfaces.set(entry.id,entry);},
   registerPit(entry){pits.set(entry.id,entry);},
@@ -64,7 +67,10 @@ globalThis.HangingRopes={
 };
 globalThis.HronalWitchBombs={
   registerDispenser(_map,id,root){tubes.set(id,root);return true;},
-  dispenseFromMechanism:async()=>({id:'witch-bomb-test'}),
+  dispenseFromMechanism:async()=>{dispenseRequests++;return {id:'witch-bomb-test'};},
+};
+globalThis.DevRandomRuinSimplePuzzles={
+  registerExternalProjectileTarget(target){if(!rangedRuntimeReady)return null;rangedTargets.add(target);return ()=>rangedTargets.delete(target);},
 };
 globalThis.KeyStatues={registerDispenser(_map,id,root,_puzzle,options={}){statuary.set(id,{root,feedPlinthId:options.feedPlinthId});return true;}};
 const burdens=new Map(),rewardChests=[]; // Tracks the optional physical Shattercask source and its reward chest.
@@ -129,17 +135,26 @@ const mkTile=walkable=>({type:walkable?'grass':'rock'});
   assert(enc.spawners.every(s=>s.x>3+12.9 && s.z>=24),'enemy spawners are translated into world coordinates');
   assert(nodes.get(composition.records.find(r=>r.piece==='plinth').id).group.userData.furniturePuzzle.channel.startsWith('Trial-Plinth-'),'plinth inputs do not switch unrelated V50 mechanisms');
   assert(nodes.get(composition.records.find(r=>r.piece==='bombDispenser').id).group.userData.furniturePuzzle.channel.startsWith('Trial-Bomb-'),'bomb tube uses an independent activation channel');
-  assert.equal(wing.controls.length,3,'three ordinary contextual interactions serve the defence and bomb tube');
+  assert.equal(wing.controls.length,2,'only the Key Statue and plinth expose contextual interactions');
+  assert(!wing.controls.some(control=>control.kind==='composed-bombDispenser'),'the bomb tube never exposes an Action 1 prompt');
+  assert.equal(rangedTargets.size,1,'each composed witch-bomb tube has one nearby registered projectile target');
+  const target=[...rangedTargets][0];
+  assert(target.hittable() && target.object?.name.includes('witch_bomb_projectile_target'));
+  const switchPoint=target.object.parent?.position,tubePoint=tubes.values().next().value.position;
+  assert(Math.hypot(switchPoint.x-tubePoint.x,switchPoint.z-tubePoint.z)>1,
+    'the projectile glyph is a distinct nearby fixture, not part of the ceiling tube');
+  await target.onHit();assert.equal(dispenseRequests,1,'hitting the glyph activates the actual tube');
   for(const control of wing.controls) {
     assert(control.point && control.promptRoot && typeof control.onPress==='function','mobile/controller action has a world-space owner');
     const response=await control.onPress();
     assert(response.ok,'a gameplay interaction resolves through its runtime');
   }
-  assert.equal(toast.length,3,'action messages use the existing toast surface');
+  assert.equal(toast.length,2,'only the two retained interactions produce toast messages');
   wing.dispose();
   assert.equal(rec.grid[footRow][footCol].type,'grass','undoing the wing restores the original V50 tile instead of leaving a phantom obstacle');
   assert.equal(nodes.size,0,'furniture puzzle graph is cleaned up on exit');
   assert.equal(ropes.size,0,'the rope runtime is cleaned up');
+  assert.equal(rangedTargets.size,0,'wing teardown unregisters every externally wired projectile switch');
   assert.equal(encounters.size,0,'the defence encounter is cleaned up');
   assert.equal(surfaces.size,0);assert.equal(pits.size,0);
   assert.equal(rec.scene.children.length,0,'wing geometry is detached from the game scene');
@@ -147,10 +162,15 @@ const mkTile=walkable=>({type:walkable?'grass':'rock'});
   // The original Burden Plinth is separately authored from the long Key Statue defense plinth.
   // Its own replenishable Key Statue dispenser supplies it; completion (not mere placement) unlocks a bonus chest exactly once.
   const bonusRec=makeRecord(),revealed=[];
+  rangedRuntimeReady=false; // Cover a composed wing mounted before the native projectile interceptors initialize.
   const bonus=await Playable.mount({rec:bonusRec,ruin:{theme:'hronal'},seed,archetype:'trialHall',burdenOffering:true,
     mapId:'map_i_dev_random_ruin',scope:'bonus_test',makeTile:mkTile,DynamicSurfaces,THREE,originX:3,originZ:24,
     addControl:control=>revealed.push(control),isCurrent:()=>true});
   assert(bonus.offering,'full trial can include the separately authored generic Burden Plinth');
+  assert.equal(rangedTargets.size,0,'the bomb target cannot register while V50 projectile handling is unavailable');
+  rangedRuntimeReady=true;
+  bonus.update();
+  assert.equal(rangedTargets.size,1,'the later wing update installs its deferred external ranged target');
   const offering=[...nodes.entries()].find(([id])=>id.startsWith('composed_offering_'));
   assert(offering&&offering[1].group.userData.furniturePuzzle.requiredBurdenKind==='keyStatue');
   const feed=[...statuary.entries()].find(([id])=>id.startsWith('composed_offering_')&&id.endsWith('_dispenser')); // The bonus plinth owns a different statue source from the defense.
@@ -165,6 +185,7 @@ const mkTile=walkable=>({type:walkable?'grass':'rock'});
   assert.equal(rewardChests.at(-1).group.visible,true);
   assert.equal(revealed.length,1);assert.equal(revealed[0].kind,'dungeonChest');
   bonus.dispose();
+  assert.equal(rangedTargets.size,0,'optional offerings do not leak the bomb tube target');
   assert(!nodes.has(feed[0]),'ruin exit unregisters the bonus dispenser node');
   assert.equal(bonusRec.scene.children.length,0);
 

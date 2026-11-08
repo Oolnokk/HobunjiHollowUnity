@@ -202,7 +202,9 @@
     const gateMaterial=tintStone('#4d3831',0x4d3831);
     const bronzeMaterial=tintStone('#715e48',0x715e48);
     const nativeFlames=[]; // Tracks player campfire emitters on the native V50 floor goal braziers.
+    const brazierLights=[]; // Persistent Kanthic illumination records for completed native V50 floor goals.
     const owner={records:[],lit:0,total:records.length,disposed:false,group:base};
+    owner.lightSources=()=>owner.disposed?[]:brazierLights; // Read-only compositor feed, owned by this native floor runtime.
     const disposeMeshes=new Set(),controls=[],scopes=[]; // These are owned by native V50 floors, not the existing one-floor V50 entry.
     const views=[];
     function addControl(control){ruin.controls.push(control);controls.push(control);}
@@ -478,6 +480,9 @@
         flame.position.set(cx,goalY+1.22,cz);flame.visible=false;group.add(flame);
         const flameVisual=root.PersistentGroundFire?.attachCampfireFlame?.(flame,{scale:1.08,rateScale:.95});
         if(flameVisual)nativeFlames.push(flameVisual);
+        const brazierLight={x:cx,y:goalY+1.4,z:cz,floorY:goalY,radius:10.5,strength:.98,
+          color:[255,136,61],active:false}; // Uses actual raised support Y, not the nominal story level; otherwise native plateau light floats underground.
+        if(ruin.theme==='kanthic')brazierLights.push(brazierLight);
         record.goalBrazier={pedestal,flame};
         addControl({kind:'v50NativeBrazier',object:pedestal,promptRoot:pedestal,
           floorY:goalY,range:1.7,priority:20,touchIcon:'🔥',
@@ -487,8 +492,9 @@
             if(record.solved!==record.challenges.length){
               options.showToast?.('Complete the V50 chambers first.',false);return;
             }
-            record.lit=true;flame.visible=true;owner.lit++;
+            record.lit=true;flame.visible=true;brazierLight.active=true;owner.lit++; // Kanthic visibility follows the required goal brazier's existing solved state.
             updateGoals();
+            if(ruin.theme==='kanthic')root.CloudForestFog?.refreshLightingOverlay?.(); // The completed chamber reveals immediately, including mobile.
             options.showToast?.('Native V50 floor brazier ignited.',true);
           }
         });
