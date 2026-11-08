@@ -6,7 +6,7 @@
   if (window.SpouseKissMotion) return;
 
   const DURATION_S = 2.4; // Used by the editor timeline and the live contact/exit sequence.
-  const MOUTH_HEIGHT_FRACTION = .82; // Floor-relative portrait mouth proxy; scaled by actual rig height.
+  const MOUTH_HEIGHT_FRACTION = .82; // Legacy-only fallback for callers without a rendered rig; real kisses use the b'shuakauitl mouth anchors.
   const MAX_SINK_PCT = 82; // Upper safety cap; the actual knee limit is based on the leg rig, not this percent alone.
   const KNEEL_LEG_FRACTION = .95; // Spouse-only deep-kneel limit; regular stances retain their original 55%.
   const MAX_BOW_DEG = 89.5; // At extreme height ratios the larger spouse must nearly lie forward, without sinking below the floor.
@@ -21,14 +21,52 @@
   let lastResult = null; // Exposed through diagnostics after a completed or interrupted kiss.
   let schedulerInstalled = false; // Avoids duplicate pre-render callbacks on repeated init.
 
+  // B'shuakauitl and drinking place their mouthpieces with this exact skinned
+  // portrait resolver, including species/gender points, age, head scale,
+  // authored neck rotation and left/right-facing compensation. No second
+  // approximation of a face's height is maintained by the kiss animation.
+  function mouthWorldPoint(avatar, out, scratch = null) {
+    const attackPose = window.SharedAttackPose; // Canonical head-attached tool system used by b'shuakauitl.
+    const workspace = scratch || {}; // Reuses the same frame vectors during animation and diagnostics.
+    const THREE = workspace.THREE || window.THREE; // Editor provides its module-scoped Three in the scratch, gameplay provides window.THREE.
+    if (!THREE?.Vector3 || !attackPose?.headFrame || !attackPose?.createHeadFrame ||
+        !avatar?.userData?.neckRig?.available || !out?.copy) return false;
+    const frame = workspace.headFrame || (workspace.headFrame = attackPose.createHeadFrame(THREE)); // Reused real skinned mouth frame.
+    avatar.updateWorldMatrix?.(true, false);
+    if (!attackPose.headFrame(frame, avatar)) return false;
+    out.copy(frame.position);
+    return true;
+  }
+
+  function mouthHeightWorld(avatar, floorRoot, scratch = null) {
+    const workspace = scratch || {}; // Shared world-mouth and world-floor vectors for each participant.
+    const THREE = workspace.THREE || window.THREE; // Matches the editor's and gameplay's actual Three instance.
+    if (!THREE?.Vector3 || !floorRoot?.getWorldPosition) return null;
+    const mouth = workspace.mouth || (workspace.mouth = new THREE.Vector3()); // World-space b'shuakauitl mouth position.
+    const floor = workspace.floor || (workspace.floor = new THREE.Vector3()); // Actor's current authored floor reference.
+    if (!mouthWorldPoint(avatar, mouth, workspace)) return null;
+    floorRoot.updateWorldMatrix?.(true, false);
+    floorRoot.getWorldPosition(floor);
+    const height = mouth.y - floor.y; // Root-relative mouth Y is unchanged by floor elevation, floating islands or jumps.
+    return Number.isFinite(height) && height > .001 ? height : null;
+  }
+
   function solveHeights(firstHeight, secondHeight, options = {}) {
     const first = Math.max(.001, finite(firstHeight, 1)); // Real rendered height of the first character.
     const second = Math.max(.001, finite(secondHeight, 1)); // Real rendered height of the second character.
     const taller = first >= second ? 'first' : 'second'; // Only the physically taller partner kneels and bows.
     const tall = Math.max(first, second);
     const short = Math.min(first, second);
-    const tallMouth = tall * MOUTH_HEIGHT_FRACTION;
-    const shortMouth = short * MOUTH_HEIGHT_FRACTION;
+    const firstMouth = Number(options.firstMouthHeightWorld); // True skinned mouth Y from the first actor's floor root.
+    const secondMouth = Number(options.secondMouthHeightWorld); // True skinned mouth Y from the second actor's floor root.
+    const firstResolved = Number.isFinite(firstMouth) && firstMouth > .001; // Reject missing/invalid mouth points instead of treating null as zero.
+    const secondResolved = Number.isFinite(secondMouth) && secondMouth > .001; // Legacy mock callers still fall back independently when unspecified.
+    const tallMouth = taller === 'first'
+      ? (firstResolved ? firstMouth : first * MOUTH_HEIGHT_FRACTION)
+      : (secondResolved ? secondMouth : second * MOUTH_HEIGHT_FRACTION); // Mouth Y, not a whole-character height percentage.
+    const shortMouth = taller === 'first'
+      ? (secondResolved ? secondMouth : second * MOUTH_HEIGHT_FRACTION)
+      : (firstResolved ? firstMouth : first * MOUTH_HEIGHT_FRACTION); // Same exact resolver for the shorter partner.
     const hipHeight = clamp(finite(options.tallerHipHeightWorld, tall * .28), .001, tallMouth); // Ground-to-posterior height from the real leg handle.
     const legLength = Math.max(.001, finite(options.tallerLegLengthWorld, hipHeight)); // Anatomical leg length controls actual stance limits.
     const kneeLimit = Math.min(legLength * KNEEL_LEG_FRACTION, tall * MAX_SINK_PCT / 100);
@@ -66,7 +104,10 @@
     const remainingGap = Math.max(0, requestedDrop - kneeDrop - bowDrop - shorterJumpWorld);
     return {
       taller, firstHeight: first, secondHeight: second,
-      mouthHeightRatio: MOUTH_HEIGHT_FRACTION,
+      mouthHeightRatio: firstResolved && secondResolved ? null : MOUTH_HEIGHT_FRACTION, // Null signifies that canonical mouth points were used.
+      mouthHeightSource: firstResolved && secondResolved ? 'shared-attack-pose-skinned-mouth' : 'legacy-height-fallback',
+      firstMouthHeightWorld: firstResolved ? firstMouth : first * MOUTH_HEIGHT_FRACTION,
+      secondMouthHeightWorld: secondResolved ? secondMouth : second * MOUTH_HEIGHT_FRACTION, // Serialized for mobile review and deterministic imported clips.
       tallerSinkWorld: kneeDrop, tallerSinkPct: kneeDrop / tall * 100,
       shorterSinkPct: 0, tallerBowDeg: bowRad * 180 / Math.PI,
       tallerBowForwardWorld: torsoLength * Math.sin(bowRad),
@@ -379,12 +420,20 @@
     if (!npcRigRoot) { lastError = 'spouse-body-rig-not-ready'; return false; }
     const firstHeight = actorHeight(player, playerLegs, player);
     const secondHeight = actorHeight(walker.avatarGroup, npcLegs, walker.root);
+    const mouthScratch = { player: {}, npc: {} }; // Separate reusable b'shuakauitl head frames and world vectors for both live participants.
+    const firstMouthHeightWorld = mouthHeightWorld(player, player, mouthScratch.player); // Exact local player mouth height above their rig floor.
+    const secondMouthHeightWorld = mouthHeightWorld(walker.avatarGroup, walker.root, mouthScratch.npc); // Exact spouse mouth height above NPC walker floor.
+    if (firstMouthHeightWorld === null || secondMouthHeightWorld === null) {
+      lastError = 'spouse-mouth-points-not-ready'; // Never silently kiss using a guessed height when the skinned head is unavailable.
+      return false;
+    }
     const playerAnatomy = anatomyWorld(playerLegs, firstHeight);
     const npcAnatomy = anatomyWorld(npcLegs, secondHeight);
     const isPlayerTaller = firstHeight >= secondHeight;
     const tallAnatomy = isPlayerTaller ? playerAnatomy : npcAnatomy;
     const shortAnatomy = isPlayerTaller ? npcAnatomy : playerAnatomy; // Small partner's real hip height and leg length decide whether a supported jump is feasible.
     const height = solveHeights(firstHeight, secondHeight, {
+      firstMouthHeightWorld, secondMouthHeightWorld, // Authoritative b'shuakauitl mouth points control the paired knee/bow/hop solution.
       tallerLegLengthWorld: tallAnatomy.legLengthWorld,
       tallerHipHeightWorld: tallAnatomy.hipHeightWorld,
       shorterLegLengthWorld: shortAnatomy.legLengthWorld,
@@ -443,7 +492,7 @@
       npcTiltPivot, originalNpcTiltX: npcTiltPivot?.rotation?.x,
       originalPlayerKneeLimit, originalNpcKneeLimit,
       playerAnatomy, npcAnatomy,
-      playerHands, npcHands, shoulderScratch: {}, footScratch: {}, // Cached world targets for posterior-supported foot IK during short-partner jumps.
+      playerHands, npcHands, shoulderScratch: {}, footScratch: {}, mouthScratch, // Cached head frames are also used for mobile mouth-to-mouth diagnostics.
       lastHandContact: null, // Mobile diagnostics expose reach and timing without requiring DevTools.
       playerNeck, npcNeck,
       originalPlayerNeck: playerNeck?.quaternion?.clone?.() || null,
@@ -574,12 +623,15 @@
       session: active ? { npcId: active.walker?.rec?.id, elapsedS: active.elapsed, touched: active.touched,
         height: { ...active.height }, jumpBlend: sampleJumpBlend(active.elapsed),
         feetAnchored: !!(active.playerLegs?.hasExternalFootTargets?.() || active.npcLegs?.hasExternalFootTargets?.()),
-        hands: active.lastHandContact || null } : null };
+        hands: active.lastHandContact || null,
+        mouth: { source: active.height.mouthHeightSource,
+          firstHeightWorld: active.height.firstMouthHeightWorld,
+          secondHeightWorld: active.height.secondMouthHeightWorld } } : null };
   }
 
   window.SpouseKissMotion = Object.freeze({
     DURATION_S, MAX_SINK_PCT, MOUTH_HEIGHT_FRACTION, KNEEL_LEG_FRACTION, MAX_BOW_DEG,
-    solveHeights, samplePose, sampleJumpBlend, posteriorStraddleFootTargets,
+    solveHeights, mouthWorldPoint, mouthHeightWorld, samplePose, sampleJumpBlend, posteriorStraddleFootTargets,
     sampleKneelBlend, sampleInitiatorHandReach,
     resolveShoulderGripWorld, shoulderGripWorld, applyInitiatorShoulderHands,
     actorHeight, anatomyWorld, init, start, stop: clearMotion,
