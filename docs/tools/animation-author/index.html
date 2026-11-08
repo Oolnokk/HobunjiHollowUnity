@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <script src="../../js/tap-reliability.js?v=20261010a"></script>
-<title>Hobunji Animation Author V15.50</title>
+<title>Hobunji Animation Author V15.51</title>
 <style>
 :root {
   color-scheme: dark;
@@ -13874,16 +13874,25 @@ function kissPairHeightV1546() {
   if (!pair.leader || !pair.partner) return { ...pair, solution: null };
   const firstHeight = kissActorHeightV1546(pair.leader);
   const secondHeight = kissActorHeightV1546(pair.partner);
-  const tallerActor = firstHeight >= secondHeight ? pair.leader : pair.partner; // The actual taller model supplies the anatomical knee limit.
-  const feet = tallerActor.rigFeetPreview; // Reuses exactly the procedural leg solver that drives the visible preview.
-  const scaleY = Math.max(.001, Math.abs(Number(tallerActor.visualOffset?.scale?.y) || 1));
-  const anatomy = feet?.motionAnatomy?.() || [];
-  const lengths = anatomy.map(record => Number(record?.length)).filter(length => Number.isFinite(length) && length > 0);
-  const legWorld = lengths.length ? Math.min(...lengths) * scaleY : undefined;
-  const hipWorld = Number.isFinite(Number(feet?.standingPosteriorY)) ? feet.standingPosteriorY * scaleY : undefined;
+  const tallerActor = firstHeight >= secondHeight ? pair.leader : pair.partner; // Both participants' real leg measurements determine whether a supported hop is possible.
+  const shorterActor = tallerActor === pair.leader ? pair.partner : pair.leader;
+  const legMetrics = actor => {
+    const feet = actor.rigFeetPreview; // Same anatomy that drives the deforming pants, not a guessed lower-body proxy.
+    const scale = Math.max(.001, Math.abs(Number(actor.visualOffset?.scale?.y) || 1));
+    const records = feet?.motionAnatomy?.() || [];
+    const lengths = records.map(record => Number(record?.length)).filter(value => Number.isFinite(value) && value > 0);
+    return {
+      length: lengths.length ? Math.min(...lengths) * scale : undefined,
+      hip: Number.isFinite(Number(feet?.standingPosteriorY)) ? feet.standingPosteriorY * scale : undefined,
+    };
+  }; // Measured leg length and posterior Y in the avatar's authored scale.
+  const tall = legMetrics(tallerActor);
+  const short = legMetrics(shorterActor);
   const solution = window.SpouseKissMotion?.solveHeights?.(firstHeight, secondHeight, {
-    ...(legWorld ? { tallerLegLengthWorld: legWorld } : {}),
-    ...(hipWorld ? { tallerHipHeightWorld: hipWorld } : {}),
+    ...(tall.length ? { tallerLegLengthWorld: tall.length } : {}),
+    ...(tall.hip ? { tallerHipHeightWorld: tall.hip } : {}),
+    ...(short.length ? { shorterLegLengthWorld: short.length } : {}),
+    ...(short.hip ? { shorterHipHeightWorld: short.hip } : {}),
   }) || null; // The author and gameplay now agree about physically reachable knees.
   return { ...pair, solution };
 }
@@ -13892,14 +13901,20 @@ function kissTransformV1546(who, time, solution) {
   const pose = window.SpouseKissMotion.samplePose(time); // Shared approach, mouth contact, and separation curves.
   const first = who === 'leader';
   const taller = first ? solution.taller === 'first' : solution.taller === 'second';
-  const bend = pose.blend * (taller ? 1 : .35);
-  const bodyBlend = window.SpouseKissMotion.sampleKneelBlend(time, solution.taller === 'second'); // If the initiator is smaller, hands reach first and the taller partner bows second.
-  const bowRetreat = taller ? solution.tallerBowForwardWorld * bodyBlend : 0; // Retreat occurs with the actual torso lowering, never before hand placement.
+  const bodyBlend = window.SpouseKissMotion.sampleKneelBlend(time, solution.taller === 'second'); // Shorter initiators lift their hands before the tall spouse kneels.
+  const bowRetreat = taller && !solution.shorterPosteriorGrip ? solution.tallerBowForwardWorld * bodyBlend : 0; // A supported hop keeps the taller posterior underneath its planted feet.
+  const progress = Math.max(0, Math.min(1, (time - .09) / .28));
+  const approach = progress * progress * (3 - 2 * progress); // Hands reach early without making face meshes overlap during contact.
+  const departure = time <= 1.52 ? 1 : Math.max(0, Math.min(1, (2.4 - time) / .88));
+  const departEase = departure * departure * (3 - 2 * departure);
+  const spacing = .20 - .12 * approach * departEase; // At contact ~.08 instead of ~.02; preserves the early wrist reach from V15.50.
+  const hop = !taller && solution.shorterPosteriorGrip
+    ? solution.shorterJumpWorld * window.SpouseKissMotion.sampleJumpBlend(time) : 0; // Small partner jumps onto the taller posterior, independently of knee flex.
   return {
     position: {
       x: 0,
-      y: 0, // Keep the feet grounded: the preview's anatomical knee solver lowers only the upper body.
-      z: first ? -bowRetreat : .14 - .12 * pose.blend + bowRetreat, // Both faces remain close enough for real wrists to reach the target's upper torso before knee lowering.
+      y: hop, // Only jump pairs rise above the ground; regular kiss clips remain grounded.
+      z: first ? -bowRetreat : spacing + bowRetreat,
     },
     rotationDeg: { x: 0, y: first ? 0 : 180, z: 0 }, // Torso bow belongs on the portrait and hand rigs, not the foot/leg root.
     scale: { x: 1, y: 1, z: 1 },
@@ -13916,6 +13931,8 @@ function kissTrackV1546(who, solution) {
       // Per-frame percent mirrors Attack Editor body sink. Runtime applies it to
       // procedural legs/body instead of translating the character's collider.
       bodySinkPct: taller ? solution.tallerSinkPct * bodyBlend : 0,
+      jumpLiftWorld: !taller ? solution.shorterJumpWorld * window.SpouseKissMotion.sampleJumpBlend(time) : 0, // Root Y and exportable jump metadata describe the same motion.
+      posteriorFeetPlanted: !taller && solution.shorterPosteriorGrip && window.SpouseKissMotion.sampleJumpBlend(time) >= .99,
       bodyBowDeg: (taller ? solution.tallerBowDeg * bodyBlend : 3 * pose.blend), // Exportable torso-only bow; never tilts the planted foot rig.
       neckRotationDeg: { x: (taller ? -12 : 8) * pose.blend, y: 0, z: 0 },
     };
@@ -13927,7 +13944,7 @@ function applyKissPresetV1546() {
   const { leader, partner, solution } = kissPairHeightV1546();
   if (!leader || !partner) { setStatus('Kiss needs two NPC/character actors in the Multi-Avatar scene.', 'warn'); return false; }
   if (!solution?.contactPossible) {
-    setStatus('These mouth heights exceed the available body sink. Inspect the rig heights before exporting.', 'warn');
+    setStatus('These mouth heights exceed the safely reachable kneel and posterior hop. Inspect both leg rigs.', 'warn');
     return false;
   }
   setProjectTimingFromTemplate({ fps: KISS_FPS_V1546, duration: window.SpouseKissMotion.DURATION_S }); // Syncs the author timeline with shared gameplay timing.
@@ -14311,7 +14328,8 @@ function syncMultiAvatarFullBodiesV1548(time = animationAuthor.currentTime, dt =
       // In a full-body preview that root also owns the leg + pants bones, so
       // retain its horizontal approach/yaw but move sink and bow to the torso
       // and hand groups below. Otherwise the soles tilt or sink into the floor.
-      actor.root.position.y = 0;
+      actor.root.position.y = participant && !taller && solution.shorterPosteriorGrip
+        ? Number(sampleActorTransform(actor, time).position.y) || 0 : 0; // Keep the authored airborne jump; only taller knees stay planted on the floor.
       actor.root.rotation.x = 0;
     }
     const blend = participant ? window.SpouseKissMotion?.samplePose?.(time)?.blend || 0 : 0;
@@ -14342,7 +14360,10 @@ function syncMultiAvatarFullBodiesV1548(time = animationAuthor.currentTime, dt =
       legs: !!feet.group?.parent,
       gaitSpeed: Number(strideSpeed.toFixed(3)),
       hands: !!hands?.group?.parent,
-      feetGrounded: Math.abs(Number(actor.root.position.y) || 0) < .001 && Math.abs(Number(actor.root.rotation.x) || 0) < .001,
+      feetGrounded: (!participant || !solution.shorterPosteriorGrip || taller) &&
+        Math.abs(Number(actor.root.position.y) || 0) < .001 && Math.abs(Number(actor.root.rotation.x) || 0) < .001,
+      posteriorJump: participant && !taller && solution.shorterPosteriorGrip,
+      jumpHeightWorld: participant && !taller ? actor.root.position.y : 0, // Mobile diagnostics distinguish a deliberate airborne straddle from an accidental foot lift.
     }; // Available through fullBodyDiagnostics for mobile troubleshooting.
   }
 }
@@ -14379,11 +14400,29 @@ function installInitiatorShoulderContactV1550(initiator, target, time, solution)
 
 const beforeShoulderHandSyncV1550 = syncMultiAvatarFullBodiesV1548;
 syncMultiAvatarFullBodiesV1548 = function(time = animationAuthor.currentTime, dt = 0) {
-  const result = beforeShoulderHandSyncV1550(time, dt); // First resolve both planted feet, pants and body sinks.
+  const result = beforeShoulderHandSyncV1550(time, dt); // First resolve both actors' knees, body bow and authored upward jump.
   if (animationAuthor.mode === 'multi' && animationAuthor.multiPreset === 'kiss') {
     const { leader, partner } = configuredKissPairV1550(); // Initiator remains Pahu even when Leaf is selected in the timeline.
     const solution = animationAuthor.kissHeightSolutionV1546;
     if (leader && partner && solution) {
+      if (solution.shorterPosteriorGrip) {
+        const taller = solution.taller === 'first' ? leader : partner; // Real posterior anchor stays on the taller leg handle.
+        const shorter = taller === leader ? partner : leader;
+        const jumperFeet = shorter.rigFeetPreview;
+        const actualJump = Number(shorter.root.position.y) || 0;
+        const jumpFraction = solution.shorterJumpWorld > .001 ? Math.max(0, Math.min(1, actualJump / solution.shorterJumpWorld)) : 0;
+        const scratch = shorter.multiKissJumpScratchV1551 || (shorter.multiKissJumpScratchV1551 = {}); // Stable vector storage reused while scrubbing.
+        const targets = window.SpouseKissMotion.posteriorStraddleFootTargets(
+          state.three.THREE, taller.rigFeetPreview, jumperFeet, solution, jumpFraction, scratch,
+        );
+        jumperFeet?.setExternalFootTargets?.(targets, { allowDeepFold: true }); // The two existing leg IK chains grip opposite sides of the actual posterior.
+        if (targets) jumperFeet.applyWorldFootTargets?.(targets, null, false, true); // Update at scrub time, not one render frame late.
+        jumperFeet?.pants?.update?.(); // The worn pants should deform with both straddled knee chains immediately.
+        shorter.previewAnatomyV1548.jumpFeetAnchored = !!targets;
+        shorter.previewAnatomyV1548.jumpFootDistance = targets ? targets.left.distanceTo(targets.right) : 0;
+      } else {
+        for (const actor of [leader, partner]) actor.rigFeetPreview?.setExternalFootTargets?.(null); // A new non-jump preset must release old foot targets.
+      }
       installInitiatorShoulderContactV1550(leader, partner, time, solution);
       // The noninitiating partner retains the existing idle/embrace hand pose.
       // For a shorter initiator the shoulder projection engages at .13–.37 s,
@@ -14391,6 +14430,7 @@ syncMultiAvatarFullBodiesV1548 = function(time = animationAuthor.currentTime, dt
     }
   } else {
     for (const actor of animationAuthor.actors) {
+      actor.rigFeetPreview?.setExternalFootTargets?.(null); // Restore normal gait when leaving the kiss, switching mode or opening another preset.
       actor.multiKissHandContactRigV1550 = null; // A subsequent Kiss must reinstall its grip provider after dance/mode changes.
       actor.multiKissHandContactV1550 = null;
     }
@@ -14436,6 +14476,7 @@ const beforeMultiRemoveV1548 = removeAnimationActor;
 removeAnimationActor = function(id) {
   const actor = actorById(id);
   actor?.multiKissHandRigV1548?.setPoseProvider?.(MULTI_HAND_KISS_OWNER_V1548, null);
+  actor?.rigFeetPreview?.setExternalFootTargets?.(null);
   return beforeMultiRemoveV1548(id);
 };
 
@@ -14443,6 +14484,7 @@ const beforeMultiClearV1548 = clearAnimationActors;
 clearAnimationActors = function() {
   animationAuthor.kissInitiatorActorIdV1550 = null; // New/cleared scenes must explicitly choose a fresh initiator.
   for (const actor of animationAuthor.actors) {
+    actor.rigFeetPreview?.setExternalFootTargets?.(null); // Nothing remains attached to an obsolete posterior after actor removal.
     actor.multiKissHandRigV1548?.setPoseProvider?.(MULTI_HAND_KISS_OWNER_V1548, null);
   }
   return beforeMultiClearV1548();
@@ -14468,7 +14510,7 @@ prepareMultiAvatarAnimationAuthor = function() {
 };
 installKissPresetUiV1546(); // The author initialized earlier in the same script; install immediately too.
 if (window.MultiAvatarAnimationAuthor) {
-  window.MultiAvatarAnimationAuthor.version = '15.50';
+  window.MultiAvatarAnimationAuthor.version = '15.51';
   window.MultiAvatarAnimationAuthor.fullBodyDiagnostics = fullCharacterPreviewDiagnosticsV1548;
   window.MultiAvatarAnimationAuthor.kissPairDiagnostics = () => {
     const pair = configuredKissPairV1550(); // Exposes pinned initiator, not the currently inspected actor.
@@ -14478,6 +14520,8 @@ if (window.MultiAvatarAnimationAuthor) {
       taller: animationAuthor.kissHeightSolutionV1546?.taller || null,
       firstHeight: animationAuthor.kissHeightSolutionV1546?.firstHeight || null,
       secondHeight: animationAuthor.kissHeightSolutionV1546?.secondHeight || null,
+      posteriorJump: !!animationAuthor.kissHeightSolutionV1546?.shorterPosteriorGrip,
+      jumpWorld: animationAuthor.kissHeightSolutionV1546?.shorterJumpWorld || 0,
     };
   };
   window.MultiAvatarAnimationAuthor.kissFacingDiagnostics = () => animationAuthor.actors
@@ -14507,10 +14551,10 @@ if (window.MultiAvatarAnimationAuthor) {
   window.MultiAvatarAnimationAuthor.applyKissPreset = applyKissPresetV1546;
   window.MultiAvatarAnimationAuthor.importProject = importAnimationProjectData;
 }
-document.title = 'Hobunji Animation Author V15.50';
-animationAuthor.recentChange = 'V15.50 uses authored shoulder landmarks and real arm reach for initiator hand contact: smaller initiators reach before kneeling; taller initiators grip as lowering allows.';
+document.title = 'Hobunji Animation Author V15.51';
+animationAuthor.recentChange = 'V15.51 restores a small space between kissing faces and gives dramatically shorter partners a two-foot, posterior-anchored jump with live knee/pants IK.';
 animationAuthor.modeStates.multi.recentChange = animationAuthor.recentChange;
-log('V15.50 kiss initiator hands attach to real partner shoulder coordinates using per-side reach and timed knee lowering.');
+log('V15.51 kiss spacing adjusted; the smaller partner straddles the tall posterior only when kneeling alone cannot align their mouths comfortably.');
 
 })();
 </script>
