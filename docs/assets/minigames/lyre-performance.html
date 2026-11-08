@@ -1342,7 +1342,8 @@
   function harmonyPatternLabel(name) { return HARMONY_PATTERN_ADJECTIVES[name] || name; }
   const NOTE_GLYPHS = ['X','A','B','Y'];
   const ROMAN_DEGREES = ['I','II','III','IV','V','VI','VII'];
-  const STRUM_NOTE_DELAY_MS = 22; // Spaces the six virtual strings during right-stick chord sweeps.
+  const STRUM_NOTE_DELAY_MS = 9; // Close-spaced string attacks imitate a fast classical-guitar brush.
+  const FLUTE_NOTE_DURATION_S = 4.5; // Solo flute sustains one long breath until the next note interrupts it.
   const AUTO_PICK_COMPAT_VOICES = 8; // Eight primed mobile media channels keep successive automatic plucks from stealing the same sample tail.
   const PULSE_LOOKAHEAD_MS = 90; // Fires automatic pluck-continuation timers this much early so the precise Web Audio start() call (not the jitter-prone JS timer) governs exactly when each pulse actually sounds.
   const TRANSPORT_AUDIO_LOOKAHEAD_MS = PULSE_LOOKAHEAD_MS; // Keeps the metronome/footstep and chord-root pad on the same ahead-of-time audio grid as automatic Kurraya notes.
@@ -1576,6 +1577,7 @@
     fourGroupShiftCounter:0, // Monotonic press counter used to distinguish RT→LT from LT→RT.
     noteSources:Array.from({length:4},() => new Set()), // Tracks the four face-button notes independently of the selected melody bank.
     voices:new Map(),
+    fluteVoice:null, // The sole sounding flute note, reused by direct playing, arpeggios and strums.
     previewCounter:0,
     inputCount:0, // Counts physical/touch note presses before any asynchronous audio work.
     auditoryPulseCount:0, // Counts automatic continuation attacks that are deliberately audio-only and never treated as gameplay input.
@@ -1723,7 +1725,7 @@
   function createFallbackBuffer() {
     if (!state.audioContext) return;
     const sampleRate = state.audioContext.sampleRate;
-    const duration = HOSTED_FLUTE_PERFORMANCE ? 2.1 : 1.55; // A held flute tone needs a longer breath envelope than the Kurraya's decaying pluck.
+    const duration = HOSTED_FLUTE_PERFORMANCE ? FLUTE_NOTE_DURATION_S + 0.1 : 1.55; // Provides a long breath and loopable middle for the flute.
     const length = Math.floor(sampleRate * duration);
     const buffer = state.audioContext.createBuffer(1, length, sampleRate);
     const data = buffer.getChannelData(0);
@@ -1734,8 +1736,7 @@
       noiseState = (1664525 * noiseState + 1013904223) >>> 0;
       const noise = (noiseState / 0xffffffff) * 2 - 1;
       if (HOSTED_FLUTE_PERFORMANCE) {
-        // A MIDI-pitched, breathy flute fallback. The existing polyphonic sampler
-        // transposes this C4 buffer and schedules every chord/roll voice as before.
+        // Breath-like C4 flute fallback; its stable middle can loop for any transposed pitch.
         const attack = Math.min(1, time / 0.055);
         const release = Math.min(1, Math.max(0, duration - time) / 0.23);
         const phase = 2 * Math.PI * frequency * time + 0.018 * Math.sin(2 * Math.PI * 5.2 * time);
@@ -3127,7 +3128,7 @@
   }
 
   function syncRootPad(force = false, whenMs = null, clock = null) {
-    if (!state.rootPadEnabled || state.paused || document.hidden) {
+    if (HOSTED_FLUTE_PERFORMANCE || !state.rootPadEnabled || state.paused || document.hidden) { // A solo flute cannot also play a pad chord.
       if (state.rootPadVoices.length) stopRootPad(0.35);
       return false;
     }
@@ -3558,7 +3559,7 @@
   }
 
   function canUseCompatibilitySampler() {
-    return state.sampleImported && state.playbackEngine === 'compat' && Boolean(state.sampleObjectUrl);
+    return !HOSTED_FLUTE_PERFORMANCE && state.sampleImported && state.playbackEngine === 'compat' && Boolean(state.sampleObjectUrl); // The flute needs Web Audio for sample-accurate monophony.
   }
 
   function mediaPlaybackRate(midi) {
@@ -3674,6 +3675,7 @@
   function stopVoice(voice, release = state.release) {
     if (!voice || voice.released) return;
     voice.released = true;
+    if (HOSTED_FLUTE_PERFORMANCE && state.fluteVoice === voice) state.fluteVoice = null; // Pause/clear frees the single-voice slot.
     if (voice.kind === 'gesture-media') {
       clearTimeout(voice.stopTimer);
       clearInterval(voice.loopTimer);
@@ -3735,7 +3737,7 @@
   }
 
   function registerVoice(voiceKey, voice) {
-    if (!voice) return;
+    if (!voice || voice.released) return; // A flute attack may be superseded while an earlier async caller is still awaiting audio; do not resurrect the silent old voice.
     if (!Number.isFinite(voice.sequence)) voice.sequence = ++state.voiceSequence;
     const group = state.voices.get(voiceKey) || [];
     group.push(voice); // Pedal sustain deliberately retains older attacks, even when pitch and physical source are identical.
@@ -3766,10 +3768,27 @@
 
   function clearRingingVoices(reason = 'manual') {
     const count = activeVoiceCount();
+    if (HOSTED_FLUTE_PERFORMANCE && state.fluteVoice) stopVoice(state.fluteVoice,0.025); // Also stop a just-scheduled flute note not yet registered by its awaiting caller.
     for (const voices of state.voices.values()) voices.forEach(voice => stopVoice(voice, Math.max(0.04, state.release)));
     state.voices.clear();
     refs.transportStatus.innerHTML = `<strong>Cleared.</strong> Fading ${count} ringing sample voice${count === 1 ? '' : 's'}.`;
     log('Ringing voices cleared', `${reason} · ${count} voice${count === 1 ? '' : 's'}`);
+  }
+
+  function interruptFluteVoice(nextStartAt) {
+    const previous = state.fluteVoice; // Shared note owner across direct input, Auto Pick, manual strums and previews.
+    if (!previous || previous.released) return;
+    const now = state.audioContext.currentTime;
+    const endAt = Math.max(now,nextStartAt); // The old note stops at the new audio-clock attack, not at the early JS callback.
+    const fadeAt = Math.max(now,endAt - 0.008);
+    try {
+      previous.gain.gain.cancelScheduledValues(fadeAt);
+      previous.gain.gain.setValueAtTime(Math.max(0.0001,previous.gain.gain.value),fadeAt);
+      previous.gain.gain.linearRampToValueAtTime(0.0001,endAt);
+      previous.source.stop(endAt);
+    } catch (error) { log('Flute interruption warning',error.message); }
+    previous.released = true;
+    if (previous.voiceKey) removeVoiceFromGroup(previous.voiceKey,previous); // Debug voice count reflects one flute note, never stacked tails.
   }
 
   async function startSamplerVoice(midi, voiceKey, gainAmount = 0.72, whenMs = null) {
@@ -3779,16 +3798,33 @@
     const startAt = audioStartTimeFor(context, whenMs);
     const voice = createVoiceNodes(midi, gainAmount, startAt);
     voice.sequence = ++state.voiceSequence;
+    voice.voiceKey = voiceKey; // Registry identity for removing a note when a new flute pitch interrupts it.
     const markers = voice.markers;
     const {source, gain} = voice;
     const rate = Math.max(0.01, source.playbackRate.value);
     try {
-      const outputDuration = Math.max(0.025, (markers.trimEnd - markers.trimStart) / rate);
-      const releaseStart = startAt + Math.max(state.attack + 0.02, outputDuration - Math.min(0.2, state.release));
-      gain.gain.setTargetAtTime(0.0001, releaseStart, Math.max(0.01, state.release / 4));
-      source.start(startAt, markers.trimStart);
+      const outputDuration = HOSTED_FLUTE_PERFORMANCE ? FLUTE_NOTE_DURATION_S : Math.max(0.025, (markers.trimEnd - markers.trimStart) / rate);
+      const releaseStart = HOSTED_FLUTE_PERFORMANCE
+        ? startAt + outputDuration - 0.16
+        : startAt + Math.max(state.attack + 0.02, outputDuration - Math.min(0.2, state.release));
+      if (HOSTED_FLUTE_PERFORMANCE) {
+        const loopStart = Math.max(0,Number(markers.loopIn) || 0);
+        const loopEnd = Math.min(source.buffer.duration,Number(markers.loopOut) || 0);
+        if (loopEnd - loopStart > 0.06) {
+          source.loop = true; source.loopStart = loopStart; source.loopEnd = loopEnd; // Sustains the middle of the recorded or synthesized tone at any transposed pitch.
+        }
+      }
+      gain.gain.setTargetAtTime(0.0001,releaseStart,HOSTED_FLUTE_PERFORMANCE ? 0.04 : Math.max(0.01,state.release / 4));
+      source.start(startAt,markers.trimStart);
       source.stop(startAt + outputDuration + 0.04);
-      source.onended = () => removeVoiceFromGroup(voiceKey, voice);
+      if (HOSTED_FLUTE_PERFORMANCE) {
+        interruptFluteVoice(startAt);
+        state.fluteVoice = voice;
+      }
+      source.onended = () => {
+        if (state.fluteVoice === voice) state.fluteVoice = null;
+        removeVoiceFromGroup(voiceKey,voice);
+      };
       return voice;
     } catch (error) {
       try { source.disconnect(); } catch {}
@@ -3847,7 +3883,7 @@
         refs.transportStatus.innerHTML = '<strong>Paused.</strong> Press Start to resume, or choose Free Play.';
         return;
       }
-      if (state.playMode === 'pluck') {
+      if (!HOSTED_FLUTE_PERFORMANCE && state.playMode === 'pluck') { // Flute replacement is handled by the shared precise single-voice interrupter; do not pre-fade and overlap breaths.
         const previous = state.voices.get(voiceKey);
         if (previous) previous.forEach(voice => stopVoice(voice, 0.04));
         state.voices.delete(voiceKey);
@@ -3882,6 +3918,7 @@
       const strumId = ++state.previewCounter;
       const gainAmount = clamp(0.34 + velocity * 0.16, 0.38, 0.54); // Keeps six overlapping sample voices below clipping.
       const touchPoolPrefix = sourceId.includes('touch right stick') ? 'touch-right-strum' : null;
+      const strumAt = nowMs(); // Same timing anchor for all six strings; Web Audio schedules each tiny offset precisely.
       state.inputCount += 1;
       state.lastInput = `${direction} chord strum · ${harmony.degreeNumber}/${harmony.romanNumeral} from ${sourceId}`;
       log('Chord strum input received', state.lastInput);
@@ -3898,7 +3935,7 @@
             if (canUseCompatibilitySampler()) {
               const channelKey = touchPoolPrefix ? `${touchPoolPrefix}-${stringIndex}` : null;
               voice = channelKey ? startGestureMediaVoice(midi, voiceKey, gainAmount, channelKey) : startMediaVoice(midi, voiceKey, gainAmount);
-            } else voice = await startSamplerVoice(midi, voiceKey, gainAmount);
+            } else voice = await startSamplerVoice(midi, voiceKey, gainAmount, strumAt + delay);
             if (!voice) return;
             registerVoice(voiceKey, voice);
           } catch (error) {
@@ -4061,7 +4098,7 @@
       if (!state.paused) {
         const interval = Math.max(1,pluckIntervalMs(state.pluckInputMode));
         const gateVoice = voice => {
-          if (voice && Number(step?.gate) > 0) setTimeout(() => stopVoice(voice,.035),Math.max(24,interval * Number(step.gate)));
+          if (!HOSTED_FLUTE_PERFORMANCE && voice && Number(step?.gate) > 0) setTimeout(() => stopVoice(voice,.035),Math.max(24,interval * Number(step.gate))); // A flute holds until a new pitch rather than a pluck's short gate.
           return voice;
         };
         if (step?.type === 'note') {
@@ -4072,7 +4109,7 @@
           const voicing = step.type === 'boom' ? melodyTopStrumMidis(fretMidi,'boom',pulseClock) : melodyTopStrumMidis(fretMidi,step.voicing || 'full',pulseClock);
           const ordered = step.direction === 'up' ? voicing.slice().reverse() : voicing;
           ordered.forEach((midi,stringIndex) => {
-            const stringDelay = stringIndex * Math.max(10,Math.round(STRUM_NOTE_DELAY_MS * .72));
+            const stringDelay = stringIndex * STRUM_NOTE_DELAY_MS; // Matches the fast sweep used for manual chords and previews.
             const stringWhenMs = pulseTarget + stringDelay;
             setTimeout(async () => {
               if (generation !== state.pluckGeneration || state.paused) return;
@@ -5981,13 +6018,16 @@
     refs.harmonyBpm.value = String(state.harmonyBpm);
     refs.harmonyChordBeats.value = String(state.harmonyChordBeats);
     refs.auditoryMetronome.value = state.auditoryMetronome ? 'on' : 'off';
-    refs.rootPadEnabled.value = state.rootPadEnabled ? 'on' : 'off';
+    refs.rootPadEnabled.value = HOSTED_FLUTE_PERFORMANCE ? 'off' : (state.rootPadEnabled ? 'on' : 'off');
+    refs.rootPadEnabled.disabled = HOSTED_FLUTE_PERFORMANCE; // No second instrument voice is available for a harmony pad.
+    refs.rootPadEnabled.title = HOSTED_FLUTE_PERFORMANCE ? 'Flute is monophonic: harmony pad disabled.' : '';
     refs.rootPadLevelSlider.value = String(Math.round(state.rootPadLevel * 100));
     refs.rootPadLevelOut.textContent = `${Math.round(state.rootPadLevel * 100)}%`;
     refs.playMode.value = state.playMode;
     refs.voiceSelect.value = state.voice;
     refs.strumSensitivity.value = String(state.strumThreshold);
-    refs.playbackEngine.value = state.playbackEngine;
+    refs.playbackEngine.value = HOSTED_FLUTE_PERFORMANCE ? 'webaudio' : state.playbackEngine;
+    refs.playbackEngine.disabled = HOSTED_FLUTE_PERFORMANCE; // Compatibility media cannot schedule overlapping strum cutoffs accurately.
     refs.pitchCacheMode.value = state.pitchCacheMode;
     $('#attackSlider').value = String(Math.round(state.attack * 1000));
     $('#attackOut').textContent = `${Math.round(state.attack * 1000)} ms`;
@@ -6920,8 +6960,8 @@
           const ordered = step.direction === 'up' ? voicing.slice().reverse() : voicing;
           ordered.forEach((midi,stringIndex) => setTimeout(() => {
             if (!state.game.active || !state.game.demoActive || generation !== state.demoGeneration || state.paused) return; // Stopping a demo cancels delayed chord strings too.
-            void playAuditoryOnlyMidi(midi,`${voiceKey}:${stringIndex}`,0.4 * (step.velocity || 1),null,true,scheduledAt + stringIndex * 14);
-          },stringIndex * 14));
+            void playAuditoryOnlyMidi(midi,`${voiceKey}:${stringIndex}`,0.4 * (step.velocity || 1),null,true,scheduledAt + stringIndex * STRUM_NOTE_DELAY_MS);
+          },stringIndex * STRUM_NOTE_DELAY_MS));
         }
       },Math.max(0,targetGameTime - gameTime()));
       state.demoTimers.add(timer);
@@ -7453,10 +7493,11 @@
       `Buffer: ${state.buffer ? `${state.buffer.duration.toFixed(3)}s / ${state.buffer.numberOfChannels}ch / ${state.buffer.sampleRate}Hz` : 'none'} | imported output ${state.playbackEngine} | cache ${state.sampleCacheStatus}`,
       `Pitch cache: ${state.pitchCacheStatus} | ${state.pitchCacheReadyCount}/${state.pitchCacheTargetCount} prepared | mode ${state.pitchCacheMode}`,
       `Sample: ${state.sampleName} | ${state.sampleImported ? 'imported' : 'fallback'} | root ${midiName(state.sampleRootMidi)} | mode ${state.playMode}`,
+      `Flute: ${HOSTED_FLUTE_PERFORMANCE ? (state.fluteVoice && !state.fluteVoice.released ? midiName(state.fluteVoice.midi) + ' sounding' : 'silent') + ' | one voice / ' + FLUTE_NOTE_DURATION_S + 's breath' : 'not equipped'} | fast strum ${STRUM_NOTE_DELAY_MS} ms/string`, // Existing on-screen Mobile Debug reports the actual single flute voice without devtools.
       `Import: ${state.sourceChannels} source ch → ${state.monoStrategy} | corr ${state.stereoCorrelation.toFixed(2)} | gain ×${state.sampleNormalizationGain.toFixed(2)} | peak ${state.samplePeakDb.toFixed(1)} dBFS`,
       `Markers: ${marker.trimStart.toFixed(3)} > ${marker.loopIn.toFixed(3)} ⇄ ${marker.loopOut.toFixed(3)} > ${marker.trimEnd.toFixed(3)}`,
       `Note set: ${state.scaleName} ${midiName(state.tonicMidi)} | locked layout ${state.layoutPreset} | visual ${state.visualPreset}${state.visualPreset === 'timing-rings' ? ` (${state.timingPromptBeats} beats ahead)` : ''} | melody bank ${modeLabelFromOffset(currentModeOffset())} (notes ${currentModeOffset() + 1}–${currentModeOffset() + 4})${usesAutomaticPluckInput() && currentFretData() ? ` | held melody ${midiName(noteMidi(currentFretData().noteIndex,currentFretData().modeOffset))}` : ''}${state.autoReleaseTail ? ` | beat fill until boundary ${midiName(noteMidi(state.autoReleaseTail.fret.noteIndex,state.autoReleaseTail.fret.modeOffset))}` : ''}`,
-      `Harmony: ${currentHarmonyData().source === 'song' ? `${songTitle(state.game.songType)} silent chords` : state.harmonyPattern} | step ${currentHarmonyStep() + 1}${activeSongChordTimeline() ? `/${activeSongChordTimeline().length}` : `/${(HARMONY_PATTERNS[state.harmonyPattern] || []).length}`} degree ${currentHarmonyData().degreeNumber} (${currentHarmonyData().romanNumeral}) · ${currentHarmonyData().chordName} | ${currentHarmonyBeatData().inCountIn ? 'intro ' : 'beat '}${currentHarmonyBeatData().beatInChord + 1}/${currentHarmonyBeatData().beatsPerChord} | shared ${activeClockBpm()} quarter-BPM ${sharedTransportData().meter.label} clock${sharedTransportData().meter.grouping.length>1 ? ` (${sharedTransportData().meter.grouping.join('+')})` : ''} | click ${state.auditoryMetronome ? (state.metronomeSampleBuffer ? 'sample' : 'synth') : 'off'} | root pad ${state.rootPadEnabled ? `${midiName(rootPadTargetMidi())} ${state.rootPadSampleBuffer ? 'sample' : 'kurraya'} @ ${Math.round((state.rootPadSampleBuffer ? state.rootPadSampleLevel : state.rootPadLevel) * 100)}%` : 'off'}`,
+      `Harmony: ${currentHarmonyData().source === 'song' ? `${songTitle(state.game.songType)} silent chords` : state.harmonyPattern} | step ${currentHarmonyStep() + 1}${activeSongChordTimeline() ? `/${activeSongChordTimeline().length}` : `/${(HARMONY_PATTERNS[state.harmonyPattern] || []).length}`} degree ${currentHarmonyData().degreeNumber} (${currentHarmonyData().romanNumeral}) · ${currentHarmonyData().chordName} | ${currentHarmonyBeatData().inCountIn ? 'intro ' : 'beat '}${currentHarmonyBeatData().beatInChord + 1}/${currentHarmonyBeatData().beatsPerChord} | shared ${activeClockBpm()} quarter-BPM ${sharedTransportData().meter.label} clock${sharedTransportData().meter.grouping.length>1 ? ` (${sharedTransportData().meter.grouping.join('+')})` : ''} | click ${state.auditoryMetronome ? (state.metronomeSampleBuffer ? 'sample' : 'synth') : 'off'} | root pad ${state.rootPadEnabled && !HOSTED_FLUTE_PERFORMANCE ? `${midiName(rootPadTargetMidi())} ${state.rootPadSampleBuffer ? 'sample' : 'kurraya'} @ ${Math.round((state.rootPadSampleBuffer ? state.rootPadSampleLevel : state.rootPadLevel) * 100)}%` : 'off'}`,
       `Auto-pick phase: ${state.pluckNextPulseAt ? `${Math.round(state.pluckNextPulseAt - nowMs())} ms to next pulse` : 'idle'} | legato handoffs ${state.pluckLegatoHandoffs} | release tail ${state.autoReleaseTail ? 'active' : 'none'}`,
       `Arpeggio: ${isDualArpLayout() ? `L ${DUAL_ARP_LABELS.left[state.arpeggioIndex]} ${midiName(dualArpeggioMidi('left',state.arpeggioIndex))} | R ${DUAL_ARP_LABELS.right[state.rightArpeggioIndex]} ${midiName(dualArpeggioMidi('right',state.rightArpeggioIndex))}` : usesAutomaticPluckInput() ? `${automaticPluckLabel()} | step ${state.pluckStep}${currentFretData() ? ` | ${automaticPatternSteps(noteMidi(currentFretData().noteIndex,currentFretData().modeOffset),currentFretData(),state.pluckInputMode).label} | ${automaticPatternDefinition().kind}` : ''}` : `slot ${state.arpeggioIndex + 1} → ${midiName(arpeggioMidi())} | fixed register −1 oct`} | LS ${state.leftStick.map(value => value.toFixed(2)).join(', ')} | RS ${state.rightStick.map(value => value.toFixed(2)).join(', ')} | gesture channels ${state.gestureMediaChannels.size}`,
       `Four-way LS: selected ${['UP','RIGHT','DOWN','LEFT'][state.leftStickSector] || 'UP'} ${automaticPatternDefinition().short} | slots ${normalizeAutoPickSlots().map((id,index) => `${['U','R','D','L'][index]}:${automaticPatternDefinition(id).short}`).join(' · ')}`,

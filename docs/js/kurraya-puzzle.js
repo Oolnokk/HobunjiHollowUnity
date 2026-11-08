@@ -136,6 +136,7 @@
   function createSampler(url, options = {}) {
     const useCustomSample = options.useCustomSample !== false; // Flute uses its own authored sample rather than a Kurraya Music Lab recording.
     const allowMidiFallback = options.fallback === 'midi'; // The flute remains playable through Web Audio synthesis until its named sample is uploaded.
+    const FLUTE_NOTE_DURATION_S = 4.5; // Same sustained one-voice breath duration as Performance Mode.
     let context = null; // Allocated on first gesture, preserving mobile autoplay policy.
     let buffer = null; // Decoded bundled Kurraya pluck, shared across all subsequent notes.
     let pending = null; // Coalesces decode when several notes are pressed during first load.
@@ -226,16 +227,25 @@
         source.frequency.value = 440 * Math.pow(2, (Number(midi) - 69) / 12);
         gain.gain.setValueAtTime(0.0001,start);
         gain.gain.exponentialRampToValueAtTime(Math.max(0.0002,configuredGain() * 0.65),start + 0.045);
-        gain.gain.exponentialRampToValueAtTime(0.0001,start + 0.42);
+        gain.gain.setValueAtTime(Math.max(0.0002,configuredGain() * 0.65),start + FLUTE_NOTE_DURATION_S - 0.2); // Sustain after the attack, then exhale only at the end.
+        gain.gain.exponentialRampToValueAtTime(0.0001,start + FLUTE_NOTE_DURATION_S);
       } else {
         source.buffer = buffer;
         // The sample is pitched by the same playback-rate method as Kurraya Music Lab.
         source.playbackRate.value = Math.pow(2,(Number(midi) - sampleRootMidi) / 12);
         gain.gain.value = configuredGain();
+        if (allowMidiFallback) {
+          const loopStart = Math.min(buffer.duration * 0.2,Math.max(0,buffer.duration - 0.1)); // Recorded flute repeats a stable interior instead of ending on its original sample length.
+          const loopEnd = Math.min(buffer.duration * 0.8,buffer.duration);
+          if (loopEnd - loopStart > 0.06) { source.loop = true; source.loopStart = loopStart; source.loopEnd = loopEnd; }
+          gain.gain.setValueAtTime(configuredGain(),start);
+          gain.gain.setValueAtTime(configuredGain(),start + FLUTE_NOTE_DURATION_S - 0.2);
+          gain.gain.linearRampToValueAtTime(0.0001,start + FLUTE_NOTE_DURATION_S);
+        }
       }
       source.connect(gain); gain.connect(ctx.destination);
       source.start(start);
-      if (usingMidiFallback) source.stop(start + 0.44);
+      if (allowMidiFallback) source.stop(start + FLUTE_NOTE_DURATION_S);
       voice = source;
       source.onended = () => { if (voice === source) voice = null; source.disconnect(); gain.disconnect(); };
       lastError = '';

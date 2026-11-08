@@ -159,7 +159,7 @@ function fallbackSound(flute) {
     buffer:null,pitchCache:new Map(),sampleObjectUrl:null,
   };
   const sandbox = {
-    state, HOSTED_FLUTE_PERFORMANCE:flute,URL:{revokeObjectURL:noop},
+    state, HOSTED_FLUTE_PERFORMANCE:flute,FLUTE_NOTE_DURATION_S:4.5,URL:{revokeObjectURL:noop}, // Isolated fallback evaluation includes the production flute duration constant.
     invalidatePitchCache:noop,clearGestureMediaChannels:noop,
     syncMarkerSlidersFromState:noop,updateSampleUI:noop,drawWaveform:noop,
   };
