@@ -464,7 +464,15 @@
       const first = pickFromRng(rng, rules.firstParts); // Opening cluster, sometimes vowel-led or ending in a hard consonant.
       const middle = rng() < rules.threePartChance ? pickFromRng(rng, rules.middleParts) : ''; // Optional middle unit distinguishes Nanahi/Azgarlu from Imlao/Amnao.
       const last = pickFromRng(rng, rules.lastParts); // Final vowel or consonant ending shared by the two naming styles.
-      const name = applyCasing(first + middle + last, culture.casing); // Same casing mechanism as every other culture.
+      const parts = [first, middle, last].filter(Boolean); // Only nonempty Harlyao name fragments participate in phonetic joins.
+      let joined = parts[0]; // Accumulated name, checked at each fragment boundary to prevent unintended vowel blends.
+      for (const part of parts.slice(1)) {
+        if (/[aeiou]$/i.test(joined) && /^[aeiou]/i.test(part)) {
+          joined += pickFromRng(rng, rules.bridgeConsonants); // Insert a Harlyao consonant instead of inventing an "au" or other vowel combination.
+        }
+        joined += part;
+      }
+      const name = applyCasing(joined, culture.casing); // Same casing mechanism as every other culture.
       if (name.length >= 5 && name.length <= 12 && !/(.)\1\1/i.test(name) && !reserved.has(name.toLowerCase())) return name;
     }
     return 'Narkalu'; // Pathological fixed RNG must never hang or take an authored boss's name.
