@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <script src="../../js/tap-reliability.js?v=20261010a"></script>
-<title>Hobunji Animation Author V15.48</title>
+<title>Hobunji Animation Author V15.49</title>
 <style>
 :root {
   color-scheme: dark;
@@ -5843,18 +5843,42 @@ function transformMatrixFromSnapshot(value = {}) {
   return new THREE.Matrix4().compose(positionVector, quaternion, scaleVector);
 }
 
-function transformSnapshotFromMatrix(matrix) {
+function transformSnapshotFromMatrix(matrix, authoredRotationDeg = null) {
   const THREE = state.three.THREE;
   const position = new THREE.Vector3();
   const quaternion = new THREE.Quaternion();
   const scale = new THREE.Vector3();
   matrix.decompose(position, quaternion, scale);
-  const rotation = new THREE.Euler().setFromQuaternion(quaternion, 'XYZ');
+  const rotation = authoredRotationDeg
+    ? authorContinuousRotationDeg(THREE, quaternion, authoredRotationDeg)
+    : new THREE.Euler().setFromQuaternion(quaternion, 'XYZ'); // Ordinary transforms retain existing matrix conventions.
   return {
     position: { x: position.x, y: position.y, z: position.z },
-    rotationDeg: { x: radToDeg(rotation.x), y: radToDeg(rotation.y), z: radToDeg(rotation.z) },
+    rotationDeg: authoredRotationDeg ? rotation
+      : { x: radToDeg(rotation.x), y: radToDeg(rotation.y), z: radToDeg(rotation.z) },
     scale: { x: scale.x, y: scale.y, z: scale.z },
   };
+}
+
+// A 180° yaw has two XYZ Euler representations: (0,180,0) and
+// (180,0,180). Clearing the interpolated root X for grounded procedural feet
+// makes the second representation an upside-down roll. Choose the Euler
+// branch closest to the actual authored rotations instead.
+function authorContinuousRotationDeg(THREE, quaternion, referenceDeg = {}) {
+  const euler = new THREE.Euler().setFromQuaternion(quaternion, 'XYZ'); // Primary rotation representation from Three.
+  const first = { x: radToDeg(euler.x), y: radToDeg(euler.y), z: radToDeg(euler.z) }; // Closest to normal zero rotation.
+  const second = { x: first.x + 180, y: 180 - first.y, z: first.z + 180 }; // Quaternion-equivalent alternate XYZ branch.
+  const reference = { x: Number(referenceDeg.x) || 0, y: Number(referenceDeg.y) || 0, z: Number(referenceDeg.z) || 0 }; // Intended authored heading.
+  const nearest = degrees => ({ // Wraps both equivalent candidates near the corresponding keyframe axis.
+    x: reference.x + ((degrees.x - reference.x + 540) % 360) - 180,
+    y: reference.y + ((degrees.y - reference.y + 540) % 360) - 180,
+    z: reference.z + ((degrees.z - reference.z + 540) % 360) - 180,
+  });
+  const a = nearest(first); // First candidate scored for keyframe continuity.
+  const b = nearest(second); // Second candidate scored for keyframe continuity.
+  const score = value => (value.x - reference.x) ** 2 +
+    (value.y - reference.y) ** 2 + (value.z - reference.z) ** 2; // Smaller deviation avoids fake X/Z flips.
+  return score(b) < score(a) ? b : a;
 }
 
 function sampleTransformTrack(baseTransform, keyframes, time) {
@@ -5891,14 +5915,21 @@ function sampleTransformTrack(baseTransform, keyframes, time) {
   ));
   const quaternion = new THREE.Quaternion();
   quaternion.copy(leftQuaternion).slerp(rightQuaternion, alpha); // Three r128's slerpQuaternions may mutate without returning its receiver.
-  const rotation = new THREE.Euler().setFromQuaternion(quaternion, 'XYZ');
+  const leftRotation = left.transform.rotationDeg; // Earlier authored keyframe orientation.
+  const rightRotation = right.transform.rotationDeg; // Next authored keyframe orientation.
+  const reference = {
+    x: leftRotation.x + (rightRotation.x - leftRotation.x) * alpha,
+    y: leftRotation.y + (rightRotation.y - leftRotation.y) * alpha,
+    z: leftRotation.z + (rightRotation.z - leftRotation.z) * alpha,
+  }; // Guides quaternion interpolation back to the intended Y-axis facing.
+  const rotation = authorContinuousRotationDeg(THREE, quaternion, reference);
   return {
     position: {
       x: leftPosition.x + (rightPosition.x - leftPosition.x) * alpha,
       y: leftPosition.y + (rightPosition.y - leftPosition.y) * alpha,
       z: leftPosition.z + (rightPosition.z - leftPosition.z) * alpha,
     },
-    rotationDeg: { x: radToDeg(rotation.x), y: radToDeg(rotation.y), z: radToDeg(rotation.z) },
+    rotationDeg: rotation,
     scale: {
       x: leftScale.x + (rightScale.x - leftScale.x) * alpha,
       y: leftScale.y + (rightScale.y - leftScale.y) * alpha,
@@ -5931,9 +5962,13 @@ function sampleNeckTrack(baseRotationDeg, keyframes, time) {
   const qb = new THREE.Quaternion().setFromEuler(new THREE.Euler(degToRad(right.neckRotationDeg.x), degToRad(right.neckRotationDeg.y), degToRad(right.neckRotationDeg.z), 'XYZ'));
   const quaternion = new THREE.Quaternion();
   quaternion.copy(qa).slerp(qb, alpha); // Never pass an r128 slerpQuaternions return value as a quaternion.
-  const rotation = new THREE.Euler().setFromQuaternion(quaternion, 'XYZ');
-  return { x: radToDeg(rotation.x), y: radToDeg(rotation.y), z: radToDeg(rotation.z) };
-}
+  const reference = {
+    x: left.neckRotationDeg.x + (right.neckRotationDeg.x - left.neckRotationDeg.x) * alpha,
+    y: left.neckRotationDeg.y + (right.neckRotationDeg.y - left.neckRotationDeg.y) * alpha,
+    z: left.neckRotationDeg.z + (right.neckRotationDeg.z - left.neckRotationDeg.z) * alpha,
+  }; // Neck animations also need continuous yaw without surprise X/Z flips.
+  return authorContinuousRotationDeg(THREE, quaternion, reference);
+
 
 function animationFrameSampleTimes() {
   const fps = Math.max(1, animationAuthor.fps);
@@ -5965,7 +6000,10 @@ function authoringSnapshotToGameplayLocal(actor, authoringSnapshot, time) {
   const target = actor.targetId ? actorById(actor.targetId) : null;
   if (!target) return clone(authoringSnapshot);
   const inverseTargetAnchor = targetAnchorAuthoringMatrixAtTime(target, time).invert();
-  return transformSnapshotFromMatrix(inverseTargetAnchor.multiply(transformMatrixFromSnapshot(authoringSnapshot)));
+  return transformSnapshotFromMatrix(
+    inverseTargetAnchor.multiply(transformMatrixFromSnapshot(authoringSnapshot)),
+    animationAuthor.multiPreset === 'kiss' ? authoringSnapshot.rotationDeg : null,
+  ); // Export relative kiss tracks without dropping the facing yaw.
 }
 
 function gameplayLocalSnapshotToAuthoring(target, gameplayLocalSnapshot, time) {
@@ -7734,7 +7772,10 @@ authoringSnapshotToGameplayLocal = function(actor, authoringSnapshot, time) {
   const target = actor.targetId ? actorById(actor.targetId) : null;
   if (!target) return clone(authoringSnapshot);
   const inverseTargetAnchor = targetAnchorAuthoringMatrixAtTimeV157(target, time, actor).invert();
-  return transformSnapshotFromMatrix(inverseTargetAnchor.multiply(transformMatrixFromSnapshot(authoringSnapshot)));
+  return transformSnapshotFromMatrix(
+    inverseTargetAnchor.multiply(transformMatrixFromSnapshot(authoringSnapshot)),
+    animationAuthor.multiPreset === 'kiss' ? authoringSnapshot.rotationDeg : null,
+  ); // Export relative kiss tracks without dropping the facing yaw.
 };
 
 gameplayLocalSnapshotToAuthoring = function(target, gameplayLocalSnapshot, time, childActor = null) {
@@ -14362,8 +14403,28 @@ prepareMultiAvatarAnimationAuthor = function() {
 };
 installKissPresetUiV1546(); // The author initialized earlier in the same script; install immediately too.
 if (window.MultiAvatarAnimationAuthor) {
-  window.MultiAvatarAnimationAuthor.version = '15.48';
+  window.MultiAvatarAnimationAuthor.version = '15.49';
   window.MultiAvatarAnimationAuthor.fullBodyDiagnostics = fullCharacterPreviewDiagnosticsV1548;
+  window.MultiAvatarAnimationAuthor.kissFacingDiagnostics = () => animationAuthor.actors
+    .filter(actor => actor.source?.type === 'npc')
+    .map(actor => {
+      const THREE = state.three.THREE; // On-device and browser-test rotation diagnostics.
+      const rootUp = new THREE.Vector3(0, 1, 0).applyQuaternion(actor.root.getWorldQuaternion(new THREE.Quaternion()));
+      const portraitUp = actor.model
+        ? new THREE.Vector3(0, 1, 0).applyQuaternion(actor.model.getWorldQuaternion(new THREE.Quaternion()))
+        : null;
+      return {
+        name: actor.label,
+        time: animationAuthor.currentTime,
+        authoredRotationDeg: { ...sampleActorTransform(actor, animationAuthor.currentTime).rotationDeg },
+        rootRotationDeg: {
+          x: radToDeg(actor.root.rotation.x), y: radToDeg(actor.root.rotation.y), z: radToDeg(actor.root.rotation.z),
+        },
+        worldUpY: rootUp.y,
+        portraitUpY: portraitUp?.y ?? null,
+        body: actor.previewAnatomyV1548 || null,
+      };
+    });
   window.MultiAvatarAnimationAuthor.tick = tickAnimationAuthor; // The public author API was created before the V15.48 preview wrapper.
   window.MultiAvatarAnimationAuthor.setMode = setAnimationAuthorMode;
   window.MultiAvatarAnimationAuthor.parseSceneUrl = parseAnimationUrlSceneV1547;
@@ -14371,10 +14432,10 @@ if (window.MultiAvatarAnimationAuthor) {
   window.MultiAvatarAnimationAuthor.applyKissPreset = applyKissPresetV1546;
   window.MultiAvatarAnimationAuthor.importProject = importAnimationProjectData;
 }
-document.title = 'Hobunji Animation Author V15.48';
-animationAuthor.recentChange = 'V15.48 shows real hands, procedural feet, deforming leg animations and worn pants in Multi-Avatar previews, including Pahu and Leaf kissing via URL scenes.';
+document.title = 'Hobunji Animation Author V15.49';
+animationAuthor.recentChange = 'V15.49 stops Leaf turning upside down during kiss playback by retaining authored Y-facing through interpolation and export.';
 animationAuthor.modeStates.multi.recentChange = animationAuthor.recentChange;
-log('V15.47 URL scene setup installed; open ?scene=pahu-leaf-kiss to load two NPCs and the Kiss preset.');
+log('V15.49 upright kiss interpolation installed; 180° facing yaw no longer becomes an X/Z flip.');
 
 })();
 </script>
