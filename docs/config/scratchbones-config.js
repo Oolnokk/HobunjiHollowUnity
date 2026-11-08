@@ -1014,6 +1014,7 @@ window.SCRATCHBONES_CONFIG = {
             "middleParts": ["na", "gar", "la", "ri", "ra", "ha", "mi", "nar", "nu", "ril", "ar", "ma", "zul", "va", "gal", "lu", "n"],
             "lastParts": ["hi", "lu", "lao", "larg", "nao", "ri", "ra", "na", "aru", "ar", "an", "il", "ir", "or", "ur", "gar", "ga", "nir", "kal", "arg", "lar", "ma", "ha", "no", "za"],
             "threePartChance": 0.38,
+            "bridgeConsonants": ["n", "l", "r", "g", "k", "m", "h"],
             "reservedNames": ["Nanahi", "Azgarlu", "Imlao"]
           }
         }
