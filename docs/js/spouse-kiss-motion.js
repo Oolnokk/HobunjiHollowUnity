@@ -130,6 +130,9 @@
     let closestGap = 0; // Largest unavailable exact-shoulder distance after anatomical reach clamping.
     let surfaceContacts = 0; // Counts nearest reachable upper-torso surfaces rather than floating arm reach boundaries.
     let minGrip = 1; // Paired hand engagement for the author/readout.
+    let exactContacts = 0; // Counts true shoulder coordinates rather than closest reachable upper-torso placements.
+    let maxWristReach = 0; // Farthest final wrist distance from its own shoulder, used to detect overextension.
+    let unreachableSurfaces = 0; // Counts hand targets that cannot be reached even along the partner's torso.
     initiatorRig.useIdlePose?.(); // Reset both hands ONCE, or the right-hand solve would undo the left-hand shoulder grip.
     const torsoVector = geometry.torsoVector || (geometry.torsoVector = new THREE.Vector3());
     const torsoQuaternion = geometry.torsoQuaternion || (geometry.torsoQuaternion = new THREE.Quaternion());
@@ -150,20 +153,33 @@
       const result = resolveShoulderGripWorld(data.source, data.target, reach, data.grip,
         initiatorShorter ? torsoVector : null); // Short initiators reach nearest upper-body surface; tall initiators wait for true shoulders.
       if (!result) continue;
+      // A short initiator can touch a reachable chest/upper-torso point before
+      // the taller spouse kneels. If no real surface intersects the arm's reach,
+      // wait rather than planting a hand in midair at the reach sphere's edge.
+      const surfaceReachable = result.exactShoulder || result.onTorso; // Only anatomical contact points count as a planted hand.
       const gesture = sampleInitiatorHandReach(time, initiatorShorter, result.targetDistance, result.armReach);
+      if (!surfaceReachable) {
+        gesture.blend = 0;
+        unreachableSurfaces++;
+      }
       const socket = initiatorRig.group?.getObjectByName?.(side + '_hand_socket');
       if (!socket) continue;
       socket.getWorldPosition(data.idle);
       socket.getWorldQuaternion(data.orientation);
       data.grip.lerpVectors(data.idle, data.grip, gesture.blend);
-      initiatorRig.placeHandWorld(side, data.grip, data.orientation);
-      applied++;
+      if (gesture.blend > 0) {
+        initiatorRig.placeHandWorld(side, data.grip, data.orientation);
+        applied++;
+        if (result.exactShoulder) exactContacts++;
+        if (result.onTorso) surfaceContacts++;
+        maxWristReach = Math.max(maxWristReach, data.source.distanceTo(data.grip));
+      }
       closestGap = Math.max(closestGap, result.targetDistance - result.armReach);
-      if (result.onTorso) surfaceContacts++;
       minGrip = Math.min(minGrip, gesture.blend);
     }
     return { applied: applied === 2, hands: applied, blend: applied ? minGrip : 0, closestGap,
-      torsoContacts: surfaceContacts };
+      torsoContacts: surfaceContacts, exactShoulderContacts: exactContacts,
+      maxWristReach, unreachableSurfaces }; // Mobile diagnostics distinguish genuine shoulder contact from reachable chest contact.
   }
 
   function actorHeight(model, legs, root) {
