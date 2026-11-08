@@ -39,6 +39,45 @@ assert.equal(solver.samplePose(1.12).touch, true);
 assert.equal(solver.samplePose(.8).touch, false);
 assert.equal(solver.samplePose(1.9).touch, false);
 
+// A shorter initiator reaches for shoulder landmarks while the taller spouse
+// is still standing, then the knees lower; reverse height ordering waits for
+// actual reach instead of teleporting hands onto the shorter partner.
+assert.equal(solver.sampleKneelBlend(.37, true), 0, 'short initiator has hands up before taller spouse starts kneeling');
+assert.equal(solver.sampleKneelBlend(.37, false) > 0, true, 'tall initiator can start lowering from the beginning');
+assert.ok(solver.sampleKneelBlend(.72, true) > 0, 'taller spouse kneels after the grasp');
+assert.equal(solver.sampleKneelBlend(1.12, true), 1);
+assert.equal(solver.sampleKneelBlend(2.4, true), 0, 'knees recover at clip completion');
+const earlyReach = solver.sampleInitiatorHandReach(.37, true, 1.5, .35);
+assert.ok(earlyReach.blend > .9 && earlyReach.closestDistance > 0,
+  'short initiator reaches toward the closest anatomically possible point, even if true shoulder is too high');
+assert.equal(solver.sampleInitiatorHandReach(.37, false, 1.5, .35).blend, 0,
+  'tall initiator cannot grip a shoulder still outside arm reach');
+assert.ok(solver.sampleInitiatorHandReach(.72, false, .25, .35).blend > .9,
+  'tall initiator grips as soon as lowering brings the shoulder within arm reach');
+assert.equal(solver.sampleInitiatorHandReach(2.4, true, .25, .35).blend, 0,
+  'hands let go again at animation completion');
+class ShoulderVector {
+  constructor(x=0,y=0,z=0) { this.isVector3=true;this.x=x;this.y=y;this.z=z; }
+  copy(v){this.x=v.x;this.y=v.y;this.z=v.z;return this;}
+  distanceTo(v){return Math.hypot(this.x-v.x,this.y-v.y,this.z-v.z);}
+  sub(v){this.x-=v.x;this.y-=v.y;this.z-=v.z;return this;}
+  multiplyScalar(s){this.x*=s;this.y*=s;this.z*=s;return this;}
+  add(v){this.x+=v.x;this.y+=v.y;this.z+=v.z;return this;}
+}
+const sourceShoulder = new ShoulderVector(0,.7,0);
+const tallShoulder = new ShoulderVector(.15,2,0);
+const gripPoint = new ShoulderVector();
+const grip = solver.resolveShoulderGripWorld(sourceShoulder,tallShoulder,.38,gripPoint);
+assert.ok(grip && !grip.exactShoulder, 'unreachable upper shoulder is explicitly marked as projected');
+assert.ok(sourceShoulder.distanceTo(gripPoint) <= grip.armReach + 1e-6,
+  'short initiator hand never extends beyond actual arm reach');
+assert.ok(gripPoint.distanceTo(tallShoulder) < sourceShoulder.distanceTo(tallShoulder),
+  'clamped grip is the nearest possible point toward the shoulder');
+const nearShoulder = new ShoulderVector(0,.8,0);
+const exactGrip = solver.resolveShoulderGripWorld(sourceShoulder,nearShoulder,.38,gripPoint);
+assert.ok(exactGrip.exactShoulder && gripPoint.distanceTo(nearShoulder) < 1e-6,
+  'reachable shoulders receive genuine, unoffset contact');
+
 // The author must show a concrete one-shot preset, preserve pair-relative
 // exports, carry height/buff metadata, and load the same solver as gameplay.
 for (const needle of [
