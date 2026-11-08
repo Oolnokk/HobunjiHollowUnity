@@ -14433,6 +14433,7 @@ syncMultiAvatarFullBodiesV1548 = function(time = animationAuthor.currentTime, dt
         const actualJump = Number(shorter.root.position.y) || 0;
         const jumpFraction = solution.shorterJumpWorld > .001 ? Math.max(0, Math.min(1, actualJump / solution.shorterJumpWorld)) : 0;
         const scratch = shorter.multiKissJumpScratchV1551 || (shorter.multiKissJumpScratchV1551 = {}); // Stable vector storage reused while scrubbing.
+        scratch.posteriorLocalOffsetY = -(taller.rigFeetPreview?.getStanceDrop?.() || 0); // In the author only the portrait is lowered; actual game rig roots already move with the pelvis.
         const targets = window.SpouseKissMotion.posteriorStraddleFootTargets(
           state.three.THREE, taller.rigFeetPreview, jumperFeet, solution, jumpFraction, scratch,
         );
