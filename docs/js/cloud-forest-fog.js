@@ -732,9 +732,7 @@
       }
       grad.addColorStop(1, 'rgba(0,0,0,0)');
       ctx.fillStyle = grad;
-      ctx.beginPath();
-      ctx.arc(center.x, center.y, shineR, 0, Math.PI * 2);
-      ctx.fill();
+      withRuinShadowClip(ctx,shadows,()=>{ctx.beginPath();ctx.arc(center.x,center.y,shineR,0,Math.PI*2);ctx.fill();});
     }
 
     const weatherTint = preserveOutdoorWeatherTint ? currentOutdoorWeatherTintState() : null; // Used below so static outdoor lights preserve the same weather coloration as carried/watch lanterns.
