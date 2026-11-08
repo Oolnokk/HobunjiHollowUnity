@@ -2,6 +2,7 @@
 const assert = require('node:assert/strict'); // Validates independent pitch without changing stone cue duration.
 const fs = require('node:fs'); // Reads the shipped sound modules rather than a reimplementation.
 const vm = require('node:vm'); // Executes each browser module with controllable audio backends.
+const { performance: performanceClock } = require('node:perf_hooks'); // Required by the cooperative WSOLA processing timer in the browser sandbox.
 
 const read = file => fs.readFileSync(file, 'utf8'); // Shared source reader for production fixtures.
 const audioCalls = []; // Records native voices so a playback-rate regression is observable.
@@ -65,7 +66,7 @@ assert.equal(stone.debugSnapshot().lastPitchMode, 'neutral');
 const voiceWindow = { addEventListener() {}, AudioSystem: { gameAudioConfig: () => ({ enabled: true }) } }; // Forces the independent renderer's native fallback, as on a locked/no-WebAudio device.
 const voiceDocument = { addEventListener() {} };
 vm.runInNewContext(read('docs/js/animal-voice-independent-playback.js'), {
-  window: voiceWindow, document: voiceDocument, Audio: FakeAudio, console, setTimeout, clearTimeout, setInterval, clearInterval,
+  window: voiceWindow, document: voiceDocument, Audio: FakeAudio, console, performance: performanceClock, setTimeout, clearTimeout, setInterval, clearInterval,
 }, { filename: 'animal-voice-independent-playback.js' });
 voiceWindow.AnimalVoiceIndependentPlayback.playIndependent('stone-test.m4a', {
   tempo: 1, pitchSemitones: -7, preserveDurationOnFallback: true,
