@@ -5,7 +5,7 @@
   if(window.PingdortFlocks)return;
   const KIND='pingdort'; // Shared creature key from PingdortRegistration.
   const FERTILE_EGG='fertilePingdortEgg'; // Canonical hatchable inventory item.
-  const MAX_FLOCKS=3, FLOCK_SIZE=3, NEST_EGGS=3; // Each occupied nest shelters precisely three hunters and a fertile clutch.
+  const MAX_FLOCKS=8, FLOCK_SIZE=3, NEST_EGGS=3; // A limited set of permanent minicliff nests, with three hunters per nearby flock.
   const NEST_NEAR_PLAYER_TILES=17, HUNT_DISTANCE=13, FLEE_DISTANCE=7; // Bounded territory and predator-sense scan.
   const BOULDER_KIND='pingdortBoulder'; // Physical burden registered with the existing Shattercasks factory.
   const clamp=(v,a,b)=>Math.max(a,Math.min(b,Number(v)||0));
@@ -15,10 +15,10 @@
   const hash=str=>{let h=2166136261;for(const ch of String(str))h=Math.imul(h^ch.charCodeAt(0),16777619)>>>0;return h}; // Stable region, nest and bird identities.
   const sessions=new Map(); // Per-active-zone flock/nest objects, invalidated by scene replacement or area transition.
   const pets=new WeakMap(); // Companion ongoing special is owned by Combat; WeakMap provides non-rendering debug state.
-  const debug={flocks:0,spawned:0,dives:0,hits:0,flees:0,nestsHarvested:0,eggsCollected:0,
+  const debug={flocks:0,spawned:0,unloaded:0,flockDeaths:0,missingShelves:0,dives:0,hits:0,flees:0,nestsHarvested:0,eggsCollected:0,
     bombingRuns:0,bouldersDropped:0,lowCeilingDives:0,lastError:null}; // Console-free finite counters for mobile.
   let deps=null; // WildlifeSpawn's factory, hostile/companion sets and current map.
-  let nestButton=null; // One mobile-friendly in-world pickup button for nest interactions outside the farm's worldObjects targeting.
+  const FLOCK_UNLOAD_TILES=34; // Wild birds outside this radius retire without wasting off-screen AI and renderer time.
   let registeredBomb=false,registeredAttack=false,serial=0; // Idempotent combat/burden registration and unique burden ids.
 
   function activeArea(){return String(deps?.getCurrentArea?.()||'')}
@@ -103,47 +103,27 @@
     if(leg.elapsed<leg.duration)return false;
     state.leg=null;return true;
   }
-  function updateNestButton(session,position){
-    if(typeof document==='undefined'||!document.body)return; // Node fixtures and non-browser worlds do not need HUD controls.
-    const nearby=session&&position ? session.nests.filter(n=>!n.harvested&&dist(position,n)<=2.5)
-      .sort((a,b)=>dist(position,a)-dist(position,b))[0] : null; // Player must physically approach an intact fertile clutch.
-    if(!nearby){if(nestButton)nestButton.style.display='none';return;}
-    if(!nestButton){
-      nestButton=document.createElement('button'); // Independent fallback for zones where farm worldObjects are not eligible wilderness targets.
-      nestButton.type='button';nestButton.id='pingdortNestTakeButton';
-      nestButton.textContent='🥚 Take Pingdort Eggs';
-      nestButton.setAttribute('aria-label','Take fertile Pingdort eggs from nearby nest');
-      nestButton.style.cssText='position:fixed;right:12px;bottom:120px;z-index:1000;min-height:44px;padding:8px 12px;border:1px solid #bd9a60;border-radius:9px;background:rgba(37,29,20,.94);color:#fbe8bf;font:600 14px sans-serif;cursor:pointer;pointer-events:auto;box-shadow:0 3px 12px #0008';
-      nestButton.addEventListener('click',()=>{
-        const area=activeArea(),active=sessions.get(area),player=tilePos(deps?.player);
-        const closest=active?.nests.filter(n=>!n.harvested&&dist(player,n)<=2.5)
-          .sort((a,b)=>dist(player,a)-dist(player,b))[0];
-        if(!closest)return;
-        const outcome=collectNest(closest.id);
-        deps?.showToast?.(outcome.message, outcome.ok);
-        updateNestButton(active,player);
-      });
-      document.body.appendChild(nestButton);
-    }
-    nestButton.style.display=''; // Accessible without DevTools on desktop, touch and controller-using mobile browser builds.
+  function retireBird(state){
+    const a=state.actor;
+    window.TzatzulLiveVisuals?.release?.(a,'flock streamed out');
+    window.PerchSupport?.forget?.(a);a.onBranch=null;
+    deps?.hostileObjects?.delete?.(a);
+    a.avatarRef?.group?.parent?.remove?.(a.avatarRef.group);
+    a.groundShadow?.parent?.remove?.(a.groundShadow);
+    a.avatarRef?.dispose?.();
+    debug.unloaded++;
   }
   function cleanupSession(session){
     if(!session||session.disposed)return;
     session.disposed=true;
-    if(nestButton)nestButton.style.display='none'; // A scene swap immediately removes the old nest action.
     for(const state of session.birds){
-      const a=state.actor;window.TzatzulLiveVisuals?.release?.(a,'flock unloaded');
-      window.PerchSupport?.forget?.(a);a.onBranch=null;
-      deps?.hostileObjects?.delete?.(a);
-      a.avatarRef?.group?.parent?.remove?.(a.avatarRef.group);
-      a.groundShadow?.parent?.remove?.(a.groundShadow);
-      a.avatarRef?.dispose?.();
+      if(state.actor.health<=0)rememberBirdDeath(session,state.nest,state.slot);
+      retireBird(state);
     }
+    session.birds.clear();
     for(const nest of session.nests){
-      if(nest.worldKey && deps?.worldObjects?.get?.(nest.worldKey)===nest.interaction)
-        deps.worldObjects.delete(nest.worldKey);
-      nest.group?.parent?.remove?.(nest.group);
-      nest.group?.traverse?.(node=>node.geometry?.dispose?.());
+      nest.mesh?.parent?.remove?.(nest.mesh);
+      if(nest.fallbackArt)nest.mesh?.traverse?.(node=>node.geometry?.dispose?.());
     }
     for(const material of session.materials)material.dispose?.();
     if(sessions.get(session.area)===session)sessions.delete(session.area);
@@ -155,61 +135,97 @@
     const world=window.__hobunjiPlayerProfile?.worldId||'world';
     return 'pingdort:nest:'+world+':'+session.area+':'+date+':'+nest.id;
   }
-  function collectNest(id){
-    const area=activeArea(),session=sessions.get(area),nest=session?.nests.find(n=>n.id===id);
-    if(!nest||nest.harvested)return {ok:false,message:'This Pingdort nest is empty.'};
-    const player=tilePos(deps?.player);
-    if(dist(player,nest)>2.5)return {ok:false,message:'Move closer to the nest.'};
-    const inventory=deps?.inventory;if(!inventory)return {ok:false,message:'Inventory unavailable.'};
-    const available=Math.max(0,(window.InventoryStacks?.MAX_TOTAL??99)-(Number(inventory[FERTILE_EGG])||0));
-    if(!available)return {ok:false,message:'No room for fertile Pingdort eggs.'};
-    const count=Math.min(available,NEST_EGGS);
-    inventory[FERTILE_EGG]=(Number(inventory[FERTILE_EGG])||0)+count;
-    nest.harvested=true;
-    try{localStorage.setItem(saveHarvestKey(session,nest),'1')}catch(_){} // Tolerates privacy mode; live session still prevents repeats.
-    for(let i=0;i<count;i++){
-      const genotype=window.CreatureGenetics?.makeDefaultGenotype?.(KIND);
-      if(genotype)window.FarmAnimals?.queueItemGenotype?.(FERTILE_EGG,genotype); // Persistence adapter stores lineage beside the saved bag stack.
-    }
-    nest.eggGroup.visible=false;
-    debug.nestsHarvested++;debug.eggsCollected+=count;
-    deps.saveMemberWorldData?.();deps.refreshItemScroll?.();deps.refreshActionBar?.();
-    return {ok:true,message:'🥚 Found '+count+' fertile Pingdort egg'+(count===1?'':'s')+'!'};
+  function flockLossKey(session,nest){
+    return saveHarvestKey(session,nest).replace('pingdort:nest:','pingdort:wildlife:'); // Day-scoped losses persist independently from fertile eggs.
   }
-  function nestVisual(session,x,z,index){
-    const THREE=window.THREE,group=new THREE.Group(); // Tiny low-poly twig nest; no walkable/perch surface added to collision.
-    const y=groundAt(x,z)+.12;
-    group.name='pingdort-flock-nest';group.position.set(x,y,z);
-    const twig=new THREE.MeshBasicMaterial({color:0x584837});
-    const shell=new THREE.MeshBasicMaterial({color:0xa8a487});
-    session.materials.add(twig);session.materials.add(shell);
-    for(let i=0;i<8;i++){
-      const segment=new THREE.Mesh(new THREE.BoxGeometry(.66,.045,.12),twig);
-      const angle=i*Math.PI/4;segment.position.set(Math.cos(angle)*.24,.04,Math.sin(angle)*.24);
-      segment.rotation.y=angle;group.add(segment);
+  function readDeadSlots(session,nest){
+    try{
+      const saved=JSON.parse(localStorage.getItem(flockLossKey(session,nest))||'[]');
+      if(Array.isArray(saved))return new Set(saved.filter(x=>Number.isInteger(x)&&x>=0&&x<FLOCK_SIZE));
+    }catch(_){} // Damaged/disabled storage must not crash wildlife spawning.
+    return new Set();
+  }
+  function rememberBirdDeath(session,nest,slot){
+    if(!nest||!Number.isInteger(slot)||slot<0||slot>=FLOCK_SIZE||nest.deadBirdSlots.has(slot))return;
+    nest.deadBirdSlots.add(slot);debug.flockDeaths++;
+    try{localStorage.setItem(flockLossKey(session,nest),JSON.stringify([...nest.deadBirdSlots].sort()))}catch(_){}
+  }
+  function readRemaining(session,nest) {
+    let stored=null;
+    try{stored=localStorage.getItem(saveHarvestKey(session,nest))}catch(_){} // Private browsers still get live-session clutch state.
+    if(stored==='1')return 0; // Migrate older one-click/three-egg harvested nests.
+    if(typeof stored==='string'&&stored.startsWith('n:'))return Math.floor(clamp(Number(stored.slice(2)),0,NEST_EGGS));
+    return NEST_EGGS;
+  }
+  function eggCollected(session,nest){
+    try{localStorage.setItem(saveHarvestKey(session,nest),'n:'+nest.remaining)}catch(_){}
+    debug.eggsCollected++;
+    if(nest.remaining===0)debug.nestsHarvested++;
+  }
+  function collectNest(id){
+    // Headless/test adapter only. The player holds the normal nest_take input
+    // while aiming at an individual egg through DenNestSystem, not this method.
+    const session=sessions.get(activeArea()),nest=session?.nests.find(n=>n.id===id);
+    if(!nest||nest.remaining<=0)return {ok:false,message:'This Pingdort nest is empty.'};
+    const player=tilePos(deps?.player);
+    if(dist(player,{x:nest.col+.5,z:nest.row+.5})>1.6)return {ok:false,message:'Move closer to the nest.'};
+    const jumpFeet=deps?.player?.physicalFeetY;
+    const feetY=typeof jumpFeet==='number'&&Number.isFinite(jumpFeet)?jumpFeet:Number(deps?.playerMesh?.position?.y);
+    if(Number.isFinite(feetY)&&Math.abs(feetY-nest.worldY)>1.25)
+      return {ok:false,message:'Reach the minicliff shelf first.'};
+    const inventory=deps?.inventory;if(!inventory)return {ok:false,message:'Inventory unavailable.'};
+    if((Number(inventory[FERTILE_EGG])||0)>=(window.InventoryStacks?.MAX_TOTAL??99))
+      return {ok:false,message:'No room for fertile Pingdort eggs.'};
+    inventory[FERTILE_EGG]=(Number(inventory[FERTILE_EGG])||0)+1;
+    nest.remaining--;eggCollected(session,nest);
+    window.FarmAnimals?.queueItemGenotype?.(FERTILE_EGG,nest.genotype);
+    deps.saveMemberWorldData?.();deps.refreshItemScroll?.();deps.refreshActionBar?.();
+    return {ok:true,message:'🥚 Took a fertile Pingdort egg.'};
+  }
+  function clearNestTile(shelf){
+    const spots=(shelf?.footprint||[]).map(cell=>({x:cell.c+.5,z:cell.r+.5}))
+      .filter(p=>window.CliffRouteNetwork?.shelfContains?.(shelf,p.x,p.z)); // Real walkable cap centers; never a ground/rock surface beneath the shelf.
+    if(!spots.length)return null;
+    const reward=shelf.reward==='herbCluster'&&shelf.herbTile
+      ?{x:shelf.herbTile.c+.5,z:shelf.herbTile.r+.5}:shelf;
+    const gap=shelf.reward==='oreRock'?1.05:.88; // Keep the authored central ore/chest/herb pickup clear of the smaller 1×1 nest.
+    const safe=shelf.reward?spots.filter(p=>dist(p,reward)>gap):spots;
+    return safe.sort((a,b)=>dist(a,reward)-dist(b,reward))[0]||null;
+  }
+  function nestVisual(session,shelf,index) {
+    const THREE=window.THREE,spot=clearNestTile(shelf);
+    if(!spot||![spot.x,spot.z,shelf.y].every(Number.isFinite))return null;
+    const x=spot.x,z=spot.z,worldY=shelf.y;
+    let group=window.DenNestSystem?.createExteriorNestFurniture?.(session.scene,x,worldY,z);
+    let fallbackArt=false;
+    if(!group){
+      group=new THREE.Group();fallbackArt=true; // Stripped test worlds keep a small nest, never a floating opaque egg marker.
+      const twig=new THREE.MeshBasicMaterial({color:0x584837});
+      session.materials.add(twig);
+      for(let i=0;i<8;i++){
+        const branch=new THREE.Mesh(new THREE.BoxGeometry(.5,.045,.10),twig);
+        const a=i*Math.PI/4;branch.position.set(Math.cos(a)*.2,.035,Math.sin(a)*.2);
+        branch.rotation.y=a;group.add(branch);
+      }
+      group.position.set(x,worldY+.02,z);
+      session.scene.add(group);
     }
-    const eggGroup=new THREE.Group();eggGroup.name='pingdort-egg-clutch';
-    for(let i=0;i<NEST_EGGS;i++){
-      const egg=new THREE.Mesh(new THREE.SphereGeometry(.11,8,8),shell);
-      egg.scale.y=1.3;egg.position.set((i-1)*.2,.16,.05);eggGroup.add(egg);
-    }
-    group.add(eggGroup);session.scene.add(group);
-    const nest={id:session.area+':'+index,x,z,group,eggGroup,harvested:false,worldKey:null,interaction:null};
-    try{nest.harvested=localStorage.getItem(saveHarvestKey(session,nest))==='1'}catch(_){}
-    eggGroup.visible=!nest.harvested;
-    // Ordinary world object buttons mirror berries/reagents; no special egg-inventory subsystem.
-    const interaction={id:'pingdort_nest_'+nest.id,type:'pingdort_nest',col:Math.floor(x),row:Math.floor(z),
-      mesh:group,label:'🥚 Pingdort Nest',getButtons:()=>nest.harvested?[]:[{
-        icon:'🥚',label:'Take fertile Pingdort eggs',action:'obj_take_pingdort_eggs',style:'primary',allowed:true,
-      }],onAction:action=>action==='obj_take_pingdort_eggs'?collectNest(nest.id):{ok:false,message:'Unknown nest action.'}};
-    const key=interaction.col+','+interaction.row;
-    if(deps?.worldObjects?.has && !deps.worldObjects.has(key)){
-      deps.worldObjects.set(key,interaction);nest.worldKey=key;nest.interaction=interaction;
-    }
+    group.name='pingdort-minicliff-nest';
+    group.userData=group.userData||{};
+    group.userData.pingdortNest=true;
+    const nest={id:session.area+':'+shelf.id,x,z,worldY,shelfId:shelf.id,
+      areaId:session.area,remaining:NEST_EGGS,itemKey:FERTILE_EGG,
+      genotype:window.CreatureGenetics?.makeDefaultGenotype?.(KIND)||null,
+      col:Math.floor(x),row:Math.floor(z),w:1,h:1,
+      mesh:group,group,fallbackArt,flockLoaded:false,deadBirdSlots:new Set()};
+    nest.x=x*unit();nest.y=z*unit(); // Native DenNestSystem uses pixel-space nest coordinates like branch nests.
+    nest.onEggCollected=()=>eggCollected(session,nest); // Shares the normal hold-to-take and one-item inventory path.
+    nest.remaining=readRemaining(session,nest);
+    nest.deadBirdSlots=readDeadSlots(session,nest); // One death per flock member per game day, not per scene visit.
     return nest;
   }
   function spawnBird(session,nest,index){
-    const pos={x:nest.x+.4+(index-1)*.35,z:nest.z+.1+(index%2)*.25};
+    const pos={x:nest.col+.5+(index-1)*.18,z:nest.row+.5+(index%2)*.12}; // Three roosting birds stay over the same raised 1×1 cap.
     const genotype=window.CreatureGenetics?.makeDefaultGenotype?.(KIND)||null; // Each wild flock member rolls one persistent-in-session earth-tone coat and default small size.
     const actor=deps.makeCreatureEntity?.(KIND,pos.x*unit(),pos.z*unit(),{
       genotype,
@@ -219,72 +235,99 @@
     if(!actor)return null;
     actor.areaId=session.area;actor.isWildPingdort=true;actor.pingdortFlightPose='perched';
     actor.def=Object.assign(Object.create(actor.def||null),{hostile:false,attacks:[]}); // Wild birds never choose the player/large prey in generic AI.
-    const home={x:pos.x,z:pos.z,y:groundAt(pos.x,pos.z)+2.3};
+    const home={x:pos.x,z:pos.z,y:nest.worldY+.75+index*.12}; // Explicit ledge elevation prevents buried birds in Sense Mode.
     const perch=window.PerchSupport?.point?.(nest.id+':bird:'+index,actor.x,actor.y,home.y);
     if(!perch||!window.PerchSupport.attach(actor,perch)){actor.avatarRef?.dispose?.();return null;}
     deps.hostileObjects.add(actor);
-    const state={id:nest.id+':'+index,actor,home,nest,phase:'rest',cooldown:1.5+index*.38,
+    const state={id:nest.id+':'+index,slot:index,actor,home,nest,phase:'rest',cooldown:1.5+index*.38,
       serial:0,leg:null,target:null,struck:false}; // Group hunters share a nest, but own staggered attack flights.
     session.birds.add(state);debug.spawned++;
     return state;
   }
-  function validSite(session,x,z){
-    const col=Math.floor(x),row=Math.floor(z),zone=deps?.zoneScenes?.get?.(session.area)||deps?._zoneScenes?.get?.(session.area);
-    const tile=zone?.grid?.[row]?.[col];
-    if(!tile)return !!session.scene; // Dev fixtures without a zone grid still exercise the flock runtime.
-    const type=String(tile.type||'').toLowerCase();
-    return !['water','river','stream','lake','pond','void','rock','cliff','lava'].includes(type);
+  function chooseShelves(network){
+    const towers=network?.area==='map_southern_cloud_forest'
+      ? window.CloudForestRuntimeV2?.lastKarstReport?.sites||[] : []; // Prefer the newly raised karst shelves without forbidding older natural minicliffs.
+    const towerDistance=s=>towers.length?Math.min(...towers.map(t=>Math.hypot(s.x-t.x,s.z-t.z))):Infinity;
+    return (network?.balconies||[]).filter(s=>!s.puzzleCavePortal&&s.base?.footprint?.length
+      && Number.isFinite(s.y)&&s.y>0&&Array.isArray(s.footprint)&&s.footprint.length
+      &&clearNestTile(s))
+      .sort((a,b)=>(towerDistance(a)<=9?0:1)-(towerDistance(b)<=9?0:1)
+        ||hash(a.id)-hash(b.id))
+      .reduce((selected,s)=>{
+        if(selected.length<MAX_FLOCKS&&selected.every(other=>dist(other,s)>7))selected.push(s);
+        return selected;
+      },[]); // Distinct climbing-connected shelves, with new limestone pillars as the first nesting preference.
+  }
+  function syncNearbyFlocks(session){
+    const player=tilePos(deps?.player);
+    for(const nest of session.nests){
+      const distance=dist(player,{x:nest.col+.5,z:nest.row+.5});
+      if(distance<=NEST_NEAR_PLAYER_TILES+9&&!nest.flockLoaded){
+        let spawned=0;
+        for(let i=0;i<FLOCK_SIZE;i++){
+          if(nest.deadBirdSlots.has(i))continue; // Previously killed individuals remain absent after unloading/re-entering.
+          if(spawnBird(session,nest,i))spawned++;
+        }
+        nest.flockLoaded=spawned>0||nest.deadBirdSlots.size===FLOCK_SIZE;
+      } else if(distance>FLOCK_UNLOAD_TILES&&nest.flockLoaded){
+        for(const state of [...session.birds])if(state.nest===nest){
+          session.birds.delete(state);
+          if(state.actor.health<=0)rememberBirdDeath(session,nest,state.slot);
+          retireBird(state);
+        }
+        nest.flockLoaded=false;
+      }
+    }
   }
   function ensureZone(area=activeArea()){
     if(!habitat(area)||!deps?.makeCreatureEntity||!window.PerchSupport||!window.THREE)return 0;
-    const scene=currentScene(area);
-    if(!scene)return 0;
+    const scene=currentScene(area),network=window.CliffRouteNetwork?.forArea?.(area);
+    if(!scene||!network?.balconies?.length){debug.missingShelves++;return 0;} // Never fall back to birds embedded in terrain.
     const existing=sessions.get(area);
-    if(existing && existing.scene===scene){
-      const day=String(deps?.calendar?.year??0)+':'+String(deps?.calendar?.month??'unknown')+':'+String(deps?.calendar?.day??1); // Refill fertile clutches when the in-game civil day changes.
+    if(existing&&existing.scene===scene&&existing.network===network){
+      const day=String(deps?.calendar?.year??0)+':'+String(deps?.calendar?.month??'unknown')+':'+String(deps?.calendar?.day??1);
       if(existing.harvestDay!==day){
         existing.harvestDay=day;
         for(const nest of existing.nests){
-          let alreadyCollected=false;
-          try{alreadyCollected=localStorage.getItem(saveHarvestKey(existing,nest))==='1';}catch(_){}
-          nest.harvested=alreadyCollected;nest.eggGroup.visible=!alreadyCollected;
+          nest.remaining=readRemaining(existing,nest);
+          for(const state of [...existing.birds])if(state.nest===nest){
+            existing.birds.delete(state);
+            if(state.actor.health>0)retireBird(state); // Live flocks turn over once per civil day, not at every scene reload.
+          }
+          nest.flockLoaded=false;
+          nest.deadBirdSlots=readDeadSlots(existing,nest); // A new civil day creates a new wildlife population.
         }
       }
+      syncNearbyFlocks(existing);
       return existing.nests.length;
     }
     if(existing)cleanupSession(existing);
-    const session={area,scene,nests:[],birds:new Set(),materials:new Set(),disposed:false,
-      harvestDay:String(deps?.calendar?.year??0)+':'+String(deps?.calendar?.month??'unknown')+':'+String(deps?.calendar?.day??1)}; // A streamed scene owns bird actors and each date's finite fertile clutch.
+    const session={area,scene,network,nests:[],birds:new Set(),materials:new Set(),disposed:false,
+      harvestDay:String(deps?.calendar?.year??0)+':'+String(deps?.calendar?.month??'unknown')+':'+String(deps?.calendar?.day??1),
+      flockSyncTimer:0}; // Per-scene minicliff nests; only nearby wild birds enter the canonical roster.
     sessions.set(area,session);
-    const nearby=[...(deps.hostileObjects||[])].filter(c=>
-      c.areaId===area&&c.health>0&&String(c.creatureKey||'').startsWith('drenkirra'));
-    const player=tilePos(deps.player);
-    const origins=nearby.length?nearby.map(tilePos):[player];
-    for(let i=0;i<32&&session.nests.length<MAX_FLOCKS;i++){ // Bounded retries skip water, steep rock and already-occupied nesting sites.
-      const base=origins[hash(area+':'+i)%origins.length];
-      const angle=(hash(area+':nest-angle:'+i)%628)/100;
-      const radius=5+(hash(area+':nest-radius:'+i)%8);
-      const x=Math.floor(base.x+Math.cos(angle)*radius)+.5;
-      const z=Math.floor(base.z+Math.sin(angle)*radius)+.5;
-      if(!validSite(session,x,z)||session.nests.some(n=>dist(n,{x,z})<9))continue;
-      // A far-away zone has no active virtual camera; defer nests beyond the current territory.
-      if(dist(player,{x,z})>NEST_NEAR_PLAYER_TILES+9)continue;
-      const nest=nestVisual(session,x,z,i);
+    for(const shelf of chooseShelves(network)){
+      const nest=nestVisual(session,shelf,session.nests.length);
+      if(!nest)continue;
       session.nests.push(nest);
-      for(let j=0;j<FLOCK_SIZE;j++)spawnBird(session,nest,j);
       debug.flocks++;
     }
+    syncNearbyFlocks(session);
     return session.nests.length;
   }
   function updateWild(dt){
     const area=activeArea();
     for(const old of [...sessions.values()])if(old.area!==area)cleanupSession(old); // Release unloaded flocks and nest visuals without leaking another area's actors.
     const session=sessions.get(area);
-    if(!session||session.disposed){if(nestButton)nestButton.style.display='none';return;}
-    updateNestButton(session,tilePos(deps?.player)); // Keep the pickup affordance synced with living nests.
+    if(!session||session.disposed)return;
+    session.flockSyncTimer-=dt;
+    if(session.flockSyncTimer<=0){session.flockSyncTimer=2;syncNearbyFlocks(session);} // No duplicate RAF or per-frame whole-zone spawn search.
     for(const state of session.birds){
       const a=state.actor;
-      if(!alive(a,area))continue;
+      if(!alive(a,area)){
+        if(a?.health<=0)rememberBirdDeath(session,state.nest,state.slot);
+        continue;
+      }
       const at=tilePos(a),predator=predatorNear(area,at);
       if(predator&&state.phase!=='flee'){
         const away=tilePos(predator),length=Math.max(.001,dist(at,away));
@@ -476,10 +519,13 @@
     if(!registeredAttack)registerCompanionAttack();
     updateWild(clamp(dt,0,.1));
   }
+  const nestRecords=area=>sessions.get(area)?.nests||[]; // DenNestSystem reads this as the authoritative real-egg list.
   const debugSnapshot=()=>({...debug,habitats:[...sessions].map(([area,s])=>({
-    area,nests:s.nests.map(n=>({id:n.id,x:n.x,z:n.z,harvested:n.harvested})),
+    area,networkShelves:s.network?.balconies?.length||0,
+    nests:s.nests.map(n=>({id:n.id,x:n.col+.5,z:n.row+.5,y:n.worldY,shelfId:n.shelfId,
+      remaining:n.remaining,flockLoaded:n.flockLoaded,deadSlots:[...n.deadBirdSlots].sort()})),
     liveBirds:[...s.birds].filter(v=>v.actor.health>0).length,
   }))});
-  window.PingdortFlocks=Object.freeze({KIND,BOULDER_KIND,init,ensureZone,update,collectNest,lowCeiling,debugSnapshot,
+  window.PingdortFlocks=Object.freeze({KIND,BOULDER_KIND,init,ensureZone,update,collectNest,nestRecords,lowCeiling,debugSnapshot,
     getNest: id=>[...sessions.values()].flatMap(s=>s.nests).find(n=>n.id===id)||null});
 })();

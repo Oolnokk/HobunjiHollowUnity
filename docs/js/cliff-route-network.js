@@ -229,7 +229,8 @@
     for (const route of routes) {
       const c = selected[route.id], id = route.id, h = c.y1 - c.y0;
       const { nodes, upperNode: spans, tangent: tan, normal } = route;
-      if (h >= MIN_MINI_CLIFF_HEIGHT + 0.12 && hash(c.a.c, c.a.r, 83) % 100 < 38) {
+      if (h >= MIN_MINI_CLIFF_HEIGHT + 0.12 && hash(c.a.c, c.a.r, 83) % 100 <
+        (opts.area === 'map_southern_cloud_forest' ? 90 : 38)) { // Karst faces favor more ledges; other biomes retain original frequency.
         const count = h >= 8 ? 2 : 1;
         const oldSpans = clamp(Math.ceil(Math.max(h / 0.54, (c.walls + 1) / 0.56)), 3, 95); // Preserve existing reward save keys.
         for (let j = 0; j < count; j++) {

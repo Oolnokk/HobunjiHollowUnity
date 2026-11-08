@@ -140,11 +140,41 @@
       + '</div>';
   }
 
+  function renderPingdortCensus() {
+    const area = deps?.getCurrentArea?.();
+    if (!window.PingdortRegistration?.ZONES?.includes(area)) return '';
+    const status = window.PingdortFlocks?.debugSnapshot?.(); // Native live roster and per-egg clutch states, not guessed biome populations.
+    const record = status?.habitats?.find(item => item.area === area);
+    const network = window.CliffRouteNetwork?.forArea?.(area);
+    const karst = area === 'map_southern_cloud_forest'
+      ? window.CloudForestRuntimeV2?.lastKarstReport : null; // Last-generated map report is labelled explicitly because older saves may differ.
+    const fmt = value => deps.esc(String(value ?? 'unknown'));
+    const liveNests = record?.nests || [];
+    const nestRows = liveNests.map(nest =>
+      '<div>' + fmt(nest.id) + ' · minicliff Y ' + fmt(nest.y)
+      + ' · eggs ' + fmt(nest.remaining) + ' · living flock '
+      + fmt(nest.flockLoaded ? Math.max(0, 3 - (nest.deadSlots?.length || 0)) : 'streamed out')
+      + ' · losses today ' + fmt(nest.deadSlots?.length || 0) + '</div>').join('');
+    return '<div style="padding:8px 10px;margin-bottom:8px;border:1px solid rgba(177,184,143,.35);border-radius:6px;font-size:12px">'
+      + '<div style="font-weight:600">Pingdort nests / cliff wildlife</div>'
+      + '<div>Live birds: <b>' + fmt(record?.liveBirds || 0) + '</b> · nest sites: '
+      + fmt(liveNests.length) + ' · minicliffs: ' + fmt(network?.balconies?.length || 0)
+      + ' · climb routes valid: ' + fmt(network?.verification?.ok ?? 'not built') + '</div>'
+      + '<div>Eggs collected: ' + fmt(status?.eggsCollected || 0)
+      + ' · flock deaths: ' + fmt(status?.flockDeaths || 0)
+      + ' · shelf checks without a network: ' + fmt(status?.missingShelves || 0) + '</div>'
+      + (karst ? '<div>Last Cloud Forest generation: ' + fmt(karst.towers)
+        + ' limestone pillars in ' + fmt(karst.clusters) + ' clusters (seed '
+        + fmt(karst.seed) + ')</div>' : '')
+      + (nestRows || '<div style="opacity:.72">No current minicliff nests. Check that this zone has finished generating its cliff routes.</div>')
+      + '</div>';
+  }
+
   function renderWildlifeDebugPanel() {
     syncWildlifeTabVisibility();
     const container = document.getElementById('wildlifeDenList');
     if (!container) return;
-    const censusHtml = renderDenNestCensus() + renderDenTurnoverCensus() + renderRoamingHerdCensus() + renderCaveGeometryCensus() + renderTzatzulCensus();
+    const censusHtml = renderDenNestCensus() + renderDenTurnoverCensus() + renderRoamingHerdCensus() + renderCaveGeometryCensus() + renderTzatzulCensus() + renderPingdortCensus();
     if (!window.WildlifeSpawn.getDenGenotypes().size) {
       container.innerHTML = censusHtml + '<div style="opacity:.6;padding:8px 0">No den-family genotypes generated yet this session. Roaming herds are reported separately above because they do not belong to caverns.</div>';
       return;
