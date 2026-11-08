@@ -12,8 +12,10 @@ const Grid=require('../docs/js/cell-grid-3d.js');
 const fail=checks=>checks.filter(check=>!check.ok).map(check=>check.name+': '+(check.detail||'')).join(', ');
 assert(Plan.TRAVERSAL_METHODS.includes('reachingObelisks'),'new methods are selected from a dedicated traversal pool');
 assert(Obelisks.UNBUFFED_SPEED>3&&Obelisks.UNBUFFED_SPEED<4.3,'fall proof uses the no-buff movement reference with acceleration margin');
-assert(Math.abs(Obelisks.BEAT_SECONDS-1.6)<1e-9,'the existing 1.2-second pulse slows by the relative 120-to-90 BPM ratio');
-assert(Obelisks.ROTATION_SECONDS>0&&Obelisks.ROTATION_SECONDS<Obelisks.BEAT_SECONDS,
+assert.equal(Obelisks.BEAT_SECONDS,3,'the automatic shaft advances exactly once every three seconds');
+assert(Math.abs(Obelisks.ROTATION_SECONDS-3*(.7/1.6))<1e-9,
+  'the eased quarter-turn keeps the same share of the slower beat');
+assert(Obelisks.ROTATION_SECONDS<Obelisks.BEAT_SECONDS,
   'each eased quarter-turn settles before the following beat');
 assert(Math.abs(Obelisks.fallDistanceForTiles(2)-4*Obelisks.fallDistanceForTiles(1))<1e-9,'freefall is quadratic in horizontal travel time');
 assert.throws(()=>Obelisks.fallDistanceForTiles(2,0),'zero horizontal speed is not solvable');
@@ -111,9 +113,13 @@ try{
   assert.equal(a.desiredY,a.highY);assert.equal(b.desiredY,b.highY);
   assert.equal(c.desiredY,c.lowY,'only the two elevator pillars change elevation');
   const firstBeatRotations=[a.rotation]; // The 3 turns per measure must expose all four orientations across 4 bars.
+  const tickSeconds=.05; // Matches the runtime frame clamp and derives long-beat test budgets from the exported tempo.
+  const maxBeatSteps=Math.ceil(Obelisks.BEAT_SECONDS/tickSeconds)+3; // Allows for floating-point rounding at a three-second boundary.
+  for(let i=0;i<maxBeatSteps-5;i++)rt.tick(tickSeconds);
+  assert.equal(rt.getState().beatsPlayed,1,'the 3-second downbeat cannot advance early');
   const reachBeat=target=>{
     let steps=0;
-    while(rt.getState().beatsPlayed<target&&steps++<40)rt.tick(.05);
+    while(rt.getState().beatsPlayed<target&&steps++<maxBeatSteps)rt.tick(tickSeconds);
     assert.equal(rt.getState().beatsPlayed,target,'beat '+target+' must fire on the live room clock');
   };
   for(let count=2;count<=16;count++){
@@ -129,7 +135,7 @@ try{
       const halfwayYaw=a.holder.rotation.y;
       rt.tick(.05);
       assert(a.holder.rotation.y>halfwayYaw&&a.holder.rotation.y<Math.PI/2,'rotation progresses smoothly between beats');
-      for(let step=0;step<12;step++)rt.tick(.05);
+      for(let step=0;step<Math.ceil(Obelisks.ROTATION_SECONDS/tickSeconds);step++)rt.tick(tickSeconds);
       assert.equal(a.rotationPending,false,'the turn finishes within its beat');
       assert(Math.abs(a.holder.rotation.y-Math.PI/2)<1e-8,'turn finishes precisely at the next quarter-facing');
       assert([...climbs.values()].includes(climberSession.surface),'active climber follows a surviving, registered face');
