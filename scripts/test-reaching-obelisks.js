@@ -12,6 +12,9 @@ const Grid=require('../docs/js/cell-grid-3d.js');
 const fail=checks=>checks.filter(check=>!check.ok).map(check=>check.name+': '+(check.detail||'')).join(', ');
 assert(Plan.TRAVERSAL_METHODS.includes('reachingObelisks'),'new methods are selected from a dedicated traversal pool');
 assert(Obelisks.UNBUFFED_SPEED>3&&Obelisks.UNBUFFED_SPEED<4.3,'fall proof uses the no-buff movement reference with acceleration margin');
+assert.equal(Obelisks.BEAT_SECONDS,1.6,'the existing 1.2-second pulse slows by the relative 120-to-90 BPM ratio');
+assert(Obelisks.ROTATION_SECONDS>0&&Obelisks.ROTATION_SECONDS<Obelisks.BEAT_SECONDS,
+  'each eased quarter-turn settles before the following beat');
 assert(Math.abs(Obelisks.fallDistanceForTiles(2)-4*Obelisks.fallDistanceForTiles(1))<1e-9,'freefall is quadratic in horizontal travel time');
 assert.throws(()=>Obelisks.fallDistanceForTiles(2,0),'zero horizontal speed is not solvable');
 assert(Obelisks.catchDepthForGap(4)>Obelisks.catchDepthForGap(1),'longer traversals need lower catch strands');
@@ -91,8 +94,10 @@ try{
   assert(plan.ok,fail(plan.checks));
   const surfaces=new Map(),climbs=new Map(); // Verify registered support and climb faces follow the same moving/rotating pillars.
   const DS={registerSurface:s=>surfaces.set(s.id,s),clearScope(scope){for(const [id,s]of surfaces)if(s.scope===scope)surfaces.delete(id);}};
+  let climberSession=null; // Simulates an attached climber so the rotating bands must retain an owned grip.
   const CS={register:s=>{const record={...s,enabled:true};climbs.set(s.id,record);return record;},
-    remove:id=>climbs.delete(id),clearScope(scope){for(const [id,s]of climbs)if(s.scope===scope)climbs.delete(id);}};
+    remove:id=>climbs.delete(id),clearScope(scope){for(const [id,s]of climbs)if(s.scope===scope)climbs.delete(id);},
+    getAttachedSession:()=>climberSession};
   const parent=new Group();let player={x:0,z:0},playerY=0,mechanismBeats=0;
   const rt=Obelisks.mount(plan,{THREE,parent,DynamicSurfaces:DS,ClimbSurfaces:CS,
     tradition:'tothal',getPlayerPosition:()=>player,getPlayerY:()=>playerY,
@@ -116,6 +121,20 @@ try{
     assert.equal(rt.getState().beat,(count-1)%4+1,'4/4 meter is stable');
     if(count%4===1)firstBeatRotations.push(a.rotation);
     else assert.equal(a.rotation,(a.rotation===b.rotation?a.rotation:-1),'all pillars rotate in sync');
+    if(count===2){
+      const grip=a.worldFaces[0].surface; // The first turn happens while a player is attached to a registered strand.
+      climberSession={surface:grip,u:(grip.u0+grip.u1)/2,v:(grip.y0+grip.y1)/2,standOff:.34};
+      assert(a.rotationPending,'rotation begins when beat two fires');
+      assert(a.holder.rotation.y>0&&a.holder.rotation.y<Math.PI/2,'the first frame turns a fraction of 90 degrees');
+      const halfwayYaw=a.holder.rotation.y;
+      rt.tick(.05);
+      assert(a.holder.rotation.y>halfwayYaw&&a.holder.rotation.y<Math.PI/2,'rotation progresses smoothly between beats');
+      for(let step=0;step<12;step++)rt.tick(.05);
+      assert.equal(a.rotationPending,false,'the turn finishes within its beat');
+      assert(Math.abs(a.holder.rotation.y-Math.PI/2)<1e-8,'turn finishes precisely at the next quarter-facing');
+      assert([...climbs.values()].includes(climberSession.surface),'active climber follows a surviving, registered face');
+      climberSession=null;
+    }
   }
   assert.deepEqual(firstBeatRotations,[0,3,2,1],
     'three quarter turns per bar yield each starting facing across the four-bar cycle');
