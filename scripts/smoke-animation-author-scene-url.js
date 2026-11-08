@@ -141,7 +141,7 @@ async function main() {
       }
       if (!afterContact.find(actor => actor.name === 'Pahu')?.initiatorHands?.applied) {
         throw Error('Initiator wrist anchors must follow the spouse shoulders during contact: ' +
-          JSON.stringify({ bodies: afterContact, mouths: mouthAtContact, solver: api.exportProject().project.kiss.heightSolution }));
+          JSON.stringify({ bodies: afterContact, mouths: mouthAtContact, standing: mouthDiagnostics, solver: api.exportProject().project.kiss.heightSolution, correction: api.exportProject().project.kiss.mouthContactCorrectionXZ }));
       }
       scrubber.value = '0';
       scrubber.dispatchEvent(new Event('input', { bubbles: true })); // Reset to the intended kiss opening before testing walking gait.
