@@ -91,7 +91,9 @@
     o.balconies = o.octagon ? o.floors - 1 : Math.max(1, Math.min(3, o.balconies | 0));
     o.spacing = Math.max(3, o.spacing | 0);
     o.depth = Math.max(1, Math.min(o.depth | 0, (o.shaft - 1) / 2 - Math.floor(o.length / 2))); // buttresses on neighbouring sides must not run into each other
-    const cols = o.shaft + 2 * o.wall, rows = cols, topStand = o.spacing * o.balconies, levels = topStand + 3;
+    const cols = o.shaft + 2 * o.wall, rows = cols, topStand = o.spacing * o.balconies;
+    const headroom = o.traversal === 'jumpPlatforms' ? o.spacing : 0; // One extra story of open height above the top gallery, with no balcony: where the bomber Skeeri nest.
+    const levels = topStand + 3 + headroom;
     const grid = G.create({ cols, rows, levels, originX: o.originX, originZ: o.originZ, baseY: o.baseY });
     const random = rng(o.seed), turn = Math.floor(random() * 4);
     const sides = [0, 1, 2, 3].map(i => SIDES[(i + turn) % 4]);
@@ -205,7 +207,7 @@
     if(o.traversal==='jumpPlatforms'&&!jumpShaft?.ok)
       throw new Error('The jump-platform shaft is missing or unsolvable'+(jumpShaft?': '+jumpShaft.checks.filter(c=>!c.ok).map(c=>c.name).join(','):'.'));
     const surfaces = grid.collectClimbSurfaces();
-    const result = { ok: false, options: o, grid, cols, rows, levels, balconies, doors, entrance, wingPortals, surfaces, obelisks, jumpShaft, checks: [],
+    const result = { ok: false, headroom, options: o, grid, cols, rows, levels, balconies, doors, entrance, wingPortals, surfaces, obelisks, jumpShaft, checks: [],
       stories: Array.from({length:o.balconies+1},(_,floor)=>({floor,level:floor*o.spacing,balconies:balconies.filter(b=>b.level===floor*o.spacing),gallery:(ringCellsByLevel.find(r=>r.floor===floor)?.cells||[]).filter(c=>grid.canStand(c.col,c.row,floor*o.spacing))})) }; // Level map for a subsequent wing composer.
     result.checks = verify(result);
     result.ok = result.checks.every(c => c.ok);
@@ -332,7 +334,7 @@
     const floorMask = new Uint8Array(grid.cols * grid.rows); // No rectangular floor visible under the clipped octagon.
     const lo=result.options.wall,hi=lo+result.options.shaft-1,cut=Math.floor(result.options.shaft*.19);
     for(let r=0;r<grid.rows;r++) for(let c=0;c<grid.cols;c++)
-      if(grid.canStand(c,r,0)&&!(result.obelisks&&Math.abs(c-(lo+hi)/2)<(result.options.shaft-10)/2&&Math.abs(r-(lo+hi)/2)<(result.options.shaft-10)/2)&&(!result.options.octagon||inOctagon(c,r,lo,hi,cut)||result.entrance.side==='N'&&c===result.entrance.col&&r<lo||result.entrance.side==='S'&&c===result.entrance.col&&r>hi||result.entrance.side==='W'&&r===result.entrance.row&&c<lo||result.entrance.side==='E'&&r===result.entrance.row&&c>hi)) floorMask[r*grid.cols+c]=1;
+      if(grid.canStand(c,r,0)&&!((result.obelisks||result.jumpShaft)&&Math.abs(c-(lo+hi)/2)<(result.options.shaft-10)/2&&Math.abs(r-(lo+hi)/2)<(result.options.shaft-10)/2)&&(!result.options.octagon||inOctagon(c,r,lo,hi,cut)||result.entrance.side==='N'&&c===result.entrance.col&&r<lo||result.entrance.side==='S'&&c===result.entrance.col&&r>hi||result.entrance.side==='W'&&r===result.entrance.row&&c<lo||result.entrance.side==='E'&&r===result.entrance.row&&c>hi)) floorMask[r*grid.cols+c]=1;
     part('shaft-hub-octagonal-floor', Faces.mergeMask(floorMask, grid.cols, grid.rows).map(rect => ({ axis:'y', side:1, plane:0, a0:rect.i0, a1:rect.i1, b0:rect.j0, b1:rect.j1 })));
     if (climb?.buildVisual) for (const surface of result.surfaces) shell.add(climb.buildVisual(THREE,{...surface,ruin:true})); // Real V50 ladder art replaces the old colored climb tile overlays.
     return shell;
@@ -348,7 +350,7 @@
     for(const cell of grid.standingSurfaces({clearance:2})){
       if(cell.level>=grid.levels-1)continue; // No invisible standing surface on the roof.
       if(o.octagon&&!inOctagon(cell.col,cell.row,0,grid.cols-1,exteriorCut))continue;
-      if(result.obelisks&&cell.level===0&&Math.abs(cell.col-(o.wall+(o.shaft-1)/2))<(o.shaft-10)/2
+      if((result.obelisks||result.jumpShaft)&&cell.level===0&&Math.abs(cell.col-(o.wall+(o.shaft-1)/2))<(o.shaft-10)/2
         &&Math.abs(cell.row-(o.wall+(o.shaft-1)/2))<(o.shaft-10)/2)continue; // No implicit support inside the fatal basin.
       let rows=levelRows.get(cell.level);
       if(!rows){rows=new Map();levelRows.set(cell.level,rows);}

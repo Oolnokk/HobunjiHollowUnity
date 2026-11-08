@@ -176,6 +176,7 @@ async function check(){
       rooms:[{id:'r'+i,kind:'challenge-room',x:60,z:70,w:12,d:12,y:i*16}]}))};
   const ruin=w.SkeeriRuins.mount({rec:{scene,mapData:{id:area}},plan,seed:11,
     getPlayerY:()=>0,difficulty:5,theme:'kanthic'});
+  w.SkeeriRuins.update(.01); // bombers are created lazily once the ruin is the active area
   assert.equal(ruin.theme,'kanthic', "Skeeri inherit the generated ruin’s lich tradition");
   assert(ruin.bombers.every(b=>b.actor.skeeriPalette.theme==='kanthic'
     && w.SkeeriRuins.BODY_GROUPS.kanthic.includes(b.actor.skeeriPalette.body)),

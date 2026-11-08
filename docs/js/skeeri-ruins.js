@@ -358,7 +358,12 @@
     const top=plan.floors[plan.floors.length-1],anchor=plan.shaft.anchor;
     // Scale the nest and the attack range to the shaft (cave/hole/lich shafts are far smaller than the original 45-cell one).
     const shaftSize=Number(plan.options?.shaftSize)||45,floorHeight=Number(plan.options?.floorHeight)||16;
-    const shaftRadius=Math.max(8,Math.min(SHAFT_RADIUS,shaftSize/2+3)),nestSetback=Math.max(6,Math.min(20,shaftRadius*1.05)),nestRise=clamp(floorHeight*.7,6,11);
+    const shaftRadius=Math.max(8,shaftSize/2+3);
+    // Jump-platform shafts have an extra story of open height above the top gallery (no balcony):
+    // the nest is a basket balcony bolted to the north wall in that space, where the bombers roost in view.
+    const headroomShaft=plan.options?.shaftTraversal==='jumpPlatforms';
+    const nestSetback=headroomShaft?Math.max(4,shaftSize/2-1.7):Math.max(6,Math.min(20,shaftRadius*1.05));
+    const nestRise=headroomShaft?floorHeight*.55:clamp(floorHeight*.7,6,11);
     const session={mapId:rec.mapData?.id||MAP_ID,scene:rec.scene,seed:Number(seed)>>>0,
       getPlayerY,theme:traditionOf(options.theme),hatches:[],actors:new Set(),roots:[],materials:new Set(),disposed:false,
       shaftRadius,nestSetback,nest:{x:anchor.x,z:anchor.z-nestSetback,y:top.y+nestRise},bombers:[],lastSignal:0}; // All actor, hatch, nest and payload lifetime stays inside one generated map.
@@ -391,15 +396,19 @@
       hatchVisual(session,selected,medium?'medium':'small',mechanism?'mechanism':'proximity',floor.floor);
     }
     nestVisual(session);
-    const difficulty=clamp(options.difficulty??plan.floorCount,1,9); // One to three bombers as ruin difficulty increases.
-    const bomberCount=difficulty<=3?1:difficulty===4?2:3; // Three-, four- and five-story shafts have one, two and three bombers respectively.
+    session.difficulty=clamp(options.difficulty??plan.floorCount,1,9); // One to three bombers as ruin difficulty increases.
+    session.bombersSpawned=false; // Bombers are created by update() once the ruin is the ACTIVE area. Creating them here, during generation, clamped them into the previous area's tile grid (~150 tiles from their nest), so nobody ever saw one.
+    snapshot.mounts++;
+    return session;
+  }
+  function spawnBombers(session) {
+    session.bombersSpawned=true;
+    const difficulty=session.difficulty,bomberCount=difficulty<=3?1:difficulty===4?2:3; // Three-, four- and five-story shafts have one, two and three bombers respectively.
     for(let i=0;i<bomberCount;i++){
       const x=session.nest.x+(i-(bomberCount-1)/2)*1.8,z=session.nest.z+.1;
       const state=newActor(session,'large',x,z,session.nest.y+1.5,Math.floor(difficulty/2),'b'+i);
       if(state){state.phase='nest';state.cooldown=4+i*3;state.home={x,z,y:session.nest.y+1.5};session.bombers.push(state);}
     }
-    snapshot.mounts++;
-    return session;
   }
   async function dropBomb(session,state) {
     if(!isActive(session)||state.dead||state.pendingBomb)return;
@@ -471,6 +480,7 @@
   function update(dt=0) {
     const session=owner;
     if(!session||!isActive(session))return;
+    if(!session.bombersSpawned)spawnBombers(session);
     const step=clamp(dt,0,.1),player=currentPlayer(),playerY=Number(session.getPlayerY?.())||0;
     for(const hatch of session.hatches)updateHatch(session,hatch,step,player,playerY);
     for(const state of session.actors){

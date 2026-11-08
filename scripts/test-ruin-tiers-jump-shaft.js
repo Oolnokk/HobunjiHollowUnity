@@ -14,9 +14,9 @@ const Hub = require(docs('js/shaft-hub.js'));
 const Jump = require(docs('js/ruin-jump-shaft.js'));
 
 const SPEC = {
-  cave: { floors: 2, wings: 3, rooms: 2, central: 9 },
-  hole: { floors: 3, wings: 4, rooms: 3, central: 19 },
-  lich: { floors: 4, wings: 5, rooms: 3, central: 27 },
+  cave: { floors: 2, wings: 3, rooms: 2, central: 13 },
+  hole: { floors: 3, wings: 4, rooms: 3, central: 27 },
+  lich: { floors: 4, wings: 5, rooms: 3, central: 39 },
 };
 const SIDES = ['N', 'E', 'S', 'W'];
 

@@ -16,8 +16,8 @@
 // The runtime object deliberately exposes the same read surface the old
 // obelisk runtime did (columns, isVoidAt, pitY, plan.physics, tradition,
 // getState, tick, dispose) so the ruin's existing airborne/fall reconciler
-// drives it unchanged. Falling is soft: you land on the platform or floor
-// below and take fall damage; there is no death pit.
+// drives it unchanged. The ground story is a gallery over a death pit; landing on a
+// platform or gallery after a fall is survivable (fall damage).
 (function (root, factory) {
   const api = factory();
   if (typeof module === 'object' && module.exports) module.exports = api;
@@ -34,11 +34,12 @@
   const GALLERY = 5; // Same gallery width as ShaftHub (balcony thickness never changes).
   const EDGE = 0.45; // Clear strip between a platform edge and the gallery drop.
   const GAP = 1.0; // Preferred edge-to-edge gap (jump reach is ~1.9).
-  const MIN_SIZE = 1.1, MAX_SIZE = 3.8;
+  const MIN_SIZE = 1.1, MAX_SIZE = 6; // Big chambers get big, forgiving slabs rather than long gaps.
   const PILLAR_RADIUS = 3.1; // js/dev-random-ruin-lich-themes.js PILLAR_RADIUS.
   const PILLAR_HEIGHT = 2.4;
   const SAFE_GAP_FRACTION = 0.85;
   const FALL_SAFE_DROP = 3, FALL_DAMAGE_PER_UNIT = 3.2;
+  const DEATH_DEPTH = 8; // Pit bottom sits this far below the ground gallery.
 
   const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
   const reach = rise => { // Horizontal travel of a jump that lands `rise` above take-off.
@@ -157,7 +158,7 @@
       routes.push({ story, entryY: y0, exitY: y0 + o.spacing, platformIds: ids, rise: dy, startSide: ['N', 'E', 'S', 'W'][startSide] });
     }
     const plan = { method: TRAVERSAL, options: o, platforms, routes, centre, central: C,
-      physics: { gravity: GRAVITY, reach: reach(dy), rise: dy }, pit: { bottomY: o.baseY - 2, style: 'floor', depth: 2 } };
+      physics: { gravity: GRAVITY, reach: reach(dy), rise: dy }, pit: { bottomY: o.baseY - DEATH_DEPTH, style: 'tradition', depth: DEATH_DEPTH } }; // The ground story is a gallery over a death pit (as with the old obelisks).
     plan.checks = verify(plan);
     plan.ok = plan.checks.every(c => c.ok);
     return plan;
@@ -229,6 +230,35 @@
     const tradeTrim = { tothal: 0xb7ecfa, hronal: 0xff7a30, kanthic: 0xa072d8 }[tradition] || 0xb7ecfa;
     const trimMaterial = basic(tradeTrim, { transparent: true, opacity: .55, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }); // Offset keeps the sheet from flickering against the slab top.
     const cx = plan.centre.x, cz = plan.centre.z, half = plan.central / 2;
+    // ── Death pit under the whole central chamber ─────────────────────────
+    // The ground story is a gallery around it. Nothing is registered as support in the
+    // pit, so walking off the edge or missing a jump falls to the bottom (fatal). Registering
+    // it as a DynamicSurfaces pit also stops free jumps counting the ruin's ground tile as a
+    // landing floor. Hazard art follows the tradition: lava, ice spikes or real plasm.
+    const pitY = plan.pit.bottomY, pitSize = plan.central;
+    const basin = new THREE.Mesh(new THREE.BoxGeometry(pitSize, .4, pitSize), basic(0x211c1b));
+    basin.position.set(cx, pitY - .22, cz); basin.name = 'jump-shaft-death-pit'; group.add(basin); owned.push(basin);
+    if (tradition !== 'kanthic') {
+      const sheet = new THREE.Mesh(new THREE.PlaneGeometry(pitSize, pitSize), basic(tradition === 'tothal' ? 0xb7ecfa : 0xff4215));
+      sheet.rotation.x = -Math.PI / 2; sheet.position.set(cx, pitY + .03, cz); sheet.name = 'jump-shaft-' + tradition + '-hazard'; group.add(sheet); owned.push(sheet);
+    }
+    if (tradition === 'tothal' && root.IceStalagmiteCoverage?.build) {
+      const ice = root.IceStalagmiteCoverage, tempMaterial = basic(0xffffff, { transparent: true, opacity: 0, depthWrite: false });
+      const chunk = 8, size = Math.floor(pitSize), baseX = cx - size / 2, baseZ = cz - size / 2;
+      for (let dz = 0; dz < size; dz += chunk) for (let dx = 0; dx < size; dx += chunk) {
+        const source = new THREE.Group(), cubes = [];
+        for (let zz = dz; zz < Math.min(size, dz + chunk); zz++) for (let xx = dx; xx < Math.min(size, dx + chunk); xx++) {
+          const cube = new THREE.Mesh(new THREE.BoxGeometry(1, .02, 1), tempMaterial);
+          cube.position.set(xx + .5, 0, zz + .5); cube.userData.authoredPartId = 'ice-death-cube-' + xx + '-' + zz; source.add(cube); cubes.push(cube);
+        }
+        const growth = ice.build(THREE, source, { kind: 'iceStalagmites', seed: plan.options.seed + dx * 131 + dz * 17, count: Math.min(64, cubes.length), density: 1, iceCluster: 3, radius: .28,
+          iceHeightMin: .65, iceHeightMax: 2.2, iceRoughness: .27, iceOpacity: .92, color: '#c2e8fb', iceEngulf: .45, iceFootprintPadding: .06, iceFacets: 5, iceTipSharpness: .84, iceLean: .14, target: 'all' });
+        growth.position.set(baseX + dx, pitY + .04, baseZ + dz); group.add(growth);
+        growth.traverse(node => { if (node.isMesh) owned.push(node); });
+        for (const cube of cubes) cube.geometry.dispose();
+      }
+    }
+    DS.registerPit?.({ id: scope + '-death-pit', scope, bounds: { minX: cx - half, maxX: cx + half, minZ: cz - half, maxZ: cz + half } });
     for (const p of plan.platforms) {
       const holder = new THREE.Group(); holder.name = p.id; holder.position.set(p.x, p.y, p.z); group.add(holder);
       const slab = new THREE.Mesh(new THREE.BoxGeometry(p.w, THICKNESS, p.d), stone);
@@ -257,6 +287,11 @@
           pillarRecords.push(record);
         }
       } else if (tradition === 'kanthic') {
+        const pitTiles = []; // The old sinking Kanthic plasm fills the pit (it is deadly to reach in any case).
+        for (let tz = Math.floor(cz - half); tz < Math.ceil(cz + half); tz++) for (let tx = Math.floor(cx - half); tx < Math.ceil(cx + half); tx++) pitTiles.push({ x: tx, z: tz, y: plan.pit.bottomY });
+        const pitPlasm = themes.createPlasmPatch?.(pitTiles, { permanent: true, ignoreClear: true, label: 'shaft-pit' });
+        if (!pitPlasm) return false;
+        plasmHandles.push(pitPlasm);
         for (const p of plan.platforms) if (p.kind === 'plasm') {
           const handle = themes.createPlasmPatch?.(p.tiles.map(t => ({ x: t.x, z: t.z, y: p.y })), { permanent: true, ignoreClear: true });
           if (!handle) return false;
@@ -292,7 +327,7 @@
     };
     const state = () => ({ method: TRAVERSAL, active: false, beat: 0, measure: 0, moving: 0, // `active` stays false: the ambient-music silencer keys on the obelisk beat clock. platforms: plan.platforms.length, hazards: tradition, hazardsAttached, falls: fallEvents,
       route0: plan.platforms.filter(p => p.floor === 0).map(p => [p.kind, +p.x.toFixed(2), +p.z.toFixed(2), +p.y.toFixed(2), +p.w.toFixed(2), +p.d.toFixed(2)]), // Compact layout for on-device checks and headless drivers.
-      pillars: pillarRecords.length, plasmSlabs: plasmHandles.length, iceTiles: plan.platforms.filter(p => p.kind === 'ice').length, pit: 'soft-floor' });
+      pillars: pillarRecords.length, plasmSlabs: plasmHandles.length, iceTiles: plan.platforms.filter(p => p.kind === 'ice').length, pit: 'death-pit' });
     return {
       plan, method: TRAVERSAL, tick, dispose, columns, supportAt, isVoidAt, isIceAt, tradition, pitY: plan.pit.bottomY, softLanding: true,
       noteFall: () => { fallEvents++; }, getState: state,

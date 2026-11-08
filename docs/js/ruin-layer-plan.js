@@ -19,9 +19,9 @@
   // chamber (2 = one puzzle + brazier, 3 = two puzzles + brazier).
   const GALLERY_WIDTH=5,FULL_CENTRAL=35;
   const TIERS=Object.freeze({
-    cave:Object.freeze({floors:2,centralScale:.25,wings:3,wingRooms:2,floorHeight:6}),
-    hole:Object.freeze({floors:3,centralScale:.5,wings:4,wingRooms:3,floorHeight:10}),
-    lich:Object.freeze({floors:4,centralScale:.75,wings:5,wingRooms:3,floorHeight:12}),
+    cave:Object.freeze({floors:2,centralScale:.375,wings:3,wingRooms:2,floorHeight:6}),
+    hole:Object.freeze({floors:3,centralScale:.75,wings:4,wingRooms:3,floorHeight:10}),
+    lich:Object.freeze({floors:4,centralScale:1.125,wings:5,wingRooms:3,floorHeight:12}),
   });
   // Wings are spread as evenly as possible with the remainder on the upper
   // floors (ground floor loses one side to the entrance, so it is capped at 3).

@@ -1758,7 +1758,7 @@
     fall.y=next;ruin.supportY=next;
     ruin.lastAcceptedPx={x:deps.player.x,y:deps.player.y};
     syncRuinPresentationHeight(next);
-    if(next<=pitFloor+.12&&!obelisks.softLanding){
+    if(next<=pitFloor+.12){
       ruin.obeliskFall=null;ruin.supportId=null;
       if(window.PlayerDowned?.dieImmediately?.('reaching-obelisks-'+obelisks.tradition)!==true)
         window.DevRandomRuinSimplePuzzles?.respawnAtCheckpoint?.('reaching-obelisks-'+obelisks.tradition);
