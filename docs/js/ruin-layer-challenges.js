@@ -9,6 +9,19 @@
   'use strict';
   const TYPES=Object.freeze(['pressurePlate','glyphObelisk','ceilingRailTargets','melodyEcho','dungeonFire','ropeChain','statueDefense','findBlocks','timedMelody','fireSconces']);
   const boneTextures=new Map(); // Shared Scratchbone numeral textures for every generated melody decal.
+  function scratchboneMaterial(THREE,texture,options,name){
+    if(root.RuinMelodyGlyphDecal?.makeInkMaterial)
+      return root.RuinMelodyGlyphDecal.makeInkMaterial(texture,options,name);
+    const material=new THREE.MeshBasicMaterial({map:texture,...options});
+    material.onBeforeCompile=shader=>{
+      shader.fragmentShader=shader.fragmentShader.replace('#include <map_fragment>',`
+        #ifdef USE_MAP
+          diffuseColor.a *= texture2D(map, vUv).a;
+        #endif
+      `); // Match the Witch-bomb engraving shader even if the standalone cave test omits the shared decal library.
+    };
+    return material;
+  }
   function melodyFor(id){
     let seed=2166136261; // Deterministic FNV hash; the same generated chamber always has the same note sequence.
     for(const ch of String(id))seed=Math.imul(seed^ch.charCodeAt(0),16777619)>>>0;
@@ -379,6 +392,10 @@
             const material=rec.glyphs[i].material;
             const color=i===snapshot.activeIndex?0xffee89:0xffb35e; // Cycling glow teaches timing without opening any instrument UI.
             material.color?.setHex?.(color); // One glyph glows during its full written duration; silence means none glows.
+            if(rec.glyphs[i]?.userData)rec.glyphs[i].userData.melodyGlowActive=i===snapshot.activeIndex;
+            const halo=rec.glyphs[i]?.userData?.melodyGlowMaterial;
+            if(halo){halo.color?.setHex?.(i===snapshot.activeIndex?0xffd87b:0xff8340);
+              halo.opacity=i===snapshot.activeIndex?1.15:.16;}
           }
           rec.melodyState=snapshot; // Exposed in the existing mobile ruin diagnostics.
         },
@@ -424,8 +441,7 @@
             boneTextures.set(number,texture);
           }
           const appearance={color:0xffda70,transparent:true,depthWrite:false,side:THREE.DoubleSide}; // Unlit glyphs stay luminous in dark ruins.
-          const material=root.HobunjiSpritePngSurface?.makeMaterial?.(THREE,texture,'ruin-melody-'+number,appearance)
-            ||new THREE.MeshBasicMaterial({map:texture,...appearance});
+          const material=scratchboneMaterial(THREE,texture,appearance,'ruin-melody-'+number);
           materials.push(material);
           const decal=body('scratchbone-note-'+id+'-'+i,new THREE.PlaneGeometry(.65,.75),material,
             cx-(i-(rec.notes.length-1)/2)*.8,y+1.8,room.z+.55);
@@ -538,8 +554,8 @@
             root.HobunjiSpritePngSurface?.configureTexture?.(THREE,texture,'puzzle-cave-note-'+number);
             boneTextures.set(number,texture);
           }
-          const mat=new THREE.MeshBasicMaterial({map:texture||null,color:0xffb35e,transparent:true,
-            depthWrite:false,side:THREE.DoubleSide});
+          const mat=scratchboneMaterial(THREE,texture||null,{color:0xffb35e,transparent:true,
+            depthWrite:false,side:THREE.DoubleSide},'cave-note-'+number);
           materials.push(mat);
           const glyph=new THREE.Mesh(new THREE.PlaneGeometry(.25,.28),mat);
           const column=i%2,row=Math.floor(i/2);
