@@ -46,7 +46,7 @@ load('docs/js/modular-weapons.js');
 load('docs/js/combat/weapon-shape-stats.js');
 load('docs/js/combat/combat-attack-events.js');
 const stats = window.WeaponShapeStats; // Single production resolver for all assertions.
-assert.deepEqual([...Object.keys(stats.DEFAULT)].sort(), ['efficiency', 'power', 'range', 'speed']);
+assert.deepEqual([...Object.keys(stats.DEFAULT)].sort(), ['attackPower', 'efficiency', 'power', 'range', 'speed']);
 const foundryConfig = window.ModularWeapons.getConfig(); // All authored donors must have an intentional profile instead of silent neutral fallback.
 const donorShapes = [...new Set([...Object.values(foundryConfig.shafts), ...Object.values(foundryConfig.heads)].map(part => part.sourceShape))]; // Covers forgeable, saved-legacy and editor-only pieces.
 for (const shape of donorShapes) assert(Object.hasOwn(stats.SHAPES, shape), `Foundry donor ${shape} is missing its shape stat profile`);
@@ -71,7 +71,10 @@ const contextForPower = window.CombatAttackEvents.prepare({
   attacker: player, weaponKey: 'dagger_tinBronze', abilityId: 'pokeCombo',
   damage: 8, knockbackPxS: 200, afflictionBonuses: { cut: 3 },
 });
-for (const field of ['damage', 'affliction', 'knockback', 'footingDamage']) close(contextForPower.modifiers[field], 0.5, `player ${field} multiplier`);
+for (const field of ['damage', 'knockback', 'footingDamage']) close(contextForPower.modifiers[field], 0.5, `player ${field} multiplier`);
+close(contextForPower.modifiers.affliction, 1, 'shape Health-damage Power cannot modify separate affliction Attack Power');
+close(stats.forShape('bshuakauitl').attackPower, 18, 'Bshuakauitl has high affliction Attack Power despite low Health damage');
+close(stats.forShape('porakanekiGreatclub').attackPower, 16, 'Porakaneki Spiked Club has a distinct heavy attack potency');
 const npcPower = window.CombatAttackEvents.prepare({ attacker: {}, weaponKey: 'dagger_tinBronze', abilityId: 'pokeCombo' });
 close(npcPower.modifiers.damage, 1, 'NPC shape damage is applied in the bandit executor only');
 
