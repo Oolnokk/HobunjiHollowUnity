@@ -118,7 +118,8 @@ const largeLegs = {
 };
 const smallLegs = {
   group:mkWorld(0,.084,.08),
-  getRestStance:()=>({left:{ankle:{x:-.04,y:.006,z:0}},right:{ankle:{x:.04,y:.006,z:0}}}),
+  getRestStance:()=>({left:{hip:{x:-.04,y:.09,z:0},ankle:{x:-.04,y:.006,z:0}},
+    right:{hip:{x:.04,y:.09,z:0},ankle:{x:.04,y:.006,z:0}}}),
 };
 const posteriorSolution = solver.solveHeights(1,.5);
 const footTargets = solver.posteriorStraddleFootTargets({Vector3:PosteriorVector},
@@ -136,6 +137,15 @@ assert.ok(Math.abs(gameplayFootTargets.left.y - footTargets.left.y) < 1e-6,
 assert.ok(footTargets.left.distanceTo(footTargets.right)>0.01);
 assert.equal(solver.posteriorStraddleFootTargets({Vector3:PosteriorVector},largeLegs,smallLegs,posteriorSolution,0),null,
   'no external foot ownership when the short partner has not taken off');
+const challenged = {...posteriorSolution, jumpFootForwardWorld: 1.2}; // Deliberately unreachable intermediate ankle path.
+const folded = solver.posteriorStraddleFootTargets({Vector3:PosteriorVector},
+  largeLegs,smallLegs,challenged,.5,{posteriorLocalOffsetY:-.056});
+for(const side of ['left','right']) {
+  const hip = smallLegs.getRestStance()[side].hip;
+  const worldHip = new PosteriorVector(hip.x,hip.y+.084,hip.z+.08);
+  assert.ok(worldHip.distanceTo(folded[side]) <= (.09-.006)*.995 + .000001,
+    'during lift/landing, temporary ankle target stays inside true two-bone leg reach');
+}
 // Gameplay's player composer moves the entire avatar only while rendering.
 // Its uncomposed leg IK target must be correspondingly lower, so after the
 // composer lift the two actual soles still land on the taller posterior.
