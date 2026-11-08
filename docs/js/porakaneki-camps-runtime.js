@@ -1254,8 +1254,9 @@
 
 
   function weaponRoll(rng = rand) {
-    const shapes = Array.isArray(cfg?.equipment?.weaponShapes) && cfg.equipment.weaponShapes.length ? cfg.equipment.weaponShapes : ['fishingspear', 'hatchet', 'dagger'];
-    return shapes[Math.floor(rng() * shapes.length)] || shapes[0];
+    const authored = Array.isArray(cfg?.equipment?.weaponShapes) && cfg.equipment.weaponShapes.length ? cfg.equipment.weaponShapes : ['fishingspear', 'hatchet', 'dagger']; // Cultural Porakaneki club is allowed only if its held shape is registered.
+    const shapes = authored.filter(shape => combatDeps?.HELD_SHAPE_DEFS?.[shape]?.slots?.includes('weapon')); // Avoid spawning invisible weapons for stale save/config shapes.
+    return shapes[Math.floor(rng() * shapes.length)] || 'fishingspear';
   }
   function weaponDef(shapeKey) {
     const metalKey = cfg?.equipment?.weaponMetalKey || 'nativeCopper';
@@ -1265,7 +1266,8 @@
       metalKey,
       weaponKey: combatDeps?.craftedToolItemKey?.(shapeKey, metalKey) || shapeKey,
       attackTag: shape.dmgType || 'sharp',
-      ranged: shapeKey === 'dagger',
+      ranged: ['dagger', 'hatchet', 'fishingspear'].includes(shapeKey),
+      rangedWeaponKey: combatDeps?.craftedToolItemKey?.(['dagger', 'hatchet', 'fishingspear'].includes(shapeKey) ? shapeKey : 'fishingspear', metalKey) || `fishingspear_${metalKey}`, // Club wielders carry an additional spear to use from unreachable ledges.
     };
   }
   function randomCampPoint(camp, rng = rand) {
@@ -1779,6 +1781,7 @@
     try {
       const base = await loadGangConfig();
       if (!base || generation !== buildGeneration || currentArea() !== camp.zoneId) return null;
+      window.HobunjiRangedWeaponArchetypes?.patchGeneratedDefinitions?.(); // Register dual-role spear/hatchet/dagger definitions before creating the held ranged mesh.
       const weapon = weaponDef(hunter.weaponShape);
       const avenger = isAvenger(hunter);
       const title = `${LABEL} ${avenger ? 'Avenger' : 'Hunter'}`;
@@ -1797,7 +1800,7 @@
           weaponShapeKey: weapon.shapeKey,
           weaponMetalKey: weapon.metalKey,
           attackTag: weapon.attackTag,
-          rangedWeaponKey: weapon.ranged ? weapon.weaponKey : null,
+          rangedWeaponKey: window.RangedWeapons?.config?.[weapon.rangedWeaponKey] ? weapon.rangedWeaponKey : null, // Keep ranged equipment valid even when an optional content pack is missing.
         },
         extra: {
           isTribeHunter: true, // Shared tribe-camp semantics (neutral planner, Favor, gifts, barbarian voice).

@@ -35,7 +35,8 @@
     "weaponShapes": [
       "fishingspear",
       "hatchet",
-      "dagger"
+      "dagger",
+      "porakanekiGreatclub"
     ],
     "weaponMetalKey": "nativeCopper"
   },
@@ -71,7 +72,8 @@
     "tier": 1,
     "weaponShapes": [
       "fishingspear",
-      "hatchet"
+      "hatchet",
+      "porakanekiGreatclub"
     ],
     "rideSpeedTilesPerSecond": 2.6,
     "combatSpeedMultiplier": 1.4,

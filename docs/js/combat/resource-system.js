@@ -21,6 +21,8 @@
 (() => {
   "use strict";
 
+  const DEFAULT_ATTACK_POWER = 12; // Neutral outgoing status potency for attacks without an authored Attack Power stat; never inherited from Health damage.
+
   const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
   const round1 = value => Math.round(value * 10) / 10;
   const nowMs = () => performance.now();
@@ -1005,7 +1007,8 @@
       }
     }
 
-    const buildupSourceDamage = finalDamage; // Harmful affliction buildup must be based on pre-defense impact strength, not Glass Fang or False Courage's Health-only modifier.
+    const rawAttackPower = Number(opts.attackPower ?? opts.attacker?.def?.attackPower ?? opts.attacker?.def?.weaponShapeStats?.attackPower ?? (opts.attacker === window.Combat?.deps?.player ? window.WeaponShapeStats?.current?.().attackPower : null) ?? DEFAULT_ATTACK_POWER); // Status potency is independent of the hit's Health damage.
+    const buildupAttackPower = Number.isFinite(rawAttackPower) ? Math.max(0, Math.min(500, rawAttackPower)) : DEFAULT_ATTACK_POWER; // Clamp invalid or modded values, preserving intentional zero-potency attacks.
     finalDamage *= statModifier(entity, 'incomingHealthDamage'); // Player trade-offs apply to actual direct Health damage (including heavy Bruised consumption), not raw affliction chances.
     const enhanced = resolveEnhancedResourceTransaction(entity, "health", finalDamage, { kind: "damage", reason: opts.reason || "damage" }); // Resolute/Mirrored Health absorb before ordinary Health through the shared enhanced transaction.
     const before = entity.health;
@@ -1024,7 +1027,7 @@
         const aliasScale = actualId !== id ? Math.max(1, Number(definition.rangedScale) || 1) : 1; // Converts authored alias into the real affliction exactly once.
         const perkId = FAMILY_PERK[AFFLICTIONS[actualId].family];
         const familyMul = perkId ? 1 + (window.PerkSystem?.rank('combat', perkId) || 0) * 0.12 : 1;
-        addAffliction(entity, actualId, buildupSourceDamage * mul * aliasScale * familyMul); // Preserve the new ranged alias scaling while Health-only trinket defense cannot alter affliction buildup.
+        addAffliction(entity, actualId, buildupAttackPower * mul * aliasScale * familyMul); // Status buildup follows Attack Power, not the dart/club's Health damage.
       }
     }
     if (opts.fixedAfflictionBuildup) {
