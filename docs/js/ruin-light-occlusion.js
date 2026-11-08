@@ -46,7 +46,8 @@
     const y=Math.max(box.min.y+.05,Math.min(source.y,box.max.y-.05)); // Cast at a height actually intersecting the solid.
     const edge=(corner)=>{
       const dx=corner.x-sx,dz=corner.z-sz,d=Math.hypot(dx,dz)||1;
-      return {near:project(corner.x,y,corner.z),far:project(sx+dx/d*depth,y,sz+dz/d*depth)};
+      const near=project(corner.x,y,corner.z),far=project(sx+dx/d*depth,y,sz+dz/d*depth);
+      return {near:near&&{x:near.x,y:near.y},far:far&&{x:far.x,y:far.y}}; // Some overlay projection callbacks reuse one mutable result object.
     };
     const a=edge(corners[lo]),b=edge(corners[hi]);
     const polygon=[a.near,a.far,b.far,b.near];
