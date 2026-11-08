@@ -1150,6 +1150,38 @@
     playSfxAudioElement(snd, volume, gainBoost, Number(cfgEntry.lowpassHz) || 0);
   }
 
+  function playObjectSfxKeyIndependentPitch(key, pitch = 1, volumeScale = 1) {
+    const cfgEntry = objectSfxConfig()[key]; // The same configured stone recording and mixer as ordinary object SFX.
+    const audioCfg = gameAudioConfig();
+    if (!cfgEntry || audioCfg.enabled === false || objectSfxConfig().enabled === false) return false;
+    const volume = Math.max(0, Math.min(1, Number(cfgEntry.volume) || 0.8))
+      * Math.max(0, Number(audioCfg.sfxVolume ?? 1)) * Math.max(0, Number(volumeScale) || 0);
+    if (volume <= 0.002) return false;
+    const rate = Math.max(0.3, (Number.isFinite(Number(pitch)) ? Number(pitch) : 1) * (Number(cfgEntry.pitch) || 1));
+    const semitones = Math.round(12 * Math.log2(rate) * 2) / 2; // Half-semitone bins reuse the independent-render cache across similarly sized stone pieces.
+    const player = window.AnimalVoiceIndependentPlayback; // Reuses the game's WSOLA pitch/tempo-independent renderer; no bespoke audio engine.
+    let handle = null; // Non-null means the pitch-only renderer accepted this particular stone cue.
+    if (Math.abs(semitones) >= 0.05 && cfgEntry.url && !deps?.audioUrlFailed?.(cfgEntry.url) && typeof player?.playIndependent === 'function') {
+      try {
+        handle = player.playIndependent(cfgEntry.url, {
+          tempo: 1, pitchSemitones: semitones, volume: Math.min(1, volume * Math.max(1, Number(cfgEntry.gainBoost) || 1)),
+          trimSilence: false, tailPadS: 0, edgeFadeS: 0, extraWetBase: 0,
+          preserveDurationOnFallback: true, // If Web Audio is locked/unavailable, never translate size into faster/slower stone travel.
+        });
+      } catch (_) { handle = null; }
+    }
+    if (!handle) playObjectSfxKey(key, volumeScale, 1); // Neutral recording is preferable to changing duration on an unsupported device.
+    const preloaded = cfgEntry.url ? objectSfxPreloads.get(cfgEntry.url) : null;
+    lastObjectSfxKeyDebug = {
+      key, found: true, url: cfgEntry.url || null, preloaded: !!preloaded,
+      readyState: preloaded?.readyState ?? null,
+      requestedPitch: rate, pitchSemitones: semitones, tempo: 1,
+      pitchMode: handle ? (handle.independentPitch ? 'independent' : 'neutral-native-fallback') : 'neutral',
+      atMs: Math.round(performance.now()),
+    }; // Pixel Probe reports size pitch separately from real-time duration on mobile.
+    return true;
+  }
+
   function playGeneratedStoneKchunk(volume = 1) {
     const AudioCtx=window.AudioContext||window.webkitAudioContext; // Temporary procedural completion cue; intended to be replaced by a recorded stone kchunk asset later.
     if(!AudioCtx)return false;
@@ -1754,6 +1786,7 @@
     objectSfxConfig,
     playObjectSfx,
     playObjectSfxKey,
+    playObjectSfxKeyIndependentPitch,
     objectSfxDebugSnapshot,
     playCreatureSfxAt,
     playCreatureBark,
