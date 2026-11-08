@@ -13934,6 +13934,7 @@ function applyKissPresetV1546() {
   animationAuthor.loop = false; // A kiss is a one-shot event, not a repeating dance.
   animationAuthor.projectName = 'Spouse Kiss — ' + leader.label + ' and ' + partner.label;
   animationAuthor.multiPreset = KISS_PRESET_V1546;
+  animationAuthor.kissInitiatorActorIdV1550 = leader.id; // The initiator remains fixed while switching which avatar to inspect or edit.
   if ($('maaProjectName')) $('maaProjectName').value = animationAuthor.projectName;
   if ($('maaLoop')) $('maaLoop').checked = false;
   if ($('maaPresetSelect')) $('maaPresetSelect').value = KISS_PRESET_V1546;
@@ -14040,6 +14041,7 @@ serializeAnimationProject = function() {
     maxBodySinkPct: window.SpouseKissMotion.MAX_SINK_PCT,
     deepKneelLegFraction: window.SpouseKissMotion.KNEEL_LEG_FRACTION,
     maxTorsoBowDeg: window.SpouseKissMotion.MAX_BOW_DEG,
+    initiatorActorId: animationAuthor.kissInitiatorActorIdV1550 || null,
     initiatorHands: { source: 'leader', target: 'partner-shoulders', shoulderSystem: 'canonical-species-gender-attachment-anchors',
       reachRule: 'per-arm-reach-with-closest-reachable-shoulder-projection',
       shorterInitiator: 'hands-before-knee-at-0.52s', tallerInitiator: 'reach-as-torso-lowers' },
@@ -14066,6 +14068,8 @@ importAnimationProjectData = async function(data, options = {}) {
   const result = await beforeKissImportV1546(data, options);
   if (data?.project?.relationshipPreset === KISS_PRESET_V1546) {
     animationAuthor.kissHeightSolutionV1546 = clone(data?.project?.kiss?.heightSolution || null);
+    animationAuthor.kissInitiatorActorIdV1550 = data?.project?.kiss?.initiatorActorId ||
+      animationAuthor.actors.find(actor => actor.source?.type === 'npc')?.id || null; // Backwards-compatible role identity on existing kiss JSON.
     for (const record of data.actors || []) {
       const actor = actorById(record.id);
       if (actor) actor.kissBodySinkPctAtContact = Number(record.kissBodySinkPctAtContact) || 0;
@@ -14270,7 +14274,7 @@ function applyMultiHandKissV1548(actor, time) {
 function syncMultiAvatarFullBodiesV1548(time = animationAuthor.currentTime, dt = 0) {
   const isMulti = animationAuthor.mode === 'multi'; // Rig Coordinates keeps its existing reference/ground preview.
   const kissing = isMulti && animationAuthor.multiPreset === 'kiss';
-  const pair = kissing ? romanticDancePair() : null; // Selects precisely the two kiss participants, not unrelated actors.
+  const pair = kissing ? configuredKissPairV1550() : null; // The authored initiator never changes just because the inspector selection does.
   const solution = kissing ? animationAuthor.kissHeightSolutionV1546 : null;
   const frameDelta = Math.max(0, Math.min(.08, Number(dt) || 0));
   for (const actor of animationAuthor.actors) {
@@ -14347,6 +14351,12 @@ function syncMultiAvatarFullBodiesV1548(time = animationAuthor.currentTime, dt =
 // shoulder coordinates through the same hand rig used in live gameplay.
 // Hand placement happens AFTER both actors' knees/bows update, otherwise the
 // target is one frame behind the position the player actually sees.
+function configuredKissPairV1550() {
+  const leader = actorById(animationAuthor.kissInitiatorActorIdV1550) || romanticDancePair().leader; // Pinned initiator, including imported clips.
+  const partner = animationAuthor.actors.find(actor => actor.source?.type === 'npc' && actor !== leader) || null;
+  return { leader, partner };
+}
+
 function installInitiatorShoulderContactV1550(initiator, target, time, solution) {
   const hands = initiator?.model?.userData?.proceduralHandRig; // Initiator's existing species/gender hand sockets.
   const targetHands = target?.model?.userData?.proceduralHandRig; // Actual shoulder coordinates on the intended partner, never guessed portrait edges.
@@ -14371,7 +14381,7 @@ const beforeShoulderHandSyncV1550 = syncMultiAvatarFullBodiesV1548;
 syncMultiAvatarFullBodiesV1548 = function(time = animationAuthor.currentTime, dt = 0) {
   const result = beforeShoulderHandSyncV1550(time, dt); // First resolve both planted feet, pants and body sinks.
   if (animationAuthor.mode === 'multi' && animationAuthor.multiPreset === 'kiss') {
-    const { leader, partner } = romanticDancePair(); // Leader is the command initiator; in the named scene this is Pahu.
+    const { leader, partner } = configuredKissPairV1550(); // Initiator remains Pahu even when Leaf is selected in the timeline.
     const solution = animationAuthor.kissHeightSolutionV1546;
     if (leader && partner && solution) {
       installInitiatorShoulderContactV1550(leader, partner, time, solution);
@@ -14431,6 +14441,7 @@ removeAnimationActor = function(id) {
 
 const beforeMultiClearV1548 = clearAnimationActors;
 clearAnimationActors = function() {
+  animationAuthor.kissInitiatorActorIdV1550 = null; // New/cleared scenes must explicitly choose a fresh initiator.
   for (const actor of animationAuthor.actors) {
     actor.multiKissHandRigV1548?.setPoseProvider?.(MULTI_HAND_KISS_OWNER_V1548, null);
   }
@@ -14460,7 +14471,7 @@ if (window.MultiAvatarAnimationAuthor) {
   window.MultiAvatarAnimationAuthor.version = '15.50';
   window.MultiAvatarAnimationAuthor.fullBodyDiagnostics = fullCharacterPreviewDiagnosticsV1548;
   window.MultiAvatarAnimationAuthor.kissPairDiagnostics = () => {
-    const pair = romanticDancePair(); // Exposes true initiator vs partner selection for mobile and reversed-height browser tests.
+    const pair = configuredKissPairV1550(); // Exposes pinned initiator, not the currently inspected actor.
     return {
       initiator: pair.leader?.source?.id || null,
       partner: pair.partner?.source?.id || null,
