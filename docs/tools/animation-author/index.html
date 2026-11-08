@@ -12167,8 +12167,11 @@ function installRigPantsPreviewV1546(actor) {
   const Renderer = window.PantsGarmentRenderer;
   if (actor?.source?.type !== 'npc' || !['rig', 'multi'].includes(animationAuthor.mode) || !actor.rigFeetPreview || !Renderer?.attachToLegs) return null;
   const npc = state.npcs.find(item => String(item.id || item.name) === String(actor.source.id));
-  const garmentId = Renderer.garmentForCosmetics?.(npc ? portraitExportFor(npc).equippedCosmetics : []); // Actual avatar-editor wardrobe takes priority over the legacy top-level NPC inventory.
-  if (!garmentId) return null; // Database NPC clothing is authoritative; the animator must not invent pants for intentionally pantless outfits.
+  const equippedId = Renderer.garmentForCosmetics?.(npc ? portraitExportFor(npc).equippedCosmetics : []); // Avatar-editor wardrobe takes precedence.
+  const defaultAllowed = npc?.noPants !== true && npc?.kind !== 'animal'
+    && Renderer.hasRigFor?.(actor.source.species, actor.source.gender, 'pants_basic'); // Normal NPC gameplay gives basic pants to humanoids without authored legwear.
+  const garmentId = equippedId || (defaultAllowed ? 'pants_basic' : null);
+  if (!garmentId) return null; // Pantless and unsupported species remain uncovered; the NPC record is never mutated.
   const garmentRecord = rigPantsGarmentRecordV1546(garmentId);
   if (!garmentRecord) return null;
   const profile = actor.model?.userData?.rigAvatarProfile || null;
@@ -13853,10 +13856,10 @@ function kissTransformV1546(who, time, solution) {
   return {
     position: {
       x: 0,
-      y: taller ? -solution.tallerSinkWorld * pose.blend : 0,
+      y: 0, // Keep the feet grounded: the preview's anatomical knee solver lowers only the upper body.
       z: first ? -bowRetreat : .52 - .18 * pose.blend + bowRetreat,
     },
-    rotationDeg: { x: taller ? solution.tallerBowDeg * pose.blend : 3 * bend, y: first ? 0 : 180, z: 0 },
+    rotationDeg: { x: 0, y: first ? 0 : 180, z: 0 }, // Torso bow belongs on the portrait and hand rigs, not the foot/leg root.
     scale: { x: 1, y: 1, z: 1 },
   };
 }
@@ -13870,6 +13873,7 @@ function kissTrackV1546(who, solution) {
       // Per-frame percent mirrors Attack Editor body sink. Runtime applies it to
       // procedural legs/body instead of translating the character's collider.
       bodySinkPct: taller ? solution.tallerSinkPct * pose.blend : 0,
+      bodyBowDeg: (taller ? solution.tallerBowDeg : 3) * pose.blend, // Exportable torso-only bow; never tilts the planted foot rig.
       neckRotationDeg: { x: (taller ? -12 : 8) * pose.blend, y: 0, z: 0 },
     };
   });
@@ -14216,40 +14220,69 @@ function applyMultiHandKissV1548(actor, time) {
 }
 
 function syncMultiAvatarFullBodiesV1548(time = animationAuthor.currentTime, dt = 0) {
+  const isMulti = animationAuthor.mode === 'multi'; // Rig Coordinates keeps its existing reference/ground preview.
+  const kissing = isMulti && animationAuthor.multiPreset === 'kiss';
+  const pair = kissing ? romanticDancePair() : null; // Selects precisely the two kiss participants, not unrelated actors.
+  const solution = kissing ? animationAuthor.kissHeightSolutionV1546 : null;
+  const frameDelta = Math.max(0, Math.min(.08, Number(dt) || 0));
   for (const actor of animationAuthor.actors) {
     if (actor?.source?.type !== 'npc') continue;
-    applyMultiHandKissV1548(actor, time);
+    const participant = !!(solution && (actor === pair?.leader || actor === pair?.partner));
+    applyMultiHandKissV1548(actor, participant ? time : 0);
     const feet = actor.rigFeetPreview;
-    if (!feet) continue;
-    const multi = animationAuthor.mode === 'multi';
-    feet.group.visible = multi || animationAuthor.mode === 'rig';
-    if (!multi) continue;
-    const kissing = animationAuthor.multiPreset === 'kiss';
-    const frameDelta = Math.max(0, Math.min(.08, Number(dt) || 0));
-    const previousPose = frameDelta > 0 ? sampleActorTransform(actor, Math.max(0, time - frameDelta)) : null; // Reuses the authored root track for walk speed, not fake oscillation.
+    if (feet?.group) feet.group.visible = isMulti || animationAuthor.mode === 'rig';
+    const model = actor.model;
+    if (!feet || !model) continue;
+    const hands = model.userData?.proceduralHandRig;
+    const rest = actor.multiAvatarBodyRestV1548 || (actor.multiAvatarBodyRestV1548 = {
+      modelY: model.position.y, modelPitch: model.rotation.x,
+    }); // Original model orientation/height used for every preset switch and import.
+    if (hands?.group && !actor.multiAvatarHandRestV1548) {
+      actor.multiAvatarHandRestV1548 = { y: hands.group.position.y, pitch: hands.group.rotation.x }; // Hand rig attaches asynchronously after the portrait.
+    }
+    const handRest = actor.multiAvatarHandRestV1548;
+    if (!isMulti) {
+      model.position.y = rest.modelY;
+      model.rotation.x = rest.modelPitch;
+      if (hands?.group && handRest) { hands.group.position.y = handRest.y; hands.group.rotation.x = handRest.pitch; }
+      continue;
+    }
+
+    const previousPose = frameDelta > 0 ? sampleActorTransform(actor, Math.max(0, time - frameDelta)) : null;
     const currentPose = frameDelta > 0 ? sampleActorTransform(actor, time) : null;
-    const strideSpeed = previousPose && currentPose
+    const strideSpeed = previousPose && currentPose && time >= frameDelta
       ? Math.min(8, Math.hypot(currentPose.position.x - previousPose.position.x,
-          currentPose.position.z - previousPose.position.z) / frameDelta) : 0;
-    const sinkPercent = kissing ? previewActorKissSinkPctV1548(actor, time) : 0;
-    // The actor's animation root already carries the rendered knee/body lowering;
-    // raising the gameplay leg group by this *same* amount cancels the floor drop.
-    const height = kissActorHeightV1546(actor);
-    const worldDrop = Math.max(0, height * sinkPercent / 100);
+          currentPose.position.z - previousPose.position.z) / frameDelta) : 0; // Real authored movement drives the shared procedural walk cycle.
+    const taller = participant && (solution.taller === 'first' ? actor === pair.leader : actor === pair.partner);
+    const blend = participant ? window.SpouseKissMotion?.samplePose?.(time)?.blend || 0 : 0;
+    const worldDrop = taller ? solution.tallerSinkWorld * blend : 0; // Solver uses the true leg/anatomy length, not guessed full-body units.
     const bodyScale = Math.max(.001, Math.abs(Number(actor.visualOffset?.scale?.y) || 1));
     const localDrop = worldDrop / bodyScale;
-    feet.setStanceDropLimitFraction?.(kissing ? MULTI_KISS_LEG_LIMIT_V1548 : .55);
-    feet.update?.(frameDelta, strideSpeed, false, null); // Ordinary multi-avatar walking now drives the same gait solver as gameplay.
+    const torsoBow = participant ? (taller ? solution.tallerBowDeg : 3) * blend * Math.PI / 180 : 0;
+
+    feet.setStanceDropLimitFraction?.(taller ? MULTI_KISS_LEG_LIMIT_V1548 : .55);
     feet.setStanceDrop?.(localDrop, true);
-    feet.update?.(0, 0, false, null); // Syncs the real shin/ankle solver and the pants texture/mesh even while scrubbing.
+    feet.update?.(frameDelta, strideSpeed, false, null); // The same gait and knee solve automatically deforms worn pants.
+    const actualDrop = feet.getStanceDrop?.() || 0; // Portrait and hands must follow what the real knee achieved.
+    model.position.y = rest.modelY - actualDrop;
+    model.rotation.x = rest.modelPitch + torsoBow; // The torso bows; the planted feet never pitch or drop through the floor.
+    if (hands?.group && handRest) {
+      hands.group.position.y = handRest.y - actualDrop;
+      hands.group.rotation.x = handRest.pitch + torsoBow;
+      hands.applyOwnedPose?.(); // A scrubbed kiss poses GLB hands immediately, not only on the next animation frame.
+    }
+    model.updateMatrixWorld?.(true);
+    feet.pants?.update?.(); // Belt uses the just-updated torso transform; trouser legs use real hip/knee/ankle positions.
     actor.previewAnatomyV1548 = {
       requestedWorldDrop: worldDrop,
-      appliedWorldDrop: (feet.getStanceDrop?.() || 0) * bodyScale,
+      appliedWorldDrop: actualDrop * bodyScale,
+      torsoBowDegrees: torsoBow * 180 / Math.PI,
       pants: !!actor.rigPantsPreview,
       legs: !!feet.group?.parent,
-      gaitSpeed: strideSpeed, // Exposed in diagnostics to verify leg animation without a mobile console.
-      hands: !!actor.model?.userData?.proceduralHandRig?.group?.parent,
-    }; // Exposed on the in-memory actor and diagnostics for mobile verification.
+      gaitSpeed: Number(strideSpeed.toFixed(3)),
+      hands: !!hands?.group?.parent,
+      feetGrounded: Math.abs(Number(actor.root.position.y) || 0) < .001 && Math.abs(Number(actor.root.rotation.x) || 0) < .001,
+    }; // Available through fullBodyDiagnostics for mobile troubleshooting.
   }
 }
 
