@@ -352,7 +352,7 @@
       shorterHipHeightWorld: shortAnatomy.hipHeightWorld,
     });
     if (!height.contactPossible) { lastError = 'mouth-height-not-reachable'; return false; }
-    const contactGap = Math.min(dist, .08 + Math.min(firstHeight, secondHeight) * .02); // Aligns in-game mouth spacing with the now slightly separated author kiss (~.08 world units).
+    const contactGap = Math.min(dist, .12 + Math.min(firstHeight, secondHeight) * .10); // Preserve the established gameplay collider-safe approach spacing; editor's flat portrait preview uses its own screen-readable gap.
     const approach = Math.max(0, dist - contactGap); // Move only the spouse, so player collider and camera stay stable.
     const approachX = dist > .0001 ? (playerPoint.x - npcPoint.x) * approach / dist : 0;
     const approachZ = dist > .0001 ? (playerPoint.z - npcPoint.z) * approach / dist : 0;
