@@ -17,7 +17,7 @@
   const ICE_PHYSICS=Object.freeze({accelerationFactor:.28,turningFactor:.22,retention20Hz:.892});
   const PLASM_DEPTH = 0.22; // Match Western Slope snow's visibly raised cap and .22-wide curved perimeter lip.
   const PLASM_PULL_TILES_S = 0.72; // Player drift toward the nearest patch's interior.
-  const PLASM_COLOR = 0xb98cff, PLASM_OPACITY = .92; // Violet tint over the (dark) oil PNG.
+  const PLASM_COLOR = 0xffffff, PLASM_OPACITY = 1; // The authored oil PNG untinted: only the temporary kind is coloured, and only along its glowing outline.
   const PLASM_WORLD_UV_TILES = 3.2; // World tiles one repeat of the plasm PNG covers on explicit-tile patches (about the scale of a ground puddle).
   const PLASM_SINK_SECONDS = 2.8; // Time immersed in the pull before a full-body fatal sink.
   const ROCK_SFX = 'assets/audio/sfx/sfx_break_rock.mp3'; // Existing rock-break sample used for the three warning pulses.
