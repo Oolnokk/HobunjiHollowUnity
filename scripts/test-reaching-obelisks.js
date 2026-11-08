@@ -115,12 +115,14 @@ try{
   const firstBeatRotations=[a.rotation]; // The 3 turns per measure must expose all four orientations across 4 bars.
   const tickSeconds=.05; // Matches the runtime frame clamp and derives long-beat test budgets from the exported tempo.
   const maxBeatSteps=Math.ceil(Obelisks.BEAT_SECONDS/tickSeconds)+3; // Allows for floating-point rounding at a three-second boundary.
-  for(let i=0;i<maxBeatSteps-5;i++)rt.tick(tickSeconds);
+  const framesPerBeat=Math.round(Obelisks.BEAT_SECONDS/tickSeconds); // Checks the exact 3-second boundary, not merely eventual progress.
+  for(let i=0;i<framesPerBeat-1;i++)rt.tick(tickSeconds);
   assert.equal(rt.getState().beatsPlayed,1,'the 3-second downbeat cannot advance early');
   const reachBeat=target=>{
     let steps=0;
     while(rt.getState().beatsPlayed<target&&steps++<maxBeatSteps)rt.tick(tickSeconds);
     assert.equal(rt.getState().beatsPlayed,target,'beat '+target+' must fire on the live room clock');
+    if(target===2)assert.equal(steps,1,'beat two must occur precisely on the sixtieth 50 ms frame');
   };
   for(let count=2;count<=16;count++){
     reachBeat(count);
