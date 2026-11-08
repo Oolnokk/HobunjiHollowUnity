@@ -5758,25 +5758,7 @@
         if (environmentalImpact) return { applied: appliedImpactHealth, lethal: false };
       }
 
-      // Closest Root Totem (see wilderness-map-generator.js's
-      // placeRootTotems) to a given world position, within one zone only —
-      // totems don't offer a way to reach a different zone's terrain from
-      // where the player actually died, so a death is always recovered
-      // within its own zone or (if that zone has none, or the player wasn't
-      // in a wilderness zone at all) falls back to the farmhouse. Returns
-      // the totem's pathAnchor tile ({x,y}) or null.
-      function nearestRootTotemFor(zoneId, worldX, worldY) {
-        const totems = _zoneLayouts.get(zoneId)?.rootTotems;
-        if (!totems || !totems.length) return null;
-        const px = worldX / TILE, py = worldY / TILE;
-        let best = null, bestDist = Infinity;
-        for (const t of totems) {
-          const anchor = t.pathAnchor || t;
-          const d = Math.hypot(anchor.x - px, anchor.y - py);
-          if (d < bestDist) { bestDist = d; best = anchor; }
-        }
-        return best;
-      }
+      // nearestRootTotemFor (closest zone Root Totem for death recovery) now lives in js/sacred-ground.js as HobunjiSacredGround.nearestRootTotem.
 
       window.HobunjiSacredGround?.init?.({
         tileSize: TILE,
@@ -5841,7 +5823,7 @@
           showToast('Respawned at the Testing Arena entrance.', false);
           return;
         }
-        const totem = _isZoneArea(currentArea) ? nearestRootTotemFor(currentArea, player.x, player.y) : null;
+        const totem = _isZoneArea(currentArea) ? (window.HobunjiSacredGround?.nearestRootTotem?.(currentArea, player.x, player.y) || null) : null;
         if (totem) {
           player.x = (totem.x + 0.5) * TILE;
           player.y = (totem.y + 0.5) * TILE;
