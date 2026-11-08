@@ -108,7 +108,12 @@
     const posteriorHalfWidth = Math.max(.001, Math.abs(tallStance.left.hip.x - pelvisX),
       Math.abs(tallStance.right.hip.x - pelvisX)); // Bounded lateral placement on the taller character's genuine posterior, not an imaginary infinite platform.
     const kneeDrop = tallerLegs.getStanceDrop?.() || 0;
-    const pelvisLocalY = tallerLegs.standingPosteriorY - 2 * kneeDrop; // Leg group rises +drop, while the actual body pelvis descends -drop.
+    const hipY = (Number(tallStance.left.hip.y) + Number(tallStance.right.hip.y)) / 2; // Actual authored posterior bone coordinate in the existing leg group.
+    const pelvisLocalY = (Number.isFinite(hipY) ? hipY : tallerLegs.standingPosteriorY - kneeDrop)
+      + (Number.isFinite(Number(temp.posteriorLocalOffsetY)) ? Number(temp.posteriorLocalOffsetY) : 0);
+    // Gameplay NPCs lower their entire rig root while knees fold, so bone
+    // coordinates already track the posterior. The author lowers only its
+    // portrait; it supplies an extra -kneeDrop preview offset explicitly.
     tallerLegs.group.updateWorldMatrix?.(true, false);
     shorterLegs.group.updateWorldMatrix?.(true, false);
     const composerLift = !!temp.composerLift; // Gameplay player composer applies the leap only during render; editor/NPC roots move immediately.
