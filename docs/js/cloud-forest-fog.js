@@ -46,6 +46,7 @@
   const UNDERGROUND_NIGHT_LIGHTING = Object.freeze({ r: 5, g: 8, b: 23, a: 0.80 });
   const KANTHIC_STANDARD_DARKNESS_ALPHA = 0.95; // Kanthic uses the same unified mist/night darkness pass at higher opacity, never a second vignette.
   const UNDERGROUND_FOG_DENSITY = 0.055; // Same as map_southern_cloud_forest's fogDensity.
+  let ruinMistFade = 1; // 1 = normal mist, 0 = suppressed while standing in a ruin shaft.
   let undergroundFogOverride = null; // { scene, fog, background } restored when the player leaves.
   const GLOBAL_DARKNESS_DELTA = 0.09; // Added to the previous mine/den/interior darkness levels and scaled by lunar phase for outdoor night darkness.
   const DEFAULT_TUNING = Object.freeze({
@@ -353,12 +354,18 @@
     const pz = deps.player.y / deps.TILE;
     const groundY = deps.getPlayerGroundY();
     const t = performance.now() / 1000;
+    // The mist is three short tubes that follow the player's feet. Inside a ruin's tall shaft that
+    // means a dark band hovering around the player that snaps up and down with every jump or
+    // fall (and is sliced by platforms), so it fades out while the player is in the shaft room.
+    const inRuinShaft = !cloudForest && deps.getCurrentArea?.() === 'map_i_dev_random_ruin' && window.DevRandomRuin?.isPlayerInShaft?.() === true;
+    ruinMistFade += ((inRuinShaft ? 0 : 1) - ruinMistFade) * Math.min(1, dt * 4);
+    if (ruinMistFade < 0.01) ruinMistFade = inRuinShaft ? 0 : ruinMistFade;
 
     for (let i = 0; i < layers.length; i++) {
       const { mesh, material, config } = layers[i];
       const live = layerLive[i];
       // Used to skip both draw submission and animation work for a disabled mist layer.
-      const opacity = clamp01(live.opacity);
+      const opacity = clamp01(live.opacity) * ruinMistFade;
       material.opacity = opacity;
       mesh.visible = opacity > 0;
       if (!mesh.visible) continue;
