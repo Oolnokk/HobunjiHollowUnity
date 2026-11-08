@@ -139,14 +139,14 @@ const root = (x, y, z, height) => ({
 const legHandle = height => ({
   modelHeight: height, standingPosteriorY: height * .28, sink: 0, limit: .55,
   group: { getWorldScale(out) { out.x = 1; out.y = 1; out.z = 1; return out; } },
-  motionAnatomy() { return [{ length: height * .28 }, { length: height * .28 }]; },
+  motionAnatomy() { return [{ length: this.standingPosteriorY }, { length: this.standingPosteriorY }]; },
   setStanceDropLimitFraction(value) {
     const previous = this.limit;
     this.limit = Math.max(.55, Math.min(.95, Number(value) || .55));
     return previous;
   },
   getStanceDropLimitFraction() { return this.limit; },
-  setStanceDrop(amount) { this.sink = Math.min(amount, height * .28 * this.limit); },
+  setStanceDrop(amount) { this.sink = Math.min(amount, this.standingPosteriorY * this.limit); },
   getStanceDrop() { return this.sink; },
 });
 const avatarRoot = root(0, 0, 0, 1);
@@ -193,6 +193,11 @@ vm.runInNewContext(motionSrc, { window: visualWindow, console });
 const visual = visualWindow.SpouseKissMotion;
 assert.equal(visual.init(), true, 'live kiss must register on shared pre-render clock');
 let contacts = 0;
+visualWindow.NpcPathfinding = { isNpcPositionWalkable: () => false };
+assert.equal(visual.start(sceneWalker, () => contacts++), false, 'bow must refuse blocked floor space');
+assert.equal(visual.diagnostics().lastError, 'not-enough-clear-floor-for-deep-bow');
+assert.equal(activeTokens.size, 0, 'failed start must leave actors unlocked');
+delete visualWindow.NpcPathfinding;
 assert.equal(visual.start(sceneWalker, () => contacts++), true);
 assert.equal(partnerLegs.limit, .95, 'only the kiss may deepen the kneel');
 assert.equal(lastLockParticipants[0].channels.includes('pose'), false, 'player pose lock would disable the compositor');
@@ -219,11 +224,47 @@ assert.equal(contacts, 1, 'contact callback fires exactly once per kiss');
 assert.equal(visual.diagnostics().active, false, 'animation finishes and cleans up');
 assert.equal(visual.diagnostics().lastResult.reason, 'completed');
 assert.equal(partnerLegs.limit, .55, 'completed kiss restores normal knee cap');
+
+// The taller player needs the real body composer and floor-anchored procedural legs.
+avatarRoot.userData.portraitModelHeight = 5;
+playerLegs.modelHeight = 5;
+playerLegs.standingPosteriorY = 1.4;
+sceneWalker.avatarGroup.userData.portraitModelHeight = 1;
+partnerLegs.modelHeight = 1;
+partnerLegs.standingPosteriorY = .28;
+assert.equal(visual.start(sceneWalker, () => contacts++), true, 'reversed size pairing starts');
+for (let i = 0; i < 9; i++) renderFrame({ deltaMs: 80 });
+assert.ok(playerLegs.sink > 0, 'taller player knee actually folds');
+assert.equal(partnerLegs.sink, 0, 'shorter NPC keeps its feet planted');
+assert.ok(channels.get('spouse-kiss')?.rotation?.pitch > 0, 'player composer gets a genuine bow');
+assert.equal(channels.get('spouse-kiss')?.absoluteLegs, true, 'player feet remain vertical');
+assert.ok(channels.has('spouse-kiss-retreat'), 'player body makes room for the bow');
+assert.equal(visual.stop('reversed-cancel'), true);
+assert.equal(playerLegs.sink, 0);
+assert.equal(playerLegs.limit, .55);
+assert.equal(partnerLegs.limit, .55);
+assert.equal(channels.size, 0);
+assert.equal(activeTokens.size, 0);
 assert.equal(activeTokens.size, 0);
 
 const npcStateSrc = read('docs/js/npc-character-state.js');
 assert.match(npcStateSrc, /!window\.SpouseKissMotion\?\.isPartner\?\.\(walker\)/,
   'NPC movement lock must not suppress the kiss leg solver');
+const npcStateWindow = {
+  CharacterActionLocks: { isLocked: () => true },
+  SpouseKissMotion: { isPartner: () => true },
+};
+vm.runInNewContext(npcStateSrc, { window: npcStateWindow, console });
+let npcSuppressed = null;
+const heldWalker = {
+  rec: { id: 'spouse' }, root: { position: { x: 1, y: 0, z: 2 } },
+  legs: { update(dt, speed, suppressed) { npcSuppressed = suppressed; } },
+};
+assert.equal(npcStateWindow.NpcCharacterState.update(heldWalker, .016, {}), true);
+assert.equal(npcSuppressed, false, 'kiss freezes NPC movement but not knee folding');
+npcStateWindow.SpouseKissMotion.isPartner = () => false;
+npcStateWindow.NpcCharacterState.update(heldWalker, .016, {});
+assert.equal(npcSuppressed, true, 'unrelated NPC locks still suppress the leg pose');
 const legsSrc = read('docs/js/procedural-leg-animation.js');
 assert.match(legsSrc, /setStanceDropLimitFraction:/, 'real legs expose reversible deep-kneel allowance');
 console.log('Spouse kiss: anatomical limits, torso bow, lock ownership, cancel/cleanup, author, save/expiry OK.');
