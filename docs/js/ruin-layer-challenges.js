@@ -489,7 +489,8 @@
       }
       for(let i=slots.length-1;i>0;i--){const j=Math.floor(rnd()*(i+1));[slots[i],slots[j]]=[slots[j],slots[i]];}
       const hidden=Math.min(3,Math.max(1,slots.length-1));
-      const block=(px,pz,height)=>DS?.registerBlocker?.({minX:px-.4,maxX:px+.4,minZ:pz-.4,maxZ:pz+.4,minY:y,maxY:y+height,scope});
+      let blockerSerial=0;
+      const block=(px,pz,height)=>DS?.registerBlocker?.({id:scope+'-pillar-'+(blockerSerial++),minX:px-.4,maxX:px+.4,minZ:pz-.4,maxZ:pz+.4,minY:y,maxY:y+height,scope});
       slots.forEach((slot,index)=>{
         if(index<hidden){
           const t=target(id+'-glyph'+index,slot.x,y+1.5,slot.z,false,Math.floor(rnd()*4));
