@@ -69,7 +69,12 @@ async function main() {
         throw Error('Kiss must be a 2.4-second one-shot');
       if (project.actors.some(actor => actor.keyframes.length < 6)) throw Error('Kiss clip has missing keyframes');
       document.getElementById('maaPlayBtn').click(); // The URL intentionally opens paused for editing; tests must actually start playback.
-      for (let frame = 0; frame < 69; frame++) api.tick(1 / 60);
+      let walked = false; // Tracks real authored approach speed, not a fake continuous idle-leg animation.
+      for (let frame = 0; frame < 69; frame++) {
+        api.tick(1 / 60);
+        walked ||= api.fullBodyDiagnostics().some(body => body.preview?.gaitSpeed > .01);
+      }
+      if (!walked) throw Error('Approach root motion never animated the procedural gait');
       const contactBodies = api.fullBodyDiagnostics();
       if (contactBodies.some(body => !body.handRig || !body.feet || !body.pants)) {
         throw Error('Missing hands, feet, or equipped pants during the kiss: ' + JSON.stringify(contactBodies));
@@ -77,11 +82,17 @@ async function main() {
       if (!contactBodies.some(body => body.kneeDrop > 0)) {
         throw Error('The taller NPC must fold their knees at contact: ' + JSON.stringify(contactBodies));
       }
+      if (contactBodies.some(body => !body.preview?.feetGrounded)) {
+        throw Error('Kiss rotated or sank the actual planted feet: ' + JSON.stringify(contactBodies));
+      }
+      if (!contactBodies.some(body => body.preview?.torsoBowDegrees > 1)) {
+        throw Error('Tall torso did not bow independently of grounded legs: ' + JSON.stringify(contactBodies));
+      }
       for (let frame = 69; frame < 150; frame++) api.tick(1 / 60);
       const again = api.exportProject();
       const finishedBodies = api.fullBodyDiagnostics();
-      if (finishedBodies.some(body => body.kneeDrop > 0.0001)) {
-        throw Error('Both actors should stand normally after the kiss: ' + JSON.stringify(finishedBodies));
+      if (finishedBodies.some(body => body.kneeDrop > 0.0001 || Math.abs(body.preview?.torsoBowDegrees || 0) > .01)) {
+        throw Error('Both actors must recover their knee and torso rest poses: ' + JSON.stringify(finishedBodies));
       }
       if (again.project.relationshipPreset !== 'kiss') throw Error('Kiss changed during preview');
       return {
