@@ -50,6 +50,7 @@ assert.equal(Shadows.projectedShadows({scene:{traverse(fn){fn(offsetNode);}},sou
 
 const climb=read('docs/js/climb-surfaces.js');
 const reach=read('docs/js/ruin-reaching-obelisks.js');
+const shaft=read('docs/js/shaft-hub.js');
 const sense=read('docs/js/perception-mode.js');
 const fog=read('docs/js/cloud-forest-fog.js');
 const furnitureMask=fog.split('function drawFurnitureLightMasksCompat(')[1]?.split('const ruinFireMaskStats')[0]||'';
@@ -65,8 +66,9 @@ assert(climb.includes('buildRuinLadderMarks(THREE,surface)')&&climb.includes('ru
   'climbing pillars have depth-tested, glowing rune boundaries');
 assert(reach.includes('senseTargets')&&reach.includes('liveLadderGroups.delete(group)'),
   'sense targets must track live physical ladders and unregister on disposal');
-assert(sense.includes('shaftLadders: window.RuinReachingObelisks?.senseTargets?.(scene)'),
-  'sense mode must render the ladders, not the solid pillar');
+assert(sense.includes('window.RuinReachingObelisks?.senseTargets?.(scene)')&&
+  sense.includes('window.ShaftHub?.senseTargets?.(scene)')&&shaft.includes('function senseTargets(scene)'),
+  'sense mode must render both moving-pillar and static-buttress ladders through the stone');
 assert(fog.includes('withRuinShadowClip(ctx,shadows')&&fog.includes('ruinShadowPolygons(light,light.radius)'),
   'every special-ruin fire mask, including tower sconces, uses per-light shadows');
 assert(fog.includes('node.userData?.ruinLadderRuneGlow'),
