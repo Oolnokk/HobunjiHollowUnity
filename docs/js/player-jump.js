@@ -237,6 +237,7 @@
     const launchGround = groundAt(x, z) ?? baseY;
     const state = {
       area: deps.getCurrentArea(), phase: 'air', feetY: baseY,
+      takeoffY: baseY, // Ruin wall catches compare with jump launch height, not the inflated midair feet height.
       launchGround, vy: CONFIG.launchSpeed, vx: 0, vz: 0, elapsed: 0, blocked: null, source: 'free jump',
       lastX: x, lastZ: z, safeX: x, safeZ: z, // Last verified walkable point for fallback when no area-specific abyss physics exists.
     }; // Sole airborne state; kept off save data and discarded on area changes.
