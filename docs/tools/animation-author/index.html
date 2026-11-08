@@ -13841,8 +13841,7 @@ function applyKissPresetV1546() {
     setStatus('These mouth heights exceed the available body sink. Inspect the rig heights before exporting.', 'warn');
     return false;
   }
-  animationAuthor.fps = KISS_FPS_V1546;
-  animationAuthor.duration = window.SpouseKissMotion.DURATION_S;
+  setProjectTimingFromTemplate({ fps: KISS_FPS_V1546, duration: window.SpouseKissMotion.DURATION_S }); // Syncs the author timeline with shared gameplay timing.
   animationAuthor.loop = false; // A kiss is a one-shot event, not a repeating dance.
   animationAuthor.projectName = 'Spouse Kiss — ' + leader.label + ' and ' + partner.label;
   animationAuthor.multiPreset = KISS_PRESET_V1546;
@@ -13874,6 +13873,7 @@ function applyKissPresetV1546() {
 
   setAnimationTime(0, { pause: true });
   selectAnimationActor(leader.id);
+  renderAllAnimationUi(); // Refresh FPS/seconds, pose inspectors and keyframe tracks after replacing both clips.
   frameAllAnimationActors('angle');
   updateKissHeightReadoutV1546();
   setAnimationRecentChange('V15.46 spouse kiss: adaptive ' + solution.pose +
