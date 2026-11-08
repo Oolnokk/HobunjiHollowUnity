@@ -352,7 +352,10 @@
       shorterHipHeightWorld: shortAnatomy.hipHeightWorld,
     });
     if (!height.contactPossible) { lastError = 'mouth-height-not-reachable'; return false; }
-    const contactGap = Math.min(dist, .12 + Math.min(firstHeight, secondHeight) * .10); // Preserve the established gameplay collider-safe approach spacing; editor's flat portrait preview uses its own screen-readable gap.
+    const normalGap = .12 + Math.min(firstHeight, secondHeight) * .10; // Keep the established game spacing for couples standing on their own feet.
+    const jumpGap = height.jumpFootForwardWorld + height.shorterLegLengthWorld * .18; // Supported posterior hops need the smaller pelvis close enough to reach both foot targets.
+    const contactGap = Math.min(dist, height.shorterPosteriorGrip
+      ? Math.min(normalGap, Math.max(.006, jumpGap)) : normalGap); // Only a mounted posterior contact approaches closer than the normal collision-safe kiss.
     const approach = Math.max(0, dist - contactGap); // Move only the spouse, so player collider and camera stay stable.
     const approachX = dist > .0001 ? (playerPoint.x - npcPoint.x) * approach / dist : 0;
     const approachZ = dist > .0001 ? (playerPoint.z - npcPoint.z) * approach / dist : 0;
