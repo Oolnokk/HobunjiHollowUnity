@@ -1132,6 +1132,12 @@
     const rate = Math.max(0.3, pitch * (Number(cfgEntry.pitch) || 1) * (1 + (Math.random() * 2 - 1) * pitchVariance));
     const snd = createObjectSfxAudio(url);
     if (Number.isFinite(metronomeLimitSeconds) && metronomeLimitSeconds > 0) {
+      const metronomeDebug = lastObjectSfxKeyDebug; // Pixel Probe reports actual media start/error rather than only a successful key lookup.
+      if (metronomeDebug?.metronome) {
+        metronomeDebug.playbackState='requested';
+        snd.addEventListener?.('playing',()=>{metronomeDebug.playbackState='playing';});
+        snd.addEventListener?.('error',()=>{metronomeDebug.playbackState='error';},{once:true});
+      }
       if (metronomeSfxVoice) {
         metronomeSfxVoice.pause?.();
         activeSfx.delete(metronomeSfxVoice); // A delayed 1.85-second pick tail may not mask the next quarter-note tick.
