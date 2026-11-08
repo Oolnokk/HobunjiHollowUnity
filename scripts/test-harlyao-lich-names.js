@@ -23,11 +23,15 @@ for (let i = 0; i < 2500; i++) {
   const name = generator.generateIdentityFromSeed(seed, 'male', 'harlyao'); // Culture identity is a single given name.
   assert.match(name, /^[A-Z][a-z]{4,11}$/);
   assert(!reserved.has(name.toLowerCase()), name + ' must not duplicate an authored lich');
+  assert.doesNotMatch(name.toLowerCase(), /(?!ao)[aeiou]{2}/, 'no accidental vowel-vowel joins except authored ao diphthongs');
   assert.equal(generator.generateIdentityFromSeed(seed, 'female', 'harlyao'), name, 'Harlyao names currently have no gender suffix rule');
   seen.add(name);
 }
 assert(seen.size > 1100, 'two/three-part Harlyao syllable pools should produce a wide variety of names');
 assert.equal(generator.generateHarlyaoName(() => 0), 'Narkalu', 'a pathological fixed RNG cannot lock in an authored identity');
+const boundaryRolls = [12.1 / 28, .1, 0, 14.1 / 25, 0]; // Forces dran + na + ur, selecting n as the bridge consonant.
+assert.equal(generator.generateHarlyaoName(() => boundaryRolls.shift() ?? 0), 'Drannanur', 'a consonant must interrupt a vowel-vowel fragment boundary');
+
 assert(generator.generateIdentityFromSeed('culture-regression', 'male', 'slagothim').includes(' '), 'existing living-species naming still works');
 
 let randomState = 123456; // Repeatable live GameRandom stream for spawn assertions.
