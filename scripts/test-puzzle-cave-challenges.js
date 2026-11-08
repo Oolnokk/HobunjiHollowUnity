@@ -136,11 +136,24 @@ assert.equal(timedPickBeats.length,1,'standing on the music plate starts exactly
 assert.equal(timedPickBeats[0].downbeat,true,'the immediate first pick accent is on beat one');
 assert.equal(playing,0,"the pressure plate must not open or equip the player's instrument");
 assert(timed.scorePanel?.visible||timed.inscription?.group.visible,'the glowing Scratchbone score appears while on the plate');
+assert.equal(timed.glyphs[1].material.hex,0xeaf5ff,'a non-current interior note is softly white');
+const frozenGlyphLocations=timed.glyphs.map(glyph=>({...glyph.position})); // Physical carvings remain in their authored coordinates for all timing transitions.
+const frozenGlyphGeometries=timed.glyphs.map(glyph=>glyph.geometry); // Only halo brightness/radius can change, never the carved numeral plane.
+timed.tick(.10);
+assert.notEqual(timed.glyphs[0].material.hex,0xeaf5ff,
+  'the current indoor note gradually shifts from inactive white toward strong yellow');
+assert.equal(timed.glyphs[1].material.hex,0xeaf5ff,
+  'the next note remains neutral white rather than growing a fake larger engraving');
 const firstNote=timed.song.notes[0].index;
 events.dispatch('hobunji-kurraya-puzzle-note',{area:'wrong_map',noteIndex:firstNote});
 assert.equal(timed.session.snapshot().progress,0,'an instrument in another map cannot solve the cave');
 events.dispatch('hobunji-kurraya-puzzle-note',{area,noteIndex:(firstNote+1)%8});
 assert.equal(timed.session.snapshot().progress,0,'wrong notes invalidate the attempt');
+assert.equal(timed.glyphs[0].material.hex,0xff6666,
+  'the current interior carving flashes red immediately for an incorrect played pitch');
+assert(timed.glyphs.every((glyph,index)=>glyph.geometry===frozenGlyphGeometries[index]&&
+    glyph.position.x===frozenGlyphLocations[index].x&&glyph.position.y===frozenGlyphLocations[index].y),
+  'white-yellow-red focus transitions must never alter physical carved geometry or placement');
 player={x:room.x,z:room.z};
 timed.tick(.016);
 assert.equal(closed,0,'leaving the plate must not close a player-owned instrument');
