@@ -407,11 +407,17 @@
     [workspace?.section, workspace?.summary, workspace?.owned, info].filter(Boolean).forEach((node) => resizeObserver?.observe?.(node));
   }
 
+  function gearActuallyVisible(pane) {
+    const menu = document.getElementById('menuPanel'); // The menu uses opacity, not display:none, so layout measurements still run when closed.
+    return !!(pane?.classList.contains('inv-mode-gear') && pane.classList.contains('active')
+      && menu?.classList.contains('open'));
+  }
+
   function refreshPresentation() {
     fitQueued = false;
     if (typeof document === 'undefined') return null;
     const pane = document.getElementById('mpInventory');
-    if (!pane?.classList.contains('inv-mode-gear')) {
+    if (!gearActuallyVisible(pane)) {
       // Gameplay continues updating inventory data with the menu closed.
       // Do not measure/reflow a hidden detail panel or keep resize observers
       // attached; the pane's Gear-mode class change schedules the next fit.
@@ -451,17 +457,17 @@
     const pane = document.getElementById('mpInventory');
     if (!pane) return;
 
-    let lastGearMode = pane.classList.contains('inv-mode-gear'); // Remembers the pane's last mode so ordinary UI class toggles do not force a full Gear reflow.
+    let lastGearVisible = gearActuallyVisible(pane); // Tracks Gear tab, active inventory pane, AND the menu's actual open class.
     inventoryMutationObserver = new MutationObserver((records) => {
-      const gearActive = pane.classList.contains('inv-mode-gear');
-      const modeChanged = gearActive !== lastGearMode;
-      lastGearMode = gearActive;
-      const relevant = modeChanged || (gearActive && records.some((record) => {
+      const gearActive = gearActuallyVisible(pane);
+      const visibilityChanged = gearActive !== lastGearVisible;
+      lastGearVisible = gearActive;
+      const relevant = visibilityChanged || (gearActive && records.some((record) => {
         const target = record.target?.nodeType === 1 ? record.target : record.target?.parentElement;
         if (record.type === 'attributes') {
           // Non-Gear tab changes and class churn on the inventory pane itself
           // are not changes to item-detail geometry.
-          if (target === pane) return false;
+          if (target === pane || target === document.getElementById('menuPanel')) return false;
           return !!target?.closest?.('#invEquipSection, #invInfo');
         }
         // Gear contents may be rebuilt while the menu is open. A direct pane
@@ -471,6 +477,8 @@
       if (relevant) scheduleFit();
       else fitStats.ignoredMutations += records.length;
     });
+    const menu = document.getElementById('menuPanel'); // Closing/reopening the opacity-hidden menu must also release/restart Gear fitting.
+    menu && inventoryMutationObserver.observe(menu, { attributes:true, attributeFilter:['class'] });
     inventoryMutationObserver.observe(pane, {
       childList:true,
       subtree:true,
