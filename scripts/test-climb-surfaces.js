@@ -225,6 +225,14 @@ assert.equal(player.onClimbSurface, null, 'bottom event releases the player');
   CS.register({ id: 'ruin-tall-face', scope: 'tall', axis: 'z', normal: { x: 1, z: 0 },
     plane: 5, u0: 6, u1: 8, y0: 0, y1: 1.4 });
   assert(CS.worldClimbProvider(), 'tall ruin face still offers climbing');
+  jumper._freeJump = { phase: 'air', source: 'free jump', takeoffY: 0, feetY: 0.8 }; // Apex should not make a tall wall look short.
+  global.window = { PlayerJump: { reset() {} } }; // Minimal reset owner for the airborne handoff.
+  assert.equal(CS.tryAirGrab({ x: 5.25, z: 7, y: 0.8 }, { x: -1, z: 0 }), true,
+    'a tall ruin face must still catch a jumper even when the airborne feet approach its top');
+  assert(jumper.onClimbSurface, 'a tall wall grab enters the proper attached state');
+  delete global.window;
+  jumper.onClimbSurface = null;
+  jumper._freeJump = null;
   CS.clearScope('tall');
   delete global.PlayerJump;
 }
