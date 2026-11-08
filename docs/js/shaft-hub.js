@@ -384,7 +384,7 @@
     const THREE = deps.THREE || globalThis.THREE;
     const visual = parent && THREE ? buildVisual(result,THREE,deps.ClimbSurfaces) : null;
     if (visual) parent.add(visual);
-    if (deps.ClimbSurfaces) out.surfaces = deps.ClimbSurfaces.registerGrid(result.grid, { scope, idPrefix: scope, autoCatch: true }) // This hub's authored V50 ladders catch descending contact automatically.;
+    if (deps.ClimbSurfaces) out.surfaces = deps.ClimbSurfaces.registerGrid(result.grid, { scope, idPrefix: scope, autoCatch: true }); // This hub's authored V50 ladders catch descending contact automatically.
     if (deps.DynamicSurfaces) out.floors = registerGroupedSupport(result, deps.DynamicSurfaces, scope);
     mounts.set(scope,{ deps, visual });
     deps.DevRandomRuin?.registerShaftGrid?.(scope,result.grid,() => unmount(deps));
