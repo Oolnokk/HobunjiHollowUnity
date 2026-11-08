@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <script src="../../js/tap-reliability.js?v=20261010a"></script>
-<title>Hobunji Animation Author V15.45</title>
+<title>Hobunji Animation Author V15.46</title>
 <style>
 :root {
   color-scheme: dark;
@@ -1207,6 +1207,7 @@ body[data-animation-author-mode="rig"] #maaViewportBadge { max-width:calc(100% -
 <script src="../../config/attachment-rig-profiles.js?v=20261026homgurkulower03"></script>
 <script src="../../js/animal-chathead-frame.js?v=20261029h17359fc"></script>
 <script src="../../js/transform-dump-utils.js?v=20261017h3ce7f8d"></script>
+<script src="../../js/spouse-kiss-motion.js?v=20261108kiss1"></script>
 
 <script>
 (() => {
@@ -13780,6 +13781,222 @@ syncCreatureGroundReferenceV1543 = function(actor, sizeClass) {
 animationAuthor.recentChange = 'Omgurku lower-half ground height is editable as an animal rig with its own exportable profile, fixed-size preview, and moving ground plane.';
 animationAuthor.modeStates.rig.recentChange = animationAuthor.recentChange;
 log('Omgurku lower-half animal-style Rig Coordinates controls ready.');
+
+// -----------------------------------------------------------------------------
+// V15.46: Non-looping spouse kiss. The author and gameplay consume precisely the
+// same height solution and eased contact timing from SpouseKissMotion.
+// -----------------------------------------------------------------------------
+const KISS_PRESET_V1546 = 'kiss'; // Serialized as project.relationshipPreset, like the existing dance preset.
+const KISS_TIMES_V1546 = Object.freeze([0, .3, .82, 1.02, 1.52, 1.95, 2.4]); // Timeline keys for approach, contact, and return.
+const KISS_FPS_V1546 = 12; // Playback sampling resolution for both members of the pair.
+
+function kissActorHeightV1546(actor) {
+  const metrics = portraitModelMetrics(actor); // Existing rendered portrait metrics, not the NPC information-form species.
+  const visualScaleY = Math.abs(Number(actor?.visualOffset?.scale?.y) || 1); // Applies the rig's visible vertical scale without movement keyframes.
+  return metrics.modelHeight * visualScaleY;
+}
+
+function kissPairHeightV1546() {
+  const pair = romanticDancePair(); // Uses the same selected-actor pairing rules as the romantic dance.
+  if (!pair.leader || !pair.partner) return { ...pair, solution: null };
+  const solution = window.SpouseKissMotion?.solveHeights?.(kissActorHeightV1546(pair.leader), kissActorHeightV1546(pair.partner)) || null;
+  return { ...pair, solution };
+}
+
+function kissTransformV1546(who, time, solution) {
+  const pose = window.SpouseKissMotion.samplePose(time); // Shared approach, mouth contact, and separation curves.
+  const first = who === 'leader';
+  const taller = first ? solution.taller === 'first' : solution.taller === 'second';
+  const bend = pose.blend * (taller ? 1 : .35);
+  return {
+    position: {
+      x: 0,
+      y: taller ? -solution.tallerSinkWorld * pose.blend : 0,
+      z: first ? .09 * pose.blend : .52 - .09 * pose.blend,
+    },
+    rotationDeg: { x: (first ? 1 : -1) * 9 * bend, y: first ? 0 : 180, z: 0 },
+    scale: { x: 1, y: 1, z: 1 },
+  };
+}
+
+function kissTrackV1546(who, solution) {
+  const taller = who === 'leader' ? solution.taller === 'first' : solution.taller === 'second';
+  return KISS_TIMES_V1546.map(time => {
+    const pose = window.SpouseKissMotion.samplePose(time);
+    return {
+      time, transform: kissTransformV1546(who, time, solution),
+      // Per-frame percent mirrors Attack Editor body sink. Runtime applies it to
+      // procedural legs/body instead of translating the character's collider.
+      bodySinkPct: taller ? solution.tallerSinkPct * pose.blend : 0,
+      neckRotationDeg: { x: (taller ? -12 : 8) * pose.blend, y: 0, z: 0 },
+    };
+  });
+}
+
+function applyKissPresetV1546() {
+  if (animationAuthor.mode !== 'multi') return false;
+  const { leader, partner, solution } = kissPairHeightV1546();
+  if (!leader || !partner) { setStatus('Kiss needs two NPC/character actors in the Multi-Avatar scene.', 'warn'); return false; }
+  if (!solution?.contactPossible) {
+    setStatus('These mouth heights exceed the available body sink. Inspect the rig heights before exporting.', 'warn');
+    return false;
+  }
+  animationAuthor.fps = KISS_FPS_V1546;
+  animationAuthor.duration = window.SpouseKissMotion.DURATION_S;
+  animationAuthor.loop = false; // A kiss is a one-shot event, not a repeating dance.
+  animationAuthor.projectName = 'Spouse Kiss — ' + leader.label + ' and ' + partner.label;
+  animationAuthor.multiPreset = KISS_PRESET_V1546;
+  if ($('maaProjectName')) $('maaProjectName').value = animationAuthor.projectName;
+  if ($('maaLoop')) $('maaLoop').checked = false;
+  if ($('maaPresetSelect')) $('maaPresetSelect').value = KISS_PRESET_V1546;
+
+  const leaderKeys = kissTrackV1546('leader', solution); // Root actor faces the target; no parent cycle.
+  const partnerKeys = kissTrackV1546('partner', solution); // Runtime-local partner track is exported relative to leader.
+  setActorTarget(leader, null, false);
+  leader.rootMotionMode = 'gameplay';
+  leader.keyframes = leaderKeys.map(key => clone(key));
+  leader.baseTransform = clone(leaderKeys[0].transform);
+  applyTransformSnapshot(leader.root, leader.baseTransform);
+  leader.gaze.mode = 'manual'; // Authored neck curves, not live target gaze, control mouth contact.
+
+  setActorTarget(partner, leader.id, false);
+  installGameplayRelativeTrackAsIndependentAuthoring(partner, leader, partnerKeys[0].transform, partnerKeys);
+  // Existing relative-transform bake preserves neckRotationDeg; the explicit
+  // body-sink channel is exported separately as actor metadata below.
+  partner.keyframes.forEach((key, index) => { key.bodySinkPct = (partnerKeys[index] || partnerKeys[partnerKeys.length - 1]).bodySinkPct; });
+  partner.gaze.mode = 'manual';
+  leader.kissBodySinkPctAtContact = solution.taller === 'first' ? solution.tallerSinkPct : 0;
+  partner.kissBodySinkPctAtContact = solution.taller === 'second' ? solution.tallerSinkPct : 0;
+  animationAuthor.kissHeightSolutionV1546 = solution;
+
+  setAnimationTime(0, { pause: true });
+  selectAnimationActor(leader.id);
+  frameAllAnimationActors('angle');
+  updateKissHeightReadoutV1546();
+  setAnimationRecentChange('V15.46 spouse kiss: adaptive ' + solution.pose +
+    ', ' + solution.tallerSinkPct.toFixed(1) + '% body sink for the taller actor, 2.4 s one-shot and 24-hour Beloved buff on gameplay contact.');
+  scheduleAnimationProjectSave();
+  return true;
+}
+
+function updateKissHeightReadoutV1546() {
+  const node = $('maaKissHeightReadoutV1546');
+  if (!node) return;
+  node.style.display = $('maaPresetSelect')?.value === KISS_PRESET_V1546 ? '' : 'none';
+  if (node.style.display === 'none') return;
+  const { solution } = kissPairHeightV1546();
+  if (!solution) { node.textContent = 'Add two NPC/character actors, then Apply Kiss. Both participants are animated.'; return; }
+  node.textContent = 'Auto height match: ' + solution.firstHeight.toFixed(2) + ' / ' +
+    solution.secondHeight.toFixed(2) + ' model units. ' +
+    (solution.taller === 'first' ? 'First' : 'Second') + ' actor ' +
+    solution.pose + 's ' + solution.tallerSinkPct.toFixed(1) +
+    '%; remaining lip-height gap ' + solution.remainingGap.toFixed(3) +
+    '. The knee/body-sink channel is separate from collision and adapts even to extreme height ratios.';
+}
+
+function installKissPresetUiV1546() {
+  const select = $('maaPresetSelect');
+  const apply = $('maaApplyPresetBtn');
+  if (!select || !apply || select.dataset.kissPresetInstalled === 'true') return;
+  select.dataset.kissPresetInstalled = 'true';
+  const option = document.createElement('option');
+  option.value = KISS_PRESET_V1546;
+  option.textContent = 'Kiss — two spouses, adaptive height';
+  const danceOption = select.querySelector('option[value="dance"]');
+  if (danceOption) danceOption.insertAdjacentElement('afterend', option);
+  else select.appendChild(option);
+  const note = document.createElement('div');
+  note.id = 'maaKissHeightReadoutV1546';
+  note.className = 'maaSmall maaMuted';
+  note.style.marginTop = '7px';
+  apply.insertAdjacentElement('afterend', note);
+  // Old Apply listener captures the original preset dispatcher by reference.
+  // Capture this new choice first; leave every old preset untouched.
+  apply.addEventListener('click', event => {
+    if (select.value !== KISS_PRESET_V1546) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    applyKissPresetV1546();
+  }, true);
+  select.addEventListener('change', updateKissHeightReadoutV1546);
+  updateKissHeightReadoutV1546();
+}
+
+const beforeKissSetActivePresetV1546 = setActiveMultiPresetV1514;
+setActiveMultiPresetV1514 = function(preset, options = {}) {
+  if (preset !== KISS_PRESET_V1546) return beforeKissSetActivePresetV1546(preset, options);
+  animationAuthor.multiPreset = KISS_PRESET_V1546;
+  installKissPresetUiV1546();
+  if ($('maaPresetSelect')) $('maaPresetSelect').value = KISS_PRESET_V1546;
+  if (options.save !== false) scheduleAnimationProjectSave();
+  updateKissHeightReadoutV1546();
+  return KISS_PRESET_V1546;
+};
+
+const beforeKissInferPresetV1546 = inferMultiPresetV1514;
+inferMultiPresetV1514 = function(project = null) {
+  if (project?.project?.relationshipPreset === KISS_PRESET_V1546 ||
+      /kiss/i.test(String(project?.project?.name || ''))) return KISS_PRESET_V1546;
+  return beforeKissInferPresetV1546(project);
+};
+
+const beforeKissSerializeV1546 = serializeAnimationProject;
+serializeAnimationProject = function() {
+  const data = beforeKissSerializeV1546();
+  if (data?.schema !== animationAuthor.schema || animationAuthor.multiPreset !== KISS_PRESET_V1546) return data;
+  data.project.relationshipPreset = KISS_PRESET_V1546;
+  data.project.kiss = {
+    durationHours: 24, effect: 'beloved', effectStats: { staminaRegenMultiplier: 1.1 },
+    adaptation: 'floor-relative-mouth-heights-and-authored-body-sink-percent',
+    mouthHeightRatio: window.SpouseKissMotion.MOUTH_HEIGHT_FRACTION,
+    maxBodySinkPct: window.SpouseKissMotion.MAX_SINK_PCT,
+    contactAtSeconds: 1.02, durationSeconds: window.SpouseKissMotion.DURATION_S,
+    heightSolution: clone(animationAuthor.kissHeightSolutionV1546 || null),
+  };
+  for (const record of data.actors || []) {
+    const actor = actorById(record.id);
+    if (actor) record.kissBodySinkPctAtContact = Number(actor.kissBodySinkPctAtContact) || 0;
+    if (actor && record.targetActorId && Array.isArray(record.keyframes)) {
+      const pct = Number(actor.kissBodySinkPctAtContact) || 0;
+      record.keyframes.forEach(key => {
+        key.bodySinkPct = pct * window.SpouseKissMotion.samplePose(key.time).blend;
+      });
+    }
+  }
+  return data;
+};
+
+const beforeKissImportV1546 = importAnimationProjectData;
+importAnimationProjectData = async function(data, options = {}) {
+  const result = await beforeKissImportV1546(data, options);
+  if (data?.project?.relationshipPreset === KISS_PRESET_V1546) {
+    animationAuthor.kissHeightSolutionV1546 = clone(data?.project?.kiss?.heightSolution || null);
+    for (const record of data.actors || []) {
+      const actor = actorById(record.id);
+      if (actor) actor.kissBodySinkPctAtContact = Number(record.kissBodySinkPctAtContact) || 0;
+    }
+    setActiveMultiPresetV1514(KISS_PRESET_V1546, { save: false });
+  }
+  updateKissHeightReadoutV1546();
+  return result;
+};
+
+const beforeKissPrepareV1546 = prepareMultiAvatarAnimationAuthor;
+prepareMultiAvatarAnimationAuthor = function() {
+  const value = beforeKissPrepareV1546();
+  installKissPresetUiV1546();
+  return value;
+};
+installKissPresetUiV1546(); // The author initialized earlier in the same script; install immediately too.
+if (window.MultiAvatarAnimationAuthor) {
+  window.MultiAvatarAnimationAuthor.version = '15.46';
+  window.MultiAvatarAnimationAuthor.applyKissPreset = applyKissPresetV1546;
+  window.MultiAvatarAnimationAuthor.importProject = importAnimationProjectData;
+}
+document.title = 'Hobunji Animation Author V15.46';
+animationAuthor.recentChange = 'V15.46 adds a spouse kiss preset with shared runtime/editor height compensation, per-actor body sink, and a one-shot kiss/contact timing.';
+animationAuthor.modeStates.multi.recentChange = animationAuthor.recentChange;
+log('V15.46 spouse kiss preset installed; body-sink and relative-mouth-height diagnostics available on mobile.');
 
 })();
 </script>
