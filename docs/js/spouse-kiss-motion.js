@@ -75,7 +75,7 @@
     const early = ease((pose.time - .13) / .24); // Short initiator extends hands before the taller one bends.
     const reachable = distance <= reach; // Tall initiator waits until torso lowering brings the other shoulders within actual reach.
     const tallBlend = reachable ? ease((reach - distance) / Math.max(.008, reach * .07)) : 0;
-    const grip = (initiatorShorter ? early : Math.min(early, tallBlend)) * released;
+    const grip = (initiatorShorter ? early : tallBlend) * released; // Tall initiators move hands on the first reachable frame as their torso lowers.
     return { blend: clamp(grip, 0, 1), reachable, closestDistance: Math.max(0, distance - reach) };
   }
 
