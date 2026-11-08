@@ -97,10 +97,10 @@ approximately(victim.health, 90, 'Fish Leap uses the shared scent payout');
 approximately(rs.getAffliction(victim, 'scentMarkedHealth'), 7.8, 'Fish Leap builds scent after consuming it');
 
 rs.AFFLICTIONS.__testBlowgunScent = { ...rs.AFFLICTIONS.scentMarkedHealth,
-  rangedAliasFor: 'scentMarkedHealth', rangedScale: 40 };
+  rangedAliasFor: 'scentMarkedHealth', rangedScale: 10 };
 victim = actor();
-rs.applyDamage(victim, 2, { afflictionBonuses: { __testBlowgunScent: 0.15 } });
-approximately(rs.getAffliction(victim, 'scentMarkedHealth'), 12, 'Bshuakauitl 40x alias builds the real mark');
+rs.applyDamage(victim, 2, { attackPower: 18, afflictionBonuses: { __testBlowgunScent: 0.15 } }); // B'shuakauitl applies full 18-point status potency despite its two Health damage.
+approximately(rs.getAffliction(victim, 'scentMarkedHealth'), 27, 'Bshuakauitl 10x alias converts independent Attack Power into the real scent mark');
 assert.equal(rs.getAffliction(victim, '__testBlowgunScent'), 0, 'no phantom alias remains');
 
 const player = actor({ id: 'player', x: 20 });
