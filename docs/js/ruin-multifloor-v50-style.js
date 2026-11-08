@@ -10,6 +10,14 @@
 
   let activeKanthicLights=[]; // Only the currently mounted Kanthic shaft contributes to the shared darkness compositor.
 
+  function chooseHubBrazierCell(hub,story) {
+    const grid=hub.grid,o=hub.options,level=story*o.spacing; // The actual shaft's standing-support graph decides whether a brazier can exist.
+    const lo=o.wall,hi=lo+o.shaft-1,mid=Math.floor((lo+hi)/2);
+    const candidates=[[lo+3,mid-5],[mid+5,lo+3],[hi-3,mid+5],[mid-5,hi-3]]; // Gallery-side cells, never the central basin, door threshold, or narrow corridor.
+    const ordered=candidates.slice(story%4).concat(candidates.slice(0,story%4));
+    return ordered.find(([c,r])=>grid.canStand(c,r,level)&&!grid.isSolid(c,r,level+1))||null; // No invisible floating braziers on an unsupported floor.
+  }
+
   function mountKanthicFixtures({accents,rec,ruin,hub,THREE,getPlayerY,showToast,onStateChange}){
     if(ruin.theme!=='kanthic')return null;
     const rootGroup=new THREE.Group(); // Session-owned, non-colliding fire furniture in the actual shaft.
@@ -93,10 +101,7 @@
       towerFixtures.push(fixture); // Explicitly detach from a different runtime's owner before it is destroyed.
     }
     for(let story=0;story<o.floors;story++){
-      const level=story*o.spacing,lo=o.wall,hi=lo+o.shaft-1,mid=Math.floor((lo+hi)/2);
-      const candidates=[[lo+3,mid-5],[mid+5,lo+3],[hi-3,mid+5],[mid-5,hi-3]]; // Gallery-side placements: never in the central fatal basin or the narrow entry tunnel.
-      const ordered=candidates.slice(story%4).concat(candidates.slice(0,story%4));
-      const cell=ordered.find(([c,r])=>grid.canStand(c,r,level)&&!grid.isSolid(c,r,level+1));
+      const level=story*o.spacing,cell=chooseHubBrazierCell(hub,story); // Reuse the same grid-grounded placement selection that regression tests exercise.
       if(!cell)continue; // Never invent a brazier on an unsupported story or block the only available path.
       const floorY=grid.levelToY(level),x=grid.colToX(cell[0]+.5),z=grid.rowToZ(cell[1]+.5);
       const group=new THREE.Group(); // Optional fire source, separate from the Great Door's required wing braziers.
@@ -301,7 +306,7 @@
     cleanup.tick=tick; // Reused by the ruin's existing before-render client; never installs another frame loop.
     return cleanup;
   }
-  return Object.freeze({apply,lightSources:()=>activeKanthicLights,
+  return Object.freeze({apply,chooseHubBrazierCell,lightSources:()=>activeKanthicLights,
     lightDebug:()=>({total:activeKanthicLights.length,active:activeKanthicLights.filter(source=>source.active!==false).length,
       litBraziers:activeKanthicLights.filter(source=>!source.anchor&&source.active===true).length})}); // Mobile diagnostics confirm ignition reached the screen-mask data.
 });
