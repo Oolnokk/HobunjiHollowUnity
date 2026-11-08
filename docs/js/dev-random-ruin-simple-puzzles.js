@@ -1645,8 +1645,8 @@
       const body=naturalizeStone(new THREE.Mesh(sharedBoxGeometry(.72,1.75,.52),makeBasic(0x808080)));
       body.position.set(p.x,Number(support.y)+.875,p.z);body.rotation.y=p.yaw;body.name='dev_ruin_sarcophagus_body_'+room.id+'_'+index;root.add(body);
       const panel=naturalizeStone(new THREE.Mesh(sharedBoxGeometry(.58,1.55,.12),makeBasic(0x808080)));
-      panel.position.set(0,0,.32);body.add(panel);
-      coffins.push({index,body,panel,closedY:0,openY:1.62,progress:0,spawnX:p.spawnX,spawnZ:p.spawnZ,floorY:Number(support.y),spawnStarted:false,activated:false,spawned:false,creature:null,released:false,spawnError:null});
+      panel.position.set(0,0,.32);panel.userData.devRuinFootprintIgnore=true;body.add(panel); // Moving stone covers never leave a stationary ghost collider when they slide open.
+      coffins.push({index,body,panel,closedY:0,openY:1.62,progress:0,spawnX:p.spawnX,spawnZ:p.spawnZ,emergeX:p.x+Math.sin(p.yaw)*.82,emergeZ:p.z+Math.cos(p.yaw)*.82,floorY:Number(support.y),spawnStarted:false,activated:false,spawned:false,creature:null,released:false,spawnError:null}); // Skeletons start inside stone, then step onto the clear room floor when the cover retracts.
     }
     if(coffins.length<2){disposeObject(root);return null;}
     const bounds=options.bounds||roomBounds(context.meta,room);
@@ -2331,7 +2331,14 @@
         const t=coffin.progress*coffin.progress*(3-2*coffin.progress);
         coffin.panel.position.y=coffin.closedY+(coffin.openY-coffin.closedY)*t;
         if(coffin.creature&&!coffin.released&&coffin.progress>=.68){
-          deps?.hostileObjects?.add?.(coffin.creature); // Enemy AI begins only after the stone door has visibly retracted far enough to release it.
+          const tile=Math.max(1,Number(deps?.TILE)||1); // Entity positions are pixels; coffin and collision positions are measured in dungeon tiles.
+          const emergeX=Number.isFinite(coffin.emergeX)?coffin.emergeX:coffin.spawnX;
+          const emergeZ=Number.isFinite(coffin.emergeZ)?coffin.emergeZ:coffin.spawnZ;
+          coffin.creature.x=emergeX*tile;coffin.creature.y=emergeZ*tile; // Clear the permanent solid coffin body before normal hostile collision/pathing begins.
+          coffin.creature.homeX=coffin.creature.x;coffin.creature.homeY=coffin.creature.y;
+          if(coffin.creature.avatarRef?.group?.position){coffin.creature.avatarRef.group.position.x=emergeX;coffin.creature.avatarRef.group.position.z=emergeZ;}
+          if(coffin.creature.groundShadow?.position){coffin.creature.groundShadow.position.x=emergeX;coffin.creature.groundShadow.position.z=emergeZ;}
+          deps?.hostileObjects?.add?.(coffin.creature); // Enemy AI begins after the sliding panel clears and the skeleton has a navigable landing.
           coffin.released=true;
         }
       }
