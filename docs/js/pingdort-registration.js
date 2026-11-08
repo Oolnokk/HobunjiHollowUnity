@@ -13,7 +13,7 @@
     wings:'assets/creaturesprites/pingdort_wings.png',
   }); // Authored PNGs also provide the native farm, nursery and companion fallback silhouette.
   const RIG_URL='config/creatures/pingdort-flying-rig.json'; // Authored shared two-bone flying rig with burden socket.
-  const debug={registered:false,rigLoaded:false,failures:0,lastError:null}; // Mobile-readable registration and asset diagnostics.
+  const debug={registered:false,rigLoaded:false,failures:0,tintAssignments:0,lastTint:null,lastError:null}; // Mobile-readable registration, coat tint and asset diagnostics.
   let rigPromise=null; // One image/config decode shared by all wild and pet Pingdorts.
 
   function configureLivestock(){
@@ -39,7 +39,7 @@
       sprites:{idle:SPRITES.perched,run:[SPRITES.flying,SPRITES.flying]}};
     // Wild flocks override their own attack dispatch; personal companions use this special.
     if(render)render[KIND]={...(render[KIND]||{}),prefix:KIND,
-      base:{idle:SPRITES.perched,run1:SPRITES.flying,run2:SPRITES.flying},patterns:[]};
+      base:{idle:SPRITES.perched,run1:SPRITES.flying,run2:SPRITES.flying},patterns:[],fullBaseRecolor:true}; // Farm, nursery and Stable portraits use the same inherited base-coat color.
     const items=injected.ITEM_DEFS;
     if(items){
       items[FERTILE_EGG]={...(items[FERTILE_EGG]||{}),label:'Fertile Pingdort Egg',
@@ -75,9 +75,30 @@
     }).catch(error=>{rigPromise=null;debug.failures++;debug.lastError=String(error);throw error;});
     return rigPromise;
   }
-  async function createRig(){
+  async function createRig(genotype=null){
     const {settings,images}=await loadRig();
-    return window.FlyingAnimalRig.create(settings,images);
+    const instance=window.FlyingAnimalRig.create(settings,images); // The usual authored PNGs retain their wing rig, geometry and dispose owner.
+    const sourceHex=genotype?.base?.color; // Wild, saved farm and Stable genotypes all use this same inherited base coat.
+    if(/^#[0-9a-f]{6}$/i.test(String(sourceHex||''))){
+      const tintMaterials=new Set(); // Collect the existing body/wing material owners once; exclude optional eye overlays.
+      instance.root.traverse(node=>{
+        if(node.isMesh&&!node.userData?.flyingAnimalEyeOverlay&&node.material?.color)tintMaterials.add(node.material);
+      });
+      instance.restoreTint=(nextHex=sourceHex)=>{
+        const color=String(nextHex||''); // Allow a newly bred/edited live genotype to refresh without rebuilding textures.
+        if(!/^#[0-9a-f]{6}$/i.test(color))return false;
+        let changed=false;
+        for(const material of tintMaterials){
+          if(material.color.getHexString?.().toLowerCase()===color.slice(1).toLowerCase())continue;
+          material.color.set(color);
+          changed=true;
+        }
+        if(changed){debug.tintAssignments++;debug.lastTint=color;}
+        return changed;
+      };
+      instance.restoreTint(); // The shared live-visual tick also repairs lost tint after hit flashes.
+    }
+    return instance;
   }
   configureLivestock(); // Must run before game.js snapshots LIVESTOCK_ITEM_KINDS and resources.
   window.PingdortRegistration=Object.freeze({KIND,FERTILE_EGG,FARM_EGG,ZONES,SPRITES,register,configureLivestock,loadRig,createRig,
