@@ -210,7 +210,9 @@
   }
   function spawnBird(session,nest,index){
     const pos={x:nest.x+.4+(index-1)*.35,z:nest.z+.1+(index%2)*.25};
+    const genotype=window.CreatureGenetics?.makeDefaultGenotype?.(KIND)||null; // Each wild flock member rolls one persistent-in-session earth-tone coat and default small size.
     const actor=deps.makeCreatureEntity?.(KIND,pos.x*unit(),pos.z*unit(),{
+      genotype,
       homeX:pos.x*unit(),homeY:pos.z*unit(),state:'idle',wildlifeRole:'predator',streamVisuals:true,
       pingdortFlockId:nest.id,
     });
