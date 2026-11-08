@@ -276,7 +276,7 @@
       tallerHipHeightWorld: tallAnatomy.hipHeightWorld,
     });
     if (!height.contactPossible) { lastError = 'mouth-height-not-reachable'; return false; }
-    const contactGap = Math.min(dist, .2 + Math.min(firstHeight, secondHeight) * .11); // Shortest partner's head width controls mouth proximity.
+    const contactGap = Math.min(dist, .12 + Math.min(firstHeight, secondHeight) * .10); // Close enough for shoulder grasp after kneeling; shortest partner's head still controls spacing.
     const approach = Math.max(0, dist - contactGap); // Move only the spouse, so player collider and camera stay stable.
     const approachX = dist > .0001 ? (playerPoint.x - npcPoint.x) * approach / dist : 0;
     const approachZ = dist > .0001 ? (playerPoint.z - npcPoint.z) * approach / dist : 0;
