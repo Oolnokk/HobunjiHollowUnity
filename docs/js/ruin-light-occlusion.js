@@ -21,8 +21,10 @@
       if(cachedCandidates.length>=MAX_CASTERS||!node.isMesh||node.isInstancedMesh||node.visible===false)return;
       const name=String(node.name||''),parentName=String(node.parent?.name||'');
       const role=String(node.userData?.interiorRuinRole||node.parent?.userData?.interiorRuinRole||'');
-      if(DECORATION_NAME.test(name)||node.userData?.devRuinFootprintIgnore)return;
-      if(!BLOCKER_NAME.test(name+' '+parentName+' '+role)&&!node.userData?.ruinInteriorWall)return;
+      const physics=node.userData||{};
+      const solid=!!(physics.ruinInteriorWall||physics.transitDoor||physics.pushable||physics.blocksLight);
+      if(node.userData?.devRuinFootprintIgnore||DECORATION_NAME.test(name)&&!solid)return;
+      if(!BLOCKER_NAME.test(name+' '+parentName+' '+role)&&!solid)return; // Respect the existing ruin solid-object tags even when a mesh name is generic.
       const material=Array.isArray(node.material)?node.material[0]:node.material;
       if(!material||material.visible===false||material.transparent&&Number(material.opacity)<.5)return;
       cachedCandidates.push(node);
