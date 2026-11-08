@@ -106,6 +106,8 @@ assert.equal(areaFootprints.providerIds().length,0,'retiring the cave removes it
 assert.equal(parent.children.length,0,'cave teardown removes mechanism meshes');
 
 const events=eventBus(); // The existing music bridge emits these exact instrument-input events.
+const timedPickBeats=[]; // Actual composed timed cave plates emit the shared mine-pick metronome events.
+globalThis.RuinInteractionAudio={metronomeTick:beat=>timedPickBeats.push(beat)};
 let playing=0,closed=0,awarded=0;
 const music={beginPlayerSession(){playing++;return true;},close(){closed++;}};
 let player={x:room.x+room.w/2,z:room.z+room.d/2-1.6};
@@ -130,6 +132,8 @@ assert(timedCollider.enabled(),'the music gate starts physically locked');
 assert(areaFootprints.blocksBox(area,gateX,gateZ,.18),'the stone-song gate blocks real player movement until solved');
 assert.equal(events.count('hobunji-kurraya-puzzle-note'),1,'only real instrument notes reach the score');
 timed.tick(0);
+assert.equal(timedPickBeats.length,1,'standing on the music plate starts exactly one mine-pick metronome beat');
+assert.equal(timedPickBeats[0].downbeat,true,'the immediate first pick accent is on beat one');
 assert.equal(playing,0,"the pressure plate must not open or equip the player's instrument");
 assert(timed.scorePanel?.visible||timed.inscription?.group.visible,'the glowing Scratchbone score appears while on the plate');
 const firstNote=timed.song.notes[0].index;
