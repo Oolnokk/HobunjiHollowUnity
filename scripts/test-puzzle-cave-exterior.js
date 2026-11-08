@@ -177,6 +177,12 @@ for(let index=0;index<gate.glyphs.length;index++){
 }
 assert(gate.scoreStone.visible,'the physical paired pillars remain visible even when their music glyphs are hidden');
 assert.equal(gate.glyphGlows.length,gate.song.notes.length,'each outdoor note has a shared-visibility additive halo');
+assert(gate.glyphs.every(glyph=>typeof glyph.material.onBeforeCompile==='function'),
+  'the exterior glyphs must use the Witch-bomb alpha-only ink shader');
+const alphaShader={fragmentShader:'#include <map_fragment>'};
+gate.glyphOuterGlows[0].material.onBeforeCompile(alphaShader);
+assert(alphaShader.fragmentShader.includes('diffuseColor.a *= texture2D(map, vUv).a'),
+  'the additive exterior glow must sample glyph alpha instead of multiplying by the dark PNG RGB');
 assert(gate.glyphGlows.every(glow=>glow.material.opacity===.07),
   'inactive notes retain only a faint inner glow');
 assert.equal(gate.glyphOuterGlows.length,gate.song.notes.length,'every note has a broader additive halo');
@@ -210,6 +216,11 @@ Exterior.update(.01,area);
 assert.equal(opened,0,'stepping onto the plate must not auto-equip or open an instrument');
 assert.equal(gate.lastDown,true,'standing on the real raised plate activates the melody clue');
 assert(gate.scoreBoard.visible,'the exterior Scratchbone score lights up on the active raised plate');
+assert(sounds.some(event=>event.key==='pick'),'the occupied outdoor song plate starts the recorded mine-pick beat');
+const initialPickCount=sounds.filter(event=>event.key==='pick').length;
+Exterior.update(gate.song.secondsPerTick*4.02,area);
+assert.equal(sounds.filter(event=>event.key==='pick').length,initialPickCount+1,
+  'each actual quarter-note boundary adds exactly one mine-pick click');
 assert.equal(sounds.filter(event=>event.key==='stoneActivator').length,1,
   'stepping onto the outdoor melody plate plays exactly one recorded activator cue');
 assert(gate.glyphGlows.some(glow=>glow.material.opacity===.98),
