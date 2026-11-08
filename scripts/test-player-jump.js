@@ -147,6 +147,7 @@ function harness({ rock = null, furniture = null, wall = null, pit = null, start
   assert(Math.abs(launchSpeed ** 2 / (2 * gravity) - priorApex / 2) < 0.001,
     'base jump must reach half of its former apex without changing gravity');
   assert.equal(gravity, 11.8, 'halving takeoff height must not alter gravity or falling behavior');
+  assert.equal(h.player._freeJump?.takeoffY, 0, 'a fresh jump retains physical takeoff height for ruin wall-grab filtering');
   assert.equal(!!h.player.climbing, false, 'free jump must not lock the wall-climb action state');
   let apex = 0;
   for (let i = 0; i < 85; i++) {
