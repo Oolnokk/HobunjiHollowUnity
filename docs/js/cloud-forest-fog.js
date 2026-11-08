@@ -767,12 +767,14 @@
     }
   }
 
-  function drawRuinTraditionLightMasks() {
-    const lights = window.DevRandomRuinLichThemes?.lightSources?.() || []; // Cached generation-time floor/wall/ceiling sources, never scene traversals.
+  function drawRuinTraditionLightMasks(lights = window.DevRandomRuinLichThemes?.lightSources?.() || []) { // Existing Hronal/Tothal sources and Kanthic fixture sources share one compositing path.
     if (!lights.length) return;
     const ctx = lightingDeps.lctx;
     const visible = []; // Kept for the second coloured-glow pass, so project each source just once.
     for (const light of lights) {
+      if (light.active === false) continue; // Optional Kanthic shaft braziers cannot reveal anything until the player ignites them.
+      const playerY = Number(lightingDeps.getPlayerWorldY?.()); // Prevent a tall shaft's upper-story fire from illuminating unrelated floors below.
+      if (Number.isFinite(light.floorY) && Number.isFinite(playerY) && Math.abs(light.floorY - playerY) > 10) continue;
       const transmission = interiorLightTransmission(light.x, light.z);
       if (transmission <= 0.005) continue;
       const center = lightingDeps.worldToOverlay(light.x, light.y, light.z);
@@ -804,6 +806,53 @@
       grad.addColorStop(1,'rgba('+r+','+g+','+b+',0)');
       ctx.fillStyle=grad;ctx.beginPath();ctx.arc(center.x,center.y,radius,0,Math.PI*2);ctx.fill();
     }
+  }
+
+
+  const ruinGlowProjection = new window.THREE.Vector3(); // Reused world-space center for engraved glow surfaces, avoiding allocation in the 60 Hz compositor.
+  const ruinGlowStats = { found:0,drawn:0,scans:0 }; // Mobile darkness diagnostics can confirm that glyph masks were discovered and actually painted.
+  let ruinGlowScene = null,ruinGlowNextScan = 0,ruinGlowMeshes = []; // Cache only the active scene's glowing pattern meshes; re-check lazy async atlases periodically.
+  function drawRuinPatternGlowMasks(scene, now) {
+    if (!scene?.traverse) return;
+    if (ruinGlowScene !== scene || now >= ruinGlowNextScan) {
+      ruinGlowScene = scene;ruinGlowNextScan = now + 1600;
+      ruinGlowMeshes = []; // Filter by the real additive pass, not decorative base stone or procedural wall labels.
+      scene.traverse(node => {
+        if (node.name === 'engraving-glyph-glow' && node.isMesh) ruinGlowMeshes.push(node);
+      });
+      ruinGlowStats.scans++;ruinGlowStats.found=ruinGlowMeshes.length;
+    }
+    const ctx = lightingDeps.lctx, playerY = Number(lightingDeps.getPlayerWorldY?.()); // Keep vertical shaft floors isolated while exposing glowing carvings.
+    ruinGlowStats.drawn = 0;
+    ctx.globalCompositeOperation = 'destination-out';
+    for (const mesh of ruinGlowMeshes) {
+      if (ruinGlowStats.drawn >= 80 || !mesh.material?.visible || !(mesh.material.opacity > .001)) continue; // Bound the mobile overlay cost in engraving-dense dungeons.
+      let visible=true; // Hidden overhead wings and removed groups must not punch unexplained holes in darkness.
+      for (let parent=mesh;parent && parent!==scene;parent=parent.parent) {
+        if (parent.visible === false) {visible=false;break;}
+      }
+      if (!visible) continue;
+      mesh.updateWorldMatrix?.(true,false);
+      if (!mesh.geometry?.boundingSphere) mesh.geometry?.computeBoundingSphere?.();
+      const sphere=mesh.geometry?.boundingSphere;
+      if (sphere) ruinGlowProjection.copy(sphere.center).applyMatrix4(mesh.matrixWorld);
+      else mesh.getWorldPosition?.(ruinGlowProjection);
+      if (!Number.isFinite(ruinGlowProjection.x) || !Number.isFinite(ruinGlowProjection.y) || !Number.isFinite(ruinGlowProjection.z)
+        || Number.isFinite(playerY) && Math.abs(ruinGlowProjection.y - playerY) > 11) continue;
+      const scale=mesh.matrixWorld?.getMaxScaleOnAxis?.() || 1; // Sphere bounds are local geometry units, including stretched masonry patches.
+      const radiusTiles=Math.min(5,Math.max(.8,(sphere?.radius||1)*scale)); // Cover the engraving's face, but never illuminate an entire corridor from one glyph.
+      const center=lightingDeps.worldToOverlay(ruinGlowProjection.x,ruinGlowProjection.y,ruinGlowProjection.z);
+      const radius=lightScreenRadius(ruinGlowProjection.x,ruinGlowProjection.z,ruinGlowProjection.y,radiusTiles);
+      if (!(radius > 0) || !lightMaskIntersectsViewport(center,radius,ctx,ruinGlowProjection.x,ruinGlowProjection.y,ruinGlowProjection.z,radiusTiles)) continue;
+      const gradient=ctx.createRadialGradient(center.x,center.y,0,center.x,center.y,radius);
+      gradient.addColorStop(0,'rgba(0,0,0,.98)');
+      gradient.addColorStop(.58,'rgba(0,0,0,.96)');
+      gradient.addColorStop(.83,'rgba(0,0,0,.70)');
+      gradient.addColorStop(1,'rgba(0,0,0,0)'); // Erase only nearby overlay darkness: glyph pixels remain depth-tested by the original Three.js pass.
+      ctx.fillStyle=gradient;ctx.beginPath();ctx.arc(center.x,center.y,radius,0,Math.PI*2);ctx.fill();
+      ruinGlowStats.drawn++;
+    }
+    ctx.globalCompositeOperation = 'source-over';
   }
 
   function ordinaryBuildingInterior(area) {
@@ -1012,6 +1061,8 @@
       drawLanternMasksCompat(1);
       if (ruinTradition !== 'kanthic' && ruinTradition !== 'tothal') drawFurnitureLightMasksCompat(); // The pure-black Kanthic room and cold Tothal room have no generic warm furniture pools.
       if (ruinTradition === 'hronal' || ruinTradition === 'tothal') drawRuinTraditionLightMasks();
+      if (ruinTradition === 'kanthic') drawRuinTraditionLightMasks(window.RuinMultifloorV50Style?.lightSources?.() || []); // Only dedicated Kanthic fire fixtures lift the blackness.
+      if (ruinTradition) drawRuinPatternGlowMasks(activeScene,now); // An emissive wall engraving is legible without a carried lantern.
       if (ordinaryBuildingInterior(currentArea) && !ruinTradition) drawWindowLightMasks();
       if (sceneTransAlpha > 0) {
         ctx.globalCompositeOperation = 'source-over';
@@ -1032,6 +1083,8 @@
     // Outdoor carried/watch lanterns still clear darkness, but preserve a configurable amount of the active weather tint.
     drawLanternMasksCompat(undergroundFog ? 1 : currentOutdoorLanternActivation(), !undergroundFog);
     if (!(undergroundFog && activeRuinTradition() === 'kanthic')) drawFurnitureLightMasksCompat(!undergroundFog); // The pure-black Kanthic room has no generic warm furniture pools.
+    if (undergroundFog && activeRuinTradition() === 'kanthic') drawRuinTraditionLightMasks(window.RuinMultifloorV50Style?.lightSources?.() || []);
+    if (currentArea === 'map_i_dev_random_ruin') drawRuinPatternGlowMasks(activeScene,now); // The fog and enclosed paths must agree about engraved emission.
 
     if (lightningAlpha > 0) {
       ctx.fillStyle = `rgba(220,240,255,${lightningAlpha * 0.45})`;
@@ -1098,7 +1151,8 @@
         fogColor: fogResultColor ? `#${fogResultColor.getHexString()}` : null,
         skydomeSuppressed: !!isNoSkyArea(debugArea),
         undergroundLanternArea: isUndergroundLanternArea(debugArea),
-        latestChange: 'Outdoor point-light glows and watch lanterns fade with player distance; indoor light pools retain their existing eased fades and door transmission.',
+        latestChange: 'Kanthic shaft fire fixtures reveal local pools; glowing ruin engravings clear darkness without changing generic room lights.',
+        ruinEngravingGlowMasks: { ...ruinGlowStats }, // Mobile-visible proof that glowing wall patterns survive the darkness overlay.
         interiorLightRadiusMultiplier: INTERIOR_LIGHT_RADIUS_MULTIPLIER,
         interiorLightFalloff: 'ease-out',
         undergroundDarknessKind: enclosedDarknessKind(debugArea),
