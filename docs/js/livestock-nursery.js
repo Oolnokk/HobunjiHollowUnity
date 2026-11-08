@@ -29,6 +29,7 @@
     grehlr: '🐈',
     drenkirra: '🦎',
     moot: '🐾', // Displayed on the Nursery baby list for Moot offspring.
+    pingdort: '🐦', // Fertile wild flock eggs hatch in the existing nursery and barn facilities.
   };
   const SPECIES_LABELS = {
     uumkaoii: "Uumkao'ii",
@@ -37,6 +38,7 @@
     grehlr: 'Grehlr',
     drenkirra: 'Drenkirra',
     moot: 'Moot', // Keeps the Ranch starter's juvenile name consistent with its adult creature label.
+    pingdort: 'Pingdort', // Shares inherited Stable size and coat lineage.
   };
 
   let animalDeps = null; // Captures FarmAnimals' existing injected save/world/permission seam.

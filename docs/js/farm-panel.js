@@ -47,6 +47,7 @@
     drenkirra: '🪿',
     puktuk: '🐑',
     honeyfuzzle: '🐝',
+    pingdort: '🐦', // Wild eggs hatch into small shoulder pets or medium/large companions.
   };
 
   const STABLE_ROLE_META = {

@@ -126,9 +126,13 @@
     ensureVoorgAssRuntimeRegistration(injectedDeps);
     window.MootRegistration?.register?.(injectedDeps); // Independent Northern Cliffs grazing groups and usable Ranch starter; no den insertion.
     window.TzatzulRegistration?.register?.(injectedDeps); // Species registration is synchronous, like Voorg-Ass; actual nesting is separate.
+    window.SkeeriRuins?.register?.(injectedDeps); // The shared wildlife creature factory also recognizes ruin-only Skeeri species.
+    window.PingdortRegistration?.register?.(injectedDeps); // Native Pingdort sprites, fertile eggs, farm livestock and companion sizes.
     window.TzatzulLiveVisuals?.init?.(injectedDeps);
     window.TzatzulRegistration?.registerPeck?.(); // Ensure the authored hatchling attack exists after Combat initialization.
     window.TzatzulFlightRuntime?.init?.(injectedDeps); // Shared wildlife population and movement owner.
+    window.SkeeriRuins?.init?.(injectedDeps); // No extra RAF: the existing wildlife tick owns Skeeri flight.
+    window.PingdortFlocks?.init?.(injectedDeps); // Native wild flock and companion attack owners use the shared combat/world clock.
     window.TzatzulNestEncounter?.init?.(injectedDeps); // Indoor boss encounter uses the same hostile roster and wildlife tick. // The canonical wildlife update tick will own bird-rig promotion, animation and disposal.
     deps = injectedDeps;
     installDenTurnoverDeathHook();
@@ -1808,6 +1812,8 @@
     if (currentArea !== lastTurnoverArea) { lastTurnoverArea = currentArea; processDueCaves(); }
     if (deps.getCutscenePreviewActive()) return;
     window.TzatzulLiveVisuals?.tick?.(dt, currentArea);
+    window.SkeeriRuins?.update?.(dt); // Advances only mounted ruin Skeeri; ordinary zones remain untouched.
+    window.PingdortFlocks?.update?.(dt); // Wild Pingdorts use the existing updateHostileSpawning step.
     window.TzatzulFlightRuntime?.update?.(dt); // Reuses the same tick, not an additional RAF or scan.
     window.TzatzulNestEncounter?.update?.(dt); // Only the active authored nest cave is evaluated; no second RAF. // Actual dev-spawned Tzatzul get their authored body/wing rig in the existing update loop, even outside wilderness zones.
     denCheckTimer -= dt;
@@ -1820,6 +1826,7 @@
     ensureCurrentZoneRoamingHerds();
     ensureCurrentZoneNestTrees();
     window.TzatzulFlightRuntime?.ensureZone?.(currentArea); // Cliff birds spawn only where elevated natural ledge geometry exists.
+    window.PingdortFlocks?.ensureZone?.(currentArea); // Exactly three birds per fertile nest in Cloud Forest and Eastern Mire.
     window.HoneyfuzzleHives?.ensureCurrentZone(); // Swarms come out of their hive stumps by day (js/honeyfuzzle-hives.js).
     window.BanditCamps.ensureCurrentZoneCamps();
     if (_zoneEntryAnimalLogPending === currentArea) {
