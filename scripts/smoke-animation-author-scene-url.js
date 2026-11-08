@@ -71,8 +71,8 @@ async function main() {
       document.getElementById('maaPlayBtn').click(); // The URL intentionally opens paused for editing; tests must actually start playback.
       for (let frame = 0; frame < 69; frame++) api.tick(1 / 60);
       const contactBodies = api.fullBodyDiagnostics();
-      if (contactBodies.some(body => !body.hands || !body.feet)) {
-        throw Error('Missing hands or feet during the kiss: ' + JSON.stringify(contactBodies));
+      if (contactBodies.some(body => !body.handRig || !body.feet || !body.pants)) {
+        throw Error('Missing hands, feet, or equipped pants during the kiss: ' + JSON.stringify(contactBodies));
       }
       if (!contactBodies.some(body => body.kneeDrop > 0)) {
         throw Error('The taller NPC must fold their knees at contact: ' + JSON.stringify(contactBodies));
