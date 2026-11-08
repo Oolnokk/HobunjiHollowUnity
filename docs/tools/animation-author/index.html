@@ -5749,7 +5749,9 @@ function updateAnimationTimeUi() {
   $('maaScrubber').max = String(animationAuthor.duration);
   if ($('maaFpsInput')) $('maaFpsInput').value = String(animationAuthor.fps);
   if ($('maaDurationInput')) $('maaDurationInput').value = String(animationAuthor.duration);
-  $('maaScrubber').step = String(1 / Math.max(1, animationAuthor.fps));
+  $('maaScrubber').step = animationAuthor.multiPreset === 'kiss' ||
+    Math.abs(animationAuthor.duration * animationAuthor.fps - Math.round(animationAuthor.duration * animationAuthor.fps)) > .00001
+    ? 'any' : String(1 / Math.max(1, animationAuthor.fps)); // The final 2.40s kiss frame is not on a 12-FPS tick; allow the slider to reach exact recovery rather than snapping to ~2.33s.
   $('maaScrubber').value = String(animationAuthor.currentTime);
   $('maaTimeReadout').textContent = `${animationAuthor.currentTime.toFixed(2)} / ${animationAuthor.duration.toFixed(2)}s`;
   updateAnimationPlaybackButtons();
