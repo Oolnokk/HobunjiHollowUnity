@@ -140,7 +140,8 @@ async function main() {
         throw Error('Kiss contact lost a skinned mouth point: '+JSON.stringify(mouthAtContact));
       }
       if (!afterContact.find(actor => actor.name === 'Pahu')?.initiatorHands?.applied) {
-        throw Error('Initiator wrist anchors must follow the spouse shoulders during contact: ' + JSON.stringify(afterContact));
+        throw Error('Initiator wrist anchors must follow the spouse shoulders during contact: ' +
+          JSON.stringify({ bodies: afterContact, mouths: mouthAtContact, solver: api.exportProject().project.kiss.heightSolution }));
       }
       scrubber.value = '0';
       scrubber.dispatchEvent(new Event('input', { bubbles: true })); // Reset to the intended kiss opening before testing walking gait.
