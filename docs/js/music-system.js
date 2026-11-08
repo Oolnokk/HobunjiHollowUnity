@@ -1162,6 +1162,11 @@
   function ruinVaultSilencesAmbient(area) {
     return area === 'map_i_dev_random_ruin' && window.DevRandomRuinSanctum?.isGreatDoorUnlocked?.() === true;
   }
+  function ruinShaftSilencesAmbient(area) {
+    // The automatic obelisk clock activates only when the player is physically inside the hub.
+    return area === 'map_i_dev_random_ruin'
+      && window.DevRandomRuin?.getShaftNetworkState?.()?.obelisk?.active === true;
+  }
   function isAudioEntryEligible(entry, area = deps.getCurrentArea()) {
     if (!entry) return false;
     return window.ConditionRegistry?.entryEligible
@@ -1343,12 +1348,16 @@
       }
     }
 
-    if (ruinVaultSilencesAmbient(currentArea)) {
-      if (_ambientCueState.currentBgm || _ambientCueState.currentCue) stopAmbientCue('Great Door unlocked');
-      if (_ambientCueState.currentCombatBgm) stopMusicSlot('currentCombatBgm', 'Great Door unlocked');
-      _ambientCueState.combatOverrideActive = false; // An unlocked vault cancels combat soundtrack ownership until the player leaves the ruin.
-      _ambientCueState.combatSchedulerPausedAt = 0; // No paused exploration track should resume over the door source on later ticks.
-      return; // Positional door audio, weather and other SFX continue through their separate update paths.
+    if (ruinVaultSilencesAmbient(currentArea) || ruinShaftSilencesAmbient(currentArea)) {
+      const shaftRhythm = ruinShaftSilencesAmbient(currentArea); // Selects the longer musical fade only for the automatic shaft.
+      const reason = shaftRhythm ? 'automatic shaft rhythm' : 'Great Door unlocked';
+      const fadeMs = shaftRhythm ? musicFadeConfig().songFadeOutMs : musicFadeConfig().interruptFadeMs;
+      if (_ambientCueState.currentCue) stopMusicSlot('currentCue', reason, fadeMs);
+      if (_ambientCueState.currentBgm) stopMusicSlot('currentBgm', reason, fadeMs);
+      if (_ambientCueState.currentCombatBgm) stopMusicSlot('currentCombatBgm', reason, fadeMs);
+      _ambientCueState.combatOverrideActive = false; // No soundtrack should compete with the chamber's stone mechanisms.
+      _ambientCueState.combatSchedulerPausedAt = 0; // No paused exploration track resumes over the mechanism.
+      return; // Mechanical SFX, positional sources, weather and other effects remain audible.
     }
 
     // Area transitions can still retire a soundtrack, but mere weather/time
@@ -1953,7 +1962,8 @@
     const sound = _ambientCueState.currentCombatBgm || _ambientCueState.currentBgm || _ambientCueState.currentCue; // Identifies the actual scheduler-owned transport.
     return {
       revision: 'cue-load-retry-2', area, stage: _ambientCueState.mode, cueIndex: indexId, audioContext: _musicAudioCtx?.state || 'none',
-      ruinVaultSilenced: ruinVaultSilencesAmbient(area), // Included in the existing mobile-copyable music diagnostics when the door owns the soundtrack.
+      ruinVaultSilenced: ruinVaultSilencesAmbient(area), // Great Door sound ownership remains separately inspectable.
+      ruinShaftSilenced: ruinShaftSilencesAmbient(area), // Mobile audio report identifies the automatic-pillar music fade.
       cueStageRemainingSec: Math.max(0, Math.round((_ambientCueState.cuePhaseEndsAt - performance.now()) / 1000)),
       nextInSec: Math.max(0, Math.round((_ambientCueState.nextAt - performance.now()) / 1000)),
       manifest: { ..._cueIndexLoad, retryInSec: Math.max(0, Math.round((_cueIndexLoad.retryAt - performance.now()) / 1000)), loaded: [..._audioCueIndexes.keys()] },
@@ -1981,7 +1991,7 @@
     playGameplayCue,
     resetAmbientCueTimer,
     updateAmbientCues,
-    ambientDiagnostics: () => ({ area: _ambientCueState.area, mode: _ambientCueState.mode, bgm: _ambientCueState.currentBgm?._trackUrl || null, cue: _ambientCueState.currentCue?._trackUrl || null, festivalSilenced: festivalSilencesAmbient(deps?.getCurrentArea?.()), ruinVaultSilenced: ruinVaultSilencesAmbient(deps?.getCurrentArea?.()) }), // Read-only snapshot for headless/mobile audio checks.
+    ambientDiagnostics: () => ({ area: _ambientCueState.area, mode: _ambientCueState.mode, bgm: _ambientCueState.currentBgm?._trackUrl || null, cue: _ambientCueState.currentCue?._trackUrl || null, festivalSilenced: festivalSilencesAmbient(deps?.getCurrentArea?.()), ruinVaultSilenced: ruinVaultSilencesAmbient(deps?.getCurrentArea?.()), ruinShaftSilenced: ruinShaftSilencesAmbient(deps?.getCurrentArea?.()) }), // Read-only snapshot for headless/mobile audio checks.
     updateLyreDucking,
     updateExteriorBgs,
     updateRainAudio,
