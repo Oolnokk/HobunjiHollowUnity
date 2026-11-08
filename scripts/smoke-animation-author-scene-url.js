@@ -108,6 +108,7 @@ async function main() {
       scrubber.value = '0';
       scrubber.dispatchEvent(new Event('input', { bubbles: true })); // Reset to the intended kiss opening before testing walking gait.
       const project = api.exportProject();
+      const initialPair = api.kissPairDiagnostics?.(); // Ensures initiator/partner anatomy does not silently swap when applying a new preset.
       const initialBodies = api.fullBodyDiagnostics?.() || [];
       if (initialBodies.length !== 2 || initialBodies.some(body => !body.feet)) {
         throw Error('Both Pahu and Leaf must show real gameplay leg/foot rigs: ' + JSON.stringify(initialBodies));
@@ -182,6 +183,7 @@ async function main() {
         shoulderGripEarly: earlyInitiator.initiatorHands,
         shoulderGripAtContact: afterContact.find(actor => actor.name === 'Pahu')?.initiatorHands,
         tallerInitiator,
+        initialPair,
         reversePair,
         reverseActorSink,
         copiedUrlValid: true,
