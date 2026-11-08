@@ -254,7 +254,7 @@
         if(THREE.SRGBColorSpace)pillarTexture.colorSpace=THREE.SRGBColorSpace;
       }
       const stone=new THREE.Mesh(new THREE.BoxGeometry(layout.width+.06,layout.height+.14,.24),
-        new THREE.MeshBasicMaterial({map:pillarTexture,color:0x918b80}));
+        new THREE.MeshBasicMaterial({map:pillarTexture,color:0x7a746b}));
       stone.name='puzzle-cave-score-pillar';
       stone.position.z=-.105; // Glyphs sit just above the existing carved face, not inside the stone.
       board.add(stone);
@@ -296,7 +296,9 @@
     // The plate belongs on the registered cap, not at terrain height underneath.
     if(portal.requiresSong){
       const plate=new THREE.Mesh(new THREE.CylinderGeometry(.55,.55,.09,24),
-        new THREE.MeshBasicMaterial({color:0x6f6152}));
+        root.ProceduralFurniture?.makePartMaterial?.({
+          materialTexture:'carved_smooth.png',materialLighting:'unlit',materialFillMode:'never',color:'#7a746b',
+        })||new THREE.MeshBasicMaterial({color:0x7a746b})); // PNG stone even if the Tankan artwork loader is unavailable.
       plate.name='puzzle-cave-exterior-plate';
       plate.position.set(portal.plate.x,portal.plate.y+.035,portal.plate.z);
       group.add(plate);portal.plateMesh=plate;
