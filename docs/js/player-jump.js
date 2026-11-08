@@ -11,6 +11,7 @@
     maxFrameSeconds: 0.22, maxStepUp: 0.25, landingTolerance: 0.045,
     assistReach: 1, assistSeconds: 0.16, // Short, collision-checked forward lerp after clearing an obstacle.
   }); // Halve the original 1.65-world-unit apex (~0.83) via launch speed; retain fall gravity.
+  const EASY_JUMP_RISE = Math.max(0, CONFIG.launchSpeed ** 2 / (2 * CONFIG.gravity) - 0.12); // Ruin ledge targeting uses this comfortable, sub-apex jump height instead of its old climb threshold.
   let deps = null; // Injected from ClimbSystem.init; contains the same live player and terrain readers.
   const debug = { starts: 0, landings: 0, blockedMoves: 0, lastEvent: 'not started', lastObstacle: null, grabs: 0, ropeCatches: 0, flights: 0, slides: 0, assists: 0 }; // Mobile diagnostics in ClimbSystem.debug.
 
@@ -236,6 +237,7 @@
     const launchGround = groundAt(x, z) ?? baseY;
     const state = {
       area: deps.getCurrentArea(), phase: 'air', feetY: baseY,
+      takeoffY: baseY, // Ruin wall catches compare with jump launch height, not the inflated midair feet height.
       launchGround, vy: CONFIG.launchSpeed, vx: 0, vz: 0, elapsed: 0, blocked: null, source: 'free jump',
       lastX: x, lastZ: z, safeX: x, safeZ: z, // Last verified walkable point for fallback when no area-specific abyss physics exists.
     }; // Sole airborne state; kept off save data and discarded on area changes.
@@ -521,5 +523,6 @@
         vy: s?.vy ?? 0, elapsed: s?.elapsed ?? 0, blocked: s?.blocked || null };
     },
     config: CONFIG,
+    easyJumpRise: EASY_JUMP_RISE, // Shared with short-ledge and authored-wall climb selection; real jump physics remain authoritative.
   });
 })();

@@ -202,4 +202,41 @@ assert.equal(player.onClimbSurface, null, 'bottom event releases the player');
   delete global.window;
 }
 
+
+{
+  // A low authored ruin wall should not hijack Jump (or auto-catch a free jump).
+  CS.clearScope('t');
+  CS.register({ id: 'ruin-short-face', scope: 'short', axis: 'z', normal: { x: 1, z: 0 },
+    plane: 5, u0: 6, u1: 8, y0: 0, y1: 0.65 });
+  const jumper = { x: 5.4 * TILE, y: 7 * TILE, angle: WEST }; // Short-face test player, initially on the 0-unit ruin floor.
+  let area = 'map_i_dev_random_ruin', safeTop = true; // Change the scene and standability to prove unsafe and non-ruin climbs remain available.
+  global.PlayerJump = { easyJumpRise: 0.70 }; // Same shared physics-derived cutoff exported by the real PlayerJump module.
+  CS.init({ player: jumper, TILE, getFeetY: () => 0, getCurrentArea: () => area,
+    getMovementInput: () => ({ x: 0, y: 0 }), canStandAt: () => safeTop, setFacingAngle() {} });
+  assert.equal(CS.worldClimbProvider(), null, 'short standable ruin face defers to normal jump');
+  assert.equal(CS.tryAirGrab({ x: 5.25, z: 7, y: 0 }, { x: -1, z: 0 }), false,
+    'jumping beside an easy ruin wall does not auto-grab it');
+  safeTop = false;
+  assert(CS.worldClimbProvider(), 'a low wall with no standable top must still be climbable');
+  safeTop = true; area = 'zone-test';
+  assert(CS.worldClimbProvider(), 'outside ruins, existing authored wall behavior stays unchanged');
+  area = 'map_i_dev_random_ruin';
+  CS.clearScope('short');
+  CS.register({ id: 'ruin-tall-face', scope: 'tall', axis: 'z', normal: { x: 1, z: 0 },
+    plane: 5, u0: 6, u1: 8, y0: 0, y1: 1.4 });
+  assert(CS.worldClimbProvider(), 'tall ruin face still offers climbing');
+  jumper._freeJump = { phase: 'air', source: 'free jump', feetY: 0.8 }; // Missing takeoff data must never silently disable an air grab.
+  assert(CS.worldClimbProvider(), 'missing launch height conservatively preserves climbing');
+  jumper._freeJump = { phase: 'air', source: 'free jump', takeoffY: 0, feetY: 0.8 }; // Apex should not make a tall wall look short.
+  global.window = { PlayerJump: { reset() {} } }; // Minimal reset owner for the airborne handoff.
+  assert.equal(CS.tryAirGrab({ x: 5.25, z: 7, y: 0.8 }, { x: -1, z: 0 }), true,
+    'a tall ruin face must still catch a jumper even when the airborne feet approach its top');
+  assert(jumper.onClimbSurface, 'a tall wall grab enters the proper attached state');
+  delete global.window;
+  jumper.onClimbSurface = null;
+  jumper._freeJump = null;
+  CS.clearScope('tall');
+  delete global.PlayerJump;
+}
+
 console.log('climb-surfaces: ok');
