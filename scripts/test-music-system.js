@@ -55,7 +55,7 @@ const progressDeeperCuePath = path.join(__dirname, '../docs/assets/audio/music/c
     areaBgmIncludesTrack: () => true, areaCueIncludesTrack: () => true,
     ambientMusicOwnsSoundtrack: () => live.exclusive,
     audioDebug() {}, audioTrace() {}, audioTraceEnabled: () => false,
-    isAudioEntryEligible: () => true, audioUrlFailed: () => false, festivalSilencesAmbient: () => false, ruinVaultSilencesAmbient: () => false, // No generated ruin in the isolated scheduler fixtures.
+    isAudioEntryEligible: () => true, audioUrlFailed: () => false, festivalSilencesAmbient: () => false, ruinVaultSilencesAmbient: () => false, ruinShaftSilencesAmbient: () => false, // No generated ruin in the isolated scheduler fixtures.
     musicFadeConfig: () => ({ songFadeInMs: 0, songFadeOutMs: 0 }),
     pauseAmbientForCombat() { live.pauses++; },
     restoreAmbientSchedulerAfterCombat() {},
@@ -103,6 +103,34 @@ const progressDeeperCuePath = path.join(__dirname, '../docs/assets/audio/music/c
   delete context.window.CombatTutorial;
   context.updateAmbientCues();
   assert.equal(state.combatOverrideActive, false, 'music works before the tutorial module loads');
+  // Entering an automatic shaft must silence every transport, even one left over from combat.
+  state.currentBgm = {src:'exploration.ogg'};
+  state.currentCue = {src:'regional-cue.ogg'};
+  state.currentCombatBgm = {src:'combat.ogg'};
+  context.ruinShaftSilencesAmbient = () => true;
+  context.updateAmbientCues();
+  assert.equal(state.currentBgm, null, 'shaft rhythm fades the exploration song');
+  assert.equal(state.currentCue, null, 'shaft rhythm fades ambient motifs');
+  assert.equal(state.currentCombatBgm, null, 'shaft rhythm fades combat songs');
+  assert.equal(state.combatOverrideActive, false, 'shaft suppresses soundtrack overrides');
+}
+{
+  const state = {area:'map_i_dev_random_ruin',active:false,unlocked:false}; // Separates shaft occupancy from a Great Door that is still locked.
+  const context = {window:{
+    DevRandomRuin:{getShaftNetworkState:()=>({obelisk:{active:state.active}})},
+    DevRandomRuinSanctum:{isGreatDoorUnlocked:()=>state.unlocked},
+  }};
+  const start=music.indexOf('  function ruinVaultSilencesAmbient('),end=music.indexOf('  function isAudioEntryEligible(');
+  vm.runInNewContext(music.slice(start,end),context);
+  assert.equal(context.ruinShaftSilencesAmbient(state.area),false,'locked ruin outside the shaft keeps music');
+  state.active=true;
+  assert.equal(context.ruinShaftSilencesAmbient(state.area),true,'entering an automatic shaft silences music');
+  assert.equal(context.ruinVaultSilencesAmbient(state.area),false,'shaft suppression does not pretend the vault is open');
+  state.active=false;
+  assert.equal(context.ruinShaftSilencesAmbient(state.area),false,'leaving the shaft lets the scheduler resume');
+  state.unlocked=true;
+  assert.equal(context.ruinVaultSilencesAmbient(state.area),true,'Great Door retains its separate soundtrack ownership');
+  assert.equal(context.ruinShaftSilencesAmbient('farm'),false,'the shaft never silences another area');
 }
 
 // Verify the authored music cycle: complete song -> 120 seconds of separate cues -> next song.
@@ -121,7 +149,7 @@ const progressDeeperCuePath = path.join(__dirname, '../docs/assets/audio/music/c
     audioDebug() {}, audioTrace() {}, audioTraceEnabled: () => false,
     areaBgmIncludesTrack: () => true, areaCueIncludesTrack: () => true,
     resolveAreaAudioIndex: () => 'general', // Shared cue library across farm and town.
-    isAudioEntryEligible: () => live.cuesAvailable, audioUrlFailed: () => false, festivalSilencesAmbient: () => false, ruinVaultSilencesAmbient: () => false, // No generated ruin in the isolated scheduler fixtures.
+    isAudioEntryEligible: () => live.cuesAvailable, audioUrlFailed: () => false, festivalSilencesAmbient: () => false, ruinVaultSilencesAmbient: () => false, ruinShaftSilencesAmbient: () => false, // No generated ruin in the isolated scheduler fixtures.
     musicFadeConfig: () => ({ cueFadeMs: 280, songFadeInMs: 2200, songFadeOutMs: 2600 }),
     ambientMusicOwnsSoundtrack: () => false,
     resolveAreaBgm: () => live.bgmAvailable ? { url: 'song-' + (++live.nextSong) + '.ogg', loop: true } : null, // Even a mistakenly looping ordinary BGM must advance the sequential cycle.
@@ -243,7 +271,7 @@ const progressDeeperCuePath = path.join(__dirname, '../docs/assets/audio/music/c
     _lyreDucked: false, _gameplayCueDuckOwners: new Set(), _dailyBgmPlayed: new Set(),
     audioDebug() {}, audioTrace() {}, audioTraceEnabled: () => false,
     areaBgmIncludesTrack: () => true, areaCueIncludesTrack: () => true,
-    isAudioEntryEligible: () => true, audioUrlFailed: () => false, festivalSilencesAmbient: () => false, ruinVaultSilencesAmbient: () => false, // No generated ruin in the isolated scheduler fixtures.
+    isAudioEntryEligible: () => true, audioUrlFailed: () => false, festivalSilencesAmbient: () => false, ruinVaultSilencesAmbient: () => false, ruinShaftSilencesAmbient: () => false, // No generated ruin in the isolated scheduler fixtures.
     musicFadeConfig: () => ({ cueFadeMs: 280, songFadeInMs: 2200, songFadeOutMs: 2600 }),
     ambientMusicOwnsSoundtrack: () => false,
     resolveAreaBgm: () => ({ url: 'assets/audio/music/bgm/bgm_what_the_winds_carry.mp3' }),
