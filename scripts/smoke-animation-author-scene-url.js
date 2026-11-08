@@ -79,6 +79,9 @@ async function main() {
       if (contactBodies.some(body => !body.handRig || !body.feet || !body.pants)) {
         throw Error('Missing hands, feet, or equipped pants during the kiss: ' + JSON.stringify(contactBodies));
       }
+      if (contactBodies.some(body => body.preview.feetGrounded !== true)) {
+        throw Error('An avatar root is pitching or sinking the procedural soles: ' + JSON.stringify(contactBodies));
+      }
       if (!contactBodies.some(body => body.kneeDrop > 0)) {
         throw Error('The taller NPC must fold their knees at contact: ' + JSON.stringify(contactBodies));
       }
