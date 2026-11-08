@@ -24331,7 +24331,6 @@
       let _heldItemHandMode = null; // 'bottle' (one hand on the neck) or 'large' (both hands at the sides); read by getHeldItemHandTarget.
       let _heldThrowAimT = 0; // Used as 0=neutral, 1=held windup aim, 2=windup-to-strike throw playback.
       let _heldThrowAnimProgress = 0; // Used to resume confirmed throws from the indefinitely-held windup pose.
-      let _playerKurrayaTwitch = null; // Reactive-twitch state for the player's held Kurraya — see updateHeldItemHolder.
       // Full authored duration in seconds, used to convert dt into animation progress.
       let _heldDrinkAnimDuration = 0;
 
@@ -24696,20 +24695,27 @@
           // instead of a single flat billboard.
           _heldItemPlane = isKurraya ? buildKurrayaAssembly() : makeHeldItemPlaneMesh(item);
           _heldItemKey = item.key;
-          _playerKurrayaTwitch = newKurrayaTwitchState();
           if (_heldItemPlane) heldItemHolder.add(_heldItemPlane);
           window.__farmLog?.(`[held-item] ${item.key}: pose=${isKurraya ? 'instrument' : usesThrustHeldPose(item) ? 'thrust-idle' : 'chest'} sprite=${isKurraya ? 'toolsprite' : (ITEM_DEFS[item.key]?.spriteIcon || 'emoji')}`);
         }
         if (isKurraya) {
-          // Cradled across the chest at its authored rest tilt (see
-          // buildKurrayaAssembly) — the assembly itself carries that tilt
-          // and any note-reactive twitch (see triggerPlayerKurrayaTwitch,
-          // called from js/music-minigame.js on each 'sounded-note'
-          // relay); only position/scale belong to the outer holder.
-          heldItemHolder.position.set(playerToolBaseX * 0.4, playerItemHoldY - 0.05, HELD_ITEM_FORWARD_OFFSET);
-          heldItemHolder.rotation.set(0, 0, 0);
-          heldItemHolder.scale.setScalar(0.85);
-          updateKurrayaTwitch(_playerKurrayaTwitch, _heldItemPlane);
+          // The Attack Editor's Neutral/Windup/Strike pose drives the REAL held
+          // holder, not a decorative twitch on the crossed PNG planes. Hands
+          // already follow this holder, so grips and instrument now move together.
+          const pose = window.KurrayaInstrument?.playerHeldPose?.(); // One shared note clock is used by the tool, right hand, grip spans and leg sink.
+          if (pose) {
+            const identity = playerPoseIdentity(); // Species/height orbit is the same transform the Attack Editor previews.
+            const gripKey = `kurraya|melee|${identity.speciesId}|${identity.gender}`; // The shared hand-grip cache prevents a holder-space pivot allocation every frame.
+            if (!_gripAnchorCache.has(gripKey)) _gripAnchorCache.set(gripKey,
+              window.HobunjiHandToolGrips?.primaryGripHolderPointForTool?.('kurraya', 'melee', identity) || null);
+            window.KurrayaInstrument.applyPlayerHeldPose(heldItemHolder, pose, playerToolBaseX, playerToolBaseY, {
+              cx: 0, cz: 0, floorY: 0, baseY: playerToolBaseY,
+              speciesId: identity.speciesId, gender: identity.gender,
+              modelHeight: playerAvatarModelHeight, armLength: playerArmLength,
+              poseOrbitScale: playerPoseOrbitScale,
+            }, _gripAnchorCache.get(gripKey)); // Editor scales about the primary grip; not about the sprite centre.
+            playerMesh.rotation.y = playerFacing + THREE.MathUtils.degToRad(Number(pose.bodyYaw) || 0); // Body yaw is authored per note rather than inherited from a weapon stance.
+          }
         } else if (isThrowFlaskItem(item) && window.HeldActionAnimations?.throwFlask) {
           applyHeldDrinkPose(window.HeldActionAnimations.throwFlask, 0); // Idle flask rests in the authored thrown-weapon stance, the same Neutral its throw starts from.
         } else if (usesThrustHeldPose(item) && window.HeldActionAnimations?.heldItemSmall?.poses?.neutral) {
@@ -30829,9 +30835,6 @@
         // the player's overlay iframe or an NPC's ambient performance iframe
         // — see updateHeldItemHolder (player) and the station-tool block
         // above (NPC) for what actually owns each twitch state.
-        triggerPlayerKurrayaTwitch: () => {
-          if (_heldItemPlane?.userData.kurrayaAssembly) triggerKurrayaTwitch(_playerKurrayaTwitch, _heldItemPlane);
-        },
         triggerNpcKurrayaTwitch: (npcId) => {
           const walker = npcId ? npcWalkers.find(w => w.rec?.id === npcId) : null;
           if (walker?.stationToolMesh?.userData.kurrayaAssembly) triggerKurrayaTwitch(walker.stationKurrayaTwitch, walker.stationToolMesh);

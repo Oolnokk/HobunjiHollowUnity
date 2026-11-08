@@ -270,22 +270,43 @@
     return global.RangedWeapons?.isPlayerThrownFireThroughStrike?.() === true;
   }
 
-  function currentWeights(side) {
+  const instrumentHandState = { key: null, action: null, progress: 0 }; // Reused while the player's hand rig samples editor-authored instrument shoulders/elbows each frame.
+  function playingInstrumentFor(avatarRoot) {
+    const playerMesh = global.Combat?.deps?.playerMesh || global.PlayerBodyTransformComposer?.getPlayerMesh?.();
+    if (!avatarRoot || !playerMesh || avatarRoot.parent !== playerMesh) return null; // Player music must never animate NPC or hostile shoulders.
+    const key = global.KurrayaInstrument?.activePlayerInstrument?.()
+      || (global.KurrayaInstrument?.playerKurrayaHandTarget?.()?.holder?.visible ? 'kurraya' : null); // The visible carried Kurraya also uses its editor Neutral elbows and shoulder hinges.
+    const action = key === 'flute' ? global.HeldActionAnimations?.flutePlayNote
+      : key === 'kurraya' ? global.HeldActionAnimations?.kurrayaPlayNote : null;
+    if (!action?.poses) return null;
+    instrumentHandState.key = key;
+    instrumentHandState.action = action;
+    instrumentHandState.progress = global.KurrayaInstrument?.playerInstrumentProgress?.(key) || 0;
+    return instrumentHandState;
+  }
+
+  function currentWeights(side, avatarRoot = null) {
     const editor = global.HobunjiAttackEditorHandShoulderControls;
     if (editor?.currentWeights) {
       const weights = editor.currentWeights();
       const toolKey = document.getElementById('toolSpriteSelect')?.value || '';
       return applyLeftIdleRule(side, toolKey, normalize(weights, IDLE));
     }
+    const instrument = playingInstrumentFor(avatarRoot);
+    if (instrument) return applyLeftIdleRule(side, instrument.key,
+      weightsAt(instrument.progress, instrument.action, instrument.action.poses, instrument.action.sequence)); // No weapon/throw stance override while playing.
     const weights = gameWeights(side);
     if (!rangedWindupStrikeActive()) return weights;
     return { ...weights, grip: 0 }; // Ranged Windup/Strike disables the grip-axis correction only; palm-normal targeting still follows the authored elbow/shoulder target.
   }
 
-  function currentElbow(side) {
+  function currentElbow(side, avatarRoot = null) {
     const editor = global.HobunjiAttackEditorHandShoulderControls;
     if (editor?.currentElbow) return normalizeElbowPoint(editor.currentElbow(side));
 
+    const instrument = playingInstrumentFor(avatarRoot);
+    if (instrument) return elbowAt(instrument.progress, instrument.action,
+      instrument.action.poses, instrument.action.sequence, side); // Authored plucking/flute elbow targets drive the same timeline as the holder and right hand.
     const action = global.RangedWeapons?.playerActionState?.() || null;
     if (action?.itemKey && action?.kind && Number(action.durationS) > 0) {
       const def = global.RangedWeapons?.config?.[action.itemKey] || null;

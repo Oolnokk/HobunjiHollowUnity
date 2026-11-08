@@ -594,10 +594,7 @@
   function animatePlayerNote() {
     if (!playerSession) return; // Only the local player's sounded notes animate their equipped instrument.
     if (playerSession.instrumentKey === 'flute') window.KurrayaInstrument?.playFluteNote?.();
-    else {
-      window.KurrayaInstrument?.playPlayerKurrayaNote?.(); // Uses the same sounded note for the independently authored right hand.
-      deps?.triggerPlayerKurrayaTwitch?.(); // Keeps the existing responsive two-plane assembly animation.
-    }
+    else window.KurrayaInstrument?.playPlayerKurrayaNote?.(); // One authored note drives holder, independent hand, grip spans and leg stance. No second twitch on the sprite.
   }
   function onSoundedNote(data, source) {
     if (source === frameEl?.contentWindow) {
