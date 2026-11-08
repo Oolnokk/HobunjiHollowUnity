@@ -1,0 +1,65 @@
+name: Check integrated ruin and puzzle changes
+
+on:
+  pull_request:
+    paths:
+      - 'docs/**'
+      - 'scripts/test-*.js'
+      - '.github/workflows/check-integrated-ruin-puzzles.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  integration:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Parse all integrated runtime modules and regression tests
+        run: |
+          for path in \
+            docs/js/climb-surfaces.js \
+            docs/js/cliff-crawl-presentation.js \
+            docs/js/climb-system.js \
+            docs/js/player-jump.js \
+            docs/js/dev-random-ruin-bootstrap.js \
+            docs/js/dev-random-ruin-interactions.js \
+            docs/js/dev-random-ruin-simple-puzzles.js \
+            docs/js/dev-ruin-find-blocks.js \
+            docs/js/dev-ruin-single-room-trial.js \
+            docs/js/ruin-composer-playable.js \
+            docs/js/cloud-forest-fog.js \
+            docs/js/ruin-layer-playable.js \
+            docs/js/ruin-multifloor-v50-style.js \
+            docs/js/ruin-shaft-connector.js \
+            docs/js/ruin-v50-native-floors.js \
+            docs/js/puzzle-cave-entrances.js \
+            docs/js/puzzle-cave-melody.js \
+            docs/js/ruin-interaction-audio.js \
+            docs/js/ruin-layer-challenges.js \
+            docs/js/ruin-melody-glyph-decal.js; do
+            node --check "$path"
+          done
+      - name: Run combined climbing, coffin, target, and light regression coverage
+        run: |
+          node scripts/test-cliff-crawl-presentation.js
+          node scripts/test-cliff-climb-mechanics.js
+          node scripts/test-climb-surfaces.js
+          node scripts/test-fall-system.js
+          node scripts/test-player-jump.js
+          node scripts/test-ruin-sarcophagus-proximity.js
+          node scripts/test-find-the-blocks.js
+          node scripts/test-ruin-composer-playable.js
+          node scripts/test-kanthic-shaft-firelight.js
+          node scripts/test-shaft-hub.js
+          node scripts/test-overlay-only-lighting.js
+          node scripts/test-puzzle-cave-art.js
+          node scripts/test-puzzle-cave-challenges.js
+          node scripts/test-puzzle-cave-exterior.js
+          node scripts/test-puzzle-cave-melody.js
+          node scripts/test-ruin-melody-glyph-decal.js

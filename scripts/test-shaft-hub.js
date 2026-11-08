@@ -558,7 +558,8 @@ for(const side of ['north','east','south','west']){
   const makeTile=walkable=>({type:walkable?'grass':'rock'});
   const rec={cols:150,rows:140,grid:Array.from({length:140},()=>Array.from({length:150},()=>makeTile(false))),
     floorSet:new Set(),mapData:{id:'map_i_dev_random_ruin',floor:[]},scene:new Group()};
-  const ruin={localeRoot:new Group(),occupancy:{},mechanisms:new Map(),transitDoors:[],activators:[],pushBlocks:[],controls:[]};
+  const ruin={localeRoot:new Group(),occupancy:{},mechanisms:new Map(),transitDoors:[],activators:[],pushBlocks:[],controls:[],
+    theme:side==='north'?'kanthic':'hronal'}; // One real multiwing run verifies Kanthic firelight while the others verify non-Kanthic isolation.
   let player={x:5,z:7,y:0}; // Mutable position to test upper-story plate activation.
   const DS={registerSurface(){},clearScope(){}};
   const climb={registerGrid:()=>3,clearScope(){}};
@@ -629,6 +630,8 @@ for(const side of ['north','east','south','west']){
   assert.equal(network.getState().wings,connected.plan.totalWings,'every planned floor wing is instantiated');
   assert.equal(network.getState().braziers,connected.plan.totalWings,'one physical brazier per wing');
   assert.equal(ruin.controls.filter(c=>c.kind==='layerBrazier').length,network.getState().braziers);
+  assert.equal(network.lightSources().length,ruin.theme==='kanthic'?network.states.length:0,
+    'only Kanthic wing braziers provide shadow-clearing light sources');
   const challenge=network.states[0].challenges[0];
   assert(challenge.gate,'first chamber must block its outbound corridor until solved');
   const gateSolid=()=>challenge.gate.tiles.every(([c,r])=>challenge.grid.isSolid(
@@ -646,6 +649,7 @@ for(const side of ['north','east','south','west']){
   const first=network.states[0],brazierControl=ruin.controls.find(c=>c.kind==='layerBrazier');
   brazierControl.onPress();
   assert.equal(network.getState().lit,0,'uncompleted wing cannot ignite its endpoint');
+  assert(network.lightSources().every(light=>light.active===false),'unsolved wing cannot reveal the dungeon');
   for(const remaining of first.challenges.slice(1)){
     player={x:remaining.x,z:remaining.z,y:remaining.floorY};
     if(remaining.kind==='pressurePlate')for(let i=0;i<17;i++)network.tick(.05);
@@ -658,6 +662,11 @@ for(const side of ['north','east','south','west']){
   }
   brazierControl.onPress();
   assert.equal(network.getState().lit,1,'a completed wing can ignite its real brazier');
+  if(ruin.theme==='kanthic'){
+    const live=network.lightSources().filter(light=>light.active);
+    assert.equal(live.length,1,'the actual completed Kanthic wing now emits one visible light');
+    assert(live[0].strength>=.95&&live[0].radius>=9,'a completed wing reveals useful playable space, not just its flame');
+  }
   for(const p of [connected.route.path[0],connected.route.path.at(-1)])
     assert(rec.floorSet.has(p.x+','+p.z),'both path endpoints are actual walkable tiles');
   assert(rec.mapData.floor.some(([c,r])=>c===connected.route.path.at(-1).x&&r===connected.route.path.at(-1).z));
@@ -705,6 +714,7 @@ for(const side of ['north','east','south','west']){
   if(echo)assert.equal(musicClosed,1,'teardown must close the active stacked-story flute session');
   globalThis.MusicMinigame=oldMusic;
   assert(network.disposed,'all secondary wing collision grids and meshes are disposable');
+  assert.equal(network.lightSources().length,0,'reroll removes all wing-brazier illumination sources');
   assert.equal(ruin.controls.filter(control=>control.kind==='layerBrazier'||control.kind==='dungeonFireSource').length,0,
     'reroll clears the authored wing brazier and fire-source interactions');
   assert.equal(liveChains.size,0,'leaving a generated ruin never leaks rope grabs and mid-air catch records');

@@ -226,17 +226,32 @@
 
   function playerPos() { return { x: deps.player.x / deps.TILE, z: deps.player.y / deps.TILE, y: Number(deps.getFeetY?.()) || 0 }; } // player.y is the ground-plane z in px.
 
+  // Short, standable ruin faces are normal jump targets, even when painted with climb holds.
+  // Keep long walls, unsafe landings, and climbing outside the generated ruin unchanged.
+  function isEasyRuinJump(hit, pos) {
+    if (deps?.getCurrentArea?.() !== 'map_i_dev_random_ruin' || !hit?.surface || typeof deps.canStandAt !== 'function') return false;
+    const easyRise = Number(globalThis.PlayerJump?.easyJumpRise); // Reuses the physical jump's comfortable rise for both ground grabs and airborne catches.
+    const flight = deps.player?._freeJump; // A tall wall never becomes an easy jump just because the player is already near the apex.
+    if (flight?.phase === 'air' && flight.source !== 'free jump') return false; // Rope falls retain their own handhold catches.
+    const takeoffY = flight?.phase === 'air' ? Number(flight.takeoffY) : pos.y;
+    const rise = hit.surface.y1 - takeoffY; // Compare the landing height with the physical takeoff, not current midair height.
+    if (!Number.isFinite(easyRise) || !Number.isFinite(rise) || rise <= 0 || rise > easyRise) return false;
+    const exit = topExitPoint(hit.surface, hit.u);
+    return !!deps.canStandAt(exit.x, exit.z, exit.y); // Never disable a climb without a safe surface to stand on.
+  }
+
   // For ClimbSystem.registerWorldClimbProvider: grab when a forward dodge is pressed facing a surface.
   function worldClimbProvider() {
     if (!deps || deps.player.onClimbSurface || deps.player.climbing || deps.player.onBranch) return null;
-    const hit = findGrabTarget(playerPos(), deps.player.angle);
-    return hit ? { kind: 'climbSurface', surface: hit.surface, start: () => grab(hit) } : null;
+    const pos = playerPos(); // Same feet-height probe must decide both proximity and whether jumping is enough.
+    const hit = findGrabTarget(pos, deps.player.angle);
+    return hit && !isEasyRuinJump(hit, pos) ? { kind: 'climbSurface', surface: hit.surface, start: () => grab(hit) } : null;
   }
 
   function tryAirGrab(pos, direction) {
     if (!deps || deps.player.onClimbSurface || deps.player.climbing || deps.player.onBranch) return false;
     const hit = findGrabTarget(pos, Math.atan2(direction.z, direction.x), { reach: 0.32 }); // Catch only a nearby wall being approached.
-    if (!hit) return false;
+    if (!hit || isEasyRuinJump(hit, pos)) return false; // Jumpable ruin props must not steal an ordinary jump midair.
     window.PlayerJump?.reset?.();
     const session = attach(hit.surface, pos); // Preserve airborne feet height instead of the ground below the jumper.
     deps.player.onClimbSurface = session;
@@ -259,10 +274,18 @@
     p.angle = out.facing; deps.setFacingAngle?.(out.facing); deps.setTargetAimAngle?.(out.facing); deps.setLastMoveAngle?.(out.facing);
   }
 
-  function release() {
+  function release({ fall = false } = {}) {
     const p = deps?.player;
     if (!p?.onClimbSurface) return false;
+    const feetY = p.wallClimbY; // Preserves the wall-climb height when a Dodge release starts a physical fall.
+    const tileX = p.x / deps.TILE, tileZ = p.y / deps.TILE; // Carries the current wall position into PlayerJump's airborne state.
     p.onClimbSurface = null; p.wallClimbY = 0;
+    if (fall && Number.isFinite(feetY)) {
+      window.PlayerJump?.beginFlight?.({
+        x: tileX, z: tileZ, y: feetY, vx: 0, vy: 0, vz: 0,
+        safeX: tileX, safeZ: tileZ, noGrab: true,
+      }, { source: 'wall climb release', deliberate: true });
+    }
     return true;
   }
 
@@ -330,6 +353,7 @@
     findGrabTarget, attach, step, topExitPoint, sideExitPoint, buildVisual,
     worldClimbProvider, tryAirGrab, grab, release, updatePlayer,
     isAttached: () => !!deps?.player?.onClimbSurface,
+    getAttachedSession: () => deps?.player?.onClimbSurface || null, // Surface pose uses the active wall plane without duplicating movement state.
     debugSnapshot: () => ({
       initialized: !!deps, surfaces: surfaces.size, attached: !!deps?.player?.onClimbSurface,
       player: deps ? { tileX: deps.player.x / deps.TILE, tileZ: deps.player.y / deps.TILE, angle: deps.player.angle, wallClimbY: deps.player.wallClimbY ?? null, u: deps.player.onClimbSurface?.u ?? null } : null,

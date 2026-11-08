@@ -148,7 +148,7 @@
     }
 
     function weightsFor(side) {
-      const weights = poseRuntime?.currentWeights?.(side) || { grip: 1, palmNormal: 1 };
+      const weights = poseRuntime?.currentWeights?.(side, avatarRoot) || { grip: 1, palmNormal: 1 }; // Avatar scope prevents the player's musical stance leaking to NPCs.
       return { grip: clamp01(weights.grip), palmNormal: clamp01(weights.palmNormal) };
     }
 
@@ -314,7 +314,7 @@
     function resolveElbowInParent(side, shoulder, target = guideElbow) {
       const socket = socketFor(side);
       if (!socket || !shoulder) return null;
-      const authoredOffset = poseRuntime?.currentElbow?.(side) || null; // Direct pose data: shoulder-relative elbow offset in the same local space as shoulder/wrist.
+      const authoredOffset = poseRuntime?.currentElbow?.(side, avatarRoot) || null; // Match the current player's authored elbow without changing other hand rigs. // Direct pose data: shoulder-relative elbow offset in the same local space as shoulder/wrist.
       if (authoredOffset) {
         target.set(
           shoulder.x + Number(authoredOffset.x || 0),

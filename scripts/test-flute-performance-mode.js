@@ -9,14 +9,14 @@ const noop = () => {};
 
 function playerSession(instrument) {
   const messages = {}; // Captures live iframe notifications to verify per-instrument reactions.
-  const calls = { begin:0, end:0, twitch:0, played:0 }; // Debuggable counters for pose/session and actual note events.
+  const calls = { begin:0, end:0, twitch:0, played:0, note:0 }; // Debuggable counters for pose/session and actual note events.
   const element = () => ({dataset:{},classList:{add:noop,remove:noop,toggle:noop},addEventListener:noop});
   const overlay = element(), frame = element();
   frame.contentWindow = {};
   const doc = {body:element(),getElementById:id => id === 'musicMinigameOverlay' ? overlay : id === 'musicMinigameFrame' ? frame : null};
   const win = {
     addEventListener:(type,listener) => (messages[type] ||= []).push(listener),
-    KurrayaInstrument:{beginFlute:() => calls.begin++,endFlute:() => calls.end++},
+    KurrayaInstrument:{beginFlute:() => calls.begin++,endFlute:() => calls.end++,playFluteNote:() => calls.note++,playPlayerKurrayaNote:() => calls.note++},
     HobunjiActivityEvents:{emit:() => calls.played++},
   };
   vm.runInNewContext(read('docs/js/music-minigame.js'), {window:win,document:doc,setTimeout:noop,setInterval:noop,clearInterval:noop});
@@ -175,7 +175,9 @@ function fallbackSound(flute) {
   assert.equal(flute.calls.begin,1,'the existing blowgun-mouth-mounted flute stays equipped across both modes');
   assert.equal(flute.calls.end,1);
   assert.equal(flute.calls.twitch,0,'flute notes must not trigger the Kurraya string twitch');
-  assert.equal(kurraya.calls.twitch,1,'Kurraya retains its original live note response');
+  assert.equal(flute.calls.note,1,'flute still plays one authored note from the real sounded-note relay');
+  assert.equal(kurraya.calls.note,1,'Kurraya sounds one editor-authored note per input');
+  assert.equal(kurraya.calls.twitch,0,'Kurraya does not double-animate its decorative planes after the holder is posed');
   await missingFluteSample();
   testFluteMouthMount();
   const fluteAudio = fallbackSound(true), kurrayaAudio = fallbackSound(false);

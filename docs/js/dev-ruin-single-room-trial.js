@@ -35,7 +35,7 @@
     ['burnableNet','Burnable ceiling net','Ignite a shot at the brazier, then hit the net to drop its burden.'],
     ['burdenIcicle','Burden-bearing icicle','Ignite a shot at the brazier, then hit the ice around the burden.'],
     ['pillarBridge','Rising pillar bridge','Interact beside the bridge to toggle its authored motion.'],
-    ['witchBombTube','Witch-bomb ceiling dispenser','Interact under the tube, then step clear of the falling bomb.'],
+    ['witchBombTube','Witch-bomb ceiling dispenser','Shoot the separate glowing projectile target beside the tube, then step clear of the falling bomb.'],
   ]); // Individually selectable fixtures, excluded from weighted puzzle draws.
   const AUTHORED_MECHANISMS=Object.freeze({pillarBridge:'ruinPillarBridge',witchBombTube:'witchBombCeilingTube'}); // Authored pieces loaded before the fixture mounts.
   const NATIVE_VARIANTS=Object.freeze({nativeBrazier:'brazier',nativeGlyphObelisk:'glyphObelisk',

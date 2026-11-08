@@ -6,6 +6,9 @@ const read=path=>fs.readFileSync(path,'utf8');
 const json=path=>JSON.parse(read(path));
 const bomb=json('docs/config/furniture-authored/hronalWitchBomb.json');
 const tube=json('docs/config/furniture-authored/witchBombCeilingTube.json');
+const audioConfig=read('docs/config/scratchbones-config.js'); // Verifies the production cue mapping and shipped recording.
+assert(fs.existsSync('docs/assets/audio/sfx/sfx_lowblast.mp3'),'Witch-bomb lowblast recording must ship with the game');
+assert(/"witchBombBlast":\s*\{[^}]*"url":\s*"assets\/audio\/sfx\/sfx_lowblast\.mp3"[^}]*"preload":\s*true/s.test(audioConfig),'dedicated Witch-bomb cue must map to the preloaded lowblast recording');
 const index=json('docs/config/furniture-authored/index.json');
 
 assert.equal(bomb.key,'hronalWitchBomb');
@@ -133,6 +136,7 @@ assert(/furniture-pattern-surfaces\.js\?v=[A-Za-z0-9_-]+/.test(html));
  scene.isScene=true;
  const burdens=new Map(),factories=new Map(),glowStates=[];
  let clock=1000,spawns=0,releases=0;
+ const playedSfx=[]; // Captures the exact cue emitted when the runtime blast occurs.
  const tube={isObject3D:true,id:'tube-fixture',parent:scene,
   userData:{puzzleInstanceId:'tube-fixture',authoredFurnitureData:{bombTubeExit:{x:0,y:-.88,z:0}}},
   updateWorldMatrix(){},localToWorld(point){return point.add(new RuntimeVector3(2,3,4));}};
@@ -158,7 +162,7 @@ assert(/furniture-pattern-surfaces\.js\?v=[A-Za-z0-9_-]+/.test(html));
    applyBlast(){},triggerBurdenBlastAt(){},
   },
   FurniturePatternSurfaces:{setGlowState(_root,state){glowStates.push(state);}},
-  AudioSystem:{playObjectSfxKey(){}},
+  AudioSystem:{playObjectSfxKey(key){playedSfx.push(key);}},
  };
  runtimeWindow.window=runtimeWindow;
  vm.runInNewContext(read('docs/js/hronal-witch-bombs.js'),{
@@ -193,11 +197,17 @@ assert(/furniture-pattern-surfaces\.js\?v=[A-Za-z0-9_-]+/.test(html));
  clock=8100;runtimeWindow.HronalWitchBombs.tick(.016);
  assert.deepEqual(broken,['throwing callback','adjacent prop'],'detonation processes neighboring marked props even if a callback fails');
  assert(first.exploded&&!first.group.parent,'detonation retires the physical burden');
+ assert.deepEqual(playedSfx,['witchBombBlast'],'each Witch-bomb explosion plays lowblast exactly once, never the Shattercask cue');
+ assert.equal(runtimeWindow.HronalWitchBombs.debugSnapshot().blastSfxKey,'witchBombBlast','mobile debugging reports the explosion cue');
  assert(scene.children.every(child=>!child.userData.hronalBombBreakable),'all hit props are removed');
  assert.equal(runtimeWindow.HronalWitchBombs.debugSnapshot().dispensers[0].activeBombId,null,'detonation frees the ceiling tube');
  const replacement=await runtimeWindow.HronalWitchBombs.dispenseFromMechanism(tube);
  assert(replacement&&replacement.id!==first.id,'detonating the first payload releases the dispenser for a replacement');
  assert.equal(spawns,2);assert.equal(releases,2,'each successful dispense begins a vertical downward release');
+ assert.equal(replacement.onImpact(replacement,'witch-bomb-chain'),true,'a neighboring Witch-bomb blast triggers chain detonation');
+ assert.deepEqual(playedSfx,['witchBombBlast','witchBombBlast'],'fuse and chain detonations each emit the lowblast cue once');
+ assert.equal(replacement.onImpact(replacement,'witch-bomb-chain'),false,'an already exploded Witch-bomb cannot replay the sound');
+ assert.equal(playedSfx.length,2,'duplicate impacts do not duplicate explosion audio');
  console.log('Hronal Witch-bomb runtime: tube world transform, configured fuse, single-payload lock, accelerating glyph pulse and blast cleanup/unlock/re-dispense PASS');
 })().catch(error=>{console.error(error);process.exitCode=1;});
 
