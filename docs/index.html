@@ -604,7 +604,7 @@
   <script src="js/perch-support.js?v=20261105perchAudit7"></script> <!-- Point/line perches and shared branch-fall release on prone, death, or knockback. -->
   <script src="js/cliff-route-network.js?v=20261108karstcliffs1"></script> <!-- Shared graph for selected exterior handholds, balcony terrain and wildlife routes. -->
   <script src="js/fall-system.js?v=20261107fall1"></script>
-  <script src="js/player-jump.js?v=20261107releaseFall3"></script> <!-- Free jumping and real cover-elevation traversal, initialized by ClimbSystem. -->
+  <script src="js/player-jump.js?v=20261108shaftfallgrab1"></script> <!-- Free jumping and real cover-elevation traversal, initialized by ClimbSystem. -->
   <script src="js/climb-system.js?v=20261107releaseFall3"></script>
   <script src="js/cliff-crawl-presentation.js?v=20261107contactBody1"></script> <!-- Rock-projected hands, feet and body for handhold routes and attached wall surfaces. -->
   <script src="js/creature-cliff-climb.js?v=20261104cliffAudit1"></script>
@@ -616,10 +616,10 @@
   <script src="js/cliff-elevated-surfaces.js?v=20261106miniplateau1"></script> <!-- Wilderness balconies reuse CellGrid3D and scoped DynamicSurfaces; terrain heightfield stays intact. -->
   <!-- Climbable wall surfaces (window.ClimbSurfaces): attach + move along a wall.
        Needs ClimbSystem (registered as a world-climb provider by game.js). -->
-  <script src="js/climb-surfaces.js?v=20261108shaftmarker1"></script>
+  <script src="js/climb-surfaces.js?v=20261108shaftfallgrab1"></script>
   <script src="js/ruin-wall-faces.js?v=20261106walls1"></script> <!-- Merged stretch-to-fit wall faces; shaft-hub.js builds its stone from them. -->
-  <script src="js/ruin-reaching-obelisks.js?v=20261108shaftsense1"></script> <!-- Complete stateful vertical traversal, after CellGrid3D and the climb pipeline. -->
-  <script src="js/shaft-hub.js?v=20261108shaftsense1"></script>
+  <script src="js/ruin-reaching-obelisks.js?v=20261108shaftfallgrab1"></script> <!-- Complete stateful vertical traversal, after CellGrid3D and the climb pipeline. -->
+  <script src="js/shaft-hub.js?v=20261108shaftfallgrab1"></script>
   <script src="js/ruin-layer-plan.js?v=20261107integrationBlocks1"></script>
   <script src="js/dev-ruin-single-room-trial.js?v=20261108witchBombExtern1"></script> <!-- One-room developer puzzle chooser and normal-plan weighted odds. -->
   <script src="js/dev-ruin-find-blocks.js?v=20261108witchBombExtern1"></script> <!-- Four-block compound lab fixture, using native ruin push, fire, flute and bomb mechanics. -->
@@ -2970,7 +2970,7 @@
   <!-- Camera-safe utility spyglass: capture Fishing/ActionArcUI init before game.js boots; action-arch prompt and lens are created at DOM ready. -->
   <script src="js/utility-spyglass.js?v=20261103spyglassControls3"></script>
   <!-- Dev-only Random Test Ruin runtime; injects nothing unless Dev Mode is on. -->
-  <script src="js/dev-random-ruin-bootstrap.js?v=20261108witchBombExtern1"></script>
+  <script src="js/dev-random-ruin-bootstrap.js?v=20261108shaftfallgrab1"></script>
   <!-- Dev Testing Switchbox: dev-only performance kill switches (audio,
        NPC/creature AI, water sim, low-poly foliage). Must load after
        audio-system.js/water-system.js/foliage-generator.js (wraps their

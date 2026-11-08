@@ -257,7 +257,7 @@
       : { x: 0, z: 0, strength: 0 };
   }
 
-  function tryAirGrab(state, direction) {
+  function tryAirGrab(state, direction, previousY = state.feetY) {
     if (state.phase !== 'air' || state.noGrab) return false; // A deliberate wall release must not immediately reattach to the grip it just left.
     const pos = { x: deps.player.x / deps.TILE, z: deps.player.y / deps.TILE, y: state.feetY }; // Shared physical airborne position for both climb owners.
     const speed = number(deps.getBaseMoveSpeedTiles?.(), CONFIG.airTilesPerSecond);
@@ -267,6 +267,11 @@
       window.HangingRopes?.catchAirborneRope?.(flight)) {
       debug.grabs++; debug.ropeCatches++;
       debug.lastEvent = 'caught rope in air';
+      return true;
+    }
+    if (state.vy < 0 && window.ClimbSurfaces?.tryFallGrab?.(pos, previousY)) {
+      debug.grabs++;
+      debug.lastEvent = 'caught shaft ladder while falling';
       return true;
     }
     if (!window.ClimbSurfaces?.tryAirGrab?.(pos, direction) && !window.ClimbSystem?.tryAirGrab?.(pos, direction)) return false;
@@ -320,11 +325,11 @@
     return null;
   }
 
-  function stepMovement(state, seconds, speed) {
+  function stepMovement(state, seconds, speed, previousY = state.feetY) {
     const player = deps.player;
     const direction = movementVector();
     player.inputX = direction.x; player.inputY = direction.z; player.inputStrength = direction.strength; // Keep aiming/movement systems informed during free jumps and raised-support walking.
-    if (tryAirGrab(state, direction.strength ? direction : state.lastDirection || { x: Math.cos(player.angle || 0), z: Math.sin(player.angle || 0) })) return;
+    if (tryAirGrab(state, direction.strength ? direction : state.lastDirection || { x: Math.cos(player.angle || 0), z: Math.sin(player.angle || 0) }, previousY)) return;
     const carryX = number(state.vx, 0) * seconds, carryZ = number(state.vz, 0) * seconds; // Ballistic rope velocity is retained while steering remains available.
     if (!direction.strength && !Math.hypot(carryX, carryZ)) { state.assist = null; return; }
     if (!direction.strength) state.assist = null;
@@ -359,7 +364,7 @@
         if (!slide) { state.vx = 0; state.vz = 0; break; } // A blocked rope launch cannot keep tunnelling into a wall.
         player.x = slide.x * deps.TILE; player.y = slide.z * deps.TILE;
         debug.slides++;
-        if (state.phase === 'air' && tryAirGrab(state, direction.strength ? direction : state.lastDirection || direction)) return; // Also catch at the swept slide point, not only before the frame.
+        if (state.phase === 'air' && tryAirGrab(state, direction.strength ? direction : state.lastDirection || direction, previousY)) return; // Also catch at the swept slide point, not only before the frame.
         continue;
       }
       if (state.phase === 'air' && state.obstaclePending) {
@@ -370,7 +375,7 @@
       }
       player.x = x * deps.TILE; player.y = z * deps.TILE;
       state.lastX = x; state.lastZ = z;
-      if (state.phase === 'air' && tryAirGrab(state, direction.strength ? direction : state.lastDirection || direction)) return; // Fast rope swings can cross a grip between frame starts; sample each swept movement segment.
+      if (state.phase === 'air' && tryAirGrab(state, direction.strength ? direction : state.lastDirection || direction, previousY)) return; // Fast rope swings can cross a grip between frame starts; sample each swept movement segment.
     }
   }
 
@@ -462,7 +467,7 @@
       state.vy -= CONFIG.gravity * step;
       state.feetY += state.vy * step;
       state.elapsed += step;
-      stepMovement(state, step, CONFIG.airTilesPerSecond);
+      stepMovement(state, step, CONFIG.airTilesPerSecond, previous);
       if (player._freeJump !== state) break; // A wall grab transferred movement ownership and physical elevation.
       slideOffTerrain(state, previous, step);
       if (groundAt(player.x / deps.TILE, player.y / deps.TILE) != null) {

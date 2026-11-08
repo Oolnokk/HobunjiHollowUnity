@@ -1693,6 +1693,16 @@
       ruin.lastSafePx={...ruin.lastAcceptedPx};
       syncRuinPresentationHeight(surface.y);return true;
     }
+    // This shaft has its own gravity integrator, so it must explicitly offer
+    // the same descending ladder catch as PlayerJump before dropping past a band.
+    if(window.ClimbSurfaces?.tryFallGrab?.({x,z,y:next},previous)){
+      ruin.obeliskFall=null;ruin.supportId=null;
+      ruin.supportY=deps.player.wallClimbY; // The shared ladder pose now owns the accepted vertical height.
+      ruin.lastAcceptedPx={x:deps.player.x,y:deps.player.y};
+      ruin.lastSafePx={...ruin.lastAcceptedPx};
+      syncRuinPresentationHeight(ruin.supportY);
+      return true;
+    }
     fall.y=next;ruin.supportY=next;
     ruin.lastAcceptedPx={x:deps.player.x,y:deps.player.y};
     syncRuinPresentationHeight(next);

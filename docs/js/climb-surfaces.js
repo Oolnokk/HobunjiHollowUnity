@@ -38,6 +38,8 @@
     sideStandOffs: [0.34, 0.7, 1.1], // How far out from the wall plane (tiles) a side exit may land.
     bottomGrabSlack: 0.25, // Feet may be this far below the wall's bottom edge and still grab.
     topGrabClearance: 0.5, // Must be at least this far below the top edge to grab (else just walk onto it).
+    fallCatchReach: 0.55, // Passive shaft-ladder grabs catch a falling body's near-wall reach, without extending ordinary grabs.
+    fallTopClearance: 0.08, // A descending character can catch close to a short ladder band's upper rim.
     mantleDepth: 0.5,      // How far past the wall plane (into the solid) the mantle lands.
   });
 
@@ -63,6 +65,7 @@
   // ---------------------------------------------------------------- registry
 
   const surfaces = new Map();
+  let fallCatchCount = 0; // Mobile climb debug reports how many passive ladder catches succeeded this session.
   function normalize(raw) {
     const axisX = raw.axis === 'x'; // axis = the world axis `u` runs along
     const n = raw.normal || { x: 0, z: 1 };
@@ -71,6 +74,7 @@
       normal: { x: n.x, z: n.z }, tangent: axisX ? { x: 1, z: 0 } : { x: 0, z: 1 },
       plane: Number(raw.plane), u0: Number(raw.u0), u1: Number(raw.u1), y0: Number(raw.y0), y1: Number(raw.y1),
       enabled: raw.enabled ?? true,
+      autoCatch: raw.autoCatch === true, // Only explicitly designated shaft ladders can be grabbed by passive falls.
     };
   }
   function register(raw) {
@@ -85,7 +89,8 @@
     const scope = options.scope ?? 'cell-grid-3d', prefix = options.idPrefix ?? 'cs';
     let n = 0;
     for (const raw of grid.collectClimbSurfaces()) {
-      register({ ...raw, id: `${prefix}-${raw.facing}-${raw.plane}-${raw.u0}-${raw.y0}`, scope });
+      register({ ...raw, id: `${prefix}-${raw.facing}-${raw.plane}-${raw.u0}-${raw.y0}`, scope,
+        autoCatch: options.autoCatch === true || raw.autoCatch === true });
       n++;
     }
     return n;
@@ -115,6 +120,29 @@
       if (pos.y < s.y0 - o.bottomGrabSlack || pos.y > s.y1 - o.topGrabClearance) continue;
       if (-(fx * s.normal.x + fz * s.normal.z) < cosTol) continue;    // Must be facing into the wall.
       if (!best || d < best.d) best = { surface: s, d, u };
+    }
+    return best;
+  }
+
+  // Finds actual descending contact with an authored ladder. The vertical sweep
+  // prevents a fast fall from skipping a one-cell-high obelisk band. Unlike a
+  // prompted/forward-air grab, facing direction is irrelevant: the character
+  // reaches for a ladder already within arm's reach.
+  function findFallGrabTarget(pos, previousY = pos?.y) {
+    if (!pos || ![pos.x, pos.z, pos.y, previousY].every(Number.isFinite) || pos.y >= previousY - 1e-6) return null;
+    let best = null; // The closest reachable ladder band wins when several vertical strips overlap the swept fall.
+    for (const s of surfaces.values()) {
+      if (!s.enabled || !s.autoCatch) continue; // Natural cliffs, ordinary walls and non-ladder props preserve their old controls.
+      const d = distanceOut(s, pos.x, pos.z); // Player center must remain on the open side of the visible ladder.
+      if (d < -0.05 || d > DEFAULTS.fallCatchReach) continue;
+      const u = s.axis === 'x' ? pos.x : pos.z; // Parallel position prevents grabbing an unrelated nearby pillar face.
+      if (u < s.u0 - 0.12 || u > s.u1 + 0.12) continue;
+      const catchTop = s.y1 - Math.min(DEFAULTS.fallTopClearance, (s.y1 - s.y0) * 0.35);
+      if (previousY < s.y0 - 0.02 || pos.y > catchTop + 0.02) continue;
+      const hit = { surface: s, d, u, y: clamp(pos.y, s.y0, catchTop) }; // Snap only within the vertically swept handhold band.
+      const lift = Math.max(0, hit.y - pos.y); // Prefer the nearest vertically reachable rung if a fast fall crosses multiple bands.
+      if (!best || lift < best.lift - 1e-6 || (Math.abs(lift - best.lift) <= 1e-6 && d < best.d))
+        best = { ...hit, lift };
     }
     return best;
   }
@@ -312,16 +340,28 @@
     return hit && !isEasyRuinJump(hit, pos) ? { kind: 'climbSurface', surface: hit.surface, start: () => grab(hit) } : null;
   }
 
-  function tryAirGrab(pos, direction) {
-    if (!deps || deps.player.onClimbSurface || deps.player.climbing || deps.player.onBranch) return false;
-    const hit = findGrabTarget(pos, Math.atan2(direction.z, direction.x), { reach: 0.32 }); // Catch only a nearby wall being approached.
-    if (!hit || isEasyRuinJump(hit, pos)) return false; // Jumpable ruin props must not steal an ordinary jump midair.
+  function attachAirborne(surface, pos) {
+    const session = attach(surface, pos); // Transfer the physical fall height into the same authored wall-climb session.
     window.PlayerJump?.reset?.();
-    const session = attach(hit.surface, pos); // Preserve airborne feet height instead of the ground below the jumper.
     deps.player.onClimbSurface = session;
     deps.player.vx = 0; deps.player.vy = 0;
     applyPose(session);
     return true;
+  }
+
+  function tryAirGrab(pos, direction) {
+    if (!deps || deps.player.onClimbSurface || deps.player.climbing || deps.player.onBranch) return false;
+    const hit = findGrabTarget(pos, Math.atan2(direction.z, direction.x), { reach: 0.32 }); // Catch only a nearby wall being approached.
+    if (!hit || isEasyRuinJump(hit, pos)) return false; // Jumpable ruin props must not steal an ordinary jump midair.
+    return attachAirborne(hit.surface, pos);
+  }
+
+  function tryFallGrab(pos, previousY = pos?.y) {
+    if (!deps || deps.player.onClimbSurface || deps.player.climbing || deps.player.onBranch || deps.player._freeJump?.noGrab) return false;
+    const hit = findFallGrabTarget(pos, previousY);
+    if (!hit) return false; // These are explicit ladder grips, even when the top happens to be jump-height from the falling body.
+    fallCatchCount++;
+    return attachAirborne(hit.surface, { ...pos, y: hit.y });
   }
 
   function grab(hit) {
@@ -414,12 +454,13 @@
 
   return Object.freeze({
     DEFAULTS, init, registerStyle, getStyle, listStyles, register, registerGrid, remove, clearScope, list,
-    findGrabTarget, attach, step, topExitPoint, sideExitPoint, buildVisual,
-    worldClimbProvider, tryAirGrab, grab, release, updatePlayer,
+    findGrabTarget, findFallGrabTarget, attach, step, topExitPoint, sideExitPoint, buildVisual,
+    worldClimbProvider, tryAirGrab, tryFallGrab, grab, release, updatePlayer,
     isAttached: () => !!deps?.player?.onClimbSurface,
     getAttachedSession: () => deps?.player?.onClimbSurface || null, // Surface pose uses the active wall plane without duplicating movement state.
     debugSnapshot: () => ({
       initialized: !!deps, surfaces: surfaces.size, attached: !!deps?.player?.onClimbSurface,
+      autoCatchSurfaces: [...surfaces.values()].filter(s => s.enabled && s.autoCatch).length, fallCatchCount, // In-game diagnostics for ladder contact on mobile.
       player: deps ? { tileX: deps.player.x / deps.TILE, tileZ: deps.player.y / deps.TILE, angle: deps.player.angle, wallClimbY: deps.player.wallClimbY ?? null, u: deps.player.onClimbSurface?.u ?? null } : null,
     }),
   });
