@@ -21,7 +21,7 @@
   const POLL_MS = 250;
   const STORAGE_KEY = 'hobunjiRuinTracker';
 
-  let root = null, titleEl = null, listEl = null;
+  let root = null, titleEl = null, hintEl = null, listEl = null;
   let lastAt = -Infinity;
   let lastSignature = '';
   let visible = false;
@@ -43,6 +43,7 @@
         opacity:0;transform:translateX(-12px);transition:opacity .35s ease,transform .35s ease;}
       #ruinObjectiveTracker.show{opacity:1;transform:none;}
       #ruinObjectiveTracker .rot-title{color:#f9e28a;font-size:14px;margin-bottom:4px;letter-spacing:.02em;}
+      #ruinObjectiveTracker .rot-hint{font-weight:500;font-style:italic;font-size:12px;color:#d9e6d4;margin:-2px 0 5px;white-space:normal;}
       #ruinObjectiveTracker .rot-row{display:flex;justify-content:space-between;gap:14px;white-space:nowrap;}
       #ruinObjectiveTracker .rot-row.done{color:#9fe0a6;}
       #ruinObjectiveTracker .rot-row.pulse{animation:rotPulse .9s ease-out 1;}
@@ -55,8 +56,10 @@
     root.setAttribute('aria-live', 'polite');
     titleEl = document.createElement('div');
     titleEl.className = 'rot-title';
+    hintEl = document.createElement('div');
+    hintEl.className = 'rot-hint';
     listEl = document.createElement('div');
-    root.append(titleEl, listEl);
+    root.append(titleEl, hintEl, listEl);
     document.body.appendChild(root);
     return root;
   }
@@ -86,6 +89,18 @@
     return rows;
   }
 
+  // One line of "what next", Zelda-style: the current step only, no essay.
+  function nextHint(rows) {
+    const by = Object.fromEntries(rows.map(r => [r.key, r]));
+    const open = r => r && r.need > 0 && r.have < r.need;
+    if (open(by.trials)) return 'Clear each wing\'s trials, then light its brazier.';
+    if (open(by.wing)) return 'Light the brazier at the end of every wing.';
+    if (open(by.seals)) return 'Light the blue braziers to wake the Great Door.';
+    if (by.door && !by.door.done) return by.door.text === 'sealed' ? 'Something still binds the Great Door.' : 'Go to the Great Door.';
+    if (by.door?.done) return 'The sanctum lies beyond the Great Door.';
+    return '';
+  }
+
   function render(title, rows) {
     ensureDom();
     if (!root) return;
@@ -93,6 +108,9 @@
     if (signature === lastSignature) return;
     lastSignature = signature;
     titleEl.textContent = title || 'Ancient Ruin';
+    const hint = nextHint(rows);
+    hintEl.textContent = hint;
+    hintEl.style.display = hint ? '' : 'none';
     const pulses = [];
     listEl.replaceChildren(...rows.map(row => {
       const el = document.createElement('div');
@@ -153,7 +171,7 @@
   if (!install()) window.addEventListener('load', install, { once: true });
 
   window.RuinObjectiveTracker = Object.freeze({
-    buildRows, poll,
+    buildRows, nextHint, poll,
     setEnabled(on) { try { localStorage.setItem(STORAGE_KEY, on ? '1' : '0'); } catch (_) {} lastAt = -Infinity; poll(); },
     debugSnapshot: () => ({ visible, signature: lastSignature }),
   });

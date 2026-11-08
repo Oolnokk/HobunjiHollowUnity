@@ -143,4 +143,8 @@ assert.equal(rows[2].have, 1);
 assert.equal(rows[3].text, 'sealed');
 assert.equal(trackerCtx.RuinObjectiveTracker.buildRows({}).length, 0, 'no ruin data, no rows');
 
+const T = trackerCtx.RuinObjectiveTracker;
+assert.match(T.nextHint(rows), /trials/, 'unfinished trials come first');
+const doneRows = T.buildRows({ shaft: { braziers: 2, lit: 2, challengesSolved: 3, challengesTotal: 3 }, sanctum: { braziers: [{ lit: true }], door: { state: 'awake' } } });
+assert.equal(T.nextHint(doneRows), 'Go to the Great Door.');
 console.log('game feel + ruin tracker: ok');

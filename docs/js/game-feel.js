@@ -424,7 +424,7 @@
       if (!dmg) return;
       const heavy = /charge|breaker|finisher|heavy/i.test(String(event?.abilityId || event?.attackCategory || ''));
       hitStop(heavy ? 0.1 : 0.055);
-      addTrauma(heavy ? 0.34 : 0.14);
+      addTrauma(heavy ? 0.36 : 0.22); // trauma² scaling: ~8 mm on a normal hit, ~2 cm on a heavy one at the default boom.
     });
     window.WorldEvents?.on?.('blast', payload => {
       if (payload?.scope && payload.scope !== deps?.getCurrentArea?.()) return;
