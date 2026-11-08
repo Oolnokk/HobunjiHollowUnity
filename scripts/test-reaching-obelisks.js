@@ -30,8 +30,8 @@ for(let seed=1;seed<=110;seed++){
   const plan=Obelisks.compose(options);
   assert(plan.ok,'obelisk solution '+seed+' '+fail(plan.checks));
   assert.equal(plan.pillars.length,(layout.floorCount-1)*4,'four physical columns per climb stage');
-  assert.equal(plan.targets.length,(layout.floorCount-1)*2,'two genuine ranged switches per story');
-  assert.equal(plan.plates.length,layout.floorCount-1,'rotating pillar is keyed to a pressure plate');
+  assert.equal(plan.targets.length,0,'the automatic shaft has no hidden ranged switches');
+  assert.equal(plan.plates.length,0,'the automatic shaft never requires a pressure plate');
   assert.equal(plan.pit.bottomY,options.baseY===undefined?-8:options.baseY-8,'death plane is below the entry floor');
   for(const route of plan.routes){
     const byName=Object.fromEntries(plan.pillars.filter(p=>p.story===route.story).map(p=>[p.name,p]));
@@ -42,9 +42,7 @@ for(let seed=1;seed<=110;seed++){
     assert(byName.A.y===undefined,'generator does not prematurely simulate moving platforms');
     assert(route.flights.every(f=>f.requiredCatchDepth<=byName[f.to.split('-').at(-1)].catchDepth),
       'every audited downward flight ends within the authored climbable strip');
-    const raise=plan.targets.find(t=>t.controls===byName.A.id);
-    const dot=(byName.A.x-byName.B.x)*raise.normal.x+(byName.A.z-byName.B.z)*raise.normal.z;
-    assert(dot<0,'A cannot see the switch on the reverse face of B');
+    assert.equal(route.requires.length,0,'every route relies on a periodic mechanism rather than a manual activation');
     for(const p of Object.values(byName)){
       assert(Number.isInteger(p.catchDepth)&&p.catchDepth>=9&&p.catchDepth<=15);
       const faces=Obelisks.climbFaces(p);
@@ -91,40 +89,50 @@ try{
   const plan=Obelisks.compose({seed:91,shaft:45,wall:8,spacing:16,floors:3,
     balconySides:['N','E'],originX:100,originZ:100,baseY:0});
   assert(plan.ok,fail(plan.checks));
-  const surfaces=new Map(),climbs=new Map(),projectileTargets=new Map();
+  const surfaces=new Map(),climbs=new Map(); // Verify registered support and climb faces follow the same moving/rotating pillars.
   const DS={registerSurface:s=>surfaces.set(s.id,s),clearScope(scope){for(const [id,s]of surfaces)if(s.scope===scope)surfaces.delete(id);}};
   const CS={register:s=>{const record={...s,enabled:true};climbs.set(s.id,record);return record;},
     remove:id=>climbs.delete(id),clearScope(scope){for(const [id,s]of climbs)if(s.scope===scope)climbs.delete(id);}};
-  const bus={hasActiveRuinState:()=>true,registerExternalProjectileTarget:t=>{projectileTargets.set(t.id,t);return()=>projectileTargets.delete(t.id);}};
-  const parent=new Group();let player={x:0,z:0},playerY=0;
+  const parent=new Group();let player={x:0,z:0},playerY=0,mechanismBeats=0;
   const rt=Obelisks.mount(plan,{THREE,parent,DynamicSurfaces:DS,ClimbSurfaces:CS,
-    tradition:'tothal',getPlayerPosition:()=>player,getPlayerY:()=>playerY,projectileBus:bus});
+    tradition:'tothal',getPlayerPosition:()=>player,getPlayerY:()=>playerY,
+    onStateChange:()=>mechanismBeats++});
   assert.equal(rt.tradition,'tothal');assert(icePieces>=1000,'ice is generated across the whole pit, not just the corners');
   assert.equal(surfaces.size,plan.pillars.length);assert(climbs.size>10);
-  rt.tick(.05);assert.equal(projectileTargets.size,plan.targets.length,'all ranged targets are attached to the canonical bus');
-  const a=rt.columns.get('obelisk-f0-A'),b=rt.columns.get('obelisk-f0-B');
-  const button=[...rt.targets.values()].find(t=>t.controls===a.id);
-  assert(button&&!button.active);
-  const spec=plan.targets.find(t=>t.id===button.id);
-  player={x:b.x+spec.normal.x*6,z:b.z+spec.normal.z*6};playerY=b.y-1.3;
-  assert(button.hittable(),'C-side line to B target is exposed at the correct elevation');
-  player={x:a.x,z:a.z};assert(!button.hittable(),'the same switch is hidden from A');
-  player={x:b.x+spec.normal.x*6,z:b.z+spec.normal.z*6};
-  assert(button.onHit(),'a real ranged hit switches its linked pillar');
-  assert(button.active&&a.desiredY===a.highY,'red target becomes green and lifts a different pillar');
-  for(let i=0;i<95;i++)rt.tick(.05);
-  assert(Math.abs(a.y-a.highY)<.001,'the pillar physically raises at its configured rate');
-  assert.equal(surfaces.get('shaft-obelisks-'+a.id).topY(),a.highY,'live collision top follows the moving mesh');
-  assert([...climbs.values()].some(s=>s.y1>a.lowY),'grip surfaces follow the moving pillar instead of disappearing');
-  const plate=[...rt.plates.values()].find(s=>s.pillar.id===a.id);
-  player={x:a.x,z:a.z};playerY=a.highY;
-  for(let i=0;i<11;i++)rt.tick(.05);
-  assert(plate.triggered&&a.rotation===1,'standing on pressure plate rotates A exactly 90 degrees');
+  rt.tick(.05);assert.equal(rt.getState().beatsPlayed,0,'mechanisms stay idle when the player is outside the shaft');
+  const a=rt.columns.get('obelisk-f0-A'),b=rt.columns.get('obelisk-f0-B'),c=rt.columns.get('obelisk-f0-C');
+  player={x:a.x,z:a.z};rt.tick(.05);
+  assert.equal(rt.getState().beatsPlayed,1,'entering the shaft begins beat one automatically');
+  assert.equal(a.desiredY,a.highY);assert.equal(b.desiredY,b.highY);
+  assert.equal(c.desiredY,c.lowY,'only the two elevator pillars change elevation');
+  const firstBeatRotations=[a.rotation]; // The 3 turns per measure must expose all four orientations across 4 bars.
+  const reachBeat=target=>{
+    let steps=0;
+    while(rt.getState().beatsPlayed<target&&steps++<40)rt.tick(.05);
+    assert.equal(rt.getState().beatsPlayed,target,'beat '+target+' must fire on the live room clock');
+  };
+  for(let count=2;count<=16;count++){
+    reachBeat(count);
+    assert.equal(rt.getState().beat,(count-1)%4+1,'4/4 meter is stable');
+    if(count%4===1)firstBeatRotations.push(a.rotation);
+    else assert.equal(a.rotation,(a.rotation===b.rotation?a.rotation:-1),'all pillars rotate in sync');
+  }
+  assert.deepEqual(firstBeatRotations,[0,3,2,1],
+    'three quarter turns per bar yield each starting facing across the four-bar cycle');
+  assert.equal(a.rotation,0,'all four measures restore the original facing');
+  assert.equal(a.desiredY,a.lowY,'four first-beat toggles return the elevator to its starting height');
+  assert.equal(rt.getState().measure,4);
+  assert.equal(mechanismBeats,16,'one synchronized mechanism cue/state transition per beat');
+  assert.equal(surfaces.get('shaft-obelisks-'+a.id).topY(),a.y,'live collision stays attached to the moving mesh');
+  assert([...climbs.values()].some(s=>s.y1>a.lowY),'rotating grip bands remain registered');
+  player={x:0,z:0};for(let i=0;i<50;i++)rt.tick(.05);
+  assert.equal(rt.getState().beatsPlayed,16,'leaving the room pauses the cycle');
+  assert.equal(rt.getState().active,false);
   assert.equal(rt.isDeathAt(rt.plan.pillars[0].x,rt.plan.pillars[0].z,-8),true);
   assert.equal(rt.isDeathAt(rt.plan.pillars[0].x,rt.plan.pillars[0].z,8),false);
   rt.dispose();
-  assert(!parent.children.length&&!projectileTargets.size&&!surfaces.size&&!climbs.size,
-    'reroll removes all shaft meshes, targets, dynamic supports and climb faces');
+  assert(!parent.children.length&&!surfaces.size&&!climbs.size,
+    'reroll removes all shaft meshes, dynamic supports and climb faces');
 }finally{globalThis.IceStalagmiteCoverage=savedIce;}
 
 const runtime=fs.readFileSync('docs/js/dev-random-ruin-interior-map.js','utf8');
@@ -138,4 +146,4 @@ const scriptAt=name=>index.search(new RegExp('<script[^>]+src="js/'+name.replace
 assert(scriptAt('ruin-reaching-obelisks.js')>=0&&scriptAt('ruin-reaching-obelisks.js')<scriptAt('shaft-hub.js'),
   'the browser loads the obelisk module before its shaft consumers');
 assert.match(bootstrap, /dev-random-ruin-interior-map\.js\?v=[A-Za-z0-9_-]+/, 'the fall runtime is loaded with a cache-bust token');
-console.log('ok test-reaching-obelisks: 110 seeds, ballistic catch proofs, 24 full shaft checks, moving platforms, switch LOS, ice covers, pressure plate and cleanup');
+console.log('ok test-reaching-obelisks: 110 seeds, ballistic catch proofs, 24 full shaft checks, automatic 4/4 pillar motion, 4-bar rotation cycle, room gating and cleanup');
