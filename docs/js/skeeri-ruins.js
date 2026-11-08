@@ -356,9 +356,12 @@
     const THREE=window.THREE;
     if(!THREE)return null;
     const top=plan.floors[plan.floors.length-1],anchor=plan.shaft.anchor;
+    // Scale the nest and the attack range to the shaft (cave/hole/lich shafts are far smaller than the original 45-cell one).
+    const shaftSize=Number(plan.options?.shaftSize)||45,floorHeight=Number(plan.options?.floorHeight)||16;
+    const shaftRadius=Math.max(8,Math.min(SHAFT_RADIUS,shaftSize/2+3)),nestSetback=Math.max(6,Math.min(20,shaftRadius*1.05)),nestRise=clamp(floorHeight*.7,6,11);
     const session={mapId:rec.mapData?.id||MAP_ID,scene:rec.scene,seed:Number(seed)>>>0,
       getPlayerY,theme:traditionOf(options.theme),hatches:[],actors:new Set(),roots:[],materials:new Set(),disposed:false,
-      nest:{x:anchor.x,z:anchor.z-20,y:top.y+11},bombers:[],lastSignal:0}; // All actor, hatch, nest and payload lifetime stays inside one generated map.
+      shaftRadius,nestSetback,nest:{x:anchor.x,z:anchor.z-nestSetback,y:top.y+nestRise},bombers:[],lastSignal:0}; // All actor, hatch, nest and payload lifetime stays inside one generated map.
     session.hatchMaterial=window.ProceduralFurniture?.makePartMaterial?.({
       materialTexture:'carved_smooth.png',materialLighting:'unlit',materialFillMode:'never',color:'#6d6259',
     }) || new THREE.MeshBasicMaterial({color:0x6d6259});
@@ -406,8 +409,8 @@
     if(!bombs?.spawn||!window.Shattercasks?.releaseBurdenDownward)return;
     state.pendingBomb=true;
     try{
-      const bomb=await bombs.spawn({mapId:session.mapId,scene:session.scene,
-        x:bird.x,y:bird.y-.6,z:bird.z,fuseSeconds:14,hanging:false}); // The dropped sphere is an ordinary pickable/throwable Hronal burden.
+      const bomb=await bombs.spawn({mapId:session.mapId,scene:session.scene,variant:session.theme,
+        x:bird.x,y:bird.y-.6,z:bird.z,fuseSeconds:14,hanging:false}); // The dropped sphere is an ordinary pickable/throwable witch-bomb of THIS ruin's tradition (frost in Tothal, plasm in Kanthic).
       if(!bomb)return;
       if(!isActive(session)){window.Shattercasks.discardBurden?.(bomb);return;}
       if(window.Shattercasks.releaseBurdenDownward(bomb,'skeeri-bomber')){
@@ -460,7 +463,7 @@
     }
     if(state.phase!=='nest'||!player)return;
     state.cooldown-=dt;
-    if(state.cooldown>0||distance(player,{x:session.nest.x,z:session.nest.z+20})>SHAFT_RADIUS)return;
+    if(state.cooldown>0||distance(player,{x:session.nest.x,z:session.nest.z+session.nestSetback})>session.shaftRadius)return;
     const to={x:player.x+(state.home.x-session.nest.x)*.15,
       z:player.z,y:playerY+5}; // A fast attack pass descends to player height, then immediately retreats to the inaccessible balcony.
     flightTo(session,state,to,'approach',state.spec.speed);

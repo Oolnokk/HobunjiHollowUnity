@@ -1022,6 +1022,25 @@
       return owner.spellPlasm.has(patch)&&patch.plasm.has(key)&&(!Number.isFinite(y)||Math.abs(patch.plasmFloorY.get(key)-y)<.01);
     },dispose};
   }
+  // A circular puddle of temporary plasm (Kanthic witch-bomb blast). Each tile rests on
+  // the support under the blast height (platform or floor), so a bomb that goes off on a
+  // shaft platform paints that platform, not the ground story below it.
+  function createPlasmPuddle(x,z,{radius=3.2,ttl=5,y=null}={}) {
+    if(world?.theme!=='kanthic'||!Number.isFinite(x)||!Number.isFinite(z))return null;
+    const DS=window.DynamicSurfaces,tiles=[],range=Math.max(.6,Number(radius)||3.2);
+    for(let tz=Math.floor(z-range);tz<=Math.floor(z+range);tz++)for(let tx=Math.floor(x-range);tx<=Math.floor(x+range);tx++){
+      const cx=tx+.5,cz=tz+.5;
+      if(Math.hypot(cx-x,cz-z)>range||protectedPlasmTile(world.kit,tx,tz))continue; // Entrance and checkpoint landings are never plasm.
+      let tileY;
+      if(Number.isFinite(y)){
+        const support=DS?.sampleSupport?.(cx,cz,{minY:y-2.6,maxY:y+.35,pad:.02});
+        if(!support)continue; // Nothing to pool on: no plasm hanging in shaft air.
+        tileY=support.y;
+      }
+      tiles.push({x:tx,z:tz,y:tileY});
+    }
+    return createPlasmPatch(tiles,{ttl,label:'bomb-puddle',ignoreClear:true});
+  }
   function tickTimedPlasm(dt) {
     if(!world?.timedPlasm?.size)return;
     for(const patch of [...world.timedPlasm]){
@@ -1261,7 +1280,7 @@
     snapshot,
     isIceAt:(x,z)=>!!world?.iceTiles?.has(tileKey(x,z)), // Identical coverage for rendering and native locomotion.
     movementPhysicsAt:(x,z)=>world?.theme==='tothal'&&(world.iceTiles.has(tileKey(x,z))||window.RuinJumpShaft?.isIceAt?.(x,z,window.DevRandomRuin?.getPlayerGroundSupportY?.()))?ICE_PHYSICS:null, // No allocations per game frame; jump-shaft ice platforms answer for their own height.
-    addPlatformPillar,createPlasmPatch,
+    addPlatformPillar,createPlasmPatch,createPlasmPuddle,
     createSpellPlasm, // Lich drops share tile rendering, immersion and checkpoint recovery.
     trackBossBlizzard,stopBossBlizzard,triggerBossBlizzard, // Nanahi tracks one spawn point and releases one icicle into the ordinary hit/shatter handlers each time.
     spawnBossPillar,updateArenaBossPillars,clearArenaBossPillars, // Testing Arena and the real ruin use the same preset-footprint pillar charge and explosion pipeline.
