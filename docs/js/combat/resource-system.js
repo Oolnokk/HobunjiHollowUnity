@@ -994,6 +994,11 @@
   // for the heavy-consumption rule above and any caller-side flavor (hit
   // SFX, UI labels) — it no longer implies any specific affliction. Returns
   // the actual Health lost.
+  function attackPowerForAttack(opts = {}) {
+    const raw = Number(opts.attackPower ?? opts.attacker?.def?.attackPower ?? opts.attacker?.def?.weaponShapeStats?.attackPower ?? (opts.attacker === window.Combat?.deps?.player ? window.WeaponShapeStats?.current?.().attackPower : null) ?? DEFAULT_ATTACK_POWER); // Player shape, NPC shape, or ranged weapon declares offensive status strength.
+    return Number.isFinite(raw) ? Math.max(0, Math.min(500, raw)) : DEFAULT_ATTACK_POWER; // Only gameplay's authored Attack Power affects on-hit buildup, not post-defense Health damage.
+  }
+
   function applyDamage(entity, amount, opts = {}) {
     if (!(amount > 0)) return 0;
     entity.lastAttackReceivedAt = nowMs();
@@ -1007,8 +1012,7 @@
       }
     }
 
-    const rawAttackPower = Number(opts.attackPower ?? opts.attacker?.def?.attackPower ?? opts.attacker?.def?.weaponShapeStats?.attackPower ?? (opts.attacker === window.Combat?.deps?.player ? window.WeaponShapeStats?.current?.().attackPower : null) ?? DEFAULT_ATTACK_POWER); // Status potency is independent of the hit's Health damage.
-    const buildupAttackPower = Number.isFinite(rawAttackPower) ? Math.max(0, Math.min(500, rawAttackPower)) : DEFAULT_ATTACK_POWER; // Clamp invalid or modded values, preserving intentional zero-potency attacks.
+    const buildupAttackPower = attackPowerForAttack(opts); // One shared source for ordinary and Drunken Health damage adapters.
     finalDamage *= statModifier(entity, 'incomingHealthDamage'); // Player trade-offs apply to actual direct Health damage (including heavy Bruised consumption), not raw affliction chances.
     const enhanced = resolveEnhancedResourceTransaction(entity, "health", finalDamage, { kind: "damage", reason: opts.reason || "damage" }); // Resolute/Mirrored Health absorb before ordinary Health through the shared enhanced transaction.
     const before = entity.health;
@@ -1264,6 +1268,7 @@
     spendStamina,
     spendFooting,
     applyDamage,
+    attackPowerForAttack, // Shared by the Drunken Health adapter and mobile combat diagnostics.
     tick,
     getRestInfo,
     getRingFillFraction,
