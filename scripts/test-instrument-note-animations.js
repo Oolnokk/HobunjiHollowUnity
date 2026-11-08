@@ -119,8 +119,8 @@ assert.equal(api.playPlayerKurrayaNote(),true);
 const playerNoteStart=clock.ms; // All visual channels share this exact note timestamp.
 clock.ms=playerNoteStart+kurrayaPlayNote.durationS*1000*kurrayaPlayNote.strikeFrac;
 assert(Math.abs(api.playerInstrumentProgress('kurraya')-kurrayaPlayNote.strikeFrac)<1e-9,'instrument clocks must match');
-assert.equal(api.playerHeldPose().roll,11,'gameplay holder must use the editor Strike roll, not a decorative sprite twitch');
-assert.equal(api.playerHeldPose().bodySink,3,'gameplay holder and legs must sample the same 3% body bend');
+assert(Math.abs(api.playerHeldPose().roll-11)<1e-9,'gameplay holder must use the editor Strike roll, not a decorative sprite twitch');
+assert(Math.abs(api.playerHeldPose().bodySink-3)<1e-9,'gameplay holder and legs must sample the same 3% body bend');
 const heldTransform={ // Three.js transform facade: the game must update the holder tracked by hand sockets.
   position:{set(x,y,z){Object.assign(this,{x,y,z});}},
   rotation:{set(x,y,z,order){Object.assign(this,{x,y,z,order});}},
@@ -173,7 +173,7 @@ assert.equal(shoulder.currentWeights('right',npcAvatar).grip,1,'non-player shoul
 api.playPlayerKurrayaNote();
 const elbowStart=clock.ms;
 clock.ms=elbowStart+kurrayaPlayNote.durationS*1000*kurrayaPlayNote.strikeFrac;
-assert.equal(shoulder.currentElbow('right',playerAvatar).y,-0.28,'Kurraya Strike must raise and aim the authored plucking elbow');
+assert(Math.abs(shoulder.currentElbow('right',playerAvatar).y+0.28)<1e-9,'Kurraya Strike must raise and aim the authored plucking elbow');
 api.endPlayerKurraya();
 api.beginFlute();
 assert.equal(api.activePlayerInstrument(),'flute','Flute must own the same shared elbow/shoulder timeline');
