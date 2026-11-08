@@ -125,9 +125,15 @@ try{
   assert.equal(mechanismBeats,16,'one synchronized mechanism cue/state transition per beat');
   assert.equal(surfaces.get('shaft-obelisks-'+a.id).topY(),a.y,'live collision stays attached to the moving mesh');
   assert([...climbs.values()].some(s=>s.y1>a.lowY),'rotating grip bands remain registered');
-  player={x:0,z:0};for(let i=0;i<50;i++)rt.tick(.05);
-  assert.equal(rt.getState().beatsPlayed,16,'leaving the room pauses the cycle');
+  player={x:0,z:0};
+  const lastHeight=a.y; // The last elevator height must remain untouched across all out-of-room frames.
+  for(let i=0;i<50;i++)rt.tick(.05);
+  assert.equal(rt.getState().beatsPlayed,0,'leaving the room resets the meter, ready for a new opening downbeat');
   assert.equal(rt.getState().active,false);
+  assert.equal(a.y,lastHeight,'platforms must not move when the chamber is empty');
+  player={x:a.x,z:a.z};rt.tick(.05);
+  assert.equal(rt.getState().beat,1,'reentering always begins on the elevation beat, never an arbitrary turn');
+  assert.equal(a.desiredY,a.highY,'the new downbeat resumes elevator movement');
   assert.equal(rt.isDeathAt(rt.plan.pillars[0].x,rt.plan.pillars[0].z,-8),true);
   assert.equal(rt.isDeathAt(rt.plan.pillars[0].x,rt.plan.pillars[0].z,8),false);
   rt.dispose();
