@@ -74,6 +74,12 @@
         }
       }
     }
+    for(const floor of ruin.shaftHubPlan?.floors||[])for(const wing of floor.wings||[]){
+      const room=wing.rooms?.[0]; // Place one modest sconce in each outer wing, leaving the shaft as the brightest architectural landmark.
+      if(!room||room.w<5||room.d<5)continue;
+      const x=room.x+Math.max(2,Math.floor(room.w*.3)),z=room.z+.13; // The northern interior face is inset from its corner and stays clear of the central doorway.
+      sconce(floorRoot(floor.floor),x,floor.y+2.05,z,0,1,floor.floor);
+    }
     for(const pillar of hub.obelisks?.pillars||[]){
       if(!['A','D'].includes(pillar.name))continue; // Two luminous tower sides per story are enough to mark the moving shaft mechanisms.
       const holder=rec.scene.getObjectByName?.(pillar.id); // The live obelisk holder owns the motion; lights follow its animated transform.
