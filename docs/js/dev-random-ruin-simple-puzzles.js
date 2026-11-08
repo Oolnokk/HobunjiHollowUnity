@@ -261,8 +261,7 @@
   }
 
   function naturalizeStone(mesh) {
-    const natural = window.NaturalSurfaceMaterials;
-    if (mesh?.isMesh && typeof natural?.naturalizeMesh === 'function') {
+    if (mesh?.isMesh && typeof window.ProceduralFurniture?.makePartMaterial === 'function') { // PNG stone does not depend on the unrelated natural-surface loader.
       mesh.material = window.ProceduralFurniture.makePartMaterial({ materialTexture:'carved_smooth.png', materialLighting:'unlit', materialFillMode:'never', color:'#7a746b' });
       window.HobunjiSurfaceStretchUV?.mapMesh?.(mesh, { label:'ruin-stone', maxPatchWorldSize:6 });
       mesh.userData.devRandomRuinDenMaterial = true;
@@ -498,7 +497,9 @@
       state.group.add(root);
 
       const cells = [];
-      const plateMaterial = makeBasic(0xffffff); // Instanced colors multiply this white base so every plate can still reveal/flash independently in one draw call.
+      const plateMaterial = window.ProceduralFurniture?.makePartMaterial?.({
+        materialTexture:'carved_smooth.png',materialLighting:'unlit',materialFillMode:'never',color:'#7a746b',
+      }) || makeBasic(0x7a746b); // One immutable stone PNG material for every safe-path plate.
       const plateBatch = new THREE.InstancedMesh(sharedBoxGeometry(plateSize,.055,plateSize), plateMaterial, cols * rows);
       plateBatch.name = 'dev_ruin_pressure_plate_batch_' + hall.id;
       plateBatch.userData.devRandomRuinPressurePlate = true;
@@ -507,6 +508,10 @@
       plateBatch.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(cols * rows * 3), 3); // Allocate before count=0: r128's lazy setColorAt sizes this buffer from the *current* count, which left every plate black.
       plateBatch.count = 0;
       root.add(plateBatch);
+      const runeBatch=window.FurniturePatternSurfaces?.createStoneSignalBatch?.(cols*rows,{
+        width:plateSize*.64,height:plateSize*.64,
+      })||null; // One instanced glow layer reports safe/unsafe/fired states, not plate material tints.
+      if(runeBatch){runeBatch.name='dev_ruin_safe_path_glowing_glyphs_'+hall.id;root.add(runeBatch);}
       let invalidPatch = false;
       for (let row = 0; row < rows && !invalidPatch; row++) {
         for (let col = 0; col < cols; col++) {
@@ -523,14 +528,26 @@
           plateInstanceDummy.scale.set(1,1,1);
           plateInstanceDummy.updateMatrix();
           plateBatch.setMatrixAt(index, plateInstanceDummy.matrix);
-          plateInstanceColor.setHex(PLATE_IDLE_COLOR);
-          plateBatch.setColorAt(index, plateInstanceColor);
+          plateInstanceColor.setHex(0xffffff);
+          plateBatch.setColorAt(index, plateInstanceColor); // White instances retain their authored stone PNG unchanged.
           plateBatch.count = index + 1;
+          if(runeBatch){
+            plateInstanceDummy.position.y=Number(support.y)+.068; // Just above the unpressed slab; later follows its motion.
+            plateInstanceDummy.updateMatrix();
+            runeBatch.setMatrixAt(index,plateInstanceDummy.matrix);
+            plateInstanceColor.setHex(PLATE_IDLE_COLOR);
+            runeBatch.setColorAt(index,plateInstanceColor);
+            runeBatch.count=index+1;
+          }
           cells.push({ key, col, row, x, z, y:Number(support.y), safe:safe.has(key), index, renderDown:false, renderColor:PLATE_IDLE_COLOR, lastTriggeredAt:-Infinity, proven:false });
         }
       }
       plateBatch.instanceMatrix.needsUpdate = true;
       if (plateBatch.instanceColor) plateBatch.instanceColor.needsUpdate = true;
+      if (runeBatch) {
+        runeBatch.instanceMatrix.needsUpdate=true;
+        runeBatch.instanceColor.needsUpdate=true;
+      }
       if (invalidPatch || cells.length !== cols * rows) {
         disposeObject(root);
         continue;
@@ -559,9 +576,12 @@
       button.userData.interactive3D = true;
       const pedestal = naturalizeStone(new THREE.Mesh(sharedBoxGeometry(.62,.35,.62), makeBasic(0x777777)));
       pedestal.position.y = .175;
-      const capMat = makeBasic(0x718a72);
-      const cap = new THREE.Mesh(sharedBoxGeometry(.42,.09,.42), capMat);
+      const cap = naturalizeStone(new THREE.Mesh(sharedBoxGeometry(.42,.09,.42),makeBasic(0x7a746b)));
+      const capMat = cap.material; // Retain the existing diagnostics reference without mutating the stone tint.
       cap.position.y = .395;
+      const buttonSignal=window.FurniturePatternSurfaces?.attachStoneSignal?.(cap,{
+        width:.31,height:.31,idleColor:'#c1e7a3',activeColor:'#88ffc7',
+      }); // Only its emblem pulses; the PNG-textured stone remains the same color.
       button.add(pedestal,cap);
       button.position.set(buttonX, Number(buttonSupport.y), buttonZ);
       root.add(button);
@@ -578,7 +598,7 @@
       }
       const grid = {
         entryMechanismId,
-        hallId:String(hall.id), axis, cols, rows, root, cells, safe, button, capMat, plateBatch,
+        hallId:String(hall.id), axis, cols, rows, root, cells, safe, button, capMat, buttonSignal, plateBatch, runeBatch,
         approachAtMin,entryDoorId:entryDoor?.id||null,buttonPoint:{x:buttonX,z:buttonZ},
         revealUntil:0, lastPlayerKey:null, triggerCount:0,
       };
@@ -1197,13 +1217,16 @@
     for(let i=0;i<points.length;i++){
       const p=points[i],support=sampleSupport(p.x,p.z);
       if(!support){disposeObject(root);return null;}
-      const material=window.ProceduralFurniture.makePartMaterial({materialTexture:'carved_smooth.png',materialLighting:'unlit',color:'#b08d57',materialFillEnabled:true,materialFillColor:'#b08d57',materialFillMode:'always'}); // Verdigris bronze: distinct from the grey floor and from the sandstone safe-path trap plates.
+      const material=window.ProceduralFurniture.makePartMaterial({materialTexture:'carved_smooth.png',materialLighting:'unlit',color:'#7a746b',materialFillMode:'never'}); // Standard ruin stone; the engraving conveys plate state.
       const mesh=new THREE.Mesh(sharedBoxGeometry(.68,.06,.68),material);
       mesh.name='dev_ruin_melody_trigger_'+id;
       mesh.position.set(p.x,Number(support.y)+.03,p.z);
       mesh.userData.devRandomRuinMelodyTrigger=true;
       root.add(mesh);
-      plates.push({index:i,x:p.x,z:p.z,y:Number(support.y),mesh,material,down:false,played:false,pressCount:0});
+      const signal=window.FurniturePatternSurfaces?.attachStoneSignal?.(mesh,{
+        width:.42,height:.42,idleColor:'#7de6c7',pressedColor:'#fff0a4',activeColor:'#ffe184',
+      }); // Glowing glyph replaces all per-interaction stone recoloring.
+      plates.push({index:i,x:p.x,z:p.z,y:Number(support.y),mesh,material,signal,down:false,played:false,pressCount:0});
     }
     const noteCount=4+(rng()>.7?1:0); // Short, variable-length phrase: four or five notes chosen from the same eight buttons as the normal puzzle instrument.
     const noteSlots=window.KurrayaPuzzle?.NOTE_CODES.length ?? 8; // Match the instrument range in game and the standalone ruin preview.
@@ -2183,7 +2206,13 @@
     for(const grid of state.safeGrids){
       const revealing=now<grid.revealUntil;
       const idlePulse=grid.revealUntil===0?.5+.5*Math.sin(now*.005):0; // Pedestal throbs until it has been used once, pointing the player at the reveal.
-      grid.capMat.color.setHex(revealing?0xc9f7a2:(idlePulse>.5?0x9fe0a0:0x718a72));
+      if(grid.buttonSignal){
+        if(grid.buttonSignalActive!==revealing){
+          grid.buttonSignal?.setActive(revealing);
+          grid.buttonSignalActive=revealing;
+        }
+        grid.buttonSignal.glyph.material.opacity=revealing?1:.55+.3*idlePulse; // Pulse the rune, not the stone.
+      }
       let occupied=null,matrixDirty=false,colorDirty=false,near=false;
       for(const cell of grid.cells){
         const on=Math.abs(player.x-cell.x)<=.34&&Math.abs(player.z-cell.z)<=.34;
@@ -2197,6 +2226,11 @@
           plateInstanceDummy.scale.set(1,1,1);
           plateInstanceDummy.updateMatrix();
           grid.plateBatch.setMatrixAt(cell.index,plateInstanceDummy.matrix);
+          if(grid.runeBatch){
+            plateInstanceDummy.position.y=cell.y+.068-(on?.032:0); // Glyph follows the real depressed slab.
+            plateInstanceDummy.updateMatrix();
+            grid.runeBatch.setMatrixAt(cell.index,plateInstanceDummy.matrix);
+          }
           cell.renderDown=on;matrixDirty=true;
         }
         const color=now-cell.lastTriggeredAt<260?PLATE_FIRING_COLOR
@@ -2206,16 +2240,22 @@
           :PLATE_IDLE_COLOR;
         if(cell.renderColor!==color){
           plateInstanceColor.setHex(color);
-          grid.plateBatch.setColorAt(cell.index,plateInstanceColor);
-          cell.renderColor=color;colorDirty=true;
+          (grid.runeBatch || grid.plateBatch).setColorAt(cell.index,plateInstanceColor);
+          cell.renderColor=color;colorDirty=true; // In browsers the state color belongs to the overlaid glyph; fallback tests retain their old material.
         }
       }
       if(near&&!grid.hinted&&grid.revealUntil===0){
         grid.hinted=true;
         deps?.showToast?.('Trapped pressure plates ahead — use the glowing pedestal to reveal the safe path.',true);
       }
-      if(matrixDirty)grid.plateBatch.instanceMatrix.needsUpdate=true;
-      if(colorDirty&&grid.plateBatch.instanceColor)grid.plateBatch.instanceColor.needsUpdate=true;
+      if(matrixDirty){
+        grid.plateBatch.instanceMatrix.needsUpdate=true;
+        if(grid.runeBatch)grid.runeBatch.instanceMatrix.needsUpdate=true;
+      }
+      if(colorDirty){
+        const target=grid.runeBatch||grid.plateBatch;
+        if(target.instanceColor)target.instanceColor.needsUpdate=true;
+      }
       const key=occupied?.key||null;
       if(occupied&&!occupied.safe&&grid.lastPlayerKey!==key&&now-occupied.lastTriggeredAt>=GRID_RETRIGGER_MS){
         occupied.lastTriggeredAt=now;
@@ -2318,7 +2358,7 @@
     if (!set || set.solved) return;
     set.solved = true; set.solveCount++;
     cancelEchoPlayback(set);
-    for (const plate of set.plates) plate.material.color.setHex(CHORD_PLATE_SOLVED_COLOR);
+    for (const plate of set.plates) plate.signal?.setActive(true); // The carved PNG remains the same stone tint after solving.
     playStoneUnlockKchunk(); // Success is communicated by the physical mechanism, not a text notification.
     try { set.onComplete?.(set); } catch (error) { console.warn('[Random Test Ruin] melody completion failed',error); }
   }
@@ -2355,10 +2395,10 @@
         if(down&&!plate.down&&!set.solved){
           plate.pressCount++;
           set.attempts++;
-          plate.material.color.setHex(CHORD_PLATE_PLAYED_COLOR);
+          plate.signal?.setActive('pressed');
           replayEchoSet(set); // Stepping onto the plate plays the sample; leaving and returning plays it again without resetting note recognition.
         }
-        if (!set.solved && !down) plate.material.color.setHex(CHORD_PLATE_IDLE_COLOR);
+        if (!set.solved && !down) plate.signal?.setActive(false);
         plate.down=down;
         window.RuinInteractionAudio?.watchPlate?.(plate.mesh,down); // The real chord plate press/release drives the shared stone activator sound.
         set.inscription?.setVisible?.(down);

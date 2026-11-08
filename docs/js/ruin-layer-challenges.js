@@ -133,7 +133,7 @@
     });
     if(authoredStone)materials.push(authoredStone); // Owned stone material uses the same texture treatment as the shaft and V50 walls.
     const stone=authoredStone||basic(TARGET_COLORS.stone),idle=basic(TARGET_COLORS.idle),hit=basic(TARGET_COLORS.hit);
-    const plateMat=basic(0x776452);
+    const plateMat=stone; // Interacting with the plate changes its rune, never the carved stone PNG.
     const bus=options.projectileBus||root.DevRandomRuinSimplePuzzles;
     const side=options.side||'E'; // Used by rope chambers to orient the traversal away from the shaft.
     const music=options.music||root.MusicMinigame; // Existing eight-note flute performance/puzzle bridge is authoritative.
@@ -164,7 +164,9 @@
     };
     const complete=()=>{
       if(rec.solved||rec.disposed||!isActive())return false;
-      rec.solved=true;onSolved(rec);
+      rec.solved=true;
+      rec.plateSignal?.setActive(true); // One completion path illuminates the native pressure plate and melody plate alike.
+      onSolved(rec);
       return true;
     };
     const target=(name,x,py,z,ceiling=false)=>{
@@ -185,7 +187,7 @@
         base=body(name+'-stone',new THREE.CylinderGeometry(.35,.43,stemHeight,8),stone,x,y+stemHeight*.5,z);
         body(name+'-cap',new THREE.BoxGeometry(.85,.13,.85),stone,x,y+stemHeight-.035,z);
         base.raycast=()=>{};
-        rune=body(name+'-rune-hit',new THREE.BoxGeometry(.62,.5,.2),idle,x,py,z+.43);
+        rune=body(name+'-rune-hit',new THREE.BoxGeometry(.62,.5,.2),stone,x,py,z+.43);
         hitMesh=rune;
         plaque=authored('ruinGlyphTarget',x,py,z+.55);
         if(plaque){
@@ -195,6 +197,9 @@
           rune.material=invisible;
         }
       }
+      const signal=!plaque&&!hanging?root.FurniturePatternSurfaces?.attachStoneSignal?.(rune,{
+        face:'front',width:.42,height:.39,idleColor:'#fbaa48',activeColor:'#65ffaf',
+      }):null; // Keep the target plaque stone constant and light only its PNG rune.
       const state={
         id:name,object:visualRoot||rune,hitMesh,active:false,
         hittable:()=>!rec.disposed&&!state.active&&isActive()&&(visualRoot||rune).visible
@@ -204,7 +209,7 @@
             ||!Number.isFinite(Number(getPlayerY?.()))||Math.abs(Number(getPlayerY())-y)>=.9)return;
           state.active=true;rec.hits++;
           if(hanging)hanging.setActive(true);
-          else if(!plaque)rune.material=hit;
+          else if(!plaque)signal?.setActive(true);
           options.onHit?.(rec,state);
           if(rec.hits===rec.targetCount)complete();
         },
@@ -217,6 +222,7 @@
       const surface=body('stone-pressure-plate-'+id,
         new THREE.BoxGeometry(2.2,.18,2.2),plateMat,cx,y+.05,cz);
       rec.plate=surface;
+      rec.plateSignal=root.FurniturePatternSurfaces?.attachStoneSignal?.(surface,{width:.68,height:.68,idleColor:'#e8a957',activeColor:'#65ffaf'});
       rec.requiredSeconds=.8;
     }else if(kind==='ropeChain'){
       // A real open abyss occupies the entire width of this chamber. The
@@ -347,6 +353,8 @@
       const plate=body('puzzle-cave-music-plate-'+id,
         new THREE.CylinderGeometry(1.18,1.18,.15,32),plateMat,cx,y+.08,cz-1.6);
       rec.plate=plate;rec.song=song;rec.attempts=0;rec.lastDown=false;
+      const plateSignal=root.FurniturePatternSurfaces?.attachStoneSignal?.(plate,{width:.32,height:.32,idleColor:'#e5aa55',activeColor:'#65ffaf'});
+      rec.plateSignal=plateSignal; // Both the musical session and an external result use the same glyph state.
       rec.plateArt=root.PuzzleCavePlateArt?.decorate?.(THREE,plate,{
         radius:1.18,thickness:.15,toward:{x:0,z:1}
       })||null; // Furniture-textured stone, inscribed with hao'uun in the Tankan author font.
@@ -363,7 +371,7 @@
       };
       rec.session=composer.createSession(song,{
         onSolved:()=>{
-          rec.plate.material?.color?.setHex?.(TARGET_COLORS.hit); // Keep carved_smooth on the solved plate.
+          plateSignal?.setActive(true); // Stone stays carved_smooth while the glyph illuminates.
           complete(); // The player chose to play their instrument; never seize or dismiss it.
         },
         onChanged:snapshot=>{
@@ -424,8 +432,7 @@
       rec.onMelodyResult=detail=>{
         if(rec.disposed||rec.solved||detail?.id!==id)return;
         if(detail.solved===true){
-          if(rec.plateSkin)rec.plateSkin.traverse(node=>{if(node.isMesh&&node.material?.color)node.material.color.setHex(TARGET_COLORS.hit);});
-          else rec.plate.material=hit;
+          rec.plateSignal?.setActive(true); // Both authored and fallback plates keep their PNG stone.
           complete();
         }
       };

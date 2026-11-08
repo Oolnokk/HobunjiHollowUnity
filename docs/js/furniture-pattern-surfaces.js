@@ -7,6 +7,8 @@
   const ATLAS_QUANTUM_PX = 64; // Atlas edges round up to this step so similarly sized surfaces share one composited GPU tile.
   const textureCache = new WeakMap(); // Identical tiles share one GPU texture while any furniture material still uses it.
   const tileCache = new Map(); // Bounded composite promises shared by identical pattern/palette definitions.
+  let ruinSignalTexture = null; // Shared repository PNG rune used by interactive stone markings, never by the stone body.
+  const ruinAwardTargets = new WeakMap(); // Maps visual-only ruin groups to their owning gameplay root without serializable object cycles.
   const hex = (value, fallback) => /^#[0-9a-f]{6}$/i.test(value || '') ? value : fallback;
   const finite = (value, fallback) => Number.isFinite(Number(value)) ? Number(value) : fallback;
 
@@ -400,6 +402,94 @@
     return glow;
   }
 
+  function createStoneSignalBatch(count, options = {}) {
+    const THREE = window.THREE; // Keep one draw call for many stateful plates without ever recoloring their stone instances.
+    if (!THREE?.InstancedMesh || !THREE?.PlaneGeometry || !THREE?.InstancedBufferAttribute || !THREE?.TextureLoader || !Number.isInteger(count) || count < 1) return null;
+    if (!ruinSignalTexture) {
+      ruinSignalTexture = new THREE.TextureLoader().load('assets/textures/decals/ruin_glyph_rune.png');
+      if (THREE.SRGBColorSpace) ruinSignalTexture.colorSpace = THREE.SRGBColorSpace;
+    }
+    const geometry = new THREE.PlaneGeometry(Math.max(.1,Number(options.width)||.34),Math.max(.1,Number(options.height)||.34));
+    geometry.rotateX?.(-Math.PI/2); // World-space up-facing glyph without rotating instance translations.
+    const material = new THREE.MeshBasicMaterial({
+      map:ruinSignalTexture,color:0xffffff,transparent:true,opacity:.92,
+      depthWrite:false,depthTest:true,side:THREE.DoubleSide,blending:THREE.AdditiveBlending,
+    });
+    material.onBeforeCompile = shader => {
+      shader.fragmentShader = shader.fragmentShader.replace('#include <map_fragment>', `
+        #ifdef USE_MAP
+          diffuseColor.a *= texture2D(map, vUv).a;
+        #endif
+      `);
+    }; // Glowing white glyph ink, tinted only by instanceColor; the stone beneath remains unmodified.
+    const batch = new THREE.InstancedMesh(geometry,material,count);
+    batch.count=0;
+    batch.instanceColor=new THREE.InstancedBufferAttribute(new Float32Array(count*3),3); // Initialized before setColorAt when count is zero (Three r128).
+    batch.name='ruin-stone-interaction-glyphs';
+    batch.userData.ruinStoneSignalBatch=true;
+    batch.userData.devRuinFootprintIgnore=true;
+    batch.frustumCulled=false;
+    batch.renderOrder=2;
+    batch.raycast=()=>{};
+    return batch;
+  }
+
+  function attachStoneSignal(mesh, options = {}) {
+    const THREE = window.THREE; // Reuse the existing PNG decal pipeline without repainting the stone material.
+    if (!mesh?.add || !THREE?.TextureLoader || !THREE?.MeshBasicMaterial || !THREE?.PlaneGeometry) return null;
+    if (!ruinSignalTexture) {
+      ruinSignalTexture = new THREE.TextureLoader().load('assets/textures/decals/ruin_glyph_rune.png');
+      if (THREE.SRGBColorSpace) ruinSignalTexture.colorSpace = THREE.SRGBColorSpace;
+    }
+    const size = mesh.geometry?.parameters || {}; // Centered box/cylinder dimensions locate the actual visible face.
+    const face = options.face || 'top'; // Top plates and upright projectile plaques share the same glowing glyph.
+    const width = Math.max(.1, Number(options.width) || .34), height = Math.max(.1, Number(options.height) || width);
+    const material = new THREE.MeshBasicMaterial({
+      map:ruinSignalTexture, color:options.idleColor || '#e59a56',
+      transparent:true, opacity:.72, depthWrite:false, depthTest:true,
+      side:THREE.DoubleSide, blending:THREE.AdditiveBlending,
+      polygonOffset:true, polygonOffsetFactor:-2, polygonOffsetUnits:-2,
+    }); // The carved_smooth.png pixels underneath never change when the puzzle state changes.
+    material.onBeforeCompile = shader => {
+      shader.fragmentShader = shader.fragmentShader.replace('#include <map_fragment>', `
+        #ifdef USE_MAP
+          diffuseColor.a *= texture2D(map, vUv).a;
+        #endif
+      `); // The PNG's dark ink cannot multiply away its emitted glyph color.
+    };
+    const glyph = new THREE.Mesh(new THREE.PlaneGeometry(width,height),material);
+    glyph.name = 'ruin-stone-interaction-glyph';
+    glyph.raycast = () => {};
+    glyph.renderOrder = 2;
+    glyph.userData.devRuinFootprintIgnore = true;
+    glyph.userData.ruinStoneSignalGlyph = true;
+    const lift = .012;
+    const extentY = (Number(size.height) || .06) * .5;
+    const extentX = (Number(size.width) || Number(size.radiusTop) * 2 || .5) * .5;
+    const extentZ = (Number(size.depth) || Number(size.radiusTop) * 2 || .5) * .5;
+    if (face === 'top') {glyph.rotation.x = -Math.PI/2; glyph.position.y = extentY + lift;}
+    else if (face === 'left' || face === 'right') {
+      glyph.rotation.y = face === 'right' ? Math.PI/2 : -Math.PI/2;
+      glyph.position.x = (face === 'right' ? 1 : -1) * (extentX + lift);
+    } else {
+      glyph.rotation.y = face === 'back' ? Math.PI : 0;
+      glyph.position.z = (face === 'back' ? -1 : 1) * (extentZ + lift);
+    }
+    mesh.add(glyph);
+    const state = {texture:'ruin_glyph_rune.png',face,active:false}; // Exposed to mobile diagnostics.
+    mesh.userData ||= {};
+    mesh.userData.ruinStoneSignal = state;
+    const setActive = active => {
+      state.active = active === true;
+      state.pressed = active === 'pressed'; // A held pressure plate glows amber; solved mechanisms glow green.
+      material.color.set(state.active ? (options.activeColor || '#69ffc4')
+        : state.pressed ? (options.pressedColor || '#ffd77c') : (options.idleColor || '#e59a56'));
+      material.opacity = state.active || state.pressed ? 1 : .72;
+    };
+    setActive(options.active);
+    return {glyph,setActive}; // Ruin cleanup disposes owned geometry/material; the PNG texture is shared.
+  }
+
   function setGlowState(root, state = {}) {
     if (!root?.traverse) return false;
     const normalized = {
@@ -547,15 +637,32 @@
     return key || 'other';
   }
 
+  function setRuinAwardTarget(visualRoot, owningRuinRoot) {
+    if (visualRoot && owningRuinRoot) ruinAwardTargets.set(visualRoot, owningRuinRoot);
+  }
+
   function decorateRuin(root, seed, special = null) {
     if (!root) return [];
     const catalog = [...(window.PatternLibrary?.getCatalog?.() || []), ...(window.RepoPatternLibrary?.listCached?.() || []).filter(entry=>entry.collectible)]; // Engravings grant exactly the reusable catalog motif rendered on the ruin.
+    root.userData ||= {};
+    if (root.userData.ruinPatternLoad === 'pending') return []; // Repeated decoration before PNG preload must not leak unrelated motifs.
+    if (!window.RepoPatternLibrary?.listCached?.().length && window.RepoPatternLibrary?.load
+      && root.userData.ruinPatternLoad !== 'pending' && root.userData.ruinPatternLoad !== 'empty') {
+      root.userData.ruinPatternLoad = 'pending'; // Never choose an unrelated player motif before the Harlyao PNG catalog is ready.
+      root.userData.ruinPatternSeed = seed;
+      window.RepoPatternLibrary.load().then(() => {
+        if (root.userData.ruinPatternLoad !== 'pending') return;
+        root.userData.ruinPatternLoad = window.RepoPatternLibrary.listCached().length ? 'loaded' : 'empty';
+        if (root.parent || root.isScene) window.FurniturePatternSurfaces?.decorateRuin?.(root,seed,special); // Re-enter the public Harlyao-filtered decorator once.
+      }).catch(error => {root.userData.ruinPatternLoad = 'failed: ' + (error?.message || error);});
+      return [];
+    }
     const ids = new Set(), meshes = []; // Collect first so adding overlay children cannot extend traversal.
     const rules = window.RuinPatternSurfaceRules; // Optional per-piece enable/scale/atlas rules (docs/js/ruin-pattern-surface-rules.js).
     const types = new Map(), overlays = []; // Per repeated piece type, for the Dev Companion's live surface list.
     root.userData.ruinPatternSeed = seed; // Rule edits re-run decoration with the same deterministic choices.
     root.updateMatrixWorld?.(true); // Rules measure faces in world space (a sideways pillar's faces are short, not tall).
-    root.traverse(node => { if (node.isMesh && !node.userData?.furniturePattern) meshes.push(node); });
+    root.traverse(node => { if (node.isMesh && !node.userData?.furniturePattern && !node.userData?.ruinStoneSignalGlyph && node.name !== 'engraving-glyph-glow') meshes.push(node); });
     for (let index = 0; index < meshes.length; index++) {
       const mesh = meshes[index];
       let node = mesh, role = ''; // Walk ancestors only once at generation to find renderer-owned structural semantics.
@@ -588,6 +695,9 @@
         return { ...template, pattern: template.random === false ? template.pattern : null,
           patterns:template.random === false ? template.patterns : template.patterns?.length > 1 ? [resolvePattern({patternId}),template.patterns[1]] : null, // Keep seeded ruin primaries independent of the authored overpass snapshot.
           patternId, palette: namedWall ? [special.ink || '#ffd5a3', special.ink || '#ffd5a3'] : (template.palette || ['#b7a185', '#625447']), scale: template.scale || rule?.defaultScale || 1.5,
+          glowColor:template.glowColor || (namedWall ? special.ink || '#ffd5a3' : '#7cebc6'),
+          glowIntensity:template.glowIntensity ?? (namedWall ? 1.5 : .95),
+          glowPulseDepth:template.glowPulseDepth ?? .14,
           ...(rule?.scale > 0 ? { scaleOverride: rule.scale } : {}), ...(rule ? { maxAtlasPx: rule.maxAtlasPx, minSurfaceTiles: template.allowRegions ? 0 : rule.minSurfaceTiles, tilePx: rule.tilePx } : {}) }; // Region-picked faces were size-checked in world space already.
       });
       const authored = mesh.userData?.authoredPart; // Piece JSON data for V50 repo pieces is preloaded by the rules module.
@@ -595,15 +705,18 @@
       for (const child of mesh.children) if (child.userData?.furniturePattern?.mode === 'engraving') {
         ids.add(child.userData.furniturePattern.patternId); overlays.push(child); if (type) type.overlays++;
         if (namedWall && child.material) {
-          child.material.blending = THREE.AdditiveBlending; // Mask-eye-like glow preserves the existing base wall texture.
-          child.material.transparent = true; child.material.depthWrite = false; child.material.needsUpdate = true;
-          child.userData.specialLichGlyphGlow = {id:special.patternId, ink:special.ink}; // Exposed for per-wall diagnostics on mobile.
+          child.userData.specialLichGlyphGlow = {id:special.patternId, ink:special.ink}; // The separate glyph pass glows; the wall itself keeps its stone PNG.
         }
       } // Only motifs actually shown are granted on completion.
     }
     root.userData.ruinPatternTypes = types;
     root.userData.ruinPatternOverlays = overlays;
     root.userData.ruinPatternIds = [...ids];
+    const awardRoot=ruinAwardTargets.get(root); // Some shaft/wing glyph groups are separate visuals but grant to their owning playable ruin.
+    if(awardRoot?.userData && awardRoot!==root)
+      awardRoot.userData.ruinPatternIds=[...new Set([...(awardRoot.userData.ruinPatternIds||[]),...ids])];
+    root.userData.ruinPatternGlow = {engraved:overlays.length, glowing:overlays.filter(item => !!item.userData?.engravingGlowMesh).length,
+      pending:overlays.filter(item => item.userData?.furniturePattern?.status === 'loading').length}; // Inspect readiness via mobile diagnostics.
     return [...ids];
   }
 
@@ -684,5 +797,5 @@
     return records;
   }
 
-  window.FurniturePatternSurfaces = { surfaceCategory, regionKey, normalize, resolvePattern, editablePattern, placedPatterns, placementControls, renderTile, surfaceGeometry, applyPart, setGlowState, decorateRuin, unlockRuin, applyOverrides, editInstance, debug, hash };
+  window.FurniturePatternSurfaces = { surfaceCategory, regionKey, normalize, resolvePattern, editablePattern, placedPatterns, placementControls, renderTile, surfaceGeometry, applyPart, attachStoneSignal, createStoneSignalBatch, setRuinAwardTarget, setGlowState, decorateRuin, unlockRuin, applyOverrides, editInstance, debug, hash };
 })();
