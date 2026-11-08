@@ -105,6 +105,8 @@
     if (!tallStance?.left?.hip || !tallStance?.right?.hip ||
         !shortStance?.left?.ankle || !shortStance?.right?.ankle) return null;
     const pelvisX = (tallStance.left.hip.x + tallStance.right.hip.x) / 2; // Authored posterior center between the tall rig's hip pivots.
+    const posteriorHalfWidth = Math.max(.001, Math.abs(tallStance.left.hip.x - pelvisX),
+      Math.abs(tallStance.right.hip.x - pelvisX)); // Bounded lateral placement on the taller character's genuine posterior, not an imaginary infinite platform.
     const kneeDrop = tallerLegs.getStanceDrop?.() || 0;
     const pelvisLocalY = tallerLegs.standingPosteriorY - 2 * kneeDrop; // Leg group rises +drop, while the actual body pelvis descends -drop.
     tallerLegs.group.updateWorldMatrix?.(true, false);
@@ -114,9 +116,22 @@
     for (const side of ['left', 'right']) {
       const grip = temp[side + 'Grip'] || (temp[side + 'Grip'] = new THREE.Vector3()); // Posterior-straddle target in the larger rig's anatomical frame.
       const ground = temp[side + 'Ground'] || (temp[side + 'Ground'] = new THREE.Vector3()); // Ground foot at this actor's current horizontal approach position.
-      const otherSide = side === 'left' ? 1 : -1; // Face-to-face actors have mirrored anatomical left/right.
-      grip.set(pelvisX + otherSide * solution.jumpFootSpreadWorld,
-        pelvisLocalY, solution.jumpFootForwardWorld);
+      const otherSide = side === 'left' ? 1 : -1; // Fallback for minimal legacy or test-only leg handles without world-coordinate support.
+      const shortHip = shortStance[side].hip;
+      const projectedHip = temp[side + 'HipProjected'] || (temp[side + 'HipProjected'] = new THREE.Vector3()); // Real short-partner hip in the tall posterior's own frame.
+      let localFootX = pelvisX + otherSide * solution.jumpFootSpreadWorld;
+      if (shortHip && typeof tallerLegs.group.worldToLocal === 'function') {
+        projectedHip.set(shortHip.x, shortHip.y, shortHip.z);
+        shorterLegs.group.localToWorld(projectedHip);
+        tallerLegs.group.worldToLocal(projectedHip);
+        const lateral = projectedHip.x - pelvisX; // Same-side contact prevents crossing legs and exceeding the short character's lateral reach.
+        const tallScale = tallerLegs.group.getWorldScale?.(temp.tallWorldScale || (temp.tallWorldScale = new THREE.Vector3(1,1,1)));
+        const scaleX = Math.max(.001, Math.abs(tallScale?.x || 1));
+        const minimumSpread = solution.jumpFootSpreadWorld / scaleX;
+        const spread = Math.min(posteriorHalfWidth, Math.max(minimumSpread, Math.abs(lateral)));
+        localFootX = pelvisX + Math.sign(lateral || otherSide) * spread; // Feet bracket the posterior, matching short hip sockets whenever feasible.
+      }
+      grip.set(localFootX, pelvisLocalY, solution.jumpFootForwardWorld);
       tallerLegs.group.localToWorld(grip);
       const ankle = shortStance[side].ankle;
       ground.set(ankle.x, ankle.y, ankle.z);
