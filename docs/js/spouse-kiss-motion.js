@@ -229,12 +229,13 @@
     }
     session.elapsed += clamp(finite(context.deltaMs) / 1000, 0, .08);
     const pose = samplePose(session.elapsed);
-    const pct = session.height.tallerSinkPct * pose.blend; // Percent-of-height body sink; same units as Attack Editor.
     const playerIsTaller = session.height.taller === 'first';
-    const playerPct = playerIsTaller ? pct : 0;
-    const npcPct = playerIsTaller ? 0 : pct;
+    const kneeWorld = session.height.tallerSinkWorld * pose.blend; // Single world-space target shared by both possible taller actors.
+    const playerLocalKnee = playerIsTaller ? kneeWorld / session.playerAnatomy.worldScale : 0;
+    const npcLocalKnee = playerIsTaller ? 0 : kneeWorld / session.npcAnatomy.worldScale;
+    const npcPct = npcLocalKnee / Math.max(.001, Number(session.npcLegs.modelHeight) || 0) * 100;
 
-    session.playerLegs.setStanceDrop(playerPct / 100 * (session.playerLegs.modelHeight || 0), true);
+    session.playerLegs.setStanceDrop(playerLocalKnee, true);
     const playerDrop = session.playerLegs.getStanceDrop?.() || 0;
     session.composer.setChannel(SOURCE, {
       priority: 200, absoluteYaw: session.headingPlayer,
