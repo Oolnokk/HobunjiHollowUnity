@@ -130,7 +130,7 @@
   // reaches for a ladder already within arm's reach.
   function findFallGrabTarget(pos, previousY = pos?.y) {
     if (!pos || ![pos.x, pos.z, pos.y, previousY].every(Number.isFinite) || pos.y > previousY + 1e-6) return null;
-    let best = null; // The nearest actual shaft ladder is the only passive grab candidate.
+    let best = null; // The closest reachable ladder band wins when several vertical strips overlap the swept fall.
     for (const s of surfaces.values()) {
       if (!s.enabled || !s.autoCatch) continue; // Natural cliffs, ordinary walls and non-ladder props preserve their old controls.
       const d = distanceOut(s, pos.x, pos.z); // Player center must remain on the open side of the visible ladder.
