@@ -1655,6 +1655,14 @@
       // A shaft edge may join ordinary ground, but its rock padding is not a route.
       return ruin.floorSet.has(Math.floor(x)+','+Math.floor(z));
     }
+    if(floor===undefined&&ruin.floorSet?.size){
+      // Ordinary ground (entrance corridor, hallways, sanctum): creatures used to be checked against NOTHING here, so they
+      // walked straight through walls. Only the generated floor set is walkable; an actor that is already off it
+      // (spawned on an edge, shoved) may still step anywhere so it can never be pinned.
+      const tile=Math.floor(x)+','+Math.floor(z);
+      const standing=actor&&Number.isFinite(actor.x)?Math.floor(actor.x/deps.TILE)+','+Math.floor(actor.y/deps.TILE):null;
+      if(!ruin.floorSet.has(tile)&&(standing===null||ruin.floorSet.has(standing)))return false;
+    }
     return true;
   }
 

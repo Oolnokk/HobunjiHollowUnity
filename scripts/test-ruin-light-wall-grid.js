@@ -7,6 +7,7 @@ globalThis.DevRandomRuin = { getShaftCollisionMap: floor => ({ y: floor * 6, flo
   blocked: floor === 0 ? ['10,5', '11,5', '12,5', '13,5', '14,5'] : ['10,2'] }) };
 const Occlusion = require('../docs/js/ruin-light-occlusion.js');
 const project = (x, y, z) => ({ x: x * 10, y: z * 10 });
+Occlusion.setWallShadows(true); // Off by default (it drew a big dark plane over the player); this test covers the geometry itself.
 const shadows = source => Occlusion.projectedShadows({ scene: { traverse() {} }, source, radiusTiles: 9, project, THREE: { Box3: class {} }, now: 1000 });
 const ground = shadows({ x: 12.5, y: 1.3, z: 8.5 });
 assert.ok(ground.length >= 2, 'a 5-cell wall becomes several shadow polygons (' + ground.length + ')');

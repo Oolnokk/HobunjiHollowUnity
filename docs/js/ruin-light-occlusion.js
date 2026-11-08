@@ -10,6 +10,7 @@
   let cachedScene=null,cachedAt=-Infinity,cachedCandidates=[]; // Reused until a new dungeon/scene is mounted or the scene's props change.
   const boxCache=new WeakMap(); // Cache world-space bounds across sources; moving pillars refresh much more often than static masonry.
   const root=typeof self!=='undefined'?self:globalThis;
+  let wallShadowsOn=false; // Grid-wall wedges drew a large dark/purple plane over the player; OFF until they can be made soft. RuinLightOcclusion.setWallShadows(true) re-enables them.
   let enabled=true; // Debug switch: RuinLightOcclusion.setEnabled(false) removes every projected shadow wedge.
   const stats={candidates:0,lights:0,shadows:0}; // Readable through the mobile debug console or Pixel Probe.
   const BLOCKER_NAME=/obelisk-.*-stone|pillar|column|wall|stone.door|push.*block|boulder|statue/i;
@@ -132,7 +133,7 @@
       const hit=shadowPolygon(box,source,radiusTiles,project);
       if(hit)boxes.push(hit);
     }
-    for(const hit of wallShadows(source,radiusTiles,project,now))boxes.push(hit); // Grid walls: precise per-run shadows for merged wing/shaft masonry.
+    if(wallShadowsOn)for(const hit of wallShadows(source,radiusTiles,project,now))boxes.push(hit); // Grid walls: precise per-run shadows for merged wing/shaft masonry.
     boxes.sort((a,b)=>a.distance-b.distance);
     const result=boxes.slice(0,MAX_SHADOWS_PER_LIGHT+WALL_CAP).map(entry=>entry.polygon);
     stats.shadows+=result.length;return result;
@@ -150,6 +151,6 @@
       return draw();
     }finally{ctx.restore();}
   }
-  return Object.freeze({setEnabled:on=>{enabled=on!==false;},isEnabled:()=>enabled,projectedShadows,shadowPolygon,withClip,debugSnapshot:()=>({...stats}),
+  return Object.freeze({setWallShadows:on=>{wallShadowsOn=on===true;},isWallShadows:()=>wallShadowsOn,setEnabled:on=>{enabled=on!==false;},isEnabled:()=>enabled,projectedShadows,shadowPolygon,withClip,debugSnapshot:()=>({...stats}),
     __test:Object.freeze({angularDifference})});
 });

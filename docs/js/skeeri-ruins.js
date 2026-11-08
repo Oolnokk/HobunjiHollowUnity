@@ -271,6 +271,7 @@
     });
     if(!actor){snapshot.failedSpawns++;return null;}
     actor.areaId=session.mapId;
+    actor.senseRangeTiles=Math.max(30,session.shaftRadius*2.5); // Sense mode reveals ruin Skeeri (the bomber roosts high in the dark) across the whole shaft.
     actor.isRuinSkeeri=true; // Ground-AI arbitration can distinguish this intentional aerial movement.
     actor.skeeriPalette=paletteFor(session.theme,session.seed+':'+index); // Per-instance palette from the actual lich hue family; never mutate the species or shared assets.
     actor.skeeriFlightPose='perched';
@@ -410,12 +411,20 @@
       if(state){state.phase='nest';state.cooldown=4+i*3;state.home={x,z,y:session.nest.y+1.5};session.bombers.push(state);}
     }
   }
+  // True when a gallery/platform stands between the bird's height and the player's head in this column:
+  // a bomber must never fly or drop through a balcony.
+  function overheadBlocked(x,z,fromY,toY){
+    const DS=window.DynamicSurfaces;
+    if(!DS?.sampleSupport)return false;
+    return !!DS.sampleSupport(x,z,{minY:fromY+2.3,maxY:toY-.3,pad:.45});
+  }
   async function dropBomb(session,state) {
     if(!isActive(session)||state.dead||state.pendingBomb)return;
     const player=currentPlayer(),bird=actorLocation(state.actor,session);
     if(!player||distance(player,bird)>5)return;
     if(window.DevRandomRuin?.isPlayerInShaft&&window.DevRandomRuin.isPlayerInShaft()!==true)return; // Never bomb someone standing in a hallway or wing: only inside the shaft footprint.
     if(Number(session.getPlayerY?.())>bird.y-.4)return; // The bird must actually be above its target.
+    if(overheadBlocked(player.x,player.z,Number(session.getPlayerY?.())||0,bird.y))return; // Never drop through a higher balcony or platform.
     const bombs=window.HronalWitchBombs;
     if(!bombs?.spawn||!window.Shattercasks?.releaseBurdenDownward)return;
     state.pendingBomb=true;
@@ -476,7 +485,8 @@
     state.cooldown-=dt;
     if(state.cooldown>0||distance(player,{x:session.nest.x,z:session.nest.z+session.nestSetback})>session.shaftRadius)return;
     const to={x:player.x+(state.home.x-session.nest.x)*.15,
-      z:player.z,y:playerY+5}; // A fast attack pass descends to player height, then immediately retreats to the inaccessible balcony.
+      z:player.z,y:playerY+5};
+    if(overheadBlocked(to.x,to.z,playerY,to.y+.5)||overheadBlocked(player.x,player.z,playerY,session.nest.y)){state.cooldown=1.5;return;} // Roofed over by a balcony: hold at the nest and retry shortly. // A fast attack pass descends to player height, then immediately retreats to the inaccessible balcony.
     flightTo(session,state,to,'approach',state.spec.speed);
   }
   function update(dt=0) {
