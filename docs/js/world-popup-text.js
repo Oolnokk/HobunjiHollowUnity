@@ -812,6 +812,20 @@
     event.material.opacity = 1;
   }
 
+  // Slide a prompt row sideways (camera-right axis) so it never hangs off the
+  // left/right edge of the viewport when its anchor sits near the frame edge.
+  function keepPromptRowOnScreen(plane, camera, right, back, halfFovTan) {
+    const dx = plane.position.x - camera.position.x, dy = plane.position.y - camera.position.y, dz = plane.position.z - camera.position.z;
+    const depth = -(dx * back.x + dy * back.y + dz * back.z);
+    if (!(depth > 0.05)) return;
+    const halfViewWidth = depth * halfFovTan * (Number(camera.aspect) || 1) * 0.94;
+    const halfRow = ((Number(plane.geometry?.parameters?.width) || 1) / 2) * plane.scale.x;
+    const lo = -halfViewWidth + halfRow, hi = halfViewWidth - halfRow;
+    if (lo > hi) return; // Wider than the view: leave it centred on its anchor.
+    const x = dx * right.x + dy * right.y + dz * right.z;
+    const clamped = Math.max(lo, Math.min(hi, x));
+    if (clamped !== x) plane.position.addScaledVector(right, clamped - x);
+  }
   const INTERACTION_MAX_SCREEN_FRACTION = 0.035; // A prompt row never exceeds 3.5% of the viewport height.
   const _updateScratch = { right: null, forward: null };
   function update(now) {
@@ -861,6 +875,7 @@
       const pop = event.kind === 'damage' ? 1.1 - 0.1 * Math.min(1, progress / 0.24) : 1;
       const listScale = event.mode === 'centeredFiveRow' ? CENTERED_LIST_SCALE : 1;
       event.plane.scale.setScalar(state.settings[event.mode].worldHeight * listScale * pop * screenClamp);
+      if (event.interactionPrompt) keepPromptRowOnScreen(event.plane, camera, cameraRight, cameraBack, halfFovTan);
     }
     finishedRewards.sort((a, b) => a.sequence - b.sequence).forEach(forwardToReadout);
     updateConditionCallout(camera, cameraRight);

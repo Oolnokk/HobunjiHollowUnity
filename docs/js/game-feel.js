@@ -273,6 +273,28 @@
     return true;
   }
 
+  // Treasure motif for opening a chest: a quick upward run that lands on a
+  // sustained chord. Higher tiers add a top note and a longer shimmer.
+  function treasureFanfare(tier = 1, boss = false) {
+    const vol = sfxVolume();
+    const ctx = vol > 0 ? audioContext() : null;
+    if (!ctx) return false;
+    if (ctx.state === 'suspended') ctx.resume?.().catch(() => {});
+    const out = ctx.createGain();
+    out.gain.value = 0.15 * vol;
+    out.connect(ctx.destination);
+    const t0 = ctx.currentTime + 0.04;
+    const run = [523.25, 659.25, 783.99, 1046.5]; // C major run up an octave.
+    run.forEach((f, i) => bell(ctx, out, f, t0 + i * 0.075, 0.35, 0.55));
+    const land = t0 + run.length * 0.075 + 0.05;
+    const level = Math.max(1, Math.min(4, Number(tier) || 1)) + (boss ? 1 : 0);
+    const chord = [783.99, 987.77, 1174.66].concat(level >= 3 ? [1567.98] : []);
+    chord.forEach(f => bell(ctx, out, f, land, 1.1 + level * 0.25, 0.45));
+    addTrauma(boss ? 0.3 : 0.15);
+    debug.fanfares = (debug.fanfares || 0) + 1;
+    return true;
+  }
+
   // Short UI blip (lock-on engage/release).
   function blip(freq = 1318.5, length = 0.18, gain = 0.5) {
     const vol = sfxVolume();
@@ -424,7 +446,7 @@
   }
 
   window.GameFeel = Object.freeze({
-    init, frameDt, addTrauma, hitStop, playerHurt, puzzleSolved, mechanismMoved, solveChime, progressNote, blip, sinkAway, cancelSink,
+    init, frameDt, addTrauma, hitStop, playerHurt, puzzleSolved, mechanismMoved, solveChime, progressNote, blip, treasureFanfare, sinkAway, cancelSink,
     beginReveal, endReveal, isRevealing: () => !!reveal,
     shakeEnabled, setShakeEnabled,
     debugSnapshot: () => ({ ...debug, trauma, revealing: !!reveal, hitStopActive: performance.now() < hitStopUntil }),
