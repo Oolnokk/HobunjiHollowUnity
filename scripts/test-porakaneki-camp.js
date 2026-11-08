@@ -250,6 +250,8 @@ const banditCombat = {
   init(deps) { this.deps = deps; return 'bandit-init'; },
   async loadGangConfig() { return { baseline: true }; },
   async makeEntity(_base, _rank, _tier, x, y, opts) {
+    assert.deepEqual(Array.from(_base.weaponShapePool), [opts.defOverride.weaponShapeKey], 'tribal combat math is rolled from the visible club/spear rather than a random bandit weapon');
+    assert.equal(_base.weaponMetalKey, opts.defOverride.weaponMetalKey, 'the held weapon and NPC damage use the same metal strength');
     return {
       id: `generated_${opts.extra.porakanekiCampId}_${opts.extra.porakanekiHunterIndex}`,
       x, y, health: 20, maxHealth: 20, halfHeight: 0.5,
