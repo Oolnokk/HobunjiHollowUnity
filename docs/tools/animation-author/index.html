@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <script src="../../js/tap-reliability.js?v=20261010a"></script>
-<title>Hobunji Animation Author V15.47</title>
+<title>Hobunji Animation Author V15.48</title>
 <style>
 :root {
   color-scheme: dark;
@@ -12165,7 +12165,7 @@ function rigPantsGarmentRecordV1546(garmentId) {
 function installRigPantsPreviewV1546(actor) {
   actor.rigPantsPreview = null; // The prior leg handle, if any, already disposed its attached pants before this rebuild.
   const Renderer = window.PantsGarmentRenderer;
-  if (actor?.source?.type !== 'npc' || animationAuthor.mode !== 'rig' || !actor.rigFeetPreview || !Renderer?.attachToLegs) return null;
+  if (actor?.source?.type !== 'npc' || !['rig', 'multi'].includes(animationAuthor.mode) || !actor.rigFeetPreview || !Renderer?.attachToLegs) return null;
   const npc = state.npcs.find(item => String(item.id || item.name) === String(actor.source.id));
   const garmentId = Renderer.garmentForCosmetics?.(npc?.equippedCosmetics || []);
   if (!garmentId) return null; // Database NPC clothing is authoritative; the animator must not invent pants for intentionally pantless outfits.
@@ -12200,7 +12200,7 @@ function installShoulderRigFeetPreviewV1529(actor) {
   if (!actor) return null;
   actor.rigFeetPreview?.dispose?.();
   actor.rigFeetPreview = null;
-  if (actor.source?.type !== 'npc' || animationAuthor.mode !== 'rig' || !window.ProceduralLegAnimation?.attach) return null;
+  if (actor.source?.type !== 'npc' || !['rig', 'multi'].includes(animationAuthor.mode) || !window.ProceduralLegAnimation?.attach) return null;
   const metrics = portraitModelMetrics(actor); // Supplies the child/species-scaled dimensions already used by the portrait and idle hands.
   const profile = actor.model?.userData?.rigAvatarProfile || null; // Enables the gameplay feet runtime's normal torso-width stance scan.
   actor.rigFeetPreview = window.ProceduralLegAnimation.attach(state.three.THREE, actor.visualOffset, {
@@ -12210,7 +12210,7 @@ function installShoulderRigFeetPreviewV1529(actor) {
     modelWidth: metrics.modelWidth,
     modelHeight: metrics.modelHeight,
     handAttachY: actor.model?.userData?.handAttachY,
-    name: `${actor.id}_shoulder_rig`,
+    name: `${actor.id}_character_preview_rig`,
     profile,
     portraitSize: metrics.pixelWidth,
   });
@@ -12230,7 +12230,7 @@ addNpcAnimationActor = async function(npcId, options = {}) {
 const baseUpdateRigAnchorVisibilityV1529 = updateRigAnchorVisibility;
 updateRigAnchorVisibility = function(actor) {
   const result = baseUpdateRigAnchorVisibilityV1529(actor);
-  if (actor?.rigFeetPreview?.group) actor.rigFeetPreview.group.visible = animationAuthor.mode === 'rig';
+  if (actor?.rigFeetPreview?.group) actor.rigFeetPreview.group.visible = ['rig', 'multi'].includes(animationAuthor.mode);
   return result;
 };
 
@@ -14149,6 +14149,147 @@ async function copyCurrentAnimationSceneUrlV1547() {
   }
 }
 
+
+// -----------------------------------------------------------------------------
+// V15.48: Multi-Avatar full-character presentation parity.
+//
+// The existing Rig Coordinates gameplay leg + pants preview is reused for
+// every multi-avatar NPC. Hands come from ProceduralHandFrameDriver, which
+// attaches the *real* skinned hand models to proceduralHandParent after
+// PNGPlaneAvatar builds the visual. No duplicate/proxy limb geometry is made.
+// During the kiss, bodySinkPct is sampled into the anatomical knee handle;
+// the existing pants renderer follows those bones automatically.
+// -----------------------------------------------------------------------------
+const MULTI_HAND_KISS_OWNER_V1548 = 'multi-avatar-kiss-preview'; // Direct hand driver retains this action's pose ownership until the preset/mode changes.
+const MULTI_KISS_LEG_LIMIT_V1548 = window.SpouseKissMotion?.KNEEL_LEG_FRACTION || .95; // Deep kneel only for the Kiss preset.
+
+function previewActorKissSinkPctV1548(actor, time) {
+  if (animationAuthor.multiPreset !== 'kiss') return 0;
+  const contact = Number(actor?.kissBodySinkPctAtContact) || 0;
+  if (!contact) return 0;
+  return Math.max(0, contact * (window.SpouseKissMotion?.samplePose?.(time)?.blend || 0));
+}
+
+function applyMultiHandKissV1548(actor, time) {
+  const rig = actor.model?.userData?.proceduralHandRig;
+  if (!rig) return;
+  if (animationAuthor.mode !== 'multi' || animationAuthor.multiPreset !== 'kiss') {
+    if (actor.multiKissHandRigV1548 === rig) {
+      rig.setPoseProvider?.(MULTI_HAND_KISS_OWNER_V1548, null);
+      rig.useIdlePose?.();
+      actor.multiKissHandRigV1548 = null;
+    }
+    return;
+  }
+  if (actor.multiKissHandRigV1548 !== rig) {
+    const height = Math.max(.1, portraitModelMetrics(actor).modelHeight); // Size only for proportional hand reach, not a substitute hand mesh.
+    const pose = { // Live driver-owned fallback frame; both hand sockets reuse the normal species/gender GLB calibration.
+      left: { position: { x: 0, y: 0, z: 0 }, rotationDeg: { pitch: 0, yaw: 0, roll: 0 } },
+      right: { position: { x: 0, y: 0, z: 0 }, rotationDeg: { pitch: 0, yaw: 0, roll: 0 } },
+    };
+    actor.multiKissHandPoseV1548 = { pose, height };
+    rig.setPoseProvider?.(MULTI_HAND_KISS_OWNER_V1548, handRig => handRig.useIdlePose(pose));
+    actor.multiKissHandRigV1548 = rig;
+  }
+  const values = actor.multiKissHandPoseV1548;
+  const blend = window.SpouseKissMotion?.samplePose?.(time)?.blend || 0;
+  const reach = blend * values.height; // Drives an understated paired embrace without requiring a new arm skeleton.
+  values.pose.left.position.y = .055 * reach;
+  values.pose.right.position.y = .055 * reach;
+  values.pose.left.position.z = .075 * reach;
+  values.pose.right.position.z = .075 * reach;
+  values.pose.left.rotationDeg.pitch = -17 * blend;
+  values.pose.right.rotationDeg.pitch = -17 * blend;
+  rig.applyOwnedPose?.(); // Scrubbing responds immediately; the frame driver also maintains the pose each render.
+}
+
+function syncMultiAvatarFullBodiesV1548(time = animationAuthor.currentTime, dt = 0) {
+  for (const actor of animationAuthor.actors) {
+    if (actor?.source?.type !== 'npc') continue;
+    applyMultiHandKissV1548(actor, time);
+    const feet = actor.rigFeetPreview;
+    if (!feet) continue;
+    const multi = animationAuthor.mode === 'multi';
+    feet.group.visible = multi || animationAuthor.mode === 'rig';
+    if (!multi) continue;
+    const kissing = animationAuthor.multiPreset === 'kiss';
+    const sinkPercent = kissing ? previewActorKissSinkPctV1548(actor, time) : 0;
+    // The actor's animation root already carries the rendered knee/body lowering;
+    // raising the gameplay leg group by this *same* amount cancels the floor drop.
+    const height = kissActorHeightV1546(actor);
+    const worldDrop = Math.max(0, height * sinkPercent / 100);
+    const bodyScale = Math.max(.001, Math.abs(Number(actor.visualOffset?.scale?.y) || 1));
+    const localDrop = worldDrop / bodyScale;
+    feet.setStanceDropLimitFraction?.(kissing ? MULTI_KISS_LEG_LIMIT_V1548 : .55);
+    feet.update?.(Math.max(0, Math.min(.08, Number(dt) || 0)), 0, false, null);
+    feet.setStanceDrop?.(localDrop, true);
+    feet.update?.(0, 0, false, null); // Syncs the real shin/ankle solver and the pants texture/mesh even while scrubbing.
+    actor.previewAnatomyV1548 = {
+      requestedWorldDrop: worldDrop,
+      appliedWorldDrop: (feet.getStanceDrop?.() || 0) * bodyScale,
+      pants: !!actor.rigPantsPreview,
+      legs: !!feet.group?.parent,
+      hands: !!actor.model?.userData?.proceduralHandRig?.group?.parent,
+    }; // Exposed on the in-memory actor and diagnostics for mobile verification.
+  }
+}
+
+const beforeMultiEvaluateV1548 = evaluateAnimationAtTime;
+evaluateAnimationAtTime = function(time) {
+  const result = beforeMultiEvaluateV1548(time);
+  if (animationAuthor.mode === 'multi') syncMultiAvatarFullBodiesV1548(time, 0); // Every slider seek, preset application and import updates all four limbs.
+  return result;
+};
+
+const beforeMultiTickV1548 = tickAnimationAuthor;
+tickAnimationAuthor = function(dt) {
+  const result = beforeMultiTickV1548(dt);
+  if (animationAuthor.mode === 'multi') syncMultiAvatarFullBodiesV1548(animationAuthor.currentTime, dt); // Full-body legs/pants follow the multi-avatar clock, not a second timer.
+  return result;
+};
+
+const beforeMultiKissApplyV1548 = applyKissPresetV1546;
+applyKissPresetV1546 = function() {
+  const result = beforeMultiKissApplyV1548();
+  if (result) syncMultiAvatarFullBodiesV1548(0);
+  return result;
+};
+
+const beforeMultiModeV1548 = setAnimationAuthorMode;
+setAnimationAuthorMode = async function(mode) {
+  const result = await beforeMultiModeV1548(mode);
+  // The primary mode-root visibility remains owned by the existing editor.
+  // Drop any kiss-only hand ownership when switching to another workspace.
+  syncMultiAvatarFullBodiesV1548(animationAuthor.currentTime, 0);
+  return result;
+};
+
+const beforeMultiRemoveV1548 = removeAnimationActor;
+removeAnimationActor = function(id) {
+  const actor = actorById(id);
+  actor?.multiKissHandRigV1548?.setPoseProvider?.(MULTI_HAND_KISS_OWNER_V1548, null);
+  return beforeMultiRemoveV1548(id);
+};
+
+const beforeMultiClearV1548 = clearAnimationActors;
+clearAnimationActors = function() {
+  for (const actor of animationAuthor.actors) {
+    actor.multiKissHandRigV1548?.setPoseProvider?.(MULTI_HAND_KISS_OWNER_V1548, null);
+  }
+  return beforeMultiClearV1548();
+};
+
+function fullCharacterPreviewDiagnosticsV1548() {
+  return animationAuthor.actors.filter(actor => actor.source?.type === 'npc').map(actor => ({
+    name: actor.label,
+    preview: { ...(actor.previewAnatomyV1548 || {}) },
+    handRig: !!actor.model?.userData?.proceduralHandRig?.group?.parent,
+    feet: !!actor.rigFeetPreview?.group?.parent,
+    pants: !!actor.rigPantsPreview,
+    kneeDrop: actor.rigFeetPreview?.getStanceDrop?.() || 0,
+  }));
+}
+
 const beforeKissPrepareV1546 = prepareMultiAvatarAnimationAuthor;
 prepareMultiAvatarAnimationAuthor = function() {
   const value = beforeKissPrepareV1546();
@@ -14157,14 +14298,15 @@ prepareMultiAvatarAnimationAuthor = function() {
 };
 installKissPresetUiV1546(); // The author initialized earlier in the same script; install immediately too.
 if (window.MultiAvatarAnimationAuthor) {
-  window.MultiAvatarAnimationAuthor.version = '15.47';
+  window.MultiAvatarAnimationAuthor.version = '15.48';
+  window.MultiAvatarAnimationAuthor.fullBodyDiagnostics = fullCharacterPreviewDiagnosticsV1548;
   window.MultiAvatarAnimationAuthor.parseSceneUrl = parseAnimationUrlSceneV1547;
   window.MultiAvatarAnimationAuthor.getSceneLink = currentAnimationSceneUrlV1547;
   window.MultiAvatarAnimationAuthor.applyKissPreset = applyKissPresetV1546;
   window.MultiAvatarAnimationAuthor.importProject = importAnimationProjectData;
 }
-document.title = 'Hobunji Animation Author V15.47';
-animationAuthor.recentChange = 'V15.47 adds shareable URL scenes, including ?scene=pahu-leaf-kiss, and repairs the Kiss dropdown preset label.';
+document.title = 'Hobunji Animation Author V15.48';
+animationAuthor.recentChange = 'V15.48 shows real hands, procedural feet, deforming leg animations and worn pants in Multi-Avatar previews, including Pahu and Leaf kissing via URL scenes.';
 animationAuthor.modeStates.multi.recentChange = animationAuthor.recentChange;
 log('V15.47 URL scene setup installed; open ?scene=pahu-leaf-kiss to load two NPCs and the Kiss preset.');
 
