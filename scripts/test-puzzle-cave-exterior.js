@@ -26,11 +26,27 @@ class Material {
   dispose(){this.disposed=true;}
 }
 class Geometry {constructor(...dimensions){this.dimensions=dimensions;}dispose(){this.disposed=true;}}
+const maskPaints=[]; // Records the real white-alpha tinting operations without relying on WebGL in the headless test.
+class CanvasTexture {constructor(image){this.image=image;this.needsUpdate=false;}}
+class TextureLoader {
+  load(name,onLoad){
+    const source={name,image:{width:45,height:38},dispose(){this.disposed=true;}};
+    onLoad?.(source);return source; // The production THREE loader invokes this after image bytes load.
+  }
+}
 const THREE={Group,Mesh,MeshBasicMaterial:Material,CylinderGeometry:Geometry,PlaneGeometry:Geometry,BoxGeometry:Geometry,
-  AdditiveBlending:2,
-  TextureLoader:class{load(name){return {name};}},DoubleSide:2,SRGBColorSpace:'srgb'};
+  AdditiveBlending:2,CanvasTexture,TextureLoader,DoubleSide:2,SRGBColorSpace:'srgb'};
+const makeCanvas=()=>{
+  const paint={operations:[],globalCompositeOperation:'source-over',fillStyle:'',
+    clearRect(){this.operations.push('clear');},
+    drawImage(){this.operations.push('draw');},
+    fillRect(){this.operations.push('fill:'+this.globalCompositeOperation+':'+this.fillStyle);}};
+  maskPaints.push(paint);
+  return {width:0,height:0,getContext:()=>paint};
+};
 const handlers=new Map(); // Browser-like instrument event delivery used by the actual exterior melody controller.
 const context={console,THREE,Math,Promise,Number,Map,Set,Date,
+  document:{createElement:kind=>kind==='canvas'?makeCanvas():null},
   addEventListener:(type,handler)=>{if(!handlers.has(type))handlers.set(type,new Set());handlers.get(type).add(handler);},
   removeEventListener:(type,handler)=>handlers.get(type)?.delete(handler),
   __farmLog:()=>{},
@@ -172,6 +188,10 @@ assert.equal(gate.glyphGlows.length,gate.song.notes.length,'each outdoor note ha
 assert(gate.glyphGlows.every(glow=>glow.material.opacity===.07),
   'inactive notes retain only a faint inner glow');
 assert.equal(gate.glyphOuterGlows.length,gate.song.notes.length,'every note has a broader additive halo');
+assert(maskPaints.length>0&&maskPaints.every(p=>p.operations.includes('fill:source-in:#ffffff')),
+  'black Scratchbone PNG ink is replaced by a white alpha mask that can actually glow');
+assert(gate.glyphOuterGlows.every(glow=>glow.material.map?.needsUpdate),
+  'every outdoor halo receives the completed white-alpha canvas texture');
 assert(gate.glyphOuterGlows.every(glow=>glow.material.opacity===.02),
   'the broad halo remains dim until its timed note is active');
 assert.equal(originalFacade.visible,false,'the original den facade is concealed by the cliff door');
