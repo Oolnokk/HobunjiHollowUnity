@@ -182,6 +182,24 @@
       onSolved(rec);
       return true;
     };
+    // V50 square pillar (docs/tools/debris-ifier createPillarNicheShortObeliskActivator envelope): 0.78 x 1.75 with base, collar,
+    // shaft, collar and capital. With `opening` the shaft is a hollow housing open on that side, so a glyph target sits in a niche.
+    const squarePillar=(name,x,py0,z,opening=null)=>{
+      const part=(w,h,d,ox,oy,oz,label)=>body(name+'-'+label,new THREE.BoxGeometry(w,h,d),stone,x+ox,py0+oy,z+oz);
+      const first=part(.78,.11,.78,0,.055,0,'base');
+      part(.64,.07,.64,0,.145,0,'collar');
+      part(.58,.10,.58,0,1.56,0,'collar-top');
+      part(.76,.14,.76,0,1.68,0,'capital');
+      const SH=1.36,SY=.18+SH/2,W=.48,T=.055;
+      if(!opening){part(W-.02,SH,W-.02,0,SY,0,'shaft');return first;}
+      const dirs={north:[0,-1],south:[0,1],east:[1,0],west:[-1,0]};
+      for(const [side,[dx,dz]] of Object.entries(dirs)){
+        if(side===opening)continue; // The open face is the niche.
+        part(dx?T:W,SH,dz?T:W,dx*(W/2-T/2),SY,dz*(W/2-T/2),'wall-'+side);
+      }
+      return first;
+    };
+    const SIDE_NAMES=['south','east','north','west']; // Matches the side index used by target(): 0:+z, 1:+x, 2:-z, 3:-x.
     const target=(name,x,py,z,ceiling=false,side=0)=>{
       const SIDE=[[0,1],[1,0],[0,-1],[-1,0]][side&3],yaw=[0,Math.PI/2,Math.PI,-Math.PI/2][side&3]; // Which pillar face holds the glyph: hidden pillars hide it around the back.
       const kit={ // Reuse the standalone V50 ceiling-sconce geometry and glyph art, not a second hand-built ceiling target.
@@ -197,15 +215,12 @@
         visualRoot=hanging.object;base=visualRoot;rune=hanging.hitMesh;hitMesh=hanging.hitMesh;
         authoredVisuals.push(visualRoot); // Hanging fixture owns multiple meshes and a shared rune texture.
       }else{
-        const stemHeight=Math.max(.9,py-y+.17); // Grounded stone pillar reaches the glyph height rather than floating in the air.
-        base=body(name+'-stone',new THREE.CylinderGeometry(.35,.43,stemHeight,8),stone,x,y+stemHeight*.5,z);
-        body(name+'-cap',new THREE.BoxGeometry(.85,.13,.85),stone,x,y+stemHeight-.035,z);
-        base.raycast=()=>{};
-        rune=body(name+'-rune-hit',new THREE.BoxGeometry(.62,.5,.2),stone,x+SIDE[0]*.43,py,z+SIDE[1]*.43);
+        base=squarePillar(name,x,y,z,SIDE_NAMES[side&3]); // Hollow square pillar, open on one face; the glyph sits inside the niche.
+        rune=body(name+'-rune-hit',new THREE.BoxGeometry(.34,.4,.12),stone,x-SIDE[0]*.06,py,z-SIDE[1]*.06);
         rune.rotation.y=yaw;
         hitMesh=rune;
-        plaque=authored('ruinGlyphTarget',x+SIDE[0]*.55,py,z+SIDE[1]*.55);
-        if(plaque)plaque.rotation.y=yaw;
+        plaque=authored('ruinGlyphTarget',x+SIDE[0]*.0,py,z+SIDE[1]*.0);
+        if(plaque){plaque.rotation.y=yaw;plaque.position.set(x-SIDE[0]*.03+SIDE[0]*.0,py,z-SIDE[1]*.03);plaque.scale.multiplyScalar(.62);} // Sized to the niche.
         if(plaque){
           // The real rune decal is visible while the transparent box remains the canonical projectile target.
           const invisible=basic(0xffffff);
@@ -500,13 +515,12 @@
         }});};
       slots.forEach((slot,index)=>{
         if(index<hidden){
-          const t=target(id+'-glyph'+index,slot.x,y+1.5,slot.z,false,Math.floor(rnd()*4));
+          const t=target(id+'-glyph'+index,slot.x,y+.95,slot.z,false,Math.floor(rnd()*4));
           block(slot.x,slot.z,2.4);
           return t;
         }
-        const height=1.9+rnd()*.9;
-        body(id+'-pillar'+index,new THREE.CylinderGeometry(.35,.43,height,8),stone,slot.x,y+height*.5,slot.z);
-        body(id+'-pillar-cap'+index,new THREE.BoxGeometry(.85,.13,.85),stone,slot.x,y+height-.035,slot.z);
+        const height=1.75;
+        squarePillar(id+'-pillar'+index,slot.x,y,slot.z);
         block(slot.x,slot.z,height);
       });
       rec.pillarScope=DS?scope:null;
