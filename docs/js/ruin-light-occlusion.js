@@ -100,7 +100,7 @@
     const angles=corners.map(c=>angularDifference(Math.atan2(c.z-sz,c.x-sx),center));
     const lo=angles.indexOf(Math.min(...angles)),hi=angles.indexOf(Math.max(...angles));
     const depth=Math.max(radiusTiles*1.8,Math.hypot(corners[lo].x-sx,corners[lo].z-sz)+2);
-    const y=Math.max(box.min.y+.05,Math.min(source.y,box.max.y-.05)); // Cast at a height actually intersecting the solid.
+    const y=box.min.y+.05; // Anchor the wedge on the FLOOR where the wall meets it. Casting at torch height floated the dark wedge above the ground, over the player and props.
     const edge=(corner)=>{
       const dx=corner.x-sx,dz=corner.z-sz,d=Math.hypot(dx,dz)||1;
       const near=project(corner.x,y,corner.z),far=project(sx+dx/d*depth,y,sz+dz/d*depth);
