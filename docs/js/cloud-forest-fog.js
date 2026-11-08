@@ -767,7 +767,11 @@
     }
   }
 
+  const ruinFireMaskStats={sources:0,lit:0,projected:0,drawn:0}; // Mobile Pixel Probe verifies an ignited brazier actually contributes to the visible darkness overlay.
   function drawRuinTraditionLightMasks(lights = window.DevRandomRuinLichThemes?.lightSources?.() || []) { // Existing Hronal/Tothal sources and Kanthic fixture sources share one compositing path.
+    ruinFireMaskStats.sources=lights.length;
+    ruinFireMaskStats.lit=lights.filter(light=>light.active!==false).length;
+    ruinFireMaskStats.projected=0;ruinFireMaskStats.drawn=0;
     if (!lights.length) return;
     const ctx = lightingDeps.lctx;
     const visible = []; // Kept for the second coloured-glow pass, so project each source just once.
@@ -782,6 +786,7 @@
       if (!lightMaskIntersectsViewport(center, radius, ctx, light.x, light.y, light.z, light.radius)) continue;
       visible.push({light,center,radius,transmission});
     }
+    ruinFireMaskStats.projected=visible.length; // Distinguishes source state from sources actually in the camera viewport.
     ctx.globalCompositeOperation = 'destination-out';
     for (const {light,center,radius,transmission} of visible) {
       const strength = light.strength * transmission;
@@ -792,6 +797,7 @@
       grad.addColorStop(1,'rgba(0,0,0,0)'); // Special-ruin light now shares the enclosed-room eased edge.
       ctx.fillStyle=grad;
       ctx.beginPath();ctx.arc(center.x,center.y,radius,0,Math.PI*2);ctx.fill();
+      ruinFireMaskStats.drawn++; // A destination-out mask was actually submitted this frame.
     }
     ctx.globalCompositeOperation='source-over';
     for (const {light,center,radius,transmission} of visible) {
@@ -1153,6 +1159,7 @@
         undergroundLanternArea: isUndergroundLanternArea(debugArea),
         latestChange: 'Kanthic shaft fire fixtures reveal local pools; glowing ruin engravings clear darkness without changing generic room lights.',
         ruinEngravingGlowMasks: { ...ruinGlowStats }, // Mobile-visible proof that glowing wall patterns survive the darkness overlay.
+        kanthicFirelight: { ...ruinFireMaskStats, ...(window.RuinMultifloorV50Style?.lightDebug?.()||{}) }, // Both emitted/visible mask counts and actual ignited brazier counts are readable without devtools.
         interiorLightRadiusMultiplier: INTERIOR_LIGHT_RADIUS_MULTIPLIER,
         interiorLightFalloff: 'ease-out',
         undergroundDarknessKind: enclosedDarknessKind(debugArea),
