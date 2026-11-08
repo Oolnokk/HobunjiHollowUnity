@@ -371,10 +371,6 @@
   }
   function triggerTwitch(twitchState, group) {
     if (!group?.userData.kurrayaAssembly) return;
-    if (playerKurrayaNote.active && playerKurrayaNote.awaitingAssembly) {
-      playerKurrayaNote.heldAssembly = group; // The existing game callback supplies the REAL player assembly immediately after the sounded-note relay.
-      playerKurrayaNote.awaitingAssembly = false;
-    }
     const note=window.HeldActionAnimations?.kurrayaPlayNote; // Runtime owns this action's live source, not a duplicated hard-coded motion.
     if(note) {
       if(twitchState.active) restoreNoteTransform(twitchState,group); // Rapid notes restart from the resting hold without accumulating drift.
@@ -425,25 +421,24 @@
     group.rotation[axis]=twitchState.base+Math.sin((elapsed/1000)*twitchState.frequency+twitchState.phase)*twitchState.amplitude*envelope;
   }
 
-  const playerKurrayaNote = { active: false, startedAt: null, noteCount: 0, heldAssembly: null, awaitingAssembly: false, nextResolveAtMs: 0 }; // Player-only note clock and real gameplay holder; NPC twitches never leak into this reference. // Player-only note clock and real gameplay holder; NPC twitches never leak into this reference. // Player-only sounded-note clock; NPC twitches never move the player's plucking hand.
+  const playerKurrayaNote = { active: false, startedAt: null, noteCount: 0, heldAssembly: null, nextResolveAtMs: 0 }; // Player-only note clock and hand assembly reference, resolved exclusively from the player's avatar subtree.
   function beginPlayerKurraya() {
     window.WeaponStanceDropRuntime?.endInstrumentNote?.(); // A fresh performance starts from a standing idle, not the previous flute/Kurraya body sink.
     playerKurrayaNote.active = true; playerKurrayaNote.startedAt = null;
-    playerKurrayaNote.heldAssembly = null; playerKurrayaNote.awaitingAssembly = false;
+    playerKurrayaNote.heldAssembly = null;
     playerKurrayaNote.nextResolveAtMs = 0; // Allow an immediate first scan for the already-equipped instrument.
   }
   function playPlayerKurrayaNote() {
     if (!playerKurrayaNote.active) return false;
     playerKurrayaNote.startedAt = performance.now(); // Reset hand keyframes on each sounded player note.
     window.WeaponStanceDropRuntime?.beginInstrumentNote?.('kurraya'); // Share the exact sound timestamp for the authored 3% Strike leg/body bend.
-    playerKurrayaNote.awaitingAssembly = true; // Exactly the following game callback captures the player assembly, never an NPC's idle animation.
     playerKurrayaNote.noteCount++;
     return true;
   }
   function endPlayerKurraya() {
     window.WeaponStanceDropRuntime?.endInstrumentNote?.(); // Restore the player body when the Kurraya minigame closes, even if the note was interrupted.
     playerKurrayaNote.active = false; playerKurrayaNote.startedAt = null;
-    playerKurrayaNote.heldAssembly = null; playerKurrayaNote.awaitingAssembly = false; playerKurrayaNote.nextResolveAtMs = 0;
+    playerKurrayaNote.heldAssembly = null; playerKurrayaNote.nextResolveAtMs = 0;
   }
   function playerKurrayaHandTarget() {
     if (!playerKurrayaNote.active) return null;
