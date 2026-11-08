@@ -367,7 +367,8 @@
       wings.skeleton.dispose();
     }
 
-    return { root, update, dispose, pitch, yaw, setPerchSpline, perched };
+    return { root, update, dispose, pitch, yaw, setPerchSpline, perched,
+      bodyMaterials: { flying: flying.material, perched: perched.material, wings: wings.material } }; // Live genotype recolors can replace the exact existing pose maps without disturbing the shared gripping mesh.
   }
 
   window.FlyingAnimalRig = { defaults: DEFAULT, limits, perchPosePadding: PERCH_POSE_PADDING, normalize, normalizePerchSpline, talonTypes: TALON_TYPES, normalizeTalonCarry, placeTalonPayload, flapAngle, create };
