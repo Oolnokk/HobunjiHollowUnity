@@ -224,7 +224,7 @@
         const row = Math.floor(index/layout.columns), column=index%layout.columns;
         const rowLength = Math.min(layout.columns,nextNotes.length-row*layout.columns);
         const texture=getGlyphTexture(note); // Reuses the authored Scratchbone silhouette through the canonical sprite pipeline.
-        const appearance={color:0xffda70,transparent:true,side:THREE.DoubleSide,
+        const appearance={color:0xeaf5ff,transparent:true,side:THREE.DoubleSide,
           depthWrite:false,polygonOffset:true,polygonOffsetFactor:-1,polygonOffsetUnits:-2};
         const material=makeInkMaterial(texture,appearance,'ruin-melody-scratchbone-' + (index+1));
         const glyph = new THREE.Mesh(getGlyphGeometry(),material);
