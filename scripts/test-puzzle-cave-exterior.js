@@ -157,13 +157,13 @@ await Promise.resolve(); // AuthoredFurniture.load is asynchronous; verify after
 assert(gate&&gate.requiresSong,'a real supported ledge owns one outdoor music puzzle');
 assert(gate.scoreBoard?.children?.length,'the exterior Scratchbone clue was built after the authored cliff door');
 assert.equal(gate.scoreSurface.kind,'pillarPair','exterior notes must never use cave walls, floors or incidental terrain.');
-const pillars=gate.scoreStone.children.filter(mesh=>/^puzzle-cave-score-pillar-\\d+$/.test(mesh.name));
+const pillars=gate.scoreStone.children.filter(mesh=>/^puzzle-cave-score-pillar-\d+$/.test(mesh.name));
 assert.equal(pillars.length,2,'the doorway has two equally sized permanent carved-smooth stone score pillars');
 assert.equal(pillars[0].geometry.dimensions[1],pillars[1].geometry.dimensions[1]);
 assert(Math.abs(pillars[0].position.x+pillars[1].position.x)<.0001,
   'the two pillar centres mirror around the authored doorway axis');
-assert(Math.abs(pillars[0].position.z-pillars[1].position.z)<.0001,
-  'the matching pillars share the same setback from the active door');
+assert(Math.abs(pillars[0].position.z+pillars[1].position.z)<.0001,
+  'the physical pillar pair stays centred on the authored doorway even when the musician stands off-axis');
 assert(gate.scoreStone.children.filter(mesh=>mesh.name.includes('-cap-')).length===2,
   'both pillars have identical stone capitals');
 assert(gate.scoreStone.children.filter(mesh=>mesh.name.includes('-plinth-')).length===2,
