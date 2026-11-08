@@ -159,7 +159,7 @@
   <script src="debug.js?v=20261107h4ad2a3b"></script>
   <!-- Global gameplay/UI config must load before CSS so config-backed custom properties are available on first paint. -->
   <script src="config/config.js?v=20261026h7f369c3"></script>
-  <script src="config/scratchbones-config.js?v=20261107combined1520_1524_1"></script>
+  <script src="config/scratchbones-config.js?v=20261107pingnelk2"></script>
   <!-- Canonical source-art color fill math shared by portraits, creatures, weaving, tools, terrain, and item sprites. -->
   <script src="js/color-fill.js?v=20260923colorfill7"></script>
   <!-- Shared frame-budget yield for long async pixel jobs (clothing weaving, creature genetics). -->
@@ -228,7 +228,7 @@
        doesn't itself depend on it (each reads genotype data, not each
        other), but they're a matched pair. -->
   <script src="js/voorg-ass-registration.js?v=20261027h7e25ded"></script> <!-- Shared Voorg-Ass creature/renderer/herd registration used by the three scripts below. -->
-  <script src="js/pingdort-registration.js?v=20261107pingdort1"></script> <!-- Early hatchable egg and livestock config, before the game snapshots item kinds. -->
+  <script src="js/pingdort-registration.js?v=20261107pingnelk2"></script> <!-- Early hatchable egg and livestock config, before the game snapshots item kinds. -->
   <script src="js/moot-registration.js?v=20261107mootreview1"></script> <!-- Moot surface-wildlife and farm-baby registration; config must precede the main game snapshot. -->
   <script src="js/creature-genetics.js?v=20261107flyers2"></script>
   <script src="js/animal-hides.js?v=20261102-animalhides2"></script> <!-- Per-unit genetics, rarity, price, and save data for butchered hides. -->
@@ -652,7 +652,7 @@
   <script src="js/flying-animal-rig.js?v=20261108planebentFur1"></script> <!-- Canonical authored two-bone bird wing/body assembly. -->
   <script src="js/tzatzul-registration.js?v=20261107eye1"></script> <!-- Tzatzul dev species, hatchling peck, stable individual tint and flying-rig JSON. -->
   <script src="js/skeeri-ruins.js?v=20261108planebentFur1"></script> <!-- Three authored Skeeri sizes, concealed ruin hatches and shaft witch-bomb runs. -->
-  <script src="js/tzatzul-live-visuals.js?v=20261107planeSkeeri1"></script>
+  <script src="js/tzatzul-live-visuals.js?v=20261108ha635d1e"></script>
   <script src="js/tzatzul-cliff-sites.js?v=20261107h4239d09"></script> <!-- Separate rock-textured, non-climbable Tzatzul spires. -->
   <script src="js/tzatzul-flight-runtime.js?v=20261107scoutbound3"></script> <!-- Shared swept-body dive for exterior and nest mothers. -->
   <script src="js/tzatzul-nest-encounter.js?v=20261107foodcap1"></script> <!-- Authoritative indoor mother and hatchling combat in the existing wildlife tick. -->
@@ -941,7 +941,7 @@
   <script src="js/shattercasks.js?v=20261107burdenCombined1"></script>
   <script src="js/crate-piles.js?v=20261105hf6df591"></script>
   <script src="js/hronal-witch-bombs.js?v=20261106ha49d50c"></script>
-  <script src="js/pingdort-flocks.js?v=20261107pingdort1"></script> <!-- Wild Drenkirra-hunting flocks, fertile nests, and companion rock-bomber attacks. -->
+  <script src="js/pingdort-flocks.js?v=20261107pingnelk1"></script> <!-- Wild Drenkirra-hunting flocks, fertile nests, and companion rock-bomber attacks. -->
   <!-- Hanging ropes: the shared rope swing arithmetic (pure) and the rope component burdens hang from. Needs Shattercasks at
        call time only. See docs/architecture/ruin-capabilities.md. -->
   <script src="js/rope-core.js?v=1"></script>

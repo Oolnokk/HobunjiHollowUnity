@@ -6,6 +6,32 @@ const path=require('node:path');
 const vm=require('node:vm');
 const root=path.resolve(__dirname,'..'); // Production file root used by all following assertions.
 const read=name=>fs.readFileSync(path.join(root,name),'utf8'); // Read the actual modules under test.
+const paletteHost={}; // Run the shipped config independently to verify the actual species color tables.
+vm.runInNewContext(read('docs/config/scratchbones-config.js'),{window:paletteHost});
+const palettes=paletteHost.SCRATCHBONES_CONFIG.game.creatureGenetics.palettes; // Same data consumed by native genetics and Character Studio.
+const colorsFor=kind=>new Set(palettes[kind].map(entry=>entry.hex)); // Reject any offspring outside its species palette.
+const pingdortGreens=palettes.pingdort.filter(entry=>/green|moss|sage|fern|lichen|pine/i.test(entry.name)); // Muted woodland greens, not the bright Drenkirra palette.
+assert(pingdortGreens.length>=5&&pingdortGreens.every(entry=>entry.weight>0));
+assert(palettes.pingdort.every(entry=>/^#[0-9a-f]{6}$/i.test(entry.hex)&&entry.weight>0));
+const nelkLightWeight=palettes.nelk.filter(entry=>entry.weight>=5).reduce((total,entry)=>total+entry.weight,0); // Wild rolls should primarily select light/mid coats.
+const nelkDarkWeight=palettes.nelk.filter(entry=>entry.weight===1).reduce((total,entry)=>total+entry.weight,0); // Rare dark variants must still exist and breed.
+assert(nelkDarkWeight>0&&nelkLightWeight>=7*nelkDarkWeight,'Nelk dark coats should be much rarer than lighter coats');
+assert.equal(palettes.nelk.length,palettes.default.length,'Nelk retains every preexisting coat color');
+assert(palettes.default.every(entry=>colorsFor('nelk').has(entry.hex)),'No Nelk pigmentation is made unobtainable by reweighting');
+const geneticsHost={SCRATCHBONES_CONFIG:paletteHost.SCRATCHBONES_CONFIG,addEventListener(){},__farmLog(){}}; // Isolated genuine genetics module, no game bootstrap or sprite machinery.
+vm.runInNewContext(read('docs/js/creature-genetics.js'),{window:geneticsHost});
+geneticsHost.CreatureGenetics.init({CREATURE_DB:{pingdort:{defaultSizeClass:'small'},nelk:{defaultSizeClass:'medium'}},clamp:(x,a,b)=>Math.max(a,Math.min(b,x))});
+for(const kind of ['pingdort','nelk']){
+  const allowed=colorsFor(kind); // Both fresh specimens and offspring must use the authored palette.
+  for(let i=0;i<60;i++){
+    const mother=geneticsHost.CreatureGenetics.makeDefaultGenotype(kind);
+    const father=geneticsHost.CreatureGenetics.makeDefaultGenotype(kind);
+    const offspring=geneticsHost.CreatureGenetics.crossOffspring(mother,father,kind,0);
+    assert(allowed.has(mother.base.color)&&allowed.has(father.base.color)&&allowed.has(offspring.base.color));
+    assert.equal(offspring.sizeClass,mother.sizeClass,'identical parental size classes remain inheritable');
+  }
+}
+assert.equal(palettes.drenkirra.length,12,'Unrelated bright Drenkirra colors stay unchanged');
 for(const species of ['skeeri','pingdort']){
   const rig=JSON.parse(read('docs/config/creatures/'+species+'-flying-rig.json')); // Authored, not fake, species wing settings.
   assert.equal(rig.version,1);
@@ -70,7 +96,22 @@ const Shattercasks={
   releaseBurdenDownward(b){if(!b?.group?.parent)return false;drops++;b.flying=true;return true;},
   discardBurden(b){b.group?.parent?.remove?.(b.group);return true;},
 };
-const w={THREE,PerchSupport,Shattercasks,CreatureGeneticsRender:{SPECIES:{}},
+const sourcePixels=Uint8ClampedArray.from([159,191,159,255,255,255,255,255,0,0,0,255,110,139,110,255]); // Green coat, white eye, black outline and shadow from authored PNG art.
+class TestImage{set src(_url){this.width=4;this.height=1;this.onload?.();}} // Tiny pose artwork for an actual keyed coat-color regression.
+class TestCanvas{
+  constructor(){this.width=0;this.height=0;this.pixels=null;} // Supports the exact 2D surface API used by PingdortRegistration.
+  getContext(){return {drawImage:()=>{this.pixels=new Uint8ClampedArray(sourcePixels);},
+    getImageData:()=>({data:this.pixels}),putImageData:frame=>{this.pixels=frame.data;}};}
+}
+const fakeDocument={createElement:tag=>{assert.equal(tag,'canvas');return new TestCanvas();}}; // Avoids Node DOM dependencies while testing pixels.
+
+const testFetch=async()=>({ok:true,json:async()=>({version:1})}); // The physical wing geometry is owned by FlyingAnimalRig, not this integration test.
+const renderColors={SPECIES:{},
+  hexToRgb:hex=>[parseInt(hex.slice(1,3),16),parseInt(hex.slice(3,5),16),parseInt(hex.slice(5,7),16)],
+  recolorPixels(data,color,predicate){for(let i=0;i<data.length;i+=4)if(predicate(i))for(let n=0;n<3;n++)data[i+n]=color[n];},
+}; // Real registration and pixel mask selection use the existing shared recolor interface.
+const w={THREE,PerchSupport,Shattercasks,CreatureGeneticsRender:renderColors,
+  HobunjiSpritePngSurface:{makeCanvasTexture(_three,canvas){return {image:canvas,dispose(){this.disposed=true;}};}},
   SCRATCHBONES_CONFIG:{game:{livestock:{itemKinds:{},animalWidths:{},diet:{},resources:{}}}},
   CreatureGenetics:{makeDefaultGenotype:()=>({base:{color:'#aaaaaa'},sizeClass:'small'}),
     creatureSizeClass:(_kind,g)=>g?.sizeClass||'small'},
@@ -83,7 +124,7 @@ const w={THREE,PerchSupport,Shattercasks,CreatureGeneticsRender:{SPECIES:{}},
   InventoryStacks:{MAX_TOTAL:99},FarmAnimals:{queueItemGenotype(){}},
   __hobunjiPlayerProfile:{worldId:'unit'},__farmLog(){}};
 for(const name of ['skeeri-ruins','pingdort-registration','pingdort-flocks'])
-  vm.runInNewContext(read('docs/js/'+name+'.js'),{window:w,performance:{now:()=>1000},
+  vm.runInNewContext(read('docs/js/'+name+'.js'),{window:w,Image:TestImage,document:fakeDocument,fetch:testFetch,performance:{now:()=>1000},
     localStorage:{getItem:key=>storage.get(key)||null,setItem:(key,val)=>storage.set(key,String(val))},
     console,Promise},{filename:name+'.js'});
 const deps={TILE:64,CREATURE_DB:db,hostileObjects,companionObjects,zoneScenes,inventory,
@@ -97,6 +138,29 @@ const deps={TILE:64,CREATURE_DB:db,hostileObjects,companionObjects,zoneScenes,in
 async function check(){
   assert(w.SkeeriRuins.register(deps));assert(w.SkeeriRuins.init(deps));
   assert(w.PingdortRegistration.register(deps));assert(w.PingdortFlocks.init(deps));
+  assert.equal(w.CreatureGeneticsRender.SPECIES.pingdort.baseRecolorKeyHex,'#9dc09c','Farm and Stable colors should target green feathers, not white eyes');
+  const makeColor=()=>({value:'ffffff',getHexString(){return this.value;},set(hex){this.value=hex.slice(1).toLowerCase();}}); // Covers the existing material white-reset after damage.
+  const materials=Object.fromEntries(['flying','perched','wings'].map(p=>[p,{color:makeColor(),map:null}])); // Actual pose material ownership, including the perched gripping alias.
+  w.FlyingAnimalRig={normalize:value=>value,create:(_settings,images)=>{for(const pose of Object.keys(materials))materials[pose].map={image:images[pose],dispose(){this.disposed=true;}};
+    return {root:{},bodyMaterials:materials,dispose(){}};}}; // Only geometry and GPU upload are stubbed, not Pingdort's pixel recolor or map-swapping code.
+  const tintedRig=await w.PingdortRegistration.createRig({base:{color:'#536747'}});
+  for(const material of Object.values(materials)){
+    assert.deepEqual([...material.map.image.pixels.slice(0,3)],[83,103,71],'Only green plumage is recolored');
+    assert.deepEqual([...material.map.image.pixels.slice(4,8)],[255,255,255,255],'The white eye remains white');
+    assert.deepEqual([...material.map.image.pixels.slice(8,12)],[0,0,0,255],'The black outline remains black');
+  }
+  const oldFlyingMap=materials.flying.map; // A live edit disposes the obsolete map without rebuilding the actor.
+  assert.equal(tintedRig.restoreTint('#859578'),true,'Changing the genotype swaps all three pose textures');
+  assert.equal(oldFlyingMap.disposed,true,'Old GPU texture is disposed after a new genotype color');
+  assert.deepEqual([...materials.perched.map.image.pixels.slice(0,3)],[133,149,120]);
+  assert.deepEqual([...materials.perched.map.image.pixels.slice(4,8)],[255,255,255,255]);
+  assert.equal(tintedRig.restoreTint('#859578'),false,'Repeated update neither recolors nor reallocates the same genotype');
+  materials.wings.color.set('#ff0000');
+  assert.equal(tintedRig.restoreTint('#859578'),true,'Hit-flash multiply color resets without replacing body textures');
+  assert.equal(materials.wings.color.value,'ffffff');
+  assert.equal(w.PingdortRegistration.debugSnapshot().tintAssignments,2);
+  assert(read('docs/js/tzatzul-live-visuals.js').includes('create(appearance)'),'Native bird owner passes Pingdort genotype to rig constructor');
+  assert(read('docs/js/tzatzul-live-visuals.js').includes('actor.genotype?.base?.color'),'Native owner restores after damage or genetic edits');
   assert(db.pingdort.modelWidth<db.drenkirra.modelWidth);
   assert.equal(w.SCRATCHBONES_CONFIG.game.livestock.itemKinds.fertilePingdortEgg,'pingdort');
   const plan={floorCount:5,shaft:{anchor:{x:110,z:110}},
@@ -125,7 +189,9 @@ async function check(){
   hostileObjects.add(prey);
   const count=w.PingdortFlocks.ensureZone(area);
   assert(count>=1 && count<=3,'wild Pingdorts establish eligible flocks');
-  assert.equal([...hostileObjects].filter(a=>a.creatureKey==='pingdort').length,count*3);
+  const wildBirds=[...hostileObjects].filter(a=>a.creatureKey==='pingdort'); // Every naturally spawned hunter should have a coat allele, not an untinted fallback.
+  assert.equal(wildBirds.length,count*3);
+  assert(wildBirds.every(actor=>actor.genotype?.base?.color==='#aaaaaa'),'Flock birds explicitly receive their individual genotype');
   const nest=w.PingdortFlocks.debugSnapshot().habitats[0].nests[0];
   player.x=nest.x*64;player.y=nest.z*64;
   inventory.fertilePingdortEgg=99;assert.equal(w.PingdortFlocks.collectNest(nest.id).ok,false);
@@ -150,6 +216,6 @@ async function check(){
   assert(rocks>0&&drops>start,'companion fetched and dropped a physical Boulder burden');
   assert.equal(w.PingdortFlocks.debugSnapshot().bouldersDropped,1);
   assert.match(read('docs/js/creature-genetics.js'),/entry\?\.kind==='pingdort'&&sizeClass==='large'\?'companion'/);
-  console.log('Skeeri and Pingdort flight, hatches, bombs, eggs, farm registration and companion boulder PASS');
+  console.log('Skeeri/Pingdort encounters, inherited flight colors and Nelk light-coat genetics PASS');
 }
 check().catch(error=>{console.error(error);process.exitCode=1;});
