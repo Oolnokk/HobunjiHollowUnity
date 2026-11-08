@@ -14352,7 +14352,7 @@ function installInitiatorShoulderContactV1550(initiator, target, time, solution)
   const targetHands = target?.model?.userData?.proceduralHandRig; // Actual shoulder coordinates on the intended partner, never guessed portrait edges.
   if (!hands?.setPoseProvider || !targetHands?.shoulderPositionLocal) return false;
   if (initiator.multiKissHandContactRigV1550 !== hands) {
-    initiator.multiKissHandContactScratchV1550 = {}; // Reusable world-space scratch for two hands throughout the clip.
+    initiator.multiKissHandContactScratchV1550 = { THREE: state.three.THREE }; // The author imports Three as a module rather than exposing it on window.
     hands.setPoseProvider(MULTI_HAND_KISS_OWNER_V1548, () => {
       const actorTime = Number(initiator.multiKissHandContactTimeV1550) || 0; // Resolves timeline scrubs without frame-dependent motion accumulation.
       initiator.multiKissHandContactV1550 = window.SpouseKissMotion.applyInitiatorShoulderHands(
