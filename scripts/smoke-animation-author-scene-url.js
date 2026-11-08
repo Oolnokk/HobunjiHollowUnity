@@ -83,6 +83,28 @@ async function main() {
           throw Error('Pahu acquired an upside-down root rotation at t=' + t + ': ' + JSON.stringify(pahu));
         }
       }
+      const seek = t => { // Scrub and let both partners' existing rig code sample the exact timeline time.
+        scrubber.value = String(t);
+        scrubber.dispatchEvent(new Event('input', { bubbles: true }));
+        return api.fullBodyDiagnostics();
+      };
+      const early = seek(.37);
+      const earlyInitiator = early.find(actor => actor.name === 'Pahu');
+      const earlyTall = early.find(actor => actor.name === 'Leaf');
+      if (!earlyInitiator?.initiatorHands?.applied || earlyInitiator.initiatorHands.blend < .85) {
+        throw Error('Pahu must attach both hands toward Leaf shoulders before she kneels: ' + JSON.stringify(early));
+      }
+      if (earlyTall?.kneeDrop > .001) {
+        throw Error('Leaf kneels before shorter Pahu places his hands on shoulders: ' + JSON.stringify(early));
+      }
+      const afterLowering = seek(.78);
+      if (!(afterLowering.find(actor => actor.name === 'Leaf')?.kneeDrop > .005)) {
+        throw Error('Leaf never kneels after the initiator shoulder grasp: ' + JSON.stringify(afterLowering));
+      }
+      const afterContact = seek(1.12);
+      if (!afterContact.find(actor => actor.name === 'Pahu')?.initiatorHands?.applied) {
+        throw Error('Initiator wrist anchors must follow the spouse shoulders during contact: ' + JSON.stringify(afterContact));
+      }
       scrubber.value = '0';
       scrubber.dispatchEvent(new Event('input', { bubbles: true })); // Reset to the intended kiss opening before testing walking gait.
       const project = api.exportProject();
@@ -128,6 +150,10 @@ async function main() {
         throw Error('Both actors must recover their knee and torso rest poses: ' + JSON.stringify(finishedBodies));
       }
       if (again.project.relationshipPreset !== 'kiss') throw Error('Kiss changed during preview');
+      const feetAtFinish = api.fullBodyDiagnostics(); // Used to verify no lingering shoulder grip remains after the one-shot.
+      if (feetAtFinish.find(actor => actor.name === 'Pahu')?.initiatorHands?.blend > .001) {
+        throw Error('Pahu hands remained locked to shoulders after the kiss released: ' + JSON.stringify(feetAtFinish));
+      }
       return {
         actors: actors.map(a => ({ id: a.source.id, label: a.label })),
         preset: project.project.relationshipPreset,
@@ -136,6 +162,8 @@ async function main() {
         exportable: again.actors.length === 2,
         fullBodiesAtContact: contactBodies,
         facingSamples,
+        shoulderGripEarly: earlyInitiator.initiatorHands,
+        shoulderGripAtContact: afterContact.find(actor => actor.name === 'Pahu')?.initiatorHands,
         copiedUrlValid: true,
         genericUrlValid: true,
         status: document.getElementById('statusPill')?.textContent || '',
