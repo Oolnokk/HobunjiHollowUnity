@@ -1440,7 +1440,7 @@
         ankle:new THREE.Vector3(side==='left'?state.idleLeftX:state.idleRightX,state[`${side}ContactY`],0),
         length:Math.max(.001,Math.abs(posteriorY-state[`${side}ContactY`])),bend:{...legBend[side]}})); // Captured once when a paired action starts, including the actual posterior and GLB sole offset.
     }
-    function applyWorldFootTargets(targets,footWorldQuaternion=null,allowExtendedReach=false) {
+    function applyWorldFootTargets(targets,footWorldQuaternion=null,allowExtendedReach=false,allowDeepFold=false) {
       if(state.disposed || !window.LegBones)return false;
       root.updateWorldMatrix(true,false);
       pairedBend ||= new THREE.Euler(); // Lazily initialized only for an explicitly owned paired pose.
@@ -1450,7 +1450,7 @@
         root.worldToLocal(pairedFootLocal.copy(target));
         const length=Math.max(.001,Math.abs(posteriorY-state[`${side}ContactY`])); // Rest segment length also handles authored posteriors below the sprite root; never use a signed height as a length.
         const distance=pairedFootLocal.distanceTo(chain.hip.position); // Knee flex stays below 90 degrees; targets never lengthen the leg.
-        if(distance>1e-8 && !allowExtendedReach)pairedFootLocal.sub(chain.hip.position).multiplyScalar(Math.max(length*.72,Math.min(length*.999,distance))/distance).add(chain.hip.position); // Grapple-only override retains the real portrait contact instead of clamping it to a short walking leg.
+        if(distance>1e-8 && !allowExtendedReach)pairedFootLocal.sub(chain.hip.position).multiplyScalar(Math.max(length*(allowDeepFold?.05:.72),Math.min(length*.999,distance))/distance).add(chain.hip.position); // Paired posterior contacts can fold deeply; the same fixed-length bones still never overextend.
         pairedForward.set(0,0,1).applyEuler(pairedBend.set(legBend[side].x*Math.PI/180,0,legBend[side].z*Math.PI/180));
         const solved=window.LegBones.solveTwoBoneLeg(THREE,{hip:chain.hip.position,foot:pairedFootLocal,foldMaxLength:length,foldForward:pairedForward}); // Beyond rest length the shared solver extends the two bones precisely to the world target. // Shared fixed-length two-bone solve; authored bend chooses the safe forward pole.
         chain.thigh.position.set(0,0,0);
@@ -1473,9 +1473,11 @@
 
     let externalFootTargets = null; // Optional per-foot world coordinates, owned by a grapple/mount/cutscene until cleared.
     let externalFootExtendedReach = false; // Opt-in: Headtaker feet must reach the real portrait surface; other users retain fixed walking limb length.
+    let externalFootDeepFold = false; // Opt-in: petite partners fold knees around a spouse posterior without changing regular grounded gait.
     function setExternalFootTargets(targets, options = null) {
       externalFootTargets = targets?.left && targets?.right ? targets : null;
       externalFootExtendedReach = !!(externalFootTargets && options?.allowExtendedReach);
+      externalFootDeepFold = !!(externalFootTargets && options?.allowDeepFold);
       if (!externalFootTargets) state.motionMode = 'idle'; // Normal gait resumes on the next update.
     }
 
@@ -1484,7 +1486,7 @@
       if (!motion?.lunging || motion?.airborne || suppressed || seatedPose) state.lungeActive = false;
       if (state.disposed) return;
       if (externalFootTargets) {
-        if (applyWorldFootTargets(externalFootTargets, null, externalFootExtendedReach)) {
+        if (applyWorldFootTargets(externalFootTargets, null, externalFootExtendedReach, externalFootDeepFold)) {
           state.motionMode = 'external-portrait-contact';
           return; // Contact on another actor's portrait outranks ordinary floor stepping.
         }
@@ -1613,6 +1615,7 @@
       if (state.disposed) return;
       state.disposed = true;
       externalFootTargets = null;
+      externalFootDeepFold = false;
       portraitGuides?.dispose();
       parent.remove(root);
       disposeObjectResources(root);
