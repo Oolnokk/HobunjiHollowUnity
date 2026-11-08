@@ -14,6 +14,7 @@
   let inventoryMutationObserver = null; // Watches Gear rebuilds, item-detail changes, and readability-floor annotations.
   let fitQueued = false; // Coalesces rebuild/resize/orientation bursts into one presentation pass.
   let lastDebug = null; // Mobile-friendly snapshot of the latest workspace + item-detail fit.
+  const fitStats = { passes: 0, inactiveSkips: 0, ignoredMutations: 0 }; // Counts layout work avoided or performed for the in-game debug snapshot.
 
   function installStyles() {
     if (typeof document === 'undefined' || document.getElementById(STYLE_ID)) return;
@@ -409,6 +410,17 @@
   function refreshPresentation() {
     fitQueued = false;
     if (typeof document === 'undefined') return null;
+    const pane = document.getElementById('mpInventory');
+    if (!pane?.classList.contains('inv-mode-gear')) {
+      // Gameplay continues updating inventory data with the menu closed.
+      // Do not measure/reflow a hidden detail panel or keep resize observers
+      // attached; the pane's Gear-mode class change schedules the next fit.
+      fitStats.inactiveSkips++;
+      hookResizeTargets(null, null);
+      lastDebug = { version:VERSION, gearActive:false, workspaceReady:false };
+      return lastDebug;
+    }
+    fitStats.passes++;
     const workspace = ensureGearWorkspace();
     const info = document.getElementById('invInfo');
     hookResizeTargets(workspace, info);
@@ -416,6 +428,7 @@
 
     lastDebug = {
       version:VERSION,
+      gearActive:true,
       workspaceReady:!!workspace,
       summaryScrollHeight:Number((workspace?.summary?.scrollHeight || 0).toFixed?.(2) || 0),
       summaryClientHeight:Number((workspace?.summary?.clientHeight || 0).toFixed?.(2) || 0),
@@ -438,13 +451,25 @@
     const pane = document.getElementById('mpInventory');
     if (!pane) return;
 
+    let lastGearMode = pane.classList.contains('inv-mode-gear'); // Remembers the pane's last mode so ordinary UI class toggles do not force a full Gear reflow.
     inventoryMutationObserver = new MutationObserver((records) => {
-      const relevant = records.some((record) => {
-        if (record.type === 'childList' || record.type === 'characterData') return true;
+      const gearActive = pane.classList.contains('inv-mode-gear');
+      const modeChanged = gearActive !== lastGearMode;
+      lastGearMode = gearActive;
+      const relevant = modeChanged || (gearActive && records.some((record) => {
         const target = record.target?.nodeType === 1 ? record.target : record.target?.parentElement;
-        return !!target?.closest?.('#mpInventory');
-      });
+        if (record.type === 'attributes') {
+          // Non-Gear tab changes and class churn on the inventory pane itself
+          // are not changes to item-detail geometry.
+          if (target === pane) return false;
+          return !!target?.closest?.('#invEquipSection, #invInfo');
+        }
+        // Gear contents may be rebuilt while the menu is open. A direct pane
+        // child change is relevant because it can replace either region.
+        return target === pane || !!target?.closest?.('#invEquipSection, #invInfo');
+      }));
       if (relevant) scheduleFit();
+      else fitStats.ignoredMutations += records.length;
     });
     inventoryMutationObserver.observe(pane, {
       childList:true,
@@ -459,7 +484,7 @@
   }
 
   function debugSnapshot() {
-    return lastDebug ? JSON.parse(JSON.stringify(lastDebug)) : { version:VERSION, workspaceReady:false };
+    return { ...(lastDebug || { version:VERSION, workspaceReady:false }), fitStats:{ ...fitStats } };
   }
 
   window.InventoryGearCompactEffects = Object.freeze({ version:VERSION, refresh:refreshPresentation, debugSnapshot });
