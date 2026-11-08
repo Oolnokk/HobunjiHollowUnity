@@ -267,6 +267,7 @@
           const roomRgb=[1,3,5].map(n=>parseInt(String(roomHex).slice(n,n+2),16)).map(v=>Number.isFinite(v)?Math.round(v+(255-v)*.45):220); // The lich's colour, washed toward white: a lit room, not a coloured spotlight.
           const roomLight={x:cx,y:floor.y+1.4,z:cz,floorY:floor.y,floorTolerance:3,radius:Math.max(room.w,room.d)*.7+2,strength:.92,color:roomRgb,active:false};
           roomLights.push(roomLight);
+          let gateLight=null; // Lights the doorway the solve is about to open (assigned below once the gate is known).
           let challenge=null; // Created by the shared mechanism runtime; its onSolved opens this chamber's real next gate.
           challenge=Challenges.compose({
             THREE,parent:activeRoot,room,y:floor.y,id:room.id,kind:room.challenge,side:wing.side,
@@ -285,18 +286,23 @@
             onSolved:()=>{
               if(owner.disposed||record.solved!==i)return;
               record.solved++;
-              roomLight.active=true; // The solved room fills with light.
+              roomLight.active=true;if(gateLight)gateLight.active=true; // The solved room AND the doorway about to open light up first...
               options.onStateChange?.();
               root.RuinInteractionAudio?.puzzleComplete?.(); // Chime + reveal window before the gate starts moving.
-              setGate(challenge,false);
-              options.showToast?.(challenge.kind==='pressurePlate'?'A stone gate opens.'
-                :challenge.kind==='melodyEcho'?'The stone answers your melody — a gate opens.'
-                :challenge.kind==='dungeonFire'?'The ice recedes — a stone gate opens.'
-                :challenge.kind==='statueDefense'?'The defended statue sinks into the plinth — a stone gate opens.'
-                :challenge.kind==='ropeChain'?'The far bank releases the stone gate.'
-                :challenge.kind==='findBlocks'?'Four stone blocks settle — the gate opens.'
-                :'The last target falls — the stone gate opens.',true);
-              options.onStateChange?.();
+              const openGate=()=>{ // ...then the stone gate moves and the reveal camera pans to it, so the door is actually visible when the shot arrives.
+                if(owner.disposed)return;
+                setGate(challenge,false);
+                options.showToast?.(challenge.kind==='pressurePlate'?'A stone gate opens.'
+                  :challenge.kind==='melodyEcho'?'The stone answers your melody — a gate opens.'
+                  :challenge.kind==='dungeonFire'?'The ice recedes — a stone gate opens.'
+                  :challenge.kind==='statueDefense'?'The defended statue sinks into the plinth — a stone gate opens.'
+                  :challenge.kind==='ropeChain'?'The far bank releases the stone gate.'
+                  :challenge.kind==='findBlocks'?'Four stone blocks settle — the gate opens.'
+                  :'The last target falls — the stone gate opens.',true);
+                options.onStateChange?.();
+              };
+              const delay=Number.isFinite(Number(options.gateOpenDelayMs))?Number(options.gateOpenDelayMs):(typeof document!=='undefined'?450:0); // Headless node tests open the gate immediately.
+              if(delay>0&&typeof setTimeout==='function')setTimeout(openGate,delay);else openGate();
             }
           });
           challenge.x=cx;challenge.z=cz;challenge.floorY=floor.y;challenge.gate=null;
@@ -312,6 +318,8 @@
             const gate=authoredGate?authoredGate.object:mesh('ruin-challenge-gate-'+room.id,
               new THREE.BoxGeometry(dx?1.1:3,2.4,dz?1.1:3),gateMat,cx+.5,floor.y+1.2,cz+.5);
             challenge.gate={tiles:gateTiles,object:gate};
+            gateLight={x:cx+.5,y:floor.y+1.4,z:cz+.5,floorY:floor.y,floorTolerance:3,radius:5.5,strength:.95,color:roomRgb,active:false};
+            roomLights.push(gateLight);
             challenge.grid=grid;setGate(challenge,true);
           }
           record.challenges.push(challenge);
