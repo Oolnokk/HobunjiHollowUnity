@@ -128,6 +128,10 @@ async function check(){
   inventory.fertilePingdortEgg=0;assert.equal(w.PingdortFlocks.collectNest(nest.id).ok,true);
   assert.equal(inventory.fertilePingdortEgg,3);
   assert.equal(w.PingdortFlocks.collectNest(nest.id).ok,false);
+  deps.calendar.day=2; // A new in-game day renews the finite clutch even without leaving the zone.
+  assert.equal(w.PingdortFlocks.ensureZone(area),count);
+  assert.equal(w.PingdortFlocks.collectNest(nest.id).ok,true);
+  assert.equal(inventory.fertilePingdortEgg,6);
 
   area='farm';scene=new Root();zoneScenes.set(area,{scene});player.x=20*64;player.y=20*64;
   const pet=deps.makeCreatureEntity('pingdort',21*64,20*64,{isCompanion:true,stableRole:'companion',master:player});
