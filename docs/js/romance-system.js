@@ -628,6 +628,13 @@
     }
     maybeStartWedding();
     installKissBuffProviders();
+    if (state.kissBuff) {
+      if (remainingKissHours() <= 0) {
+        state.kissBuff = null; // Clear an expired effect without carrying a stale icon into future saves.
+        persist();
+        window.EffectBuffBar?.refresh?.(true);
+      } else window.EffectBuffBar?.refresh?.(); // Refresh the remaining in-game-hours indicator during the active buff.
+    }
     window.RomanceWedding?.tick?.(deps.getCurrentArea?.());
     window.RomanceFamily?.tick?.();
   }
