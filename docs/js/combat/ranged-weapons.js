@@ -1795,7 +1795,7 @@
         }
         const groundY = deps.worldSurfaceY?.(x, y); // Raised walkable terrain also occludes lower shot lines.
         if (Number.isFinite(groundY) && rayWorldY - radiusWorld <= groundY + 0.08) return { clear: false, kind: 'ground', id: 'raised-terrain' };
-        if (typeof deps.canOccupyAt === 'function' && !deps.canOccupyAt(x, y, def.projectileRadiusPx, rayWorldY)) {
+        if (typeof deps.canOccupyAt === 'function' && !deps.canOccupyAt(x, y, radiusWorld * deps.TILE, rayWorldY)) {
           return { clear: false, kind: 'tile', id: 'solid-tile' };
         }
       }
