@@ -23,6 +23,7 @@
   });
   const BODY_VARIANTS = Object.freeze(['dusty','muted','dark_muted']); // Natural-looking entries from the same existing dye families liches use.
   const HUE_ORDER = Object.freeze(['red','red_orange','orange','yellow_orange','yellow','yellow_green','green','green_blue','blue','blue_indigo','indigo','indigo_violet','violet']); // Used only to find immediately adjacent fur-marking hue families.
+  const HUE_ANGLES = Object.freeze([0,15,30,45,60,90,120,180,240,255,270,285,300]); // Mirrors authored dye family angles; 60-degree gaps are not a slight fur color excursion.
   const EYE_VARIANTS = Object.freeze(['pure','bright']); // Deliberately uncanny vivid dyes within those same families, never a complementary hue from another tradition.
   const BODY_GROUPS = Object.freeze({ // Fallback natural swatches if the normal dye catalog has not loaded yet.
     hronal:Object.freeze(['#854e48','#875a42','#967d55','#605052']), // Muted reds, rust orange and ochre, not an unrelated brown dye.
@@ -61,8 +62,15 @@
     const order=window.SCRATCHBONES_CONFIG?.game?.dyes?.hueFamilies?.map(hue=>hue.id)||HUE_ORDER;
     const first=order.indexOf(family[0]),last=order.indexOf(family[family.length-1]);
     if(first<0||last<0)return []; // A malformed custom palette cannot accidentally widen the permitted eye range.
-    return [order[(first+order.length-1)%order.length],order[(last+1)%order.length]]
-      .filter(hue=>!family.includes(hue)); // Fur alone may occasionally use the immediate neighboring hue, never more.
+    const neighbors=[{hue:order[(first+order.length-1)%order.length],edge:family[0]},
+      {hue:order[(last+1)%order.length],edge:family[family.length-1]}]; // Only the actual ends of the canonical hue band can expand.
+    const cfg=window.SCRATCHBONES_CONFIG?.game?.dyes?.hueFamilies||[];
+    const degrees=hue=>Number(cfg.find(item=>item.id===hue)?.hueAngle ?? HUE_ANGLES[HUE_ORDER.indexOf(hue)]);
+    return neighbors.filter(({hue,edge})=>{
+      const a=degrees(hue),b=degrees(edge);
+      return !family.includes(hue) && Number.isFinite(a) && Number.isFinite(b)
+        && Math.abs((a-b+540)%360-180)<=30; // A slight 15–30° fur drift, not a 60° leap to an unrelated hue.
+    }).map(item=>item.hue);
   }
   function paletteFor(theme,identity) {
     const family=traditionOf(theme),slot=hash(String(identity)); // Stable appearance independent of AI RNG and encounter order.
