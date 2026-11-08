@@ -154,12 +154,27 @@
     return catalog.find(dye => dye.id === chosen)?.hex || null;
   }
 
+  function rollOrdinaryLichName() {
+    const generate = window.SCRATCHBONES_NAME_GENERATOR?.generateHarlyaoName; // Shared culture generator, loaded before gameplay spawns.
+    if (typeof generate !== 'function') return null; // Isolated editor/test harnesses may omit culture scripts.
+    const occupied = new Set([...(deps?.hostileObjects || [])]
+      .filter(actor => actor?.isHarlyaoLich && Number(actor.health) > 0)
+      .map(actor => String(actor.lichGivenName || actor.name || '').split(/\s+/)[0].toLowerCase())); // Given names remain unique even when the visible label includes a surname.
+    let fallback = null; // Last valid culturally generated name, used if a deterministic test RNG repeats a single value.
+    for (let attempt = 0; attempt < 24; attempt++) {
+      const name = generate(random); // Use GameRandom, the same RNG as the lich's robe/appearance.
+      if (!occupied.has(name.toLowerCase())) return name;
+      fallback = name;
+    }
+    return fallback;
+  }
+
   function rosterFor(type, gender = null) {
     const def = typeDef(type); // Lich type provides display name while cosmetics stay identical across traditions.
     const chosenGender = gender === 'female' ? 'female' : gender === 'male' ? 'male' : (random() < 0.5 ? 'male' : 'female'); // Used by the Engh-sho-inherited Harlyao Skeleton hood/bodywrap variants.
     const dyeId = rollDye(def.id); // One roll is deliberately reused for BOTH hood and bodywrap.
     return {
-      name: def.label,
+      name: rollOrdinaryLichName() || def.label, // Named guardians bypass this roster; ordinary Harlyao get a personal name.
       appearance: { speciesId: 'harlyao-skeleton', gender: chosenGender, cosmetics: {} },
       equippedCosmetics: [HOOD_ID, BODYWRAP_ID],
       cosmeticSlots: { [HOOD_ID]: 'hood', [BODYWRAP_ID]: 'overwear' },
@@ -310,6 +325,10 @@
     }
     const tier = Math.max(0, Math.min(3, Math.round(Number(options.tier) || 0))); // Existing dev tier selector remains meaningful for lich base stats.
     const areaId = currentLichArea(); // Spawn area; every spell/summon below follows its owner's area.
+    const generatedGivenName = !special && !options.roster && !options.nameOverride && /^[A-Z][a-z]{4,11}$/.test(roster.name || '') ? roster.name : null; // One Harlyao given name; custom rosters and authored liches retain their original identities.
+    const surnameGenerator = window.SCRATCHBONES_NAME_GENERATOR?.generateHarlyaoSurname; // Use the same Harlyao family-name rules as seeded culture identities.
+    const generatedSurname = generatedGivenName && typeof surnameGenerator === 'function' ? surnameGenerator(random, generatedGivenName) : null; // Ordinary liches have one given name and a distinct surname.
+    const lichDisplayName = special?.name || options.nameOverride || (generatedSurname ? `${generatedGivenName} ${generatedSurname}` : roster.name || def.label); // Overhead label is first + last name; authored bosses keep their titled epithets.
     const entity = await window.BanditCombat.makeEntity({
       ...cfg,
       speciesWeights: { 'harlyao-skeleton': 1 },
@@ -318,7 +337,7 @@
       zoneId: areaId,
       rosterOverride: roster,
       enemyClass: CLASS_ID,
-      nameOverride: special?.name || def.label,
+      nameOverride: lichDisplayName, // Ordinary liches use two Harlyao words; authored guardians and explicit editor names stay unchanged.
       avatarRigScale: options.avatarRigScale || (special ? window.SpecialHarlyaoLiches?.rigScaleFor?.(def.id) : null), // Exact 20/30% dimensions relative to the existing skeleton defaults, unless a Workshop rule overrides them.
       defOverride: {
         weaponKey: special?.weapon || LICH_CAST_WEAPON_KEY, // Azgarlu wields a visible warhammer; baseline liches keep invisible Light Weapon casting.
@@ -337,6 +356,8 @@
       },
     });
     if (!entity) return null;
+    if (generatedGivenName) entity.lichGivenName = generatedGivenName; // The unadorned Harlyao first name is used for future uniqueness checks and diagnostics.
+    if (generatedSurname) entity.lichSurname = generatedSurname; // Family name is separate from personal identity and available to debug/HUD integrations.
     if (special?.weapon) {
       entity._specialWeaponKey = special.weapon; // The warhammer remains in its existing animated holder for melee combat.
       entity._specialWarhammerGlyph = special.glyph; // The boss's entropy pattern identifier for metadata and debugging.
@@ -2012,7 +2033,7 @@
     const grace = entrancedGraceDisplay(playerCommandState);
     return {
       classId: CLASS_ID, arenaOnly: ARENA_ID, wrappersInstalled,
-      activeLiches: liches.map(lich => ({ id: lich.id, type: lich.lichType, dye: lich.lichDyeId, resolvedDyes: lich.avatarRef?.resolvedRosterDyes || null, command: lich._lichCommand, casting: lich._lichCastingAbility || null, hovering: !!lich.avatarRef?.legs?.isHoverMode?.(), hoverOffset: Number(lich._lichHoverOffsetWorld) || 0, aerialOffset: Number(lich._specialHoverOffsetWorld)||0, comboStep: Number(lich._specialComboStep)||0, comboLeftMs: Math.max(0,(Number(lich._specialComboUntilMs)||0)-performance.now()), strikeHoldLeftMs: Math.max(0,(Number(lich._specialStrikeHoldUntilMs)||0)-performance.now()), specialMode: lich._specialMode||null, dodging: !!lich.dodging, lunging: !!lich._specialLunge, handRig: !!handRigForLich(lich), emptyLightWeapon: !!lich._lichCastWeaponSocket, primaryCd: lich._lichPrimaryCooldownS, summonCd: lich._lichSummonCooldownS, summons: [...(lich._lichSummons || [])].filter(isLiveActor).length })),
+      activeLiches: liches.map(lich => ({ id: lich.id, name: lich.name, givenName: lich.lichGivenName || null, surname: lich.lichSurname || null, type: lich.lichType, dye: lich.lichDyeId, resolvedDyes: lich.avatarRef?.resolvedRosterDyes || null, command: lich._lichCommand, casting: lich._lichCastingAbility || null, hovering: !!lich.avatarRef?.legs?.isHoverMode?.(), hoverOffset: Number(lich._lichHoverOffsetWorld) || 0, aerialOffset: Number(lich._specialHoverOffsetWorld)||0, comboStep: Number(lich._specialComboStep)||0, comboLeftMs: Math.max(0,(Number(lich._specialComboUntilMs)||0)-performance.now()), strikeHoldLeftMs: Math.max(0,(Number(lich._specialStrikeHoldUntilMs)||0)-performance.now()), specialMode: lich._specialMode||null, dodging: !!lich.dodging, lunging: !!lich._specialLunge, handRig: !!handRigForLich(lich), emptyLightWeapon: !!lich._lichCastWeaponSocket, primaryCd: lich._lichPrimaryCooldownS, summonCd: lich._lichSummonCooldownS, summons: [...(lich._lichSummons || [])].filter(isLiveActor).length })),
       specialLiches: window.SpecialHarlyaoLiches?.snapshot?.() || null, // Mobile debug source for named-boss effects and current stage.
       projectiles: projectiles.size,
       tothalFogOrbs: [...projectiles].filter(projectile => projectile.type === 'tothal').length,
@@ -2044,9 +2065,10 @@
       const hover = d.activeLiches.filter(lich => lich.hovering).map(lich => `${lich.id || lich.type}:${lich.hoverOffset.toFixed?.(2) || lich.hoverOffset}`).join(',') || '-'; // Compact mobile-readable proof that active liches are using airborne presentation.
       const special = d.specialLiches ? (' special=' + d.specialLiches.event + '/p' + d.specialLiches.plasmPatches + '/d' + d.specialLiches.drips) : ''; // Appends boss state to the existing Pixel Probe line.
       const azgarlu = d.activeLiches.filter(lich => lich.type==='hronal' && lich.specialMode).map(lich => `${lich.specialMode}/step${lich.comboStep}/combo${Math.ceil(lich.comboLeftMs)}ms/hold${Math.ceil(lich.strikeHoldLeftMs)}ms/alt${lich.aerialOffset.toFixed(2)}${lich.dodging?'/dodge':''}${lich.lunging?'/lunge':''}`).join(',') || '-'; // Mobile Pixel Probe exposes attack-combo retention and active air flight without DevTools.
+      const names = d.activeLiches.map(lich => lich.name || lich.type).join(',') || '-'; // Mobile debug exposes the generated, player-facing identity of every active lich.
       const hands = d.activeLiches.map(lich => `${lich.id || lich.type}:${lich.handRig ? 'hands' : 'NO-HANDS'}`).join(',') || '-'; // Exposes the exact rig-attachment failure class without requiring desktop devtools.
       const dyes = d.activeLiches.map(lich => `${lich.id || lich.type}:${Object.entries(lich.resolvedDyes || {}).map(([slot, rec]) => `${slot}=${rec?.dyeId || '?'}`).join('+') || 'NO-DYES'}`).join(',') || '-'; // Confirms world-raster dye reconciliation independently from loot metadata.
-      return `Harlyao Liches: live=${d.activeLiches.length} hover=${hover} hands=${hands} dyes=${dyes} projectiles=${d.projectiles}/fog=${d.tothalFogOrbs} earth=${d.eruptions} plasm=${d.puddles}/${d.puddleLimit} sink=${d.playerPlasmSinkPct}% summons=${d.totalSummons} goo=${d.playerGooSlow?.stacks || 0} azgarlu=${azgarlu} last=${d.lastEvent}${special}`;
+      return `Harlyao Liches: live=${d.activeLiches.length} names=${names} hover=${hover} hands=${hands} dyes=${dyes} projectiles=${d.projectiles}/fog=${d.tothalFogOrbs} earth=${d.eruptions} plasm=${d.puddles}/${d.puddleLimit} sink=${d.playerPlasmSinkPct}% summons=${d.totalSummons} goo=${d.playerGooSlow?.stacks || 0} azgarlu=${azgarlu} last=${d.lastEvent}${special}`;
     },
   };
   window.__lichDebug = { snapshot: debugSnapshot }; // Console-independent API also consumed by the existing mobile debug surfaces/tests.
