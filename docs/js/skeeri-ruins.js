@@ -7,8 +7,8 @@
   const MAP_ID = 'map_i_dev_random_ruin'; // The currently supported generated-ruin map; never spawn these in wilderness ecology.
   const RIG_URL = 'config/creatures/skeeri-flying-rig.json'; // Authored wings, folded pose and burden-grip socket.
   const SPRITES = Object.freeze({
-    flying:'assets/creaturesprites/skeeri_flying.png',
-    perched:'assets/creaturesprites/skeeri_perched.png',
+    flying:'assets/creaturesprites/skeeri_planebent_flying.png',
+    perched:'assets/creaturesprites/skeeri_planebent_perched.png',
     wings:'assets/creaturesprites/skeeri_wings.png',
   }); // The existing authoring sprites serve every size; actor scale supplies the differences.
   const SPECIES = Object.freeze({
@@ -16,16 +16,67 @@
     medium:{key:'skeeri-medium',label:'Skeeri',size:'medium',width:1.15,health:54,damage:13,speed:6.8},
     large: {key:'skeeri-large',label:'Large Skeeri',size:'large',width:2.2,health:125,damage:17,speed:12},
   }); // A single flight engine applies size-specific combat tuning.
+  const BODY_GROUPS = Object.freeze({ // Natural and nearly natural relatives of each ruin's named lich tradition.
+    hronal:Object.freeze(['#705441','#856149','#94715a','#605148']), // Soot, russet and baked earth near Azgarlu's fire.
+    tothal:Object.freeze(['#647079','#808d96','#545e68','#999d9c']), // Cold slate, frost-gray and weathered blue stone.
+    kanthic:Object.freeze(['#5a5567','#746879','#514d5e','#827986']), // Dusty indigo, charcoal-violet and ash.
+  });
+  const FALLBACK_GLOW = Object.freeze({hronal:'#32e0ff',tothal:'#ff8545',kanthic:'#dfeb45'}); // Color-C fallbacks only if named-lich data is unavailable.
+  const EYE_BRIGHTNESS = Object.freeze([.92,1,1.16]); // Minor per-bird variance in the same unnatural lich glow family.
+  const EYE_MARKER = '#7F00FF'; // The exact purple source family already used for maskbound mask/lich eye dye.
   const HATCH_OPEN_SECONDS = .65; // Stone hatch slides upward before the concealed enemies emerge.
   const ACTIVATION_RADIUS = 3.3; // Within a few tiles, the proximity compartment opens.
   const SHAFT_RADIUS = 19; // Bomber only makes attack runs while the player is in the shaft.
   const clamp = (v,a,b) => Math.max(a,Math.min(b,Number(v)||0));
   const hash = str => {let h=2166136261;for(const ch of String(str))h=Math.imul(h^ch.charCodeAt(0),16777619)>>>0;return h;}; // Separate deterministic rolls do not perturb the generator RNG.
   const distance = (a,b) => Math.hypot(a.x-b.x,a.z-b.z); // Flight/trigger distances are measured in world tiles.
-  const snapshot = {mounts:0,hatchesOpened:0,spawned:0,dives:0,hits:0,bombRuns:0,bombsDropped:0,failedSpawns:0,lastError:null}; // Readable on mobile without developer console.
+  const snapshot = {mounts:0,hatchesOpened:0,spawned:0,dives:0,hits:0,bombRuns:0,bombsDropped:0,failedSpawns:0,eyeMarkerPixels:0,lastError:null}; // Readable on mobile without developer console.
   let deps = null; // Injected once by WildlifeSpawn.init: authoritative player, factory and hostile collection.
   let owner = null; // Exactly one disposable generated-ruin encounter session.
   let rigPromise = null; // Shared immutable sprite/JSON download across all three Skeeri sizes.
+
+  function traditionOf(value) {return Object.hasOwn(BODY_GROUPS,String(value))?String(value):'hronal';} // Reject nonexistent lich theme IDs.
+  function glowFor(theme) {
+    const authored=window.SpecialHarlyaoLiches?.specialRoster?.(theme)?.appearance?.bodyColors?.C?.hex; // Same actual Color C as the guardian's eyes and ruin wall.
+    return /^#[0-9a-f]{6}$/i.test(authored||'')?authored:FALLBACK_GLOW[theme];
+  }
+  function brightness(hex,multiplier) {
+    const source=parseInt(hex.slice(1),16); // Preserve the lich eye hue while varying its light intensity.
+    const channel=shift=>Math.round(Math.min(255,(source>>shift&255)*multiplier)).toString(16).padStart(2,'0');
+    return '#'+channel(16)+channel(8)+channel(0);
+  }
+  function paletteFor(theme,identity,glowHex=null) {
+    const family=traditionOf(theme),slot=hash(String(identity)); // Stable appearance independent of AI RNG and encounter order.
+    const eyes=/^#[0-9a-f]{6}$/i.test(glowHex||'')?glowHex:glowFor(family);
+    return {theme:family,body:BODY_GROUPS[family][slot%BODY_GROUPS[family].length],
+      eyes:brightness(eyes,EYE_BRIGHTNESS[hash(String(identity)+':eye')%EYE_BRIGHTNESS.length])};
+  }
+
+  function separateEyeMarker(image) {
+    if(typeof document==='undefined')return {body:image,glow:null,marked:0};
+    const width=image.naturalWidth||image.width,height=image.naturalHeight||image.height; // Source-space pixels preserve both authored poses.
+    const canvas=()=>Object.assign(document.createElement('canvas'),{width,height});
+    const body=canvas(),bodyCtx=body.getContext('2d',{willReadFrequently:true});
+    const core=canvas(),coreCtx=core.getContext('2d');
+    bodyCtx.drawImage(image,0,0,width,height);
+    const pixels=bodyCtx.getImageData(0,0,width,height),eyes=coreCtx.getImageData(0,0,width,height);
+    let marked=0;
+    for(let i=0;i<pixels.data.length;i+=4) {
+      const r=pixels.data[i],g=pixels.data[i+1],b=pixels.data[i+2],a=pixels.data[i+3];
+      // Purple marker, including its shaded/antialiased variations; ordinary shadows and non-marker anatomy remain intact.
+      if(!a||b<50||r<b*.28||r>b*.75||g>b*.24)continue;
+      eyes.data[i]=eyes.data[i+1]=eyes.data[i+2]=255;
+      eyes.data[i+3]=a;
+      pixels.data[i+3]=0; // Remove the magenta eye from the naturally tinted body before adding its independent emissive layer.
+      marked++;
+    }
+    if(!marked)return {body:image,glow:null,marked:0};
+    bodyCtx.putImageData(pixels,0,0);coreCtx.putImageData(eyes,0,0);
+    const glow=canvas(),ctx=glow.getContext('2d'); // Blurred halo and bright core are one shared source-space sprite.
+    ctx.filter='blur(12px)';ctx.globalAlpha=.8;ctx.drawImage(core,0,0);
+    ctx.filter='none';ctx.globalAlpha=1;ctx.drawImage(core,0,0);
+    return {body,glow,marked};
+  }
 
   function register(injected = {}) {
     const db=injected.CREATURE_DB; // Species definitions consumed by the existing creature factory.
@@ -62,14 +113,23 @@
     if(!rigPromise)rigPromise=Promise.all([
       fetch(RIG_URL).then(r=>{if(!r.ok)throw new Error('Skeeri rig HTTP '+r.status);return r.json();}),
       ...Object.values(SPRITES).map(loadImage),
-    ]).then(([raw,flying,perched,wings])=>({
-      rig:window.FlyingAnimalRig.normalize(raw),images:{flying,perched,wings},
-    })).catch(error=>{rigPromise=null;snapshot.lastError=String(error);throw error;});
+    ]).then(([raw,flying,perched,wings])=>{
+      const flight=separateEyeMarker(flying),rest=separateEyeMarker(perched); // Built once, never inside the render loop.
+      snapshot.eyeMarkerPixels=flight.marked+rest.marked;
+      if(!flight.marked||!rest.marked)window.__farmLog?.('[skeeri] planebent eye marker absent from a pose ('+EYE_MARKER+')','warn');
+      return {rig:window.FlyingAnimalRig.normalize({...raw,
+        flying:'creaturesprites/skeeri_planebent_flying.png',perched:'creaturesprites/skeeri_planebent_perched.png'}),
+        images:{flying:flight.body,perched:rest.body,wings,glowFlying:flight.glow,glowPerched:rest.glow}};
+    }).catch(error=>{rigPromise=null;snapshot.lastError=String(error);throw error;});
     return rigPromise;
   }
-  async function createRig() {
+  async function createRig(actor=null) {
     const {rig,images}=await loadRig();
-    return window.FlyingAnimalRig.create(rig,images); // Native actor group owns orientation, hit flashes and disposal.
+    const instance=window.FlyingAnimalRig.create(rig,images); // Native actor group owns orientation, hit flashes and disposal.
+    const palette=actor?.skeeriPalette||paletteFor('hronal','preview');
+    instance.restoreTint=()=>instance.setPalette?.(palette.body,palette.eyes)||false; // Restore after native hit flashes, excluding the separately colored eyes.
+    instance.restoreTint();
+    return instance;
   }
   function currentPlayer() {
     const p=deps?.player,unit=Number(deps?.TILE)||64; // Game actor coordinates use pixels; shaft geometry uses world tiles.
@@ -155,6 +215,7 @@
     if(!actor){snapshot.failedSpawns++;return null;}
     actor.areaId=session.mapId;
     actor.isRuinSkeeri=true; // Ground-AI arbitration can distinguish this intentional aerial movement.
+    actor.skeeriPalette=paletteFor(session.theme,session.seed+':'+index,session.glowHex); // Per-instance body/eye palette, never mutate the shared species.
     actor.skeeriFlightPose='perched';
     const perch=window.PerchSupport?.point?.('skeeri:'+session.seed+':'+index,x*unit,z*unit,y);
     if(!perch || !window.PerchSupport.attach(actor,perch)){
@@ -239,8 +300,9 @@
     if(!THREE)return null;
     const top=plan.floors[plan.floors.length-1],anchor=plan.shaft.anchor;
     const session={mapId:rec.mapData?.id||MAP_ID,scene:rec.scene,seed:Number(seed)>>>0,
-      getPlayerY,hatches:[],actors:new Set(),roots:[],materials:new Set(),disposed:false,
+      getPlayerY,theme:traditionOf(options.theme),hatches:[],actors:new Set(),roots:[],materials:new Set(),disposed:false,
       nest:{x:anchor.x,z:anchor.z-20,y:top.y+11},bombers:[],lastSignal:0}; // All actor, hatch, nest and payload lifetime stays inside one generated map.
+    session.glowHex=glowFor(session.theme); // Resolve the named boss's Color C once for the entire ruin.
     session.hatchMaterial=window.ProceduralFurniture?.makePartMaterial?.({
       materialTexture:'carved_smooth.png',materialLighting:'unlit',materialFillMode:'never',color:'#6d6259',
     }) || new THREE.MeshBasicMaterial({color:0x6d6259});
@@ -359,11 +421,11 @@
     }
   }
   function debugSnapshot() {
-    return {...snapshot,active:!!owner,hatches:owner?.hatches.map(h=>({
+    return {...snapshot,active:!!owner,theme:owner?.theme||null,hatches:owner?.hatches.map(h=>({
       id:h.id,size:h.size,trigger:h.trigger,opened:h.opened,spawned:h.spawned}))||[],
     actors:[...(owner?.actors||[])].map(s=>({id:s.id,size:s.size,phase:s.phase,
-      health:s.actor.health,y:Number(s.actor.branchSurfaceY)||0}))};
+      health:s.actor.health,y:Number(s.actor.branchSurfaceY)||0,palette:s.actor.skeeriPalette}))};
   }
-  window.SkeeriRuins=Object.freeze({SPECIES,SPRITES,register,init,createRig,mount,update,
+  window.SkeeriRuins=Object.freeze({SPECIES,SPRITES,BODY_GROUPS,paletteFor,separateEyeMarker,register,init,createRig,mount,update,
     activateCompartment,signalMechanism,debugSnapshot,get active(){return owner;}});
 })();
