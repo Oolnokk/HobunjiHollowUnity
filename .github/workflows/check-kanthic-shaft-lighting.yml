@@ -5,7 +5,11 @@ on:
     paths:
       - 'docs/js/ruin-multifloor-v50-style.js'
       - 'docs/js/ruin-shaft-connector.js'
+      - 'docs/js/ruin-layer-playable.js'
+      - 'docs/js/ruin-v50-native-floors.js'
       - 'docs/js/cloud-forest-fog.js'
+      - 'docs/index.html'
+      - 'scripts/test-shaft-hub.js'
       - 'scripts/test-kanthic-shaft-firelight.js'
       - '.github/workflows/check-kanthic-shaft-lighting.yml'
   workflow_dispatch:
@@ -26,9 +30,13 @@ jobs:
         run: |
           node --check docs/js/ruin-multifloor-v50-style.js
           node --check docs/js/ruin-shaft-connector.js
+          node --check docs/js/ruin-layer-playable.js
+          node --check docs/js/ruin-v50-native-floors.js
           node --check docs/js/cloud-forest-fog.js
           node --check scripts/test-kanthic-shaft-firelight.js
       - name: Check Kanthic fixture behavior, darkness exemptions and cleanup
         run: node scripts/test-kanthic-shaft-firelight.js
+      - name: Exercise real stacked wing ignition and teardown
+        run: node scripts/test-shaft-hub.js
       - name: Check established shared overlay behavior
         run: node scripts/test-overlay-only-lighting.js
