@@ -812,10 +812,15 @@
     event.material.opacity = 1;
   }
 
+  const INTERACTION_MAX_SCREEN_FRACTION = 0.035; // A prompt row never exceeds 3.5% of the viewport height.
+  const _updateScratch = { right: null, forward: null };
   function update(now) {
     const camera = state.deps?.camera;
     if (!camera) return;
-    const cameraRight = new state.deps.THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0).normalize();
+    if (!_updateScratch.right) { _updateScratch.right = new state.deps.THREE.Vector3(); _updateScratch.forward = new state.deps.THREE.Vector3(); }
+    const cameraRight = _updateScratch.right.setFromMatrixColumn(camera.matrixWorld, 0).normalize(); // Reused per frame (was a new Vector3 every frame).
+    const cameraForward = _updateScratch.forward.setFromMatrixColumn(camera.matrixWorld, 2).normalize().negate();
+    const halfFovTan = Math.tan(((Number(camera.fov) || 42) * Math.PI / 180) / 2);
     const finishedRewards = []; // Completed rewards are forwarded in their original event order after the reverse removal pass.
     for (let index = state.active.length - 1; index >= 0; index--) {
       const event = state.active[index];
@@ -827,6 +832,17 @@
         state.active.splice(index, 1);
         continue;
       }
+      // Interaction prompts are world-anchored, so a camera pushed against a
+      // wall used to blow the list up to fill the screen. Cap each row's
+      // on-screen height (and the list spacing with it) without changing how
+      // it looks at ordinary distances.
+      let screenClamp = 1;
+      if (event.interactionPrompt) {
+        const depth = Math.max(0.05, (center.x - camera.position.x) * cameraForward.x + (center.y - camera.position.y) * cameraForward.y + (center.z - camera.position.z) * cameraForward.z);
+        const baseHeight = state.settings[event.mode].worldHeight * (event.mode === 'centeredFiveRow' ? CENTERED_LIST_SCALE : 1);
+        const maxHeight = INTERACTION_MAX_SCREEN_FRACTION * 2 * depth * halfFovTan;
+        if (baseHeight > maxHeight) screenClamp = maxHeight / baseHeight;
+      }
       if (event.mode === 'floatPlus') {
         center.addScaledVector(cameraRight, event.offsetX + Math.sin(progress * Math.PI) * event.height * 0.12);
         center.y += event.offsetY + 0.075 * (1 - Math.pow(1 - progress, 2));
@@ -836,15 +852,15 @@
         const centerSlot = event.interactionPrompt
           ? (Math.max(1, list.length) - 1) * 0.5
           : (state.settings.centeredFiveRow.maxRows - 1) * 0.5;
-        center.y += (centerSlot - event.listSlot) * event.height * state.settings.centeredFiveRow.rowSpacing;
-        if (state.settings.centeredFiveRow.textAlign === 'left') center.addScaledVector(cameraRight, event.width * 0.5);
+        center.y += (centerSlot - event.listSlot) * event.height * state.settings.centeredFiveRow.rowSpacing * screenClamp;
+        if (state.settings.centeredFiveRow.textAlign === 'left') center.addScaledVector(cameraRight, event.width * 0.5 * screenClamp);
       }
       event.plane.position.copy(center);
       event.plane.quaternion.copy(camera.quaternion);
       event.material.opacity = event.interactionPrompt ? 1 : progress < 0.72 ? 1 : (1 - progress) / 0.28;
       const pop = event.kind === 'damage' ? 1.1 - 0.1 * Math.min(1, progress / 0.24) : 1;
       const listScale = event.mode === 'centeredFiveRow' ? CENTERED_LIST_SCALE : 1;
-      event.plane.scale.setScalar(state.settings[event.mode].worldHeight * listScale * pop);
+      event.plane.scale.setScalar(state.settings[event.mode].worldHeight * listScale * pop * screenClamp);
     }
     finishedRewards.sort((a, b) => a.sequence - b.sequence).forEach(forwardToReadout);
     updateConditionCallout(camera, cameraRight);

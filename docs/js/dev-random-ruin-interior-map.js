@@ -635,7 +635,7 @@
       ruin.controls.push({kind:'pushBlock',object:block,label:'Push Stone Block',range:.36,touchIcon:'✋',
         onPress:()=>pushBlock(pusher,getPushFace(pusher,.36),true)});
     }
-    ruin.controls.push({kind:'exit',object:null,label:'Leave Test Ruin',point:ruin.spawn,onPress:leaveRuin});
+    ruin.controls.push({kind:'exit',object:null,label:generationLabel?'Leave the Ruin':'Leave Test Ruin',point:ruin.spawn,onPress:leaveRuin});
     ruin.occupancy = TileOccupancy.create({
       mapId:MAP_ID, scope:SCOPE, cols:ruin.cols, rows:ruin.rows, floorSet:ruin.floorSet,
       grid:ruin.grid, solidType:(gridDeps?.TileType||deps?.TileType||{}).ROCK??'rock', // Stamps generated blockers into the same interior grid ordinary movement/AI/knockback already query.
@@ -1456,6 +1456,18 @@
     return true;
   }
 
+  // Player-facing dungeon title. Boss tombs and dev labs keep their authored
+  // names; ordinary site ruins get a stable seeded epithet + their tradition.
+  const RUIN_EPITHETS = Object.freeze(['Sunken Halls','Hollow Vaults','Silent Galleries','Buried Cloister','Shattered Sanctum','Echoing Deep','Forgotten Crypt','Ashen Stair','Drowned Chambers','Lantern Hold']);
+  function arrivalTitle(entry) {
+    if (!entry) return '';
+    if (entry.specialBoss || /\(Dev\)/.test(String(entry.ruinName || ''))) return entry.ruinName || '';
+    const theme = String(entry.theme || '').trim();
+    const tradition = theme ? theme.charAt(0).toUpperCase() + theme.slice(1) : '';
+    const epithet = RUIN_EPITHETS[Math.floor(moduleRoll(entry.seed, 0x7171) * RUIN_EPITHETS.length) % RUIN_EPITHETS.length];
+    return tradition ? `${epithet} of ${tradition}` : (entry.ruinName || epithet);
+  }
+
   function enterRuin() {
     const entering=ruin;
     return runSceneTransition(()=>{
@@ -1464,7 +1476,7 @@
       if(!entering||ruin!==entering)return;
       for(const o of playerSceneObjects()) detach(o);
       deps.setCurrentArea(MAP_ID); deps.setCurrentBuildingMapId?.(MAP_ID);
-       if (entering.specialBoss) window.LocationArrival?.announce?.(entering.ruinName, {area:MAP_ID}); // Existing cave/camp arrival banner fires with the loading transition.
+       window.LocationArrival?.announce?.(arrivalTitle(entering), {area:MAP_ID}); // Every ruin gets the cave/camp arrival banner (a dungeon title card), not only boss tombs.
       deps.player.x=entering.spawn.x*deps.TILE; deps.player.y=entering.spawn.z*deps.TILE; deps.player.vx=0;deps.player.vy=0;
       movePlayerObjectsTo(entering.scene);
       const s=DS.sampleSupport(entering.spawn.x,entering.spawn.z,{minY:-4,maxY:5,pad:.02}); entering.supportId=s?.id||null;entering.supportY=s?.y||0;
@@ -2131,7 +2143,7 @@
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',installSettingsButton,{once:true});else installSettingsButton();
 
-  window.DevRandomRuin=Object.freeze({getVestibuleRoots:()=>ruin?{stone:ruin.vestibuleStone||null,props:ruin.stoneAgeStats?.props||0,bindings:ruin.rootGrowthBindings?.length||0,rooted:!!ruin.rootedMechanisms,ms:ruin.vestibuleRootMs||0,error:ruin.vestibuleRootError||null}:null,generate,generateStoryVault,reroll:()=>ruin?.shaftTest?generateShaftTest():generate(randomSeed(),ruin?.singleRoomTrial?{singleRoomTrial:true,puzzleType:ruin.singleRoomTrial.mode==='weighted'?'weighted':ruin.singleRoomTrial.kind}:{hachutu:ruin?.hachutu===true,rootMechanisms:ruin?.rootedMechanisms===true,stoneAge:ruin?.stoneAgeRequested===true,composedTrial:ruin?.composedTrialForced===true?true:undefined}),clear:()=>{if(deps?.getCurrentArea?.()===MAP_ID)leaveRuin();else clearRuntime(true);},leave:leaveRuin,exitTo,getInteractionControls:()=>ruin?ruin.controls.filter(control=>control.kind!=='story-vault-pedestal'||window.DelversGuild?.vaultPhase?.()==='search').map(control=>({...control,range:Number.isFinite(Number(control.range))?Number(control.range):CONTROL_RANGE})):[],registerLabPushBlock,unregisterLabPushBlock,getNativeV50TestRuntime:()=>devModeEnabled()?ruin?.nativeV50Runtime||null:null, // Developer-mode-only diagnostic handle for Playwright to exercise the actual generated puzzle controls and stage gates; not a gameplay solver.
+  window.DevRandomRuin=Object.freeze({getTitle:()=>ruin?arrivalTitle(ruin):'',getVestibuleRoots:()=>ruin?{stone:ruin.vestibuleStone||null,props:ruin.stoneAgeStats?.props||0,bindings:ruin.rootGrowthBindings?.length||0,rooted:!!ruin.rootedMechanisms,ms:ruin.vestibuleRootMs||0,error:ruin.vestibuleRootError||null}:null,generate,generateStoryVault,reroll:()=>ruin?.shaftTest?generateShaftTest():generate(randomSeed(),ruin?.singleRoomTrial?{singleRoomTrial:true,puzzleType:ruin.singleRoomTrial.mode==='weighted'?'weighted':ruin.singleRoomTrial.kind}:{hachutu:ruin?.hachutu===true,rootMechanisms:ruin?.rootedMechanisms===true,stoneAge:ruin?.stoneAgeRequested===true,composedTrial:ruin?.composedTrialForced===true?true:undefined}),clear:()=>{if(deps?.getCurrentArea?.()===MAP_ID)leaveRuin();else clearRuntime(true);},leave:leaveRuin,exitTo,getInteractionControls:()=>ruin?ruin.controls.filter(control=>control.kind!=='story-vault-pedestal'||window.DelversGuild?.vaultPhase?.()==='search').map(control=>({...control,range:Number.isFinite(Number(control.range))?Number(control.range):CONTROL_RANGE})):[],registerLabPushBlock,unregisterLabPushBlock,getNativeV50TestRuntime:()=>devModeEnabled()?ruin?.nativeV50Runtime||null:null, // Developer-mode-only diagnostic handle for Playwright to exercise the actual generated puzzle controls and stage gates; not a gameplay solver.
     setPuzzleLabStatus,
     getRuntimeContext:()=>ruin?{scene:ruin.scene,grid:ruin.grid,root:ruin.localeRoot,meta:ruin.meta,floorSet:ruin.floorSet,floorScope:SCOPE,ceilingY:ruin.ceilingY,spawn:{...ruin.spawn},cols:ruin.cols,rows:ruin.rows,sanctumMapSize:ruin.sanctumMapSize,sanctumPlan:ruin.sanctumPlan||null,
     shaftEntrance:ruin.compactVestibule?window.RuinShaftConnector?.entranceOutside?.(ruin.meta,{x:entryPadX,z:entryPadZ},RUIN_TILE_SCALE)||null:null,seed:ruin.seed,theme:ruin.theme,specialBoss:ruin.specialBoss,ruinName:ruin.ruinName,hachutu:!!ruin.hachutu,stoneAge:!!ruin.stoneAge,stoneAgeStats:ruin.stoneAgeStats||null,shaftHub:!!ruin.shaftHub,singleRoomTrial:ruin.singleRoomTrial||null,labFurniture:ruin.labFurniture,noLoot:ruin.noLoot===true,puzzleOptions:{...ruin.puzzleOptions}}:null,getPuzzleGenerationOptions:()=>readPuzzleGenerationOptions(),setPuzzleGenerationOptions:options=>savePuzzleGenerationOptions(options),getOccupancySnapshot:()=>ruin?.occupancy?.snapshot?.()||null,hasOccupancy:()=>!!ruin?.occupancy?.snapshot,debugPlayerCollision:()=>{ // Pixel Probe readout: the 3D voxel grid (not the footprint registry) is what snaps to whole tiles.
