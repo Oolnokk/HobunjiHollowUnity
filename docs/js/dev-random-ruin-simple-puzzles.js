@@ -11,6 +11,8 @@
   const SCOPE = 'dev-random-ruin-simple-puzzles';
   const PAD = 2;
   const GRID_REVEAL_MS = 3600;
+  const SARCOPHAGUS_WAKE_RADIUS = 4; // Distance in tiles from an individual wall coffin that wakes its skeleton in standalone encounters.
+  const SARCOPHAGUS_WAKE_VERTICAL_GAP = 1.4; // Limits proximity to the same dungeon level so stacked rooms cannot wake one another.
   const GRID_BURNING = 24;
   const GRID_RETRIGGER_MS = 900;
   const PLATE_IDLE_COLOR = 0x9b8763; // Sandstone plates read as a distinct trap floor instead of blending into the grey flagstones.
@@ -1644,7 +1646,7 @@
       body.position.set(p.x,Number(support.y)+.875,p.z);body.rotation.y=p.yaw;body.name='dev_ruin_sarcophagus_body_'+room.id+'_'+index;root.add(body);
       const panel=naturalizeStone(new THREE.Mesh(sharedBoxGeometry(.58,1.55,.12),makeBasic(0x808080)));
       panel.position.set(0,0,.32);body.add(panel);
-      coffins.push({index,body,panel,closedY:0,openY:1.62,progress:0,spawnX:p.spawnX,spawnZ:p.spawnZ,spawned:false,creature:null,released:false});
+      coffins.push({index,body,panel,closedY:0,openY:1.62,progress:0,spawnX:p.spawnX,spawnZ:p.spawnZ,floorY:Number(support.y),spawnStarted:false,activated:false,spawned:false,creature:null,released:false,spawnError:null});
     }
     if(coffins.length<2){disposeObject(root);return null;}
     const bounds=options.bounds||roomBounds(context.meta,room);
@@ -1654,12 +1656,15 @@
     return module;
   }
 
-  async function activateSarcophagusSpawner(module) {
-    if(!module||module.activated||module.spawnStarted)return false;
-    module.spawnStarted=true;
-    const ownerState=state; // Captured across awaited portrait builds so a reroll cannot adopt a late skeleton from the previous generated layout.
-    for(const coffin of module.coffins){
-      const px=coffin.spawnX*(Number(deps?.TILE)||1),py=coffin.spawnZ*(Number(deps?.TILE)||1); // Spawn at the stone-box center first; hostile AI is withheld until its sliding panel is mostly open.
+  async function activateSarcophagusSpawner(module, targetCoffin = null) {
+    if(!module||!state?.sarcophagusModules.includes(module))return false;
+    const ownerState=state; // Retains session ownership across awaited character builds so rerolls cannot inherit old skeletons.
+    const targets=targetCoffin?[targetCoffin]:module.coffins; // Standalone coffins wake independently; scripted ossuary encounters can still wake the entire set.
+    let started=false;
+    for(const coffin of targets){
+      if(!module.coffins.includes(coffin)||coffin.spawnStarted)continue;
+      coffin.spawnStarted=true;module.spawnStarted=true;started=true;
+      const px=coffin.spawnX*(Number(deps?.TILE)||1),py=coffin.spawnZ*(Number(deps?.TILE)||1); // Spawn at the stone-box center first; AI waits for the panel to retract.
       try{
         const creature=await window.MinionCombat?.makeEntity?.({
           speciesId:'harlyao-skeleton',name:'Harlyao Skeleton',tier:module.tier,x:px,y:py,zoneId:MAP_ID,
@@ -1679,11 +1684,19 @@
           }
           ownerState.spawnedMinions.add(creature);
           coffin.creature=creature;coffin.spawned=true;module.spawnCount++;
-        }else disposeSpawnedMinion(creature);
-      }catch(error){console.warn('[Random Test Ruin] sarcophagus skeleton spawn failed',error);}
+        }else{
+          disposeSpawnedMinion(creature);
+          if(state===ownerState)coffin.spawnError='Skeleton could not be created';
+        }
+      }catch(error){
+        coffin.spawnError=String(error?.message||error);
+        console.warn('[Random Test Ruin] sarcophagus skeleton spawn failed',error);
+      }
+      if(state!==ownerState||!ownerState.sarcophagusModules.includes(module))return false;
+      coffin.activated=true; // Only this coffin opens, after its own asynchronous skeleton spawn has settled.
+      module.activated=module.coffins.every(candidate=>candidate.activated);
     }
-    if(state===ownerState&&ownerState.sarcophagusModules.includes(module))module.activated=true; // Panels only begin retracting after the skeletons visibly exist inside their boxes.
-    return module.activated;
+    return started;
   }
 
   function buildOssuaryChordComposer(context,rng,room,options={}) {
@@ -1969,7 +1982,7 @@
         break;
       }
       case 'sarcophagus':
-        fixture=buildSarcophagusSpawnerModule(context,rng,source,{tier:1,autoActivateRadius:2.5});
+        fixture=buildSarcophagusSpawnerModule(context,rng,source,{tier:1,autoActivateRadius:SARCOPHAGUS_WAKE_RADIUS});
         break;
       case 'ropeSwing':
         fixture=buildRopeSwing(context,rng,new Set(),{room:source});
@@ -2181,7 +2194,7 @@
       const room=freeRooms.shift();usedRooms.add(room.id);buildStoneCanopyModule(context,room); // Canopies may also appear as standalone architectural cover, independent of ropes.
     }
     if(freeRooms.length&&rng()<cfg('moduleChances.sarcophagi',.3)){
-      const room=freeRooms.shift();usedRooms.add(room.id);buildSarcophagusSpawnerModule(context,rng,room,{tier:1,autoActivateRadius:2.5}); // Sarcophagus enemies can occur independently; entering their room wakes them without requiring musical plates or a lock door.
+      const room=freeRooms.shift();usedRooms.add(room.id);buildSarcophagusSpawnerModule(context,rng,room,{tier:1,autoActivateRadius:SARCOPHAGUS_WAKE_RADIUS}); // Each coffin wakes when approached; melody plates and locked doors are not required.
     }
     const liftRooms=freeRooms.filter(room=>outermostSunkenRegionForRoom(context,room)&&!state.cyclingElevators.some(elevator=>elevator.roomId===String(room.id))); // One lift per pit room.
     if(liftRooms.length&&(rng()<cfg('moduleChances.ambientLift',.38)||window.__devRuinForceAmbientLift===true)){ // The flag is a headless-test hook; rng() is still drawn first so seeds reproduce.
@@ -2300,10 +2313,20 @@
 
   function updateSarcophagusModules(dt) {
     const player=playerWorld();
+    const supportY=window.DevRandomRuin?.getPlayerGroundSupportY?.(); // Actual floor elevation wins over animated player-mesh height in multi-storey ruins.
+    const playerY=supportY!=null&&Number.isFinite(Number(supportY))?Number(supportY):player?.y;
     for(const module of state.sarcophagusModules){
-      if(!module.activated&&module.autoActivateRadius>0&&player&&Math.hypot(player.x-module.center.x,player.z-module.center.z)<=module.autoActivateRadius)activateSarcophagusSpawner(module); // Standalone sarcophagus modules wake by proximity; compound composers can still activate them explicitly.
-      const target=module.activated?1:0;
+      if(module.autoActivateRadius>0&&player){
+        const radiusSquared=module.autoActivateRadius*module.autoActivateRadius; // Squared distance avoids a square root per dormant coffin per frame.
+        for(const coffin of module.coffins){
+          if(coffin.spawnStarted)continue;
+          if(Number.isFinite(playerY)&&Math.abs(playerY-coffin.floorY)>SARCOPHAGUS_WAKE_VERTICAL_GAP)continue;
+          const dx=player.x-coffin.spawnX,dz=player.z-coffin.spawnZ;
+          if(dx*dx+dz*dz<=radiusSquared)activateSarcophagusSpawner(module,coffin);
+        }
+      }
       for(const coffin of module.coffins){
+        const target=coffin.activated?1:0; // Approaching one wall coffin cannot open the others across the room.
         coffin.progress+=Math.max(-dt*1.45,Math.min(dt*1.45,target-coffin.progress));
         const t=coffin.progress*coffin.progress*(3-2*coffin.progress);
         coffin.panel.position.y=coffin.closedY+(coffin.openY-coffin.closedY)*t;
@@ -2644,7 +2667,7 @@
       ceilingGlyphs:state.ceilingGlyphs.map(glyph=>({id:glyph.id,roomId:glyph.roomId,active:glyph.active,hitCount:glyph.hitCount,ceilingMountGap:+glyph.visual.attachmentGap(glyph.ceilingY).toFixed(3),mountConnected:glyph.visual.attachmentGap(glyph.ceilingY)<=0})),
       liftRejects:state.liftRejects.slice(),
       cyclingElevators:state.cyclingElevators.map(elevator=>({id:elevator.id,ambientLift:!!elevator.liftEnd,width:+elevator.width.toFixed(3),depth:+elevator.depth.toFixed(3),chestId:elevator.chest?.id||null,roomId:elevator.roomId,active:elevator.active,progress:+elevator.progress.toFixed(3),topY:+elevator.topTopY.toFixed(3),bottomY:+elevator.bottomTopY.toFixed(3),currentY:+(elevator.currentTopY??elevator.topTopY).toFixed(3),playerRiding:!!elevator.playerRiding})),
-      sarcophagi:state.sarcophagusModules.map(module=>({id:module.id,roomId:module.roomId,activated:module.activated,spawnCount:module.spawnCount,count:module.coffins.length,released:module.coffins.filter(coffin=>coffin.released).length})),
+      sarcophagi:state.sarcophagusModules.map(module=>({id:module.id,roomId:module.roomId,activated:module.activated,spawnCount:module.spawnCount,count:module.coffins.length,opened:module.coffins.filter(coffin=>coffin.activated).length,released:module.coffins.filter(coffin=>coffin.released).length,failed:module.coffins.filter(coffin=>coffin.spawnError).length,coffins:module.coffins.map(coffin=>({x:coffin.spawnX,z:coffin.spawnZ,spawnStarted:coffin.spawnStarted,opened:coffin.activated,released:coffin.released,error:coffin.spawnError}))})),
       sunkenRoomShells:state.sunkenRoomShells.map(module=>({id:module.id,roomId:module.roomId,floorY:+module.floorY.toFixed(3)})),
       ossuaryComposers:state.ossuaryComposers.map(module=>({id:module.id,roomId:module.roomId,entered:module.entered,completed:module.completed})),
       ropeElevatorComposers:state.ropeElevatorComposers.map(module=>({id:module.id,roomId:module.roomId,ropeId:module.rope.id,elevatorId:module.elevator.id,glyphId:module.glyph.id,canopyId:module.canopy?.id||null,lowerShellId:module.lowerShell?.id||null,ossuaryId:module.ossuary?.id||null,nextDoorMechanismId:module.nextDoorMechanismId||null})),
