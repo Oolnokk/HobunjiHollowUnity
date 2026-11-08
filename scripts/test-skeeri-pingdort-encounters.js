@@ -119,6 +119,14 @@ const w={THREE,PerchSupport,Shattercasks,CreatureGeneticsRender:renderColors,
   Combat:{deps:{TILE:64,hostileObjects,damagePlayer(){},damageCreature(){},getGroundYAtWorld(){return 0;}},
     animalAttacks:{register(key,impl){attacks.set(key,impl);}}},
   GridTileAccessors:{getActiveScene:()=>scene},TzatzulLiveVisuals:{release(){}},
+  CliffRouteNetwork:{
+    forArea:a=>a==='map_southern_cloud_forest'?{balconies:[{
+      id:'tested-shelf',x:45.5,z:45.5,y:12.5,reward:'buriedTreasure',
+      base:{footprint:[{c:45,r:45}]},
+      footprint:[{c:45,r:45},{c:46,r:45},{c:47,r:45}],
+    }]}:null, // Real minicliff with a center-aligned reward and room for a separate 1×1 nest.
+    shelfContains:(s,x,z)=>Math.abs(s.x-x)<2.1&&Math.abs(s.z-z)<.75,
+  },
   HronalWitchBombs:{async spawn(o){const group=new Root();o.scene.add(group);
     group.position.set(o.x,o.y,o.z);return {...o,id:'bomb'+(++bombs),group};}},
   InventoryStacks:{MAX_TOTAL:99},FarmAnimals:{queueItemGenotype(){}},
@@ -188,20 +196,58 @@ async function check(){
   const prey=deps.makeCreatureEntity('drenkirra',44*64,44*64,{genotype:{sizeClass:'small'}});
   hostileObjects.add(prey);
   const count=w.PingdortFlocks.ensureZone(area);
-  assert(count>=1 && count<=3,'wild Pingdorts establish eligible flocks');
-  const wildBirds=[...hostileObjects].filter(a=>a.creatureKey==='pingdort'); // Every naturally spawned hunter should have a coat allele, not an untinted fallback.
-  assert.equal(wildBirds.length,count*3);
-  assert(wildBirds.every(actor=>actor.genotype?.base?.color==='#aaaaaa'),'Flock birds explicitly receive their individual genotype');
+  assert.equal(count,1,'only reachable minicliff sites provide native nests');
+  const wildBirds=[...hostileObjects].filter(a=>a.creatureKey==='pingdort');
+  assert.equal(wildBirds.length,3,'one nearby nest supports one three-bird hunting flock');
+  assert(wildBirds.every(a=>a.genotype?.base?.color==='#aaaaaa'),'individual coats are genotype-driven');
+  assert(wildBirds.every(a=>a.branchSurfaceY>=12.5),'all roosting birds remain above their raised shelf, not buried in terrain');
   const nest=w.PingdortFlocks.debugSnapshot().habitats[0].nests[0];
+  assert.equal(nest.y,12.5,'nest visuals and egg records use the physical minicliff elevation');
+  assert(Math.hypot(nest.x-45.5,nest.z-45.5)>.88,
+    'the nest occupies a clear cap tile away from the shelf reward');
+  assert.equal(nest.remaining,3,'a visible clutch starts with three individually harvestable eggs');
+  assert.equal(w.PingdortFlocks.nestRecords(area)[0].w,1,'nest occupies a one-tile footprint');
   player.x=nest.x*64;player.y=nest.z*64;
   inventory.fertilePingdortEgg=99;assert.equal(w.PingdortFlocks.collectNest(nest.id).ok,false);
-  inventory.fertilePingdortEgg=0;assert.equal(w.PingdortFlocks.collectNest(nest.id).ok,true);
-  assert.equal(inventory.fertilePingdortEgg,3);
-  assert.equal(w.PingdortFlocks.collectNest(nest.id).ok,false);
-  deps.calendar.day=2; // A new in-game day renews the finite clutch even without leaving the zone.
-  assert.equal(w.PingdortFlocks.ensureZone(area),count);
+  inventory.fertilePingdortEgg=0;
   assert.equal(w.PingdortFlocks.collectNest(nest.id).ok,true);
-  assert.equal(inventory.fertilePingdortEgg,6);
+  assert.equal(inventory.fertilePingdortEgg,1,'individual nest egg pickup awards one item, not three at once');
+  assert.equal(w.PingdortFlocks.nestRecords(area)[0].remaining,2);
+  assert.equal(w.PingdortFlocks.collectNest(nest.id).ok,true);
+  assert.equal(w.PingdortFlocks.collectNest(nest.id).ok,true);
+  assert.equal(w.PingdortFlocks.collectNest(nest.id).ok,false,'depleted clutch cannot be harvested twice');
+  deps.calendar.day=2;
+  assert.equal(w.PingdortFlocks.ensureZone(area),count);
+  assert.equal(w.PingdortFlocks.nestRecords(area)[0].remaining,3,'new in-game day renews the clutch');
+  assert.equal(w.PingdortFlocks.collectNest(nest.id).ok,true);
+  assert.equal(inventory.fertilePingdortEgg,4);
+  assert(!read('docs/js/pingdort-flocks.js').includes('pingdortNestTakeButton'),
+    'the bespoke floating egg button is removed in favor of DenNestSystem');
+  // A dead member must not revive when changing zones or streaming the flock.
+  // Surviving flock members should return until normal daily wildlife turnover.
+  const lostBird=[...hostileObjects].find(a=>a.isWildPingdort&&a.health>0);
+  assert(lostBird,'a living wild bird must exist for the mortality test');
+  lostBird.health=0;
+  w.PingdortFlocks.update(.1);
+  assert.equal(w.PingdortFlocks.debugSnapshot().habitats[0].nests[0].deadSlots.length,1);
+  area='farm';w.PingdortFlocks.update(.1);
+  area='map_southern_cloud_forest';scene=new Root();zoneScenes.set(area,{scene});
+  assert.equal(w.PingdortFlocks.ensureZone(area),count);
+  assert.equal([...hostileObjects].filter(a=>a.isWildPingdort&&a.health>0).length,2,
+    'scene re-entry must not revive a killed wild bird');
+  player.x=100*64;player.y=100*64;
+  for(let i=0;i<22;i++)w.PingdortFlocks.update(.1);
+  assert.equal([...hostileObjects].filter(a=>a.isWildPingdort&&a.health>0).length,0,
+    'the distant flock should unload from the shared wildlife roster');
+  player.x=nest.x*64;player.y=nest.z*64;
+  assert.equal(w.PingdortFlocks.ensureZone(area),count);
+  assert.equal([...hostileObjects].filter(a=>a.isWildPingdort&&a.health>0).length,2,
+    'both surviving birds return after streaming');
+  deps.calendar.day=3;
+  w.PingdortFlocks.ensureZone(area);
+  assert.equal([...hostileObjects].filter(a=>a.isWildPingdort&&a.health>0).length,3,
+    'normal in-game day renewal restores the complete nest flock');
+
 
   area='farm';scene=new Root();zoneScenes.set(area,{scene});player.x=20*64;player.y=20*64;
   const pet=deps.makeCreatureEntity('pingdort',21*64,20*64,{isCompanion:true,stableRole:'companion',master:player});

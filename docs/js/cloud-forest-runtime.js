@@ -532,6 +532,126 @@
     }).catch(() => false);
   }
 
+
+  // Build karst towers as *nested* plateau groups on the existing cloud-forest
+  // terraces. This zone already paints almost its entire ground as plateau;
+  // writing new masks onto the root would erase original cliffs/paths.
+  function addCloudForestKarstPlateaus(workspace) {
+    const rootMap=workspaceRoot(workspace);
+    if (!rootMap?.tiles || !Array.isArray(workspace?.maps) || !Array.isArray(workspace?.plateauGroups))
+      return {clusters:0,towers:0,reason:'missing-workspace'};
+    if(rootMap.generatedFrom?.cloudKarstTowers)return rootMap.generatedFrom.cloudKarstTowers;
+    const seed=String(rootMap.generatedFrom?.seed||'cloud-forest');
+    const cols=Number(rootMap.cols)||0,rows=Number(rootMap.rows)||0;
+    const random=(a,b,salt=0)=>hash01(a+seed.length*31,b+seed.charCodeAt((salt>>>1)%seed.length),salt+8179);
+    const mapsByGroup=new Map(workspace.maps.filter(m=>m.isSubmap&&m.parentMapId===rootMap.id)
+      .map(m=>[m.plateauGroupId,m])); // Eligible parent terrace must have a real painted, walkable child map.
+    const elevations=new Map(workspace.plateauGroups.map(g=>[g.id,Number(g.elevation)||0]));
+    const reserved=new Set(); // Newly raised masks cannot overlap one another.
+    const blocked=t=>!t||!['grass','shrub','weeds'].includes(String(t.type||'').toLowerCase())
+      ||t.borderEscarpment||t.borderEntryGate||t.distantBoundaryLandscape
+      ||(t.generatedObjectType&&!['copse','bush','fruitBush','mushroomPatch','foragePlant'].includes(t.generatedObjectType));
+    const shapeAt=(cx,cz,rx,rz,salt)=>{
+      const cells=[];
+      for(let r=Math.floor(cz-rz-1);r<=Math.ceil(cz+rz+1);r++)
+        for(let c=Math.floor(cx-rx-1);c<=Math.ceil(cx+rx+1);c++){
+          const u=(c+.5-cx)/rx,v=(r+.5-cz)/rz;
+          const rough=(random(c*13,r*17,salt)-.5)*.13;
+          if(u*u+v*v<=(1+rough)**2)cells.push([c,r]);
+        }
+      return cells;
+    };
+    function candidate(cx,cz,salt) {
+      const rx=3.8+random(cx,cz,salt+1)*1.3,rz=4.8+random(cz,cx,salt+2)*1.6;
+      const shape=shapeAt(cx,cz,rx,rz,salt+3);
+      if(shape.length<37)return null;
+      const source=rootMap.tiles[Math.floor(cx)+','+Math.floor(cz)];
+      const groupId=source?.plateau,parent=mapsByGroup.get(groupId);
+      if(!parent)return null;
+      // The footprint belongs to a single existing plateau; neighboring
+      // terraces are fine, but roads, rivers and cave entrances remain untouched.
+      for(const [c,r] of shape){
+        if(c<9||r<9||c>=cols-9||r>=rows-9||reserved.has(c+','+r))return null;
+        const rootTile=rootMap.tiles[c+','+r];
+        if(rootTile?.plateau!==groupId||blocked(rootTile))return null;
+        const parentTile=parent.tiles[(c-parent.anchorC)+','+(r-parent.anchorR)];
+        if(!parentTile||blocked(parentTile)||parentTile.plateau)return null;
+        for(let dz=-1;dz<=1;dz++)for(let dx=-1;dx<=1;dx++){
+          const x=c+dx,z=r+dz,outer=rootMap.tiles[x+','+z];
+          if(!outer||reserved.has(x+','+z)||['path','river','stream','waterfall'].includes(outer.type)
+            ||outer.borderEscarpment||outer.borderEntryGate||outer.distantBoundaryLandscape
+            ||['animalDen','caveOpening','secretCaveOpening','structure'].includes(outer.generatedObjectType))return null;
+        }
+      }
+      return {cx,cz,shape,parent,groupId,baseTier:elevations.get(groupId)||0};
+    }
+    const centers=[]; // Uneven 2–4-pillar pockets rather than evenly spaced solitary monoliths.
+    let towers=0,attempts=0;
+    const clusterIds=new Set(),sites=[]; // Real cluster membership and per-pillar heights for mobile world-generation diagnostics.
+    const clusterGoal=Math.max(2,Math.min(5,Math.round(cols*rows/9000)));
+    for(let cluster=0;cluster<clusterGoal;cluster++){
+      let anchor=null;
+      for(let trial=0;trial<380&&!anchor;trial++){
+        const c=16+Math.floor(random(cluster*719+trial,17,101)*Math.max(1,cols-32));
+        const r=16+Math.floor(random(cluster*719+trial,41,103)*Math.max(1,rows-32));
+        if(centers.some(p=>Math.hypot(p.cx-c,p.cz-r)<28))continue;
+        attempts++;
+        anchor=candidate(c,r,cluster*17+trial);
+      }
+      if(!anchor)continue;
+      const goals=2+Math.floor(random(cluster,43,127)*3);
+      let placed=0;
+      for(let n=0;n<goals;n++){
+        let site=n===0?anchor:null;
+        for(let trial=0;trial<240&&!site;trial++){
+          const angle=random(cluster*17+n,trial,131)*Math.PI*2;
+          const d=11+random(n*19,cluster+trial,137)*13;
+          const cx=Math.round(anchor.cx+Math.cos(angle)*d);
+          const cz=Math.round(anchor.cz+Math.sin(angle)*d);
+          if(centers.some(p=>Math.hypot(p.cx-cx,p.cz-cz)<10))continue;
+          attempts++;
+          site=candidate(cx,cz,cluster*31+n+trial);
+        }
+        if(!site)continue;
+        const {shape,parent,baseTier}=site;
+        const id='cloud_karst_'+cluster+'_'+n;
+        const elevation=baseTier+5+Math.floor(random(site.cx,site.cz,151)*4);
+        const minC=Math.min(...shape.map(t=>t[0])),maxC=Math.max(...shape.map(t=>t[0]));
+        const minR=Math.min(...shape.map(t=>t[1])),maxR=Math.max(...shape.map(t=>t[1]));
+        const mask=new Set(shape.map(([c,r])=>c+','+r));
+        const minLocalC=minC-parent.anchorC,minLocalR=minR-parent.anchorR;
+        const child={
+          schema:'hobunji_map.v1',id:'map_generated_wilderness_'+id,
+          name:'Cloud Forest Karst Pillar '+(towers+1),category:'exterior',
+          cols:Math.max(1,maxC-minC-1),rows:Math.max(1,maxR-minR-1),
+          tiles:{},objects:{},furniture:[],decor:[],routes:[],rivers:[],
+          npcPaths:[],transitions:[],npcStations:[],buildings:[],
+          isSubmap:true,parentMapId:parent.id,plateauGroupId:id,
+          elevation,anchorC:minLocalC+1,anchorR:minLocalR+1,
+        }; // Nested within its original plateau, retaining the original terrain underneath.
+        for(const [c,r] of shape){
+          const key=c+','+r,localKey=(c-parent.anchorC)+','+(r-parent.anchorR);
+          parent.tiles[localKey]={type:'grass',crop:'',plateau:id}; // Paint exactly the new sheer rock footprint in the parent terrace.
+          rootMap.tiles[key].cloudKarstTowerId=id; // Readable terrain-inspector marker; never changes the root parent-group ownership.
+          reserved.add(key);
+          if([[1,0],[-1,0],[0,1],[0,-1]].some(([dx,dz])=>!mask.has((c+dx)+','+(r+dz))))continue;
+          const cc=c-minC-1,rr=r-minR-1;
+          if(cc>=0&&rr>=0&&cc<child.cols&&rr<child.rows)
+            child.tiles[cc+','+rr]={type:'grass',crop:''};
+        }
+        workspace.plateauGroups.push({id,number:workspace.plateauGroups.length+1,
+          label:'Cloud Forest Karst Pillar '+(towers+1),elevation,color:'#8d9180'});
+        workspace.maps.push(child);
+        towers++;placed++;centers.push({cx:site.cx,cz:site.cz});
+        clusterIds.add(cluster);sites.push({id,x:site.cx,z:site.cz,elevation});
+      }
+    }
+    const report={clusters:clusterIds.size,towers,attempts,seed,sites};
+    rootMap.generatedFrom={...rootMap.generatedFrom,cloudKarstTowers:report};
+    workspace.generatorPreset={...workspace.generatorPreset,cloudKarstTowers:report};
+    return report;
+  }
+
   function patchGenerator() {
     const generator = root.WildernessMapGenerator;
     if (!generator?.generateZoneWorkspace || generator.__cloudForestRuntimeV2Generator) return;
@@ -540,7 +660,7 @@
       const value = original.call(this, zoneMapId, ...args);
       const apply = workspace => {
         repairGeneratedEntryWorkspace(workspace);
-        if (zoneMapId === CLOUD_ID) removeCloudForestNorthCliffs(workspace);
+        if (zoneMapId === CLOUD_ID) { removeCloudForestNorthCliffs(workspace); api.lastKarstReport = addCloudForestKarstPlateaus(workspace); }
         return workspace;
       };
       return value && typeof value.then === 'function' ? value.then(apply) : apply(value);
@@ -636,8 +756,9 @@
     CLOUD_ID, NORTH_DEPTH, SHOULDER_DEPTH, SHOULDER_RISE, STEEP_RISE,
     TREE_LATTICE_WORLD, TREE_KEEP_PROBABILITY,
     edgePathRuns, findEntryRun, repairGeneratedEntryWorkspace,
-    removeCloudForestNorthCliffs, makeSteepNorthProfile, buildForestLayout,
+    removeCloudForestNorthCliffs, addCloudForestKarstPlateaus, makeSteepNorthProfile, buildForestLayout,
     patchGenerator, patchBorderTerrain,
+    lastKarstReport: null, // Coordinates in the latest generated map for native minicliff wildlife nesting.
     // Settings tab's Cloud Forest Background Forest toggle (game.js) writes
     // this directly — read at the next zone build (see patchBorderTerrain).
     bgForestEnabled: true,
