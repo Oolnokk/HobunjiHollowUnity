@@ -268,6 +268,31 @@
       eye.userData.flyingAnimalEyeOverlay = true; // The mother's palette must never multiply the eye texture.
       pitch.add(eye);
     }
+    function glowOverlay(key, geometry) {
+      if (!images[key]) return null; // Optional source-space mask, used only by creatures with authored marker eyes.
+      const mesh = new THREE.Mesh(geometry, material(key, {
+        depthWrite: false, alphaTest: 0, blending: THREE.AdditiveBlending, toneMapped: false,
+      })); // Canonical PNG texture pipeline with additive emissive-looking pixels and a soft, non-occluding halo.
+      mesh.position.z = .007; // Above the body and ordinary eye overlays; never z-fight the source art.
+      mesh.visible = false;
+      mesh.userData.flyingAnimalEyeOverlay = true; // Body tint/flash restores must never recolor the glow as fur.
+      pitch.add(mesh);
+      return mesh;
+    }
+    const glowFlying = glowOverlay('glowFlying', flying.geometry); // Same flying geometry preserves the authored eye coordinates.
+    const glowPerched = glowOverlay('glowPerched', perched.geometry); // Shared deformed geometry follows the seven-point perch spline.
+    function setPalette(bodyHex, eyeHex) {
+      let changed = false; // Used by the live visual owner to restore per-creature colors after damage flashes.
+      for (const [meshes, color] of [[[flying, perched, wings], bodyHex], [[glowFlying, glowPerched], eyeHex]]) {
+        if (!/^#[0-9a-f]{6}$/i.test(color || '')) continue;
+        for (const mesh of meshes) {
+          const pigment = mesh?.material?.color;
+          if (!pigment || pigment.getHexString().toLowerCase() === color.slice(1).toLowerCase()) continue;
+          pigment.set(color); changed = true;
+        }
+      }
+      return changed;
+    }
     function setPerchSpline(authored) {
       const geometry = perched.geometry; // Deform the existing mesh without reloading any PNGs.
       const { position, uv } = geometry.attributes;
@@ -334,6 +359,8 @@
       flying.visible = !grounded && !carrying;
       gripping.visible = !grounded && carrying;
       perched.visible = grounded;
+      if (glowFlying) glowFlying.visible = !grounded && !carrying;
+      if (glowPerched) glowPerched.visible = grounded || carrying; // The talon-grip pose reuses the perched body silhouette.
       if (eyeMaterial) {
         eyeFlying.visible = !grounded && !carrying;
         eyePerched.visible = grounded;
@@ -364,10 +391,15 @@
         eyeShutTexture.dispose();
         eyeMaterial.dispose(); // Eye meshes share the body geometries; do not dispose those a second time.
       }
+      for (const overlay of [glowFlying, glowPerched]) {
+        if (!overlay) continue;
+        overlay.material.map.dispose();
+        overlay.material.dispose(); // The body owns the reused geometry; only the extra glow textures/materials are ours.
+      }
       wings.skeleton.dispose();
     }
 
-    return { root, update, dispose, pitch, yaw, setPerchSpline, perched };
+    return { root, update, dispose, pitch, yaw, setPerchSpline, setPalette, perched };
   }
 
   window.FlyingAnimalRig = { defaults: DEFAULT, limits, perchPosePadding: PERCH_POSE_PADDING, normalize, normalizePerchSpline, talonTypes: TALON_TYPES, normalizeTalonCarry, placeTalonPayload, flapAngle, create };
