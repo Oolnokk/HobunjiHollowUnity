@@ -1158,7 +1158,8 @@
     if(pull>0){
       const dx=patch.x-point.x,dz=patch.z-point.z,d=Math.max(.001,Math.hypot(dx,dz));
       const nx=point.x+dx/d*pull,nz=point.z+dz/d*pull;
-      if(clearAt(nx,nz,floorY(kit,point.x,point.z))){player.x=nx*tile;player.y=nz*tile;}
+      // Judge the pull at the plasm's own surface height: a raised shaft platform floats above the ground story's floorY.
+      if(clearAt(nx,nz,baseY)||room.plasm.has(tileKey(nx,nz))){player.x=nx*tile;player.y=nz*tile;}
     }
     const bodyHeight=Math.max(.9,Number(kit.deps.playerMesh?.userData?.portraitModelHeight)||1.8);
     window.DevRandomRuin?.syncPlayerPresentationHeight?.(baseY-world.sink*bodyHeight);

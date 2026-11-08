@@ -10,6 +10,7 @@
   let cachedScene=null,cachedAt=-Infinity,cachedCandidates=[]; // Reused until a new dungeon/scene is mounted or the scene's props change.
   const boxCache=new WeakMap(); // Cache world-space bounds across sources; moving pillars refresh much more often than static masonry.
   const root=typeof self!=='undefined'?self:globalThis;
+  let enabled=true; // Debug switch: RuinLightOcclusion.setEnabled(false) removes every projected shadow wedge.
   const stats={candidates:0,lights:0,shadows:0}; // Readable through the mobile debug console or Pixel Probe.
   const BLOCKER_NAME=/obelisk-.*-stone|pillar|column|wall|stone.door|push.*block|boulder|statue/i;
   const DECORATION_NAME=/ladder|rung|engraving|glyph|pattern|light|flame|sconce|roof|floor|ceiling|seal|shadow/i;
@@ -110,7 +111,7 @@
     return polygon.every(p=>p&&Number.isFinite(p.x)&&Number.isFinite(p.y))?{polygon,distance}:null;
   }
   function projectedShadows({scene,source,radiusTiles,project,THREE,now=Date.now()}={}){ // `root` below is the global object.
-    if(!scene||!source||!(radiusTiles>0)||typeof project!=='function'||!THREE?.Box3)return [];
+    if(!enabled||!scene||!source||!(radiusTiles>0)||typeof project!=='function'||!THREE?.Box3)return [];
     const casters=candidates(scene,now),boxes=[];
     stats.lights++;
     for(const node of casters){
@@ -149,6 +150,6 @@
       return draw();
     }finally{ctx.restore();}
   }
-  return Object.freeze({projectedShadows,shadowPolygon,withClip,debugSnapshot:()=>({...stats}),
+  return Object.freeze({setEnabled:on=>{enabled=on!==false;},isEnabled:()=>enabled,projectedShadows,shadowPolygon,withClip,debugSnapshot:()=>({...stats}),
     __test:Object.freeze({angularDifference})});
 });
