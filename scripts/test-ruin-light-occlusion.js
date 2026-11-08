@@ -43,11 +43,21 @@ class Box{setFromObject(n){this.min=n.testBounds.min;this.max=n.testBounds.max;r
 class Vec{constructor(){this.x=0;this.y=0;this.z=0;}}
 const bounds=Shadows.projectedShadows({scene,source,radiusTiles:5,project,THREE:{Box3:Box,Vector3:Vec},now:1000});
 assert.equal(bounds.length,1,'active shaft stone is discovered without trying to illuminate the whole scene');
+const offsetNode={...node,name:'ruin-corridor-wall',getWorldPosition(v){v.x=9999;v.y=2;v.z=9999;return v;}};
+assert.equal(Shadows.projectedShadows({scene:{traverse(fn){fn(offsetNode);}},source,
+  radiusTiles:5,project,THREE:{Box3:Box,Vector3:Vec},now:1100}).length,1,
+  'masonry with geometry offset from its mesh origin must still cast shadows');
 
 const climb=read('docs/js/climb-surfaces.js');
 const reach=read('docs/js/ruin-reaching-obelisks.js');
 const sense=read('docs/js/perception-mode.js');
 const fog=read('docs/js/cloud-forest-fog.js');
+const furnitureMask=fog.split('function drawFurnitureLightMasksCompat(')[1]?.split('const ruinFireMaskStats')[0]||'';
+const ruinMask=fog.split('function drawRuinTraditionLightMasks(')[1]?.split('const ruinGlowProjection')[0]||'';
+assert.equal((furnitureMask.match(/withRuinShadowClip\(ctx,shadows,/g)||[]).length,3,
+  'the furniture torch reveal, weather-tint and colored-glow passes must all cast the same shadows');
+assert.equal((ruinMask.match(/withRuinShadowClip\(ctx,shadows,/g)||[]).length,2,
+  'special ruin fire needs shadow-aware darkness reveal AND shadow-aware colored glow');
 const index=read('docs/index.html');
 assert(climb.includes('ladder.rotation.y=-Math.PI/2')&&climb.includes('ladder.position.set(width/2,height,.006)'),
   'V50 ladder width/depth axes must rotate 90° to sit flush on the real wall face');
