@@ -58,6 +58,35 @@
       // All timing and ranking comes from the stable id: reloading never rerolls a solved cave.
     });
   }
+  const GLYPH_COLORS=Object.freeze({idle:0xeaf5ff,current:0xffec64,accepted:0x80ffbb,rejected:0xff6666}); // Consistent white/yellow/green/red response for both indoor and outdoor carved notes.
+  const GLOW_EASE_RATE=17; // Seconds-based fade speed: a frame-rate-independent ~180 ms transition, with no carved-glyph scaling.
+  function blendHex(from,to,amount){
+    const t=clamp(Number(amount)||0,0,1);
+    const channel=shift=>Math.round(((from>>shift)&255)*(1-t)+((to>>shift)&255)*t);
+    return (channel(16)<<16)|(channel(8)<<8)|channel(0);
+  }
+  function advanceGlyphGlow(glyph,{current=false,accepted=false,rejected=false,dt=0,halo=null,outer=null}={}){
+    if(!glyph?.material)return null;
+    const state=glyph.userData||(glyph.userData={}); // Per-glyph smooth color/brightness state; the inscription never changes geometry or scale.
+    const target=rejected?GLYPH_COLORS.rejected:accepted?GLYPH_COLORS.accepted:current?GLYPH_COLORS.current:GLYPH_COLORS.idle;
+    const tone=rejected?'rejected':accepted?'accepted':current?'current':'idle';
+    const targetInner=rejected?.86:accepted?.52:current?.80:.11;
+    const targetOuter=rejected?.43:accepted?.22:current?.56:.045; // A faded-in wide halo makes the *light radius* grow, not the carved number.
+    const transition=state.melodyGlowTransition||(state.melodyGlowTransition={
+      color:GLYPH_COLORS.idle,inner:.11,outer:.045,tone:'idle',
+    });
+    const fade=1-Math.exp(-Math.max(0,Number(dt)||0)*GLOW_EASE_RATE);
+    transition.color=blendHex(transition.color,target,fade);
+    transition.inner+=(targetInner-transition.inner)*fade;
+    transition.outer+=(targetOuter-transition.outer)*fade;
+    transition.tone=tone;
+    glyph.material.color?.setHex?.(transition.color);
+    const innerMat=halo||state.melodyGlowMaterial;
+    const outerMat=outer||state.melodyOuterGlowMaterial;
+    if(innerMat){innerMat.color?.setHex?.(transition.color);innerMat.opacity=transition.inner;}
+    if(outerMat){outerMat.color?.setHex?.(transition.color);outerMat.opacity=transition.outer;}
+    return {...transition}; // Also available to the existing in-game debug/inspection path.
+  }
   function createSession(song,{onSolved=()=>{},onChanged=()=>{},onBeat=()=>{}}={}){
     if(!song||!Array.isArray(song.notes)||!song.notes.length)throw new Error('Puzzle Cave song is missing its note sequence.');
     let standing=false,solved=false,elapsed=0,progress=0,mistakes=0,cycle=0,lastSignature='';
@@ -123,5 +152,5 @@
     }
     return Object.freeze({step,note,snapshot,activeIndex,get solved(){return solved;}});
   }
-  return Object.freeze({TICKS_PER_MEASURE,NOTE_COUNT,MIN_BPM,MAX_BPM,DURATIONS,generate,createSession});
+  return Object.freeze({TICKS_PER_MEASURE,NOTE_COUNT,MIN_BPM,MAX_BPM,DURATIONS,generate,createSession,advanceGlyphGlow,GLYPH_COLORS});
 });
