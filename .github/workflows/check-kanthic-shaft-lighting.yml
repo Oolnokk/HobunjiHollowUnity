@@ -1,0 +1,34 @@
+name: Check Kanthic shaft lighting
+
+on:
+  pull_request:
+    paths:
+      - 'docs/js/ruin-multifloor-v50-style.js'
+      - 'docs/js/ruin-shaft-connector.js'
+      - 'docs/js/cloud-forest-fog.js'
+      - 'scripts/test-kanthic-shaft-firelight.js'
+      - '.github/workflows/check-kanthic-shaft-lighting.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lighting:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Parse changed production modules and new regression test
+        run: |
+          node --check docs/js/ruin-multifloor-v50-style.js
+          node --check docs/js/ruin-shaft-connector.js
+          node --check docs/js/cloud-forest-fog.js
+          node --check scripts/test-kanthic-shaft-firelight.js
+      - name: Check Kanthic fixture behavior, darkness exemptions and cleanup
+        run: node scripts/test-kanthic-shaft-firelight.js
+      - name: Check established shared overlay behavior
+        run: node scripts/test-overlay-only-lighting.js
