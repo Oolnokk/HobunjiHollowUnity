@@ -234,6 +234,14 @@ function test(seed,size=24){
   }
   room.tick(.05);
   assert.equal(room.solved,true);
+  if(room.variant==='witchBomb'){
+    const target=projectileTargets.find(t=>t.id.endsWith('-dispenser-projectile-target'));
+    const requested=dispenseCount; // Requests at completion establish the baseline for checking disabled post-solve activations.
+    assert.equal(target.hittable(),false,'the bomb trigger stops accepting projectiles after the puzzle is solved');
+    target.onHit();
+    assert.equal(dispenseCount,requested,'stale projectile hits cannot dispense bombs after the gate opens');
+    assert.equal(room.snapshot().bombTarget.hittable,false,'mobile diagnostics show that the trigger is retired');
+  }
   assert.equal(state.controls.length,0,'After four plates settle, no completed controls claim Action 1');
   assert.equal(solved,1,'The completion event fires only once');
   room.tick(.05);
