@@ -490,7 +490,13 @@
       for(let i=slots.length-1;i>0;i--){const j=Math.floor(rnd()*(i+1));[slots[i],slots[j]]=[slots[j],slots[i]];}
       const hidden=Math.min(3,Math.max(1,slots.length-1));
       let blockerSerial=0;
-      const block=(px,pz,height)=>DS?.registerBlocker?.({id:scope+'-pillar-'+(blockerSerial++),minX:px-.4,maxX:px+.4,minZ:pz-.4,maxZ:pz+.4,minY:y,maxY:y+height,scope});
+      const block=(px,pz,height)=>DS?.registerBlocker?.({id:scope+'-pillar-'+(blockerSerial++),scope,
+        bounds:{minX:px-.4,maxX:px+.4,minZ:px-.4,maxZ:px+.4}, // DynamicSurfaces reads the footprint from `bounds`; bare minX/maxX meant an infinite, map-wide wall.
+        enabled:()=>!rec.disposed&&isActive(),
+        blocksAt:(_x,_z,_h,_r,_radius,query)=>{ // Solid only from the floor up to the pillar top, and only on this story.
+          const elevation=Number(query?.y??query?.floorY??query?.worldY);
+          return !Number.isFinite(elevation)||(elevation>=y-.4&&elevation<=y+height);
+        }});
       slots.forEach((slot,index)=>{
         if(index<hidden){
           const t=target(id+'-glyph'+index,slot.x,y+1.5,slot.z,false,Math.floor(rnd()*4));

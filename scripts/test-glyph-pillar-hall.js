@@ -17,7 +17,14 @@ const rec = Challenges.compose({ THREE, parent: new Obj(), room: { x: 10, z: 10,
   isActive: () => true, onSolved: () => {}, getPlayerPosition: () => ({ x: 18, z: 18 }), getPlayerY: () => 0, projectileBus: bus, DynamicSurfaces: DS });
 assert.equal(rec.targets.length, 3, 'three hidden glyph targets');
 assert.ok(blockers.size >= 6, 'every pillar is solid: ' + blockers.size);
-for (const b of blockers.values()) assert.ok(b.maxX > b.minX && b.maxZ > b.minZ && b.scope.startsWith('ruin-layer-glyph-'));
+for (const b of blockers.values()) {
+  assert.ok(b.scope.startsWith('ruin-layer-glyph-'));
+  const bounds = typeof b.bounds === 'function' ? b.bounds(b) : b.bounds; // DynamicSurfaces reads ONLY `bounds`: bare minX/maxX meant an infinite, map-wide wall.
+  for (const key of ['minX', 'maxX', 'minZ', 'maxZ']) assert.ok(Number.isFinite(bounds?.[key]), 'finite ' + key);
+  assert.ok(bounds.maxX - bounds.minX < 2 && bounds.maxZ - bounds.minZ < 2, 'a pillar-sized footprint, not the whole map');
+  assert.equal(b.blocksAt(0, 0, 1.25, b, .2, { worldY: 50 }), false, 'a different story is not blocked');
+  assert.equal(b.blocksAt(0, 0, 1.25, b, .2, { worldY: 0.1 }), true, 'this story is blocked');
+}
 rec.dispose();
 assert.equal(blockers.size, 0, 'dispose clears the pillar blockers');
 console.log('glyph pillar hall: ok');
