@@ -3,7 +3,7 @@
 
   const WESTERN_SLOPE_ID = 'map_western_slope'; // Used to scope the rock ridges and author overrides to Western Slope.
   const BACKGROUND_MAX_DEPTH_NDC = 1 - 5 * (2 / 65535); // Keep the ridges in front of cloud masks by at least one 16-bit depth step.
-  const BACKGROUND_NEAR_DEPTH_NDC = 1 - 40 * (2 / 65535); // Reserve 35 depth steps without bringing mountains in front of mid-distance terrain.
+  const BACKGROUND_NEAR_DEPTH_NDC = 1 - 12 * (2 / 65535); // Reserve seven distant depth steps while preserving foreground terrain occlusion out to ~155u.
   const BACKGROUND_DEPTH_FALLOFF = 240; // Virtual eye-space distance scale keeps separate peaks ordered beyond the 200-unit camera far clip.
   const SNOW_BOUNDARY_DEPTH_BIAS_NDC = 2 * (2 / 65535); // Two depth steps keep the fine snow/stone seam visible without surface z-fighting.
   const SNOW_TEXTURE_URL = (() => { try { return new URL('../assets/textures/canvas.png', document.currentScript?.src || window.location?.href).href; } catch (_) { return 'assets/textures/canvas.png'; } })(); // Same authored canvas PNG as Western Slope ground snow, resolved for game and nested author-tool pages.
