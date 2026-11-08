@@ -17,14 +17,21 @@ const motionWindow = {};
 vm.runInNewContext(motionSrc, { window: motionWindow, console });
 const solver = motionWindow.SpouseKissMotion;
 assert.equal(solver.DURATION_S, 2.4);
-for (const [first, second] of [[1, 1], [1.5, .8], [5, .1], [.1, 5], [200, .001]]) {
+for (const [first, second] of [[1, 1], [1.5, .8], [5, .1], [.1, 5]]) {
   const solution = solver.solveHeights(first, second);
   assert.equal(solution.contactPossible, true, 'mouths can meet with dimensions ' + first + '/' + second);
   assert.ok(solution.remainingGap <= .025);
   assert.ok(solution.tallerSinkPct >= 0 && solution.tallerSinkPct <= solver.MAX_SINK_PCT);
+  assert.ok(solution.tallerSinkWorld <= solution.kneeLimitWorld, 'kneeling respects the actual leg reach');
+  assert.ok(solution.tallerBowDeg >= 0 && solution.tallerBowDeg <= solver.MAX_BOW_DEG);
   assert.equal(solution.shorterSinkPct, 0, 'shorter partner remains standing on the ground');
   assert.equal(solution.taller, first >= second ? 'first' : 'second');
 }
+const impossible = solver.solveHeights(200, .001);
+assert.equal(impossible.contactPossible, false, 'unreachable pair must not receive false lip contact');
+assert.ok(impossible.remainingGap > .025);
+assert.equal(solver.solveHeights(5, 1, { tallerLegLengthWorld: .1, tallerHipHeightWorld: 2 }).contactPossible, false,
+  'short actual legs must not be treated as imaginary long legs');
 assert.equal(solver.samplePose(0).blend, 0);
 assert.equal(solver.samplePose(1.12).blend, 1);
 assert.equal(solver.samplePose(2.4).blend, 0);
@@ -130,8 +137,16 @@ const root = (x, y, z, height) => ({
   getWorldScale(out) { out.x = 1; out.y = 1; out.z = 1; return out; },
 });
 const legHandle = height => ({
-  modelHeight: height, sink: 0,
-  setStanceDrop(amount) { this.sink = amount; },
+  modelHeight: height, standingPosteriorY: height * .28, sink: 0, limit: .55,
+  group: { getWorldScale(out) { out.x = 1; out.y = 1; out.z = 1; return out; } },
+  motionAnatomy() { return [{ length: height * .28 }, { length: height * .28 }]; },
+  setStanceDropLimitFraction(value) {
+    const previous = this.limit;
+    this.limit = Math.max(.55, Math.min(.95, Number(value) || .55));
+    return previous;
+  },
+  getStanceDropLimitFraction() { return this.limit; },
+  setStanceDrop(amount) { this.sink = Math.min(amount, height * .28 * this.limit); },
   getStanceDrop() { return this.sink; },
 });
 const avatarRoot = root(0, 0, 0, 1);
@@ -141,11 +156,13 @@ npcRoot.getObjectByName = name => name === 'npc_character_rig_root' ? npcRigRoot
 const playerLegs = legHandle(1);
 const partnerLegs = legHandle(5);
 const sceneWalker = {
-  rec: { id: 'spouse' }, root: npcRoot, avatarGroup: { userData: {} }, legs: partnerLegs,
+  rec: { id: 'spouse' }, root: npcRoot,
+  avatarGroup: { userData: { portraitModelHeight: 5 }, rotation: { x: 0 } }, legs: partnerLegs,
 };
 let renderFrame = null;
 const channels = new Map();
 const activeTokens = new Set();
+let lastLockParticipants = null; // Used to inspect that the kiss leaves the player composer operational.
 const visualWindow = {
   THREE: { Vector3 },
   PlayerBodyTransformComposer: {
@@ -156,7 +173,8 @@ const visualWindow = {
   },
   CharacterActionLocks: {
     isLocked: () => false,
-    acquire() {
+    acquire(options) {
+      lastLockParticipants = options.participants;
       const token = {};
       activeTokens.add(token);
       return { release: () => activeTokens.delete(token) };
@@ -176,14 +194,21 @@ const visual = visualWindow.SpouseKissMotion;
 assert.equal(visual.init(), true, 'live kiss must register on shared pre-render clock');
 let contacts = 0;
 assert.equal(visual.start(sceneWalker, () => contacts++), true);
+assert.equal(partnerLegs.limit, .95, 'only the kiss may deepen the kneel');
+assert.equal(lastLockParticipants[0].channels.includes('pose'), false, 'player pose lock would disable the compositor');
 for (let i = 0; i < 9; i++) renderFrame({ deltaMs: 80 });
 assert.equal(contacts, 0, 'no blessing before the first contact frame');
 assert.ok(partnerLegs.sink > 0 && playerLegs.sink === 0, 'tall NPC kneels and shorter player stays grounded');
-assert.ok(npcRoot.position.z < .8, 'spouse approaches far enough for a visible kiss');
+assert.ok(sceneWalker.avatarGroup.rotation.x > 0, 'taller torso bends at the waist');
+assert.ok(partnerLegs.sink <= partnerLegs.standingPosteriorY * .95, 'actual knee cap is never exceeded');
+assert.ok(npcRoot.position.z > .8, 'taller partner retreats to allow space for a deep bow');
 assert.equal(activeTokens.size, 1);
 assert.equal(visual.stop('dodge'), true);
 assert.equal(partnerLegs.sink, 0, 'cancel must restore both knee sinks');
 assert.equal(npcRigRoot.position.y, 0, 'cancel must restore the NPC visual root');
+assert.equal(sceneWalker.avatarGroup.rotation.x, 0, 'cancel unbends the torso');
+assert.equal(playerLegs.limit, .55, 'player knee cap restored');
+assert.equal(partnerLegs.limit, .55, 'NPC knee cap restored');
 assert.equal(npcRoot.position.z, .8, 'cancel must restore the original approach position');
 assert.equal(channels.size, 0, 'cancel must release the player pose channel');
 assert.equal(activeTokens.size, 0, 'cancel must release both characters');
@@ -193,6 +218,12 @@ for (let i = 0; i < 34; i++) renderFrame({ deltaMs: 80 });
 assert.equal(contacts, 1, 'contact callback fires exactly once per kiss');
 assert.equal(visual.diagnostics().active, false, 'animation finishes and cleans up');
 assert.equal(visual.diagnostics().lastResult.reason, 'completed');
+assert.equal(partnerLegs.limit, .55, 'completed kiss restores normal knee cap');
 assert.equal(activeTokens.size, 0);
 
-console.log('Spouse kiss: height extremes, author, live contact/cancel/cleanup, spouse-only command, save/refresh/expiry and non-stacking buff OK.');
+const npcStateSrc = read('docs/js/npc-character-state.js');
+assert.match(npcStateSrc, /!window\.SpouseKissMotion\?\.isPartner\?\.\(walker\)/,
+  'NPC movement lock must not suppress the kiss leg solver');
+const legsSrc = read('docs/js/procedural-leg-animation.js');
+assert.match(legsSrc, /setStanceDropLimitFraction:/, 'real legs expose reversible deep-kneel allowance');
+console.log('Spouse kiss: anatomical limits, torso bow, lock ownership, cancel/cleanup, author, save/expiry OK.');
