@@ -22,12 +22,13 @@ class Canvas {
     return this.ctx;
   }
 }
-const spritePixels = new Uint8ClampedArray([ // Purple marker eye beside an ordinary opaque neutral body pixel.
+const spritePixels = new Uint8ClampedArray([ // Purple eye, neutral ink, darker natural marking, light fur highlight.
   127, 0, 255, 255, 180, 170, 160, 255,
+  117, 140, 111, 255, 174, 194, 166, 255,
 ]);
 const loads = []; // Each loaded URL proves the runtime uses the new art and existing wing assembly.
 class Image {
-  constructor() { this.width = this.naturalWidth = 2; this.height = this.naturalHeight = 1; this.pixels = spritePixels; }
+  constructor() { this.width = this.naturalWidth = 4; this.height = this.naturalHeight = 1; this.pixels = spritePixels; }
   set src(value) {
     assert.equal(this.crossOrigin, 'anonymous', 'pixel-reading images must request CORS before src');
     loads.push(value);
@@ -41,7 +42,7 @@ const w = {
     create(settings, images) {
       captured = { settings, images };
       return {
-        setPalette(body, eyes) { this.palette = { body, eyes }; return true; },
+        setPalette(body, eyes, pattern) { this.palette = { body, eyes, pattern }; return true; },
       };
     },
   },
@@ -78,34 +79,48 @@ assert.notEqual(api.paletteFor('hronal', 1).body, api.paletteFor('kanthic', 1).b
 assert.equal(api.paletteFor('bogus', 1).theme, 'hronal', 'unknown ruin themes have a safe fallback');
 const families = w.HarlyaoLichCombat.TYPE_DEFS; // The real named-lich tradition is the source of the permitted hue suffixes.
 const catalog = w.SCRATCHBONES_CONFIG.game.dyes.catalog; // Visible swatch catalogue, not copied arbitrary RGB colors.
-for(const [theme,def] of Object.entries(families)){
-  for(const [i,hue] of def.hues.entries()){
-    for(const variant of ['dusty','muted','dark_muted','pure','bright']){
-      catalog.push({id:'dye:CLOTH:'+variant+'_'+hue,hex:'#'+(i+1).toString(16).padStart(2,'0')+(variant==='pure'?'ff':'77')+(variant==='bright'?'ff':'33')});
-    }
+const hueOrder=['red','red_orange','orange','yellow_orange','yellow','yellow_green','green','green_blue','blue','blue_indigo','indigo','indigo_violet','violet']; // One dye family order for checking exactly one neighbor in either direction.
+for(const [i,hue] of hueOrder.entries()){
+  for(const variant of ['dusty','muted','dark_muted','pure','bright']){
+    catalog.push({id:'dye:CLOTH:'+variant+'_'+hue,hex:'#'+(i+1).toString(16).padStart(2,'0')+(variant==='pure'?'ff':'77')+(variant==='bright'?'ff':'33')});
   }
 }
 catalog.push({id:'dye:CLOTH:gray',hex:'#808080'});
 for(const [theme,def] of Object.entries(families)){
-  for(let index=0;index<60;index++){
+  const before=hueOrder[(hueOrder.indexOf(def.hues[0])+hueOrder.length-1)%hueOrder.length];
+  const after=hueOrder[(hueOrder.indexOf(def.hues[def.hues.length-1])+1)%hueOrder.length];
+  const allowedFur=new Set([...def.hues,before,after]); // One neighboring hue on either edge, never two.
+  const outside=new Set([before,after].filter(hue=>!def.hues.includes(hue))); // Eye colors must never enter this set.
+  let outsideFur=0;
+  for(let index=0;index<160;index++){
     const palette=api.paletteFor(theme,'specimen:'+index);
-    const body=catalog.find(dye=>dye.id===palette.bodyDyeId),eye=catalog.find(dye=>dye.id===palette.eyeDyeId);
-    assert(body && eye,theme+' must read the source dye catalog rather than custom RGB approximations');
+    const body=catalog.find(dye=>dye.id===palette.bodyDyeId);
+    const pattern=catalog.find(dye=>dye.id===palette.patternDyeId);
+    const eye=catalog.find(dye=>dye.id===palette.eyeDyeId);
+    assert(body && pattern && eye,theme+' must read the source dye catalog for all three colors');
     assert.equal(palette.body,body.hex);
+    assert.equal(palette.pattern,pattern.hex);
     assert.equal(palette.eyes,eye.hex);
     assert(def.hues.some(hue=>body.id.endsWith('_'+hue)) || def.neutralDyes?.includes(body.id),
       'natural body dye belongs to the selected lich tradition');
+    assert(allowedFur.has(pattern.id.slice(pattern.id.indexOf('_')+1).replace(/^(dusty|muted|dark_muted)_/,'')) || def.neutralDyes?.includes(pattern.id),
+      'pattern colors may use only the immediate neighboring hue or their own group');
+    if([...outside].some(hue=>pattern.id.endsWith('_'+hue)))outsideFur++;
     assert(def.hues.some(hue=>eye.id.endsWith('_'+hue)),
-      'uncanny eye dye belongs to the SAME lich tradition, not the named lich inverse-color glyph');
+      'uncanny eye dye belongs STRICTLY to the lich tradition, even when fur drifts');
+    assert(![...outside].some(hue=>eye.id.endsWith('_'+hue)),
+      'no eye can use a neighboring fur-only hue');
     assert.match(body.id,/:(dusty|muted|dark_muted)_|:gray$/);
+    assert.match(pattern.id,/:(dusty|muted|dark_muted)_|:gray$/);
     assert.match(eye.id,/:(pure|bright)_/);
   }
+  assert(outsideFur>0 && outsideFur<60, 'adjacent-hue fur markings are occasional, not universal');
 }
 
 (async () => {
   const palette = api.paletteFor('kanthic', 'specimen-A');
   const rig = await api.createRig({ skeeriPalette: palette });
-  assert.deepEqual(rig.palette, { body: palette.body, eyes: palette.eyes }, 'both body and eye materials receive their own colors');
+  assert.deepEqual(rig.palette, { body: palette.body, eyes: palette.eyes, pattern: palette.pattern }, 'body, eye and fur pattern use independent colors');
   assert.equal(captured.settings.flying, 'creaturesprites/skeeri_planebent_flying.png');
   assert.equal(captured.settings.perched, 'creaturesprites/skeeri_planebent_perched.png');
   assert.equal(captured.settings.wings, authoredRig.wings, 'normal Skeeri wings and hinge settings remain intact');
@@ -113,15 +128,21 @@ for(const [theme,def] of Object.entries(families)){
     api.SPRITES.flying, api.SPRITES.perched, api.SPRITES.wings,
   ]);
   assert(captured.images.glowFlying && captured.images.glowPerched, 'each pose has an independent glowing eye overlay');
+  assert(captured.images.patternFlying && captured.images.patternPerched, 'each pose retains its authored dark fur pattern as a separate tint layer');
   assert.equal(captured.images.flying.pixels[3], 0, 'marker pixels are removed from the naturally tinted body');
   assert.equal(captured.images.perched.pixels[3], 0);
   assert.equal(captured.images.flying.pixels[7], 255, 'ordinary body pixels remain opaque');
   assert.equal(captured.images.glowFlying.pixels[3], 255, 'marked eyes appear in the independent glow mask');
   assert.equal(captured.images.glowPerched.pixels[3], 255);
-  assert.equal(api.separateEyeMarker({ width: 2, height: 1, pixels: spritePixels }).marked, 1);
+  assert.equal(captured.images.patternFlying.pixels[11], 255, 'darker green fur pixels are isolated for the pattern dye');
+  assert.equal(captured.images.patternPerched.pixels[11], 255);
+  assert.equal(captured.images.patternFlying.pixels[3], 0, 'eye markers cannot be dyed as fur patterns');
+  assert.equal(captured.images.patternFlying.pixels[15], 0, 'light body pixels cannot become an unintended fur pattern');
+  assert.equal(api.separateEyeMarker({ width: 4, height: 1, pixels: spritePixels }).marked, 1);
   rig.palette = null;
   rig.restoreTint();
-  assert.deepEqual(rig.palette, { body: palette.body, eyes: palette.eyes }, 'hit-flash restoration keeps the lich eye hue independent of fur');
+  assert.deepEqual(rig.palette, { body: palette.body, eyes: palette.eyes, pattern: palette.pattern }, 'hit-flash restoration keeps fur and strictly in-family eye colors separate');
   assert.equal(api.debugSnapshot().eyeMarkerPixels, 2);
+  assert.equal(api.debugSnapshot().furPatternPixels, 2);
   console.log('Planebent Skeeri authored art, shared wings, theme palettes, marked eye overlays and tint restore PASS');
 })().catch(error => { console.error(error); process.exitCode = 1; });
