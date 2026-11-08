@@ -38,6 +38,10 @@ assert(oreTexturesScript >= 0 && oreTexturesScript < backdropScript, 'author pag
 const authorAssetBase = author.indexOf("window.OreRockTexturesAssetBase='../../';"); // The shared mine texture is rooted at docs/ in the standalone nested tool.
 assert(authorAssetBase >= 0 && authorAssetBase < oreTexturesScript, 'author page must configure the texture base before loading mine-rock materials');
 assert.match(author, /ore-rock-textures\.js\?v=[A-Za-z0-9_-]+/, 'author page must load the versioned shared mine-texture module');
+const liveCacheVersion = environmentBootstrap.match(/western-slope-mountain-backdrops\.js\?v=([A-Za-z0-9_-]+)/)?.[1]; // Game and author must load the same cache-busted renderer.
+const authorCacheVersion = author.match(/western-slope-mountain-backdrops\.js\?v=([A-Za-z0-9_-]+)/)?.[1];
+assert.equal(liveCacheVersion, authorCacheVersion, 'author preview and game must share the same updated mountain-backdrop module');
+assert.equal(liveCacheVersion, '20261107depthSnow1', 'new distant-mountain fixes must bypass old mobile browser caches');
 assert.match(mountainAuthor, /8 decorative mine rocks/, 'author bridge must no longer present the PNG as the live scenery');
 assert.match(mountainAuthor, /mountainPosX/, 'author bridge must retain position controls');
 assert.match(mountainAuthor, /mountainRotY/, 'author bridge must retain rotation controls');
