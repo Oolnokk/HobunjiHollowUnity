@@ -838,6 +838,16 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
         await sleep(4);
         const control=window.DevRandomRuin.getInteractionControls().find(entry=>entry.kind==='transitDoor'&&entry.object?.id===door.id);
         if(!control?.object)throw new Error('Transit-door smoke has no interaction owner');
+        const originalFocus=window.RangedWeapons?.focusCandidates; // Simulate the user's mobile camera missing the stone panel despite being within interaction reach.
+        let withoutAim=null,popupWithoutAim=false;
+        try{
+          if(window.RangedWeapons)window.RangedWeapons.focusCandidates=()=>null;
+          window.DevRandomRuinInteractions.refresh();
+          withoutAim=window.DevRandomRuinInteractions.snapshot();
+          popupWithoutAim=window.WorldPopupText.debugSnapshot()?.interactionRows?.some(entry=>entry.label==='Open Hallway Door')===true;
+        }finally{
+          if(window.RangedWeapons)window.RangedWeapons.focusCandidates=originalFocus;
+        }
         control.object.updateWorldMatrix(true,true);
         const aim=await window.__ruinBrowserAimAtPoint(new THREE.Box3().setFromObject(control.object).getCenter(new THREE.Vector3()));
         window.DevRandomRuinInteractions.refresh();
@@ -860,9 +870,11 @@ const AUDIT_SEEDS = auditRaw == null ? 8 : Math.max(0, Number(auditRaw) || 0);
         await sleep(28);
         const afterDoor=window.DevRandomRuin.getState()?.transitDoors?.find(entry=>entry.id===door.id)||null;
         const afterBlocked=hasSource(window.DevRandomRuin.getOccupancySnapshot?.());
-        return {door,row,aim,focus:interaction.focus,player:{x:window.Combat.deps.player.x/window.Combat.deps.TILE,z:window.Combat.deps.player.y/window.Combat.deps.TILE},popupVisible:popupBefore.interactionRows?.some(entry=>entry.label==='Open Hallway Door')===true,beforeBlocked,sourceTiles,beforePanelHits,afterPanelHits:panelHits(),centerClear:!window.DevRandomRuinTileOccupancy.solidAt(door.center.x,door.center.z,.02,.5),beforeGridTypes,afterGridTypes:gridTypes(),afterDoor,afterBlocked};
+        return {door,row,aim,focus:interaction.focus,withoutAimRow:withoutAim?.rows?.find(row=>row.kind==='transitdoor')||null,popupWithoutAim,player:{x:window.Combat.deps.player.x/window.Combat.deps.TILE,z:window.Combat.deps.player.y/window.Combat.deps.TILE},popupVisible:popupBefore.interactionRows?.some(entry=>entry.label==='Open Hallway Door')===true,beforeBlocked,sourceTiles,beforePanelHits,afterPanelHits:panelHits(),centerClear:!window.DevRandomRuinTileOccupancy.solidAt(door.center.x,door.center.z,.02,.5),beforeGridTypes,afterGridTypes:gridTypes(),afterDoor,afterBlocked};
       });
       assert.ok(transitDoorRuntime,'generated hallway must expose at least one plain transit-exit door: '+JSON.stringify(active));
+      assert.equal(transitDoorRuntime.withoutAimRow?.label,'Open Hallway Door','closed hallway door must offer an open-door action on proximity even when reticle focus is null: '+JSON.stringify(transitDoorRuntime));
+      assert.equal(transitDoorRuntime.popupWithoutAim,true,'a nearby stone door must display its ordinary mobile prompt without camera aim: '+JSON.stringify(transitDoorRuntime));
       assert.equal(transitDoorRuntime.row?.label,'Open Hallway Door','closed hallway transit door must expose the standard floating open-door prompt: '+JSON.stringify(transitDoorRuntime));
       assert.equal(transitDoorRuntime.popupVisible,true,'hallway door prompt must be rendered by the normal WorldPopupText action-bar path: '+JSON.stringify(transitDoorRuntime));
       assert.equal(transitDoorRuntime.beforeBlocked,true,'visibly closed hallway door must contribute authoritative collision: '+JSON.stringify(transitDoorRuntime));
