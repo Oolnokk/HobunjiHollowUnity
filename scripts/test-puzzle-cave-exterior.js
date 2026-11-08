@@ -319,6 +319,65 @@ const result=context.LocaleCliffWallMounts.mount(area,network,wallScene,
 assert.equal(result.failed,0);
 assert.equal(result.count,1,'world locates the explicitly associated wall fixture');
 context.LocaleCliffWallMounts.clear(area);
-console.log('Puzzle Cave exterior: permanent symmetrical score pillars, plate-lit notes, static mounting, gate collision and elevation return PASS.');
+
+// An exposed vertical cliff is now a legal inscription surface. A snowy cap or
+// irregular carved cavern mesh must never be accepted as its replacement.
+class FaceVector {
+  constructor(x=0,y=0,z=0){this.x=x;this.y=y;this.z=z;}
+  clone(){return new FaceVector(this.x,this.y,this.z);}
+  transformDirection(){return this;}
+  sub(o){this.x-=o.x;this.y-=o.y;this.z-=o.z;return this;}
+  add(o){this.x+=o.x;this.y+=o.y;this.z+=o.z;return this;}
+  multiplyScalar(n){this.x*=n;this.y*=n;this.z*=n;return this;}
+  length(){return Math.hypot(this.x,this.y,this.z);}
+  normalize(){return this.multiplyScalar(1/(this.length()||1));}
+  distanceTo(o){return Math.hypot(this.x-o.x,this.y-o.y,this.z-o.z);}
+}
+const cliffPoint=new FaceVector(selected.plate.x+selected.tangent.x*1.4,
+  selected.shelf.y+1.4,selected.plate.z+selected.tangent.z*1.4);
+const faceNormal=new FaceVector(selected.plate.x-cliffPoint.x,0,selected.plate.z-cliffPoint.z).normalize();
+const caveRock=new Mesh(new Geometry(),new Material({color:0x666666}));
+caveRock.name='irregular-carved-cave';caveRock.userData.melodyScoreSurface='caveWall';
+const snowCap=new Mesh(new Geometry(),new Material({color:0xeeeeee}));
+snowCap.name='cliff-cap-snow';snowCap.userData.cliffGenerated=true;
+const cliffRock=new Mesh(new Geometry(),new Material({color:0x777777}));
+cliffRock.name='exposed-vertical-cliff';cliffRock.userData.cliffGenerated=true;
+THREE.Vector3=FaceVector;
+THREE.Raycaster=class {
+  constructor(){this.far=6;this.origin=null;this.direction=null;}
+  set(origin,direction){this.origin=origin.clone();this.direction=direction.clone();}
+  intersectObjects(meshes){
+    return meshes.map(object=>({
+      object,face:{normal:faceNormal.clone(),materialIndex:object===snowCap?0:1},
+      point:this.far>=5.9?cliffPoint.clone()
+        :this.origin.clone().add(this.direction.clone().multiplyScalar(this.far-.20)),
+    })); // A coherent face at every score corner; cap material 0 must still be rejected.
+  }
+};
+const cliffScene=new Group();
+cliffScene.add(caveRock);cliffScene.add(snowCap);
+let [withoutCliff]=Exterior.mount(area,network,cliffScene,[profile]);
+await Promise.resolve();await Promise.resolve();
+assert.equal(withoutCliff.scoreSurface?.kind,'pillarPair',
+  'snow caps and carved cave walls may not displace deliberately built notation pillars');
+Exterior.clear(area);
+cliffScene.add(cliffRock);
+let [withCliff]=Exterior.mount(area,network,cliffScene,[profile]);
+await Promise.resolve();await Promise.resolve();
+assert.equal(withCliff.scoreSurface?.kind,'cliffWall',
+  'a genuine exposed vertical cliff face should now host exterior melody notation');
+assert.equal(withCliff.scoreSurface?.surface,'exposed-vertical-cliff',
+  'the selected surface is the validated rock face, never the snow cap or carved cavern');
+assert.equal(withCliff.scoreStone,undefined,
+  'a validated exterior cliff should not add redundant freestanding notation pillars');
+assert.equal(withCliff.glyphs.length,withCliff.song.notes.length,
+  'the cliff inscription still shows every timed melody note');
+assert.equal(withCliff.glyphs[0].position.x,
+  (0-(Math.min(6,withCliff.song.notes.length)-1)/2)*.23,
+  'cliffside notation uses the compact wall-width musical row layout');
+assert(withCliff.glyphGlows.every(glow=>glow.material.map),
+  'cliffside notes retain the alpha-only luminous glyph materials');
+Exterior.clear(area);
+console.log('Puzzle Cave exterior: whitelisted vertical cliffs, excluded cave/snow, symmetrical fallback pillars, timed glow, gate and elevation PASS.');
 }
 verifyExteriorScene().catch(error=>{console.error(error);process.exitCode=1;});
