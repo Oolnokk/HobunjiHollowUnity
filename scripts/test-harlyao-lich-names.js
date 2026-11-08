@@ -28,7 +28,7 @@ for (let i = 0; i < 2500; i++) {
   const name = generator.generateIdentityFromSeed(seed, 'male', 'harlyao'); // A seeded Harlyao identity includes first and family names.
   const parts = name.split(' '); // Validate each Harlyao word separately, including its vowel boundaries.
   assert.equal(parts.length, 2, 'Harlyao identities need exactly one given name and one surname');
-  assert.notEqual(parts[0], parts[1], 'a family name should differ from its owner's given name');
+  assert.notEqual(parts[0], parts[1], 'a family name should differ from its owner\'s given name');
   for (const part of parts) {
     assert.match(part, /^[A-Z][a-z]{4,11}$/);
     assert(!reserved.has(part.toLowerCase()), part + ' must not duplicate an authored lich');
