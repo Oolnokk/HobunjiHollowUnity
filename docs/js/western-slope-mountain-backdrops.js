@@ -313,9 +313,22 @@
     const T=window.THREE,sharedSnow=window.EnvironmentSurfaceMicroPlateau?.getSnowMaterial?.(); // Existing ground-snow source; never mutate its sampler settings.
     const source=record.snowMaterialBinding?sharedSnow?.map:record.snowMaterial.map; // Tracks delayed snow-texture loads and the standalone fallback.
     if(!source||source===record.snowTextureSource||source===record.snowBackdropTexture||typeof source.clone!=='function'||!T.LinearMipmapLinearFilter)return false;
-    const width=Number(source.image?.naturalWidth||source.image?.width),height=Number(source.image?.naturalHeight||source.image?.height); // Only power-of-two images can safely use mipmaps on WebGL1 mobile GPUs.
-    if(!(width>0&&height>0&&Number.isInteger(width)&&Number.isInteger(height))||(width&(width-1))||(height&(height-1)))return false;
-    const texture=source.clone(); // Backdrop-owned sampler uses the shared snow artwork but a separate GPU texture state.
+    const width=Number(source.image?.naturalWidth||source.image?.width),height=Number(source.image?.naturalHeight||source.image?.height); // Dimensions determine whether WebGL1 needs a power-of-two backdrop copy.
+    if(!(width>0&&height>0&&Number.isInteger(width)&&Number.isInteger(height)))return false;
+    const isPowerOfTwo=value=>(value&(value-1))===0; // Guards mipmap compatibility on mobile/WebGL1 without altering the source texture.
+    let image=source.image; // The mountain-only texture may use a resized canvas while ground snow retains its 250x250 image.
+    if(!isPowerOfTwo(width)||!isPowerOfTwo(height)){
+      const canvas=typeof document!=='undefined'?document.createElement?.('canvas'):null; // Resizes only the distant cap's sampler image for WebGL1 compatibility.
+      if(!canvas)return false;
+      canvas.width=2**Math.ceil(Math.log2(width));canvas.height=2**Math.ceil(Math.log2(height));
+      const context=canvas.getContext?.('2d');
+      if(!context)return false;
+      context.imageSmoothingEnabled=true;
+      context.drawImage(source.image,0,0,canvas.width,canvas.height);
+      image=canvas;
+    }
+    const texture=source.clone(); // Backdrop-owned texture shares the tint but not the sampler or mipmap state.
+    if(image!==source.image)texture.image=image;
     texture.minFilter=T.LinearMipmapLinearFilter;
     texture.magFilter=T.LinearFilter;
     texture.generateMipmaps=true;
@@ -326,7 +339,7 @@
     record.textures.push(texture);
     record.snowMaterial.map=texture;
     record.snowMaterial.needsUpdate=true;
-    stats.snowTextureState='mipmapped-background-snow';
+    stats.snowTextureState=image===source.image?'mipmapped-background-snow':'mipmapped-background-snow-pow2';
     return true;
   }
   function createSnowBoundaryMaterial(record){
