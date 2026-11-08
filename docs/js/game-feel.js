@@ -342,6 +342,11 @@
       if (!inRuin()) return 'not-in-ruin';
       if (reveal) return 'already-revealing';
       if (deps?.isPlayerInCombat?.()) return 'combat';
+      const p = deps?.getPlayer?.();
+      // Never take the camera (and movement) away mid-traversal: a rope swing
+      // over lava or a ladder climb must stay under the player's control.
+      if (p && (p._freeJump || p.climbing || p.onClimbSurface || p.onBranch || p.dodging || p.lunging || p.prone)) return 'player-busy';
+      if (window.DevRandomRuinSimplePuzzles?.ownsPlayerMotion?.()) return 'player-busy';
       if (window.CinematicCameraRuntime?.isActive?.()) return 'cinematic-active';
       if (!window.CinematicCameraRuntime?.activate) return 'no-cinematic-runtime';
       return null;

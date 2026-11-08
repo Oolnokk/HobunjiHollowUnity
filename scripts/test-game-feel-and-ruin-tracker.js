@@ -102,6 +102,15 @@ now += 2500; // Outside the reveal window.
 GF.mechanismMoved(door);
 assert.equal(activations.length, 1, 'a late mechanism is not attributed to the solve');
 
+// Mid-traversal (rope swing, ladder, jump) the reveal never steals the camera.
+now += 5000;
+player.climbing = true;
+GF.puzzleSolved();
+GF.mechanismMoved(door);
+assert.equal(activations.length, 1, 'no reveal while climbing');
+assert.equal(GF.debugSnapshot().revealSkipped, 'player-busy');
+player.climbing = false;
+
 // Sinking gate: slides down, hides, and is restored in place for a later re-block.
 const gate = makeObject([0, 0, 0], [2, 3, 0.4]);
 gate.position = { y: 0 }; gate.visible = true; gate.parent = {};
