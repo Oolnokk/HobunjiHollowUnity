@@ -375,9 +375,9 @@
       portal.glyphs[i].material?.color?.setHex?.(color);
       const halo=portal.glyphGlows[i]?.material,outer=portal.glyphOuterGlows[i]?.material;
       halo?.color?.setHex?.(rejected?0xff3840:active?0xffe7a0:0xffac37);
-      if(halo)halo.opacity=rejected||active?.98:.07;
+      if(halo)halo.opacity=(rejected||active)? .98 : .07;
       outer?.color?.setHex?.(rejected?0xff3344:0xffeb9a);
-      if(outer)outer.opacity=rejected||active?.6:.02; // Two additive layers pulse through the exact authored note/rest timing.
+      if(outer)outer.opacity=(rejected||active)? .6 : .02; // Two additive layers pulse through the exact authored note/rest timing.
     }
   }
   function attachMusic(portal){
