@@ -65,6 +65,7 @@
   // ---------------------------------------------------------------- registry
 
   const surfaces = new Map();
+  let fallCatchCount = 0; // Mobile climb debug reports how many passive ladder catches succeeded this session.
   function normalize(raw) {
     const axisX = raw.axis === 'x'; // axis = the world axis `u` runs along
     const n = raw.normal || { x: 0, z: 1 };
@@ -139,7 +140,9 @@
       const catchTop = s.y1 - Math.min(DEFAULTS.fallTopClearance, (s.y1 - s.y0) * 0.35);
       if (previousY < s.y0 - 0.02 || pos.y > catchTop + 0.02) continue;
       const hit = { surface: s, d, u, y: clamp(pos.y, s.y0, catchTop) }; // Snap only within the vertically swept handhold band.
-      if (!best || d < best.d) best = hit;
+      const lift = Math.max(0, hit.y - pos.y); // Prefer the nearest vertically reachable rung if a fast fall crosses multiple bands.
+      if (!best || lift < best.lift - 1e-6 || (Math.abs(lift - best.lift) <= 1e-6 && d < best.d))
+        best = { ...hit, lift };
     }
     return best;
   }
@@ -357,6 +360,7 @@
     if (!deps || deps.player.onClimbSurface || deps.player.climbing || deps.player.onBranch || deps.player._freeJump?.noGrab) return false;
     const hit = findFallGrabTarget(pos, previousY);
     if (!hit || isEasyRuinJump(hit, { ...pos, y: hit.y })) return false;
+    fallCatchCount++;
     return attachAirborne(hit.surface, { ...pos, y: hit.y });
   }
 
@@ -456,6 +460,7 @@
     getAttachedSession: () => deps?.player?.onClimbSurface || null, // Surface pose uses the active wall plane without duplicating movement state.
     debugSnapshot: () => ({
       initialized: !!deps, surfaces: surfaces.size, attached: !!deps?.player?.onClimbSurface,
+      autoCatchSurfaces: [...surfaces.values()].filter(s => s.enabled && s.autoCatch).length, fallCatchCount, // In-game diagnostics for ladder contact on mobile.
       player: deps ? { tileX: deps.player.x / deps.TILE, tileZ: deps.player.y / deps.TILE, angle: deps.player.angle, wallClimbY: deps.player.wallClimbY ?? null, u: deps.player.onClimbSurface?.u ?? null } : null,
     }),
   });
