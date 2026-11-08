@@ -306,4 +306,22 @@ assert.equal(HOBUNJI_CONFIG.resourceRings.colors.stamina, '#d9a441', 'Stamina ri
 assert.equal(HOBUNJI_CONFIG.resourceRings.colors.footing, '#67b7ff', 'Footing ring uses light blue');
 assert.equal(ResourceRings.parseCssColor(HOBUNJI_CONFIG.resourceRings.colors.stamina), 0xd9a441, 'Stamina shared ring color parses correctly');
 assert.equal(ResourceRings.parseCssColor(HOBUNJI_CONFIG.resourceRings.colors.footing), 0x67b7ff, 'Footing shared ring color parses correctly');
+const makeAttackPowerTarget = () => ({
+  health: 100, maxHealth: 100, stamina: 100, maxStamina: 100,
+  footing: 100, maxFooting: 100, exhaustion: { active: false, blackStamina: 100 },
+  afflictions: Object.fromEntries(Object.keys(ResourceSystem.AFFLICTIONS).map(id => [id, 0])),
+}); // Fresh matched targets for proving Attack Power, not Health damage, owns on-hit affliction buildup.
+const weakDartTarget = makeAttackPowerTarget(); // Two Health damage must still apply the full 18-power blowgun status.
+const heavyHitTarget = makeAttackPowerTarget(); // Thirty Health damage with the same Attack Power must apply the same status.
+ResourceSystem.initEntity(weakDartTarget);
+ResourceSystem.initEntity(heavyHitTarget);
+ResourceSystem.applyDamage(weakDartTarget, 2, { attackPower: 18, afflictionBonuses: { poisonedHealth: 0.5 } });
+ResourceSystem.applyDamage(heavyHitTarget, 30, { attackPower: 18, afflictionBonuses: { poisonedHealth: 0.5 } });
+assert.equal(weakDartTarget.health, 98, 'weak darts retain weak direct damage');
+assert.equal(heavyHitTarget.health, 70, 'heavy hits retain their independent direct damage');
+assert.equal(ResourceSystem.getAffliction(weakDartTarget, 'poisonedHealth'), 9, '18 Attack Power contributes nine poison buildup at a 0.5 status coefficient');
+assert.equal(ResourceSystem.getAffliction(heavyHitTarget, 'poisonedHealth'), 9, 'larger Health hits do not amplify the same Attack Power status');
+assert.equal(ResourceSystem.attackPowerForAttack({ attackPower: -12 }), 0, 'attack power clamps invalid negative mod data');
+assert.equal(ResourceSystem.attackPowerForAttack({ attackPower: Number.POSITIVE_INFINITY }), 12, 'nonfinite attack power falls back safely');
+
 console.log('resource ring visibility and affliction color checks passed');
