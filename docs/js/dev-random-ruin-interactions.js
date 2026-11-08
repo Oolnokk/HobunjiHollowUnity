@@ -392,8 +392,9 @@
     const player = playerWorldPosition();
     const facing = Number(deps?.player?.angle);
     if (!player || deps?.player?.climbing) return null;
-    const baseY = Number(window.DevRandomRuin?.getPlayerSupportY?.());
-    const floorY = Number.isFinite(baseY) ? baseY : player.y;
+    const physicalY = window.DevRandomRuin?.getPlayerGroundSupportY?.(); // Climb vs jump must use supported feet, not the ruin's smoothed presentation height.
+    const presentedY = window.DevRandomRuin?.getPlayerSupportY?.();
+    const floorY = Number.isFinite(physicalY) ? physicalY : Number.isFinite(presentedY) ? presentedY : player.y;
     const minClimbRise = Math.max(cfg('climb.ledgeMinRise', LEDGE_MIN_RISE), window.PlayerJump?.easyJumpRise ?? 0); // Low standable objects belong to free jumping, not the ruin mantle animation.
     const maxRise = Math.max(cfg('climb.ledgeMaxRise', LEDGE_MAX_RISE), Number(window.DevRandomRuinRopeRewards?.lavaClimbRise?.(player)) || 0); // Wading in basin lava: the rim is always climbable (no teleport out).
     let best = null;
