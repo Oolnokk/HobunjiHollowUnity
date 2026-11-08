@@ -97,6 +97,17 @@ async function main() {
       if (earlyTall?.kneeDrop > .001) {
         throw Error('Leaf kneels before shorter Pahu places his hands on shoulders: ' + JSON.stringify(early));
       }
+      const leafInspectorId = actors.find(actor => actor.source.id === 'leaf')?.id;
+      const pahuInspectorId = actors.find(actor => actor.source.id === 'pahu')?.id;
+      api.selectActor(leafInspectorId); // Selecting the recipient must NOT change the authored initiator or swap the kneeling participant.
+      const afterInspectorSwitch = seek(.37);
+      if (api.kissPairDiagnostics?.().initiator !== 'pahu' ||
+          !afterInspectorSwitch.find(actor => actor.name === 'Pahu')?.initiatorHands?.applied ||
+          afterInspectorSwitch.find(actor => actor.name === 'Leaf')?.kneeDrop > .001) {
+        throw Error('Inspector selection silently switched kiss initiator/shorter-first choreography: ' +
+          JSON.stringify({ pair: api.kissPairDiagnostics?.(), bodies: afterInspectorSwitch }));
+      }
+      api.selectActor(pahuInspectorId);
       const afterLowering = seek(.78);
       if (!(afterLowering.find(actor => actor.name === 'Leaf')?.kneeDrop > .005)) {
         throw Error('Leaf never kneels after the initiator shoulder grasp: ' + JSON.stringify(afterLowering));
