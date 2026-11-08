@@ -136,9 +136,11 @@
       const ankle = shortStance[side].ankle;
       ground.set(ankle.x, ankle.y, ankle.z);
       shorterLegs.group.localToWorld(ground);
-      if (!composerLift) ground.y -= solution.shorterJumpWorld * jumpBlend; // NPC/editor leg group already inherited its actual root lift.
-      out[side].copy(ground).lerp(grip, jumpBlend); // Lift into contact, stay on hips, then reverse into a safe floor landing.
-      if (composerLift) out[side].y -= solution.shorterJumpWorld * jumpBlend; // Uncomposed player IK target cancels the forthcoming render-only body translation.
+      // NPC/editor roots already follow their jumping pelvis: the idle ankle
+      // must start at its CURRENT airborne position, not be pulled down to the
+      // old ground. Otherwise both calves overstretch during release.
+      out[side].copy(ground).lerp(grip, jumpBlend); // Interpolate from a body-relative dangling foot into genuine posterior contact.
+      if (composerLift) out[side].y -= solution.shorterJumpWorld * jumpBlend; // Player composer applies its own lift only inside render; countertranslate the temporary IK target.
     }
     return out;
   }
