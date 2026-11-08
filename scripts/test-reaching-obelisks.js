@@ -12,7 +12,7 @@ const Grid=require('../docs/js/cell-grid-3d.js');
 const fail=checks=>checks.filter(check=>!check.ok).map(check=>check.name+': '+(check.detail||'')).join(', ');
 assert(Plan.TRAVERSAL_METHODS.includes('reachingObelisks'),'new methods are selected from a dedicated traversal pool');
 assert(Obelisks.UNBUFFED_SPEED>3&&Obelisks.UNBUFFED_SPEED<4.3,'fall proof uses the no-buff movement reference with acceleration margin');
-assert.equal(Obelisks.BEAT_SECONDS,1.6,'the existing 1.2-second pulse slows by the relative 120-to-90 BPM ratio');
+assert(Math.abs(Obelisks.BEAT_SECONDS-1.6)<1e-9,'the existing 1.2-second pulse slows by the relative 120-to-90 BPM ratio');
 assert(Obelisks.ROTATION_SECONDS>0&&Obelisks.ROTATION_SECONDS<Obelisks.BEAT_SECONDS,
   'each eased quarter-turn settles before the following beat');
 assert(Math.abs(Obelisks.fallDistanceForTiles(2)-4*Obelisks.fallDistanceForTiles(1))<1e-9,'freefall is quadratic in horizontal travel time');
