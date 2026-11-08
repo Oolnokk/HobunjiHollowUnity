@@ -13899,7 +13899,7 @@ function kissTransformV1546(who, time, solution) {
     position: {
       x: 0,
       y: 0, // Keep the feet grounded: the preview's anatomical knee solver lowers only the upper body.
-      z: first ? -bowRetreat : .34 - .18 * pose.blend + bowRetreat, // Bring the partner close enough for a reachable shoulder grip and genuine mouth contact.
+      z: first ? -bowRetreat : .14 - .12 * pose.blend + bowRetreat, // Both faces remain close enough for real wrists to reach the target's upper torso before knee lowering.
     },
     rotationDeg: { x: 0, y: first ? 0 : 180, z: 0 }, // Torso bow belongs on the portrait and hand rigs, not the foot/leg root.
     scale: { x: 1, y: 1, z: 1 },
