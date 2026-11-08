@@ -27,6 +27,24 @@ for (const [first, second] of [[1, 1], [1.5, .8], [5, .1], [.1, 5]]) {
   assert.equal(solution.shorterSinkPct, 0, 'shorter partner remains standing on the ground');
   assert.equal(solution.taller, first >= second ? 'first' : 'second');
 }
+// An ordinary Pahu/Leaf-sized difference never lifts feet off the floor.
+const everyday = solver.solveHeights(.675, .855);
+assert.equal(everyday.shorterPosteriorGrip, false, 'ordinary spouse kiss still kneels without a jump');
+assert.equal(everyday.shorterJumpWorld, 0);
+for (const [first, second] of [[1, .5], [.5, 1], [1, .3]]) {
+  const jump = solver.solveHeights(first, second);
+  assert.equal(jump.contactPossible, true, 'a straddled kiss must still align mouth heights');
+  assert.equal(jump.shorterPosteriorGrip, true, 'a pronounced height mismatch needs a supported two-foot hop');
+  assert.ok(jump.shorterJumpWorld > 0 && jump.shorterJumpWorld <= Math.min(first, second) * .75);
+  assert.ok(jump.tallerSinkWorld <= jump.kneeLimitWorld, 'no jump makes the taller knee exceed its anatomical limit');
+  assert.ok(jump.tallerBowDeg > 0 && jump.tallerBowDeg < solver.MAX_BOW_DEG);
+  assert.ok(jump.jumpFootSpreadWorld > 0 && jump.jumpFootForwardWorld > 0);
+}
+assert.equal(solver.sampleJumpBlend(.37), 0, 'initial shoulder touch precedes both knee lowering and jumping');
+assert.equal(solver.sampleJumpBlend(.52), 0, 'jump begins only when the tall spouse is ready');
+assert.ok(solver.sampleJumpBlend(.82) > .6);
+assert.equal(solver.sampleJumpBlend(1.12), 1, 'both jumping feet settle on the taller posterior at kiss contact');
+assert.equal(solver.sampleJumpBlend(2.4), 0, 'the smaller spouse lands safely after separation');
 const impossible = solver.solveHeights(200, .001);
 assert.equal(impossible.contactPossible, false, 'unreachable pair must not receive false lip contact');
 assert.ok(impossible.remainingGap > .025);
@@ -81,6 +99,38 @@ assert.equal(torsoContact.onTorso, true, 'short initiator touches the closest re
 assert.ok(gripPoint.distanceTo(sourceShoulder) <= torsoContact.armReach + .00001);
 assert.equal(gripPoint.x, tallShoulder.x, 'contact remains on the actual target shoulder/upper-body surface');
 assert.equal(gripPoint.z, tallShoulder.z, 'contact remains on the actual target torso depth plane');
+
+// The jump reuses two world-coordinate leg IK targets. With real-sized poses,
+// the targets end symmetrically beside the taller posterior, and the knee
+// landing stays inside the smaller actor's leg reach.
+class PosteriorVector extends ShoulderVector {
+  set(x,y,z){this.x=x;this.y=y;this.z=z;return this;}
+  lerp(v,t){this.x+=(v.x-this.x)*t;this.y+=(v.y-this.y)*t;this.z+=(v.z-this.z)*t;return this;}
+}
+const mkWorld = (x,y,z) => ({
+  updateWorldMatrix(){},
+  localToWorld(v){v.x+=x;v.y+=y;v.z+=z;return v;},
+});
+const largeLegs = {
+  group: mkWorld(0,.056,0), standingPosteriorY:.28,
+  getStanceDrop:()=>.056,
+  getRestStance:()=>({left:{hip:{x:-.08}},right:{hip:{x:.08}}}),
+};
+const smallLegs = {
+  group:mkWorld(0,.084,.08),
+  getRestStance:()=>({left:{ankle:{x:-.04,y:.006,z:0}},right:{ankle:{x:.04,y:.006,z:0}}}),
+};
+const posteriorSolution = solver.solveHeights(1,.5);
+const footTargets = solver.posteriorStraddleFootTargets({Vector3:PosteriorVector},
+  largeLegs,smallLegs,posteriorSolution,1);
+assert.ok(footTargets && footTargets.left.x > 0 && footTargets.right.x < 0,
+  'the smaller partner places left and right feet on opposite sides of the larger posterior');
+assert.ok(Math.abs(footTargets.left.y-(.28-.056)) < 1e-6,
+  'the target follows the actual sunk posterior, not the floor or unbent torso');
+assert.ok(Math.abs(footTargets.right.y-footTargets.left.y)<1e-6);
+assert.ok(footTargets.left.distanceTo(footTargets.right)>0.01);
+assert.equal(solver.posteriorStraddleFootTargets({Vector3:PosteriorVector},largeLegs,smallLegs,posteriorSolution,0),null,
+  'no external foot ownership when the short partner has not taken off');
 const nearShoulder = new ShoulderVector(0,.8,0);
 const exactGrip = solver.resolveShoulderGripWorld(sourceShoulder,nearShoulder,.38,gripPoint);
 assert.ok(exactGrip.exactShoulder && gripPoint.distanceTo(nearShoulder) < 1e-6,
@@ -292,7 +342,28 @@ assert.equal(playerLegs.limit, .55);
 assert.equal(partnerLegs.limit, .55);
 assert.equal(channels.size, 0);
 assert.equal(activeTokens.size, 0);
-assert.equal(activeTokens.size, 0);
+
+// Live in-world jump works in both directions and restores the exact previous
+// NPC root elevation after cancel. A missing hand/foot model in this mock is
+// handled gracefully while the real browser exercises actual IK.
+avatarRoot.userData.portraitModelHeight=1;playerLegs.modelHeight=1;playerLegs.standingPosteriorY=.28;
+sceneWalker.avatarGroup.userData.portraitModelHeight=2;partnerLegs.modelHeight=2;partnerLegs.standingPosteriorY=.56;
+assert.equal(visual.start(sceneWalker,()=>contacts++),true);
+assert.equal(visual.diagnostics().session.height.shorterPosteriorGrip,true,'shorter live player should hop');
+for(let i=0;i<13;i++)renderFrame({deltaMs:80});
+assert.ok(channels.get('spouse-kiss').translation.y > .01,'shorter player actually rises toward the spouse posterior');
+assert.equal(npcRoot.position.y,0,'the taller NPC continues to stand on the floor');
+assert.equal(visual.stop('short-player-hop-cancel'),true);
+assert.equal(channels.size,0,'cancel removes the player leap composer channel');
+avatarRoot.userData.portraitModelHeight=2;playerLegs.modelHeight=2;playerLegs.standingPosteriorY=.56;
+sceneWalker.avatarGroup.userData.portraitModelHeight=1;partnerLegs.modelHeight=1;partnerLegs.standingPosteriorY=.28;
+assert.equal(visual.start(sceneWalker,()=>contacts++),true);
+assert.equal(visual.diagnostics().session.height.shorterPosteriorGrip,true,'shorter NPC should hop');
+for(let i=0;i<13;i++)renderFrame({deltaMs:80});
+assert.ok(npcRoot.position.y > 0,'shorter NPC receives actual vertical leap root motion');
+assert.equal(visual.stop('short-npc-hop-cancel'),true);
+assert.equal(npcRoot.position.y,0,'cancel fully restores NPC floor elevation');
+assert.equal(playerLegs.limit,.55);assert.equal(partnerLegs.limit,.55);
 
 const npcStateSrc = read('docs/js/npc-character-state.js');
 assert.match(npcStateSrc, /!window\.SpouseKissMotion\?\.isPartner\?\.\(walker\)/,
@@ -314,4 +385,5 @@ npcStateWindow.NpcCharacterState.update(heldWalker, .016, {});
 assert.equal(npcSuppressed, true, 'unrelated NPC locks still suppress the leg pose');
 const legsSrc = read('docs/js/procedural-leg-animation.js');
 assert.match(legsSrc, /setStanceDropLimitFraction:/, 'real legs expose reversible deep-kneel allowance');
-console.log('Spouse kiss: anatomical limits, torso bow, lock ownership, cancel/cleanup, author, save/expiry OK.');
+assert.match(legsSrc, /allowDeepFold/, 'shared procedural-leg IK supports posterior straddling without leg overextension');
+console.log('Spouse kiss: anatomical kneel + posteror-straddle jump, paired IK, lock/cancel cleanup, buff, author OK.');
