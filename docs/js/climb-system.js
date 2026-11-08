@@ -1073,7 +1073,7 @@
   function cliffDodge() {
     const player = deps?.player;
     if (!player) return false;
-    if (window.ClimbSurfaces?.release?.()) return true; // Dodge detaches from authored ruin walls, exactly like Jump; never starts a ground dodge.
+    if (window.ClimbSurfaces?.release?.({ fall: true })) return true; // Dodge releases authored wall grips into physical free fall, never an evasive roll.
     if (player.climbing) {
       if (player._cliffRouteSession) return fallFromClimb(player, 'released');
       if (player._climbCancelable && !player._climbDropped) dropFromClimb(player);
