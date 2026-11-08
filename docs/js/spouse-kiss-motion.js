@@ -8,7 +8,7 @@
   const DURATION_S = 2.4; // Used by the editor timeline and the live contact/exit sequence.
   const MOUTH_HEIGHT_FRACTION = .82; // Floor-relative portrait mouth proxy; scaled by actual rig height.
   const MAX_SINK_PCT = 82; // Extreme-size kneeling limit, measured like Attack Editor bodySink.
-  const MAX_DISTANCE = 1.6; // Kisses require a nearby, visible spouse.
+  const MAX_DISTANCE = .95; // A deliberate close-range action; avoids sliding partners through distant obstacles.
   const SOURCE = 'spouse-kiss'; // Composer/input-claim ownership; never replaces other effect owners.
   const clamp = (n, lo, hi) => Math.min(hi, Math.max(lo, n));
   const finite = (n, fallback = 0) => Number.isFinite(Number(n)) ? Number(n) : fallback;
@@ -66,7 +66,11 @@
       window.PlayerBodyTransformComposer?.clearChannel?.(SOURCE);
       old.playerLegs?.setStanceDrop?.(0, true);
       if (old.npcSink && window.ActorBodySink?.apply) window.ActorBodySink.apply(old.npcSink, 0, 0, true);
-      if (old.walker?.root?.parent) old.walker.root.rotation.y = old.originalNpcYaw;
+      if (old.walker?.root?.parent === old.npcParent) {
+        old.walker.root.rotation.y = old.originalNpcYaw;
+        old.walker.root.position.x = old.originalNpcPosition.x; // Restores the approach displacement, including early dodge.
+        old.walker.root.position.z = old.originalNpcPosition.z;
+      }
       if (old.npcNeck && old.originalNpcNeck) old.npcNeck.quaternion.copy(old.originalNpcNeck);
       if (old.playerNeck && old.originalPlayerNeck) old.playerNeck.quaternion.copy(old.originalPlayerNeck);
     } finally {
@@ -110,6 +114,10 @@
     const secondHeight = actorHeight(walker.avatarGroup, npcLegs, walker.root);
     const height = solveHeights(firstHeight, secondHeight);
     if (!height.contactPossible) { lastError = 'mouth-height-not-reachable'; return false; }
+    const contactGap = Math.min(dist, .2 + Math.min(firstHeight, secondHeight) * .11); // Shortest partner's head width controls mouth proximity.
+    const approach = Math.max(0, dist - contactGap); // Move only the spouse, so player collider and camera stay stable.
+    const approachX = dist > .0001 ? (playerPoint.x - npcPoint.x) * approach / dist : 0;
+    const approachZ = dist > .0001 ? (playerPoint.z - npcPoint.z) * approach / dist : 0;
 
     const npcSink = { legs: npcLegs, lower: [{ obj: npcRigRoot, factor: () => npcRigRoot.scale?.y || 1 }] };
     const playerNeck = player.userData?.neckRig?.neckJoint || null;
@@ -128,7 +136,9 @@
       originalPlayerNeck: playerNeck?.quaternion?.clone?.() || null,
       originalNpcNeck: npcNeck?.quaternion?.clone?.() || null,
       originalNpcYaw: walker.root.rotation.y,
-      height, lock, onContact, touched: false, elapsed: 0,
+      npcParent: walker.root.parent, // Prevents scene transfers from restoring an obsolete local world position.
+      originalNpcPosition: { x: walker.root.position.x, z: walker.root.position.z },
+      approachX, approachZ, height, lock, onContact, touched: false, elapsed: 0,
       headingPlayer: Math.atan2(npcPoint.x - playerPoint.x, npcPoint.z - playerPoint.z),
       headingNpc: Math.atan2(playerPoint.x - npcPoint.x, playerPoint.z - npcPoint.z),
     };
@@ -142,7 +152,7 @@
   function update(context = {}) {
     const session = active;
     if (!session) return;
-    if (!session.player?.parent || !session.walker?.root?.parent ||
+    if (!session.player?.parent || session.walker?.root?.parent !== session.npcParent ||
         session.composer?.getPlayerMesh?.() !== session.player ||
         session.walker.legs !== session.npcLegs ||
         window.RomanceSystem?.getSpouse?.()?.npcId !== session.walker.rec.id) {
@@ -164,6 +174,8 @@
       rotation: { pitch: (playerIsTaller ? -.09 : .035) * pose.blend },
     });
     window.ActorBodySink.apply(session.npcSink, npcPct, 0, true);
+    session.walker.root.position.x = session.originalNpcPosition.x + session.approachX * pose.blend;
+    session.walker.root.position.z = session.originalNpcPosition.z + session.approachZ * pose.blend;
     session.walker.root.rotation.y = session.originalNpcYaw + 
       Math.atan2(Math.sin(session.headingNpc - session.originalNpcYaw), Math.cos(session.headingNpc - session.originalNpcYaw)) * pose.blend;
     if (session.playerNeck && session.originalPlayerNeck) {
