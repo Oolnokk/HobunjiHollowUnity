@@ -14437,6 +14437,7 @@ syncMultiAvatarFullBodiesV1548 = function(time = animationAuthor.currentTime, dt
           state.three.THREE, taller.rigFeetPreview, jumperFeet, solution, jumpFraction, scratch,
         );
         let reachExcess = 0; // Mobile-readable proof that the planted soles can reach the taller posterior without stretching legs.
+        const footReachDetail = {}; // Per-leg world deltas identify whether a too-short leg missed sideways, upward or forward.
         if (targets && jumperFeet?.group) {
           const anatomy = jumperFeet.motionAnatomy?.() || [];
           const legLength = anatomy.length ? Math.min(...anatomy.map(item => Number(item.length) || 0)) *
@@ -14447,7 +14448,11 @@ syncMultiAvatarFullBodiesV1548 = function(time = animationAuthor.currentTime, dt
             if (!hip) continue;
             const source = new state.three.THREE.Vector3(hip.x, hip.y, hip.z);
             jumperFeet.group.localToWorld(source);
-            reachExcess = Math.max(reachExcess, source.distanceTo(targets[side]) - legLength); // Positive means the requested foot target is unreachable.
+            const delta = targets[side].clone().sub(source); // Signed world offset from the genuine small hip socket to the desired planted foot.
+            footReachDetail[side] = { dx: Number(delta.x.toFixed(4)), dy: Number(delta.y.toFixed(4)),
+              dz: Number(delta.z.toFixed(4)), distance: Number(delta.length().toFixed(4)),
+              legLength: Number(legLength.toFixed(4)) };
+            reachExcess = Math.max(reachExcess, delta.length() - legLength); // Positive means the requested foot target is unreachable.
           }
         }
         jumperFeet?.setExternalFootTargets?.(targets, { allowDeepFold: true }); // Each genuine leg IK chain grips its own side of the posterior.
@@ -14456,6 +14461,7 @@ syncMultiAvatarFullBodiesV1548 = function(time = animationAuthor.currentTime, dt
         shorter.previewAnatomyV1548.jumpFeetAnchored = !!targets;
         shorter.previewAnatomyV1548.jumpFootDistance = targets ? targets.left.distanceTo(targets.right) : 0;
         shorter.previewAnatomyV1548.jumpFootReachExcessWorld = Number(reachExcess.toFixed(5)); // 0 means the posterior feet fit the species' real leg lengths.
+        shorter.previewAnatomyV1548.jumpFootReachDetail = footReachDetail; // Exposes each hip-to-ankle world delta without browser console access.
       } else {
         for (const actor of [leader, partner]) actor.rigFeetPreview?.setExternalFootTargets?.(null); // A new non-jump preset must release old foot targets.
       }
