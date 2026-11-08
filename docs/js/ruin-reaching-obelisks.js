@@ -233,9 +233,11 @@
     const tick=dt=>{
       if(disposed)return;
       const elapsedStep=clamp(Number(dt)||0,0,.05);
-      const inside=insideShaft();
-      if(!inside){active=false;elapsed=0;}
-      else if(!active){active=true;elapsed=0;applyBeat();}
+      if(!insideShaft()){
+        active=false;elapsed=0;beatCount=0; // A new room visit always opens on the elevation downbeat; no lingering partial measure.
+        return; // Neither the rhythm nor any elevator's physical position advances while the room is empty.
+      }
+      if(!active){active=true;elapsed=0;applyBeat();}
       else{
         elapsed+=elapsedStep;
         if(elapsed>=BEAT_SECONDS){elapsed-=BEAT_SECONDS;applyBeat();}
