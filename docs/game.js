@@ -24705,12 +24705,15 @@
           const pose = window.KurrayaInstrument?.playerHeldPose?.(); // One shared note clock is used by the tool, right hand, grip spans and leg sink.
           if (pose) {
             const identity = playerPoseIdentity(); // Species/height orbit is the same transform the Attack Editor previews.
+            const gripKey = `kurraya|melee|${identity.speciesId}|${identity.gender}`; // The shared hand-grip cache prevents a holder-space pivot allocation every frame.
+            if (!_gripAnchorCache.has(gripKey)) _gripAnchorCache.set(gripKey,
+              window.HobunjiHandToolGrips?.primaryGripHolderPointForTool?.('kurraya', 'melee', identity) || null);
             window.KurrayaInstrument.applyPlayerHeldPose(heldItemHolder, pose, playerToolBaseX, playerToolBaseY, {
               cx: 0, cz: 0, floorY: 0, baseY: playerToolBaseY,
               speciesId: identity.speciesId, gender: identity.gender,
               modelHeight: playerAvatarModelHeight, armLength: playerArmLength,
               poseOrbitScale: playerPoseOrbitScale,
-            });
+            }, _gripAnchorCache.get(gripKey)); // Editor scales about the primary grip; not about the sprite centre.
             playerMesh.rotation.y = playerFacing + THREE.MathUtils.degToRad(Number(pose.bodyYaw) || 0); // Body yaw is authored per note rather than inherited from a weapon stance.
           }
         } else if (isThrowFlaskItem(item) && window.HeldActionAnimations?.throwFlask) {
