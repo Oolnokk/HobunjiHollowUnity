@@ -467,6 +467,26 @@
     const elapsed = performance.now() - playerKurrayaNote.startedAt;
     return elapsed >= 0 && elapsed < duration ? elapsed / duration : 0; // At rest or after the tail returns to Neutral.
   }
+  function playerHeldPose() {
+    const action = window.HeldActionAnimations?.kurrayaPlayNote; // The Attack Editor's saved action is the only source of held-instrument poses.
+    if (!action?.poses?.neutral) return null;
+    return playerKurrayaNote.active && playerKurrayaNote.startedAt !== null
+      ? notePoseAt(action, playerNoteProgress())
+      : action.poses.neutral; // Both a carried instrument and the pauses between notes show the authored Neutral stance.
+  }
+
+  function applyPlayerHeldPose(holder, pose, baseX, baseY, speciesPose = null) {
+    if (!holder?.position?.set || !holder?.rotation?.set || !holder?.scale?.setScalar || !pose) return false;
+    const value = key => Number.isFinite(Number(pose[key])) ? Number(pose[key]) : 0; // All editor channels stay finite before reaching a Three.js transform.
+    holder.position.set((Number(baseX) || 0) + value('x'), (Number(baseY) || 0) + value('y'), value('z'));
+    if (speciesPose) window.HobunjiSpeciesPoseScale?.transformPosePoint?.(holder.position, speciesPose); // Same authored species/height/orbit mapping as the editor preview.
+    const deg = Math.PI / 180;
+    holder.rotation.set(value('pitch') * deg, value('yaw') * deg, value('roll') * deg, 'YXZ'); // Yaw × Pitch × Roll, identical to the editor's qYaw*qPitch*qRoll.
+    const scale = Number(pose.scale);
+    holder.scale.setScalar(Number.isFinite(scale) && scale > 0 ? scale : 1); // Neutral owns instrument size throughout a note.
+    return true;
+  }
+
   function playerRightHandPose() {
     if (!playerKurrayaNote.active) return null;
     const note = window.HeldActionAnimations?.kurrayaPlayNote;
@@ -642,7 +662,7 @@
   }
 
   window.KurrayaInstrument = { init, buildAssembly, newTwitchState, triggerTwitch, updateTwitch,
-    beginPlayerKurraya, playPlayerKurrayaNote, endPlayerKurraya, playerRightHandPose, playerGripAnimationState, playerKurrayaHandTarget,
+    beginPlayerKurraya, playPlayerKurrayaNote, endPlayerKurraya, playerHeldPose, applyPlayerHeldPose, playerRightHandPose, playerGripAnimationState, playerKurrayaHandTarget,
     beginFlute, playFluteNote, endFlute, fluteHandTarget, notePoseAt, fluteDiagnostics, prepareFluteCanvas,
     kurrayaHandDiagnostics: () => ({ active: playerKurrayaNote.active, noteCount: playerKurrayaNote.noteCount, notePlaying: playerKurrayaNote.startedAt !== null && performance.now() - playerKurrayaNote.startedAt < Math.max(50,(Number(window.HeldActionAnimations?.kurrayaPlayNote?.durationS)||0.32)*1000) }),
   };
