@@ -953,6 +953,7 @@
   }
   function resetPlasmOnDeath(kit) {
     if(!world)return;
+    restorePlasmPresentation();
     // Stationary patches are immutable: deaths only reset immersion, never rebuild geometry or change walkable space.
     world.sink=0;
     lastEvent='kanthic:immersion-reset';
@@ -1129,6 +1130,15 @@
     return best;
   }
 
+  // Sinking publishes a lowered presentation height. Every way OUT of the plasm (stepping off, the bomb puddle expiring
+  // under you, jumping out, dying) must hand the real support height back, or the ruin keeps believing you stand
+  // below the floor and jumps/movement misbehave afterwards.
+  function restorePlasmPresentation() {
+    if(!world?.presentationSunk)return;
+    world.presentationSunk=false;
+    const ground=window.DevRandomRuin?.getPlayerGroundSupportY?.();
+    if(Number.isFinite(ground))window.DevRandomRuin?.syncPlayerPresentationHeight?.(ground);
+  }
   function updatePlasm(kit,dt) {
     const player=kit.deps.player,tile=kit.deps.TILE;
     if(!player||!tile)return;
@@ -1136,6 +1146,7 @@
     if(!alive(player)){
       if(world.playerWasAlive!==false)resetPlasmOnDeath(kit);
       world.playerWasAlive=false;
+      restorePlasmPresentation();
       return;
     }
     world.playerWasAlive=true;
@@ -1145,11 +1156,13 @@
     // Newly activated checkpoints are always safe, without altering or re-uploading the authored surface.
     if(!room?.plasm?.has(key)||protectedPlasmTile(kit,Math.floor(point.x),Math.floor(point.z))){
       world.sink=0;
+      restorePlasmPresentation();
       return;
     }
     const baseY=room.plasmFloorY.get(key)??floorY(kit,point.x,point.z); // Keep static puddles at the original floor, even if a bridge appears later.
     if(kit.ownsPlayerMotion?.()||player.climbing||player._freeJump?.phase==='air'||playerY>baseY+PLASM_DEPTH+.08||(world.sink===0&&playerY<baseY-.3)){ // A mid-air hop over plasm neither sinks nor pulls you.
       world.sink=0;
+      restorePlasmPresentation();
       return; // Ropes, flying and elevated supports take precedence.
     }
     let patch=null,best=Infinity; // Nearest seeded tile attracts the player; avoid allocating/sorting an array every frame.
@@ -1168,6 +1181,7 @@
       if(clearAt(nx,nz,baseY)||room.plasm.has(tileKey(nx,nz))){player.x=nx*tile;player.y=nz*tile;}
     }
     const bodyHeight=Math.max(.9,Number(kit.deps.playerMesh?.userData?.portraitModelHeight)||1.8);
+    world.presentationSunk=true;
     window.DevRandomRuin?.syncPlayerPresentationHeight?.(baseY-world.sink*bodyHeight);
     if(world.sink>=1){
       world.sink=0;
