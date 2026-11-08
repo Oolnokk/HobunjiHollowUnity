@@ -842,7 +842,9 @@ window.SCRATCHBONES_CONFIG = {
           "rakakoan": "kenkari",
           "tletingan": "slagothim",
           "engh_sho": "engh_sho",
-          "engh-sho": "engh_sho"
+          "engh-sho": "engh_sho",
+          "harlyao": "harlyao",
+          "harlyao-skeleton": "harlyao"
         }
       },
       "cultures": {
@@ -1001,6 +1003,18 @@ window.SCRATCHBONES_CONFIG = {
                 "nk": 10, "mp": 6, "nt": 5, "lk": 4, "rk": 4
               }
             }
+          }
+        },
+        "harlyao": {
+          "id": "harlyao",
+          "displayName": "Harlyao",
+          "casing": "title",
+          "harlyaoRules": {
+            "firstParts": ["na", "az", "im", "kril", "am", "nar", "gar", "mal", "il", "ur", "zan", "hal", "dran", "gril", "kal", "an", "zen", "mar", "lor", "rak", "ir", "ran", "kar", "zul", "orl", "ga", "va", "ha"],
+            "middleParts": ["na", "gar", "la", "ri", "ra", "ha", "mi", "nar", "nu", "ril", "ar", "ma", "zul", "va", "gal", "lu", "n"],
+            "lastParts": ["hi", "lu", "lao", "larg", "nao", "ri", "ra", "na", "aru", "ar", "an", "il", "ir", "or", "ur", "gar", "ga", "nir", "kal", "arg", "lar", "ma", "ha", "no", "za"],
+            "threePartChance": 0.38,
+            "reservedNames": ["Nanahi", "Azgarlu", "Imlao"]
           }
         }
       }
