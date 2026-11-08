@@ -98,7 +98,7 @@
   }
 
   function applyInitiatorShoulderHands(initiatorRig, targetRig, time, initiatorShorter, scratch = null) {
-    const THREE = window.THREE;
+    const THREE = scratch?.THREE || window.THREE; // Animation Author loads Three as a module; gameplay exposes window.THREE.
     if (!THREE?.Vector3 || !THREE?.Quaternion || !initiatorRig?.placeHandWorld ||
         !initiatorRig?.armLengthForSide || !targetRig?.shoulderPositionLocal) return { applied: false, reason: 'hand-rigs-not-ready' };
     const geometry = scratch || {}; // Caller can reuse a fixed two-hand scratch structure across render frames.
