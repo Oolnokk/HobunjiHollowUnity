@@ -12,6 +12,7 @@
       throw new Error('V50 multifloor wall style needs a mounted scene and shaft grid.');
     const accents=new THREE.Group(); // Owns the V50-style wall reliefs for cleanup on dungeon reroll.
     accents.name='ruin-v50-engraved-masonry';rec.scene.add(accents);
+    root.FurniturePatternSurfaces?.setRuinAwardTarget?.(accents,ruin.localeRoot); // Late motifs grant to the playable ruin without circular serialized scene data.
     const stone=root.ProceduralFurniture?.makePartMaterial?.({
       materialTexture:'carved_smooth.png',materialLighting:'unlit',
       materialFillMode:'never',color:'#7a746b',
@@ -108,7 +109,10 @@
     // climb markings beside them.
     const featureGroups=[];rec.scene.traverse?.(node=>{if(node.userData?.ruinFeatureWalls===true)featureGroups.push(node);});
     const wallIds=[];
-    for(const group of featureGroups)wallIds.push(...(root.FurniturePatternSurfaces?.decorateRuin?.(group,seed,special)||[]));
+    for(const group of featureGroups){
+      root.FurniturePatternSurfaces?.setRuinAwardTarget?.(group,ruin.localeRoot); // Broad wall groups are separate visual subtrees.
+      wallIds.push(...(root.FurniturePatternSurfaces?.decorateRuin?.(group,seed,special)||[]));
+    }
     const original=ruin.localeRoot.userData||{};
     original.ruinPatternIds=[...new Set([...(original.ruinPatternIds||[]),...ids,...wallIds])];
     ruin.shaftConnection.patternedWallPanels=faces;

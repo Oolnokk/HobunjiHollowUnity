@@ -88,7 +88,8 @@
       return level!=null&&finite(level)?Number(level):Number(options.floorY)||0; // A missing height must never fall back to Number(null) = 0.
     };
     const nearFloor=object=>{
-      const y=Number(getPlayerY?.());
+      const physical=host.DevRandomRuin?.getPlayerGroundSupportY?.(); // A visible native control must pass the same supported-feet test as the game's action provider.
+      const y=Number(typeof physical==='number'&&Number.isFinite(physical)?physical:getPlayerY?.());
       return Number.isFinite(y)&&Math.abs(y-levelAt(object))<1;
     };
     const control=record=>{
@@ -276,16 +277,17 @@
       const panel=(door.children||[]).find(child=>child?.isMesh&&child.geometry)||door;
       const box=worldBox(panel),height=box?.max.y-box?.min.y||2;
       const closed=Number(panel.position.y)||0;
-      const state={door,panel,open:0,target:0,closed,height,openingSide:0,
-        crossingAxis:Math.abs(Math.sin(Number(door.rotation.y)||0))>.707?'x':'z'}; // A V50 hallway exit door closes behind the player only once they actually cross its plane.
+      const crossingAxis=box?(box.max.x-box.min.x<=box.max.z-box.min.z?'x':'z')
+        :(Math.abs(Math.sin(Number(door.rotation.y)||0))>.707?'x':'z'); // The live slab's WORLD-space thin axis determines crossing, including nested and pre-rotated native V50 doors.
+      const state={door,panel,open:0,target:0,closed,height,openingSide:0,crossingAxis}; // The door may auto-close after a genuine crossing but must reopen from either side.
       trackBlocker(scope+'-transit-door-'+door.id,panel,()=>state.open<.88);
       solids?.scan(panel,'door',{force:true,enabled:()=>state.open<.88});
       control({kind:'v50NativeTransitDoor',object:door,promptRoot:door,range:1.9,
-        priority:21,touchIcon:'✋',label:()=>state.target?'Close Stone Door':'Open Stone Door',
+        priority:24,claimAction1:true,touchIcon:'✋',label:()=>state.target?'Close Stone Door':'Open Stone Door',
         onPress:()=>{
           if(!nearFloor(door))return;
           state.target=state.target?0:1;
-          const player=getPlayerPosition?.(),position=center(door);
+          const player=getPlayerPosition?.(),position=center(panel); // Use the moving slab's true threshold, not the full frame's decorative bounds.
           const signed=player?(state.crossingAxis==='x'?player.x-position.x:player.z-position.z):0;
           state.openingSide=state.target&&player?(Math.sign(signed)||1):0; // Manual close does not leave a stale passage-side detector.
         }});
@@ -352,7 +354,7 @@
         host.RuinInteractionAudio?.watchMovement?.(state.panel,state.open); // Sound door travel rather than reapplying an unchanged pose.
         state.panel.position.y=state.closed+(state.height+.12)*(state.open*state.open*(3-2*state.open));
         if(state.target>.5&&state.open>.9&&state.openingSide){
-          const player=getPlayerPosition?.(),position=center(state.door);
+          const player=getPlayerPosition?.(),position=center(state.panel); // Both sides of the same panel share one crossing plane.
           const signed=player?(state.crossingAxis==='x'?player.x-position.x:player.z-position.z):0;
           if(Math.sign(signed)===-state.openingSide&&Math.abs(signed)>.48){
             state.target=0;state.openingSide=0; // Mirrors V50's authored hallway exit behavior; a closed transit door still has its own repeatable interact control.
@@ -395,6 +397,9 @@
         nestedElevatorBlocks:elevatorBlocks.length,bridgeDropBlocks:bridgeDropBlocks.length,
         completedBridgeDrops:bridgeDropBlocks.filter(drop=>drop.complete).length,
         transitDoors:inventory.transitDoors.length,
+        transitDoorStates:inventory.transitDoors.map(state=>({ // Mobile diagnostics identify a shut but interactable door without DevTools.
+          id:state.door.id||null,open:+state.open.toFixed(3),target:state.target,axis:state.crossingAxis,
+        })),
         solved:[...states.values()].filter(state=>state.solved).length,
         families:[...new Set(inventory.activators.map(item=>item.userData.activatorType))].sort(),
         motions:[...new Set([...states.values()].map(item=>item.motion))].sort(),

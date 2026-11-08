@@ -340,14 +340,17 @@
     const now = performance.now();
     if (statsCache && statsCache.root === root && now - statsAt < 1000) return statsCache;
     const overlays = (root.userData.ruinPatternOverlays || []).filter(overlay => overlay.parent);
-    const textures = new Set(); let pixels = 0, loading = 0;
+    const textures = new Set(); let pixels = 0, loading = 0, glowing = 0, failed = 0; // Live GPU/decal readiness for mobile diagnosis.
     for (const overlay of overlays) {
+      if (overlay.userData?.engravingGlowMesh) glowing++;
+      if (overlay.userData?.furniturePattern?.status === 'loading') loading++;
+      else if (overlay.userData?.furniturePattern?.status !== 'ready') failed++;
       const map = overlay.material?.map;
-      if (!map) { loading++; continue; }
+      if (!map) continue;
       if (textures.has(map)) continue;
       textures.add(map); pixels += (map.image?.width || 0) * (map.image?.height || 0);
     }
-    statsCache = { root, overlays: overlays.length, textures: textures.size, megapixels: pixels / 1e6, loading };
+    statsCache = { root, overlays: overlays.length, textures: textures.size, megapixels: pixels / 1e6, loading, glowing, failed };
     statsAt = now;
     return statsCache;
   }
@@ -380,9 +383,9 @@
       id: 'ruin-patterns',
       title: '🏛️ Ruin surface patterns',
       order: 40,
-      when: () => !!currentRoot()?.userData?.ruinPatternTypes,
+      when: () => !!(currentRoot()?.userData?.ruinPatternTypes || currentRoot()?.userData?.ruinPatternLoad),
       render: () => {
-        const root = currentRoot(), allTypes = [...root.userData.ruinPatternTypes.values()];
+        const root = currentRoot(), allTypes = [...(root.userData.ruinPatternTypes?.values?.() || [])];
         const s = stats(root), get = name => setting(name, draft), pending = dirty();
         const actions = [
           { id: 'apply', label: pending ? '✔ Apply settings' : 'Applied', active: pending, group: 'Changes', title: 'Re-pattern this ruin with the staged settings.' },
@@ -393,7 +396,7 @@
         ];
         if (selection?.none) actions.push({ id: 'pick', label: 'Nothing hit — pick again', group: 'Picked' });
         else if (selection?.key) {
-          const type = root.userData.ruinPatternTypes.get(selection.key);
+          const type = root.userData.ruinPatternTypes?.get(selection.key);
           const head = `Picked: ${selection.key}${selection.context ? ` (${selection.context})` : ''} · this face: ${CLASS_LABELS[selection.cls] || selection.cls}${selection.height != null ? ` ${selection.width}w × ${selection.height}h` : ''} · ${selection.patterned ? 'patterned' : 'plain'}`;
           if (type) actions.push(...typeActions(type, head).actions);
         }
@@ -417,7 +420,7 @@
           actions.push(...typeActions(type, group).actions);
         }
         return {
-          summary: `${allTypes.filter(type => type.overlays > 0).length}/${allTypes.length} types patterned · ${s.overlays} overlays · ${s.textures} textures · ${s.megapixels.toFixed(1)} MP${s.loading ? ` · ${s.loading} loading` : ''}${pending ? ' · unapplied changes' : ''}`,
+          summary: `${allTypes.filter(type => type.overlays > 0).length}/${allTypes.length} types patterned · ${s.overlays} overlays · ${s.glowing} additive glows · ${s.textures} textures · ${s.megapixels.toFixed(1)} MP${s.loading ? ` · ${s.loading} loading` : ''}${s.failed ? ` · ${s.failed} failed` : ''}${root.userData.ruinPatternLoad === 'pending' ? ' · motif PNGs loading' : ''}${pending ? ' · unapplied changes' : ''}`,
           note: `${live ? 'Live update is on: clicks apply immediately.' : 'Changes are staged until Apply settings.'} By default only tall broad side faces (≥${get('minRegionHeight')} tall, ≥${get('minRegionWidth')} wide in the world) are patterned. Applied settings persist in this browser; Export JSON and commit it as docs/${CONFIG_PATH} to keep them.`,
           actions,
         };

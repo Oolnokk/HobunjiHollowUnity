@@ -366,6 +366,7 @@
   // Rows that are not aim targets: a swinging rope is caught by proximity,
   // riding controls follow the player, and the exit is a spot, not an object.
   const AMBIENT_KINDS = new Set(['ropegrab', 'roperelease', 'ropebrake', 'exit']);
+  const PROXIMITY_DOOR_KINDS = new Set(['transitdoor', 'v50nativetransitdoor']); // Both ordinary and upper-story hallway doors must offer an action from either side, even without reticle focus.
   const promptAnchor = new THREE.Object3D(); // One plain anchor (no scale/rotation) so the list sits at camera height beside what is aimed at, never at an object's pivot (door pivots sit at the top of the frame).
   promptAnchor.name = 'dev_ruin_interaction_prompt_anchor';
   let focusDebug = null;
@@ -464,7 +465,9 @@
   // interaction ray picks one aimed object; only its actions are listed.
   function focusRows(rows) {
     const ambient = rows.filter(row => AMBIENT_KINDS.has(row.kind));
-    const aimed = rows.filter(row => !AMBIENT_KINDS.has(row.kind));
+    const nearbyDoor = rows.filter(row => PROXIMITY_DOOR_KINDS.has(row.kind))
+      .sort((a, b) => a.distance - b.distance)[0] || null; // Only one nearby door may claim Action 1; never choose a door on another story (providerRows already filters floorY).
+    const aimed = rows.filter(row => !AMBIENT_KINDS.has(row.kind) && !PROXIMITY_DOOR_KINDS.has(row.kind));
     const owners = [...new Set(aimed.map(row => row.owner).filter(Boolean))];
     const candidates = owners.map(owner => ({ type:'devRuinInteraction', id:owner.uuid || owner.id, data:owner, box:ownerBox(owner) })).filter(candidate => candidate.box);
     let focus = candidates.length ? window.RangedWeapons?.focusCandidates?.(candidates, 6) || null : null;
@@ -485,8 +488,9 @@
     focusDebug = { candidates:candidates.length, focused:focusedOwner?.name || null, point:focus?.point ? { x:+focus.point.x.toFixed(2), y:+focus.point.y.toFixed(2), z:+focus.point.z.toFixed(2) } : null, hasRay:!!hasRay };
     if (focusedOwner) window.DebugHitboxes?.noteInteractionFocus?.(focus);
     const chosen = focusedOwner ? aimed.filter(row => row.owner === focusedOwner) : [];
-    placePromptAnchor(focusedOwner, focus?.point || null, chosen.length ? chosen : ambient);
-    return [...chosen, ...ambient];
+    const available = nearbyDoor ? [nearbyDoor, ...chosen, ...ambient] : [...chosen, ...ambient]; // Closed hallway doors do not depend on camera alignment; puzzle-gated stone doors are still handled by their puzzle state.
+    placePromptAnchor(focusedOwner || nearbyDoor?.owner, focus?.point || null, available);
+    return available;
   }
 
   function placePromptAnchor(owner, aimPoint, rows) {

@@ -47,14 +47,12 @@
       // All block bodies, pressure plates, stairs, stone pillars, gates and rune insets use the same carved_smooth.png material as the rest of the dungeon.
       const carved=surface==='carved'?root.ProceduralFurniture?.makePartMaterial?.({
         materialTexture:'carved_smooth.png',materialLighting:'unlit',materialFillMode:'never',
-        color:'#'+Number(color).toString(16).padStart(6,'0')
+        color:'#7a746b'
       }):null;
       if(carved){
-        if(emissive&&carved.emissive?.setHex){carved.emissive.setHex(emissive);carved.emissiveIntensity=.46;}
-        return carved; // Unlit tint preserves visible bronze/green plate signals and glowing-colored markings on textured stone.
+        return carved; // Interactive feedback lives in the separate glowing PNG glyphs, not the stone tint.
       }
-      return new THREE.MeshStandardMaterial({color,roughness:.82,metalness:.06,
-        emissive,emissiveIntensity:emissive?.46:0}); // Offline/headless fallback when the furniture texture service is not loaded.
+      return new THREE.MeshStandardMaterial({color:surface==='carved'?0x7a746b:color,roughness:.82,metalness:.06}); // Headless fallback uses the same inert stone tint.
     };
     const newMesh=(name,geo,material,x,cy,z,parent=group)=>{
       const mesh=new THREE.Mesh(geo,material);
@@ -99,6 +97,7 @@
       const mesh=cube('find-block-'+name,x,z,bottom,BLOCK_SIZE,BLOCK_SIZE,BLOCK_SIZE,COLOR.block);
       const rune=cube('find-block-inset-'+name,0,0,BLOCK_SIZE*.5-.02,.32,.035,.32,COLOR.mark,0,mesh);
       rune.position.set(0,BLOCK_SIZE*.5+.008,0); // Slightly raised square top mark follows the moving block.
+      root.FurniturePatternSurfaces?.attachStoneSignal?.(rune,{width:.26,height:.26,idleColor:'#d6b77e'}); // The top mark glows without repainting the block.
       mesh.userData.findBlocksAvailable=available;
       mesh.userData.findBlocksFalling=false;
       mesh.userData.findBlocksCanDrop=false;
@@ -273,12 +272,15 @@
           const faceZ=alongX?pz:pz+Math.sign(cz-pz)*.535;
           const marker=cube('find-blocks-projectile-glyph-'+index,faceX,faceZ,floorY+.86,
             alongX?.15:.56,.57,alongX?.56:.15,COLOR.fire,0x452300); // Thin exposed wall plaque hits before the pillar in the actual ranged sweep.
+          const signal=root.FurniturePatternSurfaces?.attachStoneSignal?.(marker,{
+            face:alongX?(px<cx?'right':'left'):(pz<cz?'front':'back'),
+            width:.39,height:.4,idleColor:'#ffa64a',activeColor:'#65ffaf',
+          }); // Projectile marks switch glow only, retaining the same stone PNG underneath.
           const target={id:id+'-target-'+index,object:marker,hitMesh:marker,active:false,
             hittable:()=>alive()&&!target.active,
             onHit:()=>{
               if(!alive()||target.active)return;
-              target.active=true;hitCount++;marker.material.color.setHex(COLOR.solved);
-              marker.material.emissive.setHex(0x155a32);
+              target.active=true;hitCount++;signal?.setActive(true);
               if(hitCount===3)triggerSink();
             }};
           targets.push(target);kit.registerProjectileTarget(target);
@@ -332,10 +334,13 @@
     function createPlates(){
       const positions=[[cx-1,cz-1],[cx+1,cz-1],[cx-1,cz+1],[cx+1,cz+1]]; // Plate centers share the blocks' 1-unit slide lattice; half-tile offsets make a plate impossible to fill.
       positions.forEach(([x,z],index)=>{
-        const mesh=cube('find-blocks-pressure-plate-'+index,x,z,floorY-.025,.91,.06,.91,COLOR.plate);
-        const line=cube('find-blocks-plate-frame-'+index,x,z,floorY+.04,.64,.04,.64,COLOR.mark);
+        const mesh=cube('find-blocks-pressure-plate-'+index,x,z,floorY-.025,.91,.06,.91,COLOR.stone);
+        const line=cube('find-blocks-plate-frame-'+index,x,z,floorY+.04,.64,.04,.64,COLOR.stone);
+        const signal=root.FurniturePatternSurfaces?.attachStoneSignal?.(line,{
+          width:.48,height:.48,idleColor:'#e2ad62',activeColor:'#65ffaf',
+        }); // A seated block lights the inset glyph; neither slab changes texture/color.
         mesh.userData.findBlocksPressurePlate=index;line.userData.devRuinFootprintIgnore=true;
-        plates.push({mesh,x,z,filled:false,block:null});
+        plates.push({mesh,signal,x,z,filled:false,lastVisualFilled:false,block:null});
       });
     }
     // Fixed sparse columns make real, visible obstructions rather than hard-coded block lanes.
@@ -448,7 +453,10 @@
           plate.block=found?.name||null;
           plate.filled=!!found;
           root.RuinInteractionAudio?.watchPlate?.(plate.mesh,plate.filled); // A pushed block seating on or leaving a stone socket clicks once.
-          plate.mesh.material.color.setHex(found?COLOR.solved:COLOR.plate);
+          if (plate.filled !== plate.lastVisualFilled) {
+            plate.signal?.setActive(plate.filled);
+            plate.lastVisualFilled=plate.filled;
+          } // Only occupancy transitions update glyphs; no per-frame stone tint writes.
           if(found)weighted++;
         }
         if(weighted===4)openGate();

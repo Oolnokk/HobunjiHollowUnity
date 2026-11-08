@@ -113,7 +113,10 @@
     state.loading = true;
     const create = actor.isRuinSkeeri ? window.SkeeriRuins?.createRig : kind(actor)==='pingdort' ? window.PingdortRegistration?.createRig : window.TzatzulRegistration?.createRig; // The configured species supplies its own three sprite PNGs.
     if (!create) { state.loading = false; return; }
-    const appearance=kind(actor)==='pingdort' ? (actor.genotype ||= window.CreatureGenetics?.makeDefaultGenotype?.('pingdort')) : actor.tzatzulIdentity; // Pingdorts inherit their own base-coat allele; Tzatzul keep nest identity.
+    const appearance = actor.isRuinSkeeri ? actor
+      : kind(actor) === 'pingdort'
+        ? (actor.genotype ||= window.CreatureGenetics?.makeDefaultGenotype?.('pingdort'))
+        : actor.tzatzulIdentity; // Preserve each species' authored palette source and individual identity.
     Promise.resolve().then(() => create(appearance)).then(rig => {
       if (!rig?.root || !rig?.dispose) throw new Error('Flying rig renderer did not return a disposable root');
       if (state.removed || tracked.get(actor) !== state || actor.health <= 0

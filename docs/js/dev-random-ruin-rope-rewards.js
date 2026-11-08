@@ -21,7 +21,7 @@
   const Chests = window.DevRandomRuinDungeonChests;
   if (!window.THREE || !SimplePuzzles?.registerComposer || !Chests) return;
 
-  const PLATE_COLOR = 0xb08a3c;
+  const PLATE_COLOR = 0x7a746b; // Neutral carved_smooth base for reward plates; glyphs communicate progress.
   const PLATE_PRESSED_COLOR = 0xffd66a;
   const BASIN_RUNE_COLOR = 0xff9a3c;
   const DOOR_RUNE_COLOR = 0xffc04a;
@@ -52,13 +52,18 @@
   function makePlate(kit, id, x, y, z, onPress) {
     const authored = window.DevRandomRuinFurniturePieces?.solid?.('ruinRewardPlate'); // docs/config/furniture-authored/ruinRewardPlate.json
     const plateMesh = authored?.userData?.meshById?.get?.('plate');
-    const material = plateMesh?.material || kit.makeBasic(PLATE_COLOR);
+    const material = plateMesh?.material || window.ProceduralFurniture?.makePartMaterial?.({
+      materialTexture:'carved_smooth.png',materialLighting:'unlit',materialFillMode:'never',color:'#7a746b',
+    }) || kit.makeBasic(PLATE_COLOR);
     const mesh = authored || new THREE.Mesh(kit.sharedBoxGeometry(.74, .07, .74), material);
     mesh.name = 'dev_ruin_reward_pressure_plate_' + id;
     mesh.position.set(x, authored ? y : y + .035, z); // The authored plate's own part already sits .035 up.
     mesh.userData.devRandomRuinPressurePlate = true;
     kit.group().add(mesh);
     const plate = { id, x, y, z, mesh, material, pressed:false, onPress };
+    plate.signal=window.FurniturePatternSurfaces?.attachStoneSignal?.(plateMesh||mesh,{
+      width:.42,height:.42,idleColor:'#d7b27c',activeColor:'#ffe18a',
+    }); // Reward plate retains its PNG stone, with a glow embedded in its pressable slab.
     plate.rune = window.DevRandomRuinGlyphCircuits?.attachRune?.(kit.group(), new THREE.Vector3(x, y + 1.05, z), {
       hex:BASIN_RUNE_COLOR, size:.42, name:'dev_ruin_glyph_marker_plate_' + id, isActive:() => plate.pressed,
     }) || null;
@@ -70,7 +75,7 @@
     if (Math.abs(player.x - plate.x) > .4 || Math.abs(player.z - plate.z) > .4 || Math.abs(player.y - plate.y) > .35) return false;
     plate.pressed = true;
     plate.mesh.position.y = plate.mesh.isGroup ? plate.y - .03 : plate.y + .005;
-    plate.material.color.setHex(PLATE_PRESSED_COLOR);
+    plate.signal?.setActive(true); // Do not repaint the slab or its authored PNG on pressing.
     kit.playStoneUnlockKchunk?.();
     try { plate.onPress?.(plate); } catch (error) { console.warn('[Random Test Ruin] plate handler failed', error); }
     return true;

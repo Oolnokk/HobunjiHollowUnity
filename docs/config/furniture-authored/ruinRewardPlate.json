@@ -4,7 +4,7 @@
   "id": "ruinRewardPlate",
   "name": "Ruin Reward Pressure Plate",
   "sourceSchema": "hobunji_furniture_surface_author.v58",
-  "notes": "Rope-payoff pressure plate. Sinks and turns its pressed colour when stepped on (runtime).",
+  "notes": "Rope-payoff pressure plate. Stone stays carved_smooth grey; a separate glowing glyph shows its state (runtime).",
   "footprint": {
     "w": 1,
     "d": 1
@@ -33,7 +33,7 @@
         "sy": 0.07,
         "sz": 0.74
       },
-      "color": "#b08a3c",
+      "color": "#7a746b",
       "segments": 1,
       "taperAxis": "y",
       "topScaleX": 1,
@@ -47,15 +47,15 @@
       "liquidContainerId": null,
       "liquidLevel": 0.5,
       "wonkiness": 0,
-      "materialRole": "metal",
+      "materialRole": "stone",
       "materialTexture": "carved_smooth.png",
       "materialRotationDeg": 0,
       "materialCapTexture": null,
       "materialCapRotationDeg": 0,
-      "materialFillEnabled": true,
-      "materialFillColor": "#b08d57",
+      "materialFillEnabled": false,
+      "materialFillColor": null,
       "surfaceOpacity": 1,
-      "substanceColor": "#b08a3c",
+      "substanceColor": "#7a746b",
       "substanceFillOpacity": 0,
       "timelineUseSubstanceColor": false,
       "textureDataUrl": null,
@@ -63,7 +63,7 @@
       "textureTransparent": true,
       "textureTileSize": 1,
       "materialLighting": "unlit",
-      "materialFillMode": "always",
+      "materialFillMode": "never",
       "materialUvMapping": "connected-surface-stretch",
       "materialUvMaxPatchWorldSize": 6
     }
