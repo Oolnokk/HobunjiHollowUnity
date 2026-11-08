@@ -46,6 +46,7 @@
   }
   // Conditions that always keep a live actor's rig, at any distance.
   function alwaysVisible(c) {
+    if (c.isRuinSkeeri) return true; // Ruin Skeeri roost 20+ tiles from where you stand in the shaft: streaming them to data made the bomber invisible and unsensable.
     if ((c._tzFlight?.phase && c._tzFlight.phase !== 'perched')
       || c.tzatzulCarrying || c.tzatzulCapturedBy) return true; // Preserve distant spyglass views of original airborne prey.
     if (c.isBandit || c.isCompanion || c.prone || c._branchDefense || (c.knockbackT || 0) > 0 || (c.retreatT || 0) > 0) return true;
