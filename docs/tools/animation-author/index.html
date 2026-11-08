@@ -14003,7 +14003,11 @@ function updateKissHeightReadoutV1546() {
     '% and bows ' + solution.tallerBowDeg.toFixed(1) + '°. Tall spouse steps back ' +
     solution.tallerBowForwardWorld.toFixed(2) + ' units to make room for the head. ' +
     'Remaining estimated lip-height gap ' + solution.remainingGap.toFixed(3) +
-    '. The runtime keeps procedural feet grounded and refuses physically unreachable pairs.';
+    '. ' + (solution.shorterPosteriorGrip
+      ? 'Shorter partner hops ' + solution.shorterJumpWorld.toFixed(3) +
+        ' units, planting both feet around the taller posterior while knees and pants bend.'
+      : 'Both partners keep their feet on the ground.') +
+    ' Unreachable pairs are rejected without false mouth contact.';
 }
 
 function installKissPresetUiV1546() {
@@ -14062,18 +14066,30 @@ serializeAnimationProject = function() {
     initiatorHands: { source: 'leader', target: 'partner-shoulders', shoulderSystem: 'canonical-species-gender-attachment-anchors',
       reachRule: 'per-arm-reach-with-closest-reachable-shoulder-projection',
       shorterInitiator: 'hands-before-knee-at-0.52s', tallerInitiator: 'reach-as-torso-lowers' },
+    posteriorJump: { enabled: !!animationAuthor.kissHeightSolutionV1546?.shorterPosteriorGrip,
+      liftWorld: animationAuthor.kissHeightSolutionV1546?.shorterJumpWorld || 0,
+      footAnchor: 'taller-authored-posterior', footTargets: 'two-world-space-left-right-procedural-leg-ik',
+      foldedKnees: true }, // Used by runtime/editor to identify floor-supported vs posterior-supported contact.
     contactAtSeconds: 1.02, durationSeconds: window.SpouseKissMotion.DURATION_S,
     heightSolution: clone(animationAuthor.kissHeightSolutionV1546 || null),
   };
   for (const record of data.actors || []) {
     const actor = actorById(record.id);
     if (actor) record.kissBodySinkPctAtContact = Number(actor.kissBodySinkPctAtContact) || 0;
-    if (actor && record.targetActorId && Array.isArray(record.keyframes)) {
+    if (actor && Array.isArray(record.keyframes)) {
       const pct = Number(actor.kissBodySinkPctAtContact) || 0;
+      const pair = configuredKissPairV1550(); // Stable role identity even when the recipient is selected in the inspector.
+      const shorterActor = animationAuthor.kissHeightSolutionV1546?.taller === 'first' ? pair.partner : pair.leader;
+      const jumping = actor === shorterActor && !!animationAuthor.kissHeightSolutionV1546?.shorterPosteriorGrip;
       record.keyframes.forEach(key => {
         key.bodySinkPct = pct * window.SpouseKissMotion.sampleKneelBlend(
           key.time, animationAuthor.kissHeightSolutionV1546?.taller === 'second',
-        ); // Exported knee tracks honor the early shoulder grip followed by delayed kneeling.
+        );
+        if (jumping) {
+          key.jumpLiftWorld = (animationAuthor.kissHeightSolutionV1546?.shorterJumpWorld || 0) *
+            window.SpouseKissMotion.sampleJumpBlend(key.time); // The exported root and anatomical foot placements use this matching timing.
+          key.posteriorFeetPlanted = window.SpouseKissMotion.sampleJumpBlend(key.time) >= .99;
+        }
       });
     }
   }
