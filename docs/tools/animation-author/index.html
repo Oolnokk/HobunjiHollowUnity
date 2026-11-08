@@ -13909,14 +13909,17 @@ function kissTransformV1546(who, time, solution) {
   const approach = progress * progress * (3 - 2 * progress); // Hands reach early without making face meshes overlap during contact.
   const departure = time <= 1.52 ? 1 : Math.max(0, Math.min(1, (2.4 - time) / .88));
   const departEase = departure * departure * (3 - 2 * departure);
-  const spacing = .20 - .12 * approach * departEase; // At contact ~.08 instead of ~.02; preserves the early wrist reach from V15.50.
-  const hop = !taller && solution.shorterPosteriorGrip
-    ? solution.shorterJumpWorld * window.SpouseKissMotion.sampleJumpBlend(time) : 0; // Small partner jumps onto the taller posterior, independently of knee flex.
+  const spacing = .20 - .12 * approach * departEase; // At contact ~.08 instead of ~.02 for ordinary ground-based kisses.
+  const jumpBlend = solution.shorterPosteriorGrip ? window.SpouseKissMotion.sampleJumpBlend(time) : 0;
+  const posteriorGap = Math.min(spacing, Math.max(.006,
+    solution.jumpFootForwardWorld + solution.shorterLegLengthWorld * .18)); // Feet must physically reach the posterior, not a point beyond their leg length.
+  const actualGap = spacing + (posteriorGap - spacing) * jumpBlend; // Shorter actor leaps toward the taller hip as well as upward, then returns to normal spacing.
+  const hop = !taller ? solution.shorterJumpWorld * jumpBlend : 0; // Only the smaller body jumps, and the normal couple never gets any lift.
   return {
     position: {
       x: 0,
       y: hop, // Only jump pairs rise above the ground; regular kiss clips remain grounded.
-      z: first ? -bowRetreat : spacing + bowRetreat,
+      z: first ? -bowRetreat : actualGap + bowRetreat,
     },
     rotationDeg: { x: 0, y: first ? 0 : 180, z: 0 }, // Torso bow belongs on the portrait and hand rigs, not the foot/leg root.
     scale: { x: 1, y: 1, z: 1 },
