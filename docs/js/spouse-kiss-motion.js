@@ -107,6 +107,7 @@
     let applied = 0; // Number of hands successfully solved this frame; reported by mobile diagnostics.
     let closestGap = 0; // Largest unavailable exact-shoulder distance after anatomical reach clamping.
     let minGrip = 1; // Paired hand engagement for the author/readout.
+    initiatorRig.useIdlePose?.(); // Reset both hands ONCE, or the right-hand solve would undo the left-hand shoulder grip.
     for (const side of ['left', 'right']) {
       const other = side === 'left' ? 'right' : 'left'; // Face-to-face actors put opposite anatomical hands at the visible shoulders.
       const data = geometry[side] || (geometry[side] = {
@@ -119,7 +120,6 @@
       const result = resolveShoulderGripWorld(data.source, data.target, reach, data.grip);
       if (!result) continue;
       const gesture = sampleInitiatorHandReach(time, initiatorShorter, result.targetDistance, result.armReach);
-      initiatorRig.useIdlePose?.(); // Resets the authored idle wrist pose before moving it; avoids sampling the previous contact as the new idle.
       const socket = initiatorRig.group?.getObjectByName?.(side + '_hand_socket');
       if (!socket) continue;
       socket.getWorldPosition(data.idle);
@@ -324,8 +324,8 @@
     session.elapsed += clamp(finite(context.deltaMs) / 1000, 0, .08);
     const pose = samplePose(session.elapsed);
     const playerIsTaller = session.height.taller === 'first';
-    const kneeWorld = session.height.tallerSinkWorld *
-      sampleKneelBlend(session.elapsed, session.height.taller === 'second'); // Single world-space target shared by both possible taller actors.
+    const kneeBlend = sampleKneelBlend(session.elapsed, session.height.taller === 'second'); // Shorter initiators reach for shoulders before the taller spouse kneels.
+    const kneeWorld = session.height.tallerSinkWorld * kneeBlend; // Single world-space target shared by both possible taller actors.
     const playerLocalKnee = playerIsTaller ? kneeWorld / session.playerAnatomy.worldScale : 0;
     const npcLocalKnee = playerIsTaller ? 0 : kneeWorld / session.npcAnatomy.worldScale;
     const npcPct = npcLocalKnee / Math.max(.001, Number(session.npcLegs.modelHeight) || 0) * 100;
@@ -337,16 +337,16 @@
       mode: 'override', translationMode: 'override',
       absoluteLegs: true, // The torso bows independently; grounded knees/feet remain in their existing world orientation.
       translation: { x: 0, y: -playerDrop, z: 0 },
-      rotation: { pitch: playerIsTaller ? session.height.tallerBowDeg * Math.PI / 180 * pose.blend : .025 * pose.blend },
+      rotation: { pitch: playerIsTaller ? session.height.tallerBowDeg * Math.PI / 180 * kneeBlend : .025 * pose.blend },
     });
     const npcDrop = window.ActorBodySink.apply(session.npcSink, npcPct, 0, true);
     if (session.npcTiltPivot?.rotation && Number.isFinite(session.originalNpcTiltX)) {
       session.npcTiltPivot.rotation.x = session.originalNpcTiltX +
-        (playerIsTaller ? .025 : session.height.tallerBowDeg * Math.PI / 180) * pose.blend;
+        (playerIsTaller ? .025 * pose.blend : session.height.tallerBowDeg * Math.PI / 180 * kneeBlend);
     }
     const npcForward = playerIsTaller ? 0 : session.bowRetreatWorld; // Tall NPC steps back to allow its head to bow into the smaller player's space.
-    session.walker.root.position.x = session.originalNpcPosition.x + (session.approachX - Math.sin(session.headingNpc) * npcForward) * pose.blend;
-    session.walker.root.position.z = session.originalNpcPosition.z + (session.approachZ - Math.cos(session.headingNpc) * npcForward) * pose.blend;
+    session.walker.root.position.x = session.originalNpcPosition.x + session.approachX * pose.blend - Math.sin(session.headingNpc) * npcForward * kneeBlend;
+    session.walker.root.position.z = session.originalNpcPosition.z + session.approachZ * pose.blend - Math.cos(session.headingNpc) * npcForward * kneeBlend;
     if (playerIsTaller) {
       session.composer.setChannel(SOURCE + '-retreat', {
         space: 'world', priority: 200, translation: {
