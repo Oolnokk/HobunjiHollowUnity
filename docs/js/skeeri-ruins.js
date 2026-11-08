@@ -22,6 +22,7 @@
     kanthic:Object.freeze(['indigo','indigo_violet','violet']),
   });
   const BODY_VARIANTS = Object.freeze(['dusty','muted','dark_muted']); // Natural-looking entries from the same existing dye families liches use.
+  const HUE_ORDER = Object.freeze(['red','red_orange','orange','yellow_orange','yellow','yellow_green','green','green_blue','blue','blue_indigo','indigo','indigo_violet','violet']); // Used only to find immediately adjacent fur-marking hue families.
   const EYE_VARIANTS = Object.freeze(['pure','bright']); // Deliberately uncanny vivid dyes within those same families, never a complementary hue from another tradition.
   const BODY_GROUPS = Object.freeze({ // Fallback natural swatches if the normal dye catalog has not loaded yet.
     hronal:Object.freeze(['#854e48','#875a42','#967d55','#605052']), // Muted reds, rust orange and ochre, not an unrelated brown dye.
@@ -40,56 +41,88 @@
   const clamp = (v,a,b) => Math.max(a,Math.min(b,Number(v)||0));
   const hash = str => {let h=2166136261;for(const ch of String(str))h=Math.imul(h^ch.charCodeAt(0),16777619)>>>0;return h;}; // Separate deterministic rolls do not perturb the generator RNG.
   const distance = (a,b) => Math.hypot(a.x-b.x,a.z-b.z); // Flight/trigger distances are measured in world tiles.
-  const snapshot = {mounts:0,hatchesOpened:0,spawned:0,dives:0,hits:0,bombRuns:0,bombsDropped:0,failedSpawns:0,eyeMarkerPixels:0,lastError:null}; // Readable on mobile without developer console.
+  const snapshot = {mounts:0,hatchesOpened:0,spawned:0,dives:0,hits:0,bombRuns:0,bombsDropped:0,failedSpawns:0,eyeMarkerPixels:0,furPatternPixels:0,lastError:null}; // Readable on mobile without developer console.
   let deps = null; // Injected once by WildlifeSpawn.init: authoritative player, factory and hostile collection.
   let owner = null; // Exactly one disposable generated-ruin encounter session.
   let rigPromise = null; // Shared immutable sprite/JSON download across all three Skeeri sizes.
 
   function traditionOf(value) {return Object.hasOwn(LICH_HUES,String(value))?String(value):'hronal';} // Reject nonexistent lich theme IDs.
-  function catalogPalette(theme,variants,addNeutrals=false) {
+  function catalogPalette(theme,variants,addNeutrals=false,overrideHues=null) {
     const catalog=window.SCRATCHBONES_CONFIG?.game?.dyes?.catalog || window.ScratchbonesAccount?.getDyeCatalog?.() || []; // Same authored dye swatches as lich wardrobe.
     const available=new Map(catalog.filter(entry=>/^#[0-9a-f]{6}$/i.test(entry?.hex||'')).map(entry=>[entry.id,entry.hex]));
     const tradition=window.HarlyaoLichCombat?.TYPE_DEFS?.[theme]; // Prefer the owner of lich color groups, not a second independent range.
-    const hues=tradition?.hues || LICH_HUES[theme];
+    const hues=overrideHues || tradition?.hues || LICH_HUES[theme];
     const ids=variants.flatMap(variant=>hues.map(hue=>'dye:CLOTH:'+variant+'_'+hue));
     if(addNeutrals)ids.push(...(tradition?.neutralDyes || ['dye:CLOTH:white','dye:CLOTH:gray','dye:CLOTH:charcoal']));
     return ids.filter(id=>available.has(id)).map(id=>({id,hex:available.get(id)}));
   }
+  function patternNeighborHues(theme) {
+    const family=window.HarlyaoLichCombat?.TYPE_DEFS?.[theme]?.hues || LICH_HUES[theme]; // Authoritative boundaries of this lich's dye group.
+    const order=window.SCRATCHBONES_CONFIG?.game?.dyes?.hueFamilies?.map(hue=>hue.id)||HUE_ORDER;
+    const first=order.indexOf(family[0]),last=order.indexOf(family[family.length-1]);
+    if(first<0||last<0)return []; // A malformed custom palette cannot accidentally widen the permitted eye range.
+    return [order[(first+order.length-1)%order.length],order[(last+1)%order.length]]
+      .filter(hue=>!family.includes(hue)); // Fur alone may occasionally use the immediate neighboring hue, never more.
+  }
   function paletteFor(theme,identity) {
     const family=traditionOf(theme),slot=hash(String(identity)); // Stable appearance independent of AI RNG and encounter order.
     const bodies=catalogPalette(family,BODY_VARIANTS,family==='kanthic');
-    const eyes=catalogPalette(family,EYE_VARIANTS);
+    const corePatterns=catalogPalette(family,BODY_VARIANTS,family==='kanthic');
+    const neighborPatterns=catalogPalette(family,BODY_VARIANTS,false,patternNeighborHues(family));
+    const eyes=catalogPalette(family,EYE_VARIANTS); // Deliberately NO neighboring hues, even if fur markings can use them.
+    const patternRoll=hash(String(identity)+':fur-pattern');
     const body=bodies.length?bodies[slot%bodies.length]:null;
+    const patternPool=patternRoll%4===0 && neighborPatterns.length?neighborPatterns:corePatterns; // One in four patterns can stray by one hue step.
+    const pattern=patternPool.length?patternPool[Math.floor(patternRoll/4)%patternPool.length]:null;
     const eye=eyes.length?eyes[hash(String(identity)+':eye')%eyes.length]:null;
-    return {theme:family,body:body?.hex||BODY_GROUPS[family][slot%BODY_GROUPS[family].length],
+    const fallback=BODY_GROUPS[family][slot%BODY_GROUPS[family].length];
+    return {theme:family,body:body?.hex||fallback,pattern:pattern?.hex||fallback,
       eyes:eye?.hex||EYE_GROUPS[family][hash(String(identity)+':eye')%EYE_GROUPS[family].length],
-      bodyDyeId:body?.id||null,eyeDyeId:eye?.id||null}; // Mobile diagnostics show exactly which lich-family swatches were chosen.
+      bodyDyeId:body?.id||null,patternDyeId:pattern?.id||null,eyeDyeId:eye?.id||null}; // Mobile diagnostics expose the exact three independently selected colors.
   }
 
   function separateEyeMarker(image) {
-    if(typeof document==='undefined')return {body:image,glow:null,marked:0};
+    if(typeof document==='undefined')return {body:image,glow:null,pattern:null,marked:0,patternPixels:0};
     const width=image.naturalWidth||image.width,height=image.naturalHeight||image.height; // Source-space pixels preserve both authored poses.
     const canvas=()=>Object.assign(document.createElement('canvas'),{width,height});
     const body=canvas(),bodyCtx=body.getContext('2d',{willReadFrequently:true});
     const core=canvas(),coreCtx=core.getContext('2d');
+    const marking=canvas(),markingCtx=marking.getContext('2d');
     bodyCtx.drawImage(image,0,0,width,height);
     const pixels=bodyCtx.getImageData(0,0,width,height),eyes=coreCtx.getImageData(0,0,width,height);
-    let marked=0;
+    const pattern=markingCtx.getImageData(0,0,width,height);
+    let brightestGreen=0; // Actual authored highlight, not a hand-guessed shade: detects darker green markings in either pose.
     for(let i=0;i<pixels.data.length;i+=4) {
       const r=pixels.data[i],g=pixels.data[i+1],b=pixels.data[i+2],a=pixels.data[i+3];
-      // Purple marker, including its shaded/antialiased variations; ordinary shadows and non-marker anatomy remain intact.
-      if(!a||b<50||r<b*.28||r>b*.75||g>b*.24)continue;
-      eyes.data[i]=eyes.data[i+1]=eyes.data[i+2]=255;
-      eyes.data[i+3]=a;
-      pixels.data[i+3]=0; // Remove the magenta eye from the naturally tinted body before adding its independent emissive layer.
-      marked++;
+      if(a>20 && g>r*.98 && g>b*.95 && g>60)brightestGreen=Math.max(brightestGreen,g);
     }
-    if(!marked)return {body:image,glow:null,marked:0};
-    bodyCtx.putImageData(pixels,0,0);coreCtx.putImageData(eyes,0,0);
-    const glow=canvas(),ctx=glow.getContext('2d'); // Blurred halo and bright core are one shared source-space sprite.
-    ctx.filter='blur(12px)';ctx.globalAlpha=.8;ctx.drawImage(core,0,0);
-    ctx.filter='none';ctx.globalAlpha=1;ctx.drawImage(core,0,0);
-    return {body,glow,marked};
+    let marked=0,patternPixels=0;
+    for(let i=0;i<pixels.data.length;i+=4) {
+      const r=pixels.data[i],g=pixels.data[i+1],b=pixels.data[i+2],a=pixels.data[i+3];
+      if(!a)continue;
+      // Purple marker and its shaded variations are extracted first; eye pixels can NEVER enter the fur pattern mask.
+      if(b>=50&&r>=b*.28&&r<=b*.75&&g<=b*.24) {
+        eyes.data[i]=eyes.data[i+1]=eyes.data[i+2]=255;
+        eyes.data[i+3]=a;
+        pixels.data[i+3]=0; // Remove purple from the fur plane before drawing independent emissive eyes.
+        marked++;
+      } else if(g>60 && g<brightestGreen*.81 && g>r*.98 && g>b*.95 && r>55) {
+        // Preserve the illustrator's naturally darker markings as a separate source-space tint mask; no invented pattern geometry.
+        pattern.data[i]=pattern.data[i+1]=pattern.data[i+2]=255;
+        pattern.data[i+3]=a;
+        patternPixels++;
+      }
+    }
+    if(!marked&&!patternPixels)return {body:image,glow:null,pattern:null,marked:0,patternPixels:0};
+    bodyCtx.putImageData(pixels,0,0);
+    if(patternPixels)markingCtx.putImageData(pattern,0,0);
+    if(marked)coreCtx.putImageData(eyes,0,0);
+    const glow=marked?canvas():null,ctx=glow?.getContext('2d'); // Blurred halo and bright core are one shared source-space sprite.
+    if(ctx){
+      ctx.filter='blur(12px)';ctx.globalAlpha=.8;ctx.drawImage(core,0,0);
+      ctx.filter='none';ctx.globalAlpha=1;ctx.drawImage(core,0,0);
+    }
+    return {body,glow,pattern:patternPixels?marking:null,marked,patternPixels};
   }
 
   function register(injected = {}) {
@@ -130,10 +163,12 @@
     ]).then(([raw,flying,perched,wings])=>{
       const flight=separateEyeMarker(flying),rest=separateEyeMarker(perched); // Built once, never inside the render loop.
       snapshot.eyeMarkerPixels=flight.marked+rest.marked;
+      snapshot.furPatternPixels=flight.patternPixels+rest.patternPixels;
       if(!flight.marked||!rest.marked)window.__farmLog?.('[skeeri] planebent eye marker absent from a pose ('+EYE_MARKER+')','warn');
       return {rig:window.FlyingAnimalRig.normalize({...raw,
         flying:'creaturesprites/skeeri_planebent_flying.png',perched:'creaturesprites/skeeri_planebent_perched.png'}),
-        images:{flying:flight.body,perched:rest.body,wings,glowFlying:flight.glow,glowPerched:rest.glow}};
+        images:{flying:flight.body,perched:rest.body,wings,glowFlying:flight.glow,glowPerched:rest.glow,
+          patternFlying:flight.pattern,patternPerched:rest.pattern}};
     }).catch(error=>{rigPromise=null;snapshot.lastError=String(error);throw error;});
     return rigPromise;
   }
@@ -141,7 +176,7 @@
     const {rig,images}=await loadRig();
     const instance=window.FlyingAnimalRig.create(rig,images); // Native actor group owns orientation, hit flashes and disposal.
     const palette=actor?.skeeriPalette||paletteFor('hronal','preview');
-    instance.restoreTint=()=>instance.setPalette?.(palette.body,palette.eyes)||false; // Restore after native hit flashes, excluding the separately colored eyes.
+    instance.restoreTint=()=>instance.setPalette?.(palette.body,palette.eyes,palette.pattern)||false; // Restore after hit flashes; fur markings and eye glows retain independent swatches.
     instance.restoreTint();
     return instance;
   }
