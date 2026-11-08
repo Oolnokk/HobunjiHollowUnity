@@ -32,7 +32,7 @@ const wildSource = { creatureKey: 'nelk' };
 const petSource = { creatureKey: 'voorg', isCompanion: true };
 let victim = actor();
 rs.addAffliction(victim, 'scentMarkedHealth', 12);
-rs.applyDamage(victim, 5, { attacker: wildSource, afflictionBonuses: { bleedingHealth: 0.4 } });
+rs.applyDamage(victim, 5, { attacker: wildSource, attackPower: 10, afflictionBonuses: { bleedingHealth: 0.4 } }); // Explicit Attack Power proves scent does not secretly amplify the new independent status stat.
 approximately(victim.health, 90, 'wild strike cashes out up to its own damage');
 approximately(rs.getAffliction(victim, 'scentMarkedHealth'), 7, 'wild strike spends mark');
 approximately(rs.getAffliction(victim, 'bleedingHealth'), 2, 'scent cannot multiply original buildup');
