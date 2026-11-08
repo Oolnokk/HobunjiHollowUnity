@@ -79,13 +79,35 @@
     return { blend: clamp(grip, 0, 1), reachable, closestDistance: Math.max(0, distance - reach) };
   }
 
-  function resolveShoulderGripWorld(sourceShoulderWorld, targetShoulderWorld, reachWorld, output) {
+  function resolveShoulderGripWorld(sourceShoulderWorld, targetShoulderWorld, reachWorld, output, torsoVector = null) {
     if (!sourceShoulderWorld?.isVector3 || !targetShoulderWorld?.isVector3 || !output?.isVector3) return false;
     const distance = sourceShoulderWorld.distanceTo(targetShoulderWorld);
     const limit = Math.max(.001, finite(reachWorld, .001)) * .98; // Reserve elbow bend and forbid overextension beyond the species/gender arm length.
     output.copy(targetShoulderWorld);
-    if (distance > limit) output.sub(sourceShoulderWorld).multiplyScalar(limit / distance).add(sourceShoulderWorld);
-    return { targetDistance: distance, armReach: limit, exactShoulder: distance <= limit };
+    if (distance <= limit) return { targetDistance: distance, armReach: limit, exactShoulder: true, onTorso: false };
+    if (torsoVector?.isVector3 && torsoVector.lengthSq() > 1e-8) {
+      // An initiator too short for the shoulder may rest the hands on the
+      // highest reachable point DOWN THE PARTNER'S ACTUAL UPPER TORSO.
+      // Intersect the arm-reach sphere with the shoulder-to-chest segment,
+      // never float a wrist at the edge of an imaginary spherical guide.
+      const dx = targetShoulderWorld.x - sourceShoulderWorld.x;
+      const dy = targetShoulderWorld.y - sourceShoulderWorld.y;
+      const dz = targetShoulderWorld.z - sourceShoulderWorld.z;
+      const a = torsoVector.lengthSq();
+      const b = 2 * (dx * torsoVector.x + dy * torsoVector.y + dz * torsoVector.z);
+      const c = distance * distance - limit * limit;
+      const discriminant = b * b - 4 * a * c;
+      if (discriminant >= 0) {
+        const t = (-b - Math.sqrt(discriminant)) / (2 * a);
+        if (t >= 0 && t <= 1) {
+          output.addScaledVector(torsoVector, t);
+          return { targetDistance: distance, armReach: limit, exactShoulder: false, onTorso: true,
+            shoulderOffsetWorld: Math.sqrt(a) * t };
+        }
+      }
+    }
+    output.sub(sourceShoulderWorld).multiplyScalar(limit / distance).add(sourceShoulderWorld);
+    return { targetDistance: distance, armReach: limit, exactShoulder: false, onTorso: false };
   }
 
   function shoulderGripWorld(rig, side, output) {
@@ -106,8 +128,16 @@
     const worldScale = Math.max(.001, Math.min(Math.abs(scale.x), Math.abs(scale.y), Math.abs(scale.z)));
     let applied = 0; // Number of hands successfully solved this frame; reported by mobile diagnostics.
     let closestGap = 0; // Largest unavailable exact-shoulder distance after anatomical reach clamping.
+    let surfaceContacts = 0; // Counts nearest reachable upper-torso surfaces rather than floating arm reach boundaries.
     let minGrip = 1; // Paired hand engagement for the author/readout.
     initiatorRig.useIdlePose?.(); // Reset both hands ONCE, or the right-hand solve would undo the left-hand shoulder grip.
+    const torsoVector = geometry.torsoVector || (geometry.torsoVector = new THREE.Vector3());
+    const torsoQuaternion = geometry.torsoQuaternion || (geometry.torsoQuaternion = new THREE.Quaternion());
+    const torsoScale = targetRig.parent.getWorldScale(geometry.torsoScale || (geometry.torsoScale = new THREE.Vector3()));
+    const torsoLength = Math.max(.01, finite(targetRig.avatarRoot?.userData?.portraitModelHeight, 1) *
+      Math.abs(torsoScale.y) * .38); // Upper-shoulder-to-chest fallback, never the pelvis or legs.
+    targetRig.parent.getWorldQuaternion(torsoQuaternion);
+    torsoVector.set(0, -torsoLength, 0).applyQuaternion(torsoQuaternion); // Down the actual bowed torso, not always down world Y.
     for (const side of ['left', 'right']) {
       const other = side === 'left' ? 'right' : 'left'; // Face-to-face actors put opposite anatomical hands at the visible shoulders.
       const data = geometry[side] || (geometry[side] = {
@@ -117,7 +147,8 @@
       if (!shoulderGripWorld(initiatorRig, side, data.source) ||
           !shoulderGripWorld(targetRig, other, data.target)) continue;
       const reach = Math.max(.001, finite(initiatorRig.armLengthForSide(side), .001)) * worldScale;
-      const result = resolveShoulderGripWorld(data.source, data.target, reach, data.grip);
+      const result = resolveShoulderGripWorld(data.source, data.target, reach, data.grip,
+        initiatorShorter ? torsoVector : null); // Short initiators reach nearest upper-body surface; tall initiators wait for true shoulders.
       if (!result) continue;
       const gesture = sampleInitiatorHandReach(time, initiatorShorter, result.targetDistance, result.armReach);
       const socket = initiatorRig.group?.getObjectByName?.(side + '_hand_socket');
@@ -128,9 +159,11 @@
       initiatorRig.placeHandWorld(side, data.grip, data.orientation);
       applied++;
       closestGap = Math.max(closestGap, result.targetDistance - result.armReach);
+      if (result.onTorso) surfaceContacts++;
       minGrip = Math.min(minGrip, gesture.blend);
     }
-    return { applied: applied === 2, hands: applied, blend: applied ? minGrip : 0, closestGap };
+    return { applied: applied === 2, hands: applied, blend: applied ? minGrip : 0, closestGap,
+      torsoContacts: surfaceContacts };
   }
 
   function actorHeight(model, legs, root) {
