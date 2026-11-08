@@ -120,6 +120,7 @@ for (const theme of ['hronal', 'tothal', 'kanthic']) {
 assert.notEqual(api.paletteFor('hronal', 1).body, api.paletteFor('kanthic', 1).body);
 assert.equal(api.paletteFor('bogus', 1).theme, 'hronal', 'unknown ruin themes have a safe fallback');
 const families = w.HarlyaoLichCombat.TYPE_DEFS; // The real named-lich tradition is the source of the permitted hue suffixes.
+const dyeHue=id=>String(id).replace(/^dye:CLOTH:(?:dusty|muted|dark_muted|pure|bright)_/,''); // Exact hue identity: blue_indigo is NOT the same dye family as indigo.
 const catalog = w.SCRATCHBONES_CONFIG.game.dyes.catalog; // Visible swatch catalogue, not copied arbitrary RGB colors.
 const hueOrder=['red','red_orange','orange','yellow_orange','yellow','yellow_green','green','green_blue','blue','blue_indigo','indigo','indigo_violet','violet']; // One dye family order for checking exactly one neighbor in either direction.
 for(const [i,hue] of hueOrder.entries()){
@@ -148,16 +149,16 @@ for(const [theme,def] of Object.entries(families)){
     assert.equal(palette.body,body.hex);
     assert.equal(palette.pattern,pattern.hex);
     assert.equal(palette.eyes,eye.hex);
-    assert(def.hues.some(hue=>body.id.endsWith('_'+hue)) || def.neutralDyes?.includes(body.id),
+    assert(def.hues.includes(dyeHue(body.id)) || def.neutralDyes?.includes(body.id),
       'natural body dye belongs to the selected lich tradition');
-    assert(allowedFur.has(pattern.id.slice(pattern.id.indexOf('_')+1).replace(/^(dusty|muted|dark_muted)_/,'')) || def.neutralDyes?.includes(pattern.id),
+    assert(allowedFur.has(dyeHue(pattern.id)) || def.neutralDyes?.includes(pattern.id),
       'pattern colors may use only the immediate neighboring hue or their own group');
-    if([...outside].some(hue=>pattern.id.endsWith('_'+hue)))outsideFur++;
-    assert(![...forbidden].some(hue=>pattern.id.endsWith('_'+hue)),
+    if(outside.has(dyeHue(pattern.id)))outsideFur++;
+    assert(!forbidden.has(dyeHue(pattern.id)),
       'fur markings cannot jump across an unusually wide adjacent hue gap');
-    assert(def.hues.some(hue=>eye.id.endsWith('_'+hue)),
+    assert(def.hues.includes(dyeHue(eye.id)),
       'uncanny eye dye belongs STRICTLY to the lich tradition, even when fur drifts');
-    assert(![...outside].some(hue=>eye.id.endsWith('_'+hue)),
+    assert(!outside.has(dyeHue(eye.id)),
       'no eye can use a neighboring fur-only hue');
     assert.match(body.id,/:(dusty|muted|dark_muted)_|:gray$/);
     assert.match(pattern.id,/:(dusty|muted|dark_muted)_|:gray$/);
