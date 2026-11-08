@@ -132,7 +132,7 @@ assert.equal(upright.group.visible,false,'unoccupied plate hides the clue');
 upright.setVisible(true);assert.equal(upright.group.visible,true);
 assert(upright.group.children.slice(1).every(glyph=>glyph.rotation.x===0&&glyph.position.z>0),
   'vertical glyphs face outward with their tops pointing up');
-assert(upright.group.children.slice(1).every(glyph=>glyph.material.color===0xffda70),'glyphs use a luminous warm tint');
+assert(upright.group.children.slice(1).every(glyph=>glyph.material.color===0xeaf5ff),'inactive carved notes start as softly luminous white');
 upright.setVisible(false);assert.equal(upright.group.visible,false);
 const floorClue=api.create({root:new Group(),plate,notes:first,bounds,sampleSupport});
 const yaw=floorClue.group.rotation.y; // Local glyph top must point away from the plate on either floor side.
