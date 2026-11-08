@@ -273,6 +273,19 @@
     return true;
   }
 
+  // Short UI blip (lock-on engage/release).
+  function blip(freq = 1318.5, length = 0.18, gain = 0.5) {
+    const vol = sfxVolume();
+    const ctx = vol > 0 ? audioContext() : null;
+    if (!ctx) return false;
+    if (ctx.state === 'suspended') ctx.resume?.().catch(() => {});
+    const out = ctx.createGain();
+    out.gain.value = 0.1 * vol;
+    out.connect(ctx.destination);
+    bell(ctx, out, freq, ctx.currentTime + 0.01, length, gain);
+    return true;
+  }
+
   // ── Reveal camera ──────────────────────────────────────────────────────
   function inRuin() { return deps?.getCurrentArea?.() === RUIN_MAP_ID; }
   function objectCenter(object) {
@@ -403,7 +416,7 @@
   }
 
   window.GameFeel = Object.freeze({
-    init, frameDt, addTrauma, hitStop, playerHurt, puzzleSolved, mechanismMoved, solveChime, progressNote, sinkAway, cancelSink,
+    init, frameDt, addTrauma, hitStop, playerHurt, puzzleSolved, mechanismMoved, solveChime, progressNote, blip, sinkAway, cancelSink,
     beginReveal, endReveal, isRevealing: () => !!reveal,
     shakeEnabled, setShakeEnabled,
     debugSnapshot: () => ({ ...debug, trauma, revealing: !!reveal, hitStopActive: performance.now() < hitStopUntil }),

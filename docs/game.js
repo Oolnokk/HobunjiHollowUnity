@@ -5931,7 +5931,52 @@
       let autoTargetSightObstacles = []; // Cached active-area geometry for all candidate checks in the same frame.
 
       function mobileAutoTargetEnabled() {
-        return !isDesktop && !!window.Combat?.input?.isAutoTargetEnabled?.();
+        return desktopLockOnActive || (!isDesktop && !!window.Combat?.input?.isAutoTargetEnabled?.());
+      }
+      // Desktop/controller Lock-On (Z-targeting): the same persistent target,
+      // red lock ring and camera tracking the mobile auto-target uses, toggled
+      // by the 'lockOn' input (middle click / controller Y). Releases itself when the
+      // target dies, leaves retention range, or the weapon is put away.
+      let desktopLockOnActive = false;
+      const LOCK_ON_ACQUIRE_TILES = 10;
+      const LOCK_ON_ACQUIRE_HALF_CONE = Math.PI * 80 / 180;
+      function autoTargetPlatformAllowed() {
+        return !isDesktop || desktopLockOnActive;
+      }
+      function releaseLockOn() {
+        if (!desktopLockOnActive) return false;
+        desktopLockOnActive = false;
+        manualAutoTarget = null;
+        invalidateAutoTargetCache();
+        window.GameFeel?.blip?.(880, 0.14, 0.35);
+        return true;
+      }
+      function toggleLockOn() {
+        if (releaseLockOn()) return false;
+        const rangedOut = heldMode === 'tool' && activeTool === 'ranged' && !!equipmentSlots.ranged;
+        if (!meleeWeaponOut() && !rangedOut) {
+          if (!equipmentSlots.weapon) return false;
+          heldMode = 'tool';
+          setActiveTool('weapon'); // Zelda-style: locking on readies the sword.
+        }
+        const aimAngle = currentMeleeAimAngle();
+        const maxDist = TILE * LOCK_ON_ACQUIRE_TILES;
+        let best = null, bestScore = Infinity;
+        for (const c of hostileObjects) {
+          if (!autoTargetCandidateValid(c, maxDist)) continue;
+          const dx = c.x - player.x, dy = c.y - player.y;
+          const error = Number.isFinite(aimAngle) ? Math.abs(angleDiff(Math.atan2(dy, dx), aimAngle)) : 0;
+          if (error > LOCK_ON_ACQUIRE_HALF_CONE) continue;
+          const score = error + Math.hypot(dx, dy) / maxDist * 0.6; // Prefer what the camera points at; distance breaks near-ties.
+          if (score >= bestScore || !autoTargetVisible(c)) continue;
+          bestScore = score; best = c;
+        }
+        if (!best) return false;
+        desktopLockOnActive = true;
+        manualAutoTarget = best;
+        invalidateAutoTargetCache();
+        window.GameFeel?.blip?.(1318.5, 0.2, 0.5);
+        return true;
       }
 
       function autoTargetRange() {
@@ -5959,7 +6004,8 @@
 
       function updateMobileAutoTargetCamera(dt) {
         const target = findAutoTarget(); // Keep the selected creature while manual attack-stick input owns camera aim.
-        const suppressed = isDesktop || !target || manualCombatReticleAim() || menuOpen || dialogueOpen || sitInteraction
+        if (desktopLockOnActive && !target) releaseLockOn(); // Target died, escaped retention range, or the weapon was put away.
+        const suppressed = !autoTargetPlatformAllowed() || !target || manualCombatReticleAim() || menuOpen || dialogueOpen || sitInteraction
           || farmEditMode || characterViewMode.enabled || window.AuthoredCutsceneRuntime?.isActive?.()
           || window.__mapEditorOrbitActive; // Scripted/menu/editor camera owners remain authoritative.
         mobileAutoCameraActive = false;
@@ -6049,7 +6095,7 @@
       }
 
       function meleeAttackTargetCandidate(preview = false) {
-        if (isDesktop || (!preview && !mobileAutoTargetEnabled()) || !meleeWeaponOut()) return null;
+        if (!autoTargetPlatformAllowed() || (!preview && !mobileAutoTargetEnabled()) || !meleeWeaponOut()) return null;
         if (autoTargetCandidateValid(manualAutoTarget, autoTargetRetentionRange())) return manualAutoTarget;
         if (!preview) manualAutoTarget = null;
         const aimAngle = currentMeleeAimAngle(); // Live camera/stick/body bearing used for initial acquisition in the front half-plane.
@@ -6076,7 +6122,7 @@
 
       function computeAutoTarget(preview = false) {
         const rangedActive = heldMode === 'tool' && activeTool === 'ranged' && !!equipmentSlots.ranged; // Only equipped mobile combat tools acquire targets.
-        if (isDesktop || (!preview && !mobileAutoTargetEnabled()) || (!meleeWeaponOut() && !rangedActive)) {
+        if (!autoTargetPlatformAllowed() || (!preview && !mobileAutoTargetEnabled()) || (!meleeWeaponOut() && !rangedActive)) {
           if (!preview) manualAutoTarget = null;
           return null;
         }
@@ -6111,7 +6157,7 @@
       }
 
       function findAvailableAutoTarget() {
-        if (isDesktop) return null;
+        if (isDesktop && !desktopLockOnActive) return null;
         if (mobileAutoTargetEnabled()) return findAutoTarget();
         if (availableAutoTargetCacheFrame !== gameFrameSerial) {
           availableAutoTargetCacheValue = computeAutoTarget(true); // Uses ordinary range, visibility, and weapon/cone rules without selecting or turning toward prey.
@@ -29042,6 +29088,7 @@
         if (actionId === 'dodge') { performContextAction(); return; }
         if (actionId === 'jump') { performJumpAction(); return; }
         if (actionId === 'toggleMount') { window.Mounts?.toggleMount(); return; }
+        if (actionId === 'lockOn') { toggleLockOn(); return; }
         if (actionId === 'swapTarget') {
           const aimAngle = controllerLookActive ? controllerLookAngle
             : (isDesktop && mouseLookActive) ? mouseLookAngle
@@ -29778,6 +29825,7 @@
         threeContainer.addEventListener('pointerdown', (e) => {
           if (window.PixelProbe?.armed || menuOpen || (farmEditMode && !furniturePlacementModeArmed()) || e.shiftKey || window.__mapEditorGizmoActive) return;
           const mouseAction = getActionForButton('desktop', 'Mouse' + e.button);
+          if (mouseAction === 'lockOn') { e.preventDefault(); runInputAction('lockOn', 'press'); return; } // preventDefault also stops middle-click autoscroll.
           if ((window.WallOrnamentPlacement?.isPlayerReticlePlacementActive?.() || window.DevMapFurniture?.isActive?.()) && (mouseAction === 'action1' || mouseAction === 'action2')) {
             desktopWallFurnitureMousePresses.add(e.button);
             runInputAction(mouseAction, 'press');
@@ -30181,6 +30229,8 @@
         get targetAimAngleDeg() { return targetAimAngle * 180 / Math.PI; },
         get mouseLookAngleDeg() { return mouseLookAngle * 180 / Math.PI; },
         get mouseLookActive() { return mouseLookActive; },
+        get lockOnActive() { return desktopLockOnActive; }, // Desktop/controller Lock-On state for headless checks.
+        toggleLockOn: () => toggleLockOn(),
         get cameraAngleOffsetDeg() { return cameraAngleOffsetDeg; },
         get characterViewMode() { return { ...window.HOBUNJI_CHARACTER_VIEW_STATUS }; },
         setCharacterViewMode: (enabled) => setCharacterViewMode(enabled, 'debug'),

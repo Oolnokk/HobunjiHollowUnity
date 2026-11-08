@@ -25,6 +25,7 @@
     action7: null,
     action8: null,
     swapTarget: null,
+    lockOn: 'Button3', // Y / Triangle: Zelda-style lock-on toggle (free in the gameplay context).
     toggleMount: 'Button10',
     perceptionMode: 'Button14', // D-pad left: free in gameplay context (menu uiLeft / music scale-prev share it in their own contexts).
     weaponSwitch: 'Button11',
@@ -67,6 +68,7 @@
     { id: 'itemSelect', label: 'Item Select', desktop: null, controller: CANONICAL_CONTROLLER_DEFAULTS.itemSelect, devices: ['controller'], context: 'selection' },
     { id: 'socialWheel', label: 'Social Actions', desktop: 'Shift+KeyQ', controller: CANONICAL_CONTROLLER_DEFAULTS.socialWheel, context: 'selection' },
     { id: 'toggleMount', label: 'Call/Dismiss Mount', desktop: 'KeyV', controller: CANONICAL_CONTROLLER_DEFAULTS.toggleMount },
+    { id: 'lockOn', label: 'Lock On (target nearest enemy)', desktop: 'Mouse1', controller: CANONICAL_CONTROLLER_DEFAULTS.lockOn },
     { id: 'uiOpenMenu', label: 'Menu: Open / Close', desktop: null, controller: CANONICAL_CONTROLLER_DEFAULTS.uiOpenMenu, devices: ['controller'], context: 'menu' },
     { id: 'uiConfirm', label: 'Menu: Confirm', desktop: null, controller: CANONICAL_CONTROLLER_DEFAULTS.uiConfirm, devices: ['controller'], context: 'menu' },
     { id: 'uiCancel', label: 'Menu: Cancel / Back', desktop: null, controller: CANONICAL_CONTROLLER_DEFAULTS.uiCancel, devices: ['controller'], context: 'menu' },
@@ -122,6 +124,10 @@
       }
     }
     if (!INPUT_DEFAULTS.controller) INPUT_DEFAULTS.controller = {}; // Used as the generated controller-default map consumed by load/reset code.
+    if (INPUT_DEFAULTS.desktop && !Object.prototype.hasOwnProperty.call(INPUT_DEFAULTS.desktop, 'lockOn')) {
+      const taken = Object.values(INPUT_DEFAULTS.desktop);
+      if (!taken.includes('Mouse1')) INPUT_DEFAULTS.desktop.lockOn = 'Mouse1'; // Added after the authored config's desktop map was built; never steal a button another action already uses.
+    }
     if (useCanonicalControllerLayout) Object.assign(INPUT_DEFAULTS.controller, CANONICAL_CONTROLLER_DEFAULTS);
     if (Array.isArray(INPUT_DEFAULTS.modeShifts)) {
       const kept = removeLegacyControllerModeShift(INPUT_DEFAULTS.modeShifts); // Used to migrate the old LB+right-stick tool/item selector out of shipped defaults in place.
