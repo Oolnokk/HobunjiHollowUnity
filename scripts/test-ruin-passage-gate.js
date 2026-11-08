@@ -51,6 +51,7 @@ for (const [key, record] of Object.entries(data)) {
   assert.ok(loaded.includes(key), `${key} is loaded with the other ruin pieces`);
   assert.ok(index.furniture.some(entry => entry.key === key), `${key} is listed in index.json`);
   assert.equal(record.decals.length, 1, `${key} carries exactly one seal`);
+  assert(!record.parts.some(part => part.id === 'recess'), `${key} must expose real hallway geometry, not a black backing block`);
   assert.equal(record.decals[0].surfacePartId, 'leaf', `${key} seal sits on the leaf`);
   const leaf = record.parts.find(part => part.id === 'leaf').transform;
   assert.ok(Math.abs(record.decals[0].width * leaf.sx - record.decals[0].height * leaf.sy) < 1e-3, `${key} seal is a circle, not an oval`);
@@ -77,10 +78,23 @@ assert.deepEqual([gate.root.position.x, gate.root.position.y, gate.root.position
 assert.ok(gate.object.name.startsWith('leaf:'), 'the leaf pivot is the toggled object');
 assert.equal(gate.object.parent, gate.root);
 assert.equal(gate.object.children.length, 1, 'the pivot holds the leaf mesh');
+assert(!gate.root.userData.meshById.has('recess'), 'the built gate has no opaque fake passage geometry');
 gate.object.visible = false;
 const frame = gate.root.children.filter(child => child !== gate.object);
 assert.ok(frame.length >= 4 && frame.every(child => child.visible), 'frame stays up when the gate opens');
 assert.equal(Pieces.buildPassageGate({ span: 3, normalAxis: 'z' }).root.rotation.y, 0, "normalAxis 'z' keeps the authored +Z facing");
+
+// An older cached furniture profile must not recreate the black mesh during generation.
+const previous = data.ruinPassageDoor.parts; // Restored after the runtime sanitizer regression.
+data.ruinPassageDoor.parts = [...previous, { id:'recess', name:'Legacy Black Backing', kind:'box' }];
+const cachedGate = Pieces.buildPassageGate({ span:3 }); // The same builder handles stale cache and fresh authored JSON.
+assert(cachedGate && !cachedGate.root.userData.meshById.has('recess'), 'cached old passage data cannot recreate the black plane');
+assert(data.ruinPassageDoor.parts.some(part => part.id === 'recess'), 'sanitizing the runtime copy must not mutate editor-authoring data');
+data.ruinPassageDoor.parts = previous;
+
+// Transition doors intentionally retain their darkness; only walk-through gates lose the backing.
+assert(JSON.parse(read('docs/config/furniture-authored/cliffDoor.json')).parts.some(part => part.id === 'cliff_door_darkness'));
+assert(JSON.parse(read('docs/config/furniture-authored/ruinEntranceDoor.json')).parts.some(part => part.id === 'recess'));
 
 // Until the JSON has loaded the builder returns null, so callers keep their plain box.
 delete data.ruinPassageDoor;

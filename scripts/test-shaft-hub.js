@@ -26,6 +26,15 @@ const NativeV50=require('../docs/js/ruin-v50-native-floors.js'); // Actual V50 s
 
 const runtime=fs.readFileSync('docs/js/dev-random-ruin-interior-map.js','utf8');
 const index=fs.readFileSync('docs/index.html','utf8');
+const shaftSound=fs.readFileSync('docs/js/ruin-reaching-obelisks.js','utf8'); // Runtime event handlers are the only owners of shaft stone sounds.
+const projectileSoundSection=shaftSound.split('onHit:()=>{')[1]?.split('controls:controls.id')[0]||'';
+const plateSoundSection=shaftSound.split('const turnPillar=plate=>{')[1]?.split('const tick=dt=>{')[0]||'';
+assert(projectileSoundSection.includes('RuinInteractionAudio?.mechanism?.(controls.holder'),
+  'projectile-driven shaft elevators must sound once when commanded to move');
+assert(plateSoundSection.includes('RuinInteractionAudio?.mechanism?.(record.holder')&&plateSoundSection.includes('RuinInteractionAudio?.activator?.(plate.node'),
+  'shaft rotation must play a stone mechanism cue and its pressure-plate click');
+assert(index.includes('js/ruin-interaction-audio.js')&&index.indexOf('js/ruin-interaction-audio.js')<index.indexOf('js/ruin-reaching-obelisks.js'),
+  'the shared recorded cues must load before shaft runtime initialization');
 assert(runtime.includes('attachShaftHub(rec,candidateSeed,{preplanned:planned,nativeFloors:nativeSnapshots});'),
   'a V50 ruin must mount the pre-reserved native multi-floor plan, not compose a fresh shaft after V50');
 assert(runtime.includes('const planned=singleRoomTrial?null:placement?.plan||window.RuinLayerPlan?.compose?.(')

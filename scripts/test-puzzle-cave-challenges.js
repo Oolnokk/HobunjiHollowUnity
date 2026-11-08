@@ -91,7 +91,7 @@ assert.equal(completed,1,'second torch unlocks the gate exactly once');
 assert(fire.solved,'the shared challenge records the solve');
 fire.animate(1);
 assert(fire.door.position.y>1.75,'opening raises the physical stone slab visual');
-assert.equal(fire.backdrop.visible,false,'the black doorway plane disappears once the chest can be revealed');
+assert.equal(fire.backdrop,null,'the walk-through fire gate never constructs a black doorway plane');
 assert(!fireCollider.enabled(),'the collider opens only after the animated gate clears the threshold');
 assert(!areaFootprints.blocksBox(area,gateX,gateZ,.18),'player movement also clears the opened stone gate');
 assert(areaFootprints.blocksBox(area,room.x+.65,gateZ,.18),'solving the puzzle does not open the unbreakable left flank');
@@ -155,7 +155,7 @@ assert(areaFootprints.blocksBox(area,gateX,gateZ,.18),'the gate remains physical
 timed.animate(.52);
 assert(areaFootprints.blocksBox(area,gateX,gateZ,.18),'the still-rising music slab cannot be walked through');
 timed.animate(.35);
-assert.equal(timed.backdrop.visible,false,'the solved instrument gate also reveals its chamber instead of leaving a black plane');
+assert.equal(timed.backdrop,null,'the walk-through instrument gate never constructs a black doorway plane');
 assert(!areaFootprints.blocksBox(area,gateX,gateZ,.18),'the fully raised music slab no longer blocks player movement');
 assert(areaFootprints.blocksBox(area,room.x+.65,gateZ,.18),"the music gate\'s unbreakable rock flanks persist after unlocking");
 assert.equal(closed,0,'finishing the song must not close a manually equipped instrument');

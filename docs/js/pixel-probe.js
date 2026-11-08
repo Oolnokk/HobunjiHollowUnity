@@ -712,6 +712,8 @@
     if (following) lines.push(`NPC company: ${JSON.stringify(following)}`);
     const music = window.MusicMinigame?.diagnostics?.();
     if (music) lines.push(`NPC music: ${JSON.stringify(music)}`);
+    const stoneAudio=window.RuinInteractionAudio?.debugSnapshot?.(); // The Debug tab exposes the latest recorded cue/pitch on mobile without a console.
+    if(stoneAudio)lines.push(`Ruin stone/fire audio: ${JSON.stringify(stoneAudio)}`);
     const erroring = entries.filter(entry => entry.errorCount > 0);
     if (erroring.length) {
       lines.push(`>>> Frame scheduler subscriber errors: ${erroring.map(entry => `${entry.id}(${entry.owner}) x${entry.errorCount}: ${String(entry.lastError || '').split('\n')[0]}`).join(' | ')}`);

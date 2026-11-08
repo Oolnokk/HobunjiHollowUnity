@@ -244,7 +244,9 @@
       support('tower-top',x,z,1.9,1.9,()=>floorY+pillarHeight,()=>alive()&&!pillarBroken&&pillarHeight>.1);
       const triggerSink=()=>{
         if(!alive()||sinking||pillarLowered||pillarBroken)return false;
-        sinking=true;kit.deps?.showToast?.('The tall stone pillar is sinking!',true);return true;
+        sinking=true;
+        root.RuinInteractionAudio?.mechanism?.(stone,{size:Math.max(1.9,pillarHeight)}); // The true tall stone pillar starts sinking, one cue per puzzle activation.
+        kit.deps?.showToast?.('The tall stone pillar is sinking!',true);return true;
       };
       if(variant==='melody'||variant==='ceilingRail'){
         const challenge=root.RuinLayerChallenges?.compose?.({
@@ -445,11 +447,15 @@
             &&Math.abs(b.mesh.position.z-plate.z)<PLATE_REACH);
           plate.block=found?.name||null;
           plate.filled=!!found;
+          root.RuinInteractionAudio?.watchPlate?.(plate.mesh,plate.filled); // A pushed block seating on or leaving a stone socket clicks once.
           plate.mesh.material.color.setHex(found?COLOR.solved:COLOR.plate);
           if(found)weighted++;
         }
         if(weighted===4)openGate();
-        if(solved&&gate)gate.position.y=Math.min(gateStart+3.2,gate.position.y+step*3.6);
+        if(solved&&gate){
+          gate.position.y=Math.min(gateStart+3.2,gate.position.y+step*3.6);
+          root.RuinInteractionAudio?.watchMovement?.(gate,(gate.position.y-gateStart)/3.2); // Rumble on the physical gate's rise, not every solved frame.
+        }
       },
       snapshot(){return {id,variant,netVariant,stairMirror,solved,ceilingY:ceiling,stairRise,initialPillarHeight,weighted:plates.filter(p=>p.filled).length,
         blocks:blocks.map(b=>({name:b.name,phase:b.phase,x:b.mesh.position.x,z:b.mesh.position.z,

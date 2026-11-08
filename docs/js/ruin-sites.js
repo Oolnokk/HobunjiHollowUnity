@@ -368,10 +368,13 @@
   function openDoor(record) {
     updateEntrance(record.site.id, { open:true, struck:record.pillars.map(pillar => pillar.slot.id) });
     if (record.door) {
-      if (!window.FurniturePuzzleRuntime?.setMechanism?.(`ruinSite:${record.site.id}`, 'door', true)) window.FurniturePuzzleRuntime?.applyMechanism?.(record.door, 1);
+      const animated=window.FurniturePuzzleRuntime?.setMechanism?.(`ruinSite:${record.site.id}`, 'door', true); // The furniture runtime owns its own stone sound when it can animate the door.
+      if(!animated){
+        window.FurniturePuzzleRuntime?.applyMechanism?.(record.door, 1);
+        window.RuinInteractionAudio?.mechanism?.(record.door,{size:4}); // Only the direct-placement fallback needs its own door cue.
+      }
     }
     deps?.showToast?.('The ruin door grinds open.', true);
-    window.AudioSystem?.playSfx?.('stone_door');
   }
 
   function strike(record, pillar) {

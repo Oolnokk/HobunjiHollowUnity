@@ -51,10 +51,13 @@
 
   function ready(key) { return !!A.peek(key); }
 
-  function build(key) {
+  function build(key, { openPassage = false } = {}) {
     const data = A.peek(key);
     if (!data) return null;
-    const group = A.buildGroup(data);
+    const model = openPassage
+      ? { ...data, parts:(data.parts || []).filter(part => part.id !== 'recess') }
+      : data; // Walk-through hallway gates never instantiate obsolete black recess geometry, including from cached authored data.
+    const group = A.buildGroup(model);
     group.userData.ruinFurnitureKey = key;
     group.userData.authoredFurnitureKey = null; // Visual overlays are not standalone furniture cover; the decorated door/target remains the collision authority.
     group.traverse(node => { node.userData.devRuinFootprintIgnore = true; }); // Visual overlays; collision stays with the piece they decorate.
@@ -195,7 +198,7 @@
   // fallback. Collision is the caller's (the voxel grid), so every mesh here is footprint-ignored.
   function buildPassageGate({ span, height = PASSAGE_HEIGHT, normalAxis = 'z', parent = null, name = 'passage-gate', position = null } = {}) {
     const variant = passageVariantFor(span);
-    const root = build(variant.key);
+    const root = build(variant.key, { openPassage:true }); // Filter cached legacy recess parts before building walk-through gates.
     if (!root) return null;
     root.name = name;
     root.scale.set((Number(span) || variant.outer) / variant.outer, (Number(height) || PASSAGE_HEIGHT) / PASSAGE_HEIGHT, 1);

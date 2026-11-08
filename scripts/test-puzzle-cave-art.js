@@ -86,7 +86,10 @@ async function main(){
   assert(ruin.includes('surfaces:[scoreFace]'),'interior notes must be fixed to a vertical cave-stone face');
   assert(ruin.includes('rec.inscription?.setVisible?.(down)'),'interior clue must only appear on the plate');
   assert(caves.includes('portal.scoreBoard.visible=!!down'),'exterior clue must only appear on the plate');
-  assert(ruin.includes('if(authoredDark)authoredDark.visible=false'),'authored black portal plane must remain hidden');
+  const gate=JSON.parse(read('docs/config/furniture-authored/cliffGate.json')); // The physical cave gate must be an unobstructed passage once its slab opens.
+  assert(!gate.parts.some(part=>part.id==='cliff_gate_darkness'),'interior cliff gate must not author a black backing mesh');
+  assert(!ruin.includes('puzzle-cave-door-darkness-')&&!ruin.includes('puzzle-cave-fire-darkness-'),'interior cave gates must not generate a black placeholder');
+  assert(ruin.includes("filter(part=>part.id!=='cliff_gate_darkness')"),'runtime must reject legacy cached black gate parts');
   assert(stone.includes('caveWall?.material'),'rock gate must reuse the actual cave-shell material');
   assert(index.includes('js/puzzle-cave-plate-art.js')&&index.includes('js/ruin-melody-glyph-decal.js'));
   console.log('PASS Puzzle Cave Tankan plates, shared font loading, async teardown, manual songs and stone-wall clues');

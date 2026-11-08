@@ -355,6 +355,7 @@
       }
       if(entry.plate&&!entry.triggered&&p&&Math.hypot(p.x-entry.position.x,entry.position.z-p.z)<.45){
         entry.triggered=true;entry.plateMesh.material.color.setHex(0x63946a);
+        window.RuinInteractionAudio?.activator?.(entry.plateMesh); // The three real Hachutu stone plates sound once when stepped on.
         takeRing(session.weeds[0],entry.ring);
       }
     }

@@ -301,6 +301,7 @@
 
   function armNextProjectile() {
     if (!window.RangedWeapons?.equippedRangedKey?.()) return false;
+    if(!pendingIgnition)window.RuinInteractionAudio?.igniteAmmo?.(); // The small ignition plays only on the successful unarmed→armed transition.
     pendingIgnition = true;
     lastEvent = 'next player projectile armed';
     updateHeldVisual(1/40); // Show ignition immediately after the brazier interaction.
