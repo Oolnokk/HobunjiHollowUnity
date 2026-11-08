@@ -146,6 +146,23 @@
       // old ground. Otherwise both calves overstretch during release.
       out[side].copy(ground).lerp(grip, jumpBlend); // Interpolate from a body-relative dangling foot into genuine posterior contact.
       if (composerLift) out[side].y -= solution.shorterJumpWorld * jumpBlend; // Player composer applies its own lift only inside render; countertranslate the temporary IK target.
+      if (jumpBlend < .999 && shortStance[side]?.hip) {
+        // During takeoff/landing the ankle is still IN FLIGHT, so it must not
+        // be forced to follow a straight line through an unreachable point.
+        // Retract that interim target towards the real hip; at complete
+        // contact the posterior target is retained exactly (and validated).
+        const hip = shortStance[side].hip;
+        const hipWorld = temp[side + 'HipWorld'] || (temp[side + 'HipWorld'] = new THREE.Vector3());
+        hipWorld.set(hip.x, hip.y, hip.z);
+        shorterLegs.group.localToWorld(hipWorld);
+        const shortScale = shorterLegs.group.getWorldScale?.(
+          temp.shortScale || (temp.shortScale = new THREE.Vector3(1,1,1))
+        );
+        const span = Math.abs((Number(hip.y) || 0) - (Number(ankle.y) || 0));
+        const maxReach = Math.max(.001, span * Math.max(.001, Math.abs(shortScale?.y || 1)) * .995);
+        const distance = out[side].distanceTo(hipWorld);
+        if (distance > maxReach) out[side].sub(hipWorld).multiplyScalar(maxReach / distance).add(hipWorld); // Actual two-bone knees remain shorter than their authored length.
+      }
     }
     return out;
   }
