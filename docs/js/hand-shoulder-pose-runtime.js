@@ -274,7 +274,8 @@
   function playingInstrumentFor(avatarRoot) {
     const playerMesh = global.Combat?.deps?.playerMesh || global.PlayerBodyTransformComposer?.getPlayerMesh?.();
     if (!avatarRoot || !playerMesh || avatarRoot.parent !== playerMesh) return null; // Player music must never animate NPC or hostile shoulders.
-    const key = global.KurrayaInstrument?.activePlayerInstrument?.();
+    const key = global.KurrayaInstrument?.activePlayerInstrument?.()
+      || (global.KurrayaInstrument?.playerKurrayaHandTarget?.()?.holder?.visible ? 'kurraya' : null); // The visible carried Kurraya also uses its editor Neutral elbows and shoulder hinges.
     const action = key === 'flute' ? global.HeldActionAnimations?.flutePlayNote
       : key === 'kurraya' ? global.HeldActionAnimations?.kurrayaPlayNote : null;
     if (!action?.poses) return null;
