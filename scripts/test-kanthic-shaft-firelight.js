@@ -22,7 +22,7 @@ class Mesh extends Node{constructor(geo,mat){super();this.geometry=geo;this.mate
 const THREE={Group:Node,Mesh,BoxGeometry:Geo,CylinderGeometry:Geo,ConeGeometry:Geo,MeshBasicMaterial:Mat,Vector3:Vec,Matrix4:class{}};
 const scene=new Node(),localeRoot=new Node(),tower=new Node(); // Real parent transforms verify moving tower light tracking.
 tower.name='obelisk-f0-A';tower.position.set(100,2,100);scene.add(localeRoot,tower);
-const grid={cols:55,rows:55,levels:51,levelToY:n=>n,colToX:n=>n,rowToZ:n=>n,
+const grid={cols:55,rows:55,levels:35,levelToY:n=>n,colToX:n=>n,rowToZ:n=>n,
   isSolid:(c,r)=>c>=0&&r>=0&&c<55&&r<55&&(c<5||r<5||c>=50||r>=50),
   canStand:(c,r)=>c>=5&&r>=5&&c<50&&r<50}; // Hollow three-story, 45-wide octagonal-hub approximation.
 const hub={grid,options:{wall:5,shaft:45,spacing:16,floors:3},
@@ -40,6 +40,7 @@ assert.equal(ruin.shaftConnection.kanthicOptionalBraziers,3,'diagnostics report 
 const wallSconces=sconces.filter(l=>l.anchor.name==='kanthic-wall-giant-sconce'
   &&l.anchor.position.x<55&&l.anchor.position.z<55); // Ignore outer-wing fixtures beyond the shaft.
 assert(wallSconces.length>=10,'the shaft hub takes priority over smaller wing rooms');
+assert(wallSconces.some(l=>l.story===2),'top-floor wall sconces must fit beneath the real two-voxel roof');
 assert(wallSconces.every(l=>[5.03,49.97].some(v=>
   Math.abs(l.anchor.position.x-v)<.09||Math.abs(l.anchor.position.z-v)<.09)),
   'sconces must be fixed on the visible inner wall, not embedded in masonry');
