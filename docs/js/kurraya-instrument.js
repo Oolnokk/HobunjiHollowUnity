@@ -475,7 +475,7 @@
       : action.poses.neutral; // Both a carried instrument and the pauses between notes show the authored Neutral stance.
   }
 
-  function applyPlayerHeldPose(holder, pose, baseX, baseY, speciesPose = null) {
+  function applyPlayerHeldPose(holder, pose, baseX, baseY, speciesPose = null, grip = null) {
     if (!holder?.position?.set || !holder?.rotation?.set || !holder?.scale?.setScalar || !pose) return false;
     const value = key => Number.isFinite(Number(pose[key])) ? Number(pose[key]) : 0; // All editor channels stay finite before reaching a Three.js transform.
     holder.position.set((Number(baseX) || 0) + value('x'), (Number(baseY) || 0) + value('y'), value('z'));
@@ -483,7 +483,9 @@
     const deg = Math.PI / 180;
     holder.rotation.set(value('pitch') * deg, value('yaw') * deg, value('roll') * deg, 'YXZ'); // Yaw × Pitch × Roll, identical to the editor's qYaw*qPitch*qRoll.
     const scale = Number(pose.scale);
-    holder.scale.setScalar(Number.isFinite(scale) && scale > 0 ? scale : 1); // Neutral owns instrument size throughout a note.
+    const effectiveScale = Number.isFinite(scale) && scale > 0 ? scale : 1; // Neutral owns instrument size throughout a note.
+    holder.scale.setScalar(effectiveScale);
+    window.SharedAttackPose?.anchorScaleAtPoint?.(holder, grip, effectiveScale); // Editor pivots scaled instruments on this same authored main-hand grip.
     return true;
   }
 
