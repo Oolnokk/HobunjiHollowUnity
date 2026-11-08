@@ -65,6 +65,23 @@
     if (!a || !shakeEnabled()) return;
     trauma = Math.min(1, trauma + a);
     debug.shakes++; debug.lastTrauma = trauma;
+    if (a >= 0.12) rumble(a);
+  }
+  // Controller rumble alongside camera shake. Uses the shared ControllerInput
+  // pad (AGENTS.md: never poll navigator.getGamepads directly) and is optional.
+  let lastRumbleMs = 0;
+  function rumble(amount) {
+    const now = performance.now();
+    if (now - lastRumbleMs < 70) return false;
+    try {
+      const motor = window.ControllerInput?.frame?.()?.pad?.vibrationActuator;
+      if (!motor?.playEffect) return false;
+      const a = Math.min(1, Math.max(0, Number(amount) || 0));
+      motor.playEffect('dual-rumble', { duration: Math.round(50 + a * 220), startDelay: 0, strongMagnitude: Math.min(1, a * 1.1), weakMagnitude: Math.min(1, 0.2 + a * 1.2) })?.catch?.(() => {});
+      lastRumbleMs = now;
+      debug.rumbles = (debug.rumbles || 0) + 1;
+      return true;
+    } catch (_) { return false; }
   }
   // Smooth pseudo-noise: three incommensurate sines per axis stay coherent
   // frame to frame (unlike Math.random jitter, which reads as video noise).
