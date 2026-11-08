@@ -204,6 +204,10 @@ assert(/furniture-pattern-surfaces\.js\?v=[A-Za-z0-9_-]+/.test(html));
  const replacement=await runtimeWindow.HronalWitchBombs.dispenseFromMechanism(tube);
  assert(replacement&&replacement.id!==first.id,'detonating the first payload releases the dispenser for a replacement');
  assert.equal(spawns,2);assert.equal(releases,2,'each successful dispense begins a vertical downward release');
+ assert.equal(replacement.onImpact(replacement,'witch-bomb-chain'),true,'a neighboring Witch-bomb blast triggers chain detonation');
+ assert.deepEqual(playedSfx,['witchBombBlast','witchBombBlast'],'fuse and chain detonations each emit the lowblast cue once');
+ assert.equal(replacement.onImpact(replacement,'witch-bomb-chain'),false,'an already exploded Witch-bomb cannot replay the sound');
+ assert.equal(playedSfx.length,2,'duplicate impacts do not duplicate explosion audio');
  console.log('Hronal Witch-bomb runtime: tube world transform, configured fuse, single-payload lock, accelerating glyph pulse and blast cleanup/unlock/re-dispense PASS');
 })().catch(error=>{console.error(error);process.exitCode=1;});
 
