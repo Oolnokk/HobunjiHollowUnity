@@ -206,6 +206,32 @@ async function main() {
     assert.equal(errors.length, 0, errors.join('\n\n'));
     assert.ok(result.exportable);
     console.log('Multi-avatar scene URL PASS:', JSON.stringify(result));
+
+    // A fresh explicit URL with the tall character first tests the OTHER
+    // choreography branch without inheriting transforms from the first clip.
+    await page.goto(PAGE.replace('?scene=pahu-leaf-kiss', '?actors=leaf,pahu&preset=kiss'), {
+      waitUntil: 'domcontentloaded', timeout: 35000,
+    });
+    await page.waitForFunction(() => window.MultiAvatarAnimationAuthor?.getActors?.().length === 2 &&
+      document.getElementById('maaPresetSelect')?.value === 'kiss', null, { timeout: 120000 });
+    const tallerFirst = await page.evaluate(() => {
+      const api = window.MultiAvatarAnimationAuthor;
+      const pair = api.kissPairDiagnostics?.();
+      const slider = document.getElementById('maaScrubber');
+      const frames = [];
+      for (const t of [0, .13, .25, .37, .52, .67, .82, 1.12, 2.4]) {
+        slider.value = String(t);
+        slider.dispatchEvent(new Event('input', { bubbles: true }));
+        const leaf = api.fullBodyDiagnostics().find(actor => actor.name === 'Leaf');
+        frames.push({ t, handBlend: leaf?.initiatorHands?.blend || 0,
+          reachGap: leaf?.initiatorHands?.closestGap || 0, knee: leaf?.kneeDrop || 0 });
+      }
+      return { pair, frames };
+    });
+    if (tallerFirst.pair?.initiator !== 'leaf') {
+      throw Error('Reverse URL did not select Leaf as the explicit initiator: ' + JSON.stringify(tallerFirst));
+    }
+    console.log('Kiss reversed-role height and shoulder reach:', JSON.stringify(tallerFirst));
   } catch (error) {
     let snapshot;
     try {
