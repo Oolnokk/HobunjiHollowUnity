@@ -14052,7 +14052,9 @@ serializeAnimationProject = function() {
     if (actor && record.targetActorId && Array.isArray(record.keyframes)) {
       const pct = Number(actor.kissBodySinkPctAtContact) || 0;
       record.keyframes.forEach(key => {
-        key.bodySinkPct = pct * window.SpouseKissMotion.samplePose(key.time).blend;
+        key.bodySinkPct = pct * window.SpouseKissMotion.sampleKneelBlend(
+          key.time, animationAuthor.kissHeightSolutionV1546?.taller === 'second',
+        ); // Exported knee tracks honor the early shoulder grip followed by delayed kneeling.
       });
     }
   }
@@ -14376,6 +14378,11 @@ syncMultiAvatarFullBodiesV1548 = function(time = animationAuthor.currentTime, dt
       // The noninitiating partner retains the existing idle/embrace hand pose.
       // For a shorter initiator the shoulder projection engages at .13–.37 s,
       // before the taller partner begins kneeling at .52 s.
+    }
+  } else {
+    for (const actor of animationAuthor.actors) {
+      actor.multiKissHandContactRigV1550 = null; // A subsequent Kiss must reinstall its grip provider after dance/mode changes.
+      actor.multiKissHandContactV1550 = null;
     }
   }
   return result;
