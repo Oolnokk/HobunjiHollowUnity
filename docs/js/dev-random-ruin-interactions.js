@@ -396,7 +396,7 @@
     const presentedY = window.DevRandomRuin?.getPlayerSupportY?.();
     const floorY = Number.isFinite(physicalY) ? physicalY : Number.isFinite(presentedY) ? presentedY : player.y;
     const minClimbRise = Math.max(cfg('climb.ledgeMinRise', LEDGE_MIN_RISE), window.PlayerJump?.easyJumpRise ?? 0); // Low standable objects belong to free jumping, not the ruin mantle animation.
-    const maxRise = Math.max(cfg('climb.ledgeMaxRise', LEDGE_MAX_RISE), Number(window.DevRandomRuinRopeRewards?.lavaClimbRise?.(player)) || 0); // Wading in basin lava: the rim is always climbable (no teleport out).
+    const maxRise = Math.max(cfg('climb.ledgeMaxRise', LEDGE_MAX_RISE), Number(window.DevRandomRuinRopeRewards?.lavaClimbRise?.({ x:player.x, y:floorY, z:player.z })) || 0); // Lava escape must use the same physical floor height as climb targeting.
     let best = null;
     for (let i = 0; i < 16; i++) {
       const angle = i * Math.PI / 8, dx = Math.cos(angle), dz = Math.sin(angle);
