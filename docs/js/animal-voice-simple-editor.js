@@ -286,6 +286,12 @@
       return;
     }
 
+    // Honeyfuzzle swarms use their dedicated continuous spatial buzz, never the utterance player.
+    if (animal.id === 'honeyfuzzle') {
+      editor.innerHTML = '<div class="card"><h2>Honeyfuzzle</h2><div class="muted">Honeyfuzzles use the dedicated looping swarm buzz in game, not chatter, warnings, or growl utterances. Their audio cannot be assigned in this editor.</div></div>';
+      return;
+    }
+
     const entries = libraryEntries();
     const size = speciesSizePitch(animal) || { ...DEFAULT_SIZE_PITCH_MULTIPLIERS }; // Values rendered and edited only for this selected species.
     const treasure = state.config.companionTreasureLines?.[animal.id] || [];
