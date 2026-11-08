@@ -135,13 +135,13 @@ hostileDistance = null;
 
 tentB.interactable.lootable = false;
 assert.equal(api.action().label, 'Burn Tent', 'ransacked tents offer burning while aimed');
-tentA.destroyed = true;
+tentA.destroyed = false;
 tentB.burning = true;
-assert.equal(api.aim(zone), null, 'already-burning tents cannot be targeted again');
+assert.equal(api.aim(zone), null, 'the foreground burning tent blocks interaction with an actionable tent behind it');
 tentB.burning = false;
 tentB.interactable.burnable = false;
-assert.equal(api.action(), null, 'non-interactable tents never offer a burn prompt');
-
+assert.equal(api.action(), null, 'the foreground non-interactable tent blocks burning the tent behind it');
+tentA.destroyed = true;
 tentB.interactable.burnable = true;
 api.meshes.get(zone).delete(tentB.id);
 assert.equal(api.aim(zone), null, 'unloaded meshes must not fall back to invisible bounding boxes');
