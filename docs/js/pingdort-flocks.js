@@ -150,8 +150,10 @@
   }
   function saveHarvestKey(session,nest){
     // A nest is collectable once per in-game day per world, including across re-entry/save.
-    const day=Number(deps?.calendar?.day)||1,world=window.__hobunjiPlayerProfile?.worldId||'world';
-    return 'pingdort:nest:'+world+':'+session.area+':'+day+':'+nest.id;
+    const calendar=deps?.calendar||{}; // Harvests reset by full civil date, not just the day number shared by every month.
+    const date=[Number(calendar.year)||0,String(calendar.month??'unknown'),Number(calendar.day)||1].join('-');
+    const world=window.__hobunjiPlayerProfile?.worldId||'world';
+    return 'pingdort:nest:'+world+':'+session.area+':'+date+':'+nest.id;
   }
   function collectNest(id){
     const area=activeArea(),session=sessions.get(area),nest=session?.nests.find(n=>n.id===id);
@@ -236,9 +238,21 @@
     const scene=currentScene(area);
     if(!scene)return 0;
     const existing=sessions.get(area);
-    if(existing && existing.scene===scene)return existing.nests.length;
+    if(existing && existing.scene===scene){
+      const day=String(deps?.calendar?.year??0)+':'+String(deps?.calendar?.month??'unknown')+':'+String(deps?.calendar?.day??1); // Refill fertile clutches when the in-game civil day changes.
+      if(existing.harvestDay!==day){
+        existing.harvestDay=day;
+        for(const nest of existing.nests){
+          let alreadyCollected=false;
+          try{alreadyCollected=localStorage.getItem(saveHarvestKey(existing,nest))==='1';}catch(_){}
+          nest.harvested=alreadyCollected;nest.eggGroup.visible=!alreadyCollected;
+        }
+      }
+      return existing.nests.length;
+    }
     if(existing)cleanupSession(existing);
-    const session={area,scene,nests:[],birds:new Set(),materials:new Set(),disposed:false}; // A streamed scene owns its twig meshes and encounter actors.
+    const session={area,scene,nests:[],birds:new Set(),materials:new Set(),disposed:false,
+      harvestDay:String(deps?.calendar?.year??0)+':'+String(deps?.calendar?.month??'unknown')+':'+String(deps?.calendar?.day??1)}; // A streamed scene owns bird actors and each date's finite fertile clutch.
     sessions.set(area,session);
     const nearby=[...(deps.hostileObjects||[])].filter(c=>
       c.areaId===area&&c.health>0&&String(c.creatureKey||'').startsWith('drenkirra'));
