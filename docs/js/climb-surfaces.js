@@ -195,6 +195,42 @@
     for (let y = 0.3; y < h; y += 0.45) for (let x = 0.25; x < w; x += 0.5) { const hold = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.1, 0.1), mat); hold.position.set(x + (rnd() - 0.5) * 0.2, y + (rnd() - 0.5) * 0.15, 0.05); group.add(hold); }
     return group;
   }
+  let ruinLadderRuneTexture = null; // Shared V50 rune PNG used by ladder edge markings; individual marker geometries are disposable.
+  function buildRuinLadderMarks(THREE, surface) {
+    if (!THREE.TextureLoader || !THREE.PlaneGeometry) return null;
+    if (!ruinLadderRuneTexture) {
+      ruinLadderRuneTexture = new THREE.TextureLoader().load('assets/textures/decals/ruin_glyph_rune.png');
+      ruinLadderRuneTexture.wrapS = ruinLadderRuneTexture.wrapT = THREE.RepeatWrapping;
+      if (THREE.SRGBColorSpace) ruinLadderRuneTexture.colorSpace = THREE.SRGBColorSpace;
+    }
+    const width = surface.u1 - surface.u0, height = surface.y1 - surface.y0; // Marker placement follows the same registered climbing rectangle.
+    const runeMaterial = new THREE.MeshBasicMaterial({
+      map:ruinLadderRuneTexture,color:'#80e9ca',transparent:true,opacity:.85,
+      depthWrite:false,depthTest:true,side:THREE.DoubleSide,blending:THREE.AdditiveBlending,
+      polygonOffset:true,polygonOffsetFactor:-2,polygonOffsetUnits:-2,
+    }); // Subtle emissive etchings identify the two ladder borders without recoloring the carved stone.
+    runeMaterial.onBeforeCompile = shader => {
+      shader.fragmentShader = shader.fragmentShader.replace('#include <map_fragment>', `
+        #ifdef USE_MAP
+          diffuseColor.a *= texture2D(map, vUv).a;
+        #endif
+      `);
+    };
+    const marks = new THREE.Group(), halfGap = Math.min(1.2,width)*.43+.11;
+    for (const side of [-1,1]) {
+      const geometry = new THREE.PlaneGeometry(.20,Math.max(.15,height-.12));
+      const uvs = geometry.getAttribute('uv');
+      for(let i=0;i<uvs.count;i++) uvs.setY(i,uvs.getY(i)*Math.max(1,height/.42));
+      const strip = new THREE.Mesh(geometry,runeMaterial);
+      strip.name = 'ruin-ladder-rune-glow';
+      strip.position.set(width/2+side*halfGap,height/2,.018); // Flat against the pillar face; the stone/ladder retain normal depth testing.
+      strip.userData.devRuinFootprintIgnore = true;
+      strip.userData.ruinLadderRuneGlow = true; // The ruin's darkness compositor leaves a small halo around the etched motifs.
+      strip.raycast = () => {};
+      marks.add(strip);
+    }
+    return marks;
+  }
   function buildRuinV50Ladder(THREE, surface) {
     // The verified V50 constructor is the visual authority. This decoration is not a second gameplay ladder.
     const author=globalThis.document?.getElementById?.('devRandomRuinGeneratorFrame')?.contentWindow?.DebrisifierV50;
@@ -205,7 +241,8 @@
     catch(error) {globalThis.__farmLog?.('[ruin climb] V50 ladder visual unavailable: '+(error?.message||error),'warn');return null;} // A failed optional decoration cannot block entry.
     if(!ladder?.traverse)return null;
     ladder.name='ruin-v50-climb-ladder-visual';
-    ladder.position.set(width/2,height,.08); // V50 roots ladders at their upper lip, extending down the wall.
+    ladder.rotation.y=-Math.PI/2; // V50 builds width along local Z and depth along +X; the climb frame expects width along +X and outward along +Z.
+    ladder.position.set(width/2,height,.006); // The rear of the rotated V50 rails now hugs the actual registered stone face.
     ladder.traverse(node=>{
       node.userData=node.userData||{};
       delete node.userData.generatedAccessType; // No duplicate climb prompt, occupancy solid, or ladder-mount animation.
@@ -231,6 +268,7 @@
       local.add(body);
     }
     if(inner)local.add(inner);
+    if(v50Ladder){const marks=buildRuinLadderMarks(THREE,surface);if(marks)local.add(marks);}
     holder.add(local);
     // Right-handed local frame: +x = up x normal, +y = up, +z = normal (so the overlay sits on the open side).
     // For some facings +x runs against `u`, so the frame starts from the far end of the wall.
@@ -241,6 +279,7 @@
     holder.position.set(wallX(surface, startU), surface.y0, wallZ(surface, startU));
     holder.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(xAxis, new THREE.Vector3(0, 1, 0), new THREE.Vector3(nx, 0, nz)));
     holder.userData.climbSurfaceId = surface.id;
+    if(v50Ladder)holder.userData.ruinLadderSenseTarget = true; // Moving obelisk runtime exposes these actual visual roots to sense mode.
     return holder;
   }
 

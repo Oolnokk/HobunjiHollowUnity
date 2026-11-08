@@ -616,10 +616,10 @@
   <script src="js/cliff-elevated-surfaces.js?v=20261106miniplateau1"></script> <!-- Wilderness balconies reuse CellGrid3D and scoped DynamicSurfaces; terrain heightfield stays intact. -->
   <!-- Climbable wall surfaces (window.ClimbSurfaces): attach + move along a wall.
        Needs ClimbSystem (registered as a world-climb provider by game.js). -->
-  <script src="js/climb-surfaces.js?v=20261108v50ladder1"></script>
+  <script src="js/climb-surfaces.js?v=20261108shaftmarker1"></script>
   <script src="js/ruin-wall-faces.js?v=20261106walls1"></script> <!-- Merged stretch-to-fit wall faces; shaft-hub.js builds its stone from them. -->
-  <script src="js/ruin-reaching-obelisks.js?v=20261108rhythm3s"></script> <!-- Complete stateful vertical traversal, after CellGrid3D and the climb pipeline. -->
-  <script src="js/shaft-hub.js?v=20261108v50ladder1"></script>
+  <script src="js/ruin-reaching-obelisks.js?v=20261108shaftsense1"></script> <!-- Complete stateful vertical traversal, after CellGrid3D and the climb pipeline. -->
+  <script src="js/shaft-hub.js?v=20261108shaftsense1"></script>
   <script src="js/ruin-layer-plan.js?v=20261107integrationBlocks1"></script>
   <script src="js/dev-ruin-single-room-trial.js?v=20261108witchBombExtern1"></script> <!-- One-room developer puzzle chooser and normal-plan weighted odds. -->
   <script src="js/dev-ruin-find-blocks.js?v=20261108witchBombExtern1"></script> <!-- Four-block compound lab fixture, using native ruin push, fire, flute and bomb mechanics. -->
@@ -805,7 +805,8 @@
   <!-- Player-centered white mist cylinders, shown only in the Southern
        Cloud Forest — see EXTERIOR_ZONES.map_southern_cloud_forest's
        fogDensity/vegCullRadiusTiles comments in game.js for why. -->
-  <script src="js/cloud-forest-fog.js?v=20261108h706f571"></script>
+  <script src="js/ruin-light-occlusion.js?v=20261108shadow1"></script> <!-- Screen-space ruin torch masks clip behind physical columns, walls and props. -->
+  <script src="js/cloud-forest-fog.js?v=20261108shadow1"></script>
   <!-- Farm tab hub (header, grid glance, buildings list, processor status
        tiles, livestock roster + breeding, farm<->stable transfers, storage,
        farmhands) and the Stable tab (window.FarmPanel) — reads
@@ -985,7 +986,7 @@
   <script src="js/crop-growth.js?v=20261107cultivar2"></script>
   <!-- Perception Mode: toggleable eagle-vision highlights + crop/livestock
        info lists (window.PerceptionMode; game.js calls init/update/renderOverlay). -->
-  <script src="js/perception-mode.js?v=20261107verdigris1"></script>
+  <script src="js/perception-mode.js?v=20261108shaftsense1"></script>
   <script src="js/world-portrait-life.js?v=20261031headtakerlife6"></script>
 </head>
 <body>

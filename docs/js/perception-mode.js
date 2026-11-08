@@ -240,6 +240,7 @@
       nests: window.DenNestSystem?.senseTargets?.(scene) || [],
       hives: window.HoneyfuzzleHives?.senseTargets?.(scene) || [],
       caveFeatures: window.CaveSiteSystem?.senseTargets?.(scene) || [],
+      shaftLadders: [ ...(window.RuinReachingObelisks?.senseTargets?.(scene) || []), ...(window.ShaftHub?.senseTargets?.(scene) || []) ], // Both moving obelisks and fixed buttresses show only their real V50 ladder meshes.
     };
     lastStats.specialSources = Object.fromEntries(Object.entries(specialSources).map(([name, roots]) => [name, roots.length]));
     for (const roots of Object.values(specialSources)) for (const root of roots) consider(root, 'interact');

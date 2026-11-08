@@ -406,6 +406,17 @@
     for (const material of materials) material.dispose();
   }
 
+  function senseTargets(scene) {
+    const targets=[]; // Mounted V50 buttress ladders use the same through-stone silhouette as the moving obelisks.
+    for(const {visual} of mounts.values()){
+      if(!visual)continue;
+      let parent=visual;while(parent?.parent)parent=parent.parent;
+      if(parent!==scene)continue;
+      visual.traverse(node=>{if(node.userData?.ruinLadderSenseTarget&&node.visible!==false)targets.push(node);});
+    }
+    return targets;
+  }
+
   // The abstract room (RuinComposer's input) for one standing level of the hub: the walkable footprint at that level.
   function levelRoom(result, level) {
     const { grid } = result; // open = something to stand on at this level, with headroom; the shaft's empty air at a balcony level is not floor
@@ -413,5 +424,5 @@
     return { id: `shaft-level-${level}`, bounds: { minX: grid.colToX(0), maxX: grid.colToX(result.cols), minZ: grid.rowToZ(0), maxZ: grid.rowToZ(result.rows) }, floorY: grid.levelToY(level), ceilingY: grid.levelToY(result.levels - 1), zones: {}, gaps: [], solid };
   }
 
-  return Object.freeze({ DEFAULTS, compose, verify, reachable, mount, unmount, levelRoom });
+  return Object.freeze({ DEFAULTS, compose, verify, reachable, mount, unmount, levelRoom, senseTargets });
 });

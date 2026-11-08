@@ -649,9 +649,7 @@
       }
       grad.addColorStop(1, 'rgba(0,0,0,0)');
       ctx.fillStyle = grad;
-      ctx.beginPath();
-      ctx.arc(center.x, center.y, shineR, 0, Math.PI * 2);
-      ctx.fill();
+      withRuinShadowClip(ctx,shadows,()=>{ctx.beginPath();ctx.arc(center.x,center.y,shineR,0,Math.PI*2);ctx.fill();});
     }
 
     const weatherTint = preserveOutdoorWeatherTint ? currentOutdoorWeatherTintState() : null; // Used below to put back weather color without restoring the darkness the lantern just removed.
@@ -683,6 +681,19 @@
     ctx.globalCompositeOperation = 'source-over';
   }
 
+  function ruinShadowPolygons(light,radiusTiles) {
+    if(lightingDeps?.getCurrentArea?.()!=='map_i_dev_random_ruin')return [];
+    const scene=lightingDeps.getActiveScene?.() || window.GridTileAccessors?.getActiveScene?.();
+    return window.RuinLightOcclusion?.projectedShadows?.({
+      scene,source:light,radiusTiles,THREE:window.THREE,
+      project:(x,y,z)=>lightingDeps.worldToOverlay(x,y,z),
+      now:performance.now(),
+    }) || []; // Shared 3D blocker bounds shadow the fake light pools without enabling real-time renderer shadows.
+  }
+  function withRuinShadowClip(ctx,polygons,draw) {
+    const shadows=window.RuinLightOcclusion;
+    return shadows?.withClip ? shadows.withClip(ctx,polygons,draw) : draw();
+  }
   function drawFurnitureLightMasksCompat(preserveOutdoorWeatherTint = false) {
     const ctx = lightingDeps.lctx;
     const visible = [];
@@ -702,12 +713,13 @@
       if (transmission <= 0.005) continue;
       const projected = projectInteriorLightMask(light.x, light.y, light.z, light.distance * (linearInterior ? INTERIOR_LIGHT_RADIUS_MULTIPLIER : 1), ctx);
       if (!projected) continue;
-      visible.push({ light, center: projected.center, shineR: projected.radius, transmission, visibility }); // Reuse one fade factor across light reveal, weather tint and colored glow.
+      visible.push({ light, center: projected.center, shineR: projected.radius, transmission, visibility,
+        shadows:ruinShadowPolygons(light,light.distance * (linearInterior ? INTERIOR_LIGHT_RADIUS_MULTIPLIER : 1)) }); // Reuse one fade factor across light reveal, weather tint and colored glow.
       if (outdoors) outdoorLightStats.drawn++;
     }
 
     ctx.globalCompositeOperation = 'destination-out';
-    for (const { light, center, shineR, transmission, visibility } of visible) {
+    for (const { light, center, shineR, transmission, visibility, shadows } of visible) {
       const clarityFrac = Math.min(0.55, Math.max(0.18, 1.15 / light.distance));
       const strength = Math.min(0.94, 0.58 + light.intensity * 0.22) * transmission * visibility;
       const grad = ctx.createRadialGradient(center.x, center.y, 0, center.x, center.y, shineR);
@@ -720,15 +732,13 @@
       }
       grad.addColorStop(1, 'rgba(0,0,0,0)');
       ctx.fillStyle = grad;
-      ctx.beginPath();
-      ctx.arc(center.x, center.y, shineR, 0, Math.PI * 2);
-      ctx.fill();
+      withRuinShadowClip(ctx,shadows,()=>{ctx.beginPath();ctx.arc(center.x,center.y,shineR,0,Math.PI*2);ctx.fill();});
     }
 
     const weatherTint = preserveOutdoorWeatherTint ? currentOutdoorWeatherTintState() : null; // Used below so static outdoor lights preserve the same weather coloration as carried/watch lanterns.
     if (weatherTint) {
       ctx.globalCompositeOperation = 'multiply';
-      for (const { light, center, shineR, transmission, visibility } of visible) {
+      for (const { light, center, shineR, transmission, visibility, shadows } of visible) {
         const clarityFrac = Math.min(0.55, Math.max(0.18, 1.15 / light.distance));
         const strength = Math.min(0.94, 0.58 + light.intensity * 0.22) * transmission * visibility;
         const grad = ctx.createRadialGradient(center.x, center.y, 0, center.x, center.y, shineR);
@@ -742,14 +752,12 @@
           0.3,
         );
         ctx.fillStyle = grad;
-        ctx.beginPath();
-        ctx.arc(center.x, center.y, shineR, 0, Math.PI * 2);
-        ctx.fill();
+        withRuinShadowClip(ctx,shadows,()=>{ctx.beginPath();ctx.arc(center.x,center.y,shineR,0,Math.PI*2);ctx.fill();});
       }
     }
 
     ctx.globalCompositeOperation = 'source-over';
-    for (const { light, center, shineR, transmission, visibility } of visible) {
+    for (const { light, center, shineR, transmission, visibility, shadows } of visible) {
       const glowR = shineR * (linearInterior ? 1 : 0.62);
       const glowAlpha = Math.min(0.18, 0.055 + light.intensity * 0.055) * transmission * visibility; // Distant sources cannot leave a glowing dot after the reveal fades.
       const { r, g, b } = light.color;
@@ -761,9 +769,7 @@
       } else glow.addColorStop(0.4, `rgba(${r},${g},${b},${glowAlpha * 0.45})`);
       glow.addColorStop(1, `rgba(${r},${g},${b},0)`);
       ctx.fillStyle = glow;
-      ctx.beginPath();
-      ctx.arc(center.x, center.y, glowR, 0, Math.PI * 2);
-      ctx.fill();
+      withRuinShadowClip(ctx,shadows,()=>{ctx.beginPath();ctx.arc(center.x,center.y,glowR,0,Math.PI*2);ctx.fill();});
     }
   }
 
@@ -784,11 +790,11 @@
       const center = lightingDeps.worldToOverlay(light.x, light.y, light.z);
       const radius = lightScreenRadius(light.x, light.z, light.y, light.radius);
       if (!lightMaskIntersectsViewport(center, radius, ctx, light.x, light.y, light.z, light.radius)) continue;
-      visible.push({light,center,radius,transmission});
+      visible.push({light,center,radius,transmission,shadows:ruinShadowPolygons(light,light.radius)});
     }
     ruinFireMaskStats.projected=visible.length; // Distinguishes source state from sources actually in the camera viewport.
     ctx.globalCompositeOperation = 'destination-out';
-    for (const {light,center,radius,transmission} of visible) {
+    for (const {light,center,radius,transmission,shadows} of visible) {
       const strength = light.strength * transmission;
       const grad = ctx.createRadialGradient(center.x,center.y,0,center.x,center.y,radius);
       grad.addColorStop(0,'rgba(0,0,0,'+strength+')');
@@ -796,11 +802,11 @@
       else grad.addColorStop(.42,'rgba(0,0,0,'+(strength*.42)+')');
       grad.addColorStop(1,'rgba(0,0,0,0)'); // Special-ruin light now shares the enclosed-room eased edge.
       ctx.fillStyle=grad;
-      ctx.beginPath();ctx.arc(center.x,center.y,radius,0,Math.PI*2);ctx.fill();
+      withRuinShadowClip(ctx,shadows,()=>{ctx.beginPath();ctx.arc(center.x,center.y,radius,0,Math.PI*2);ctx.fill();});
       ruinFireMaskStats.drawn++; // A destination-out mask was actually submitted this frame.
     }
     ctx.globalCompositeOperation='source-over';
-    for (const {light,center,radius,transmission} of visible) {
+    for (const {light,center,radius,transmission,shadows} of visible) {
       const [r,g,b]=light.color;
       const grad=ctx.createRadialGradient(center.x,center.y,0,center.x,center.y,radius);
       const glowStrength = .18 * transmission;
@@ -810,7 +816,8 @@
         grad.addColorStop(.72,'rgba('+r+','+g+','+b+','+(glowStrength*.32)+')');
       } else grad.addColorStop(.35,'rgba('+r+','+g+','+b+','+(.065*transmission)+')');
       grad.addColorStop(1,'rgba('+r+','+g+','+b+',0)');
-      ctx.fillStyle=grad;ctx.beginPath();ctx.arc(center.x,center.y,radius,0,Math.PI*2);ctx.fill();
+      ctx.fillStyle=grad;
+      withRuinShadowClip(ctx,shadows,()=>{ctx.beginPath();ctx.arc(center.x,center.y,radius,0,Math.PI*2);ctx.fill();});
     }
   }
 
@@ -824,7 +831,7 @@
       ruinGlowScene = scene;ruinGlowNextScan = now + 1600;
       ruinGlowMeshes = []; // Filter by the real additive pass, not decorative base stone or procedural wall labels.
       scene.traverse(node => {
-        if (node.name === 'engraving-glyph-glow' && node.isMesh) ruinGlowMeshes.push(node);
+        if ((node.name === 'engraving-glyph-glow' || node.userData?.ruinLadderRuneGlow) && node.isMesh) ruinGlowMeshes.push(node); // Rune strips remain legible under Kanthic's near-black darkness.
       });
       ruinGlowStats.scans++;ruinGlowStats.found=ruinGlowMeshes.length;
     }
@@ -1157,7 +1164,8 @@
         fogColor: fogResultColor ? `#${fogResultColor.getHexString()}` : null,
         skydomeSuppressed: !!isNoSkyArea(debugArea),
         undergroundLanternArea: isUndergroundLanternArea(debugArea),
-        latestChange: 'Kanthic shaft fire fixtures reveal local pools; glowing ruin engravings clear darkness without changing generic room lights.',
+        latestChange: 'Shaft ladder glyphs and sense outlines; ruin torches cast screen-space shadows from solid stone and props.',
+        ruinLightOcclusion: window.RuinLightOcclusion?.debugSnapshot?.() || null, // Mobile debug readout counts scanned casters, firelight evaluations and clipped shadow projections.
         ruinEngravingGlowMasks: { ...ruinGlowStats }, // Mobile-visible proof that glowing wall patterns survive the darkness overlay.
         kanthicFirelight: { ...ruinFireMaskStats, ...(window.RuinMultifloorV50Style?.lightDebug?.()||{}) }, // Both emitted/visible mask counts and actual ignited brazier counts are readable without devtools.
         interiorLightRadiusMultiplier: INTERIOR_LIGHT_RADIUS_MULTIPLIER,
