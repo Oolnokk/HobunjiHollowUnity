@@ -18,16 +18,24 @@ assert.equal(cultureMap.aiCultureSelection.speciesToCultureId.harlyao, 'harlyao'
 assert.equal(cultureMap.aiCultureSelection.speciesToCultureId['harlyao-skeleton'], 'harlyao');
 const reserved = new Set(['nanahi', 'azgarlu', 'imlao']); // Named keystone guardians remain exclusive.
 const seen = new Set(); // Tracks generated variety across seeds.
+const harlyaoParts = cultureMap.cultures.harlyao.harlyaoRules.lastParts; // Final endings are configurable independently of planar epithets.
+assert(harlyaoParts.includes('ai'), 'Harlyao may end in ai');
+assert(!harlyaoParts.includes('o'), 'do not add a bare o final ending');
+let aiEndings = 0; // Seeded samples must actually reach the ai ending rather than only declaring it.
+
 for (let i = 0; i < 2500; i++) {
   const seed = 'harlyao-test-' + i; // Independent deterministic seed for a generated individual.
   const name = generator.generateIdentityFromSeed(seed, 'male', 'harlyao'); // Culture identity is a single given name.
   assert.match(name, /^[A-Z][a-z]{4,11}$/);
   assert(!reserved.has(name.toLowerCase()), name + ' must not duplicate an authored lich');
-  assert.doesNotMatch(name.toLowerCase(), /(?!ao)[aeiou]{2}/, 'no accidental vowel-vowel joins except authored ao diphthongs');
+  assert.doesNotMatch(name.toLowerCase(), /(?!ao|ai$)[aeiou]{2}/, 'only established ao and terminal ai vowel pairs are permitted');
+  assert.equal(name.split(' ').length, 1, 'each Harlyao personal name is one word');
+  if (name.endsWith('ai')) aiEndings++;
   assert.equal(generator.generateIdentityFromSeed(seed, 'female', 'harlyao'), name, 'Harlyao names currently have no gender suffix rule');
   seen.add(name);
 }
 assert(seen.size > 1100, 'two/three-part Harlyao syllable pools should produce a wide variety of names');
+assert(aiEndings > 20, 'the ai ending should be reachable across thousands of generated names');
 assert.equal(generator.generateHarlyaoName(() => 0), 'Narkalu', 'a pathological fixed RNG cannot lock in an authored identity');
 const boundaryRolls = [12.1 / 28, .1, 0, 14.1 / 25, 0]; // Forces dran + na + ur, selecting n as the bridge consonant.
 assert.equal(generator.generateHarlyaoName(() => boundaryRolls.shift() ?? 0), 'Drannanur', 'a consonant must interrupt a vowel-vowel fragment boundary');
@@ -65,19 +73,30 @@ win.BanditCombat.init({ getCurrentArea: () => 'map_dev_arena', hostileObjects: h
 (async () => {
   const a = await win.HarlyaoLichCombat.makeEntity({ type: 'hronal', x: 10, y: 10 }); // Ordinary named Hronal actor.
   assert(a && a.name && a.name !== 'Hronal Lich' && !reserved.has(a.name.toLowerCase()));
+  assert.match(a.name, /^[A-Z][a-z]{4,11} the [A-Z][a-z]+$/, 'overhead label is one name plus the planar adjective');
+  assert.equal(a.lichGivenName, a.name.split(' the ')[0], 'epithet must not become a surname');
+  assert(win.HarlyaoLichCombat.LICH_EPITHETS.hronal.includes(a.lichEpithet), 'Hronal epithet follows the fire-and-earth tradition');
   hostiles.add(a);
   const b = await win.HarlyaoLichCombat.makeEntity({ type: 'hronal', x: 20, y: 10 }); // Another actor must check the active name pool.
-  assert.notEqual(a.name, b.name, 'concurrent ordinary liches should not share a name');
+  assert.notEqual(a.lichGivenName, b.lichGivenName, 'concurrent ordinary liches should not share their personal name');
   hostiles.add(b);
+  for (const type of ['tothal', 'kanthic']) {
+    const ordinary = await win.HarlyaoLichCombat.makeEntity({ type, x: 25, y: 20 }); // Each tradition must use its own epithet pool.
+    assert.match(ordinary.name, /^[A-Z][a-z]{4,11} the [A-Z][a-z]+$/, type + ' overhead name format');
+    assert(win.HarlyaoLichCombat.LICH_EPITHETS[type].includes(ordinary.lichEpithet), type + ' planar epithet pool');
+    assert(!['Flame', 'Unsleeping', 'Sightless'].includes(ordinary.lichEpithet), 'authored epithets belong to the three named guardians');
+    hostiles.add(ordinary);
+  }
   const roster = { name: 'My Authored Lich', appearance: { speciesId: 'harlyao-skeleton', gender: 'male' }, lichDyeId: 'dye:CLOTH:pure_blue' }; // Explicit external editor roster must keep its identity.
   const custom = await win.HarlyaoLichCombat.makeEntity({ type: 'kanthic', x: 20, y: 30, roster });
   assert.equal(custom.name, 'My Authored Lich');
   const special = await win.HarlyaoLichCombat.makeEntity({ type: 'tothal', x: 10, y: 30, special: true });
   assert.equal(special.name, 'Nanahi the Unsleeping');
   assert.equal(win.HarlyaoLichCombat.debugSnapshot().activeLiches[0].name, a.name, 'existing mobile debug snapshots expose real lich names');
+  assert.equal(win.HarlyaoLichCombat.debugSnapshot().activeLiches[0].givenName, a.lichGivenName, 'mobile diagnostics distinguish personal names from epithets');
   assert.match(win.HarlyaoLichCombat.formatDebug(), /names=/, 'mobile text diagnostics show actual generated names');
   const index = read('docs/index.html'); // Page script loading must include the generator before game.js.
   assert(index.indexOf('js/scratchbones-name-generator.js?v=') >= 0);
   assert(index.indexOf('js/scratchbones-name-generator.js?v=') < index.indexOf('game.js?v='));
-  console.log('Harlyao lich names: seeded variety, boss exclusion, ordinary spawns, authored overrides and mobile diagnostics passed.');
+  console.log('Harlyao lich names: single-word personal names, terminal ai, planar epithets, authored overrides and mobile diagnostics passed.');
 })().catch(error => { console.error(error); process.exitCode = 1; });
