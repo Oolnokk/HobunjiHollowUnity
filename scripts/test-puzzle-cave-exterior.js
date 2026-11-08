@@ -242,6 +242,19 @@ Exterior.update(.01,area);
 assert.equal(sounds.filter(event=>event.key==='stoneActivator').length,3,
   're-entering the exterior plate is a separate valid activation');
 const song=gate.song;
+// In the gap between repeats, sounding any note must visibly fail, not silently ignore the player.
+Exterior.update(song.totalTicks*song.secondsPerTick+.10,area);
+assert.equal(gate.session.snapshot().activeIndex,-1,'the repeated outdoor melody has a silent measure');
+for(const handler of handlers.get('hobunji-kurraya-puzzle-note')||[])
+  handler({detail:{area,noteIndex:wrong}});
+assert(gate.flashRemaining>0&&gate.glyphs[0].material.color.hex===0xff6a65,
+  'a note sounded during the silent measure flashes the expected glyph red');
+assert(gate.glyphGlows[0].material.opacity===.98,
+  'error feedback remains bright even when no score glyph is currently active');
+player.x=(gate.plate.x+1.2)*64;player.y=(gate.plate.z+1.2)*64;
+Exterior.update(.01,area);
+player.x=gate.plate.x*64;player.y=gate.plate.z*64;
+Exterior.update(.01,area); // Reset the clock for a fair complete performance.
 let elapsed=0; // Musical clock advanced through the actual exterior controller's per-frame path.
 for(const note of song.notes){
   const target=(note.startTick+.10)*song.secondsPerTick;
