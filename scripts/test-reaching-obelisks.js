@@ -106,6 +106,8 @@ try{
     onStateChange:()=>mechanismBeats++});
   assert.equal(rt.tradition,'tothal');assert(icePieces>=1000,'ice is generated across the whole pit, not just the corners');
   assert.equal(surfaces.size,plan.pillars.length);assert(climbs.size>10);
+  assert([...climbs.values()].every(face => face.autoCatch === true),
+    'every moving V50 ladder band has an explicit passive fall-grab contact flag');
   rt.tick(.05);assert.equal(rt.getState().beatsPlayed,0,'mechanisms stay idle when the player is outside the shaft');
   const a=rt.columns.get('obelisk-f0-A'),b=rt.columns.get('obelisk-f0-B'),c=rt.columns.get('obelisk-f0-C');
   player={x:a.x,z:a.z};rt.tick(.05);
@@ -173,6 +175,8 @@ const connector=fs.readFileSync('docs/js/ruin-shaft-connector.js','utf8');
 const index=fs.readFileSync('docs/index.html','utf8');
 const bootstrap=fs.readFileSync('docs/js/dev-random-ruin-bootstrap.js','utf8');
 assert(runtime.includes('function reconcileObeliskPlayer(now,x,z)'),'mid-air falling is integrated with actual player support/pose');
+assert(runtime.includes('ClimbSurfaces?.tryFallGrab?.({x,z,y:next},previous)'),
+  'the obelisk gravity owner must offer a swept automatic catch before the fatal pit');
 assert(runtime.includes('PlayerDowned?.dieImmediately?.(\'reaching-obelisks-'),'the pit bypasses downed and footing states');
 assert(connector.includes('RuinReachingObelisks.mount('),'real physical shaft mounts the new motion machinery');
 const scriptAt=name=>index.search(new RegExp('<script[^>]+src="js/'+name.replace('.','\\.')+'\\?v='));
