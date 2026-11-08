@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <script src="../../js/tap-reliability.js?v=20261010a"></script>
-<title>Hobunji Animation Author V15.49</title>
+<title>Hobunji Animation Author V15.50</title>
 <style>
 :root {
   color-scheme: dark;
@@ -13860,7 +13860,7 @@ log('Omgurku lower-half animal-style Rig Coordinates controls ready.');
 // same height solution and eased contact timing from SpouseKissMotion.
 // -----------------------------------------------------------------------------
 const KISS_PRESET_V1546 = 'kiss'; // Serialized as project.relationshipPreset, like the existing dance preset.
-const KISS_TIMES_V1546 = Object.freeze([0, .3, .82, 1.02, 1.52, 1.95, 2.4]); // Timeline keys for approach, contact, and return.
+const KISS_TIMES_V1546 = Object.freeze([0, .13, .25, .37, .52, .67, .82, 1.02, 1.52, 1.95, 2.4]); // Keys separate early shoulder grasp, subsequent kneel, contact, and release.
 const KISS_FPS_V1546 = 12; // Playback sampling resolution for both members of the pair.
 
 function kissActorHeightV1546(actor) {
@@ -13893,7 +13893,8 @@ function kissTransformV1546(who, time, solution) {
   const first = who === 'leader';
   const taller = first ? solution.taller === 'first' : solution.taller === 'second';
   const bend = pose.blend * (taller ? 1 : .35);
-  const bowRetreat = taller ? solution.tallerBowForwardWorld * pose.blend : 0; // Tall actor steps back while their upper body bows into the kiss.
+  const bodyBlend = window.SpouseKissMotion.sampleKneelBlend(time, solution.taller === 'second'); // If the initiator is smaller, hands reach first and the taller partner bows second.
+  const bowRetreat = taller ? solution.tallerBowForwardWorld * bodyBlend : 0; // Retreat occurs with the actual torso lowering, never before hand placement.
   return {
     position: {
       x: 0,
@@ -13909,12 +13910,13 @@ function kissTrackV1546(who, solution) {
   const taller = who === 'leader' ? solution.taller === 'first' : solution.taller === 'second';
   return KISS_TIMES_V1546.map(time => {
     const pose = window.SpouseKissMotion.samplePose(time);
+    const bodyBlend = window.SpouseKissMotion.sampleKneelBlend(time, solution.taller === 'second'); // Uses the same delayed lowering as live gameplay.
     return {
       time, transform: kissTransformV1546(who, time, solution),
       // Per-frame percent mirrors Attack Editor body sink. Runtime applies it to
       // procedural legs/body instead of translating the character's collider.
-      bodySinkPct: taller ? solution.tallerSinkPct * pose.blend : 0,
-      bodyBowDeg: (taller ? solution.tallerBowDeg : 3) * pose.blend, // Exportable torso-only bow; never tilts the planted foot rig.
+      bodySinkPct: taller ? solution.tallerSinkPct * bodyBlend : 0,
+      bodyBowDeg: (taller ? solution.tallerBowDeg * bodyBlend : 3 * pose.blend), // Exportable torso-only bow; never tilts the planted foot rig.
       neckRotationDeg: { x: (taller ? -12 : 8) * pose.blend, y: 0, z: 0 },
     };
   });
@@ -14038,6 +14040,9 @@ serializeAnimationProject = function() {
     maxBodySinkPct: window.SpouseKissMotion.MAX_SINK_PCT,
     deepKneelLegFraction: window.SpouseKissMotion.KNEEL_LEG_FRACTION,
     maxTorsoBowDeg: window.SpouseKissMotion.MAX_BOW_DEG,
+    initiatorHands: { source: 'leader', target: 'partner-shoulders', shoulderSystem: 'canonical-species-gender-attachment-anchors',
+      reachRule: 'per-arm-reach-with-closest-reachable-shoulder-projection',
+      shorterInitiator: 'hands-before-knee-at-0.52s', tallerInitiator: 'reach-as-torso-lowers' },
     contactAtSeconds: 1.02, durationSeconds: window.SpouseKissMotion.DURATION_S,
     heightSolution: clone(animationAuthor.kissHeightSolutionV1546 || null),
   };
@@ -14304,10 +14309,11 @@ function syncMultiAvatarFullBodiesV1548(time = animationAuthor.currentTime, dt =
       actor.root.rotation.x = 0;
     }
     const blend = participant ? window.SpouseKissMotion?.samplePose?.(time)?.blend || 0 : 0;
-    const worldDrop = taller ? solution.tallerSinkWorld * blend : 0; // Solver uses the true leg/anatomy length, not guessed full-body units.
+    const bodyBlend = participant ? window.SpouseKissMotion?.sampleKneelBlend?.(time, solution.taller === 'second') || 0 : 0; // Matches the shoulder-first variant's delayed knees.
+    const worldDrop = taller ? solution.tallerSinkWorld * bodyBlend : 0; // Solver uses the true leg/anatomy length, not guessed full-body units.
     const bodyScale = Math.max(.001, Math.abs(Number(actor.visualOffset?.scale?.y) || 1));
     const localDrop = worldDrop / bodyScale;
-    const torsoBow = participant ? (taller ? solution.tallerBowDeg : 3) * blend * Math.PI / 180 : 0;
+    const torsoBow = participant ? (taller ? solution.tallerBowDeg * bodyBlend : 3 * blend) * Math.PI / 180 : 0;
 
     feet.setStanceDropLimitFraction?.(taller ? MULTI_KISS_LEG_LIMIT_V1548 : .55);
     feet.setStanceDrop?.(localDrop, true);
@@ -14334,6 +14340,46 @@ function syncMultiAvatarFullBodiesV1548(time = animationAuthor.currentTime, dt =
     }; // Available through fullBodyDiagnostics for mobile troubleshooting.
   }
 }
+
+// V15.50: the initiator's actual hand meshes seek the partner's authored
+// shoulder coordinates through the same hand rig used in live gameplay.
+// Hand placement happens AFTER both actors' knees/bows update, otherwise the
+// target is one frame behind the position the player actually sees.
+function installInitiatorShoulderContactV1550(initiator, target, time, solution) {
+  const hands = initiator?.model?.userData?.proceduralHandRig; // Initiator's existing species/gender hand sockets.
+  const targetHands = target?.model?.userData?.proceduralHandRig; // Actual shoulder coordinates on the intended partner, never guessed portrait edges.
+  if (!hands?.setPoseProvider || !targetHands?.shoulderPositionLocal) return false;
+  if (initiator.multiKissHandContactRigV1550 !== hands) {
+    initiator.multiKissHandContactScratchV1550 = {}; // Reusable world-space scratch for two hands throughout the clip.
+    hands.setPoseProvider(MULTI_HAND_KISS_OWNER_V1548, () => {
+      const actorTime = Number(initiator.multiKissHandContactTimeV1550) || 0; // Resolves timeline scrubs without frame-dependent motion accumulation.
+      initiator.multiKissHandContactV1550 = window.SpouseKissMotion.applyInitiatorShoulderHands(
+        hands, targetHands, actorTime, solution.taller === 'second',
+        initiator.multiKissHandContactScratchV1550,
+      );
+    }); // Pose owner keeps shoulder grasps authoritative through the render-time hand driver.
+    initiator.multiKissHandContactRigV1550 = hands;
+  }
+  initiator.multiKissHandContactTimeV1550 = time;
+  hands.applyOwnedPose?.(); // Immediate update on slider/touch scrubs, not merely on next render.
+  return true;
+}
+
+const beforeShoulderHandSyncV1550 = syncMultiAvatarFullBodiesV1548;
+syncMultiAvatarFullBodiesV1548 = function(time = animationAuthor.currentTime, dt = 0) {
+  const result = beforeShoulderHandSyncV1550(time, dt); // First resolve both planted feet, pants and body sinks.
+  if (animationAuthor.mode === 'multi' && animationAuthor.multiPreset === 'kiss') {
+    const { leader, partner } = romanticDancePair(); // Leader is the command initiator; in the named scene this is Pahu.
+    const solution = animationAuthor.kissHeightSolutionV1546;
+    if (leader && partner && solution) {
+      installInitiatorShoulderContactV1550(leader, partner, time, solution);
+      // The noninitiating partner retains the existing idle/embrace hand pose.
+      // For a shorter initiator the shoulder projection engages at .13–.37 s,
+      // before the taller partner begins kneeling at .52 s.
+    }
+  }
+  return result;
+};
 
 let fullBodyTickActiveV1548 = false; // Prevents recomputing both actors' legs twice when gameplay-style playback advances a frame.
 const beforeMultiEvaluateV1548 = evaluateAnimationAtTime;
@@ -14392,6 +14438,7 @@ function fullCharacterPreviewDiagnosticsV1548() {
     feet: !!actor.rigFeetPreview?.group?.parent,
     pants: !!actor.rigPantsPreview,
     kneeDrop: actor.rigFeetPreview?.getStanceDrop?.() || 0,
+    initiatorHands: actor.multiKissHandContactV1550 || null, // On-device reach/clamp/engagement diagnostics for the currently selected kiss initiator.
   }));
 }
 
@@ -14403,7 +14450,7 @@ prepareMultiAvatarAnimationAuthor = function() {
 };
 installKissPresetUiV1546(); // The author initialized earlier in the same script; install immediately too.
 if (window.MultiAvatarAnimationAuthor) {
-  window.MultiAvatarAnimationAuthor.version = '15.49';
+  window.MultiAvatarAnimationAuthor.version = '15.50';
   window.MultiAvatarAnimationAuthor.fullBodyDiagnostics = fullCharacterPreviewDiagnosticsV1548;
   window.MultiAvatarAnimationAuthor.kissFacingDiagnostics = () => animationAuthor.actors
     .filter(actor => actor.source?.type === 'npc')
@@ -14432,10 +14479,10 @@ if (window.MultiAvatarAnimationAuthor) {
   window.MultiAvatarAnimationAuthor.applyKissPreset = applyKissPresetV1546;
   window.MultiAvatarAnimationAuthor.importProject = importAnimationProjectData;
 }
-document.title = 'Hobunji Animation Author V15.49';
-animationAuthor.recentChange = 'V15.49 stops Leaf turning upside down during kiss playback by retaining authored Y-facing through interpolation and export.';
+document.title = 'Hobunji Animation Author V15.50';
+animationAuthor.recentChange = 'V15.50 uses authored shoulder landmarks and real arm reach for initiator hand contact: smaller initiators reach before kneeling; taller initiators grip as lowering allows.';
 animationAuthor.modeStates.multi.recentChange = animationAuthor.recentChange;
-log('V15.49 upright kiss interpolation installed; 180° facing yaw no longer becomes an X/Z flip.');
+log('V15.50 kiss initiator hands attach to real partner shoulder coordinates using per-side reach and timed knee lowering.');
 
 })();
 </script>
