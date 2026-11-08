@@ -209,6 +209,7 @@
     });
     authored.position.set(-centerCol, -elevationY, -centerRow);
     const group = new THREE.Group();
+    authored.userData.banditTentAimSurface = true; // Only the authored canvas/door surfaces count for loot/burn aim; flames and outlines do not.
     group.add(authored);
     group.userData.projectileCoverHeightTiles = 1.7;
     group.userData.projectileCoverRadiusTiles = 1.5;
@@ -1116,37 +1117,21 @@
     _tentActionHudEl?.classList.add('visible');
   }
 
-  function nearestBanditTent(zoneId) {
-    let best = null, bestDist = Infinity;
-    for (const obj of _banditZoneTents(zoneId)) {
-      if (obj.destroyed) continue;
-      const center = banditTentCenterPx(obj);
-      const dist = Math.hypot(deps.player.x - center.x, deps.player.y - center.y);
-      if (dist <= banditTentNearPx() && dist < bestDist) { best = obj; bestDist = dist; }
-    }
-    return best;
-  }
+  const BANDIT_TENT_AIM_MAX_WORLD = 24; // Camera-ray intersection budget for the visible tent surface, matching the shared world-focus range.
+  let _banditTentRaycaster = null; // Reused by aimedBanditTent so checking the target every frame does not allocate a Raycaster.
 
-  function banditTentInteractionBox(zoneId, obj) {
-    const mesh = _banditCampMeshes.get(zoneId)?.get(obj.id)?.mesh;
-    if (mesh?.isObject3D) {
-      mesh.updateWorldMatrix?.(true, true);
-      const meshBox = new THREE.Box3().setFromObject(mesh);
-      if (!meshBox.isEmpty()) return meshBox.expandByScalar(0.12);
-    }
-    const center = banditTentCenterPx(obj);
-    const tile = deps.TILE || 1;
-    const gridTile = deps.zoneScenes.get(zoneId)?.grid?.[obj.y]?.[obj.x];
-    const groundY = gridTile ? deps.tileSurfaceYInArea(gridTile, zoneId) : deps.NORMAL_TOP;
-    return new THREE.Box3(
-      new THREE.Vector3(center.x / tile - 0.9, groundY, center.y / tile - 0.9),
-      new THREE.Vector3(center.x / tile + 0.9, groundY + 1.45, center.y / tile + 0.9),
-    );
+  function banditTentRayHit(zoneId, obj, raycaster) {
+    const root = _banditCampMeshes.get(zoneId)?.get(obj.id)?.mesh; // Registered tent render group, never a proximity-only proxy.
+    const surface = root?.children?.find(child => child.userData?.banditTentAimSurface); // The authored canvas mesh, excluding burn flames/outline children.
+    if (!root?.visible || !surface?.visible) return null;
+    root.updateWorldMatrix?.(true, true);
+    return raycaster.intersectObject(surface, true)
+      .find(hit => Number.isFinite(hit.distance) && hit.distance >= 0) || null;
   }
 
   function aimedBanditTent(zoneId) {
     const nearby = _banditZoneTents(zoneId).filter(obj => {
-      if (obj.destroyed) return false;
+      if (obj.destroyed || obj.burning || !(obj.interactable?.lootable || obj.interactable?.burnable)) return false;
       const center = banditTentCenterPx(obj);
       return Math.hypot(deps.player.x - center.x, deps.player.y - center.y) <= banditTentNearPx();
     });
@@ -1159,16 +1144,35 @@
       _lastTentFocus = { result: !ray ? 'missing-ray' : 'missing-focus-api', nearby: nearby.length, hasRay: !!ray, hasFocusApi: !!window.RangedWeapons?.focusCandidates };
       return null;
     }
-    const candidates = nearby.map(obj => ({
-      type: 'bandit-tent', id: obj.id, data: obj,
-      box: banditTentInteractionBox(zoneId, obj),
-    }));
-    const focus = window.RangedWeapons.focusCandidates(candidates, 24);
-    if (!focus?.candidate?.data) {
+    const origin = ray.origin, dir = ray.direction; // Authoritative cursor/center ray used by the shared world focus resolver.
+    if (![origin?.x, origin?.y, origin?.z, dir?.x, dir?.y, dir?.z].every(Number.isFinite)) {
+      _lastTentFocus = { result: 'invalid-ray', nearby: nearby.length, hasRay: true, hasFocusApi: true };
+      return null;
+    }
+    const direction = new THREE.Vector3(dir.x, dir.y, dir.z); // Normalized for exact Three.js surface intersection.
+    if (direction.lengthSq() < 1e-8) {
+      _lastTentFocus = { result: 'invalid-ray', nearby: nearby.length, hasRay: true, hasFocusApi: true };
+      return null;
+    }
+    const raycaster = _banditTentRaycaster ||= new THREE.Raycaster(); // Only one reusable 3D ray query across all nearby tents.
+    raycaster.set(new THREE.Vector3(origin.x, origin.y, origin.z), direction.normalize());
+    raycaster.near = 0;
+    raycaster.far = BANDIT_TENT_AIM_MAX_WORLD;
+    let focus = null; // Closest actual tent-surface intersection, not the closest large bounding box.
+    for (const obj of nearby) {
+      const hit = banditTentRayHit(zoneId, obj, raycaster);
+      if (!hit || (focus && focus.distanceWorld <= hit.distance)) continue;
+      focus = {
+        candidate: { type: 'bandit-tent', id: obj.id, data: obj },
+        point: hit.point,
+        distanceWorld: hit.distance,
+      };
+    }
+    if (!focus) {
       _lastTentFocus = { result: 'ray-missed', nearby: nearby.length, hasRay: true, hasFocusApi: true };
       return null;
     }
-    const hostile = window.RangedWeapons.focusedHostile?.(24);
+    const hostile = window.RangedWeapons.focusedHostile?.(BANDIT_TENT_AIM_MAX_WORLD);
     if (hostile && hostile.distanceWorld <= focus.distanceWorld + 0.05) {
       _lastTentFocus = { result: 'nearer-hostile', nearby: nearby.length, hasRay: true, hasFocusApi: true };
       return null;
@@ -1187,7 +1191,7 @@
     const zoneId = deps?.getCurrentArea?.();
     if (!(zoneId && deps.isZoneArea(zoneId))) return null;
     const tent = aimedBanditTent(zoneId);
-    if (!tent) return null;
+    if (!tent || !(tent.interactable?.lootable || tent.interactable?.burnable)) return null;
     return {
       icon: tent.interactable?.lootable ? '🪙' : '🔥',
       label: tent.interactable?.lootable ? 'Loot Tent' : 'Burn Tent',
@@ -1260,7 +1264,7 @@
       && actionHeldDown
       && !_banditTentHoldInterrupted;
     if (!interacting) {
-      if (_banditTentHoldT > 0) { _banditTentHoldT = 0; _banditTentHoldId = null; }
+      if (_banditTentHoldId !== null) { _banditTentHoldT = 0; _banditTentHoldId = null; }
       hideTentActionHud();
       return;
     }
@@ -1275,6 +1279,7 @@
     if (_banditTentHoldT < holdS) return;
     _banditTentHoldT = 0;
     _banditTentHoldId = null;
+    _banditTentHoldInterrupted = true; // One press performs one action; release before burning a tent you just looted.
     hideTentActionHud();
     if (looting) lootBanditTent(zoneId, tent);
     else burnBanditTent(zoneId, tent);
