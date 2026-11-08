@@ -94,6 +94,11 @@ async function main() {
       if (!earlyInitiator?.initiatorHands?.applied || earlyInitiator.initiatorHands.blend < .85) {
         throw Error('Pahu must attach both hands toward Leaf shoulders before she kneels: ' + JSON.stringify(early));
       }
+      if (earlyInitiator.initiatorHands.unreachableSurfaces > 0 ||
+          earlyInitiator.initiatorHands.hands !== 2) {
+        throw Error('Short initiator hands must touch actual reachable upper-body surfaces, not float in air: ' +
+          JSON.stringify(earlyInitiator));
+      }
       if (earlyTall?.kneeDrop > .001) {
         throw Error('Leaf kneels before shorter Pahu places his hands on shoulders: ' + JSON.stringify(early));
       }
