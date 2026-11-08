@@ -64,7 +64,7 @@ const windowStub = {
 const sandbox = vm.createContext({
   window: windowStub, document: { createElement: () => ({
     getContext: () => context2d,
-    toDataURL: () => 'data:image/png;base64,KICK_FRAME',
+    toDataURL: () => 'data:image/png;base64,KICK_FRAME_' + rearRotations.length, // Each native pose gets a distinct fake URL so recovery proves that the silhouette actually changes.
   }) },
   performance: { now: () => clock }, Image: class {
     constructor() { this.width = 128; this.height = 75; } // Native fallback sprite dimensions used by the compositor.
