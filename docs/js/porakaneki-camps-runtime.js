@@ -1788,6 +1788,8 @@
       const entity = await window.BanditCombat.makeEntity({
         ...base,
         speciesWeights: { [SPECIES_ID]: 1 },
+        weaponShapePool: [weapon.shapeKey], // The common bandit factory rolls the actual tribal weapon so damage, cooldown, reach and combo share its shape.
+        weaponMetalKey: weapon.metalKey, // Melee stat calculations match the generated weapon rather than a random material.
         rangedWeaponChanceByRank: { grunt: 0, lieutenant: 0, captain: 0 },
       }, 'grunt', avenger ? Math.max(0, Math.floor(num(avengerCfg()?.tier, 1))) : 0, hunter.x * combatDeps.TILE, hunter.y * combatDeps.TILE, {
         zoneId: camp.zoneId,
@@ -1799,6 +1801,7 @@
           weaponKey: weapon.weaponKey,
           weaponShapeKey: weapon.shapeKey,
           weaponMetalKey: weapon.metalKey,
+          weaponShapeStats: window.WeaponShapeStats?.forKey?.(weapon.weaponKey, combatDeps?.TOOL_ITEM_DEFS?.[weapon.weaponKey]) || window.WeaponShapeStats?.forShape?.(weapon.shapeKey), // Status potency and melee geometry follow the visible weapon, including explicit Workshop rolls.
           attackTag: weapon.attackTag,
           rangedWeaponKey: window.RangedWeapons?.config?.[weapon.rangedWeaponKey] ? weapon.rangedWeaponKey : null, // Keep ranged equipment valid even when an optional content pack is missing.
         },
