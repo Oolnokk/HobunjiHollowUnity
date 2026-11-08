@@ -813,7 +813,7 @@ assert.match(shoulderAimSource, /return Number\.isFinite\(authored\) \? -modelHe
 assert.match(shoulderAimSource, /elbowPoseAuthoritative: true/, 'paper-arm preview must draw the same authoritative elbow pose that drives hand orientation');
 assert.match(shoulderAimSource, /visualOnly: true/, 'paper-arm geometry itself must remain visualization-only');
 assert.match(shoulderAimSource, /setPaperArmGuideVisible/, 'editor must be able to toggle paper-arm guides on already-created rigs');
-assert.match(shoulderAimSource, /currentElbow\?\.\(side\)/, 'runtime hand targeting must consume the interpolated direct per-side elbow pose');
+assert.match(shoulderAimSource, /currentElbow\?\.\(side, avatarRoot\)/, 'runtime hand targeting must sample the interpolated elbow pose for its own avatar rather than leaking player instrument poses to NPCs');
 assert.match(shoulderPoseRuntimeSource, /activeThrownChargeItemKey\?\.\(\)[\s\S]*return true/, 'held thrown-weapon Windup must identify the authored active phase before a ranged playerAction exists');
 assert.match(shoulderPoseRuntimeSource, /RangedWeapons\?\.isPlayerThrownFireThroughStrike\?\.\(\) === true/, 'ranged hand targeting must consume the real thrown-action phase API rather than debug state');
 assert.doesNotMatch(shoulderPoseRuntimeSource, /__rangedDebug|WeaponToolStances\?\.debugSnapshot/, 'gameplay hand targeting must never depend on diagnostic snapshots');
