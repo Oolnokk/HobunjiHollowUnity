@@ -169,8 +169,11 @@ assert(Math.hypot(gate.scoreSurface.x-gate.door.x,gate.scoreSurface.z-gate.door.
 assert(Math.abs(pillarBottom-gate.shelf.y-.015)<.001,
   'the score pillar is rooted into the ledge rather than floating over snow or empty air');
 assert.equal(gate.glyphGlows.length,gate.song.notes.length,'each outdoor note has a shared-visibility additive halo');
-assert(gate.glyphGlows.every(glow=>glow.material.opacity===.35),
-  'the note glows have an initial visible intensity even before the first active beat');
+assert(gate.glyphGlows.every(glow=>glow.material.opacity===.07),
+  'inactive notes retain only a faint inner glow');
+assert.equal(gate.glyphOuterGlows.length,gate.song.notes.length,'every note has a broader additive halo');
+assert(gate.glyphOuterGlows.every(glow=>glow.material.opacity===.02),
+  'the broad halo remains dim until its timed note is active');
 assert.equal(originalFacade.visible,false,'the original den facade is concealed by the cliff door');
 const lateFacade=new Mesh(new Geometry(),new Material({color:0x888888}));
 lateFacade.userData.denId='den1';denFacades.add(lateFacade);
@@ -197,8 +200,17 @@ assert.equal(gate.lastDown,true,'standing on the real raised plate activates the
 assert(gate.scoreBoard.visible,'the exterior Scratchbone score lights up on the active raised plate');
 assert.equal(sounds.filter(event=>event.key==='stoneActivator').length,1,
   'stepping onto the outdoor melody plate plays exactly one recorded activator cue');
-assert(gate.glyphGlows.some(glow=>glow.material.opacity===.65),
-  'the currently active note brightens its halo while the pressure plate is held');
+assert(gate.glyphGlows.some(glow=>glow.material.opacity===.98),
+  'the active beat is nearly fully illuminated, not an imperceptible tint change');
+assert(gate.glyphOuterGlows.some(glow=>glow.material.opacity===.6),
+  'a wider additive halo visibly lights the current note while its window is open');
+const wrong=(gate.song.notes[0].index+1)%8; // Deliberately incorrect sounded pitch: test input feedback without granting progress.
+for(const handler of handlers.get('hobunji-kurraya-puzzle-note')||[])
+  handler({detail:{area,noteIndex:wrong}});
+assert(gate.flashRemaining>0&&gate.glyphs[0].material.color.hex===0xff6a65,
+  'wrong notes flash the current beat red rather than failing silently');
+Exterior.update(.5,area);
+assert.equal(gate.flashRemaining,0,'error feedback clears without requiring another note');
 const scoreHeight=gate.scoreBoard.position.y; // The exterior score must remain pinned to its wall or pillar during door animation.
 player.x=(gate.plate.x+1.2)*64;player.y=(gate.plate.z+1.2)*64;
 Exterior.update(.01,area);
