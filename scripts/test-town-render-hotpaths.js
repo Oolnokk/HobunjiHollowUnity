@@ -54,7 +54,20 @@ assert.doesNotMatch(heldRender, /\.updateMatrixWorld = function heldGround/,
   'held/ground invariants no longer wrap every matrix update');
 assert.match(heldRender, /colorBuffer\.setMask\(false\)[\s\S]{0,100}colorBuffer\.setLocked\(true\)/,
   'the selective depth replay suppresses color through the renderer buffer');
-assert.match(heldRender, /prepareCutoutDepthMaterials\(collectVisible\(pngDepthRegistry, scene\), collectVisible\(protectedCoverRegistry, scene\)\)/,
+// The visible cutout/protective-cover lists are collected once outside the
+// per-elevation loop. The old assertion demanded inline collectVisible() calls
+// inside prepareCutoutDepthMaterials(), penalizing the intended optimization.
+const heldDepthReplay = heldRender.slice(
+  heldRender.indexOf('  function replaySelectiveHeldOverlay('),
+  heldRender.indexOf('  function isShellOutlinePass(')); // The actual grouped depth replay, not unrelated shell/scene code.
+const hiddenParticipantsAt = heldDepthReplay.indexOf('overlayHidden = hideObjects('); // Visible depth candidates must be sampled after held participants are hidden.
+const pngCutoutsAt = heldDepthReplay.indexOf('collectVisible(pngDepthRegistry, scene)'); // One scan for PNG silhouette occluders per overlay replay.
+const protectedCoversAt = heldDepthReplay.indexOf('collectVisible(protectedCoverRegistry, scene)'); // One scan for water, snow, slush and vegetation covers.
+const groupReplayAt = heldDepthReplay.indexOf('for (const group of groups)'); // All elevation groups reuse the two candidate lists.
+assert.ok(hiddenParticipantsAt >= 0 && hiddenParticipantsAt < pngCutoutsAt
+  && pngCutoutsAt < groupReplayAt && protectedCoversAt < groupReplayAt,
+  'both visible occluder sets are collected after hiding participants and before per-elevation depth replay');
+assert.match(heldDepthReplay, /prepareCutoutDepthMaterials\(cutoutDepthMeshes, protectedDepthMeshes\)/,
   'the colorless depth replay includes PNG silhouettes and registered protective surface layers');
 assert.match(heldRender, /for \(const object of protectedCover\)[\s\S]{0,200}material\.depthWrite = true/,
   'otherwise-transparent snow/slush, water and billboard grass temporarily write real occlusion depth');
