@@ -456,10 +456,25 @@
     return `tley ${titleCase(location)}`;
   }
 
+
+  function buildHarlyaoGivenName(rng, culture) {
+    const rules = culture.harlyaoRules; // Harlyao-only syllable pools; ordinary liches use personal names without surnames.
+    const reserved = new Set(rules.reservedNames.map(name => name.toLowerCase())); // Authored keystone guardians cannot be randomly duplicated.
+    for (let attempt = 0; attempt < 40; attempt++) {
+      const first = pickFromRng(rng, rules.firstParts); // Opening cluster, sometimes vowel-led or ending in a hard consonant.
+      const middle = rng() < rules.threePartChance ? pickFromRng(rng, rules.middleParts) : ''; // Optional middle unit distinguishes Nanahi/Azgarlu from Imlao/Amnao.
+      const last = pickFromRng(rng, rules.lastParts); // Final vowel or consonant ending shared by the two naming styles.
+      const name = applyCasing(first + middle + last, culture.casing); // Same casing mechanism as every other culture.
+      if (name.length >= 4 && name.length <= 12 && !/(.)\1\1/i.test(name) && !reserved.has(name.toLowerCase())) return name;
+    }
+    return 'Narkalu'; // Pathological fixed RNG must never hang or take an authored boss's name.
+  }
+
   function generateCultureNameFromSeed(seedString, gender = 'male', culture, options = {}) {
     const resolvedCulture = culture || {};
     const numericSeed = hashStringToSeed(seedString);
     const rng = mulberry32(numericSeed);
+    if (resolvedCulture.harlyaoRules) return buildHarlyaoGivenName(rng, resolvedCulture);
     if (resolvedCulture.enghShoRules) {
       const firstName = buildEnghShoGivenName(rng, resolvedCulture, gender);
       const surname = buildEnghShoSurname(rng, resolvedCulture);
@@ -516,8 +531,15 @@
     return generateCultureNameFromSeed(seedString, gender, selectedCulture, options);
   }
 
+  function generateHarlyaoName(rng = Math.random) {
+    const culture = resolveConfig().cultures.harlyao; // The same data-driven Harlyao culture is reused by seeded identities and live lich spawns.
+    if (!culture?.harlyaoRules) throw new Error('Missing Harlyao name-generation rules.');
+    return buildHarlyaoGivenName(rng, culture);
+  }
+
   root.SCRATCHBONES_NAME_GENERATOR = {
     hashStringToSeed,
     generateIdentityFromSeed,
+    generateHarlyaoName,
   };
 })(window);
