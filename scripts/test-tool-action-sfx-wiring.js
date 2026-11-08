@@ -33,23 +33,32 @@ class FakeAudio {
   static loadsByUrl = new Map();
   static clones = 0;
   static plays = 0;
+  static pauses = 0;
+  static instances = []; // Verify the metronome replaces its previous recorded pick voice without interrupting ordinary pick strikes.
   constructor(src) {
     this.src = src;
     this.dataset = {};
     this.readyState = 4;
     this.networkState = 1;
+    this.currentTime=0;this.paused=true;this.events=new Map();
+    FakeAudio.instances.push(this);
   }
   load() { FakeAudio.loads++; FakeAudio.loadsByUrl.set(this.src, (FakeAudio.loadsByUrl.get(this.src) || 0) + 1); }
   cloneNode() { FakeAudio.clones++; return new FakeAudio(this.src); }
-  addEventListener() {}
-  play() { FakeAudio.plays++; return Promise.resolve(); }
+  addEventListener(name,fn) {if(!this.events.has(name))this.events.set(name,[]);this.events.get(name).push(fn);}
+  emit(name) {for(const listener of this.events.get(name)||[])listener();}
+  pause() {FakeAudio.pauses++;this.paused=true;}
+  play() { FakeAudio.plays++;this.paused=false;return Promise.resolve(); }
 }
 const audioContext = { // Supplies the browser globals used by AudioSystem during this isolated regression run.
   Audio: FakeAudio,
   performance: { now: () => 1234 },
   window: {
     SCRATCHBONES_CONFIG: {
-      game: { audio: { objectSfx: { dig: { url: 'dig.mp3', volume: 0.8, preload: true } } } },
+      game: { audio: { objectSfx: {
+        dig: { url: 'dig.mp3', volume: 0.8, preload: true },
+        pick: { url: 'assets/audio/sfx/sfx_pick.mp3', volume: 0.8, preload: true },
+      } } },
     },
   },
 };
@@ -68,4 +77,25 @@ assert.equal(FakeAudio.plays, 1, 'keyed playback should start the cloned cue');
 const audioDebug = audioContext.window.AudioSystem.objectSfxDebugSnapshot(); // Confirms the mobile diagnostic reports the cue that actually played.
 assert.equal(audioDebug.last.key, 'dig');
 assert.equal(audioDebug.last.preloaded, true);
-console.log('tool action SFX wiring: ok');
+const audioSystem=audioContext.window.AudioSystem;
+assert.equal(FakeAudio.loadsByUrl.get('assets/audio/sfx/sfx_pick.mp3'),1,
+  'the real mine-pick clip is preloaded for immediate musical beat strikes');
+assert.equal(audioSystem.playObjectSfxKeyMetronome(.72),true,'the dedicated recorded pick transient is available');
+const firstPickVoice=FakeAudio.instances.at(-1);
+assert.equal(firstPickVoice.paused,false,'the first click starts playback');
+assert.equal(firstPickVoice.playbackRate,1,'metronome must use original pick pitch and duration through the audible strike');
+assert.equal(audioSystem.playObjectSfxKeyMetronome(.54),true,'each quarter beat can strike again');
+const secondPickVoice=FakeAudio.instances.at(-1);
+assert.notEqual(firstPickVoice,secondPickVoice,'each hit obtains a real preloaded recorded voice');
+assert.equal(firstPickVoice.paused,true,'a new beat silences the previous 1.85-second pick tail');
+secondPickVoice.currentTime=.37;
+secondPickVoice.emit('timeupdate');
+assert.equal(secondPickVoice.paused,true,'metronome recorded clip ends after its 360 ms transient');
+assert.equal(audioSystem.objectSfxDebugSnapshot().last.maxDurationSec,.36,
+  'mobile audio diagnostic distinguishes the short timed-puzzle cue');
+audioSystem.playObjectSfxKey('pick');
+const ordinaryMiningVoice=FakeAudio.instances.at(-1);
+ordinaryMiningVoice.currentTime=.7;ordinaryMiningVoice.emit('timeupdate');
+assert.equal(ordinaryMiningVoice.paused,false,
+  'regular mining picks still play the FULL untrimmed recording');
+console.log('tool action SFX wiring: full-duration tools and non-overlapping preloaded melody pick clicks ok');
