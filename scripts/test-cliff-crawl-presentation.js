@@ -252,8 +252,9 @@ assert(worldHands.at(-2).target.y > worldHands[0].target.y, 'moving hand reaches
 restore(frame.undo);
 
 externalFeetOwned = true;
+const footPoseCountBeforeOverride = footPoseCount; // Tracks the existing count to verify externally owned legs receive no new climb poses.
 frame = draw();
-assert.equal(footPoseCount, 2, 'climb does not overwrite grapple-owned leg targets');
+assert.equal(footPoseCount, footPoseCountBeforeOverride, 'climb does not overwrite grapple-owned leg targets');
 assert.equal(frame.debug.cliffCrawl.feetPosed, false, 'mobile diagnostics report leg override');
 restore(frame.undo);
 externalFeetOwned = false;
