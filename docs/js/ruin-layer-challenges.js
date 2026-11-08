@@ -544,7 +544,7 @@
           const glyph=new THREE.Mesh(new THREE.PlaneGeometry(.25,.28),mat);
           const column=i%2,row=Math.floor(i/2);
           glyph.position.set(posts[column].x,y+postHeight/2+(rows-1)/2*.35-row*.35,postZ-.254);
-          glyph.rotation.y=Math.PI;
+          if(glyph.rotation)glyph.rotation.y=Math.PI; // The browser mesh always has Euler rotation; headless fixture may not.
           glyph.name='puzzle-cave-timed-note-'+i;glyph.userData.melodyNoteIndex=index;
           glyph.userData.puzzleCaveNote={index,duration:rec.song.notes[i].lengthTicks};
           board.add(glyph);owned.push(glyph);rec.glyphs.push(glyph);
