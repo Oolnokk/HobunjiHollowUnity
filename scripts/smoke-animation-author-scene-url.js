@@ -105,6 +105,8 @@ async function main() {
         scrubber.dispatchEvent(new Event('input', { bubbles: true }));
         return api.fullBodyDiagnostics();
       };
+      seek(0);
+      const mouthDiagnostics = api.kissMouthDiagnostics?.(); // Neutral mouth measurements needed in early contact failure diagnostics.
       const early = seek(.37);
       const earlyInitiator = early.find(actor => actor.name === 'Pahu');
       const earlyTall = early.find(actor => actor.name === 'Leaf');
@@ -146,7 +148,6 @@ async function main() {
       scrubber.value = '0';
       scrubber.dispatchEvent(new Event('input', { bubbles: true })); // Reset to the intended kiss opening before testing walking gait.
       const project = api.exportProject();
-      const mouthDiagnostics = api.kissMouthDiagnostics?.(); // Real source-pixel and skinned world coordinates, never the old 82% estimate.
       if (mouthDiagnostics?.source !== 'shared-attack-pose-skinned-mouth' ||
           project.project.kiss?.mouthHeightSource !== 'shared-attack-pose-skinned-mouth') {
         throw Error('Kiss did not use the canonical B\'shuakauitl mouth resolver: ' + JSON.stringify(mouthDiagnostics));
