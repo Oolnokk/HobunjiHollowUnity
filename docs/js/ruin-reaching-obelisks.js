@@ -315,7 +315,11 @@
       liveLadderGroups.delete(group);
       group.parent?.remove(group);
       for(const node of owned)node.geometry?.dispose?.();
-      const extra=new Set();group.traverse(node=>{if(node.material&&!materials.includes(node.material))extra.add(node.material);});
+      const ownedMeshes=new Set(owned),extra=new Set(); // V50 ladder meshes and rune strips are not in the central pillar's owned array.
+      group.traverse(node=>{
+        if(node.geometry&&!ownedMeshes.has(node))node.geometry.dispose?.();
+        if(node.material&&!materials.includes(node.material))extra.add(node.material);
+      });
       extra.forEach(mat=>mat.dispose?.());for(const mat of materials)mat.dispose?.();
       columns.clear();
     };
