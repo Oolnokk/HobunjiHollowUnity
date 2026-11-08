@@ -225,6 +225,8 @@ assert.equal(player.onClimbSurface, null, 'bottom event releases the player');
   CS.register({ id: 'ruin-tall-face', scope: 'tall', axis: 'z', normal: { x: 1, z: 0 },
     plane: 5, u0: 6, u1: 8, y0: 0, y1: 1.4 });
   assert(CS.worldClimbProvider(), 'tall ruin face still offers climbing');
+  jumper._freeJump = { phase: 'air', source: 'free jump', feetY: 0.8 }; // Missing takeoff data must never silently disable an air grab.
+  assert(CS.worldClimbProvider(), 'missing launch height conservatively preserves climbing');
   jumper._freeJump = { phase: 'air', source: 'free jump', takeoffY: 0, feetY: 0.8 }; // Apex should not make a tall wall look short.
   global.window = { PlayerJump: { reset() {} } }; // Minimal reset owner for the airborne handoff.
   assert.equal(CS.tryAirGrab({ x: 5.25, z: 7, y: 0.8 }, { x: -1, z: 0 }), true,
