@@ -6,10 +6,10 @@ const fs = require('node:fs');
 
 const legSource = fs.readFileSync('docs/js/procedural-leg-animation.js', 'utf8');
 const headtakerSource = fs.readFileSync('docs/js/combat/combat-maskbound-headtaker.js', 'utf8');
-const start = legSource.indexOf('    function applyWorldFootTargets(targets,footWorldQuaternion=null,allowExtendedReach=false) {');
+const start = legSource.indexOf('    function applyWorldFootTargets(targets,footWorldQuaternion=null,allowExtendedReach=false,allowDeepFold=false) {');
 const end = legSource.indexOf('    let externalFootTargets = null;', start);
 assert(start >= 0 && end > start, 'extract the real external foot-target solver');
-assert(legSource.includes('applyWorldFootTargets(externalFootTargets, null, externalFootExtendedReach)'), 'runtime forwards the special reach flag');
+assert(legSource.includes('applyWorldFootTargets(externalFootTargets, null, externalFootExtendedReach, externalFootDeepFold)'), 'runtime forwards the special reach flag and the separate deep-fold option');
 assert(legSource.includes('externalFootExtendedReach = !!(externalFootTargets && options?.allowExtendedReach)'), 'disabling external foot IK also resets extended reach');
 assert(headtakerSource.includes('legs.setExternalFootTargets(feet, { allowExtendedReach: true })'), 'only Headtaker explicitly requests longer contact reach');
 const functionSource = legSource.slice(start, end);
@@ -66,6 +66,11 @@ assert.equal(apply(targets,null,true),true);
 assert.equal(measured.length,2);
 assert(Math.abs(measured[0].foot.distanceTo(targets.left))<1e-8,'left foot reaches exact surface');
 assert(Math.abs(measured[1].foot.distanceTo(targets.right))<1e-8,'right foot reaches exact surface');
+measured.length = 0;
+const closeTargets={left:new Vector3(-.04,-.03,.02),right:new Vector3(.04,-.03,.02)}; // Posterior-straddle knee fold stays within normal fixed bone reach.
+assert.equal(apply(closeTargets,null,false,true),true);
+assert(measured.every(({foot})=>Math.hypot(foot.x,foot.y,foot.z)<.25),
+  'spouse-only deep fold can plant toes near the hip without triggering Headtaker extended-reach behavior');
 // The old pants cover pass pushes soles away from the camera, under the
 // opaque victim plane. Verify that the *actual rendering hook* is bypassed
 // for the exact grapple while staying active during normal walking.
