@@ -176,8 +176,8 @@
     const plinth = new THREE.Mesh(new THREE.CylinderGeometry(.36 * scale / 2, .5 * scale / 2, plinthHeight, 10), plinthMaterial);
     plinth.position.y = plinthHeight / 2; plinth.name = name + '-plinth'; holder.add(plinth);
     const bowl = stoneBowl(null); bowl.scale.setScalar(scale); bowl.position.y = plinthHeight; holder.add(bowl);
-    const fire = createBlueFire(holder, scale * .62, palette);
-    fire.anchor.position.y = plinthHeight + .1 * scale;
+    const fire = createBlueFire(holder, scale * .95, palette); // Flame grows with the bowl: it was left at ~60% of the enlarged bowl's size.
+    fire.anchor.position.y = plinthHeight + .14 * scale;
     fire.anchor.name = name + '-flame';
     const rim = new THREE.Mesh(new THREE.TorusGeometry(.2 * scale, .018 * scale, 6, 24), new THREE.MeshBasicMaterial({ color:new THREE.Color(hex).getHex(), transparent:true, opacity:.55 }));
     rim.rotation.x = Math.PI / 2; rim.position.y = plinthHeight + .16 * scale; rim.name = name + '-lich-rim'; holder.add(rim); // A thin ring in the lich colour keeps an unlit brazier readable as belonging to that tradition.

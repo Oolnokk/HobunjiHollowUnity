@@ -142,6 +142,8 @@
         for (const cell of geo.front) grid.paintClimbFaces(cell.c, cell.r, 0, cell.c, cell.r, level - 1, OPPOSITE_DIR[side], o.climbStyle);
       }
       const tunnel = o.landings ? geo.tunnel.slice(0,-1) : geo.tunnel; // Keep the outermost wall intact behind a landing.
+      balconies.push({ index: k, side, level, y: grid.levelToY(level), cells: geo.top.map(t => ({ col: t.c, row: t.r })), front: geo.front, climbDir: OPPOSITE_DIR[side] });
+      if (Array.isArray(o.portals)) return; // A layered ruin supplies its real wing doorways explicitly: the old balcony door tunnel would be an open doorway with no wing behind it.
       for (const cell of tunnel) { // door: 1 wide, 2 high, from the wall-adjacent row out
         if (geo.buttress.some(b => b.c === cell.c && b.r === cell.r && !b.wallRow)) continue;
         grid.fillBox(cell.c, cell.r, level, cell.c, cell.r, level + 1, KIND.AIR);
@@ -158,7 +160,6 @@
           chamber.push({col:c,row:r});
         }
       }
-      balconies.push({ index: k, side, level, y: grid.levelToY(level), cells: geo.top.map(t => ({ col: t.c, row: t.r })), front: geo.front, climbDir: OPPOSITE_DIR[side] });
       doors.push({ balcony: k, side, level, col: destination.c, row: destination.r, tunnel: tunnel.map(t => ({ col: t.c, row: t.r })), outward: OUTWARD[side], chamber });
     });
     // ground entrance: same tunnel, level 0

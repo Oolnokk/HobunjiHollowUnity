@@ -334,7 +334,7 @@
           onPress:()=>{
             if(brazier.lit||Math.abs(Number(getPlayerY?.())-floor.y)>.8)return; // A brazier on floor 4 cannot be lit through the deck from a lower floor.
             if(record.solved<record.challenges.length){options.showToast?.('Complete the wing challenges first.',false);return;}
-            brazier.lit=true;flame.visible=true;brazierLight.active=true;owner.lit++; // Illumination follows the existing completion interaction, never a parallel trigger.
+            brazier.lit=true;flame.visible=true;lichBrazier?.ignite?.();brazierLight.active=true;owner.lit++; // ignite() marks the fire lit: without it update() skipped the particle emitter, so the bowl glowed with no flame. // Illumination follows the existing completion interaction, never a parallel trigger.
             owner.updateCompletion();
             if(ruin.theme==='kanthic')root.CloudForestFog?.refreshLightingOverlay?.(); // The lit wing becomes visible on the first rendered frame, including mobile.
             root.RuinInteractionAudio?.igniteTorch?.();

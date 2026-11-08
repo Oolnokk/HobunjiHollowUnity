@@ -37,6 +37,8 @@ for (const [tier, spec] of Object.entries(SPEC)) {
     const hub = Hub.compose({ seed: 5, floors: spec.floors, chambers: false, wall: 8, shaft: options.shaftSize, spacing: options.floorHeight,
       traversal: 'jumpPlatforms', entranceSide, theme, portals: [{ floor: 0, side: SIDES.find(s => s !== entranceSide) }] });
     assert.ok(hub.ok, `${tier}/${theme}/${entranceSide} hub: ${hub.checks.filter(c => !c.ok).map(c => c.name + ':' + c.detail)}`);
+    assert.equal(hub.doors.length, 0, `${tier}/${theme}: no leftover balcony door tunnels; doorways exist only for real wings`);
+    assert.equal(hub.wingPortals.length, 1, `${tier}/${theme}: exactly the requested wing doorways`);
     const jump = hub.jumpShaft;
     assert.ok(jump?.ok, `${tier}/${theme} jump plan`);
     assert.equal(jump.routes.length, spec.floors - 1);
