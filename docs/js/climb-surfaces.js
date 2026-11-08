@@ -330,6 +330,7 @@
     findGrabTarget, attach, step, topExitPoint, sideExitPoint, buildVisual,
     worldClimbProvider, tryAirGrab, grab, release, updatePlayer,
     isAttached: () => !!deps?.player?.onClimbSurface,
+    getAttachedSession: () => deps?.player?.onClimbSurface || null, // Surface pose uses the active wall plane without duplicating movement state.
     debugSnapshot: () => ({
       initialized: !!deps, surfaces: surfaces.size, attached: !!deps?.player?.onClimbSurface,
       player: deps ? { tileX: deps.player.x / deps.TILE, tileZ: deps.player.y / deps.TILE, angle: deps.player.angle, wallClimbY: deps.player.wallClimbY ?? null, u: deps.player.onClimbSurface?.u ?? null } : null,
