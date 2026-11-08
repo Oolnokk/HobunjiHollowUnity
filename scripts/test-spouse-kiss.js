@@ -131,6 +131,16 @@ assert.ok(Math.abs(footTargets.right.y-footTargets.left.y)<1e-6);
 assert.ok(footTargets.left.distanceTo(footTargets.right)>0.01);
 assert.equal(solver.posteriorStraddleFootTargets({Vector3:PosteriorVector},largeLegs,smallLegs,posteriorSolution,0),null,
   'no external foot ownership when the short partner has not taken off');
+// Gameplay's player composer moves the entire avatar only while rendering.
+// Its uncomposed leg IK target must be correspondingly lower, so after the
+// composer lift the two actual soles still land on the taller posterior.
+const composerGroup = {...smallLegs, group: mkWorld(0,0,.08)};
+const playerComposerFeet = solver.posteriorStraddleFootTargets({Vector3:PosteriorVector},
+  largeLegs, composerGroup, posteriorSolution, 1, { composerLift:true });
+assert.ok(Math.abs(playerComposerFeet.left.y + posteriorSolution.shorterJumpWorld - footTargets.left.y) < 1e-6,
+  'player-owned foot target compensates temporary render-only lift');
+assert.ok(Math.abs(playerComposerFeet.right.y + posteriorSolution.shorterJumpWorld - footTargets.right.y) < 1e-6,
+  'both player feet stay planted when the composer raises the smaller spouse');
 const nearShoulder = new ShoulderVector(0,.8,0);
 const exactGrip = solver.resolveShoulderGripWorld(sourceShoulder,nearShoulder,.38,gripPoint);
 assert.ok(exactGrip.exactShoulder && gripPoint.distanceTo(nearShoulder) < 1e-6,
