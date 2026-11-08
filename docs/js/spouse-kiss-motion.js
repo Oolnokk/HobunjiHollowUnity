@@ -58,6 +58,81 @@
     return { time, durationS: DURATION_S, blend, touch: time >= 1.02 && time <= 1.52 };
   }
 
+  // Used by both the author and live kiss to separate the early hand gesture
+  // from the taller partner's knee bend when the initiator is shorter.
+  function sampleKneelBlend(seconds, initiatorShorter = false) {
+    const pose = samplePose(seconds); // Same contact and release windows as the existing lip animation.
+    if (!initiatorShorter) return pose.blend;
+    const lowering = ease((pose.time - .52) / .30); // Hands reach at .14–.36 s; the taller partner begins kneeling only after .52 s.
+    return Math.min(lowering, pose.time <= 1.52 ? 1 : pose.blend);
+  }
+
+  function sampleInitiatorHandReach(seconds, initiatorShorter, shoulderDistance, armReach) {
+    const pose = samplePose(seconds); // Time drives the gesture deterministically while scrubbing either direction.
+    const distance = Math.max(0, finite(shoulderDistance, Infinity));
+    const reach = Math.max(.001, finite(armReach, .001));
+    const released = pose.time > 1.52 ? ease((DURATION_S - pose.time) / .48) : 1;
+    const early = ease((pose.time - .13) / .24); // Short initiator extends hands before the taller one bends.
+    const reachable = distance <= reach; // Tall initiator waits until torso lowering brings the other shoulders within actual reach.
+    const tallBlend = reachable ? ease((reach - distance) / Math.max(.008, reach * .07)) : 0;
+    const grip = (initiatorShorter ? early : Math.min(early, tallBlend)) * released;
+    return { blend: clamp(grip, 0, 1), reachable, closestDistance: Math.max(0, distance - reach) };
+  }
+
+  function resolveShoulderGripWorld(sourceShoulderWorld, targetShoulderWorld, reachWorld, output) {
+    if (!sourceShoulderWorld?.isVector3 || !targetShoulderWorld?.isVector3 || !output?.isVector3) return false;
+    const distance = sourceShoulderWorld.distanceTo(targetShoulderWorld);
+    const limit = Math.max(.001, finite(reachWorld, .001)) * .98; // Reserve elbow bend and forbid overextension beyond the species/gender arm length.
+    output.copy(targetShoulderWorld);
+    if (distance > limit) output.sub(sourceShoulderWorld).multiplyScalar(limit / distance).add(sourceShoulderWorld);
+    return { targetDistance: distance, armReach: limit, exactShoulder: distance <= limit };
+  }
+
+  function shoulderGripWorld(rig, side, output) {
+    if (!rig?.shoulderPositionLocal || !rig.parent?.localToWorld || !output) return false;
+    rig.parent.updateWorldMatrix?.(true, false);
+    const local = rig.shoulderPositionLocal(side, output);
+    if (!local) return false;
+    rig.parent.localToWorld(output);
+    return true;
+  }
+
+  function applyInitiatorShoulderHands(initiatorRig, targetRig, time, initiatorShorter, scratch = null) {
+    const THREE = window.THREE;
+    if (!THREE?.Vector3 || !THREE?.Quaternion || !initiatorRig?.placeHandWorld ||
+        !initiatorRig?.armLengthForSide || !targetRig?.shoulderPositionLocal) return { applied: false, reason: 'hand-rigs-not-ready' };
+    const geometry = scratch || {}; // Caller can reuse a fixed two-hand scratch structure across render frames.
+    const scale = initiatorRig.parent.getWorldScale(geometry.scale || (geometry.scale = new THREE.Vector3()));
+    const worldScale = Math.max(.001, Math.min(Math.abs(scale.x), Math.abs(scale.y), Math.abs(scale.z)));
+    let applied = 0; // Number of hands successfully solved this frame; reported by mobile diagnostics.
+    let closestGap = 0; // Largest unavailable exact-shoulder distance after anatomical reach clamping.
+    let minGrip = 1; // Paired hand engagement for the author/readout.
+    for (const side of ['left', 'right']) {
+      const other = side === 'left' ? 'right' : 'left'; // Face-to-face actors put opposite anatomical hands at the visible shoulders.
+      const data = geometry[side] || (geometry[side] = {
+        source: new THREE.Vector3(), target: new THREE.Vector3(), grip: new THREE.Vector3(),
+        idle: new THREE.Vector3(), orientation: new THREE.Quaternion(),
+      }); // Reused world-space shoulder and hand vectors for each side.
+      if (!shoulderGripWorld(initiatorRig, side, data.source) ||
+          !shoulderGripWorld(targetRig, other, data.target)) continue;
+      const reach = Math.max(.001, finite(initiatorRig.armLengthForSide(side), .001)) * worldScale;
+      const result = resolveShoulderGripWorld(data.source, data.target, reach, data.grip);
+      if (!result) continue;
+      const gesture = sampleInitiatorHandReach(time, initiatorShorter, result.targetDistance, result.armReach);
+      initiatorRig.useIdlePose?.(); // Resets the authored idle wrist pose before moving it; avoids sampling the previous contact as the new idle.
+      const socket = initiatorRig.group?.getObjectByName?.(side + '_hand_socket');
+      if (!socket) continue;
+      socket.getWorldPosition(data.idle);
+      socket.getWorldQuaternion(data.orientation);
+      data.grip.lerpVectors(data.idle, data.grip, gesture.blend);
+      initiatorRig.placeHandWorld(side, data.grip, data.orientation);
+      applied++;
+      closestGap = Math.max(closestGap, result.targetDistance - result.armReach);
+      minGrip = Math.min(minGrip, gesture.blend);
+    }
+    return { applied: applied === 2, hands: applied, blend: applied ? minGrip : 0, closestGap };
+  }
+
   function actorHeight(model, legs, root) {
     const local = Math.max(.05, finite(model?.userData?.portraitModelHeight, finite(legs?.modelHeight, 1))); // Render metadata includes species and gender proportions.
     const THREE = window.THREE;
@@ -90,6 +165,8 @@
     try {
       window.PlayerBodyTransformComposer?.clearChannel?.(SOURCE);
       window.PlayerBodyTransformComposer?.clearChannel?.(SOURCE + '-retreat');
+      old.playerHands?.setPoseProvider?.(SOURCE, null);
+      old.playerHands?.useIdlePose?.(); // Restores held-tool/idle ownership instead of leaving wrists glued to the spouse's shoulders.
       old.playerLegs?.setStanceDrop?.(0, true);
       if (old.npcSink && window.ActorBodySink?.apply) window.ActorBodySink.apply(old.npcSink, 0, 0, true);
       old.playerLegs?.setStanceDropLimitFraction?.(old.originalPlayerKneeLimit);
@@ -190,6 +267,8 @@
           channels: ['movement', 'tools', 'actions', 'pose', 'facing', 'head'] },
       ],
     });
+    const playerHands = player.userData?.proceduralHandRig || null; // The initiator is always the player in this spouse command.
+    const npcHands = walker.avatarGroup?.userData?.proceduralHandRig || null; // Real species/gender shoulder anchors on the spouse.
     const originalPlayerKneeLimit = playerLegs.setStanceDropLimitFraction?.(KNEEL_LEG_FRACTION) ?? .55;
     const originalNpcKneeLimit = npcLegs.setStanceDropLimitFraction?.(KNEEL_LEG_FRACTION) ?? .55;
     active = {
@@ -197,6 +276,8 @@
       npcTiltPivot, originalNpcTiltX: npcTiltPivot?.rotation?.x,
       originalPlayerKneeLimit, originalNpcKneeLimit,
       playerAnatomy, npcAnatomy,
+      playerHands, npcHands, shoulderScratch: {}, // Live hand provider uses this pair and its reusable per-side vectors.
+      lastHandContact: null, // Mobile diagnostics expose reach and timing without requiring DevTools.
       playerNeck, npcNeck,
       originalPlayerNeck: playerNeck?.quaternion?.clone?.() || null,
       originalNpcNeck: npcNeck?.quaternion?.clone?.() || null,
@@ -211,6 +292,16 @@
       headingPlayer: Math.atan2(npcPoint.x - playerPoint.x, npcPoint.z - playerPoint.z),
       headingNpc: Math.atan2(playerPoint.x - npcPoint.x, playerPoint.z - npcPoint.z),
     };
+    if (playerHands?.setPoseProvider && npcHands?.shoulderPositionLocal) {
+      const session = active; // The live pose provider runs after the body compositor has placed the shoulders.
+      playerHands.setPoseProvider(SOURCE, () => {
+        if (active !== session) return;
+        session.lastHandContact = applyInitiatorShoulderHands(
+          session.playerHands, session.npcHands, session.elapsed,
+          session.height.taller === 'second', session.shoulderScratch,
+        );
+      }); // Render-time ownership keeps real GLB hand contact attached through final-frame sync.
+    }
     lastError = null;
     window.WorldActionInputClaims?.setClaims?.(SOURCE, [
       { actionId: 'dodge', label: 'Stop kissing', priority: 600, onPress: () => clearMotion('canceled') },
@@ -233,7 +324,8 @@
     session.elapsed += clamp(finite(context.deltaMs) / 1000, 0, .08);
     const pose = samplePose(session.elapsed);
     const playerIsTaller = session.height.taller === 'first';
-    const kneeWorld = session.height.tallerSinkWorld * pose.blend; // Single world-space target shared by both possible taller actors.
+    const kneeWorld = session.height.tallerSinkWorld *
+      sampleKneelBlend(session.elapsed, session.height.taller === 'second'); // Single world-space target shared by both possible taller actors.
     const playerLocalKnee = playerIsTaller ? kneeWorld / session.playerAnatomy.worldScale : 0;
     const npcLocalKnee = playerIsTaller ? 0 : kneeWorld / session.npcAnatomy.worldScale;
     const npcPct = npcLocalKnee / Math.max(.001, Number(session.npcLegs.modelHeight) || 0) * 100;
@@ -265,7 +357,7 @@
     }
     const actualKneeWorld = playerIsTaller ? playerDrop * session.playerAnatomy.worldScale
       : npcDrop * session.npcAnatomy.worldScale;
-    const expectedKneeWorld = session.height.tallerSinkWorld * pose.blend;
+    const expectedKneeWorld = kneeWorld;
     if (pose.blend > .8 && Math.abs(actualKneeWorld - expectedKneeWorld) > Math.max(.03, expectedKneeWorld * .09)) {
       lastError = 'actual-knee-limit-prevents-mouth-contact';
       clearMotion('knee-limit-mismatch');
@@ -300,13 +392,16 @@
   }
 
   function diagnostics() {
-    return { version: 1, active: !!active, lastError, lastResult,
-      session: active ? { npcId: active.walker?.rec?.id, elapsedS: active.elapsed, touched: active.touched, height: { ...active.height } } : null };
+    return { version: 2, active: !!active, lastError, lastResult,
+      session: active ? { npcId: active.walker?.rec?.id, elapsedS: active.elapsed, touched: active.touched,
+        height: { ...active.height }, hands: active.lastHandContact || null } : null };
   }
 
   window.SpouseKissMotion = Object.freeze({
     DURATION_S, MAX_SINK_PCT, MOUTH_HEIGHT_FRACTION, KNEEL_LEG_FRACTION, MAX_BOW_DEG,
-    solveHeights, samplePose, actorHeight, anatomyWorld, init, start, stop: clearMotion,
+    solveHeights, samplePose, sampleKneelBlend, sampleInitiatorHandReach,
+    resolveShoulderGripWorld, shoulderGripWorld, applyInitiatorShoulderHands,
+    actorHeight, anatomyWorld, init, start, stop: clearMotion,
     isPartner: walker => !!active && active.walker === walker,
     diagnostics,
   });
