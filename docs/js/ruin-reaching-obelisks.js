@@ -214,7 +214,7 @@
       record.worldFaces=[];
       for(const [i,face] of climbFaces(record,Math.round(record.y),record.rotation).entries()){
         const id=scope+'-climb-'+record.id+'-'+i;
-        const normalized=CS.register({...face,id,scope});
+        const normalized=CS.register({...face,id,scope,autoCatch:true}); // A falling player can catch this exact rotating climb band without facing it.
         const visual=CS.buildVisual?.(THREE,{...normalized,ruin:true});
         if(visual){
           visual.name=id;
