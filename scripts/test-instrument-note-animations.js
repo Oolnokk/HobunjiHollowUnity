@@ -515,6 +515,9 @@ window.PlayerBodyTransformComposer={getPlayerMesh:()=>({traverse:fn=>fn(neutralA
 api.beginPlayerKurraya();
 assert.equal(api.playerKurrayaHandTarget().holder,neutralHolder,'Neutral must find the already-held instrument without requiring a first sounded note');
 api.endPlayerKurraya();
+assert.equal(api.playerKurrayaHandTarget()?.holder, neutralHolder, 'the Kurraya remains gripped in editor Neutral after leaving performance while it is still visibly carried');
+neutralHolder.visible = false;
+assert.equal(api.playerKurrayaHandTarget(), null, 'hidden Kurraya must release both hands immediately');
 delete window.PlayerBodyTransformComposer;
 window.WeaponStanceDropRuntime = musician.WeaponStanceDropRuntime; // Proves the actual player-note path calls the physical body-sink system.
 const previousPlayerNoteCount=api.kurrayaHandDiagnostics().noteCount; // Earlier editor/hand ownership scenarios already sounded notes in this same module instance.
@@ -532,10 +535,12 @@ clock.ms += 30;
 assert(api.playerRightHandPose().influence>0,'a genuine note must interpolate the free hand');
 kurrayaPlayNote.poses=savedFreePhases;
 api.endPlayerKurraya();
+assert.equal(api.playerKurrayaHandTarget()?.holder, noteParent, 'returning from a note to the visibly carried instrument retains the editor Neutral grip');
+noteParent.visible = false;
+assert.equal(api.playerKurrayaHandTarget(),null,'putting away the Kurraya releases the holder rather than its last instrument pose');
 delete window.PlayerBodyTransformComposer;
 assert.equal(musician.WeaponStanceDropRuntime.getDebug().instrumentNoteKey,null,'closing music clears the Kurraya body-sink channel');
-assert.equal(api.playerRightHandPose(),null,'closing player music releases the free hand');
-assert.equal(api.playerKurrayaHandTarget(),null,'closing player music releases the captured holder');
+assert.equal(api.playerRightHandPose(),null,'closing player music releases the independent plucking hand');
 assert.equal(api.playPlayerKurrayaNote(),false,'no player hand notes outside a session');
 
 assert(grips.includes('handCustomGripAxisPickStart') && editor.includes('gripAxisMarkers'),'editor exposes moveable Nut marker');
