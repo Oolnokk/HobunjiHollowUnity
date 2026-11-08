@@ -117,4 +117,80 @@ assert.equal(romance.remainingKissHours(), 0, 'buff expires at exact 24-hour bou
 assert.equal(resourceProviders[0](player, 'staminaRegen'), 1);
 assert.deepEqual(renderedEffects['romance-spouse-kiss'](), []);
 
-console.log('Spouse kiss: adaptive height, one-shot author, command wheel, save/refresh/expiry and non-stacking buff OK.');
+// Exercise the actual paired runtime (not a callback stub). This catches
+// staging and cleanup mistakes without requiring WebGL or browser devtools.
+class Vector3 {
+  constructor(x = 0, y = 0, z = 0) { this.x = x; this.y = y; this.z = z; }
+}
+const root = (x, y, z, height) => ({
+  position: { x, y, z }, rotation: { y: 0 }, visible: true,
+  parent: {}, userData: { portraitModelHeight: height },
+  updateWorldMatrix() {},
+  getWorldPosition(out) { out.x = this.position.x; out.y = this.position.y; out.z = this.position.z; return out; },
+  getWorldScale(out) { out.x = 1; out.y = 1; out.z = 1; return out; },
+});
+const legHandle = height => ({
+  modelHeight: height, sink: 0,
+  setStanceDrop(amount) { this.sink = amount; },
+  getStanceDrop() { return this.sink; },
+});
+const avatarRoot = root(0, 0, 0, 1);
+const npcRoot = root(0, 0, 1, 5);
+const npcRigRoot = { position: { y: 0 }, scale: { y: 1 }, userData: {} };
+npcRoot.getObjectByName = name => name === 'npc_character_rig_root' ? npcRigRoot : null;
+const playerLegs = legHandle(1);
+const partnerLegs = legHandle(5);
+const sceneWalker = {
+  rec: { id: 'spouse' }, root: npcRoot, avatarGroup: { userData: {} }, legs: partnerLegs,
+};
+let renderFrame = null;
+const channels = new Map();
+const activeTokens = new Set();
+const visualWindow = {
+  THREE: { Vector3 },
+  PlayerBodyTransformComposer: {
+    getPlayerMesh: () => avatarRoot,
+    getPlayerLegHandle: () => playerLegs,
+    setChannel(name, pose) { channels.set(name, pose); },
+    clearChannel(name) { channels.delete(name); },
+  },
+  CharacterActionLocks: {
+    isLocked: () => false,
+    acquire() {
+      const token = {};
+      activeTokens.add(token);
+      return { release: () => activeTokens.delete(token) };
+    },
+  },
+  RuntimeFrameScheduler: { register(id, callback, options) {
+    assert.equal(id, 'spouse-kiss');
+    assert.equal(options.phase, 'pre-render');
+    renderFrame = callback;
+  } },
+  RomanceSystem: { getSpouse: () => ({ npcId: 'spouse' }) },
+  WorldActionInputClaims: { setClaims() {}, clearClaims() {} },
+};
+vm.runInNewContext(read('docs/js/actor-body-sink.js'), { window: visualWindow });
+vm.runInNewContext(motionSrc, { window: visualWindow, console });
+const visual = visualWindow.SpouseKissMotion;
+assert.equal(visual.init(), true, 'live kiss must register on shared pre-render clock');
+let contacts = 0;
+assert.equal(visual.start(sceneWalker, () => contacts++), true);
+for (let i = 0; i < 9; i++) renderFrame({ deltaMs: 80 });
+assert.equal(contacts, 0, 'no blessing before the first contact frame');
+assert.ok(partnerLegs.sink > 0 && playerLegs.sink === 0, 'tall NPC kneels and shorter player stays grounded');
+assert.equal(activeTokens.size, 1);
+assert.equal(visual.stop('dodge'), true);
+assert.equal(partnerLegs.sink, 0, 'cancel must restore both knee sinks');
+assert.equal(npcRigRoot.position.y, 0, 'cancel must restore the NPC visual root');
+assert.equal(channels.size, 0, 'cancel must release the player pose channel');
+assert.equal(activeTokens.size, 0, 'cancel must release both characters');
+assert.equal(contacts, 0, 'early dodge must never grant the buff');
+assert.equal(visual.start(sceneWalker, () => contacts++), true);
+for (let i = 0; i < 34; i++) renderFrame({ deltaMs: 80 });
+assert.equal(contacts, 1, 'contact callback fires exactly once per kiss');
+assert.equal(visual.diagnostics().active, false, 'animation finishes and cleans up');
+assert.equal(visual.diagnostics().lastResult.reason, 'completed');
+assert.equal(activeTokens.size, 0);
+
+console.log('Spouse kiss: height extremes, author, live contact/cancel/cleanup, spouse-only command, save/refresh/expiry and non-stacking buff OK.');
