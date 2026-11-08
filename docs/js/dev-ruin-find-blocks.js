@@ -334,8 +334,8 @@
           face:'front',width:.44,height:.44,idleColor:'#ffae62',activeColor:'#65ffaf',
         }); // The glowing glyph is applied to carved-smooth stone, never to the tube itself.
         const target={id:tubeId+'-projectile-target',object:marker,hitMesh:marker,active:false,
-          hittable:()=>alive(),onHit:()=>{
-            if(!alive())return;
+          hittable:()=>alive()&&!solved,onHit:()=>{
+            if(!alive()||solved)return;
             bombTargetFlash=.3;bombTargetSignal?.setActive(true);
             bombs.dispenseFromMechanism(bombTube); // Factory still rejects repeats while its previous bomb is live.
           }};
@@ -487,7 +487,8 @@
         targets:targets.map(t=>({id:t.id,hit:t.active})),pillarHeight,
         melody:melody?{notes:melody.notes?.slice(),attempts:melody.attempts,
           heardNotes:melody.heardNotes?.slice(),inscription:melody.inscription?.diagnostics?.()}:null, // Mobile snapshot reveals manual input and plate-visible carved notes.
-        iceMelt,fireReady:!!fire,witchBombReady:!!bombs};},
+        iceMelt,fireReady:!!fire,witchBombReady:!!bombs,
+         bombTarget:{present:!!bombTube,hittable:!!bombTube&&alive()&&!solved,flashing:bombTargetFlash>0}};},
       dispose:teardown, // Both normal teardown and failed initialization use identical scoped cleanup.
     };
     return result;
