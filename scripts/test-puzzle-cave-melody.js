@@ -87,4 +87,27 @@ metronome.step(0,true);
 assert.equal(beatEvents.length,4,'re-entering the plate restarts its first beat immediately');
 assert.equal(beatEvents.at(-1).downbeat,true);
 
+const paint={color:{hex:null,setHex(n){this.hex=n;}}};
+const ink={material:paint,userData:{},scale:{x:.2,y:.24}}; // A carved numeral may tint but must retain the exact same physical dimensions.
+const inner={color:{hex:null,setHex(n){this.hex=n;}},opacity:0};
+const outer={color:{hex:null,setHex(n){this.hex=n;}},opacity:0};
+const white=Song.advanceGlyphGlow(ink,{dt:.1,halo:inner,outer});
+assert.equal(paint.color.hex,Song.GLYPH_COLORS.idle,'unselected score glyphs glow soft white');
+assert.equal(white.inner,.11,'inactive light retains a soft white inner halo');
+assert.equal(white.outer,.045,'inactive light has a narrow, low-opacity outer radius');
+const midway=Song.advanceGlyphGlow(ink,{current:true,dt:.04,halo:inner,outer});
+assert(midway.inner>.11&&midway.inner<.80,'yellow note brightness must lerp rather than abruptly switch');
+assert(midway.outer>.045&&midway.outer<.56,'the *halo radius* grows by brightening the stationary outer light plane');
+assert.notEqual(paint.color.hex,Song.GLYPH_COLORS.current,'the white-to-yellow color transition is interpolated');
+for(let i=0;i<12;i++)Song.advanceGlyphGlow(ink,{current:true,dt:.04,halo:inner,outer});
+assert(ink.material.color.hex!==Song.GLYPH_COLORS.idle,'the current note becomes distinctly yellow');
+assert.equal(ink.scale.x,.2,'current notes must never grow or shrink their carved geometry');
+assert.equal(ink.scale.y,.24,'halo transitions cannot change carved numeral height');
+Song.advanceGlyphGlow(ink,{accepted:true,dt:0,halo:inner,outer});
+assert.equal(paint.color.hex,Song.GLYPH_COLORS.accepted,'correctly played notes must turn green instantly');
+Song.advanceGlyphGlow(ink,{rejected:true,dt:0,halo:inner,outer});
+assert.equal(paint.color.hex,Song.GLYPH_COLORS.rejected,'mistimed notes must flash red instantly');
+const recovery=Song.advanceGlyphGlow(ink,{dt:.04,halo:inner,outer});
+assert(recovery.inner<.86&&recovery.inner>.11,'red-to-white recovery eases while the symbol itself stays fixed');
+
 console.log('Puzzle Cave melody: deterministic generation, bounded tempo, timed notes, lag spikes, loop, reset, and exactly-once solve OK');
