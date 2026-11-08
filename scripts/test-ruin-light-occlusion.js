@@ -58,6 +58,10 @@ const crowdedWalls=Array.from({length:250},(_,i)=>({
 assert.equal(Shadows.projectedShadows({scene:{traverse(fn){crowdedWalls.forEach(fn);fn(node);}},source,
   radiusTiles:5,project,THREE:{Box3:Box,Vector3:Vec},now:2200}).length,1,
   'a maze of walls must not consume the caster budget before the moving obelisk is visited');
+const hiddenNode={...node,parent:{visible:false}};
+assert.equal(Shadows.projectedShadows({scene:{traverse(fn){fn(hiddenNode);}},source,
+  radiusTiles:5,project,THREE:{Box3:Box,Vector3:Vec},now:2600}).length,0,
+  'geometry hidden by a parent group must never cast a visible shaft-light shadow');
 
 const climb=read('docs/js/climb-surfaces.js');
 const reach=read('docs/js/ruin-reaching-obelisks.js');
