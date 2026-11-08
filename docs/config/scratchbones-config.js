@@ -61,6 +61,29 @@ window.SCRATCHBONES_CONFIG = {
           {id:'fox-red',name:'Fox Red',hex:'#b15d30',weight:1},{id:'rosy-beige',name:'Rosy Beige',hex:'#997267',weight:4},
           {id:'lilac-grey',name:'Lilac Grey',hex:'#746775',weight:4},{id:'black-brown',name:'Black-Brown',hex:'#4f3f36',weight:4},
         ],
+        // Small forest/mire hunters: woodland earth pigments with muted greens, not tropical parrot hues.
+        "pingdort": [
+          {id:'soot-brown',name:'Soot Brown',hex:'#5b4c43',weight:5},{id:'ash',name:'Ash',hex:'#6d7068',weight:4},
+          {id:'warm-grey',name:'Warm Grey',hex:'#74685f',weight:4},{id:'mushroom',name:'Mushroom',hex:'#77635b',weight:4},
+          {id:'fawn',name:'Fawn',hex:'#a47650',weight:4},{id:'sand',name:'Sand',hex:'#b28754',weight:4},
+          {id:'sable',name:'Sable',hex:'#714c37',weight:4},{id:'chocolate',name:'Chocolate',hex:'#6a412e',weight:3},
+          {id:'cream',name:'Cream',hex:'#c7aa77',weight:2},{id:'russet',name:'Russet',hex:'#994b30',weight:1},
+          {id:'olive-grey',name:'Olive Grey',hex:'#6d7058',weight:4},{id:'moss',name:'Moss Green',hex:'#536747',weight:3},
+          {id:'sage',name:'Sage Green',hex:'#859578',weight:3},{id:'fern',name:'Fern Green',hex:'#55744e',weight:3},
+          {id:'lichen',name:'Lichen Green',hex:'#a3a77e',weight:2},{id:'deep-pine',name:'Deep Pine',hex:'#354b3f',weight:1},
+        ],
+        // Nelk favor pale and middle tones; the darkest coats remain inheritable, but uncommon.
+        "nelk": [
+          {id:'pale-cream',name:'Pale Cream',hex:'#c8b991',weight:9},{id:'cream',name:'Cream',hex:'#c7aa77',weight:9},
+          {id:'champagne',name:'Champagne',hex:'#b99a72',weight:8},{id:'biscuit',name:'Biscuit',hex:'#bd9463',weight:8},
+          {id:'sand',name:'Sand',hex:'#b28754',weight:7},{id:'ash',name:'Ash',hex:'#6d7068',weight:7},
+          {id:'warm-grey',name:'Warm Grey',hex:'#74685f',weight:7},{id:'fawn',name:'Fawn',hex:'#a47650',weight:6},
+          {id:'dove',name:'Dove Grey',hex:'#756f78',weight:6},{id:'olive-grey',name:'Olive Grey',hex:'#6d7058',weight:5},
+          {id:'rosy-beige',name:'Rosy Beige',hex:'#997267',weight:5},{id:'taupe',name:'Taupe',hex:'#806a5b',weight:3},
+          {id:'mushroom',name:'Mushroom',hex:'#77635b',weight:3},{id:'honey',name:'Honey',hex:'#b97832',weight:3},
+          {id:'chocolate',name:'Chocolate',hex:'#6a412e',weight:1},{id:'sable',name:'Sable',hex:'#714c37',weight:1},
+          {id:'charcoal',name:'Charcoal',hex:'#55585c',weight:1},{id:'black-brown',name:'Black-Brown',hex:'#4f3f36',weight:1},
+        ],
         "drenkirra": [
           {id:'scarlet',name:'Scarlet',hex:'#ef3340',weight:1},{id:'tangerine',name:'Tangerine',hex:'#ff7a18',weight:1},
           {id:'sun-yellow',name:'Sun Yellow',hex:'#ffd629',weight:1},{id:'lime',name:'Lime',hex:'#8bdc24',weight:1},
