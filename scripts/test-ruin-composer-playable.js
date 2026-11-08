@@ -139,8 +139,9 @@ const mkTile=walkable=>({type:walkable?'grass':'rock'});
   assert.equal(rangedTargets.size,1,'each composed witch-bomb tube has one nearby registered projectile target');
   const target=[...rangedTargets][0];
   assert(target.hittable() && target.object?.name.includes('witch_bomb_projectile_target'));
-  assert(target.object.parent?.position.x!==tubes.values().next().value.position.x,
-    'the projectile glyph is a distinct fixture, not the ceiling tube itself');
+  const switchPoint=target.object.parent?.position,tubePoint=tubes.values().next().value.position;
+  assert(Math.hypot(switchPoint.x-tubePoint.x,switchPoint.z-tubePoint.z)>1,
+    'the projectile glyph is a distinct nearby fixture, not part of the ceiling tube');
   await target.onHit();assert.equal(dispenseRequests,1,'hitting the glyph activates the actual tube');
   for(const control of wing.controls) {
     assert(control.point && control.promptRoot && typeof control.onPress==='function','mobile/controller action has a world-space owner');
