@@ -115,7 +115,7 @@ const timed=compose({THREE,parent,room,id:'music-test',kind:'timedMelody',y:0,ar
 });
 assert.equal(timed.song.measures,2);
 const chamber=parent.children.find(child=>child.name==='ruin-layer-challenge-music-test');
-const musicPosts=chamber.children.filter(child=>/^puzzle-cave-melody-pillar-\\d+$/.test(child.name));
+const musicPosts=chamber.children.filter(child=>/^puzzle-cave-melody-pillar-\d+$/.test(child.name));
 assert.equal(musicPosts.length,2,'a cave melody has two symmetrical freestanding carved pillars');
 assert.equal(musicPosts[0].position.y,musicPosts[1].position.y,'both music posts have identical heights');
 assert(Math.abs(musicPosts[0].position.x+musicPosts[1].position.x-2*gateX)<.001,
