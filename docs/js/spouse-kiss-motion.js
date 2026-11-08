@@ -109,6 +109,7 @@
     const pelvisLocalY = tallerLegs.standingPosteriorY - 2 * kneeDrop; // Leg group rises +drop, while the actual body pelvis descends -drop.
     tallerLegs.group.updateWorldMatrix?.(true, false);
     shorterLegs.group.updateWorldMatrix?.(true, false);
+    const composerLift = !!temp.composerLift; // Gameplay player composer applies the leap only during render; editor/NPC roots move immediately.
     const out = temp.targets || (temp.targets = { left: new THREE.Vector3(), right: new THREE.Vector3() });
     for (const side of ['left', 'right']) {
       const grip = temp[side + 'Grip'] || (temp[side + 'Grip'] = new THREE.Vector3()); // Posterior-straddle target in the larger rig's anatomical frame.
@@ -120,8 +121,9 @@
       const ankle = shortStance[side].ankle;
       ground.set(ankle.x, ankle.y, ankle.z);
       shorterLegs.group.localToWorld(ground);
-      ground.y -= solution.shorterJumpWorld * jumpBlend; // Remove the body's vertical jump from its originally floor-planted ankle.
+      if (!composerLift) ground.y -= solution.shorterJumpWorld * jumpBlend; // NPC/editor leg group already inherited its actual root lift.
       out[side].copy(ground).lerp(grip, jumpBlend); // Lift into contact, stay on hips, then reverse into a safe floor landing.
+      if (composerLift) out[side].y -= solution.shorterJumpWorld * jumpBlend; // Uncomposed player IK target cancels the forthcoming render-only body translation.
     }
     return out;
   }
@@ -350,7 +352,7 @@
       shorterHipHeightWorld: shortAnatomy.hipHeightWorld,
     });
     if (!height.contactPossible) { lastError = 'mouth-height-not-reachable'; return false; }
-    const contactGap = Math.min(dist, .12 + Math.min(firstHeight, secondHeight) * .10); // Close enough for shoulder grasp after kneeling; shortest partner's head still controls spacing.
+    const contactGap = Math.min(dist, .08 + Math.min(firstHeight, secondHeight) * .02); // Aligns in-game mouth spacing with the now slightly separated author kiss (~.08 world units).
     const approach = Math.max(0, dist - contactGap); // Move only the spouse, so player collider and camera stay stable.
     const approachX = dist > .0001 ? (playerPoint.x - npcPoint.x) * approach / dist : 0;
     const approachZ = dist > .0001 ? (playerPoint.z - npcPoint.z) * approach / dist : 0;
@@ -361,7 +363,7 @@
       ? Math.atan2(npcPoint.x - playerPoint.x, npcPoint.z - playerPoint.z)
       : Math.atan2(playerPoint.x - npcPoint.x, playerPoint.z - npcPoint.z);
     const walkable = window.NpcPathfinding?.isNpcPositionWalkable;
-    if (height.tallerBowForwardWorld > .05 && typeof walkable === 'function' && walker.area) {
+    if (!height.shorterPosteriorGrip && height.tallerBowForwardWorld > .05 && typeof walkable === 'function' && walker.area) {
       const distance = height.tallerBowForwardWorld;
       const steps = Math.max(1, Math.ceil(distance / .3)); // One-time corridor clearance check, not a frame-loop path search.
       for (let i = 1; i <= steps; i++) {
@@ -469,11 +471,11 @@
       session.npcTiltPivot.rotation.x = session.originalNpcTiltX +
         (playerIsTaller ? .025 * pose.blend : session.height.tallerBowDeg * Math.PI / 180 * kneeBlend);
     }
-    const npcForward = playerIsTaller ? 0 : session.bowRetreatWorld; // Tall NPC steps back to allow its head to bow into the smaller player's space.
+    const npcForward = playerIsTaller || session.height.shorterPosteriorGrip ? 0 : session.bowRetreatWorld; // Do not move a straddled posterior out from under the shorter spouse's feet.
     session.walker.root.position.y = session.originalNpcPosition.y + (playerIsTaller ? shorterJump : 0); // NPC jumps only if they are the shorter partner.
     session.walker.root.position.x = session.originalNpcPosition.x + session.approachX * pose.blend - Math.sin(session.headingNpc) * npcForward * kneeBlend;
     session.walker.root.position.z = session.originalNpcPosition.z + session.approachZ * pose.blend - Math.cos(session.headingNpc) * npcForward * kneeBlend;
-    if (playerIsTaller) {
+    if (playerIsTaller && !session.height.shorterPosteriorGrip) {
       session.composer.setChannel(SOURCE + '-retreat', {
         space: 'world', priority: 200, translation: {
           x: -Math.sin(session.headingPlayer) * session.bowRetreatWorld * pose.blend,
@@ -502,6 +504,7 @@
     if (session.height.shorterPosteriorGrip) {
       const shortLegs = playerIsTaller ? session.npcLegs : session.playerLegs; // Feet that must straddle the taller posterior rather than step on the ground.
       const tallLegs = playerIsTaller ? session.playerLegs : session.npcLegs;
+      session.footScratch.composerLift = !playerIsTaller; // Player leg transforms move only during the compositor render; NPCs have physically translated roots.
       const footTargets = posteriorStraddleFootTargets(window.THREE, tallLegs, shortLegs, session.height, jumpBlend, session.footScratch);
       shortLegs.setExternalFootTargets?.(footTargets, { allowDeepFold: true }); // Two real legs bend onto the taller partner's individual left/right pelvis landmarks.
       if (footTargets) shortLegs.applyWorldFootTargets?.(footTargets, null, false, true);
