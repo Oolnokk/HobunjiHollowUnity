@@ -103,7 +103,11 @@ async function check(){
     floors:Array.from({length:5},(_,i)=>({floor:i,y:i*16,
       rooms:[{id:'r'+i,kind:'challenge-room',x:60,z:70,w:12,d:12,y:i*16}]}))};
   const ruin=w.SkeeriRuins.mount({rec:{scene,mapData:{id:area}},plan,seed:11,
-    getPlayerY:()=>0,difficulty:5});
+    getPlayerY:()=>0,difficulty:5,theme:'kanthic'});
+  assert.equal(ruin.theme,'kanthic', "Skeeri inherit the generated ruin’s lich tradition");
+  assert(ruin.bombers.every(b=>b.actor.skeeriPalette.theme==='kanthic'
+    && w.SkeeriRuins.BODY_GROUPS.kanthic.includes(b.actor.skeeriPalette.body)),
+    'all three bombers inherit stable natural Kanthic body palettes');
   assert.equal(ruin.hatches.length,5);assert.equal(ruin.bombers.length,3);
   assert.equal(ruin.hatches.map(h=>h.floor).join(','),'0,1,2,3,4','hatch difficulty follows floor index, not world elevation');
   const hatch=ruin.hatches.find(h=>h.size==='small')||ruin.hatches[0];
