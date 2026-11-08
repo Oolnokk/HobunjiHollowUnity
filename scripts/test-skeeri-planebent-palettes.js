@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
+const zlib = require('node:zlib'); // Built-in PNG inflation lets the test inspect the actual uploaded sprite pixels without browser/node modules.
 const root = path.resolve(__dirname, '..'); // Game repository root for the real modules and uploaded PNG paths.
 const source = fs.readFileSync(path.join(root, 'docs/js/skeeri-ruins.js'), 'utf8'); // Exercise the shipped runtime instead of copying its palette logic.
 const authoredRig = JSON.parse(fs.readFileSync(path.join(root, 'docs/config/creatures/skeeri-flying-rig.json'), 'utf8')); // Original author preset remains normal Skeeri.
@@ -22,6 +23,47 @@ class Canvas {
     return this.ctx;
   }
 }
+function readRgbaPng(filename) {
+  const file=fs.readFileSync(path.join(root,'docs',filename)); // Committed artist PNGs, not synthetic fixtures.
+  assert.equal(file.subarray(1,4).toString('ascii'),'PNG');
+  let width=0,height=0,depth=0,colorType=0;
+  const compressed=[]; // IDAT chunks assembled before built-in zlib inflation.
+  for(let offset=8;offset<file.length;) {
+    const length=file.readUInt32BE(offset),kind=file.toString('ascii',offset+4,offset+8);
+    const data=file.subarray(offset+8,offset+8+length);
+    if(kind==='IHDR'){
+      width=data.readUInt32BE(0);height=data.readUInt32BE(4);
+      depth=data[8];colorType=data[9];
+    }else if(kind==='IDAT')compressed.push(data);
+    offset+=12+length;
+    if(kind==='IEND')break;
+  }
+  assert.equal(depth,8);assert.equal(colorType,6,'authored Skeeri sprites are expected to be RGBA PNGs');
+  assert(width>0&&height>0&&width*height<5000000);
+  const scan=zlib.inflateSync(Buffer.concat(compressed)); // Standard lossless PNG scanline stream.
+  const stride=width*4, pixels=new Uint8ClampedArray(width*height*4);
+  let position=0,prior=new Uint8Array(stride);
+  for(let y=0;y<height;y++) {
+    const filter=scan[position++],line=new Uint8Array(stride);
+    assert(filter<=4,'PNG scanline filter is supported');
+    for(let i=0;i<stride;i++) {
+      const left=i>=4?line[i-4]:0,up=prior[i],upperLeft=i>=4?prior[i-4]:0;
+      let predictor=0;
+      if(filter===1)predictor=left;
+      else if(filter===2)predictor=up;
+      else if(filter===3)predictor=(left+up)>>1;
+      else if(filter===4){
+        const guess=left+up-upperLeft,da=Math.abs(guess-left),db=Math.abs(guess-up),dc=Math.abs(guess-upperLeft);
+        predictor=da<=db&&da<=dc?left:db<=dc?up:upperLeft;
+      }
+      line[i]=(scan[position++]+predictor)&255;
+    }
+    pixels.set(line,y*stride);
+    prior=line;
+  }
+  return {width,height,naturalWidth:width,naturalHeight:height,pixels};
+}
+
 const spritePixels = new Uint8ClampedArray([ // Purple eye, neutral ink, darker natural marking, light fur highlight.
   127, 0, 255, 255, 180, 170, 160, 255,
   117, 140, 111, 255, 174, 194, 166, 255,
@@ -115,6 +157,16 @@ for(const [theme,def] of Object.entries(families)){
     assert.match(eye.id,/:(pure|bright)_/);
   }
   assert(outsideFur>0 && outsideFur<60, 'adjacent-hue fur markings are occasional, not universal');
+}
+
+for(const key of ['flying','perched']) {
+  const sprite=readRgbaPng(api.SPRITES[key]);
+  const extracted=api.separateEyeMarker(sprite); // The REAL artist sprite, decoded from disk.
+  assert(extracted.marked>15 && extracted.marked<sprite.width*sprite.height*.03,
+    key+' must contain a localized purple eye marker');
+  assert(extracted.patternPixels>100 && extracted.patternPixels<sprite.width*sprite.height*.50,
+    key+' must contain darker fur markings, not the entire sprite or zero pixels');
+  assert(extracted.pattern && extracted.glow, key+' includes both separately tintable layers');
 }
 
 (async () => {
