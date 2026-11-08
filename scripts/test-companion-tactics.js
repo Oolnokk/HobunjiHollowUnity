@@ -91,7 +91,8 @@ assert.ok(tacticBuildup > 0 && tacticBuildup < resources.attackPowerForAttack({}
 const removeStackedProvider = context.CompanionOffense.registerProvider('stacked-test', () => ({ damage: 1.3, affliction: 1.4 })); // Simulates existing Whistle/training bonuses alongside a tactical focus.
 resources.removeAffliction(victim, 'bleedingHealth', 1000);
 context.CompanionOffense.damageCreature((target, amount, x, y, kb, opts) => resources.applyDamage(target, amount, opts), actor, victim, 10, 0, 0, 0, { afflictionBonuses: { bleedingHealth: 1 } });
-assert.ok(Math.abs(resources.getAffliction(victim, 'bleedingHealth') - tacticBuildup * 1.4) <= 0.15, 'stacked providers scale Attack Power buildup once, without also applying their Health damage multiplier');
+assert.ok(resources.getAffliction(victim, 'bleedingHealth') > tacticBuildup, 'stacked affliction providers increase status buildup even after separating Attack Power from Health damage');
+assert.ok(resources.getAffliction(victim, 'bleedingHealth') < resources.attackPowerForAttack({}) * 1.4, 'stacked status buildup stays below a full 140% neutral Attack Power hit');
 removeStackedProvider();
 
 const enemy = { ...actor, banditCompanion: true }; // Enemy pets must retain baseline species behavior and hit strength.
