@@ -55,6 +55,36 @@ async function main() {
       if (/undefined preset/i.test(document.getElementById('statusPill')?.textContent || '')) {
         throw Error('Legacy preset-label bug is still present');
       }
+      // The original bug: a constant 180° Y-facing kiss turned into a
+      // 180° X + 180° Z Euler representation between animation keys. The
+      // full-body preview then cleared X for the legs, visually rolling Leaf
+      // upside down and leaving him facing the wrong direction.
+      const scrubber = document.getElementById('maaScrubber');
+      const samples = [0, .10, .21, .30, .48, .70, .82, 1.02, 1.12, 1.52, 1.72, 1.95, 2.19, 2.40]; // Regression frame positions, not just keyframe endpoints.
+      const facingSamples = []; // Collected for mobile-friendly CI diagnostics when a particular frame fails.
+      for (const t of samples) {
+        scrubber.value = String(t);
+        scrubber.dispatchEvent(new Event('input', { bubbles: true }));
+        const poses = api.kissFacingDiagnostics?.();
+        const leaf = poses?.find(actor => actor.name === 'Leaf');
+        const pahu = poses?.find(actor => actor.name === 'Pahu');
+        if (!leaf || !pahu) throw Error('Missing character facing diagnostics at ' + t);
+        facingSamples.push({ t, leaf: leaf.rootRotationDeg, portraitUpY: leaf.portraitUpY });
+        if (leaf.worldUpY < .98 || leaf.portraitUpY < .90) {
+          throw Error('Leaf flips upside down at t=' + t + ': ' + JSON.stringify(leaf));
+        }
+        if (Math.abs(leaf.rootRotationDeg.x) > 1 || Math.abs(leaf.rootRotationDeg.z) > 1) {
+          throw Error('Leaf root has unintended X/Z inversion at t=' + t + ': ' + JSON.stringify(leaf));
+        }
+        if (Math.abs(Math.abs(leaf.rootRotationDeg.y) - 180) > 2) {
+          throw Error('Leaf reversed his face-to-face yaw at t=' + t + ': ' + JSON.stringify(leaf));
+        }
+        if (Math.abs(pahu.rootRotationDeg.x) > 1 || Math.abs(pahu.rootRotationDeg.z) > 1) {
+          throw Error('Pahu acquired an upside-down root rotation at t=' + t + ': ' + JSON.stringify(pahu));
+        }
+      }
+      scrubber.value = '0';
+      scrubber.dispatchEvent(new Event('input', { bubbles: true })); // Reset to the intended kiss opening before testing walking gait.
       const project = api.exportProject();
       const initialBodies = api.fullBodyDiagnostics?.() || [];
       if (initialBodies.length !== 2 || initialBodies.some(body => !body.feet)) {
@@ -105,6 +135,7 @@ async function main() {
         keyframes: project.actors.map(a => a.keyframes.length),
         exportable: again.actors.length === 2,
         fullBodiesAtContact: contactBodies,
+        facingSamples,
         copiedUrlValid: true,
         genericUrlValid: true,
         status: document.getElementById('statusPill')?.textContent || '',
