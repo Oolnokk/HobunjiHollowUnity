@@ -207,6 +207,19 @@
     glyphTextures.set(number,texture);
     return texture;
   }
+  function scratchboneMaterial(THREE,texture,options,name){
+    const shared=root.RuinMelodyGlyphDecal?.makeInkMaterial;
+    if(typeof shared==='function')return shared(texture,options,name);
+    const material=new THREE.MeshBasicMaterial({map:texture,...options});
+    material.onBeforeCompile=shader=>{
+      shader.fragmentShader=shader.fragmentShader.replace('#include <map_fragment>',`
+        #ifdef USE_MAP
+          diffuseColor.a *= texture2D(map, vUv).a;
+        #endif
+      `); // Standalone fallback mirrors the Witch-bomb's alpha-only additive engravings.
+    };
+    return material;
+  }
   function makeGlyphs(portal,rootGroup){
     const THREE=root.THREE;
     if(!portal.song||!THREE?.TextureLoader)return;
@@ -254,18 +267,31 @@
       const column=index%2,row=Math.floor(index/2),post=localPosts[column];
       const x=post.x,y=(layout.rows-1)/2*SCORE_STEP_Y-row*SCORE_STEP_Y,z=post.z;
       const outer=new THREE.Mesh(new THREE.PlaneGeometry(.61,.72),
-        new THREE.MeshBasicMaterial({map:texture,color:0xffdf86,transparent:true,opacity:.02,
-          blending:THREE.AdditiveBlending,depthWrite:false,side:THREE.DoubleSide}));
+        scratchboneMaterial(THREE,texture,{color:0xffdf86,transparent:true,opacity:.02,
+          blending:THREE.AdditiveBlending,depthTest:true,depthWrite:false,side:THREE.DoubleSide},'exterior-score-outer-'+index));
       outer.name='puzzle-cave-outdoor-glyph-outer-glow-'+index;
       outer.position.set(x,y,z+.065);
+      outer.frustumCulled=false;
+      outer.renderOrder=3; // Like the Witch-bomb engraving, glow is a dedicated additive pass after ordinary stone.
+      outer.onBeforeRender=()=>{
+        const base=Number(outer.userData.baseGlowOpacity??.02);
+        const seconds=Number(root.performance?.now?.()??Date.now())/1000;
+        outer.material.opacity=base*(base>.03?.84+.16*Math.sin(seconds*9):1);
+      };
       board.add(outer);portal.glyphOuterGlows.push(outer);
       const glow=new THREE.Mesh(new THREE.PlaneGeometry(.37,.46),
-        new THREE.MeshBasicMaterial({map:texture,color:0xffac37,transparent:true,opacity:.07,
-          blending:THREE.AdditiveBlending,depthWrite:false,side:THREE.DoubleSide}));
+        scratchboneMaterial(THREE,texture,{color:0xffac37,transparent:true,opacity:.07,
+          blending:THREE.AdditiveBlending,depthTest:true,depthWrite:false,side:THREE.DoubleSide},'exterior-score-halo-'+index));
       glow.name='puzzle-cave-outdoor-glyph-glow-'+index;
       glow.position.set(x,y,z+.073);
+      glow.frustumCulled=false;glow.renderOrder=4;
+      glow.onBeforeRender=()=>{
+        const base=Number(glow.userData.baseGlowOpacity??.07);
+        const seconds=Number(root.performance?.now?.()??Date.now())/1000;
+        glow.material.opacity=base*(base>.1?.82+.18*Math.sin(seconds*9):1);
+      }; // Active notes pulse at their authored beat while their alpha-only glow remains lighting-independent.
       board.add(glow);portal.glyphGlows.push(glow);
-      const material=new THREE.MeshBasicMaterial({map:texture,color:0xffdf86,transparent:true,depthWrite:false,side:THREE.DoubleSide});
+      const material=scratchboneMaterial(THREE,texture,{color:0xffdf86,transparent:true,depthWrite:false,side:THREE.DoubleSide},'exterior-score-ink-'+index);
       const mesh=new THREE.Mesh(new THREE.PlaneGeometry(.20,.24),material);
       mesh.name='puzzle-cave-outdoor-glyph-'+index;
       mesh.position.set(x,y,z+.086);
@@ -332,9 +358,11 @@
       portal.glyphs[i].material?.color?.setHex?.(color);
       const halo=portal.glyphGlows[i]?.material,outer=portal.glyphOuterGlows[i]?.material;
       halo?.color?.setHex?.(rejected?0xff3840:active?0xffe7a0:0xffac37);
-      if(halo)halo.opacity=(rejected||active)? .98 : .07;
+      if(halo){halo.opacity=(rejected||active)? .98 : .07;
+        portal.glyphGlows[i].userData.baseGlowOpacity=halo.opacity;}
       outer?.color?.setHex?.(rejected?0xff3344:0xffeb9a);
-      if(outer)outer.opacity=(rejected||active)? .6 : .02; // Two additive layers pulse through the exact authored note/rest timing.
+      if(outer){outer.opacity=(rejected||active)? .6 : .02;
+        portal.glyphOuterGlows[i].userData.baseGlowOpacity=outer.opacity;} // Two additive layers pulse through the exact authored note/rest timing.
     }
   }
   function attachMusic(portal){
@@ -342,6 +370,7 @@
     const song=root.PuzzleCaveMelody.generate(portal.site.signature+':outdoor',{difficulty:portal.difficulty});
     portal.song=song;
     portal.session=root.PuzzleCaveMelody.createSession(song,{
+      onBeat:beat=>root.RuinInteractionAudio?.metronomeTick?.(beat), // One recorded pick per actual quarter-note boundary, only while the raised plate is occupied.
       onSolved:()=>{
         portal.solved=true;portal.openWait=.95; // Solving never closes or commandeers the player's manually equipped instrument.
         root.CaveSiteSystem?.markExteriorPuzzleSolved?.(portal.mapId,song.rewardTier);
