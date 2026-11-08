@@ -7,15 +7,16 @@
   const pngSurface = window.HobunjiSpritePngSurface; // Use the game's existing PNG-plane filter, alpha and color pipeline for the Scratchbone sprites.
 
   const MAX_COLUMNS = 6; // Long authored sequences wrap instead of spanning an entire hallway.
-  const GLYPH_STEP = .31; // Distance between consecutive Scratchbone glyph centers on a stone floor inscription.
+  const GLYPH_STEP = .31; // Distance between consecutive Scratchbone glyph centers on an authored stone inscription.
   const LINE_STEP = .35; // Distance between rows for melodies longer than six notes.
   const glyphTextures = new Map(); // Eight PNG textures reused by every generated decal and every subsequent ruin reroll.
   let glyphGeometry = null; // Single shared alpha-plane geometry for every Scratchbone numeral.
 
-  function layoutFor(notes) {
+  function layoutFor(notes, maxColumns=MAX_COLUMNS) {
     if (!Array.isArray(notes) || !notes.length) return null;
-    const columns = Math.min(MAX_COLUMNS, notes.length); // Horizontal capacity of this particular inscription.
-    const rows = Math.ceil(notes.length / MAX_COLUMNS); // Additional lines for a future longer generator sequence.
+    const capacity = Math.max(1,Math.min(MAX_COLUMNS,Math.floor(Number(maxColumns)||MAX_COLUMNS))); // A purpose-built narrow pillar can request a single vertical note column.
+    const columns = Math.min(capacity, notes.length); // Horizontal capacity of this particular inscription.
+    const rows = Math.ceil(notes.length / columns); // Additional lines wrap without spilling past the authored stone face.
     return { columns, rows, width:columns * GLYPH_STEP + .20, depth:rows * LINE_STEP + .20 };
   }
 
@@ -121,7 +122,7 @@
     return {...candidates[(Number(seed)>>>0)%candidates.length],vertical:true,fallback:false};
   }
 
-  function create({root,plate,notes,bounds=null,hallway=false,hallAxis='x',sampleSupport,blockedAt,makeStoneMaterial,surfaces=[],surfaceRoot=null,seed=0} = {}) {
+  function create({root,plate,notes,bounds=null,hallway=false,hallAxis='x',sampleSupport,blockedAt,makeStoneMaterial,surfaces=[],surfaceRoot=null,seed=0,maxColumns=MAX_COLUMNS} = {}) {
     if (!root?.add || !plate || typeof sampleSupport !== 'function') return null;
     const noteLimit = window.KurrayaPuzzle?.NOTE_CODES?.length ?? 8; // Only the eight playable pitches have matching Scratchbone number sprites.
     const valid = value => Array.isArray(value) && value.length > 0 &&
@@ -149,7 +150,7 @@
       if (!valid(nextNotes)) return false;
       const nextKey = nextNotes.join(','); // Every arbitrary sequence, including repeats, has a distinct ordered key.
       if (nextKey === sequenceKey) return true;
-      const layout = layoutFor(nextNotes); // Panel length and row wrapping are derived entirely from the new generated notes.
+      const layout = layoutFor(nextNotes,maxColumns); // A narrow purpose-built pillar uses one note per row; other ruin inscriptions retain their existing layout.
       const nextPlacement = chooseSurface(plate,layout,surfaces,surfaceRoot,seed)
         || choosePlacement(plate,layout,axis,hallway,bounds,sampleSupport,blockedAt);
       if(!nextPlacement.vertical)nextPlacement.yaw=Math.atan2(plate.x-nextPlacement.x,plate.z-nextPlacement.z); // Floor fallback reads upright from its own plate.
@@ -165,8 +166,8 @@
 
       for (let index=0; index<nextNotes.length; index++) {
         const note = nextNotes[index]; // Exact generated scale-button index, not a pitch converted back to its nearest numeral.
-        const row = Math.floor(index/MAX_COLUMNS), column=index%MAX_COLUMNS;
-        const rowLength = Math.min(MAX_COLUMNS,nextNotes.length-row*MAX_COLUMNS);
+        const row = Math.floor(index/layout.columns), column=index%layout.columns;
+        const rowLength = Math.min(layout.columns,nextNotes.length-row*layout.columns);
         const texture=getGlyphTexture(note); // Reuses the authored Scratchbone silhouette through the canonical sprite pipeline.
         const appearance={color:0xffda70,transparent:true,side:THREE.DoubleSide,
           depthWrite:false,polygonOffset:true,polygonOffsetFactor:-1,polygonOffsetUnits:-2};
