@@ -465,7 +465,7 @@
       const middle = rng() < rules.threePartChance ? pickFromRng(rng, rules.middleParts) : ''; // Optional middle unit distinguishes Nanahi/Azgarlu from Imlao/Amnao.
       const last = pickFromRng(rng, rules.lastParts); // Final vowel or consonant ending shared by the two naming styles.
       const name = applyCasing(first + middle + last, culture.casing); // Same casing mechanism as every other culture.
-      if (name.length >= 4 && name.length <= 12 && !/(.)\1\1/i.test(name) && !reserved.has(name.toLowerCase())) return name;
+      if (name.length >= 5 && name.length <= 12 && !/(.)\1\1/i.test(name) && !reserved.has(name.toLowerCase())) return name;
     }
     return 'Narkalu'; // Pathological fixed RNG must never hang or take an authored boss's name.
   }
