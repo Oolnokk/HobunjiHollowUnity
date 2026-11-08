@@ -133,8 +133,12 @@ const branchStart=gameSource.indexOf('        if (isKurraya) {\n          // The
 const branchEnd=gameSource.indexOf('        } else if (isThrowFlaskItem(item)',branchStart);
 assert(branchStart>=0&&branchEnd>branchStart,'game must delegate the held Kurraya pose to the shared instrument owner');
 const playerFacing=Math.PI/3, playerMesh={rotation:{y:0}}; // World-facing player with a real held-item parent.
+const authoredGrip={x:0.15,y:0,z:0}; // Editor's cached primary grip pivot is handed to the game unchanged.
+const gripCache=new Map([['kurraya|melee|mao-ao|male',authoredGrip]]); // Avoids a grip query on every game frame.
+const anchorCalls=[]; // The shared editor scale-pivot helper must be called with the same holder and grip.
+window.SharedAttackPose={anchorScaleAtPoint:(holder,grip,scale)=>anchorCalls.push({holder,grip,scale})};
 vm.runInNewContext(gameSource.slice(branchStart,branchEnd)+'        }',{
-  isKurraya:true,window,heldItemHolder:heldTransform,playerToolBaseX:-0.45,playerToolBaseY:0.45,
+  isKurraya:true,window,heldItemHolder:heldTransform,_gripAnchorCache:gripCache,playerToolBaseX:-0.45,playerToolBaseY:0.45,
   playerAvatarModelHeight:0.9,playerArmLength:0.558,playerPoseOrbitScale:1,
   playerFacing,playerMesh,playerPoseIdentity:()=>({speciesId:'mao-ao',gender:'male'}),
   THREE:{MathUtils:{degToRad:value=>value*Math.PI/180}},
@@ -144,6 +148,10 @@ assert(Math.abs(heldTransform.position.y-(0.45+0.08))<1e-9,'editor Y offset must
 assert(Math.abs(heldTransform.rotation.z-11*Math.PI/180)<1e-9,'editor Strike roll must reach the outer holder');
 assert.equal(heldTransform.rotation.order,'YXZ','editor pose yaw/pitch/roll composition must match the game');
 assert.equal(heldTransform.scale.x,0.85,'authored Neutral scale must apply to the holder');
+assert.equal(anchorCalls.length,1,'the scaled instrument must pivot around the editor grip');
+assert.equal(anchorCalls[0].holder,heldTransform,'grip scale correction must move the actual held-item holder');
+assert.equal(anchorCalls[0].grip,authoredGrip,'gameplay must reuse the same Kurraya primary grip as the editor');
+assert.equal(anchorCalls[0].scale,0.85,'the grip pivot uses the authored Neutral scale');
 assert.equal(playerMesh.rotation.y,playerFacing,'instrument body yaw must not inherit an unrelated weapon swing');
 assert.equal(speciesPoseOptions.speciesId,'mao-ao','live pose must use the editor species scaling path');
 assert.equal(speciesPoseOptions.baseY,0.45,'live pose must use the unscaled floor-relative hand anchor');
