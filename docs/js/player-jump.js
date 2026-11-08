@@ -258,7 +258,7 @@
   }
 
   function tryAirGrab(state, direction) {
-    if (state.phase !== 'air') return false;
+    if (state.phase !== 'air' || state.noGrab) return false; // A deliberate wall release must not immediately reattach to the grip it just left.
     const pos = { x: deps.player.x / deps.TILE, z: deps.player.y / deps.TILE, y: state.feetY }; // Shared physical airborne position for both climb owners.
     const speed = number(deps.getBaseMoveSpeedTiles?.(), CONFIG.airTilesPerSecond);
     const flight = { ...pos, vx: (state.vx || direction.x * speed), vy: state.vy,

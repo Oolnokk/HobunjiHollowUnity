@@ -137,6 +137,24 @@ near(player.wallClimbY, 2.4, 'input drives height through updatePlayer (client i
 input = { x: 0, y: 1 }; CS.updatePlayer(0.2);
 near(player.y / TILE, 7 + 1.6 * 0.2, 'sideways input moves the player along the wall in world space');
 assert(CS.release()); assert.equal(player.onClimbSurface, null); assert.equal(CS.release(), false);
+const previousWindow = global.window; // Restores the host's window after testing the explicit Dodge airborne handoff.
+let dodgeFlight = null; // Captures the PlayerJump flight from releasing a wall grip.
+global.window = { PlayerJump: { beginFlight: (flight, options) => {
+  dodgeFlight = { flight, options };
+  return { ...flight, phase: 'air' };
+} } };
+player.onClimbSurface = CS.attach(hit.surface, { x: 5.4, z: 7, y: 6 });
+player.wallClimbY = 6;
+const releaseX = player.x / TILE, releaseZ = player.y / TILE; // Original wall position must be retained by the airborne handoff.
+assert(CS.release({ fall: true }), 'manual wall drop detaches the climber');
+assert.equal(player.onClimbSurface, null);
+assert.equal(dodgeFlight?.flight.y, 6, 'manual wall release preserves the current height');
+near(dodgeFlight.flight.x, releaseX); near(dodgeFlight.flight.z, releaseZ);
+assert.equal(dodgeFlight.flight.noGrab, true, 'released wall cannot be re-grabbed in midair');
+assert.equal(dodgeFlight.options.source, 'wall climb release');
+assert.equal(dodgeFlight.options.deliberate, true);
+if (previousWindow === undefined) delete global.window;
+else global.window = previousWindow;
 // Letting go at the bottom.
 player.x = 5.4 * TILE; player.y = 7 * TILE; CS.worldClimbProvider().start();
 input = { x: 1, y: 0 }; CS.updatePlayer(0.1);

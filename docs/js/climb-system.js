@@ -730,10 +730,11 @@
     const tiers = window.FallSystem?.dropTiers?.(dropWorld) ?? dropWorld / 2.5;
     player.climbHopCount = 1; // One uninterrupted drop, not a stagger of hops.
     resetClimbTiming(player, { activeS: Math.max(0.2, Math.min(0.55, 0.18 + tiers * 0.07)), pauseS: 0, bounce: 0 });
-    player._climbFall = { dropWorld, deliberate: false, rolled: false, noGrab: true, source: 'climb ' + why }; // A slip lands on the ground; only other falls auto-grab.
+    const deliberate = why === 'released'; // Used by FallSystem landing costs to distinguish pressing Dodge from an involuntary slip.
+    player._climbFall = { dropWorld, deliberate, rolled: false, noGrab: true, source: 'climb ' + why }; // A released grip falls to the safe route base without immediately re-grabbing the face.
     climbSafetyDebug.lastJumpMode = 'fall-' + why;
-    deps.showToast?.('You lose your grip!', false);
-    window.__farmLog?.('[climb] grip lost; falling ' + dropWorld.toFixed(2) + ' units to the base', 'wildlife');
+    if (!deliberate) deps.showToast?.('You lose your grip!', false);
+    window.__farmLog?.('[climb] ' + (deliberate ? 'released grip' : 'grip lost') + '; falling ' + dropWorld.toFixed(2) + ' units to the base', 'wildlife');
     return true;
   }
 
@@ -1066,29 +1067,28 @@
     return true;
   }
 
-  // Dodge while on a cliff: a short sidestep (or, with nowhere to go, a flinch
-  // against the rock) that gives dodge i-frames to avoid projectiles. It never
-  // lets go; leaving the face is the Jump action. Returns true if handled.
+  // Dodge is a deliberate release while attached to a cliff, not an
+  // invulnerable sidestep. Keep the existing short dodge on a balcony, since
+  // standing on a ledge is no longer climbing.
   function cliffDodge() {
     const player = deps?.player;
-    if (!player || player._cliffSideStep) return false;
-    const session = player._cliffRouteSession;
+    if (!player) return false;
+    if (window.ClimbSurfaces?.release?.({ fall: true })) return true; // Dodge releases authored wall grips into physical free fall, never an evasive roll.
+    if (player.climbing) {
+      if (player._cliffRouteSession) return fallFromClimb(player, 'released');
+      if (player._climbCancelable && !player._climbDropped) dropFromClimb(player);
+      return true; // Even an already-descending climb must not start a combat dodge.
+    }
+    if (player._cliffSideStep) return false;
     const net = currentCliffNetwork();
     const shelf = player.onCliffBalcony ? window.CliffRouteNetwork?.shelfAt?.(net, player.onCliffBalcony) : null;
-    if (!(session && player.climbing) && !shelf) return false;
-    if (!deps.beginCliffDodgeEffects?.()) return true; // Cooldown/stamina gate: swallow the press, never fall back to a leap.
+    if (!shelf) return false;
+    if (!deps.beginCliffDodgeEffects?.()) return true;
     const raw = deps.getMovementInput?.() || { x: 0, y: 0 };
-    const tangent = session ? session.route.tangent : shelf.tangent;
+    const tangent = shelf.tangent;
     const along = raw.x * tangent.x + raw.y * tangent.z;
     const sign = Math.abs(along) > 0.2 ? Math.sign(along) : (player._cliffDodgeSign = -(player._cliffDodgeSign || 1));
-    if (session) {
-      if (!session.moving) {
-        const next = window.CliffRouteNetwork?.nextHop?.(session.route, session.nodeIndex, { x: tangent.x * sign, z: tangent.z * sign });
-        if (next) beginRouteHop(player, session, next);
-      }
-    } else {
-      player._cliffSideStep = { t: 0, dur: 0.22, dx: tangent.x * sign, dz: tangent.z * sign, tiles: 1.1 };
-    }
+    player._cliffSideStep = { t: 0, dur: 0.22, dx: tangent.x * sign, dz: tangent.z * sign, tiles: 1.1 };
     return true;
   }
 

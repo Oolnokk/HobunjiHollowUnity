@@ -274,10 +274,18 @@
     p.angle = out.facing; deps.setFacingAngle?.(out.facing); deps.setTargetAimAngle?.(out.facing); deps.setLastMoveAngle?.(out.facing);
   }
 
-  function release() {
+  function release({ fall = false } = {}) {
     const p = deps?.player;
     if (!p?.onClimbSurface) return false;
+    const feetY = p.wallClimbY; // Preserves the wall-climb height when a Dodge release starts a physical fall.
+    const tileX = p.x / deps.TILE, tileZ = p.y / deps.TILE; // Carries the current wall position into PlayerJump's airborne state.
     p.onClimbSurface = null; p.wallClimbY = 0;
+    if (fall && Number.isFinite(feetY)) {
+      window.PlayerJump?.beginFlight?.({
+        x: tileX, z: tileZ, y: feetY, vx: 0, vy: 0, vz: 0,
+        safeX: tileX, safeZ: tileZ, noGrab: true,
+      }, { source: 'wall climb release', deliberate: true });
+    }
     return true;
   }
 

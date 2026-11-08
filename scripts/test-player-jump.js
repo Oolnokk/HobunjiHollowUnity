@@ -413,6 +413,21 @@ function harness({ rock = null, furniture = null, wall = null, pit = null, start
   assert(h.player.x / TILE < 4.45, 'falling onto an unclimbable face slides downhill even without input');
   assert(h.player._freeJump.feetY > 0, 'slope contact never falls through the rock shell');
 }
+{
+  const h = harness(); // Uses the real free-fall physics while replacing only the two grab callbacks.
+  let regrabs = 0; // Counts wall/route auto-grab attempts that a deliberate release must suppress.
+  h.window.ClimbSurfaces = { tryAirGrab() { regrabs++; return true; } };
+  h.window.ClimbSystem = { tryAirGrab() { regrabs++; return true; } };
+  const flight = h.window.PlayerJump.beginFlight({
+    x: 2.5, y: 3, z: 3.5, vy: 0, noGrab: true,
+  }, { source: 'wall climb release', deliberate: true });
+  assert(flight, 'a released climb transfers to physical airborne movement');
+  h.advance(0.1);
+  assert.equal(regrabs, 0, 'the released grip cannot immediately reattach during falling');
+  assert(h.player._freeJump?.feetY < 3, 'gravity lowers the player from the original wall height');
+  h.advance(1);
+  assert.equal(h.player._freeJump, null, 'the fall lands and restores ordinary movement');
+}
 
 {
   const h = harness();
