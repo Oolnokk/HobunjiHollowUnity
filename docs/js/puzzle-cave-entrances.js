@@ -318,6 +318,7 @@
     portal.scoreBoard=board;
     portal.scoreSurface=mount; // Mobile diagnostics identify whether real rock or an anchored pillar received the score.
     board.visible=false; // Nothing glows or appears until the player stands on the raised pressure plate.
+    refreshScoreGlow(portal); // The door model can arrive after the clock starts; initialize the newly built glyphs to its current beat.
   }
   function createPresentation(portal,scene){
     const THREE=root.THREE;
@@ -368,14 +369,15 @@
     const snap=portal.progress;
     if(!snap)return;
     for(let i=0;i<portal.glyphs.length;i++){
-      const active=i===snap.activeIndex,accepted=i<snap.progress,rejected=active&&portal.flashRemaining>0;
+      const active=i===snap.activeIndex,accepted=i<snap.progress,
+        rejected=portal.flashRemaining>0&&i===portal.flashGlyphIndex; // Off-beat input must also flash red during a silent/rest window.
       const color=rejected?0xff6a65:active?0xffffff:accepted?0xbaffd4:0xffdf86; // Red means mistimed input; green means correctly played; white is the current beat.
       portal.glyphs[i].material?.color?.setHex?.(color);
       const halo=portal.glyphGlows[i]?.material,outer=portal.glyphOuterGlows[i]?.material;
       halo?.color?.setHex?.(rejected?0xff3840:active?0xffe7a0:0xffac37);
-      if(halo)halo.opacity=active?.98:.07;
+      if(halo)halo.opacity=rejected||active?.98:.07;
       outer?.color?.setHex?.(rejected?0xff3344:0xffeb9a);
-      if(outer)outer.opacity=active?.6:.02; // Two additive layers pulse through the exact authored note/rest timing.
+      if(outer)outer.opacity=rejected||active?.6:.02; // Two additive layers pulse through the exact authored note/rest timing.
     }
   }
   function attachMusic(portal){
@@ -389,7 +391,10 @@
         portal.plateSignal?.setActive(true); // Only the illuminated PNG rune changes color, never the stone plate.
       },
       onChanged:snap=>{
-        if(snap.mistakes>(portal.progress?.mistakes||0))portal.flashRemaining=.4; // A wrong beat flashes the currently expected note red, then returns to the readable cycle.
+        if(snap.mistakes>(portal.progress?.mistakes||0)){
+          portal.flashRemaining=.4;
+          portal.flashGlyphIndex=snap.activeIndex>=0?snap.activeIndex:Math.min(portal.song.notes.length-1,portal.progress?.progress||0);
+        } // Even during the silent measure, an attempted note visibly fails instead of appearing to do nothing.
         portal.progress=snap;
         refreshScoreGlow(portal);
       }
@@ -463,7 +468,7 @@
     const portals=plan(network,profiles).map(p=>({
       ...p,area:key,disposed:false,solved:!p.requiresSong,justSolved:false,
       lastDown:false,openWait:0,
-      rise:p.requiresSong?0:1,progress:null,glyphs:[],glyphGlows:[],glyphOuterGlows:[],flashRemaining:0,scoreSurface:null,visualRoot:null,
+      rise:p.requiresSong?0:1,progress:null,glyphs:[],glyphGlows:[],glyphOuterGlows:[],flashRemaining:0,flashGlyphIndex:-1,scoreSurface:null,visualRoot:null,
       blockerId:null,ownedTransitions:[],hiddenDenMeshes:new Map(),facadeCheckElapsed:0, // Captured visibility and slow recheck for asynchronously added den entrance meshes.
     }));
     const state={area:key,network,scene,portals};
@@ -553,7 +558,7 @@
         plate:p.plate,entry:p.entry,locked:isGateLocked(p),solved:p.solved,
         progress:p.progress,rewardTier:p.song?.rewardTier||null,modelReady:!!p.doorModel,
         scoreSurface:p.scoreSurface?.kind||null,scoreVisible:!!p.scoreBoard?.visible,
-        activeGlyph:p.progress?.activeIndex??-1,flashRemaining:p.flashRemaining,scoreBpm:p.song?.bpm||null,
+        activeGlyph:p.progress?.activeIndex??-1,flashRemaining:p.flashRemaining,flashGlyphIndex:p.flashGlyphIndex,scoreBpm:p.song?.bpm||null,
         scorePosition:p.scoreSurface&&{x:p.scoreSurface.x,y:p.scoreSurface.y,z:p.scoreSurface.z}}))}))};
   }
   return Object.freeze({init,plan,mount,update,clear,forgetCave,hasPortal,senseTargets,debugSnapshot,scoreSurfaceKind});
