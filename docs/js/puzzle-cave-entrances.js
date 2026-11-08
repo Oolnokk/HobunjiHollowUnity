@@ -234,6 +234,37 @@
     return {kind:'pillar',x:safe.x,y:shelf.y+(layout.height+.14)/2+.015,z:safe.z,
       yaw:Math.atan2(portal.plate.x-safe.x,portal.plate.z-safe.z),surface:'supported-cliff-balcony'};
   }
+  function litGlyphTexture(THREE,number){
+    let texture=glyphTextures.get(number);
+    if(texture)return texture;
+    const url='assets/hud/scratchbone'+number+'.png'; // The authored Scratchbone images contain BLACK RGB ink; tinting that ink alone can never produce a luminous glyph.
+    if(root.document?.createElement&&THREE.CanvasTexture){
+      const canvas=root.document.createElement('canvas');canvas.width=canvas.height=1;
+      texture=root.HobunjiSpritePngSurface?.makeCanvasTexture?.(THREE,canvas,'outdoor-scratchbone-'+number)
+        ||new THREE.CanvasTexture(canvas); // A single reusable white-alpha mask per note preserves the source silhouette.
+      if(THREE.SRGBColorSpace)texture.colorSpace=THREE.SRGBColorSpace;
+      new THREE.TextureLoader().load(url,source=>{
+        const image=source?.image;
+        if(!image?.width||!image?.height)return;
+        canvas.width=image.width;canvas.height=image.height;
+        const ctx=canvas.getContext('2d');
+        if(!ctx)return;
+        ctx.clearRect(0,0,canvas.width,canvas.height);
+        ctx.drawImage(image,0,0);
+        ctx.globalCompositeOperation='source-in';
+        ctx.fillStyle='#ffffff';
+        ctx.fillRect(0,0,canvas.width,canvas.height); // Recolor only opaque/translucent pixels, retaining the PNG's alpha antialiasing.
+        ctx.globalCompositeOperation='source-over';
+        texture.needsUpdate=true;
+        source.dispose?.(); // The original black texture is only an image carrier; its GPU allocation is unnecessary.
+      },undefined,error=>root.__farmLog?.('[puzzle-cave] Scratchbone glow texture failed: '+error,'warn'));
+    }else{
+      texture=new THREE.TextureLoader().load(url); // Minimal non-DOM test/render adapter fallback.
+      if(THREE.SRGBColorSpace)texture.colorSpace=THREE.SRGBColorSpace;
+    }
+    glyphTextures.set(number,texture);
+    return texture;
+  }
   function makeGlyphs(portal,rootGroup){
     const THREE=root.THREE;
     if(!portal.song||!THREE?.TextureLoader)return;
@@ -261,12 +292,7 @@
     }
     for(let index=0;index<count;index++){
       const note=portal.song.notes[index],glyphNumber=note.index+1;
-      let texture=glyphTextures.get(glyphNumber); // One loader per Scratchbone note instead of one GPU texture per generated cave.
-      if(!texture){
-        texture=new THREE.TextureLoader().load('assets/hud/scratchbone'+glyphNumber+'.png');
-        if(THREE.SRGBColorSpace)texture.colorSpace=THREE.SRGBColorSpace;
-        glyphTextures.set(glyphNumber,texture);
-      }
+      const texture=litGlyphTexture(THREE,glyphNumber); // One white-alpha canvas texture per note makes both the ink and additive auras genuinely luminous.
       const column=index%layout.columns,row=Math.floor(index/layout.columns);
       const x=(column-(layout.columns-1)/2)*SCORE_STEP_X;
       const y=(layout.rows-1)/2*SCORE_STEP_Y-row*SCORE_STEP_Y;
