@@ -9,8 +9,8 @@ const parity = fs.readFileSync('docs/js/animation-author-rig-gameplay-appearance
 assert.match(author, /'config\/pants-rigs\.js'[\s\S]*'js\/pants-rig-core\.js'[\s\S]*'js\/pants-garment-renderer\.js'/,
   'Animation Author must load the same authored pants config/core/renderer used by gameplay');
 assert.match(author, /function installRigPantsPreviewV1546\(actor\)/, 'Rig Coordinates must own an explicit pants preview installer');
-assert.match(author, /Renderer\.garmentForCosmetics\?\.\(npc\?\.equippedCosmetics \|\| \[\]\)/,
-  'Rig pants must follow the NPC database authored pants\/skirt instead of inventing clothing');
+assert.match(author, /Renderer\.garmentForCosmetics\?\.\(npc \? portraitExportFor\(npc\)\.equippedCosmetics : \[\]\)/,
+  'Rig pants must use the canonical wardrobe-resolved NPC portrait export, not an invented garment');
 assert.match(author, /Renderer\.attachToLegs\(state\.three\.THREE, actor\.rigFeetPreview/,
   'Rig pants must bind to the exact gameplay ProceduralLegAnimation handle already shown in the character rig animator');
 assert.match(author, /avatarGroup: actor\.model/, 'garment mapping must use the rendered portrait model as its coordinate space');
