@@ -278,6 +278,10 @@ async function main() {
         if (!jumper?.pants || !jumper?.feet || !standing?.feet) {
           throw Error('Missing actual feet/pants in jump: ' + JSON.stringify(all));
         }
+        if (jumper.preview.jumpFeetAnchored && jumper.preview.jumpFootReachExcessWorld > .005) {
+          throw Error('Posterior jump overextends a real leg during ascent/contact/landing at t=' + t +
+            ': ' + JSON.stringify(all));
+        }
         if (t === 1.12) {
           if (!jumper.preview.jumpFeetAnchored || jumper.preview.jumpHeightWorld < pair.jumpWorld * .95 ||
               jumper.preview.jumpFootDistance <= .005) {
