@@ -517,6 +517,7 @@ assert.equal(api.playerKurrayaHandTarget().holder,neutralHolder,'Neutral must fi
 api.endPlayerKurraya();
 delete window.PlayerBodyTransformComposer;
 window.WeaponStanceDropRuntime = musician.WeaponStanceDropRuntime; // Proves the actual player-note path calls the physical body-sink system.
+const previousPlayerNoteCount=api.kurrayaHandDiagnostics().noteCount; // Earlier editor/hand ownership scenarios already sounded notes in this same module instance.
 api.beginPlayerKurraya();
 assert.equal(api.playPlayerKurrayaNote(),true,'sounded player note starts the free-hand clock');
 assert.equal(musician.WeaponStanceDropRuntime.getDebug().instrumentNoteKey,'kurraya','player pluck must start a Kurraya leg/body animation');
@@ -524,7 +525,7 @@ const noteParent={visible:true}; // The real group's immediate held holder is re
 const playerAssembly={userData:{kurrayaAssembly:true},position:{x:0,y:0,z:0},rotation:{x:0,y:0,z:0},parent:noteParent};
 window.PlayerBodyTransformComposer={getPlayerMesh:()=>({traverse:fn=>fn(playerAssembly)})}; // The player's OWN subtree is the only authority for resolving its Kurraya grip.
 assert.equal(api.playerKurrayaHandTarget().holder,noteParent,'player hand follows the actual Kurraya holder without needing a decorative twitch');
-assert.equal(api.kurrayaHandDiagnostics().noteCount,1);
+assert.equal(api.kurrayaHandDiagnostics().noteCount,previousPlayerNoteCount+1,'each sounded note increments the existing diagnostic count exactly once');
 const savedFreePhases=kurrayaPlayNote.poses;
 kurrayaPlayNote.poses=freePhases;
 clock.ms += 30;
