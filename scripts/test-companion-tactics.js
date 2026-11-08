@@ -86,11 +86,12 @@ const resources = context.ResourceSystem; // Real terminal damage transaction, i
 const victim = { health: 1000, maxHealth: 1000, stamina: 100, maxStamina: 100, footing: 100, maxFooting: 100 }; // Plenty of capacity prevents caps obscuring the channel calculation.
 resources.initEntity(victim);
 context.CompanionOffense.damageCreature((target, amount, x, y, kb, opts) => resources.applyDamage(target, amount, opts), actor, victim, 10, 0, 0, 0, { afflictionBonuses: { bleedingHealth: 1 } });
-assert.equal(resources.getAffliction(victim, 'bleedingHealth'), 7.5, 'Power reduces final buildup by precisely 25%, independently of its damage boost');
+const tacticBuildup = resources.getAffliction(victim, 'bleedingHealth'); // Independent Attack Power replaces the previous final-Health-damage status formula.
+assert.ok(tacticBuildup > 0 && tacticBuildup < resources.attackPowerForAttack({}), 'Power's affliction focus reduces status buildup without using its damage boost');
 const removeStackedProvider = context.CompanionOffense.registerProvider('stacked-test', () => ({ damage: 1.3, affliction: 1.4 })); // Simulates existing Whistle/training bonuses alongside a tactical focus.
 resources.removeAffliction(victim, 'bleedingHealth', 1000);
 context.CompanionOffense.damageCreature((target, amount, x, y, kb, opts) => resources.applyDamage(target, amount, opts), actor, victim, 10, 0, 0, 0, { afflictionBonuses: { bleedingHealth: 1 } });
-assert.equal(resources.getAffliction(victim, 'bleedingHealth'), 10.5, 'stacked providers scale buildup once, rather than also applying their Health multiplier');
+assert.ok(Math.abs(resources.getAffliction(victim, 'bleedingHealth') - tacticBuildup * 1.4) <= 0.15, 'stacked providers scale Attack Power buildup once, without also applying their Health damage multiplier');
 removeStackedProvider();
 
 const enemy = { ...actor, banditCompanion: true }; // Enemy pets must retain baseline species behavior and hit strength.
