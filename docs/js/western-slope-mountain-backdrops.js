@@ -304,6 +304,31 @@
     }
     return material;
   }
+  function ensureSnowCapMipmaps(record){
+    // Ground snow deliberately uses linear filtering without mipmaps, but those
+    // high-frequency pixels shimmer when compressed onto faraway mountains.
+    // Clone the already-tinted image only after the asynchronous loader has
+    // populated it, leaving the canonical ground texture untouched.
+    if(record.disposed||!record.snowMaterial)return false;
+    const T=window.THREE,sharedSnow=window.EnvironmentSurfaceMicroPlateau?.getSnowMaterial?.(); // Existing ground-snow source; never mutate its sampler settings.
+    const source=record.snowMaterialBinding?sharedSnow?.map:record.snowMaterial.map; // Tracks delayed snow-texture loads and the standalone fallback.
+    if(!source||source===record.snowTextureSource||source===record.snowBackdropTexture||typeof source.clone!=='function'||!T.LinearMipmapLinearFilter)return false;
+    const width=Number(source.image?.naturalWidth||source.image?.width),height=Number(source.image?.naturalHeight||source.image?.height); // Only power-of-two images can safely use mipmaps on WebGL1 mobile GPUs.
+    if(!(width>0&&height>0&&Number.isInteger(width)&&Number.isInteger(height))||(width&(width-1))||(height&(height-1)))return false;
+    const texture=source.clone(); // Backdrop-owned sampler uses the shared snow artwork but a separate GPU texture state.
+    texture.minFilter=T.LinearMipmapLinearFilter;
+    texture.magFilter=T.LinearFilter;
+    texture.generateMipmaps=true;
+    texture.needsUpdate=true;
+    if(record.snowBackdropTexture)record.snowBackdropTexture.dispose?.();
+    record.snowBackdropTexture=texture;
+    record.snowTextureSource=source;
+    record.textures.push(texture);
+    record.snowMaterial.map=texture;
+    record.snowMaterial.needsUpdate=true;
+    stats.snowTextureState='mipmapped-background-snow';
+    return true;
+  }
   function createSnowBoundaryMaterial(record){
     const T=window.THREE,material=new T.LineBasicMaterial({color:0x514b42,transparent:false,opacity:1,depthTest:true,depthWrite:false,fog:false});
     material.userData=Object.assign({},material.userData,{westernSlopeSnowBoundary:true,visualOnly:true});
@@ -319,6 +344,7 @@
       if(!sourceGeometry)throw new Error('mine-rock geometry missing for ridge '+layer.layer+', rock '+(i+1));
       const split=splitRockGeometryAtSnowLine(sourceGeometry);sourceGeometry.dispose?.();
       const rock=new T.Group(),stoneMesh=new T.Mesh(split.stoneGeo,stoneMaterial),snowMesh=new T.Mesh(split.snowGeo,snowMaterial);
+      snowMesh.onBeforeRender=()=>ensureSnowCapMipmaps(record); // Lazy one-time mipmap creation also handles an asynchronously loaded canonical texture.
       const variation=(Math.sin((i+1)*(layer.layer+2)*1.73)+1)*.5;
       const stagger=((i*7+layer.layer*3)%5-2)*cellWidth*.035;
       const heightJitter=((i*5+layer.layer)%3-1)*layer.height*.008;
@@ -418,7 +444,7 @@
   }
   function debug(){
     const active=activeByMap.get(WESTERN_SLOPE_ID);
-    return {installed:true,distantBackgroundsInFrontOfSky:true,backgroundMaxDepthNdc:BACKGROUND_MAX_DEPTH_NDC,backgroundNearDepthNdc:BACKGROUND_NEAR_DEPTH_NDC,backgroundDepthFalloff:BACKGROUND_DEPTH_FALLOFF,snowBoundaryDepthBiasNdc:SNOW_BOUNDARY_DEPTH_BIAS_NDC,mapId:WESTERN_SLOPE_ID,groupName:GROUP_NAME,authorStorageKey:AUTHOR_STORAGE_KEY,assetUrls:[...ASSET_URLS],rocksPerLayer:ROCKS_PER_LAYER,totalDecorativeRocks:ROCKS_PER_LAYER*ASSET_URLS.length,builtDecorativeRocks:active?.root?.children?.reduce((total,l)=>total+l.children.length,0)??0,ridgeLengthMapMultiplier:RIDGE_LENGTH_MAP_MULTIPLIER,snowCapHeightFraction:SNOW_CAP_HEIGHT_FRACTION,visualOnly:true,active:!!active&&!active.cancelled,attached:!!active?.root?.parent,loading:!!active&&!active.root&&!active.cancelled,sceneChildren:active?.scene?.children?.length??null,...stats,lastLayout:stats.lastLayout?stats.lastLayout.map(l=>({...l,position:[...l.position],rotationDeg:[...l.rotationDeg],scale:[...l.scale]})):null};
+    return {installed:true,distantBackgroundsInFrontOfSky:true,backgroundMaxDepthNdc:BACKGROUND_MAX_DEPTH_NDC,backgroundNearDepthNdc:BACKGROUND_NEAR_DEPTH_NDC,backgroundDepthFalloff:BACKGROUND_DEPTH_FALLOFF,snowBoundaryDepthBiasNdc:SNOW_BOUNDARY_DEPTH_BIAS_NDC,mapId:WESTERN_SLOPE_ID,groupName:GROUP_NAME,authorStorageKey:AUTHOR_STORAGE_KEY,assetUrls:[...ASSET_URLS],rocksPerLayer:ROCKS_PER_LAYER,totalDecorativeRocks:ROCKS_PER_LAYER*ASSET_URLS.length,builtDecorativeRocks:active?.root?.children?.reduce((total,l)=>total+l.children.length,0)??0,ridgeLengthMapMultiplier:RIDGE_LENGTH_MAP_MULTIPLIER,snowCapHeightFraction:SNOW_CAP_HEIGHT_FRACTION,visualOnly:true,snowTextureMipmapped:!!active?.snowBackdropTexture,active:!!active&&!active.cancelled,attached:!!active?.root?.parent,loading:!!active&&!active.root&&!active.cancelled,sceneChildren:active?.scene?.children?.length??null,...stats,lastLayout:stats.lastLayout?stats.lastLayout.map(l=>({...l,position:[...l.position],rotationDeg:[...l.rotationDeg],scale:[...l.scale]})):null};
   }
 
   window.WesternSlopeMountainBackdrops=Object.freeze({installed:true,attach,detach,getDebugState:debug,defaultAuthorConfig,normalizeAuthorConfig,readAuthorConfig,saveAuthorConfig,clearAuthorConfig,resolveLayoutFromSizes,applyAuthorConfigToGroup,constants:Object.freeze({WESTERN_SLOPE_ID,GROUP_NAME,AUTHOR_STORAGE_KEY,ASSET_URLS,ROCKS_PER_LAYER,MIN_WIDTH_MULTIPLIER,MIN_HEIGHT_MULTIPLIER,WEST_EDGE_OFFSET_MULTIPLIER,WEST_LAYER_GAP_MULTIPLIER,WEST_STACK_SHIFT_MULTIPLIER,RIDGE_LENGTH_MAP_MULTIPLIER,SNOW_CAP_HEIGHT_FRACTION})});
