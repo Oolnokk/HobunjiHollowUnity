@@ -445,6 +445,14 @@ function harness({ rock = null, furniture = null, wall = null, pit = null, start
   const tall = nearestLedge({ facingOnly: true });
   assert(tall && Math.abs(tall.topY - topY) < 1e-6,
     'ledge above comfortable jump range still provides a scripted climb');
+  const physicalNearest = scan({ PlayerJump: h.window.PlayerJump,
+    DevRandomRuin: { getPlayerGroundSupportY: () => 0, getPlayerSupportY: () => 0.30 },
+  }, { player: { angle: 0, climbing: false } }, () => ({ x: 2.5, y: 0.30, z: 3.5 }),
+  (_key, fallback) => fallback,
+  { sampleSupport: (x, z) => x >= 3.1 && x < 5 && Math.abs(z - 3.5) < 0.7
+    ? { id: 'raised-dais', y: 0.90 } : null }, () => true, 1.75, 0.44, 1.35);
+  assert(physicalNearest({ facingOnly: true }),
+    'a visually eased player mesh cannot make a physically too-high ledge look jumpable');
 }
 
 console.log('player-jump ok');
