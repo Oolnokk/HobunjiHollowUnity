@@ -4302,7 +4302,15 @@ async function onAnimationRepositoryReady() {
   renderAnimationActorList();
   renderAnimationInspector();
   renderAnimationTimeline();
-  const urlScene = parseAnimationUrlSceneV1547(location.search); // Explicit shareable scenes outrank the last local autosave.
+  let urlScene = null; // Explicit URL scenes must be parsed without crashing repositoryReady on bad query strings.
+  try { urlScene = parseAnimationUrlSceneV1547(location.search); }
+  catch (error) {
+    animationAuthor.pendingProject = null;
+    hideOverlay();
+    log('Invalid animation scene URL: ' + (error.stack || error.message), 'error');
+    setStatus('Invalid scene URL: ' + error.message, 'bad');
+    return;
+  }
   if (urlScene) {
     animationAuthor.pendingProject = null;
     try {
@@ -14101,7 +14109,7 @@ async function installAnimationUrlSceneV1547(scene) {
   setAnimationTime(Math.min(scene.time, animationAuthor.duration), { pause: true });
   renderAnimationModeChrome();
   renderAllAnimationUi();
-  frameAllAnimationActors('front'); // Both mouths are visible; the user can rotate or reframe as usual.
+  frameAllAnimationActors('angle'); // The angled author camera keeps both flat two-sided portrait planes readable.
   animationAuthor.playing = false;
   scheduleAnimationProjectSave();
   log('URL scene built: ' + scene.actorIds.join(', ') +
