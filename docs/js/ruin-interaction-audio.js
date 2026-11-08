@@ -10,7 +10,7 @@
   const REFERENCE_SPAN=Object.freeze({activator:.82,mechanism:4}); // World-space spans whose uploaded recordings play at original pitch.
   const movement=new WeakMap(); // Per physical mechanism: previous progress/direction, to play once per motion or reversal.
   const plateStates=new WeakMap(); // Per physical pressure plate: last pressed state, to suppress continuous audio.
-  const debug={lastCue:null,lastPitch:1,lastSpan:null,plays:0}; // Mobile-friendly playback diagnostics.
+  const debug={lastCue:null,lastPitch:1,lastSpan:null,lastTempo:1,lastPitchMode:'neutral',plays:0}; // Mobile-friendly pitch-versus-tempo playback diagnostics.
   const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
   function spanFor(object,explicitSize){
     const override=Number(explicitSize??object?.userData?.ruinSoundSize); // Optional authored physical dimension avoids using decorative parent meshes.
@@ -39,8 +39,15 @@
   function play(key,pitch=1,span=null){
     const audio=root.AudioSystem;
     if(typeof audio?.playObjectSfxKey!=='function')return false;
-    audio.playObjectSfxKey(key,1,pitch);
-    debug.lastCue=key;debug.lastPitch=pitch;debug.lastSpan=span;debug.plays++;
+    const stone=key==='stoneActivator'||key==='stoneMechanism'; // Only these size-based cues require independent pitch at original duration.
+    if(stone&&typeof audio.playObjectSfxKeyIndependentPitch==='function'){
+      if(!audio.playObjectSfxKeyIndependentPitch(key,pitch))return false;
+    }else{
+      audio.playObjectSfxKey(key,1,1); // Legacy/ignition fallback stays at normal speed, never size-scaled playbackRate.
+    }
+    debug.lastCue=key;debug.lastPitch=pitch;debug.lastSpan=span;debug.lastTempo=1;
+    debug.lastPitchMode=stone?(audio.objectSfxDebugSnapshot?.()?.last?.pitchMode||'neutral'):'neutral';
+    debug.plays++;
     return true;
   }
   function activator(object=null,options={}){

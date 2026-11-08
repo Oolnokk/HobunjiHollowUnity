@@ -255,7 +255,7 @@
   <!-- Procedural furniture (replaces GLB-based furniture rendering) -->
   <script src="js/procedural-furniture.js?v=20261106hlantern9"></script>
   <script src="js/furniture-puzzle-properties.js?v=20261103h9f3db40"></script>
-  <script src="js/ruin-interaction-audio.js?v=20261107combined1520_1524_1"></script> <!-- Shared, size-pitched stone mechanisms and ignition cues; loaded before shaft mechanisms. -->
+  <script src="js/ruin-interaction-audio.js?v=20261107stoneDuration1"></script> <!-- Shared, size-pitched stone mechanisms and ignition cues; loaded before shaft mechanisms. -->
   <script src="js/furniture-puzzle-runtime.js?v=20261107combined1520_1524_1"></script>
   <script src="js/interior-door-tiles.js?v=20261104crossheightAudit2"></script>
 <script src="js/farmhouse-room-planner.js?v=20261029roomspace3"></script> <!-- Saved farmhouse wall segments and movable one-tile door slots. -->
@@ -2799,11 +2799,11 @@
   <script src="js/companion-movement-speed.js?v=20261102ownerpace1"></script> <!-- Companion move/chase speeds follow each owner's live effective pace. -->
   <!-- Footstep/one-shot SFX (window.AudioSystem) — must load before game.js,
        which calls window.AudioSystem.init(...) during its own setup. -->
-  <script src="js/audio-system.js?v=20261107combo1501a"></script>
+  <script src="js/audio-system.js?v=20261107stoneDuration1"></script>
   <script src="js/honeyfuzzle-audio.js?v=20261026hivebuzz2"></script> <!-- Shared 24-tile hive + swarm ambience, one decoded seam-crossfaded loop per nearby source, live aggression and Doppler. -->
   <!-- Semantic animal-call scheduler. Gameplay systems emit vocal intents;
        AudioSystem above remains the replaceable low-level renderer. -->
-  <script src="js/animal-vocalizations.js?v=20261105h9533091"></script>
+  <script src="js/animal-vocalizations.js?v=20261107stoneDuration1"></script>
   <!-- Background music/ambient cues/bgs/furniture-proximity SFX
        (window.Music) — wires its own DOM audio-unlock listeners at load
        time, and must load before game.js, which calls

@@ -723,7 +723,10 @@
     const pitch = clampPitchFor(opts.pitchSemitones, opts.pitchMaxSemitones ?? MAX_SHIFT_SEMITONES);
     const pitchRatio = Math.pow(2, pitch / 12);
     audio.volume = clamp(finite(opts.volume, 0.7), 0, 1);
-    if (Math.abs(pitch) < 0.05) {
+    if (opts.preserveDurationOnFallback === true && Math.abs(tempo - 1) < 0.0001) {
+      setPitchPreservation(audio, true);
+      audio.playbackRate = 1; // Stone cues must keep original duration even if independent DSP is unavailable.
+    } else if (Math.abs(pitch) < 0.05) {
       setPitchPreservation(audio, true);
       audio.playbackRate = tempo;
     } else {
