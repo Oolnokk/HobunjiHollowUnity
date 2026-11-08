@@ -383,6 +383,7 @@
         gate.position.y=baseY+3.6*rec.doorRise;
       };
       rec.session=composer.createSession(song,{
+        onBeat:beat=>root.RuinInteractionAudio?.metronomeTick?.(beat), // Same authoritative quarter-note pick track as the outdoor cave plate.
         onSolved:()=>{
           plateSignal?.setActive(true); // Stone stays carved_smooth while the glyph illuminates.
           complete(); // The player chose to play their instrument; never seize or dismiss it.
