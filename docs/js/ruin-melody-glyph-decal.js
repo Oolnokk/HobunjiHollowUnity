@@ -10,6 +10,8 @@
   const GLYPH_STEP = .31; // Distance between consecutive Scratchbone glyph centers on an authored stone inscription.
   const LINE_STEP = .35; // Distance between rows for melodies longer than six notes.
   const glyphTextures = new Map(); // Eight PNG textures reused by every generated decal and every subsequent ruin reroll.
+  const haloTextures = new Map(); // Blurred, padded halo canvases; only light spreads, never the Scratchbone geometry.
+  const haloImages = new Map(); // Loaded source PNG images feed halo creation even if they finish before the halo is requested.
   let glyphGeometry = null; // Single shared alpha-plane geometry for every Scratchbone numeral.
 
   function layoutFor(notes, maxColumns=MAX_COLUMNS) {
@@ -23,11 +25,41 @@
   function getGlyphTexture(index) {
     let texture = glyphTextures.get(index);
     if (!texture) {
-      texture = new THREE.TextureLoader().load('assets/hud/scratchbone' + (index + 1) + '.png');
+      texture = new THREE.TextureLoader().load('assets/hud/scratchbone' + (index + 1) + '.png',loaded=>{
+        const image=loaded?.image;
+        if(image?.width&&image?.height){
+          haloImages.set(index,image);
+          haloTextures.get(index)?.paint(image); // One texture load supplies both immovable ink and diffused light.
+        }
+      });
       if (pngSurface?.configureTexture) pngSurface.configureTexture(THREE,texture,'ruin-melody-glyph-' + (index+1));
       else if ('colorSpace' in texture && THREE.SRGBColorSpace) texture.colorSpace = THREE.SRGBColorSpace;
       glyphTextures.set(index, texture);
     }
+    return texture;
+  }
+
+  function getHaloTexture(index) {
+    const source=getGlyphTexture(index);
+    if(!window.document?.createElement||!THREE.CanvasTexture)return source; // Headless/old-renderer compatibility; real browsers use a diffused aura.
+    if(haloTextures.has(index))return haloTextures.get(index).texture;
+    const canvas=window.document.createElement('canvas');
+    canvas.width=canvas.height=128; // Transparent padding permits a real soft penumbra instead of enlarging the numeral.
+    const texture=new THREE.CanvasTexture(canvas);
+    if(pngSurface?.configureTexture)pngSurface.configureTexture(THREE,texture,'ruin-melody-soft-halo-'+(index+1));
+    else if('colorSpace' in texture&&THREE.SRGBColorSpace)texture.colorSpace=THREE.SRGBColorSpace;
+    const paint=image=>{
+      const ctx=canvas.getContext?.('2d');
+      if(!ctx||!image?.width||!image?.height)return;
+      ctx.clearRect(0,0,128,128);
+      ctx.filter='blur(7px)';
+      ctx.drawImage(image,32,32,64,64); // Keep the source inscription centered and unscaled in its own mesh.
+      ctx.filter='none';
+      texture.needsUpdate=true;
+    };
+    haloTextures.set(index,{texture,paint});
+    if(haloImages.has(index))paint(haloImages.get(index));
+    else if(source?.image?.width)paint(source.image);
     return texture;
   }
 
@@ -192,7 +224,7 @@
         const row = Math.floor(index/layout.columns), column=index%layout.columns;
         const rowLength = Math.min(layout.columns,nextNotes.length-row*layout.columns);
         const texture=getGlyphTexture(note); // Reuses the authored Scratchbone silhouette through the canonical sprite pipeline.
-        const appearance={color:0xffda70,transparent:true,side:THREE.DoubleSide,
+        const appearance={color:0xeaf5ff,transparent:true,side:THREE.DoubleSide,
           depthWrite:false,polygonOffset:true,polygonOffsetFactor:-1,polygonOffsetUnits:-2};
         const material=makeInkMaterial(texture,appearance,'ruin-melody-scratchbone-' + (index+1));
         const glyph = new THREE.Mesh(getGlyphGeometry(),material);
@@ -206,24 +238,34 @@
         glyph.userData.hobunjiGroundSurface = true;
         glyph.userData.melodyNoteIndex = note;
         glyph.raycast = () => {}; // The glyph is a clue, not a separate activator.
-        const glowMaterial=makeInkMaterial(texture,{
-          color:0xffbb62,transparent:true,opacity:.16,depthTest:true,depthWrite:false,
+        const softHalo=getHaloTexture(note); // Blurred source alpha, never a scaled-up crisp copy of carved ink.
+        const glowMaterial=makeInkMaterial(softHalo,{
+          color:0xeaf5ff,transparent:true,opacity:.11,depthTest:true,depthWrite:false,
           blending:THREE.AdditiveBlending,polygonOffset:true,polygonOffsetFactor:-2,polygonOffsetUnits:-2,
         },'ruin-melody-additive-glow-' + (index+1));
-        const halo=new THREE.Mesh(getGlyphGeometry(),glowMaterial); // Matching engraving-style light pass, never dark sprite pixels.
+        const halo=new THREE.Mesh(getGlyphGeometry(),glowMaterial);
         halo.name='ruin-melody-scratchbone-glow-'+index;
-        halo.scale.set(1.6,1.65,1);
+        halo.scale.set(2.3,2.4,1); // Static padded halo; its opacity, not geometry, controls apparent reach.
         halo.position.z=.005;
         halo.raycast=()=>{};
         halo.renderOrder=(glyph.renderOrder||0)+1;
         halo.frustumCulled=false;
-        halo.onBeforeRender=()=>{
-          const active=!!glyph.userData.melodyGlowActive;
-          const seconds=Number(window.performance?.now?.()??Date.now())/1000;
-          glowMaterial.opacity=(active?1.15:.16)*(active?(.82+.18*Math.sin(seconds*8)):1);
-        }; // The Witch-bomb's persistent additive pulse remains visible without relying on scene lighting.
         glyph.userData.melodyGlowMaterial=glowMaterial;
         glyph.add(halo);
+        const outerMaterial=makeInkMaterial(softHalo,{
+          color:0xeaf5ff,transparent:true,opacity:.045,depthTest:true,depthWrite:false,
+          blending:THREE.AdditiveBlending,polygonOffset:true,polygonOffsetFactor:-3,polygonOffsetUnits:-3,
+        },'ruin-melody-wide-halo-'+(index+1));
+        const wide=new THREE.Mesh(getGlyphGeometry(),outerMaterial);
+        wide.name='ruin-melody-scratchbone-wide-halo-'+index;
+        wide.scale.set(3.25,3.35,1); // Fixed outer diffusion plane; lerped alpha expands the visible *light*, not the symbol.
+        wide.position.z=.003;
+        wide.raycast=()=>{};
+        wide.renderOrder=(glyph.renderOrder||0)+2;
+        wide.frustumCulled=false;
+        glyph.userData.melodyOuterGlowMaterial=outerMaterial;
+        glyph.add(wide);
+        glyph.material.color?.setHex?.(0xeaf5ff); // Unselected notes retain a soft neutral-white ink glow.
         group.add(glyph);
       }
       group.position.set(nextPlacement.x,nextPlacement.y,nextPlacement.z);

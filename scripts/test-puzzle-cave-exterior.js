@@ -40,6 +40,8 @@ const makeCanvas=()=>{
   const paint={operations:[],globalCompositeOperation:'source-over',fillStyle:'',
     clearRect(){this.operations.push('clear');},
     drawImage(){this.operations.push('draw');},
+    set filter(value){this.operations.push('filter:'+value);},
+    get filter(){return 'none';},
     fillRect(){this.operations.push('fill:'+this.globalCompositeOperation+':'+this.fillStyle);}};
   maskPaints.push(paint);
   return {width:0,height:0,getContext:()=>paint};
@@ -53,7 +55,12 @@ const context={console,THREE,Math,Promise,Number,Map,Set,Date,
 };
 context.window=context;context.globalThis=context;
 const sounds=[]; // Captures the shipped audio adapter's real semantic SFX calls in this no-speaker gameplay fixture.
-context.AudioSystem={playObjectSfxKey:(key,volume,pitch)=>sounds.push({key,volume,pitch})};
+context.AudioSystem={
+  objectSfxConfig:()=>({pick:{url:'assets/audio/sfx/sfx_pick.mp3',preload:true}}),
+  objectSfxDebugSnapshot:()=>({last:{key:'pick',found:true,url:'assets/audio/sfx/sfx_pick.mp3',preloaded:true,readyState:4,maxDurationSec:.36}}),
+  playObjectSfxKeyMetronome:volume=>{sounds.push({key:'pick',volume,pitch:1,shortVoice:true});return true;},
+  playObjectSfxKey:(key,volume,pitch)=>sounds.push({key,volume,pitch}),
+};
 function load(file) {
   const module={exports:{}};context.module=module;
   vm.runInNewContext(read(file),context,{filename:file});
@@ -183,15 +190,17 @@ const alphaShader={fragmentShader:'#include <map_fragment>'};
 gate.glyphOuterGlows[0].material.onBeforeCompile(alphaShader);
 assert(alphaShader.fragmentShader.includes('diffuseColor.a *= texture2D(map, vUv).a'),
   'the additive exterior glow must sample glyph alpha instead of multiplying by the dark PNG RGB');
-assert(gate.glyphGlows.every(glow=>glow.material.opacity===.07),
-  'inactive notes retain only a faint inner glow');
+assert(gate.glyphGlows.every(glow=>glow.material.opacity===.11),
+  'inactive carved notes retain a soft white inner glow');
 assert.equal(gate.glyphOuterGlows.length,gate.song.notes.length,'every note has a broader additive halo');
-assert(maskPaints.length>0&&maskPaints.every(p=>p.operations.includes('fill:source-in:#ffffff')),
-  'black Scratchbone PNG ink is replaced by a white alpha mask that can actually glow');
+assert(maskPaints.some(p=>p.operations.includes('fill:source-in:#ffffff')),
+  'black Scratchbone PNG ink is replaced by a white alpha mask');
+assert(maskPaints.some(p=>p.operations.includes('filter:blur(7px)')),
+  'the outer light radius uses a blurred alpha canvas, not a giant crisp glyph copy');
 assert(gate.glyphOuterGlows.every(glow=>glow.material.map?.needsUpdate),
   'every outdoor halo receives the completed white-alpha canvas texture');
-assert(gate.glyphOuterGlows.every(glow=>glow.material.opacity===.02),
-  'the broad halo remains dim until its timed note is active');
+assert(gate.glyphOuterGlows.every(glow=>glow.material.opacity===.045),
+  'the broad halo remains dim and white until its timed note is active');
 assert.equal(originalFacade.visible,false,'the original den facade is concealed by the cliff door');
 const lateFacade=new Mesh(new Geometry(),new Material({color:0x888888}));
 lateFacade.userData.denId='den1';denFacades.add(lateFacade);
@@ -216,17 +225,25 @@ Exterior.update(.01,area);
 assert.equal(opened,0,'stepping onto the plate must not auto-equip or open an instrument');
 assert.equal(gate.lastDown,true,'standing on the real raised plate activates the melody clue');
 assert(gate.scoreBoard.visible,'the exterior Scratchbone score lights up on the active raised plate');
-assert(sounds.some(event=>event.key==='pick'),'the occupied outdoor song plate starts the recorded mine-pick beat');
+assert(sounds.some(event=>event.key==='pick'&&event.volume===.72&&event.pitch===1),
+  'the first timed beat dispatches the configured recorded mine-pick at a clear downbeat volume and normal playback rate');
+assert(context.RuinInteractionAudio.debugSnapshot().metronomeSource==='assets/audio/sfx/sfx_pick.mp3',
+  'mobile audio diagnostics expose the actual recorded pick file');
+assert(context.RuinInteractionAudio.debugSnapshot().metronomeShortVoice===true&&
+  context.RuinInteractionAudio.debugSnapshot().metronomeMaxDurationSec===.36,
+  'the actual metronome adapter selects the single-voice 360 ms pick transient rather than overlapping full mining sounds');
 assert.equal(sounds.filter(event=>event.key==='stoneActivator').length,1,
   'stepping onto the outdoor melody plate plays exactly one recorded activator cue');
-assert(gate.glyphGlows.some(glow=>glow.material.opacity===.98),
-  'the active beat is nearly fully illuminated, not an imperceptible tint change');
-assert(gate.glyphOuterGlows.some(glow=>glow.material.opacity===.6),
-  'a wider additive halo visibly lights the current note while its window is open');
+assert(gate.glyphGlows.some(glow=>glow.material.opacity>.11&&glow.material.opacity<.80),
+  'the current yellow beat starts a smooth brightness transition from white');
+assert(gate.glyphOuterGlows.some(glow=>glow.material.opacity>.045&&glow.material.opacity<.56),
+  'the visible glow radius smoothly expands via static blurred outer light, not scale');
+const immutableInkGeometry=gate.glyphs.map(glyph=>glyph.geometry); // No beat may replace or scale a carved note mesh.
+const immutableHaloGeometry=gate.glyphOuterGlows.map(glow=>glow.geometry); // Wide blurred light uses fixed-size geometry.
 const wrong=(gate.song.notes[0].index+1)%8; // Deliberately incorrect sounded pitch: test input feedback without granting progress.
 for(const handler of handlers.get('hobunji-kurraya-puzzle-note')||[])
   handler({detail:{area,noteIndex:wrong}});
-assert(gate.flashRemaining>0&&gate.glyphs[0].material.color.hex===0xff6a65,
+assert(gate.flashRemaining>0&&gate.glyphs[0].material.color.hex===0xff6666,
   'wrong notes flash the current beat red rather than failing silently');
 Exterior.update(.5,area);
 assert.equal(gate.flashRemaining,0,'error feedback clears without requiring another note');
@@ -234,6 +251,8 @@ const initialPickCount=sounds.filter(event=>event.key==='pick').length;
 Exterior.update(gate.song.secondsPerTick*4.02,area);
 assert.equal(sounds.filter(event=>event.key==='pick').length,initialPickCount+1,
   'each actual quarter-note boundary adds exactly one mine-pick click');
+assert(sounds.some(event=>event.key==='pick'&&event.volume===.54&&event.pitch===1),
+  'the subsequent quarter-note strikes use the unpitched mining pick recording with a softer accent');
 
 const scoreHeight=gate.scoreBoard.position.y; // The exterior score must remain pinned to its wall or pillar during door animation.
 player.x=(gate.plate.x+1.2)*64;player.y=(gate.plate.z+1.2)*64;
@@ -251,10 +270,10 @@ Exterior.update(song.totalTicks*song.secondsPerTick+.10,area);
 assert.equal(gate.session.snapshot().activeIndex,-1,'the repeated outdoor melody has a silent measure');
 for(const handler of handlers.get('hobunji-kurraya-puzzle-note')||[])
   handler({detail:{area,noteIndex:wrong}});
-assert(gate.flashRemaining>0&&gate.glyphs[0].material.color.hex===0xff6a65,
+assert(gate.flashRemaining>0&&gate.glyphs[0].material.color.hex===0xff6666,
   'a note sounded during the silent measure flashes the expected glyph red');
-assert(gate.glyphGlows[0].material.opacity===.98,
-  'error feedback remains bright even when no score glyph is currently active');
+assert(gate.glyphGlows[0].material.opacity===.86,
+  'red error feedback remains bright even during a rest while the white/yellow focus is eased');
 player.x=(gate.plate.x+1.2)*64;player.y=(gate.plate.z+1.2)*64;
 Exterior.update(.01,area);
 player.x=gate.plate.x*64;player.y=gate.plate.z*64;
@@ -270,6 +289,10 @@ for(const note of song.notes){
     handler({detail:{area,noteIndex:note.index}});
 }
 assert(gate.solved,'the procedural one/two-measure outdoor score opens the gate');
+assert(gate.glyphs.every((glyph,i)=>glyph.geometry===immutableInkGeometry[i]&&glyph.scale.x===1&&glyph.scale.y===1),
+  'ink plane geometry and scale stay constant across every musical note, success and failure');
+assert(gate.glyphOuterGlows.every((glow,i)=>glow.geometry===immutableHaloGeometry[i]&&glow.scale.x===1&&glow.scale.y===1),
+  'outer halo geometry stays fixed while alpha changes the apparent glow radius');
 assert.equal(opened,0,'the entire outdoor song must be played with an instrument the player opened themselves');
 assert.equal(closed,0,'solving an outdoor melody must not dismiss a manually opened instrument');
 assert(saved.get(mapId).tier>=1,'the outside difficulty tier persists with the cave signature');
@@ -319,6 +342,65 @@ const result=context.LocaleCliffWallMounts.mount(area,network,wallScene,
 assert.equal(result.failed,0);
 assert.equal(result.count,1,'world locates the explicitly associated wall fixture');
 context.LocaleCliffWallMounts.clear(area);
-console.log('Puzzle Cave exterior: permanent symmetrical score pillars, plate-lit notes, static mounting, gate collision and elevation return PASS.');
+
+// An exposed vertical cliff is now a legal inscription surface. A snowy cap or
+// irregular carved cavern mesh must never be accepted as its replacement.
+class FaceVector {
+  constructor(x=0,y=0,z=0){this.x=x;this.y=y;this.z=z;}
+  clone(){return new FaceVector(this.x,this.y,this.z);}
+  transformDirection(){return this;}
+  sub(o){this.x-=o.x;this.y-=o.y;this.z-=o.z;return this;}
+  add(o){this.x+=o.x;this.y+=o.y;this.z+=o.z;return this;}
+  multiplyScalar(n){this.x*=n;this.y*=n;this.z*=n;return this;}
+  length(){return Math.hypot(this.x,this.y,this.z);}
+  normalize(){return this.multiplyScalar(1/(this.length()||1));}
+  distanceTo(o){return Math.hypot(this.x-o.x,this.y-o.y,this.z-o.z);}
+}
+const cliffPoint=new FaceVector(selected.plate.x+selected.tangent.x*1.4,
+  selected.shelf.y+1.4,selected.plate.z+selected.tangent.z*1.4);
+const faceNormal=new FaceVector(selected.plate.x-cliffPoint.x,0,selected.plate.z-cliffPoint.z).normalize();
+const caveRock=new Mesh(new Geometry(),new Material({color:0x666666}));
+caveRock.name='irregular-carved-cave';caveRock.userData.melodyScoreSurface='caveWall';
+const snowCap=new Mesh(new Geometry(),new Material({color:0xeeeeee}));
+snowCap.name='cliff-cap-snow';snowCap.userData.cliffGenerated=true;
+const cliffRock=new Mesh(new Geometry(),new Material({color:0x777777}));
+cliffRock.name='exposed-vertical-cliff';cliffRock.userData.cliffGenerated=true;
+THREE.Vector3=FaceVector;
+THREE.Raycaster=class {
+  constructor(){this.far=6;this.origin=null;this.direction=null;}
+  set(origin,direction){this.origin=origin.clone();this.direction=direction.clone();}
+  intersectObjects(meshes){
+    return meshes.map(object=>({
+      object,face:{normal:faceNormal.clone(),materialIndex:object===snowCap?0:1},
+      point:this.far>=5.9?cliffPoint.clone()
+        :this.origin.clone().add(this.direction.clone().multiplyScalar(this.far-.20)),
+    })); // A coherent face at every score corner; cap material 0 must still be rejected.
+  }
+};
+const cliffScene=new Group();
+cliffScene.add(caveRock);cliffScene.add(snowCap);
+let [withoutCliff]=Exterior.mount(area,network,cliffScene,[profile]);
+await Promise.resolve();await Promise.resolve();
+assert.equal(withoutCliff.scoreSurface?.kind,'pillarPair',
+  'snow caps and carved cave walls may not displace deliberately built notation pillars');
+Exterior.clear(area);
+cliffScene.add(cliffRock);
+let [withCliff]=Exterior.mount(area,network,cliffScene,[profile]);
+await Promise.resolve();await Promise.resolve();
+assert.equal(withCliff.scoreSurface?.kind,'cliffWall',
+  'a genuine exposed vertical cliff face should now host exterior melody notation');
+assert.equal(withCliff.scoreSurface?.surface,'exposed-vertical-cliff',
+  'the selected surface is the validated rock face, never the snow cap or carved cavern');
+assert.equal(withCliff.scoreStone,undefined,
+  'a validated exterior cliff should not add redundant freestanding notation pillars');
+assert.equal(withCliff.glyphs.length,withCliff.song.notes.length,
+  'the cliff inscription still shows every timed melody note');
+assert.equal(withCliff.glyphs[0].position.x,
+  (0-(Math.min(6,withCliff.song.notes.length)-1)/2)*.23,
+  'cliffside notation uses the compact wall-width musical row layout');
+assert(withCliff.glyphGlows.every(glow=>glow.material.map),
+  'cliffside notes retain the alpha-only luminous glyph materials');
+Exterior.clear(area);
+console.log('Puzzle Cave exterior: whitelisted vertical cliffs, excluded cave/snow, symmetrical fallback pillars, timed glow, gate and elevation PASS.');
 }
 verifyExteriorScene().catch(error=>{console.error(error);process.exitCode=1;});

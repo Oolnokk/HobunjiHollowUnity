@@ -10,7 +10,7 @@
   const REFERENCE_SPAN=Object.freeze({activator:.82,mechanism:4}); // World-space spans whose uploaded recordings play at original pitch.
   const movement=new WeakMap(); // Per physical mechanism: previous progress/direction, to play once per motion or reversal.
   const plateStates=new WeakMap(); // Per physical pressure plate: last pressed state, to suppress continuous audio.
-  const debug={lastCue:null,lastPitch:1,lastSpan:null,lastTempo:1,lastPitchMode:'neutral',plays:0,metronomeBeats:0,lastMetronomeDownbeat:false}; // Mobile-friendly pitch-versus-tempo playback diagnostics.
+  const debug={lastCue:null,lastPitch:1,lastSpan:null,lastTempo:1,lastPitchMode:'neutral',plays:0,metronomeBeats:0,lastMetronomeDownbeat:false,metronomeSource:null,metronomePreloaded:null,metronomeReadyState:null,metronomeVolume:0,metronomeError:null}; // Mobile diagnostics prove which recorded pick cue was dispatched and whether its preload is ready. // Mobile-friendly pitch-versus-tempo playback diagnostics.
   const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
   function spanFor(object,explicitSize){
     const override=Number(explicitSize??object?.userData?.ruinSoundSize); // Optional authored physical dimension avoids using decorative parent meshes.
@@ -58,13 +58,30 @@
   }
   function igniteTorch(){return play('igniteLarge');}
   function igniteAmmo(){return play('igniteSmall');}
-  function metronomeTick({downbeat=false}={}){
-    const audio=root.AudioSystem; // Reuse the already configured mining-pick recording, not a synthesized click or a new asset.
-    if(typeof audio?.playObjectSfxKey!=='function')return false;
-    audio.playObjectSfxKey('pick',downbeat?.62:.42,1); // Strong first beat; remaining 4/4 beats are quieter and keep the recorded pick's duration/pitch.
+  function metronomeTick({downbeat=false,beatIndex=0}={}){
+    const audio=root.AudioSystem; // Uses the same genuine preloaded pick-strike recording as mining, at unchanged pitch and duration.
+    const configuration=audio?.objectSfxConfig?.();
+    const clip=configuration?.pick;
+    if((typeof audio?.playObjectSfxKey!=='function'&&typeof audio?.playObjectSfxKeyMetronome!=='function')||
+      configuration&&(!clip?.url||configuration.enabled===false)){
+      debug.metronomeError=!audio?'AudioSystem unavailable':'Recorded pick SFX missing or disabled';
+      return false;
+    }
+    const volume=downbeat?.72:.54; // Distinct first beat, with enough volume to hear quarter-note timing over cave ambience.
+    const shortCue=typeof audio.playObjectSfxKeyMetronome==='function';
+    const played=shortCue?audio.playObjectSfxKeyMetronome(volume):
+      (audio.playObjectSfxKey('pick',volume,1),true); // Headless/legacy adapter retains the same recorded pick key.
+    if(played===false){debug.metronomeError='Recorded pick unavailable or audio muted';return false;}
+    const playback=audio.objectSfxDebugSnapshot?.()?.last; // Pixel Probe exposes the trimmed single-voice click and recording readiness.
+    debug.metronomeSource=clip?.url||playback?.url||'pick';
+    debug.metronomePreloaded=playback?.preloaded??null;
+    debug.metronomeReadyState=playback?.readyState??null;
+    debug.metronomeVolume=volume;
+    debug.metronomeShortVoice=shortCue;debug.metronomeMaxDurationSec=playback?.maxDurationSec??null;
+    debug.metronomeError=playback?.found===false?'AudioSystem did not resolve recorded pick SFX':null;
     debug.lastCue='pick';debug.lastPitch=1;debug.lastSpan=null;debug.lastTempo=1;
-    debug.metronomeBeats++;debug.lastMetronomeDownbeat=!!downbeat;debug.plays++;
-    return true;
+    debug.metronomeBeats++;debug.lastMetronomeDownbeat=!!downbeat;debug.lastMetronomeBeatIndex=beatIndex;debug.plays++;
+    return !debug.metronomeError;
   }
   function watchMovement(object,progress,options={}){
     if(!object||!Number.isFinite(progress))return false;

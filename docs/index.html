@@ -255,7 +255,7 @@
   <!-- Procedural furniture (replaces GLB-based furniture rendering) -->
   <script src="js/procedural-furniture.js?v=20261106hlantern9"></script>
   <script src="js/furniture-puzzle-properties.js?v=20261103h9f3db40"></script>
-  <script src="js/ruin-interaction-audio.js?v=20261108pairedMelodyGlowPick2"></script> <!-- Shared, size-pitched stone mechanisms and ignition cues; loaded before shaft mechanisms. -->
+  <script src="js/ruin-interaction-audio.js?v=20261108cliffWhiteYellowGlowPick3"></script> <!-- Shared, size-pitched stone mechanisms and ignition cues; loaded before shaft mechanisms. -->
   <script src="js/furniture-puzzle-runtime.js?v=20261107combined1520_1524_1"></script>
   <script src="js/interior-door-tiles.js?v=20261104crossheightAudit2"></script>
 <script src="js/farmhouse-room-planner.js?v=20261029roomspace3"></script> <!-- Saved farmhouse wall segments and movable one-tile door slots. -->
@@ -625,10 +625,10 @@
   <script src="js/dev-ruin-find-blocks.js?v=20261108witchBombExtern1"></script> <!-- Four-block compound lab fixture, using native ruin push, fire, flute and bomb mechanics. -->
   <script src="js/ruin-shaft-corridor.js?v=20261104directVestibule1"></script>
   <script src="js/ruin-layer-defense.js?v=20261104soloNoLoot1"></script>
-  <script src="js/puzzle-cave-melody.js?v=20261108pairedMelodyGlowPick2"></script><!-- Reusable rhythm grid and timed plate-gated cave songs. -->
+  <script src="js/puzzle-cave-melody.js?v=20261108cliffWhiteYellowGlowPick3"></script><!-- Reusable rhythm grid and timed plate-gated cave songs. -->
   <script src="js/puzzle-cave-plate-art.js?v=20261107ruinpngglow1"></script><!-- Carved-smooth Tankan lettering, reused by interior and exterior melody plates. -->
-  <script src="js/ruin-melody-glyph-decal.js?v=20261108pairedMelodyGlowPick2"></script><!-- Plate-revealed Scratchbone clues outside the dev ruin bootstrap. -->
-  <script src="js/ruin-layer-challenges.js?v=20261108pairedMelodyGlowPick2"></script>
+  <script src="js/ruin-melody-glyph-decal.js?v=20261108cliffWhiteYellowGlowPick3"></script><!-- Plate-revealed Scratchbone clues outside the dev ruin bootstrap. -->
+  <script src="js/ruin-layer-challenges.js?v=20261108cliffWhiteYellowGlowPick3"></script>
   <script src="js/ruin-layer-playable.js?v=20261108he284639"></script>
   <script src="js/ruin-v50-native-mechanisms.js?v=20261107wingDoorSoftlock2"></script>
   <script src="js/ruin-v50-native-floors.js?v=20261108hb863f6e"></script>
@@ -930,7 +930,7 @@
   <script src="js/locale-cave-runtime.js?v=20261010h40fea5e"></script>
   <!-- Promotes wilderness den anchors into generic cave sites; wraps WildlifeSpawn/CavernGenerator/DevSpawner, all loaded above. -->
   <script src="js/locale-cliff-wall-mounts.js?v=20261105cliffPortal1"></script><!-- Mount editor-authored furniture on the resolved procedural wall normal and elevation. -->
-  <script src="js/puzzle-cave-entrances.js?v=20261108pairedMelodyGlowPick2"></script><!-- Real mini-cliff cliffDoor placement, exterior timed plate, and authoritative gated transition. -->
+  <script src="js/puzzle-cave-entrances.js?v=20261108cliffWhiteYellowGlowPick3"></script><!-- Real mini-cliff cliffDoor placement, exterior timed plate, and authoritative gated transition. -->
   <script src="js/cave-site-system.js?v=20261107caveStone1"></script>
   <!-- Two-necked Shattercask runtime. Loaded after Combat/DevSpawner/CaveSiteSystem so their
        hooks bind before game.js initializes the subsystems; also handles touch prompts. -->
@@ -2799,7 +2799,7 @@
   <script src="js/companion-movement-speed.js?v=20261102ownerpace1"></script> <!-- Companion move/chase speeds follow each owner's live effective pace. -->
   <!-- Footstep/one-shot SFX (window.AudioSystem) — must load before game.js,
        which calls window.AudioSystem.init(...) during its own setup. -->
-  <script src="js/audio-system.js?v=20261107stoneDuration1"></script>
+  <script src="js/audio-system.js?v=20261108melodyPickTransient1"></script>
   <script src="js/honeyfuzzle-audio.js?v=20261026hivebuzz2"></script> <!-- Shared 24-tile hive + swarm ambience, one decoded seam-crossfaded loop per nearby source, live aggression and Doppler. -->
   <!-- Semantic animal-call scheduler. Gameplay systems emit vocal intents;
        AudioSystem above remains the replaceable low-level renderer. -->

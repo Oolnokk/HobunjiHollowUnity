@@ -362,6 +362,7 @@
       // The generated score's beat clock advances only while the player stays on the large plate.
       const composer=options.puzzleCaveMelody||root.PuzzleCaveMelody; // One generator/judge for both exterior and interior puzzle cave doors.
       if(!composer?.generate||!composer?.createSession)throw new Error('PuzzleCaveMelody is not installed.');
+      rec.scoreComposer=composer; // The shared frame-tick callback runs outside this challenge branch and reads the same injected song/glow adapter.
       const song=composer.generate(id,options.songOptions||{}); // The cave's stable ID fixes the tune and reward tier on reload.
       const plate=body('puzzle-cave-music-plate-'+id,
         new THREE.CylinderGeometry(1.18,1.18,.15,32),plateMat,cx,y+.08,cz-1.6);
@@ -389,16 +390,14 @@
           complete(); // The player chose to play their instrument; never seize or dismiss it.
         },
         onChanged:snapshot=>{
-          for(let i=0;i<rec.glyphs.length;i++){
-            const material=rec.glyphs[i].material;
-            const color=i===snapshot.activeIndex?0xffee89:0xffb35e; // Cycling glow teaches timing without opening any instrument UI.
-            material.color?.setHex?.(color); // One glyph glows during its full written duration; silence means none glows.
-            if(rec.glyphs[i]?.userData)rec.glyphs[i].userData.melodyGlowActive=i===snapshot.activeIndex;
-            const halo=rec.glyphs[i]?.userData?.melodyGlowMaterial;
-            if(halo){halo.color?.setHex?.(i===snapshot.activeIndex?0xffd87b:0xff8340);
-              halo.opacity=i===snapshot.activeIndex?1.15:.16;}
+          if(snapshot.mistakes>(rec.melodyState?.mistakes||0)){
+            rec.flashRemaining=.4;
+            rec.flashGlyphIndex=snapshot.activeIndex>=0?snapshot.activeIndex:
+              Math.min(rec.song.notes.length-1,rec.melodyState?.progress||0); // Incorrect input flashes its own glyph red, including during rests.
           }
-          rec.melodyState=snapshot; // Exposed in the existing mobile ruin diagnostics.
+          rec.melodyState=snapshot; // The frame loop smoothly mixes white/yellow, but preserves instant green/red response.
+          if(rec.flashRemaining>0)for(let i=0;i<rec.glyphs.length;i++)
+            if(i===rec.flashGlyphIndex)composer.advanceGlyphGlow?.(rec.glyphs[i],{rejected:true,dt:0});
         },
       });
       timedNoteListener=event=>{
@@ -676,6 +675,16 @@
         const down=!rec.solved&&isActive()&&player&&Number.isFinite(currentY)&&Math.abs(currentY-y)<.75
           &&Math.hypot(player.x-cx,player.z-(cz-1.6))<=1.18;
         rec.session.step(dt,down);
+        rec.flashRemaining=Math.max(0,(rec.flashRemaining||0)-Math.max(0,Number(dt)||0));
+        const glowState=rec.session.snapshot(); // Shared beat clock controls current score note, rests and accepted-note feedback.
+        for(let i=0;i<rec.glyphs.length;i++){
+          const glyph=rec.glyphs[i],rejected=rec.flashRemaining>0&&i===rec.flashGlyphIndex;
+          if(rec.scoreComposer?.advanceGlyphGlow)rec.scoreComposer.advanceGlyphGlow(glyph,{
+            current:i===glowState.activeIndex,accepted:i<glowState.progress,rejected,dt,
+          });
+          else glyph.material?.color?.setHex?.(rejected?0xff6666:i<glowState.progress?0x80ffbb:
+            i===glowState.activeIndex?0xffec64:0xeaf5ff);
+        } // The ink planes and the two halo planes NEVER change scale; only their color and alpha interpolate.
         rec.inscription?.setVisible?.(down);
         if(rec.scorePanel)rec.scorePanel.visible=!!down;
         if(down&&!rec.lastDown)rec.attempts++;
