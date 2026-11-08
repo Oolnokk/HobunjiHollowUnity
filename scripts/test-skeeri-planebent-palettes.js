@@ -45,13 +45,12 @@ const w = {
       };
     },
   },
-  SpecialHarlyaoLiches: {
-    specialRoster(theme) {
-      return { appearance: { bodyColors: { C: { hex: {
-        hronal: '#18d6fa', tothal: '#ff9832', kanthic: '#a4f02d',
-      }[theme] } } } };
-    },
-  },
+  HarlyaoLichCombat: {TYPE_DEFS: { // Match the live tradition definition's hue bands.
+    hronal:{hues:['red','orange','yellow']},
+    tothal:{hues:['green_blue','blue','blue_indigo']},
+    kanthic:{hues:['indigo','indigo_violet','violet'],neutralDyes:['dye:CLOTH:gray']},
+  }},
+  SCRATCHBONES_CONFIG:{game:{dyes:{catalog:[]}}}, // Injected dye records below prove canonical swatch reuse.
   __farmLog() {},
 };
 vm.runInNewContext(source, {
@@ -77,6 +76,31 @@ for (const theme of ['hronal', 'tothal', 'kanthic']) {
 }
 assert.notEqual(api.paletteFor('hronal', 1).body, api.paletteFor('kanthic', 1).body);
 assert.equal(api.paletteFor('bogus', 1).theme, 'hronal', 'unknown ruin themes have a safe fallback');
+const families = w.HarlyaoLichCombat.TYPE_DEFS; // The real named-lich tradition is the source of the permitted hue suffixes.
+const catalog = w.SCRATCHBONES_CONFIG.game.dyes.catalog; // Visible swatch catalogue, not copied arbitrary RGB colors.
+for(const [theme,def] of Object.entries(families)){
+  for(const [i,hue] of def.hues.entries()){
+    for(const variant of ['dusty','muted','dark_muted','pure','bright']){
+      catalog.push({id:'dye:CLOTH:'+variant+'_'+hue,hex:'#'+(i+1).toString(16).padStart(2,'0')+(variant==='pure'?'ff':'77')+(variant==='bright'?'ff':'33')});
+    }
+  }
+}
+catalog.push({id:'dye:CLOTH:gray',hex:'#808080'});
+for(const [theme,def] of Object.entries(families)){
+  for(let index=0;index<60;index++){
+    const palette=api.paletteFor(theme,'specimen:'+index);
+    const body=catalog.find(dye=>dye.id===palette.bodyDyeId),eye=catalog.find(dye=>dye.id===palette.eyeDyeId);
+    assert(body && eye,theme+' must read the source dye catalog rather than custom RGB approximations');
+    assert.equal(palette.body,body.hex);
+    assert.equal(palette.eyes,eye.hex);
+    assert(def.hues.some(hue=>body.id.endsWith('_'+hue)) || def.neutralDyes?.includes(body.id),
+      'natural body dye belongs to the selected lich tradition');
+    assert(def.hues.some(hue=>eye.id.endsWith('_'+hue)),
+      'uncanny eye dye belongs to the SAME lich tradition, not the named lich inverse-color glyph');
+    assert.match(body.id,/:(dusty|muted|dark_muted)_|:gray$/);
+    assert.match(eye.id,/:(pure|bright)_/);
+  }
+}
 
 (async () => {
   const palette = api.paletteFor('kanthic', 'specimen-A');
