@@ -400,6 +400,10 @@
         plate.material=invisible;
       }
       rec.plate=plate;rec.plateSkin=plateSkin;
+      const visiblePlate=plateSkin?.userData?.meshById?.get?.('plate')||plate; // Prefer the actual authored stone face when available.
+      rec.plateSignal=root.FurniturePatternSurfaces?.attachStoneSignal?.(visiblePlate,{
+        width:.54,height:.54,idleColor:'#82d8b7',activeColor:'#ffe18a',
+      }); // Only the melody plate's glyph changes on completion; the carved stone remains neutral.
       rec.notes=melodyFor(id);
       rec.lastDown=false;rec.attempts=0;
       rec.heardNotes=[];rec.glyphs=[]; // Rolling player-note history and owned fallback art for native challenge diagnostics.
