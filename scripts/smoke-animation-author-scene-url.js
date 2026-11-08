@@ -160,6 +160,11 @@ async function main() {
       const leafActorId = actors.find(actor => actor.source.id === 'leaf')?.id;
       api.selectActor(leafActorId);
       if (!api.applyKissPreset?.()) throw Error('Could not rebuild the taller-initiator kiss');
+      const reversePair = api.kissPairDiagnostics?.();
+      const reverseProject = api.exportProject();
+      const reverseActorSink = reverseProject.actors.map(actor => ({
+        name: actor.source?.name, id: actor.source?.id, sink: actor.kissBodySinkPctAtContact,
+      })); // Clear browser diagnostics before asserting that the newly selected initiator is the tall one.
       const tallerInitiator = [];
       for (const t of [0, .13, .25, .37, .52, .67, .82, 1.12, 1.52, 2.4]) {
         const bodies = seek(t);
@@ -177,6 +182,8 @@ async function main() {
         shoulderGripEarly: earlyInitiator.initiatorHands,
         shoulderGripAtContact: afterContact.find(actor => actor.name === 'Pahu')?.initiatorHands,
         tallerInitiator,
+        reversePair,
+        reverseActorSink,
         copiedUrlValid: true,
         genericUrlValid: true,
         status: document.getElementById('statusPill')?.textContent || '',
