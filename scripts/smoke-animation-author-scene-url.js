@@ -154,6 +154,18 @@ async function main() {
       if (feetAtFinish.find(actor => actor.name === 'Pahu')?.initiatorHands?.blend > .001) {
         throw Error('Pahu hands remained locked to shoulders after the kiss released: ' + JSON.stringify(feetAtFinish));
       }
+      // Reverse the initiator without loading another scene: Leaf is now the
+      // taller initiator and may grip Pahu's shoulders only when his own torso
+      // has lowered far enough to fit his real arm lengths.
+      const leafActorId = actors.find(actor => actor.source.id === 'leaf')?.id;
+      api.selectActor(leafActorId);
+      if (!api.applyKissPreset?.()) throw Error('Could not rebuild the taller-initiator kiss');
+      const tallerInitiator = [];
+      for (const t of [0, .13, .25, .37, .52, .67, .82, 1.12, 1.52, 2.4]) {
+        const bodies = seek(t);
+        tallerInitiator.push({ t, leafHands: bodies.find(actor => actor.name === 'Leaf')?.initiatorHands || null,
+          leafKnee: bodies.find(actor => actor.name === 'Leaf')?.kneeDrop || 0 });
+      }
       return {
         actors: actors.map(a => ({ id: a.source.id, label: a.label })),
         preset: project.project.relationshipPreset,
@@ -164,6 +176,7 @@ async function main() {
         facingSamples,
         shoulderGripEarly: earlyInitiator.initiatorHands,
         shoulderGripAtContact: afterContact.find(actor => actor.name === 'Pahu')?.initiatorHands,
+        tallerInitiator,
         copiedUrlValid: true,
         genericUrlValid: true,
         status: document.getElementById('statusPill')?.textContent || '',
