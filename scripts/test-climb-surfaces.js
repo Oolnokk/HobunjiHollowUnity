@@ -257,4 +257,51 @@ assert.equal(player.onClimbSurface, null, 'bottom event releases the player');
   delete global.PlayerJump;
 }
 
+// --- automatic falling grabs on shaft ladders -----------------------------------
+{
+  CS.register({ id: 'shaft-fixed-auto', scope: 'shaft-hub', style: 'holds', autoCatch: true,
+    axis: 'z', plane: 5, normal: { x: 1, z: 0 }, u0: 6, u1: 8, y0: 2, y1: 8 });
+  CS.register({ id: 'nearby-unmarked-cliff', scope: 'other', style: 'holds',
+    axis: 'z', plane: 6, normal: { x: 1, z: 0 }, u0: 6, u1: 8, y0: 2, y1: 8 });
+  const falling = { x: 5.52 * TILE, y: 7 * TILE, angle: 0, vx: 1, vy: 1 };
+  let resets = 0; // Confirms a successful catch transfers ownership away from physical free-fall.
+  global.window = { PlayerJump: { reset() { resets++; falling._freeJump = null; } } };
+  CS.init({ player: falling, TILE, getCurrentArea: () => 'map_i_dev_random_ruin',
+    getFeetY: () => falling._freeJump?.feetY ?? 0, canStandAt: () => false,
+    setFacingAngle() {}, setTargetAimAngle() {}, setLastMoveAngle() {} });
+  const at = (x, y, z = 7) => ({ x, z, y }); // Supplies physical feet and contact position for fall-catching tests.
+  assert.equal(CS.findFallGrabTarget(at(5.60, 4), 4.5), null, 'a fall beyond hand reach never magnetically grabs');
+  assert.equal(CS.findFallGrabTarget(at(4.8, 4), 4.5), null, 'a body behind the solid stone face cannot grab');
+  assert.equal(CS.findFallGrabTarget(at(5.52, 4, 9.5), 4.5), null, 'a fall beside the ends of a ladder is not contact');
+  assert.equal(CS.findFallGrabTarget(at(5.52, 8.4), 8.7), null, 'descending above the ladder is not yet contact');
+  assert.equal(CS.findFallGrabTarget(at(5.52, 1), 1.5), null, 'an already-missed ladder cannot be caught from below');
+  assert.equal(CS.findFallGrabTarget(at(5.52, 4.7), 4.2), null, 'ascending motion does not trigger a passive catch');
+  assert.equal(CS.findFallGrabTarget(at(6.48, 4), 4.5), null, 'unmarked climbing surfaces never become passive catches');
+  falling._freeJump = { phase: 'air', noGrab: true, feetY: 4 };
+  assert.equal(CS.tryFallGrab(at(5.52, 4), 4.5), false, 'Dodge-released falls must not regrab a ladder');
+  falling._freeJump.noGrab = false;
+  assert(CS.tryFallGrab(at(5.52, 4), 4.5), 'falling alongside the ladder catches without input or facing it');
+  assert.equal(resets, 1, 'the physical fall is cancelled exactly once');
+  assert(falling.onClimbSurface, 'the ordinary climb session owns the character after a catch');
+  near(falling.x / TILE, 5.34, 'the fall catch aligns the character with the wall plane');
+  near(falling.wallClimbY, 4, 'the catch preserves the falling body\'s height');
+  CS.release();
+  CS.clearScope('shaft-hub');
+  CS.clearScope('other');
+
+  // The revolving obelisks expose one-cell-tall bands. Even a 1.4-unit
+  // vertical step must intersect the swept band instead of skipping it.
+  const moving = CS.register({ id: 'shaft-moving-auto', scope: 'shaft-obelisks', style: 'obelisk-stone',
+    autoCatch: true, axis: 'z', plane: 12, normal: { x: -1, z: 0 },
+    u0: 6, u1: 8, y0: 5, y1: 6 });
+  const fastDrop = CS.findFallGrabTarget(at(11.55, 4.8), 6.2);
+  assert.equal(fastDrop?.surface, moving, 'swept falling contact selects the real moving-obelisk band');
+  near(fastDrop.y, 5, 'catch clamps a fast vertical sweep to the lower rung instead of missing it');
+  assert(CS.tryFallGrab(at(11.55, 4.8), 6.2), 'a fast fall onto the short strand attaches without a climb press');
+  near(falling.wallClimbY, 5, 'the fast catch stays at a reachable handhold height');
+  CS.release();
+  CS.clearScope('shaft-obelisks');
+  delete global.window;
+}
+
 console.log('climb-surfaces: ok');
