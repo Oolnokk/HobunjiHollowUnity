@@ -94,9 +94,22 @@ const Shattercasks={
   releaseBurdenDownward(b){if(!b?.group?.parent)return false;drops++;b.flying=true;return true;},
   discardBurden(b){b.group?.parent?.remove?.(b.group);return true;},
 };
-class TestImage{set src(_url){this.width=100;this.height=162;this.onload?.();}} // Exercise rig-load tint behavior without downloading authored PNGs.
+const sourcePixels=Uint8ClampedArray.from([159,191,159,255,255,255,255,255,0,0,0,255,110,139,110,255]); // Green coat, white eye, black outline and shadow from authored PNG art.
+class TestImage{set src(_url){this.width=4;this.height=1;this.onload?.();}} // Tiny pose artwork for an actual keyed coat-color regression.
+class TestCanvas{
+  constructor(){this.width=0;this.height=0;this.pixels=null;} // Supports the exact 2D surface API used by PingdortRegistration.
+  getContext(){return {drawImage:()=>{this.pixels=new Uint8ClampedArray(sourcePixels);},
+    getImageData:()=>({data:this.pixels}),putImageData:frame=>{this.pixels=frame.data;}};}
+}
+const fakeDocument={createElement:tag=>{assert.equal(tag,'canvas');return new TestCanvas();}}; // Avoids Node DOM dependencies while testing pixels.
+
 const testFetch=async()=>({ok:true,json:async()=>({version:1})}); // The physical wing geometry is owned by FlyingAnimalRig, not this integration test.
-const w={THREE,PerchSupport,Shattercasks,CreatureGeneticsRender:{SPECIES:{}},
+const renderColors={SPECIES:{},
+  hexToRgb:hex=>[parseInt(hex.slice(1,3),16),parseInt(hex.slice(3,5),16),parseInt(hex.slice(5,7),16)],
+  recolorPixels(data,color,predicate){for(let i=0;i<data.length;i+=4)if(predicate(i))for(let n=0;n<3;n++)data[i+n]=color[n];},
+}; // Real registration and pixel mask selection use the existing shared recolor interface.
+const w={THREE,PerchSupport,Shattercasks,CreatureGeneticsRender:renderColors,
+  HobunjiSpritePngSurface:{makeCanvasTexture(_three,canvas){return {image:canvas,dispose(){this.disposed=true;}};}},
   SCRATCHBONES_CONFIG:{game:{livestock:{itemKinds:{},animalWidths:{},diet:{},resources:{}}}},
   CreatureGenetics:{makeDefaultGenotype:()=>({base:{color:'#aaaaaa'},sizeClass:'small'}),
     creatureSizeClass:(_kind,g)=>g?.sizeClass||'small'},
@@ -109,7 +122,7 @@ const w={THREE,PerchSupport,Shattercasks,CreatureGeneticsRender:{SPECIES:{}},
   InventoryStacks:{MAX_TOTAL:99},FarmAnimals:{queueItemGenotype(){}},
   __hobunjiPlayerProfile:{worldId:'unit'},__farmLog(){}};
 for(const name of ['skeeri-ruins','pingdort-registration','pingdort-flocks'])
-  vm.runInNewContext(read('docs/js/'+name+'.js'),{window:w,Image:TestImage,fetch:testFetch,performance:{now:()=>1000},
+  vm.runInNewContext(read('docs/js/'+name+'.js'),{window:w,Image:TestImage,document:fakeDocument,fetch:testFetch,performance:{now:()=>1000},
     localStorage:{getItem:key=>storage.get(key)||null,setItem:(key,val)=>storage.set(key,String(val))},
     console,Promise},{filename:name+'.js'});
 const deps={TILE:64,CREATURE_DB:db,hostileObjects,companionObjects,zoneScenes,inventory,
@@ -123,22 +136,29 @@ const deps={TILE:64,CREATURE_DB:db,hostileObjects,companionObjects,zoneScenes,in
 async function check(){
   assert(w.SkeeriRuins.register(deps));assert(w.SkeeriRuins.init(deps));
   assert(w.PingdortRegistration.register(deps));assert(w.PingdortFlocks.init(deps));
-  assert.equal(w.CreatureGeneticsRender.SPECIES.pingdort.fullBaseRecolor,true,'Farm and Stable bird sprites use inherited coats');
-  const coatMaterials=Array.from({length:3},()=>({color:{value:'ffffff',getHexString(){return this.value;},set(hex){this.value=hex.slice(1).toLowerCase();}}})); // Check the same material-level tint used by the live flying body and wings.
-  const eyeMaterial={color:{value:'ffffff',getHexString(){return this.value;},set(hex){this.value=hex.slice(1).toLowerCase();}}}; // Optional eye artwork must never be multiplied by the coat color.
-  w.FlyingAnimalRig={normalize:value=>value,create:()=>({root:{traverse(fn){
-    for(const material of coatMaterials)fn({isMesh:true,userData:{},material});
-    fn({isMesh:true,userData:{flyingAnimalEyeOverlay:true},material:eyeMaterial});
-  }},dispose(){}})}; // Stub only geometry, not PingdortRegistration's real tint and asset-loading logic.
+  assert.equal(w.CreatureGeneticsRender.SPECIES.pingdort.baseRecolorKeyHex,'#9dc09c','Farm and Stable colors should target green feathers, not white eyes');
+  const makeColor=()=>({value:'ffffff',getHexString(){return this.value;},set(hex){this.value=hex.slice(1).toLowerCase();}}); // Covers the existing material white-reset after damage.
+  const materials=Object.fromEntries(['flying','perched','wings'].map(p=>[p,{color:makeColor(),map:null}])); // Actual pose material ownership, including the perched gripping alias.
+  w.FlyingAnimalRig={normalize:value=>value,create:(_settings,images)=>{for(const pose of Object.keys(materials))materials[pose].map={image:images[pose],dispose(){this.disposed=true;}};
+    return {root:{},bodyMaterials:materials,dispose(){}};}}; // Only geometry and GPU upload are stubbed, not Pingdort's pixel recolor or map-swapping code.
   const tintedRig=await w.PingdortRegistration.createRig({base:{color:'#536747'}});
-  assert(coatMaterials.every(m=>m.color.value==='536747'),'Flying and wing material colors follow the genotype');
-  assert.equal(eyeMaterial.color.value,'ffffff','Eye overlay keeps its own color');
-  assert.equal(tintedRig.restoreTint('#859578'),true,'Live edited genetics retint the existing rig');
-  assert(coatMaterials.every(m=>m.color.value==='859578'));
-  assert.equal(tintedRig.restoreTint('#859578'),false,'No-op refresh never reallocates a new tint');
+  for(const material of Object.values(materials)){
+    assert.deepEqual([...material.map.image.pixels.slice(0,3)],[83,103,71],'Only green plumage is recolored');
+    assert.deepEqual([...material.map.image.pixels.slice(4,8)],[255,255,255,255],'The white eye remains white');
+    assert.deepEqual([...material.map.image.pixels.slice(8,12)],[0,0,0,255],'The black outline remains black');
+  }
+  const oldFlyingMap=materials.flying.map; // A live edit disposes the obsolete map without rebuilding the actor.
+  assert.equal(tintedRig.restoreTint('#859578'),true,'Changing the genotype swaps all three pose textures');
+  assert.equal(oldFlyingMap.disposed,true,'Old GPU texture is disposed after a new genotype color');
+  assert.deepEqual([...materials.perched.map.image.pixels.slice(0,3)],[133,149,120]);
+  assert.deepEqual([...materials.perched.map.image.pixels.slice(4,8)],[255,255,255,255]);
+  assert.equal(tintedRig.restoreTint('#859578'),false,'Repeated update neither recolors nor reallocates the same genotype');
+  materials.wings.color.set('#ff0000');
+  assert.equal(tintedRig.restoreTint('#859578'),true,'Hit-flash multiply color resets without replacing body textures');
+  assert.equal(materials.wings.color.value,'ffffff');
   assert.equal(w.PingdortRegistration.debugSnapshot().tintAssignments,2);
   assert(read('docs/js/tzatzul-live-visuals.js').includes('create(appearance)'),'Native bird owner passes Pingdort genotype to rig constructor');
-  assert(read('docs/js/tzatzul-live-visuals.js').includes('actor.genotype?.base?.color'),'Native owner repairs tint after hit flashes');
+  assert(read('docs/js/tzatzul-live-visuals.js').includes('actor.genotype?.base?.color'),'Native owner restores after damage or genetic edits');
   assert(db.pingdort.modelWidth<db.drenkirra.modelWidth);
   assert.equal(w.SCRATCHBONES_CONFIG.game.livestock.itemKinds.fertilePingdortEgg,'pingdort');
   const plan={floorCount:5,shaft:{anchor:{x:110,z:110}},
