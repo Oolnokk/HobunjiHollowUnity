@@ -57,7 +57,8 @@ context.window=context;context.globalThis=context;
 const sounds=[]; // Captures the shipped audio adapter's real semantic SFX calls in this no-speaker gameplay fixture.
 context.AudioSystem={
   objectSfxConfig:()=>({pick:{url:'assets/audio/sfx/sfx_pick.mp3',preload:true}}),
-  objectSfxDebugSnapshot:()=>({last:{key:'pick',found:true,url:'assets/audio/sfx/sfx_pick.mp3',preloaded:true,readyState:4}}),
+  objectSfxDebugSnapshot:()=>({last:{key:'pick',found:true,url:'assets/audio/sfx/sfx_pick.mp3',preloaded:true,readyState:4,maxDurationSec:.36}}),
+  playObjectSfxKeyMetronome:volume=>{sounds.push({key:'pick',volume,pitch:1,shortVoice:true});return true;},
   playObjectSfxKey:(key,volume,pitch)=>sounds.push({key,volume,pitch}),
 };
 function load(file) {
@@ -228,6 +229,9 @@ assert(sounds.some(event=>event.key==='pick'&&event.volume===.72&&event.pitch===
   'the first timed beat dispatches the configured recorded mine-pick at a clear downbeat volume and normal playback rate');
 assert(context.RuinInteractionAudio.debugSnapshot().metronomeSource==='assets/audio/sfx/sfx_pick.mp3',
   'mobile audio diagnostics expose the actual recorded pick file');
+assert(context.RuinInteractionAudio.debugSnapshot().metronomeShortVoice===true&&
+  context.RuinInteractionAudio.debugSnapshot().metronomeMaxDurationSec===.36,
+  'the actual metronome adapter selects the single-voice 360 ms pick transient rather than overlapping full mining sounds');
 assert.equal(sounds.filter(event=>event.key==='stoneActivator').length,1,
   'stepping onto the outdoor melody plate plays exactly one recorded activator cue');
 assert(gate.glyphGlows.some(glow=>glow.material.opacity>.11&&glow.material.opacity<.80),
