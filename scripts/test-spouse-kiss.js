@@ -17,6 +17,40 @@ const motionWindow = {};
 vm.runInNewContext(motionSrc, { window: motionWindow, console });
 const solver = motionWindow.SpouseKissMotion;
 assert.equal(solver.DURATION_S, 2.4);
+// The player/spouse height solver takes mouth Y from the SAME skinned pixel
+// that positions B'shuakauitl's mouthpiece, not from a guessed head fraction.
+const specificMouth = solver.solveHeights(1, .75, {
+  firstMouthHeightWorld: .58, secondMouthHeightWorld: .44,
+});
+assert.equal(specificMouth.mouthHeightSource, 'shared-attack-pose-skinned-mouth');
+assert.equal(specificMouth.mouthHeightRatio, null, 'real mouth points supersede the 82% proxy');
+assert.equal(specificMouth.firstMouthHeightWorld, .58);
+assert.equal(specificMouth.secondMouthHeightWorld, .44);
+assert.ok(Math.abs(specificMouth.tallerSinkWorld - .14) < .00001,
+  'the taller knee closes the real .14-unit mouth-height difference, not a .205-unit proxy');
+assert.equal(solver.solveHeights(1, .75).mouthHeightSource, 'legacy-height-fallback',
+  'existing headless callers still retain a compatibility path when no skinned portrait exists');
+assert.equal(solver.solveHeights(1, .75, { firstMouthHeightWorld: NaN, secondMouthHeightWorld: null })
+  .mouthHeightSource, 'legacy-height-fallback', 'invalid mouth coordinates cannot create a false contact');
+class MouthTestVec {
+  constructor(x=0,y=0,z=0){this.x=x;this.y=y;this.z=z;}
+  copy(other){this.x=other.x;this.y=other.y;this.z=other.z;return this;}
+}
+const mouthTestAvatar = { userData: { neckRig: { available:true } }, updateWorldMatrix(){} };
+const mouthTestFloor = { updateWorldMatrix(){}, getWorldPosition(out){out.y=1.4;return out;} };
+const mouthTestScratch = { THREE:{Vector3:MouthTestVec} };
+motionWindow.SharedAttackPose = {
+  createHeadFrame(){return {position:new MouthTestVec()};},
+  headFrame(frame,avatar){
+    assert.equal(avatar,mouthTestAvatar);
+    frame.position.y=2.03; // Exact live skinned mouth world coordinate returned by the attack-pose API.
+    return true;
+  },
+};
+assert.ok(Math.abs(solver.mouthHeightWorld(mouthTestAvatar,mouthTestFloor,mouthTestScratch)-.63)<.00001,
+  'the shared mouth resolver computes height against the actor floor, not the world origin');
+assert.equal(solver.mouthHeightWorld({userData:{}},mouthTestFloor,mouthTestScratch),null,
+  'an unavailable skinned mouth does not invent a world coordinate');
 for (const [first, second] of [[1, 1], [1.5, .8], [5, .1], [.1, 5]]) {
   const solution = solver.solveHeights(first, second);
   assert.equal(solution.contactPossible, true, 'mouths can meet with dimensions ' + first + '/' + second);
