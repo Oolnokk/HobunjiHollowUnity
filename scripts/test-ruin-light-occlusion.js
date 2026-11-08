@@ -47,6 +47,10 @@ const offsetNode={...node,name:'ruin-corridor-wall',getWorldPosition(v){v.x=9999
 assert.equal(Shadows.projectedShadows({scene:{traverse(fn){fn(offsetNode);}},source,
   radiusTiles:5,project,THREE:{Box3:Box,Vector3:Vec},now:1100}).length,1,
   'masonry with geometry offset from its mesh origin must still cast shadows');
+const taggedProp={...node,name:'authored-collision-box',userData:{pushable:true}};
+assert.equal(Shadows.projectedShadows({scene:{traverse(fn){fn(taggedProp);}},source,
+  radiusTiles:5,project,THREE:{Box3:Box,Vector3:Vec},now:1200}).length,1,
+  'pushable ruin solids must occlude light even when their mesh names are generic');
 
 const climb=read('docs/js/climb-surfaces.js');
 const reach=read('docs/js/ruin-reaching-obelisks.js');
