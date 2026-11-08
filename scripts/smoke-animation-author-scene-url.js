@@ -41,6 +41,20 @@ async function main() {
       const actors = api.getActors();
       if (actors.map(x => x.source.id).join(',') !== 'pahu,leaf') throw Error('Wrong NPCs/order');
       if (document.body.dataset.animationAuthorMode !== 'multi') throw Error('Wrong tab');
+      const share = new URL(api.getSceneLink());
+      const restoredUrlScene = api.parseSceneUrl(share.search);
+      if (restoredUrlScene.actorIds.join(',') !== 'pahu,leaf' || restoredUrlScene.preset !== 'kiss') {
+        throw Error('Copy scene link does not round-trip the actors and kiss preset');
+      }
+      if (share.searchParams.get('ref') !== 'scene-smoke-fixture') throw Error('Share URL lost the exact tested runtime ref');
+      const generic = api.parseSceneUrl('?actors=pahu,leaf&preset=kiss&t=1.12');
+      if (generic.actorIds.join(',') !== 'pahu,leaf' || generic.time !== 1.12 || generic.preset !== 'kiss') {
+        throw Error('General URL scene format is not recognized');
+      }
+      document.getElementById('maaPresetSelect').dispatchEvent(new Event('change', { bubbles: true }));
+      if (/undefined preset/i.test(document.getElementById('statusPill')?.textContent || '')) {
+        throw Error('Legacy preset-label bug is still present');
+      }
       const project = api.exportProject();
       if (!project.actors || project.actors.length !== 2 || project.project.relationshipPreset !== 'kiss')
         throw Error('Scene did not persist a valid kiss clip');
@@ -56,6 +70,8 @@ async function main() {
         clipDuration: project.project.durationSeconds,
         keyframes: project.actors.map(a => a.keyframes.length),
         exportable: again.actors.length === 2,
+        copiedUrlValid: true,
+        genericUrlValid: true,
         status: document.getElementById('statusPill')?.textContent || '',
       };
     });
