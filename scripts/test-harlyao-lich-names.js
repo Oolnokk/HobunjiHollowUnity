@@ -21,7 +21,7 @@ const seen = new Set(); // Tracks generated variety across seeds.
 for (let i = 0; i < 2500; i++) {
   const seed = 'harlyao-test-' + i; // Independent deterministic seed for a generated individual.
   const name = generator.generateIdentityFromSeed(seed, 'male', 'harlyao'); // Culture identity is a single given name.
-  assert.match(name, /^[A-Z][a-z]{3,11}$/);
+  assert.match(name, /^[A-Z][a-z]{4,11}$/);
   assert(!reserved.has(name.toLowerCase()), name + ' must not duplicate an authored lich');
   assert.equal(generator.generateIdentityFromSeed(seed, 'female', 'harlyao'), name, 'Harlyao names currently have no gender suffix rule');
   seen.add(name);
