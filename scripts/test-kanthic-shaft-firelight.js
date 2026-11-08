@@ -117,4 +117,25 @@ const above={...source,floorY:16,y:17.4};
 maskDraws.length=0;
 assert.equal(fakeWindow.__probeRuinMasks([above],drawingDeps).drawn,0,'a lit upper-story goal does not shine through lower floors');
 
+
+const Plan=require('../docs/js/ruin-layer-plan.js'); // Real seed layouts cover four entrances, varying wing portals, and 3–5 shaft stories.
+const Hub=require('../docs/js/shaft-hub.js'); // Reuses exactly the production CellGrid3D support checks, not the simplified fake geometry above.
+for(let seed=1;seed<=100;seed++){
+  const plan=Plan.compose({seed,anchorX:320,anchorZ:320,shaftSize:45,floorHeight:16,
+    groundEntranceSide:['N','E','S','W'][seed%4],nativeV50:true});
+  assert(plan.ok,'physical shaft plan generated');
+  const portals=plan.floors.flatMap(f=>[...f.wings.map(w=>({floor:f.floor,side:w.side})),
+    ...(f.nativePort?[{floor:f.floor,side:f.nativePort.side}]:[])]);
+  const realHub=Hub.compose({seed,floors:plan.floorCount,chambers:false,wall:plan.options.shaftWall,
+    shaft:plan.options.shaftSize,spacing:plan.options.floorHeight,traversal:plan.options.shaftTraversal,
+    entranceSide:plan.options.groundEntranceSide,portals});
+  assert(realHub.ok,'the real shaft geometry must pass its walkable route proofs');
+  for(let floor=0;floor<realHub.options.floors;floor++){
+    const cell=style.chooseHubBrazierCell(realHub,floor);
+    assert(cell,'optional brazier has a supported, unblocked gallery cell on seed '+seed+' floor '+floor);
+    assert(realHub.grid.canStand(cell[0],cell[1],floor*realHub.options.spacing),
+      'the player can reach the actual optional-brazier location at its correct elevation');
+  }
+}
+
 console.log('Kanthic shaft sconces, tower follow, progressive braziers, glyph darkness and teardown: PASS');
