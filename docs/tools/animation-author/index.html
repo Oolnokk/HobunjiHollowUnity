@@ -14254,6 +14254,14 @@ function syncMultiAvatarFullBodiesV1548(time = animationAuthor.currentTime, dt =
       ? Math.min(8, Math.hypot(currentPose.position.x - previousPose.position.x,
           currentPose.position.z - previousPose.position.z) / frameDelta) : 0; // Real authored movement drives the shared procedural walk cycle.
     const taller = participant && (solution.taller === 'first' ? actor === pair.leader : actor === pair.partner);
+    if (participant) {
+      // Kiss keyframes encode body sink/pitch on the entire authored actor root.
+      // In a full-body preview that root also owns the leg + pants bones, so
+      // retain its horizontal approach/yaw but move sink and bow to the torso
+      // and hand groups below. Otherwise the soles tilt or sink into the floor.
+      actor.root.position.y = 0;
+      actor.root.rotation.x = 0;
+    }
     const blend = participant ? window.SpouseKissMotion?.samplePose?.(time)?.blend || 0 : 0;
     const worldDrop = taller ? solution.tallerSinkWorld * blend : 0; // Solver uses the true leg/anatomy length, not guessed full-body units.
     const bodyScale = Math.max(.001, Math.abs(Number(actor.visualOffset?.scale?.y) || 1));
