@@ -57,7 +57,7 @@
   document.write('<script src="js/dev-hachutu-vestibule-stone.js?v=20261102vestibulestone1"></scr' + 'ipt>'); // Re-skins the Hachutu vestibule doors the root binding did not take with stone-age rock.
   document.write('<script src="js/dev-random-ruin-lich-themes.js?v=20261104azgarlu3"></scr' + 'ipt>'); // Lich-specific floor/wall illumination and disposable ruin hazard composer.
   document.write('<script src="js/dev-random-ruin-dungeon-fire.js?v=20261107integratedDungeon1"></scr' + 'ipt>'); // One-shot ranged ignition, ice/plasm mechanisms, and modular ceiling Burdens.
-  document.write('<script src="js/dev-random-ruin-interactions.js?v=20261107wingDoorProximity3"></scr' + 'ipt>');
+  document.write('<script src="js/dev-random-ruin-interactions.js?v=20261108ruinjump3"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-glyph-circuits.js?v=20261104glyphSync1"></scr' + 'ipt>');
   document.write('<script src="js/dev-random-ruin-runtime-coverage.js?v=20261018badge1"></scr' + 'ipt>');
 })();

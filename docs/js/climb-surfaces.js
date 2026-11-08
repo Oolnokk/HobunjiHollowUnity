@@ -226,17 +226,29 @@
 
   function playerPos() { return { x: deps.player.x / deps.TILE, z: deps.player.y / deps.TILE, y: Number(deps.getFeetY?.()) || 0 }; } // player.y is the ground-plane z in px.
 
+  // Short, standable ruin faces are normal jump targets, even when painted with climb holds.
+  // Keep long walls, unsafe landings, and climbing outside the generated ruin unchanged.
+  function isEasyRuinJump(hit, pos) {
+    if (deps?.getCurrentArea?.() !== 'map_i_dev_random_ruin' || !hit?.surface || typeof deps.canStandAt !== 'function') return false;
+    const easyRise = Number(globalThis.PlayerJump?.easyJumpRise); // Reuses PlayerJump's physics-derived comfortable rise for both ground grabs and airborne catches.
+    const rise = hit.surface.y1 - pos.y; // Height to the actual mantle top from the player's current physical feet.
+    if (!Number.isFinite(easyRise) || rise <= 0 || rise > easyRise) return false;
+    const exit = topExitPoint(hit.surface, hit.u);
+    return !!deps.canStandAt(exit.x, exit.z, exit.y); // Never disable a climb without a safe surface to stand on.
+  }
+
   // For ClimbSystem.registerWorldClimbProvider: grab when a forward dodge is pressed facing a surface.
   function worldClimbProvider() {
     if (!deps || deps.player.onClimbSurface || deps.player.climbing || deps.player.onBranch) return null;
-    const hit = findGrabTarget(playerPos(), deps.player.angle);
-    return hit ? { kind: 'climbSurface', surface: hit.surface, start: () => grab(hit) } : null;
+    const pos = playerPos(); // Same feet-height probe must decide both proximity and whether jumping is enough.
+    const hit = findGrabTarget(pos, deps.player.angle);
+    return hit && !isEasyRuinJump(hit, pos) ? { kind: 'climbSurface', surface: hit.surface, start: () => grab(hit) } : null;
   }
 
   function tryAirGrab(pos, direction) {
     if (!deps || deps.player.onClimbSurface || deps.player.climbing || deps.player.onBranch) return false;
     const hit = findGrabTarget(pos, Math.atan2(direction.z, direction.x), { reach: 0.32 }); // Catch only a nearby wall being approached.
-    if (!hit) return false;
+    if (!hit || isEasyRuinJump(hit, pos)) return false; // Jumpable ruin props must not steal an ordinary jump midair.
     window.PlayerJump?.reset?.();
     const session = attach(hit.surface, pos); // Preserve airborne feet height instead of the ground below the jumper.
     deps.player.onClimbSurface = session;

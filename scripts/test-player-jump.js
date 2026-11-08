@@ -412,4 +412,38 @@ function harness({ rock = null, furniture = null, wall = null, pit = null, start
   assert(h.player.x / TILE < 4.45, 'falling onto an unclimbable face slides downhill even without input');
   assert(h.player._freeJump.feetY > 0, 'slope contact never falls through the rock shell');
 }
+
+{
+  const h = harness();
+  const { launchSpeed, gravity } = h.window.PlayerJump.config;
+  const easyRise = h.window.PlayerJump.easyJumpRise; // Shared comfortable apex controls whether short ruin obstacles claim the climb action.
+  assert(Math.abs(easyRise - (launchSpeed ** 2 / (2 * gravity) - 0.12)) < 1e-6,
+    'ruin jump/climb cutoff derives from the current physical jump with room below the apex');
+  assert(easyRise > 0.65 && easyRise < 0.83, 'jumpable 0.65-unit objects should not trigger climbing');
+
+  // Execute the actual ruin ledge scan with a finite, standable dynamic support.
+  const interactions = read('docs/js/dev-random-ruin-interactions.js');
+  const begin = interactions.indexOf('  function nearestLedge(options = {}) {');
+  const end = interactions.indexOf('\n  window.ClimbSystem?.registerWorldClimbProvider?', begin);
+  assert(begin >= 0 && end > begin, 'ruin ledge scan still supplies the native climb provider');
+  const scan = new Function('window', 'deps', 'playerWorldPosition', 'cfg', 'DS', 'openAt',
+    'LEDGE_MAX_RISE', 'LEDGE_MIN_RISE', 'LEDGE_REACH',
+    interactions.slice(begin, end) + '\nreturn nearestLedge;');
+  let topY = 0.65; // Standable object height is changed below to straddle the jump-to-climb threshold.
+  const nearestLedge = scan({
+    PlayerJump: h.window.PlayerJump, DevRandomRuin: { getPlayerSupportY: () => 0 },
+  }, { player: { angle: 0, climbing: false } },
+  () => ({ x: 2.5, y: 0, z: 3.5 }),
+  (_key, fallback) => fallback,
+  { sampleSupport: (x, z) => x >= 3.1 && x < 5 && Math.abs(z - 3.5) < 0.7
+    ? { id: 'standable-low-dais', y: topY } : null },
+  () => true, 1.75, 0.44, 1.35);
+  assert.equal(nearestLedge({ facingOnly: true }), null,
+    'short ruin object is not converted into scripted climb');
+  topY = easyRise + 0.12;
+  const tall = nearestLedge({ facingOnly: true });
+  assert(tall && Math.abs(tall.topY - topY) < 1e-6,
+    'ledge above comfortable jump range still provides a scripted climb');
+}
+
 console.log('player-jump ok');

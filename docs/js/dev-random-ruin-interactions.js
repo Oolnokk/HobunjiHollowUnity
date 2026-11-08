@@ -372,8 +372,8 @@
   let focusDebug = null;
 
   // Ledge climbing: parity with the game's cliff climb (same scripted hop
-  // animation), for ruin ledges too tall to step onto (0.42u step limit) but
-  // within reach — e.g. a lowered V50 dais still stands ~1.5u proud.
+  // animation), but only for obstacles above an easy ordinary jump.
+  // The step-height floor remains configurable; PlayerJump owns the jump-height cutoff.
   const LEDGE_MIN_RISE = .44;
   const LEDGE_MAX_RISE = 1.75;
   const LEDGE_REACH = 1.35; // How far ahead of the player the ledge edge may be.
@@ -394,6 +394,7 @@
     if (!player || deps?.player?.climbing) return null;
     const baseY = Number(window.DevRandomRuin?.getPlayerSupportY?.());
     const floorY = Number.isFinite(baseY) ? baseY : player.y;
+    const minClimbRise = Math.max(cfg('climb.ledgeMinRise', LEDGE_MIN_RISE), window.PlayerJump?.easyJumpRise ?? 0); // Low standable objects belong to free jumping, not the ruin mantle animation.
     const maxRise = Math.max(cfg('climb.ledgeMaxRise', LEDGE_MAX_RISE), Number(window.DevRandomRuinRopeRewards?.lavaClimbRise?.(player)) || 0); // Wading in basin lava: the rim is always climbable (no teleport out).
     let best = null;
     for (let i = 0; i < 16; i++) {
@@ -404,7 +405,7 @@
         const support = DS.sampleSupport?.(x, z, { minY:floorY - 8, maxY:floorY + maxRise + .05, pad:.02 });
         const rise = Number(support?.y) - floorY;
         if (!(rise > .2)) { if (!openAt(x, z, .05) && t > .3) break; continue; } // Solid wall before any ledge: nothing to climb here.
-        if (rise < cfg('climb.ledgeMinRise', LEDGE_MIN_RISE) || rise > maxRise) break; // A step (walkable) or a wall too tall to climb.
+        if (rise <= minClimbRise || rise > maxRise) break; // Easy jumps stay jumps; taller reachable ledges still use the mantle.
         if (window.DevRandomRuinSimplePuzzles?.isNoClimbSurface?.(support.id)) break; // Rope platforms/balconies/vaults: reached only by rope.
         if (/^devruin-mech-/.test(String(support.id || ''))) break; // Puzzle machinery (a raised dais the glyphs bring down, bridges, stairs) moves only through its puzzle.
         const land = { x:x + dx * .45, z:z + dz * .45 };
