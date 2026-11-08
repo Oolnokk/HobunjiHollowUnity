@@ -65,10 +65,8 @@
         const slots=story%2===0?[.34,.66]:[.5]; // Alternating pairs make the immense vertical walls legible without a grid of hundreds of lights.
         for(const fraction of slots){
           const along=o.wall+Math.floor((o.shaft-1)*fraction);
-          const c=normal.side==='N'?o.wall-1:normal.side==='S'?o.wall+o.shaft:normal.side==='E'?o.wall+o.shaft-1: o.wall;
-          const r=normal.side==='W'?o.wall-1:normal.side==='E'?o.wall+o.shaft:normal.side==='N'?o.wall: o.wall+o.shaft-1;
-          const cellC=normal.side==='N'||normal.side==='S'?along:c;
-          const cellR=normal.side==='E'||normal.side==='W'?along:r;
+          const cellC=normal.side==='E'?o.wall+o.shaft:normal.side==='W'?o.wall-1:along;
+          const cellR=normal.side==='N'?o.wall-1:normal.side==='S'?o.wall+o.shaft:along; // Select the masonry cell outside the hollow shaft, then face its adjacent empty cell.
           const openC=cellC+normal.dx,openR=cellR+normal.dz;
           if(!grid.isSolid(cellC,cellR,level)||grid.isSolid(openC,openR,level))continue; // No fixture over a portal or on clipped octagon corners.
           const x=grid.colToX(cellC+.5+normal.dx*.53),z=grid.rowToZ(cellR+.5+normal.dz*.53);
@@ -141,13 +139,13 @@
     };
     return {tick,dispose,lights,braziers:controls.length,sconces:lights.length-controls.length};
   }
-  function apply({rec,ruin,hub,seed,THREE,getPlayerY,routeTiles=[]}={}){
+  function apply({rec,ruin,hub,seed,THREE,getPlayerY,routeTiles=[],showToast,onStateChange}={}){
     if(!rec?.scene||!ruin?.localeRoot||!hub?.grid||!THREE?.Mesh)
       throw new Error('V50 multifloor wall style needs a mounted scene and shaft grid.');
     const accents=new THREE.Group(); // Owns the V50-style wall reliefs for cleanup on dungeon reroll.
     accents.name='ruin-v50-engraved-masonry';rec.scene.add(accents);
     root.FurniturePatternSurfaces?.setRuinAwardTarget?.(accents,ruin.localeRoot); // Late motifs grant to the playable ruin without circular serialized scene data.
-    const kanthicFire=mountKanthicFixtures({accents,rec,ruin,hub,THREE,getPlayerY,showToast:arguments[0]?.showToast,onStateChange:arguments[0]?.onStateChange}); // Adds Kanthic-only hub and moving-tower fire without changing wing progression.
+    const kanthicFire=mountKanthicFixtures({accents,rec,ruin,hub,THREE,getPlayerY,showToast,onStateChange}); // Adds Kanthic-only hub and moving-tower fire without changing wing progression.
     if(kanthicFire){ruin.shaftConnection.kanthicSconces=kanthicFire.sconces;ruin.shaftConnection.kanthicOptionalBraziers=kanthicFire.braziers;}
     const stone=root.ProceduralFurniture?.makePartMaterial?.({
       materialTexture:'carved_smooth.png',materialLighting:'unlit',
