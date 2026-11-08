@@ -234,7 +234,18 @@ window.WildernessChunks = {
   destroyZone(mapId) { this.lastDestroyed = mapId; return true; },
 };
 
-vm.runInNewContext(source, { window, console, Promise, Map, WeakSet, Object, Math, Number, Array, String, Error });
+const snowResampleCalls = []; // Captures the backdrop-only resize needed for the shipped 250x250 snow canvas.
+const snowDocument = { createElement(tag) {
+  assert.equal(tag, 'canvas', 'only a temporary snow-resampling canvas should be allocated');
+  const canvas = { width: 0, height: 0, getContext(type) {
+    assert.equal(type, '2d');
+    return { imageSmoothingEnabled: false, drawImage(image, x, y, width, height) {
+      snowResampleCalls.push({ image, width, height, x, y }); // Records that the source image is resampled rather than modified.
+    } };
+  } };
+  return canvas;
+} }; // Minimal off-screen canvas shim to verify the WebGL1 power-of-two fallback.
+vm.runInNewContext(source, { window, document: snowDocument, console, Promise, Map, WeakSet, Object, Math, Number, Array, String, Error });
 
 (async () => {
   const api = window.WesternSlopeMountainBackdrops;
@@ -407,7 +418,7 @@ vm.runInNewContext(source, { window, console, Promise, Map, WeakSet, Object, Mat
   }
 
   const snowyRock = root.children[0].children[0].children[1]; // Render-time mipmap hook is exercised without a browser or WebGL context.
-  const sourceSnowTexture = { image: { width: 64, height: 64 }, clone() {
+  const sourceSnowTexture = { image: { width: 250, height: 250 }, clone() {
     return { image: this.image, disposed: false, dispose() { this.disposed = true; } };
   } }; // Mimics a late-loaded power-of-two shade-filled canvas texture.
   sharedSnowMaterial.map = sourceSnowTexture;
@@ -415,12 +426,17 @@ vm.runInNewContext(source, { window, console, Promise, Map, WeakSet, Object, Mat
   const mipmappedSnow = snowyRock.material.map; // Dedicated texture exists solely for the distant cap.
   assert.notEqual(mipmappedSnow, sourceSnowTexture, 'background snow may not mutate the ground-snow texture');
   assert.equal(mipmappedSnow.minFilter, THREE.LinearMipmapLinearFilter, 'distant caps must use trilinear minification');
+  assert.deepEqual([mipmappedSnow.image.width, mipmappedSnow.image.height], [256,256], 'the shipped 250px canvas must become a power-of-two backdrop-only copy');
+  assert.equal(sourceSnowTexture.image.width, 250, 'the canonical snow image dimensions must remain unchanged');
+  assert.equal(snowResampleCalls.length, 1, 'lazy mipmapping must resample the snow texture just once');
+  assert.deepEqual([snowResampleCalls[0].width, snowResampleCalls[0].height], [256,256], 'the resampler must draw at the full power-of-two size');
   assert.equal(mipmappedSnow.generateMipmaps, true, 'distant caps must generate mipmaps to prevent texture shimmer');
   assert.equal(mipmappedSnow.needsUpdate, true, 'clone must upload its new sampler settings');
   assert.equal(sharedSnowMaterial.map, sourceSnowTexture, 'canonical ground snow must keep its original texture unchanged');
   snowyRock.onBeforeRender();
   assert.equal(snowyRock.material.map, mipmappedSnow, 'rendering another frame must reuse the existing mipmapped texture');
   assert.equal(api.getDebugState().snowTextureMipmapped, true, 'mobile debug should report whether a cap mipmap was created');
+  assert.equal(api.getDebugState().snowTextureState, 'mipmapped-background-snow-pow2', 'debug status must disclose the power-of-two mobile fallback');
 
   const authored = api.readAuthorConfig();
   authored.layers[0].transform.position = [-40, 180, 95];
