@@ -1131,7 +1131,7 @@
 
   function aimedBanditTent(zoneId) {
     const nearby = _banditZoneTents(zoneId).filter(obj => {
-      if (obj.destroyed || obj.burning || !(obj.interactable?.lootable || obj.interactable?.burnable)) return false;
+      if (obj.destroyed) return false;
       const center = banditTentCenterPx(obj);
       return Math.hypot(deps.player.x - center.x, deps.player.y - center.y) <= banditTentNearPx();
     });
@@ -1171,6 +1171,10 @@
     if (!focus) {
       _lastTentFocus = { result: 'ray-missed', nearby: nearby.length, hasRay: true, hasFocusApi: true };
       return null;
+    }
+    if (focus.candidate.data.burning || !(focus.candidate.data.interactable?.lootable || focus.candidate.data.interactable?.burnable)) {
+      _lastTentFocus = { result: 'not-actionable', nearby: nearby.length, hasRay: true, hasFocusApi: true, tentId: focus.candidate.data.id };
+      return null; // A burning/empty tent physically blocks a tent behind it; never aim through its canvas.
     }
     const hostile = window.RangedWeapons.focusedHostile?.(BANDIT_TENT_AIM_MAX_WORLD);
     if (hostile && hostile.distanceWorld <= focus.distanceWorld + 0.05) {
