@@ -5968,7 +5968,7 @@ function sampleNeckTrack(baseRotationDeg, keyframes, time) {
     z: left.neckRotationDeg.z + (right.neckRotationDeg.z - left.neckRotationDeg.z) * alpha,
   }; // Neck animations also need continuous yaw without surprise X/Z flips.
   return authorContinuousRotationDeg(THREE, quaternion, reference);
-
+}
 
 function animationFrameSampleTimes() {
   const fps = Math.max(1, animationAuthor.fps);
