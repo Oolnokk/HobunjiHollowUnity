@@ -14433,7 +14433,7 @@ syncMultiAvatarFullBodiesV1548 = function(time = animationAuthor.currentTime, dt
         );
         jumperFeet?.setExternalFootTargets?.(targets, { allowDeepFold: true }); // The two existing leg IK chains grip opposite sides of the actual posterior.
         if (targets) jumperFeet.applyWorldFootTargets?.(targets, null, false, true); // Update at scrub time, not one render frame late.
-        jumperFeet?.pants?.update?.(); // The worn pants should deform with both straddled knee chains immediately.
+        shorter.rigPantsPreview?.update?.(); // Real garment renderer tracks both IK-driven hips, knees, ankles and waist on touch scrubs.
         shorter.previewAnatomyV1548.jumpFeetAnchored = !!targets;
         shorter.previewAnatomyV1548.jumpFootDistance = targets ? targets.left.distanceTo(targets.right) : 0;
       } else {
