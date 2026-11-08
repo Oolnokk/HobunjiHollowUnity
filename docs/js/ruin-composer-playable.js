@@ -115,7 +115,7 @@
     }
     if (options.isCurrent?.()===false) throw new Error('Playable ruin generation was superseded.');
     const scope=String(options.scope||'composed-ruin-wing'); // Private terrain scope; it must be removed on exit/reroll.
-    const owner={ root:null, generated:[], materials:[], placed:[], placementIds:[], blockerTiles:new Map(), blockerStates:new Map(), controls:[], ropes:[], offering:null, applied:null, disposed:false }; // Owns optional carryables, unlocks and every authored node during teardown. // Tracks authored collisions and restores original walkable tiles on rollback.
+    const owner={ root:null, generated:[], materials:[], placed:[], placementIds:[], blockerTiles:new Map(), blockerStates:new Map(), controls:[], ropes:[], bombTargets:[], offering:null, applied:null, disposed:false }; // Owns optional carryables, unlocks and every authored node during teardown. // Tracks authored collisions and restores original walkable tiles on rollback.
     let result=null;
     try {
       extendGrid(rec,origin,room,makeTile);
@@ -166,33 +166,53 @@
         if (record.piece==='bombDispenser') {
           if (!G.HronalWitchBombs?.registerDispenser?.(mapId,record.id,group,group.userData.furniturePuzzle))
             throw new Error('Witch-bomb dispenser did not register.');
+          const candidates=[{x:record.x+1.3,z:record.z},{x:record.x-1.3,z:record.z},
+            {x:record.x,z:record.z+1.3},{x:record.x,z:record.z-1.3}]; // Pick an adjacent walkable bank, never a chasm or the outside wall.
+          const spot=candidates.find(p=>p.x>1&&p.x<room.bounds.maxX-1&&p.z>1&&p.z<room.bounds.maxZ-1
+            &&!(room.gaps||[]).some(g=>g.axis==='x'?p.x>=g.start&&p.x<g.end:p.z>=g.start&&p.z<g.end));
+          if(!spot)throw new Error('No walkable position for the witch-bomb projectile switch.');
+          const material=G.ProceduralFurniture?.makePartMaterial?.({
+            materialTexture:'carved_smooth.png',materialLighting:'unlit',materialFillMode:'never',color:'#7a746b',
+          })||new THREE.MeshBasicMaterial({color:0x7a746b}); // Switch hardware uses the ordinary carved ruin stone texture.
+          owner.materials.push(material);
+          const stand=new THREE.Mesh(new THREE.BoxGeometry(.68,.93,.68),material);
+          stand.name='composed_witch_bomb_target_stand_'+record.id;
+          stand.position.set(origin.x+spot.x,.465,origin.z+spot.z);
+          stand.userData.devRuinFootprintIgnore=true;owner.root.add(stand);owner.generated.push(stand);
+          const marker=new THREE.Mesh(new THREE.BoxGeometry(.56,.56,.12),material);
+          marker.name='composed_witch_bomb_projectile_target_'+record.id;
+          marker.position.set(0,.16,-.38);marker.userData.devRuinFootprintIgnore=true;
+          stand.add(marker);owner.generated.push(marker);
+          G.FurniturePatternSurfaces?.attachStoneSignal?.(marker,{
+            face:'front',width:.44,height:.44,idleColor:'#ffae62',activeColor:'#65ffaf',
+          });
+          const target={id:record.id+'-projectile-target',object:marker,hitMesh:marker,active:false,
+            hittable:()=>!owner.disposed,
+            onHit:()=>{if(!owner.disposed)G.HronalWitchBombs?.dispenseFromMechanism?.(group);}
+          };
+          owner.bombTargets.push({target,unregister:null}); // The ranged hook can become ready after a wing is initially mounted.
         }
         if (record.piece==='statueDispenser') {
           if (!G.KeyStatues?.registerDispenser?.(mapId,record.id,group,group.userData.furniturePuzzle,{feedPlinthId}))
             throw new Error('Key Statue dispenser did not register.');
         }
-        if (record.piece==='plinth' || record.piece==='statueDispenser' || record.piece==='bombDispenser') {
+        if (record.piece==='plinth' || record.piece==='statueDispenser') {
           const point={x:origin.x+record.x,z:origin.z+record.z}; // Used by the ordinary ruin interaction list on all input devices.
           const descriptor={
             kind:'composed-'+record.piece,point,promptRoot:group,range:1.7,priority:100,
             label:() => {
               const buttons=record.piece==='plinth'?P.burdenPlateButtons(mapId,record.id)
                 :record.piece==='statueDispenser'?P.keyStatueButtons(mapId,record.id):null;
-              return buttons?.[0]?.label || (record.piece==='bombDispenser'?'Release Witch-bomb':'Use '+record.piece);
+              return buttons?.[0]?.label || 'Use '+record.piece;
             },
             onPress:async() => {
               if (owner.disposed) return {ok:false,message:'This ruin trial is no longer active.'};
               let response;
-              if (record.piece==='bombDispenser') {
-                const bomb=await G.HronalWitchBombs?.dispenseFromMechanism?.(group);
-                response={ok:!!bomb,message:bomb?'A Witch-bomb drops from the tube.':'The dispenser is waiting for its current Witch-bomb.'};
-              } else {
-                const buttons=record.piece==='plinth'?P.burdenPlateButtons(mapId,record.id):P.keyStatueButtons(mapId,record.id);
-                if (buttons?.[0]?.allowed===false) return;
-                response=record.piece==='plinth'
-                  ?P.interactBurdenPlate(mapId,record.id,buttons?.[0]?.action)
-                  :P.interactKeyStatue(mapId,record.id,buttons?.[0]?.action);
-              }
+              const buttons=record.piece==='plinth'?P.burdenPlateButtons(mapId,record.id):P.keyStatueButtons(mapId,record.id);
+              if (buttons?.[0]?.allowed===false) return;
+              response=record.piece==='plinth'
+                ?P.interactBurdenPlate(mapId,record.id,buttons?.[0]?.action)
+                :P.interactKeyStatue(mapId,record.id,buttons?.[0]?.action);
               if (response?.message) options.showToast?.(response.message,!!response.ok);
               return response;
             },
@@ -208,6 +228,7 @@
         }),
       });
       if (owner.applied.skipped.length) throw new Error('Composer skipped actual placements: '+owner.applied.skipped.join(', '));
+      update(); // Bind projectile switches immediately when the native ranged runtime is already active.
       if(options.burdenOffering===true&&composition.archetype==='trialHall'){
         if(!G.KeyStatues?.registerDispenser||!G.DevRandomRuinDungeonChests?.create)
           throw new Error('Burden offering requires the Key Statue dispenser and dungeon chest runtimes.');
@@ -256,8 +277,12 @@
       throw error;
     }
     function update() {
+      if(owner.disposed)return false;
+      for(const entry of owner.bombTargets){
+        if(!entry.unregister)entry.unregister=G.DevRandomRuinSimplePuzzles?.registerExternalProjectileTarget?.(entry.target)||null;
+      } // Deferred registration covers wings mounted before the native V50 ranged runtime initializes.
       const bonus=owner.offering;
-      if(owner.disposed||!bonus||bonus.unlocked)return false;
+      if(!bonus||bonus.unlocked)return false;
       if(P.getNode(mapId,bonus.id)?.userData?.burdenPlateComplete!==true)return false;
       bonus.unlocked=true;bonus.chest.group.visible=true;
       options.addControl?.(bonus.chest.control); // The parent ruin copied our initial controls when the wing was mounted.
@@ -267,6 +292,7 @@
     function dispose() {
       if (owner.disposed) return;
       owner.disposed=true;
+      for(const entry of owner.bombTargets)entry.unregister?.(); // Remove projectile hooks before retiring the dispenser meshes.
       if (owner.applied) C.dispose(owner.applied,{unplace:()=>{}});
       for(const [key,tile] of owner.blockerTiles) {
         const [col,row]=key.split(',').map(Number); // Restore original cells when a generation aborts after placement.
