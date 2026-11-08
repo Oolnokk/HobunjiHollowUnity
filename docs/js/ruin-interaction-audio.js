@@ -10,7 +10,7 @@
   const REFERENCE_SPAN=Object.freeze({activator:.82,mechanism:4}); // World-space spans whose uploaded recordings play at original pitch.
   const movement=new WeakMap(); // Per physical mechanism: previous progress/direction, to play once per motion or reversal.
   const plateStates=new WeakMap(); // Per physical pressure plate: last pressed state, to suppress continuous audio.
-  const debug={lastCue:null,lastPitch:1,lastSpan:null,lastTempo:1,lastPitchMode:'neutral',plays:0}; // Mobile-friendly pitch-versus-tempo playback diagnostics.
+  const debug={lastCue:null,lastPitch:1,lastSpan:null,lastTempo:1,lastPitchMode:'neutral',plays:0,metronomeBeats:0,lastMetronomeDownbeat:false}; // Mobile-friendly pitch-versus-tempo playback diagnostics.
   const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
   function spanFor(object,explicitSize){
     const override=Number(explicitSize??object?.userData?.ruinSoundSize); // Optional authored physical dimension avoids using decorative parent meshes.
@@ -58,6 +58,14 @@
   }
   function igniteTorch(){return play('igniteLarge');}
   function igniteAmmo(){return play('igniteSmall');}
+  function metronomeTick({downbeat=false}={}){
+    const audio=root.AudioSystem; // Reuse the already configured mining-pick recording, not a synthesized click or a new asset.
+    if(typeof audio?.playObjectSfxKey!=='function')return false;
+    audio.playObjectSfxKey('pick',downbeat?.62:.42,1); // Strong first beat; remaining 4/4 beats are quieter and keep the recorded pick's duration/pitch.
+    debug.lastCue='pick';debug.lastPitch=1;debug.lastSpan=null;debug.lastTempo=1;
+    debug.metronomeBeats++;debug.lastMetronomeDownbeat=!!downbeat;debug.plays++;
+    return true;
+  }
   function watchMovement(object,progress,options={}){
     if(!object||!Number.isFinite(progress))return false;
     const previous=movement.get(object);
@@ -88,6 +96,6 @@
     if(options.silent||previous===undefined&&!next)return false; // An initial unpressed plate is silent.
     return activator(object,options); // A newly seated or released stone plate clicks only on its state edge.
   }
-  return Object.freeze({pitchFor,spanFor,activator,mechanism,igniteTorch,igniteAmmo,watchMovement,watchPlate,
+  return Object.freeze({pitchFor,spanFor,activator,mechanism,igniteTorch,igniteAmmo,metronomeTick,watchMovement,watchPlate,
     debugSnapshot:()=>({...debug,trackedMotion:'per-object',trackedPlates:'per-object'})});
 });
