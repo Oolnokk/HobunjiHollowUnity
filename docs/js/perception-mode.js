@@ -240,6 +240,7 @@
       nests: window.DenNestSystem?.senseTargets?.(scene) || [],
       hives: window.HoneyfuzzleHives?.senseTargets?.(scene) || [],
       caveFeatures: window.CaveSiteSystem?.senseTargets?.(scene) || [],
+      shaftLadders: window.RuinReachingObelisks?.senseTargets?.(scene) || [], // Sense reveals the V50 ladder meshes through solid moving pillars, not the entire stone face.
     };
     lastStats.specialSources = Object.fromEntries(Object.entries(specialSources).map(([name, roots]) => [name, roots.length]));
     for (const roots of Object.values(specialSources)) for (const root of roots) consider(root, 'interact');
