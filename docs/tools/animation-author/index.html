@@ -12167,7 +12167,7 @@ function installRigPantsPreviewV1546(actor) {
   const Renderer = window.PantsGarmentRenderer;
   if (actor?.source?.type !== 'npc' || !['rig', 'multi'].includes(animationAuthor.mode) || !actor.rigFeetPreview || !Renderer?.attachToLegs) return null;
   const npc = state.npcs.find(item => String(item.id || item.name) === String(actor.source.id));
-  const garmentId = Renderer.garmentForCosmetics?.(npc?.equippedCosmetics || []);
+  const garmentId = Renderer.garmentForCosmetics?.(npc ? portraitExportFor(npc).equippedCosmetics : []); // Actual avatar-editor wardrobe takes priority over the legacy top-level NPC inventory.
   if (!garmentId) return null; // Database NPC clothing is authoritative; the animator must not invent pants for intentionally pantless outfits.
   const garmentRecord = rigPantsGarmentRecordV1546(garmentId);
   if (!garmentRecord) return null;
@@ -14213,6 +14213,12 @@ function syncMultiAvatarFullBodiesV1548(time = animationAuthor.currentTime, dt =
     feet.group.visible = multi || animationAuthor.mode === 'rig';
     if (!multi) continue;
     const kissing = animationAuthor.multiPreset === 'kiss';
+    const frameDelta = Math.max(0, Math.min(.08, Number(dt) || 0));
+    const previousPose = frameDelta > 0 ? sampleActorTransform(actor, Math.max(0, time - frameDelta)) : null; // Reuses the authored root track for walk speed, not fake oscillation.
+    const currentPose = frameDelta > 0 ? sampleActorTransform(actor, time) : null;
+    const strideSpeed = previousPose && currentPose
+      ? Math.min(8, Math.hypot(currentPose.position.x - previousPose.position.x,
+          currentPose.position.z - previousPose.position.z) / frameDelta) : 0;
     const sinkPercent = kissing ? previewActorKissSinkPctV1548(actor, time) : 0;
     // The actor's animation root already carries the rendered knee/body lowering;
     // raising the gameplay leg group by this *same* amount cancels the floor drop.
@@ -14221,7 +14227,7 @@ function syncMultiAvatarFullBodiesV1548(time = animationAuthor.currentTime, dt =
     const bodyScale = Math.max(.001, Math.abs(Number(actor.visualOffset?.scale?.y) || 1));
     const localDrop = worldDrop / bodyScale;
     feet.setStanceDropLimitFraction?.(kissing ? MULTI_KISS_LEG_LIMIT_V1548 : .55);
-    feet.update?.(Math.max(0, Math.min(.08, Number(dt) || 0)), 0, false, null);
+    feet.update?.(frameDelta, strideSpeed, false, null); // Ordinary multi-avatar walking now drives the same gait solver as gameplay.
     feet.setStanceDrop?.(localDrop, true);
     feet.update?.(0, 0, false, null); // Syncs the real shin/ankle solver and the pants texture/mesh even while scrubbing.
     actor.previewAnatomyV1548 = {
@@ -14229,22 +14235,27 @@ function syncMultiAvatarFullBodiesV1548(time = animationAuthor.currentTime, dt =
       appliedWorldDrop: (feet.getStanceDrop?.() || 0) * bodyScale,
       pants: !!actor.rigPantsPreview,
       legs: !!feet.group?.parent,
+      gaitSpeed: strideSpeed, // Exposed in diagnostics to verify leg animation without a mobile console.
       hands: !!actor.model?.userData?.proceduralHandRig?.group?.parent,
     }; // Exposed on the in-memory actor and diagnostics for mobile verification.
   }
 }
 
+let fullBodyTickActiveV1548 = false; // Prevents recomputing both actors' legs twice when gameplay-style playback advances a frame.
 const beforeMultiEvaluateV1548 = evaluateAnimationAtTime;
 evaluateAnimationAtTime = function(time) {
   const result = beforeMultiEvaluateV1548(time);
-  if (animationAuthor.mode === 'multi') syncMultiAvatarFullBodiesV1548(time, 0); // Every slider seek, preset application and import updates all four limbs.
+  if (animationAuthor.mode === 'multi' && !fullBodyTickActiveV1548) syncMultiAvatarFullBodiesV1548(time, 0); // Slider seeks and imports update all four limbs.
   return result;
 };
 
 const beforeMultiTickV1548 = tickAnimationAuthor;
 tickAnimationAuthor = function(dt) {
-  const result = beforeMultiTickV1548(dt);
-  if (animationAuthor.mode === 'multi') syncMultiAvatarFullBodiesV1548(animationAuthor.currentTime, dt); // Full-body legs/pants follow the multi-avatar clock, not a second timer.
+  fullBodyTickActiveV1548 = true;
+  let result;
+  try { result = beforeMultiTickV1548(dt); }
+  finally { fullBodyTickActiveV1548 = false; }
+  if (animationAuthor.mode === 'multi') syncMultiAvatarFullBodiesV1548(animationAuthor.currentTime, dt); // The body tick runs exactly once after timeline evaluation.
   return result;
 };
 
@@ -14300,6 +14311,8 @@ installKissPresetUiV1546(); // The author initialized earlier in the same script
 if (window.MultiAvatarAnimationAuthor) {
   window.MultiAvatarAnimationAuthor.version = '15.48';
   window.MultiAvatarAnimationAuthor.fullBodyDiagnostics = fullCharacterPreviewDiagnosticsV1548;
+  window.MultiAvatarAnimationAuthor.tick = tickAnimationAuthor; // The public author API was created before the V15.48 preview wrapper.
+  window.MultiAvatarAnimationAuthor.setMode = setAnimationAuthorMode;
   window.MultiAvatarAnimationAuthor.parseSceneUrl = parseAnimationUrlSceneV1547;
   window.MultiAvatarAnimationAuthor.getSceneLink = currentAnimationSceneUrlV1547;
   window.MultiAvatarAnimationAuthor.applyKissPreset = applyKissPresetV1546;
