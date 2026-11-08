@@ -160,6 +160,16 @@ assert.equal(api.playerHeldPose().roll,7,'finished note must return to the edito
 api.endPlayerKurraya();
 assert.equal(api.activePlayerInstrument(),null,'ending a performance releases its authored hand/body ownership');
 
+// Ambient NPC Kurraya notes must never capture the player's hand holder (both
+// instruments can sound at once, and the previous player twitch callback is gone).
+const npcInstrument={userData:{kurrayaAssembly:true},parent:{},
+  position:{x:0,y:0,z:0},rotation:{x:0,y:0,z:0}}; // An NPC-owned assembly, never under the player's avatar.
+api.beginPlayerKurraya();
+api.playPlayerKurrayaNote();
+api.triggerTwitch(api.newTwitchState(),npcInstrument);
+assert.equal(api.playerKurrayaHandTarget(),null,"an NPC note must not hijack the player's instrument holder");
+api.endPlayerKurraya();
+
 // Hand elbows and shoulder hinges use the same action/timeline, never the last
 // weapon swing; NPC rigs remain isolated from the player's music session.
 const shoulderSource=fs.readFileSync('docs/js/hand-shoulder-pose-runtime.js','utf8');
