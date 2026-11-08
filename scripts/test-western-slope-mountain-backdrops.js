@@ -364,7 +364,7 @@ vm.runInNewContext(source, { window, document: snowDocument, console, Promise, M
   assert.match(backgroundShader.vertexShader, /mix\(uBackgroundNearDepth, uBackgroundMaxDepth, backgroundBlend\)/);
   assert.match(backgroundShader.vertexShader, /min\(gl_Position\.z, gl_Position\.w \* backgroundDepth\)/);
   assert.equal(backgroundMax, 1 - 5 * (2 / 65535), 'rock ridges must retain the prior sky-depth ordering');
-  assert.equal(backgroundNear, 1 - 256 * (2 / 65535), 'distant ridges must have enough 16-bit depth precision for overlapping faces');
+  assert.equal(backgroundNear, 1 - 40 * (2 / 65535), 'distant ridges must keep separate depth slots without drawing through mid-distance terrain');
   assert.equal(falloff, 240, 'distant ridge depth compression scale must remain deterministic');
   assert.equal(backgroundShader.uniforms.uSnowBoundaryDepthBias.value, 0, 'stone must not receive the seam-only depth bias');
   assert.equal(depthFor(140, 0.8), 0.8, 'nearer naturally projected geometry must retain its unmodified foreground depth');
