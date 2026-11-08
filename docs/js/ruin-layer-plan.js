@@ -12,6 +12,40 @@
     {side:'S',dx:0,dz:1},{side:'W',dx:-1,dz:0},
   ]);
   const TRAVERSAL_METHODS=Object.freeze(['reachingObelisks']); // Expand this list as distinct complete shaft methods are authored.
+  // Ruin size by rarity. `centralScale` shrinks only the empty central chamber
+  // (the 35-cell space inside the 5-cell balcony galleries); the galleries keep
+  // their thickness, so shaftSize = central + 2 * GALLERY_WIDTH. `wings` is the
+  // TOTAL across the ruin (one brazier each); `wingRooms` counts the brazier
+  // chamber (2 = one puzzle + brazier, 3 = two puzzles + brazier).
+  const GALLERY_WIDTH=5,FULL_CENTRAL=35;
+  const TIERS=Object.freeze({
+    cave:Object.freeze({floors:2,centralScale:.25,wings:3,wingRooms:2,floorHeight:6}),
+    hole:Object.freeze({floors:3,centralScale:.5,wings:4,wingRooms:3,floorHeight:10}),
+    lich:Object.freeze({floors:4,centralScale:.75,wings:5,wingRooms:3,floorHeight:12}),
+  });
+  // Wings are spread as evenly as possible with the remainder on the upper
+  // floors (ground floor loses one side to the entrance, so it is capped at 3).
+  function distributeWings(total,floors,groundCap=3){
+    const counts=Array.from({length:floors},()=>Math.floor(total/floors));
+    for(let extra=total-counts.reduce((a,b)=>a+b,0),f=floors-1;extra>0;extra--,f=(f-1+floors)%floors)counts[f]++;
+    if(counts[0]>groundCap){counts[floors-1]+=counts[0]-groundCap;counts[0]=groundCap;}
+    return counts;
+  }
+  function tierOptions(tier){
+    const t=TIERS[tier];
+    if(!t)return null;
+    const central=Math.max(5,Math.round(FULL_CENTRAL*t.centralScale));
+    return {
+      minFloors:t.floors,maxFloors:t.floors,
+      shaftSize:(central+2*GALLERY_WIDTH)|1,
+      floorHeight:t.floorHeight,
+      wingsPerFloor:distributeWings(t.wings,t.floors),
+      minChallenges:t.wingRooms-1,maxChallenges:t.wingRooms-1,
+      nativeV50:false, // Native V50 upper floors would add unaccounted rooms and braziers; tiers specify exact counts.
+      shaftTraversal:'jumpPlatforms',
+      tier,
+    };
+  }
   const PLAYABLE_PUZZLES=Object.freeze(['pressurePlate','glyphObelisk','ceilingRailTargets','melodyEcho','dungeonFire','ropeChain','statueDefense','findBlocks']); // Shared by composer and acceptance proof.
   const RANGED_PUZZLES=Object.freeze(['glyphObelisk','ceilingRailTargets']); // Every wing includes at least one actual ranged stage.
   const DEFAULTS=Object.freeze({
@@ -21,6 +55,8 @@
     portalOffset:8, // Side-wall wing doors sit away from the climbing buttresses.
     floorHeight:16, // Dramatically taller continuous drops between independent puzzle floors.
     minFloors:3,maxFloors:5,minWings:4,maxWings:4, // Fill every free shaft wall exit; the entrance and native V50 keep their own portals.
+    wingsPerFloor:null, // Optional exact wing count for each floor (see TIERS); overrides minWings/maxWings.
+    tier:null,
     minChallenges:1,maxChallenges:2, // Divide the same puzzle load into shorter independent branches, each with its own fire.
     corridorWidth:3,
     seed:1,
@@ -57,7 +93,7 @@
     const o={...DEFAULTS,...options};
     o.spacing=Math.max(48,Math.min(128,Math.round(Number(o.spacing)||DEFAULTS.spacing)));
     o.shaftSize=Math.max(17,Math.min(o.spacing-12,(Math.round(Number(o.shaftSize)||33)|1)));
-    o.minFloors=Math.max(3,Math.min(5,o.minFloors|0));
+    o.minFloors=Math.max(2,Math.min(5,o.minFloors|0)); // Cave ruins have two stories.
     o.maxFloors=Math.max(o.minFloors,Math.min(5,o.maxFloors|0));
     o.minWings=Math.max(1,Math.min(4,o.minWings|0));
     o.maxWings=Math.max(o.minWings,Math.min(4,o.maxWings|0));
@@ -68,8 +104,9 @@
     o.groundEntranceSide=['N','E','S','W'].includes(o.groundEntranceSide)?o.groundEntranceSide:null;
     o.shaftWall=Math.max(5,Math.min(12,Math.round(Number(o.shaftWall)||8)));
     o.portalOffset=Math.max(1,Math.min(8,Math.round(Number(o.portalOffset)||8)));
-    o.floorHeight=Math.max(12,Math.min(32,Math.round(Number(o.floorHeight)||DEFAULTS.floorHeight)));
-    if(o.shaftTraversal!=='buttress'&&!TRAVERSAL_METHODS.includes(o.shaftTraversal))
+    o.floorHeight=Math.max(o.tier?6:12,Math.min(32,Math.round(Number(o.floorHeight)||DEFAULTS.floorHeight)));
+    o.portalOffset=Math.max(1,Math.min(o.portalOffset,Math.floor((o.shaftSize-1)/2)-Math.floor(o.shaftSize*.19)-2)); // Must match ShaftHub's own wing-door offset on a small shaft.
+    if(o.shaftTraversal!=='buttress'&&o.shaftTraversal!=='jumpPlatforms'&&!TRAVERSAL_METHODS.includes(o.shaftTraversal))
       o.shaftTraversal=TRAVERSAL_METHODS[Math.floor(random((o.seed^0x85bd7ca1)>>>0)()*TRAVERSAL_METHODS.length)]; // Does not perturb wing layout RNG.
     const rng=random(o.seed);
     const floorCount=integer(rng,o.minFloors,o.maxFloors); // Used to bound both the shared shaft and independent 2D floor maps.
@@ -104,10 +141,11 @@
         .filter(d=>(!nativePort||d.side!==nativePort.side)&&(floor!==0||d.side!==o.groundEntranceSide));
       const maxCustomWings=Math.min(shuffled.length,nativePort?Math.min(3,o.maxWings-1):o.maxWings);
       const minCustomWings=Math.min(maxCustomWings,nativePort?Math.max(0,o.minWings-1):o.minWings);
-      const wingCount=integer(rng,minCustomWings,maxCustomWings), wings=[],rooms=[],hallways=[],doorways=[],braziers=[]; // Each free exit is a separate fire objective, not another room added to a long corridor.
+      const fixedWings=Array.isArray(o.wingsPerFloor)&&Number.isInteger(o.wingsPerFloor[floor])?o.wingsPerFloor[floor]:null;
+      const wingCount=fixedWings!==null?Math.min(maxCustomWings,Math.max(0,fixedWings)):integer(rng,minCustomWings,maxCustomWings), wings=[],rooms=[],hallways=[],doorways=[],braziers=[]; // Each free exit is a separate fire objective, not another room added to a long corridor.
       rooms.push({id:`shaft-f${floor}`,kind:'shaft',...shaft,y,anchor:shaft.anchor,shared:true}); // Same x/z on every layer; unique floor-local room.
       for(let wi=0;wi<wingCount;wi++){
-        const dir=shuffled[wi],challengeCount=Math.min(o.maxChallenges,Math.max(o.minChallenges,wi===0?2:integer(rng,o.minChallenges,o.maxChallenges))); // First wing keeps the classic plate→ranged progression; the other exits get 1–2-room branches.
+        const dir=shuffled[wi],challengeCount=Math.min(o.maxChallenges,Math.max(o.minChallenges,wi===0?o.maxChallenges:integer(rng,o.minChallenges,o.maxChallenges))); // First wing keeps the classic plate→ranged progression; the other exits get 1–2-room branches.
         const wingId=`floor${floor}-${dir.side}`, nodes=[], corridors=[];
         const lateral=dir.dx!==0?{dx:0,dz:1}:{dx:1,dz:0};
         // Only the multi-floor shaft snaps to the invisible anchor grid.
@@ -181,7 +219,13 @@
   }
   function verify(plan){
     const checks=[],add=(name,ok)=>checks.push({name,ok:!!ok});
-    add('floorRange',plan.floors.length>=3&&plan.floors.length<=5);
+    add('floorRange',plan.floors.length>=2&&plan.floors.length<=5);
+    if(plan.options.tier){
+      const t=TIERS[plan.options.tier];
+      add('tierFloors',plan.floors.length===t.floors);
+      add('tierWings',plan.totalWings===t.wings);
+      add('tierWingRooms',plan.floors.every(f=>f.wings.every(w=>w.rooms.length===t.wingRooms)));
+    }
     add('shaftSnapped',plan.shaft.anchor.x%plan.options.spacing===0&&plan.shaft.anchor.z%plan.options.spacing===0);
     const first=plan.floors[0]?.anchor;
     for(const floor of plan.floors){
@@ -223,5 +267,5 @@
     add('braziersMatchWings',plan.totalBraziers===plan.totalWings);
     return checks;
   }
-  return Object.freeze({DEFAULTS,TRAVERSAL_METHODS,compose,verify,snap,intersects});
+  return Object.freeze({DEFAULTS,TRAVERSAL_METHODS,TIERS,tierOptions,distributeWings,compose,verify,snap,intersects});
 });

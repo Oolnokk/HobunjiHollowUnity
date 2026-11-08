@@ -527,7 +527,7 @@
     }
     return converted;
   }
-  function makeBoxExplodingPillar(kit,x,z,y,height,id,summoned=false,boss=null) {
+  function makeBoxExplodingPillar(kit,x,z,y,height,id,summoned=false,boss=null,options={}) {
     const group=new THREE.Group();
     group.position.set(x,y,z);group.name='hronal_exploding_pillar';
     const shaft=new THREE.Mesh(new THREE.BoxGeometry(.62,height,.62),kit.makeBasic(0x65554b)); // Existing 0.62×0.62 preset footprint is immutable during growth.
@@ -543,11 +543,19 @@
     group.scale.y=summoned?.001:1; // Group pivot stays at ground level so only the height rises visibly.
     world.group.add(group);
     const tag=summoned?'lich-theme-boss-'+id:'lich-theme-pillars'; // Separate tag allows single boss-pillar collision cleanup.
-    const pillar={x,z,y,height,width:.62,group,cracks,phase:summoned?'emerging':'idle',elapsed:0,pulses:0,riseElapsed:0,temporary:summoned,owner:boss,tag,arena:!!world.isTestingArena}; // Only generated ruins own DevRandomRuinTileOccupancy registration.
+    const pillar={x,z,y,height,width:.62,group,cracks,phase:summoned?'emerging':'idle',elapsed:0,pulses:0,riseElapsed:0,temporary:summoned,owner:boss,tag,arena:!!world.isTestingArena,external:options.external===true}; // Only generated ruins own DevRandomRuinTileOccupancy registration; shaft-platform pillars (external) are non-colliding and height-gated.
     world.pillars.push(pillar);
-    if(!pillar.arena)window.DevRandomRuinTileOccupancy?.addSolidBox?.(id,
+    if(!pillar.arena&&!pillar.external)window.DevRandomRuinTileOccupancy?.addSolidBox?.(id,
       {cx:x,cz:z,halfX:.31,halfZ:.31},()=>pillar.phase!=='spent'&&pillar.phase!=='emerging',tag); // Fixed footprint; the arena instead uses a live AreaFootprintBlockers provider.
     return pillar;
+  }
+  // A shaft jump platform's pillar (js/ruin-jump-shaft.js): same charge/pulse/blast
+  // pipeline as every Hronal pillar, but it never blocks movement and only reacts to
+  // the player standing near its own platform height (platforms of other stories can
+  // share its X/Z).
+  function addPlatformPillar({x,z,y,height=2.4,id='platform'}={}) {
+    if(world?.theme!=='hronal'||!Number.isFinite(x)||!Number.isFinite(z)||!Number.isFinite(y))return null;
+    return makeBoxExplodingPillar(world.kit,x,z,y,height,'jump-'+id,false,null,{external:true});
   }
   function clearArenaBossPillars() {
     if(!arenaWorld)return;
@@ -661,6 +669,17 @@
       makeBoxExplodingPillar(kit,point.x,point.z,y,height,'hronal-pillar-'+room.id); // Both ambient and summoned versions reuse one fixed-footprint recipe.
     }
   }
+  function playerFeetY(kit) {
+    const player=kit.deps?.player,feet=Number(player?.physicalFeetY);
+    return Number.isFinite(feet)?feet:Number(window.DevRandomRuin?.getPlayerGroundSupportY?.());
+  }
+  function inBlast(kit,actor,pillar) { // Horizontal radius, plus a height gate for platform pillars.
+    if(distance(pointOf(actor,kit.deps.TILE),pillar)>PILLAR_RADIUS)return false;
+    if(!pillar.external)return true;
+    if(actor!==kit.deps.player)return false;
+    const feet=playerFeetY(kit);
+    return !Number.isFinite(feet)||Math.abs(feet-pillar.y)<2.3;
+  }
   function updatePillars(kit, dt, actors) {
     for (const pillar of world.pillars) {
       if (pillar.phase === 'spent') continue;
@@ -672,7 +691,7 @@
         continue;
       }
       if (pillar.phase === 'idle') {
-        if (!actors.some(a => distance(pointOf(a, kit.deps.TILE), pillar) <= PILLAR_RADIUS)) continue;
+        if (!actors.some(a => inBlast(kit, a, pillar))) continue;
         pillar.phase = 'charging'; pillar.elapsed = 0; pillar.pulses = 0;
       }
       pillar.elapsed += dt;
@@ -702,7 +721,7 @@
       emitShards(pillar.x, pillar.y + pillar.height * .45, pillar.z, 0x726359, PILLAR_RADIUS, 64, pillar.height, pillar.width || .62);
       emitShards(pillar.x, pillar.y + pillar.height * .5, pillar.z, 0xff6419, PILLAR_RADIUS * .85, 24);
       for (const actor of actors) {
-        if (distance(pointOf(actor, kit.deps.TILE), pillar) <= PILLAR_RADIUS) {
+        if (inBlast(kit, actor, pillar)) {
           window.ResourceSystem?.addAffliction?.(actor, 'burningHealth', 25);
           window.ResourceSystem?.spendFooting?.(actor, 22, 'Hronal exploding pillar');
         }
@@ -963,6 +982,55 @@
     }};
   }
 
+  // Explicit-tile plasm: jump-shaft platform slabs (permanent) and Kanthic bomb puddles
+  // (timed). Tiles carry their own surface height, so stacked floors and elevated
+  // platforms work. ignoreClear skips the floor-set/solid/checkpoint filters (platform
+  // slabs float over empty shaft air); timed patches fade out over their last second.
+  function createPlasmPatch(tiles,opts={}) {
+    if(world?.theme!=='kanthic'||!Array.isArray(tiles)||!tiles.length)return null;
+    const kit=world.kit,patch={index:opts.label||'tiles',plasm:new Set(),plasmFloorY:new Map(),timed:false};
+    for(const t of tiles){
+      const tx=Math.floor(Number(t.x)),tz=Math.floor(Number(t.z));
+      if(!Number.isFinite(tx)||!Number.isFinite(tz))continue;
+      const y=Number.isFinite(Number(t.y))?Number(t.y):floorY(kit,tx+.5,tz+.5);
+      if(!opts.ignoreClear&&(protectedPlasmTile(kit,tx,tz)||!clearAt(tx+.5,tz+.5,y)))continue;
+      const key=tileKey(tx,tz),existing=plasmPatchAt(tx+.5,tz+.5,y);
+      if(existing&&Math.abs(existing.plasmFloorY.get(key)-y)<.01)continue;
+      patch.plasm.add(key);patch.plasmFloorY.set(key,y);
+    }
+    if(!patch.plasm.size)return null;
+    patch.mesh=makePlasmSurface(kit,patch);
+    if(!patch.mesh)return null;
+    const ttl=Number(opts.ttl);
+    if(ttl>0){ // Temporary plasm glows a little purple so it reads differently from the permanent kind.
+      patch.timed=true;patch.life=ttl;patch.ttl=ttl;
+      patch.material=world.plasmMaterial.clone();
+      patch.material.color.setHex(0x6a3fa8);patch.material.opacity=.9;
+      patch.mesh.material=patch.material;
+      (world.timedPlasm||(world.timedPlasm=new Set())).add(patch);
+    }
+    world.group.add(patch.mesh);
+    const owner=world;owner.spellPlasm.add(patch);
+    const dispose=()=>{
+      if(!owner.spellPlasm.delete(patch))return;
+      owner.timedPlasm?.delete(patch);
+      patch.mesh?.parent?.remove(patch.mesh);patch.mesh?.geometry?.dispose?.();patch.material?.dispose?.();
+    };
+    patch.dispose=dispose;
+    return {mesh:patch.mesh,tiles:patch.plasm.size,contains(x,z,y){
+      const key=tileKey(x,z);
+      return owner.spellPlasm.has(patch)&&patch.plasm.has(key)&&(!Number.isFinite(y)||Math.abs(patch.plasmFloorY.get(key)-y)<.01);
+    },dispose};
+  }
+  function tickTimedPlasm(dt) {
+    if(!world?.timedPlasm?.size)return;
+    for(const patch of [...world.timedPlasm]){
+      patch.life-=dt;
+      if(patch.life<=0){patch.dispose?.();continue;}
+      if(patch.material&&patch.life<1)patch.material.opacity=.9*Math.max(0,patch.life); // One-second fade, then gone.
+    }
+  }
+
   function plasmTileCenters() {
     if(world?.theme!=='kanthic')return [];
     const points=[];
@@ -1055,7 +1123,7 @@
       return;
     }
     const baseY=room.plasmFloorY.get(key)??floorY(kit,point.x,point.z); // Keep static puddles at the original floor, even if a bridge appears later.
-    if(kit.ownsPlayerMotion?.()||player.climbing||playerY>baseY+PLASM_DEPTH+.08||(world.sink===0&&playerY<baseY-.3)){
+    if(kit.ownsPlayerMotion?.()||player.climbing||player._freeJump?.phase==='air'||playerY>baseY+PLASM_DEPTH+.08||(world.sink===0&&playerY<baseY-.3)){ // A mid-air hop over plasm neither sinks nor pulls you.
       world.sink=0;
       return; // Ropes, flying and elevated supports take precedence.
     }
@@ -1118,7 +1186,7 @@
       for (const spike of world.icicles) if (spike.temporary && spike.phase === 'done') spike.mesh.parent?.remove?.(spike.mesh); // Shared geometry/material remain owned by the ruin.
       world.icicles = world.icicles.filter(spike => !spike.temporary || spike.phase !== 'done');
     }
-    if (world.theme === 'kanthic') updatePlasm(kit,dt);
+    if (world.theme === 'kanthic') { updatePlasm(kit,dt); tickTimedPlasm(dt); }
     updateBursts(dt);
     badgeClock += dt;
     if (badgeClock >= .25) { // The composer snapshot already feeds mobile Pixel Probe; echo a compact live state in the in-game badge.
@@ -1192,7 +1260,8 @@
     activeTheme:()=>world?.theme||null,
     snapshot,
     isIceAt:(x,z)=>!!world?.iceTiles?.has(tileKey(x,z)), // Identical coverage for rendering and native locomotion.
-    movementPhysicsAt:(x,z)=>world?.theme==='tothal'&&world.iceTiles.has(tileKey(x,z))?ICE_PHYSICS:null, // No allocations per game frame.
+    movementPhysicsAt:(x,z)=>world?.theme==='tothal'&&(world.iceTiles.has(tileKey(x,z))||window.RuinJumpShaft?.isIceAt?.(x,z,window.DevRandomRuin?.getPlayerGroundSupportY?.()))?ICE_PHYSICS:null, // No allocations per game frame; jump-shaft ice platforms answer for their own height.
+    addPlatformPillar,createPlasmPatch,
     createSpellPlasm, // Lich drops share tile rendering, immersion and checkpoint recovery.
     trackBossBlizzard,stopBossBlizzard,triggerBossBlizzard, // Nanahi tracks one spawn point and releases one icicle into the ordinary hit/shatter handlers each time.
     spawnBossPillar,updateArenaBossPillars,clearArenaBossPillars, // Testing Arena and the real ruin use the same preset-footprint pillar charge and explosion pipeline.

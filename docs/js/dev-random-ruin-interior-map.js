@@ -1130,7 +1130,7 @@
         if(singleVestibule&&meta.rooms?.length!==1)throw new Error('V50 failed to generate exactly one vestibule room.');
         const placement=singleVestibule&&!singleRoomTrial?window.RuinV50Vestibule?.compose?.({
           meta,seed:candidateSeed,LayerPlan:window.RuinLayerPlan,ShaftHub:window.ShaftHub,
-          Connector:window.RuinShaftConnector,tileScale:RUIN_TILE_SCALE,plinthTrial:trialRequested,
+          Connector:window.RuinShaftConnector,tileScale:RUIN_TILE_SCALE,plinthTrial:trialRequested,tier:opts.tier||null,
         }):null; // Derived from the V50 entrance face, not a post-hoc exterior corridor.
         if(singleVestibule&&!singleRoomTrial&&!placement)throw new Error('Ruin V50 vestibule placement module missing.');
         entryPadX=placement?.padX??PAD;entryPadZ=placement?.padZ??PAD;
@@ -1148,7 +1148,7 @@
           rec.mapData.exits[0].tiles=[[Math.floor(rec.spawn.x),Math.floor(rec.spawn.z)]];
         }
         buildingScenes.set(MAP_ID,rec);
-        ruin={preplannedShaft:planned,nativeV50Pending:[],seed:candidateSeed,hachutu:requestedRuinType==='hachutu',theme,specialBoss:!!specialDef,ruinName:generationLabel,specialGlyph:specialDef?.glyph||null,requestedSeed,sourceSeed:generated.seed,api,locale:generated.locale,meta,puzzleOptions:{...puzzleOptions},puzzleGeneration:generated.puzzleGeneration,labFurniture,
+        ruin={preplannedShaft:planned,nativeV50Pending:[],seed:candidateSeed,hachutu:requestedRuinType==='hachutu',theme,tier:opts.tier||null,specialBoss:!!specialDef,ruinName:generationLabel,specialGlyph:specialDef?.glyph||null,requestedSeed,sourceSeed:generated.seed,api,locale:generated.locale,meta,puzzleOptions:{...puzzleOptions},puzzleGeneration:generated.puzzleGeneration,labFurniture,
           entranceWallPlanes:generated.runtimeWallPlanes,entranceHallways:generated.runtimeHallways,
           ...rec,compactVestibule:singleVestibule&&!singleRoomTrial,singleRoomTrial:soloChoice,noLoot:singleRoomTrial,entryFloorSet:new Set(rec.floorSet),mechanisms:new Map(),controls:[],activators:[],pushBlocks:[],supportId:null,supportY:0,falling:null,generationAttempt:attempt+1,stoneAgeRequested,stoneAge:false,composedTrialForced:opts.composedTrial===true}; // Rerolls only retain explicit overrides, never an automatically selected encounter. // Keep parent-runtime safe-path/rope/trap flags that the V50 API correctly ignores.
         registerFloor(meta); discoverRuntimeObjects();
@@ -1167,6 +1167,7 @@
         await window.RuinPatternSurfaceRules?.ready; await window.RuinPatternSurfaceRules?.preloadPieces?.(ruin.localeRoot); // Per-piece enable/scale rules (Dev Companion + Furniture Author patternScale).
         const bossBodyColor3 = specialDef ? window.SpecialHarlyaoLiches?.specialRoster?.(theme)?.appearance?.bodyColors?.C?.hex : null; // Read the named lich's actual Body Color 3, never an independent wall-ink constant.
         ruin.specialBodyColor3 = bossBodyColor3; // Mobile dungeon diagnostics can compare wall glow against the eventual guardian portrait.
+        ruin.lichColor = bossBodyColor3 || window.SpecialHarlyaoLiches?.specialRoster?.(theme)?.appearance?.bodyColors?.C?.hex || null; // Wing braziers burn in this lich's colour (named tomb: its exact wall-glow colour; others: their tradition's lich).
         if(!ruin.hachutu)window.FurniturePatternSurfaces?.decorateRuin?.(ruin.localeRoot, candidateSeed, specialDef ? { specialBoss:true, patternId:specialDef.glyph, ink:bossBodyColor3 } : undefined); // No Harlyao wall glyphs inside the Hachutu temple. // The same C hex colors both emissive wall motifs and the boss's dyed eyes.
         generationMark('preparing-stone-age');
         if(stoneAgeRequested)await prepareStoneAgeScenery(ruin);
@@ -1678,6 +1679,20 @@
     // Rooms with stacked floors (shaft hubs, js/shaft-hub.js) sample relative to where the player stands: the highest surface in a fixed band would be the balcony overhead, so the floor under it could never be walked. Ordinary ruins keep the fixed band.
     const relative=Number.isFinite(refY)?DS.sampleSupport(x,z,{minY:refY-8,maxY:refY+MAX_STEP_HEIGHT+.02,pad:.02}):null;
     return{x,z,pit:DS.pointInPit(x,z,PLAYER_RADIUS*.25),support:relative||DS.sampleSupport(x,z,{minY:-4,maxY:5,pad:.02})};} // Horizontal collision is already resolved by the ordinary registered interior grid; this helper owns only ruin-specific vertical support/pit state.
+  // Jump-platform shafts: a fall is survivable. Short drops are free; longer ones
+  // cost Health (never lethal) and Footing, with a camera kick.
+  function applyShaftFallDamage(drop,runtime){
+    const damage=Number(runtime?.fallDamageFor?.(drop))||0;
+    runtime?.noteFall?.(drop);
+    if(!(damage>0)||!deps?.player)return 0;
+    const player=deps.player,health=Number(player.health)||0;
+    const amount=Math.min(damage,Math.max(0,health-1)); // A fall from a platform never kills outright.
+    window.ResourceSystem?.spendFooting?.(player,Math.min(60,18+damage),'shaft fall');
+    if(amount>0)deps.damagePlayer?.(amount,undefined,undefined,0,{noStagger:true});
+    window.GameFeel?.addTrauma?.(Math.min(.65,.18+damage*.02));
+    return amount;
+  }
+
   function reconcileObeliskPlayer(now,x,z){
     const obelisks=ruin.shaftObeliskRuntime; // The selected traversal owns falling between pillars; the generic 650ms fall would bypass its midair grabs.
     if(!obelisks||(!obelisks.isVoidAt(x,z)&&!ruin.obeliskFall))return false;
@@ -1698,7 +1713,7 @@
       // A horizontal approach cannot phase through the solid side of a raised
       // column. A successful climb/mantle is processed earlier in reconcilePlayer.
       const inside=[...obelisks.columns.values()].find(p=>
-        Math.abs(x-p.x)<p.width/2-.05&&Math.abs(z-p.z)<p.width/2-.05
+        Math.abs(x-p.x)<(p.w||p.width)/2-.05&&Math.abs(z-p.z)<(p.d||p.width)/2-.05
         &&levelY<p.y-.25&&levelY>=p.baseY);
       if(inside){
         deps.player.x=ruin.lastAcceptedPx.x;deps.player.y=ruin.lastAcceptedPx.y;
@@ -1724,6 +1739,7 @@
     fall.v-=obelisks.plan.physics.gravity*dt;
     const surface=DS.sampleSupport(x,z,{minY:pitFloor-2,maxY:previous+.05,pad:.015});
     if(surface&&next<=surface.y+.02&&previous>=surface.y-.05){
+      if(obelisks.softLanding)applyShaftFallDamage(fall.startedY-surface.y,obelisks); // Jump shafts have no death pit: you land on what is below and it hurts.
       ruin.obeliskFall=null;ruin.supportId=surface.id;ruin.supportY=surface.y;
       ruin.lastAcceptedPx={x:deps.player.x,y:deps.player.y};
       ruin.lastSafePx={...ruin.lastAcceptedPx};
@@ -1742,7 +1758,7 @@
     fall.y=next;ruin.supportY=next;
     ruin.lastAcceptedPx={x:deps.player.x,y:deps.player.y};
     syncRuinPresentationHeight(next);
-    if(next<=pitFloor+.12){
+    if(next<=pitFloor+.12&&!obelisks.softLanding){
       ruin.obeliskFall=null;ruin.supportId=null;
       if(window.PlayerDowned?.dieImmediately?.('reaching-obelisks-'+obelisks.tradition)!==true)
         window.DevRandomRuinSimplePuzzles?.respawnAtCheckpoint?.('reaching-obelisks-'+obelisks.tradition);
@@ -1776,6 +1792,7 @@
       if(Number.isFinite(feetY)){
         const px=deps.player.x/deps.TILE,pz=deps.player.y/deps.TILE;
         if(freeJump.phase==='air'){
+          ruin.airPeakY=Math.max(Number.isFinite(ruin.airPeakY)?ruin.airPeakY:feetY,feetY); // Highest point of this flight, for jump-shaft fall damage on landing.
           // Preserve native shaft geometry while ignoring ground-only support and
           // instant-pit reconciliation until the airborne feet actually land.
           const shaft=shaftAt(px,pz,feetY);
@@ -1785,6 +1802,10 @@
           return;
         }
         if(freeJump.phase==='supported'){
+          if(Number.isFinite(ruin.airPeakY)){ // First supported frame after a flight.
+            if(ruin.shaftObeliskRuntime?.softLanding)applyShaftFallDamage(ruin.airPeakY-feetY,ruin.shaftObeliskRuntime);
+            ruin.airPeakY=null;
+          }
           // Standing on an authored rock/table is a legitimate new elevation,
           // not a ground-level tile the V50 step-height veto should undo.
           ruin.supportY=feetY;ruin.supportId=freeJump.supportId||null;
@@ -2170,7 +2191,7 @@
   window.DevRandomRuin=Object.freeze({getTitle:()=>ruin?arrivalTitle(ruin):'',getVestibuleRoots:()=>ruin?{stone:ruin.vestibuleStone||null,props:ruin.stoneAgeStats?.props||0,bindings:ruin.rootGrowthBindings?.length||0,rooted:!!ruin.rootedMechanisms,ms:ruin.vestibuleRootMs||0,error:ruin.vestibuleRootError||null}:null,generate,generateStoryVault,reroll:()=>ruin?.shaftTest?generateShaftTest():generate(randomSeed(),ruin?.singleRoomTrial?{singleRoomTrial:true,puzzleType:ruin.singleRoomTrial.mode==='weighted'?'weighted':ruin.singleRoomTrial.kind}:{hachutu:ruin?.hachutu===true,rootMechanisms:ruin?.rootedMechanisms===true,stoneAge:ruin?.stoneAgeRequested===true,composedTrial:ruin?.composedTrialForced===true?true:undefined}),clear:()=>{if(deps?.getCurrentArea?.()===MAP_ID)leaveRuin();else clearRuntime(true);},leave:leaveRuin,exitTo,getInteractionControls:()=>ruin?ruin.controls.filter(control=>control.kind!=='story-vault-pedestal'||window.DelversGuild?.vaultPhase?.()==='search').map(control=>({...control,range:Number.isFinite(Number(control.range))?Number(control.range):CONTROL_RANGE})):[],registerLabPushBlock,unregisterLabPushBlock,getNativeV50TestRuntime:()=>devModeEnabled()?ruin?.nativeV50Runtime||null:null, // Developer-mode-only diagnostic handle for Playwright to exercise the actual generated puzzle controls and stage gates; not a gameplay solver.
     setPuzzleLabStatus,
     getRuntimeContext:()=>ruin?{scene:ruin.scene,grid:ruin.grid,root:ruin.localeRoot,meta:ruin.meta,floorSet:ruin.floorSet,floorScope:SCOPE,ceilingY:ruin.ceilingY,spawn:{...ruin.spawn},cols:ruin.cols,rows:ruin.rows,sanctumMapSize:ruin.sanctumMapSize,sanctumPlan:ruin.sanctumPlan||null,
-    shaftEntrance:ruin.compactVestibule?window.RuinShaftConnector?.entranceOutside?.(ruin.meta,{x:entryPadX,z:entryPadZ},RUIN_TILE_SCALE)||null:null,seed:ruin.seed,theme:ruin.theme,specialBoss:ruin.specialBoss,ruinName:ruin.ruinName,hachutu:!!ruin.hachutu,stoneAge:!!ruin.stoneAge,stoneAgeStats:ruin.stoneAgeStats||null,shaftHub:!!ruin.shaftHub,singleRoomTrial:ruin.singleRoomTrial||null,labFurniture:ruin.labFurniture,noLoot:ruin.noLoot===true,puzzleOptions:{...ruin.puzzleOptions}}:null,getPuzzleGenerationOptions:()=>readPuzzleGenerationOptions(),setPuzzleGenerationOptions:options=>savePuzzleGenerationOptions(options),getOccupancySnapshot:()=>ruin?.occupancy?.snapshot?.()||null,hasOccupancy:()=>!!ruin?.occupancy?.snapshot,debugPlayerCollision:()=>{ // Pixel Probe readout: the 3D voxel grid (not the footprint registry) is what snaps to whole tiles.
+    shaftEntrance:ruin.compactVestibule?window.RuinShaftConnector?.entranceOutside?.(ruin.meta,{x:entryPadX,z:entryPadZ},RUIN_TILE_SCALE)||null:null,seed:ruin.seed,theme:ruin.theme,tier:ruin.tier||null,specialBoss:ruin.specialBoss,ruinName:ruin.ruinName,hachutu:!!ruin.hachutu,stoneAge:!!ruin.stoneAge,stoneAgeStats:ruin.stoneAgeStats||null,shaftHub:!!ruin.shaftHub,singleRoomTrial:ruin.singleRoomTrial||null,labFurniture:ruin.labFurniture,noLoot:ruin.noLoot===true,puzzleOptions:{...ruin.puzzleOptions}}:null,getPuzzleGenerationOptions:()=>readPuzzleGenerationOptions(),setPuzzleGenerationOptions:options=>savePuzzleGenerationOptions(options),getOccupancySnapshot:()=>ruin?.occupancy?.snapshot?.()||null,hasOccupancy:()=>!!ruin?.occupancy?.snapshot,debugPlayerCollision:()=>{ // Pixel Probe readout: the 3D voxel grid (not the footprint registry) is what snaps to whole tiles.
       if(!ruin||!deps?.player)return null;
       const x=deps.player.x/deps.TILE,z=deps.player.y/deps.TILE,grid=shaftAt(x,z,ruin.supportY);
       const out={x:+x.toFixed(3),z:+z.toFixed(3),supportY:ruin.supportY,supportId:ruin.supportId,lastAccepted:ruin.lastAcceptedPx?{x:+(ruin.lastAcceptedPx.x/deps.TILE).toFixed(3),z:+(ruin.lastAcceptedPx.y/deps.TILE).toFixed(3)}:null,shaftGrids:ruin.shaftGrids?.size||0,grid:null};

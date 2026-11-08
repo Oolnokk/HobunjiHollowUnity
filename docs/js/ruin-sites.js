@@ -528,7 +528,8 @@
     activeVisit = { ...visit, theme, specialBoss };
     debug.lastEnter = { ...visit, theme, specialBoss, at:Date.now() };
     const returnAnchor = { area:visit.zoneId, x:visit.returnAt.x * deps.TILE, y:visit.returnAt.z * deps.TILE };
-    Promise.resolve(R.generate(siteSeed, { site:true, theme, specialBoss, label:visit.kind === 'hole' ? 'Buried Ruin' : 'Ancient Ruin', returnAnchor }))
+    const tier = specialBoss ? 'lich' : visit.kind === 'hole' ? 'hole' : 'cave'; // Rarity sets size: cliff caves are smallest, burrow holes middling, named lich tombs largest (RuinLayerPlan.TIERS).
+    Promise.resolve(R.generate(siteSeed, { site:true, theme, specialBoss, tier, label:visit.kind === 'hole' ? 'Buried Ruin' : 'Ancient Ruin', returnAnchor }))
       .then(ok => {
         if (!ok) { activeVisit=null; return; }
         if (specialBoss) {

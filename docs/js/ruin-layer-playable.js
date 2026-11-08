@@ -305,15 +305,26 @@
           record.challenges.push(challenge);
         }
         const goal=wing.rooms[wing.rooms.length-1],bx=goal.x+goal.w/2,bz=goal.z+goal.d/2;
-        const pedestal=mesh('ruin-brazier-'+wing.id,new THREE.CylinderGeometry(.7,.85,.65,8),
-          brazierMat,bx,floor.y+.38,bz);
-        const flame=new THREE.Group(); // Particle anchor replaces the opaque cone; visible only after this brazier is lit.
-        flame.name='ruin-brazier-flame-'+wing.id;
-        flame.position.set(bx,floor.y+1.27,bz);flame.visible=false;activeRoot.add(flame);
-        const flameVisual=root.PersistentGroundFire?.attachCampfireFlame?.(flame,{scale:1.1,rateScale:.95});
-        if(flameVisual)wingFlameVisuals.push(flameVisual); // Uses the exact player-placeable campfire emitter recipe.
+        // The sanctum's stone-bowl brazier, bigger, burning in the lich's colour (the same
+        // colour as the named-lich wall glow). Falls back to the plain cylinder if the
+        // sanctum module is unavailable.
+        const lichColor=ruin.lichColor||({tothal:'#8fd6ff',hronal:'#ff8a3a',kanthic:'#b47bff'})[ruin.theme]||'#ff8b3d';
+        const lichBrazier=root.DevRandomRuinSanctum?.buildLichBrazier?.({parent:activeRoot,x:bx,y:floor.y,z:bz,scale:2.6,color:lichColor,name:'ruin-brazier-'+wing.id});
+        let pedestal,flame;
+        if(lichBrazier){
+          pedestal=lichBrazier.holder;flame=lichBrazier.fire.anchor;
+          wingFlameVisuals.push({update:dt=>lichBrazier.update(dt),dispose:()=>lichBrazier.fire.emitter?.dispose?.()}); // Flicker + particles each tick; emitter freed on reroll.
+        }else{
+          pedestal=mesh('ruin-brazier-'+wing.id,new THREE.CylinderGeometry(.7,.85,.65,8),brazierMat,bx,floor.y+.38,bz);
+          flame=new THREE.Group(); // Particle anchor replaces the opaque cone; visible only after this brazier is lit.
+          flame.name='ruin-brazier-flame-'+wing.id;
+          flame.position.set(bx,floor.y+1.27,bz);flame.visible=false;activeRoot.add(flame);
+          const flameVisual=root.PersistentGroundFire?.attachCampfireFlame?.(flame,{scale:1.1,rateScale:.95});
+          if(flameVisual)wingFlameVisuals.push(flameVisual); // Uses the exact player-placeable campfire emitter recipe.
+        }
+        const lichRgb=[1,3,5].map(i=>parseInt(String(lichColor).slice(i,i+2),16));
         const brazierLight={x:bx,y:floor.y+1.4,z:bz,floorY:floor.y,radius:10,strength:.98,
-          color:[255,139,61],active:false}; // A solved Kanthic wing brightens its chamber; other lich themes keep their original atmosphere.
+          color:lichRgb.every(Number.isFinite)?lichRgb:[255,139,61],active:false}; // A solved Kanthic wing brightens its chamber in its lich's colour; other lich themes keep their original atmosphere.
         if(ruin.theme==='kanthic')brazierLights.push(brazierLight);
         const brazier={id:wing.goalBrazierId,wingId:wing.id,lit:false,flame,pedestal};
         record.braziers.push(brazier);
