@@ -60,7 +60,8 @@ assert.equal(rarity.evaluate('',{defs}).known,false,'blank item keys never gain 
 assert.equal(Number.isFinite(rarity.evaluate('rareSource',{defs}).score),true,'ratings remain numeric');
 assert(contest.ingredientPoints('rareSource',4,defs)>contest.ingredientPoints('commonSource',4,defs),'Gorkunash uses real source rarity');
 const snapshot=rarity.contestMultiplier('rareSource',{defs});
-const savedIngredients=[{key:'rareSource',stars:4,rarityMultiplier:snapshot}];
+const savedIngredients=[{key:'rareSource',stars:4,rarityMultiplier:snapshot,
+  rarityScore:rare.score,raritySource:rare.sourceLabel,rarityCertainty:rare.uncertainty}]; // Saved cooking records carry both the frozen score and its source explanation.
 assert.equal(contest.scoreIngredients(savedIngredients,defs),contest.ingredientPoints('rareSource',4,defs,snapshot),
   'saved meal snapshots reproduce their exact points');
 const meal=contest.ingredientBreakdown(savedIngredients,defs)[0];
