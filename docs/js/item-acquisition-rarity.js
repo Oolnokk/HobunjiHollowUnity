@@ -409,8 +409,11 @@
     if (sourced) return {key,kind:def.cat || 'loot',acquisition:sourced,note:sourced.model};
     const ingredients = foodRarity(key,defs);
     return { key,kind:def.cat || 'unknown',foodRarity:ingredients.factor,
+      foodRaritySources:ingredients.sources.slice(0,12), // On-demand mobile ingredient provenance: real source names and their certainty, not only an opaque multiplier.
+      foodSourceCount:ingredients.sources.length,foodRarityHasMeasuredSource:ingredients.known,
       acquisition:context.stages ? source({stages:context.stages,opportunities:context.opportunities ?? 1,baseSellPrice:def.sellPrice}) : null,
-      note:context.stages ? null : 'Unquantified source; no automatic rarity price or contest premium.' };
+      note:ingredients.sources.length ? 'Source factors are modeled; ingredients without identified sources remain neutral.'
+        : context.stages ? null : 'Unquantified source; no automatic rarity price or contest premium.' };
   }
   return Object.freeze({ chain, atLeastOne, expected, tierLayout, ruinChest, caravanSeed, inheritance, source,
     bindItemDefs, rarityFactor, cultivarRarity, cultivarSellPrice, foodRarity, artifactChest, lootPoolItem, denOffspring, liveDenOffspring, fishCatch, fishRarity, ruinArtifactOpportunity, item,
