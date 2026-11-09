@@ -19,10 +19,10 @@
 (function (root, factory) {
   const isCjs = typeof module === 'object' && module.exports;
   const api = factory(isCjs ? require('./cell-grid-3d.js') : root.CellGrid3D, isCjs ? require('./ruin-wall-faces.js') : root.RuinWallFaces,
-    isCjs ? require('./ruin-reaching-obelisks.js') : root.RuinReachingObelisks);
+    isCjs ? require('./ruin-reaching-obelisks.js') : root.RuinReachingObelisks, isCjs ? require('./ruin-jump-shaft.js') : root.RuinJumpShaft);
   if (isCjs) module.exports = api;
   else root.ShaftHub = api;
-})(typeof self !== 'undefined' ? self : globalThis, function (G, Faces, Obelisks) {
+})(typeof self !== 'undefined' ? self : globalThis, function (G, Faces, Obelisks, JumpShaft) {
   'use strict';
   const { KIND, DIR } = G;
   const PATCH = 6; // Largest stretch-to-fit patch of shaft stone, in world units (the V50 stone mapping uses the same 6).
@@ -48,6 +48,7 @@
     landings: false, // Reserve an enclosed chamber at the end of each balcony corridor.
     chambers: false, // Extend landings into seeded side rooms for the V50 wing.
     seed: 1,
+    theme: null, // Ruin tradition; jump-platform shafts vary their hazards by it.
     portals: null, // Optional floor-local wing door requests: {floor,side}, kept separate from climb buttress doors.
     originX: 0, originZ: 0, baseY: 0,
   });
@@ -85,11 +86,14 @@
     o.wall = Math.max(o.chambers ? 8 : o.landings ? 5 : 1, o.wall | 0);
     o.shaft = Math.max(o.octagon ? 17 : 5, o.shaft | 0 | 1); // Octagons need room for large platforms.
     o.length = Math.min(o.shaft - 2, Math.max(1, o.length | 0 | 1)); // odd and leaving open corners
-    o.floors = Math.max(3, Math.min(5, o.floors | 0));
+    o.floors = Math.max(2, Math.min(5, o.floors | 0)); // Cave ruins have two stories.
+    const floorOnlyTraversal = o.traversal === 'reachingObelisks' || o.traversal === 'jumpPlatforms'; // No full-height climbing buttresses: balcony floors and galleries only.
     o.balconies = o.octagon ? o.floors - 1 : Math.max(1, Math.min(3, o.balconies | 0));
     o.spacing = Math.max(3, o.spacing | 0);
     o.depth = Math.max(1, Math.min(o.depth | 0, (o.shaft - 1) / 2 - Math.floor(o.length / 2))); // buttresses on neighbouring sides must not run into each other
-    const cols = o.shaft + 2 * o.wall, rows = cols, topStand = o.spacing * o.balconies, levels = topStand + 3;
+    const cols = o.shaft + 2 * o.wall, rows = cols, topStand = o.spacing * o.balconies;
+    const headroom = o.traversal === 'jumpPlatforms' ? o.spacing : 0; // One extra story of open height above the top gallery, with no balcony: where the bomber Skeeri nest.
+    const levels = topStand + 3 + headroom;
     const grid = G.create({ cols, rows, levels, originX: o.originX, originZ: o.originZ, baseY: o.baseY });
     const random = rng(o.seed), turn = Math.floor(random() * 4);
     const sides = [0, 1, 2, 3].map(i => SIDES[(i + turn) % 4]);
@@ -112,7 +116,7 @@
     if (o.octagon) {
       const lo=o.wall,hi=lo+o.shaft-1,cut=Math.floor(o.shaft*.19),width=5; // Five-cell galleries remain walkable around higher buttresses.
       const approaches=new Set(); // All climb lanes, across every story.
-      for(const side of (o.traversal==='reachingObelisks'?[]:balconySides)){
+      for(const side of (floorOnlyTraversal?[]:balconySides)){
         const g=sideGeometry(side,o,cols,rows),out=OUTWARD[side];
         for(const f of g.front)approaches.add((f.c-out.c)+','+(f.r-out.r));
       }
@@ -130,7 +134,7 @@
     const balconies = [], doors = [];
     balconySides.forEach((side, k) => {
       const level = o.spacing * (k + 1), geo = sideGeometry(side, o, cols, rows);
-      if(o.traversal==='reachingObelisks'){
+      if(floorOnlyTraversal){
         // Keep only the balcony floor, not its full-height continuous climbing buttress.
         for(const cell of geo.buttress)grid.set(cell.c,cell.r,level-1,KIND.SOLID);
       }else{
@@ -138,6 +142,8 @@
         for (const cell of geo.front) grid.paintClimbFaces(cell.c, cell.r, 0, cell.c, cell.r, level - 1, OPPOSITE_DIR[side], o.climbStyle);
       }
       const tunnel = o.landings ? geo.tunnel.slice(0,-1) : geo.tunnel; // Keep the outermost wall intact behind a landing.
+      balconies.push({ index: k, side, level, y: grid.levelToY(level), cells: geo.top.map(t => ({ col: t.c, row: t.r })), front: geo.front, climbDir: OPPOSITE_DIR[side] });
+      if (Array.isArray(o.portals)) return; // A layered ruin supplies its real wing doorways explicitly: the old balcony door tunnel would be an open doorway with no wing behind it.
       for (const cell of tunnel) { // door: 1 wide, 2 high, from the wall-adjacent row out
         if (geo.buttress.some(b => b.c === cell.c && b.r === cell.r && !b.wallRow)) continue;
         grid.fillBox(cell.c, cell.r, level, cell.c, cell.r, level + 1, KIND.AIR);
@@ -154,7 +160,6 @@
           chamber.push({col:c,row:r});
         }
       }
-      balconies.push({ index: k, side, level, y: grid.levelToY(level), cells: geo.top.map(t => ({ col: t.c, row: t.r })), front: geo.front, climbDir: OPPOSITE_DIR[side] });
       doors.push({ balcony: k, side, level, col: destination.c, row: destination.r, tunnel: tunnel.map(t => ({ col: t.c, row: t.r })), outward: OUTWARD[side], chamber });
     });
     // ground entrance: same tunnel, level 0
@@ -197,8 +202,13 @@
       originX:o.originX,originZ:o.originZ,baseY:o.baseY,balconySides}):null;
     if(o.traversal==='reachingObelisks'&&!obelisks?.ok)
       throw new Error('The selected reaching-obelisk traversal is missing or unsolvable.');
+    const jumpShaft=o.traversal==='jumpPlatforms'?JumpShaft?.compose?.({
+      shaft:o.shaft,wall:o.wall,spacing:o.spacing,floors:o.floors,seed:o.seed,
+      originX:o.originX,originZ:o.originZ,baseY:o.baseY,theme:o.theme,entranceSide}):null;
+    if(o.traversal==='jumpPlatforms'&&!jumpShaft?.ok)
+      throw new Error('The jump-platform shaft is missing or unsolvable'+(jumpShaft?': '+jumpShaft.checks.filter(c=>!c.ok).map(c=>c.name).join(','):'.'));
     const surfaces = grid.collectClimbSurfaces();
-    const result = { ok: false, options: o, grid, cols, rows, levels, balconies, doors, entrance, wingPortals, surfaces, obelisks, checks: [],
+    const result = { ok: false, headroom, options: o, grid, cols, rows, levels, balconies, doors, entrance, wingPortals, surfaces, obelisks, jumpShaft, checks: [],
       stories: Array.from({length:o.balconies+1},(_,floor)=>({floor,level:floor*o.spacing,balconies:balconies.filter(b=>b.level===floor*o.spacing),gallery:(ringCellsByLevel.find(r=>r.floor===floor)?.cells||[]).filter(c=>grid.canStand(c.col,c.row,floor*o.spacing))})) }; // Level map for a subsequent wing composer.
     result.checks = verify(result);
     result.ok = result.checks.every(c => c.ok);
@@ -244,10 +254,12 @@
 
   function verify(result) {
     const { grid, balconies, doors, entrance, options: o } = result, checks = [], add = (name, ok, detail) => checks.push({ name, ok: !!ok, detail: detail ?? null });
-    const reach = result.obelisks?.ok
-      ?{has:(c,r,l)=>grid.canStand(c,r,l)&&l>=0&&l<=o.spacing*(o.floors-1)} // Verified state/flight graph replaces continuous climb edges.
+    const traversal = result.obelisks || result.jumpShaft; // A verified state/flight graph replaces continuous climb edges.
+    const reach = traversal?.ok
+      ?{has:(c,r,l)=>grid.canStand(c,r,l)&&l>=0&&l<=o.spacing*(o.floors-1)}
       :reachable(result);
     if(result.obelisks)add('obeliskTraversalVerified',result.obelisks.ok&&result.obelisks.routes.length===o.floors-1);
+    if(result.jumpShaft)add('jumpTraversalVerified',result.jumpShaft.ok&&result.jumpShaft.routes.length===o.floors-1);
     add('entranceOpen', grid.floorLevelAt(entrance.inside.c, entrance.inside.r, 0) === 0, 'the ground entrance leads onto the shaft floor');
     add('spacing', o.spacing >= 3, `balcony floors are ${o.spacing} apart (2 cells of headroom needed above each)`);
     for (const b of balconies) {
@@ -255,6 +267,8 @@
       add(`balcony${b.index}Standable`, stands.length === b.cells.length, `${stands.length}/${b.cells.length} balcony cells have a floor and 2 cells of headroom`);
       if(result.obelisks)add(`balcony${b.index}ObeliskRoute`,result.obelisks.routes.some(route=>route.story===b.index&&route.exitY===b.y),
         'an audited state-machine and ballistic route replaces the climb wall');
+      else if(result.jumpShaft)add(`balcony${b.index}JumpRoute`,result.jumpShaft.routes.some(route=>route.story===b.index&&route.exitY===b.y),
+        'an audited free-jump platform route replaces the climb wall');
       else add(`balcony${b.index}Climbable`, result.surfaces.some(s => s.y0 <= grid.levelToY(0) + 1e-6 && Math.abs(s.y1 - grid.levelToY(b.level)) < 1e-6), 'a wall rectangle runs from the ground to the balcony floor');
       add(`balcony${b.index}Reachable`, b.cells.some(c => reach.has(c.col, c.row, b.level)), 'reachable from the entrance by walking and climbing');
     }
@@ -321,7 +335,7 @@
     const floorMask = new Uint8Array(grid.cols * grid.rows); // No rectangular floor visible under the clipped octagon.
     const lo=result.options.wall,hi=lo+result.options.shaft-1,cut=Math.floor(result.options.shaft*.19);
     for(let r=0;r<grid.rows;r++) for(let c=0;c<grid.cols;c++)
-      if(grid.canStand(c,r,0)&&!(result.obelisks&&Math.abs(c-(lo+hi)/2)<(result.options.shaft-10)/2&&Math.abs(r-(lo+hi)/2)<(result.options.shaft-10)/2)&&(!result.options.octagon||inOctagon(c,r,lo,hi,cut)||result.entrance.side==='N'&&c===result.entrance.col&&r<lo||result.entrance.side==='S'&&c===result.entrance.col&&r>hi||result.entrance.side==='W'&&r===result.entrance.row&&c<lo||result.entrance.side==='E'&&r===result.entrance.row&&c>hi)) floorMask[r*grid.cols+c]=1;
+      if(grid.canStand(c,r,0)&&!((result.obelisks||result.jumpShaft)&&Math.abs(c-(lo+hi)/2)<(result.options.shaft-10)/2&&Math.abs(r-(lo+hi)/2)<(result.options.shaft-10)/2)&&(!result.options.octagon||inOctagon(c,r,lo,hi,cut)||result.entrance.side==='N'&&c===result.entrance.col&&r<lo||result.entrance.side==='S'&&c===result.entrance.col&&r>hi||result.entrance.side==='W'&&r===result.entrance.row&&c<lo||result.entrance.side==='E'&&r===result.entrance.row&&c>hi)) floorMask[r*grid.cols+c]=1;
     part('shaft-hub-octagonal-floor', Faces.mergeMask(floorMask, grid.cols, grid.rows).map(rect => ({ axis:'y', side:1, plane:0, a0:rect.i0, a1:rect.i1, b0:rect.j0, b1:rect.j1 })));
     if (climb?.buildVisual) for (const surface of result.surfaces) shell.add(climb.buildVisual(THREE,{...surface,ruin:true})); // Real V50 ladder art replaces the old colored climb tile overlays.
     return shell;
@@ -337,7 +351,7 @@
     for(const cell of grid.standingSurfaces({clearance:2})){
       if(cell.level>=grid.levels-1)continue; // No invisible standing surface on the roof.
       if(o.octagon&&!inOctagon(cell.col,cell.row,0,grid.cols-1,exteriorCut))continue;
-      if(result.obelisks&&cell.level===0&&Math.abs(cell.col-(o.wall+(o.shaft-1)/2))<(o.shaft-10)/2
+      if((result.obelisks||result.jumpShaft)&&cell.level===0&&Math.abs(cell.col-(o.wall+(o.shaft-1)/2))<(o.shaft-10)/2
         &&Math.abs(cell.row-(o.wall+(o.shaft-1)/2))<(o.shaft-10)/2)continue; // No implicit support inside the fatal basin.
       let rows=levelRows.get(cell.level);
       if(!rows){rows=new Map();levelRows.set(cell.level,rows);}

@@ -54,7 +54,21 @@
     return play('stoneActivator',pitchFor('activator',object,options),spanFor(object,options.size));
   }
   function mechanism(object=null,options={}){
+    try{root.GameFeel?.mechanismMoved?.(object,options);}catch(_){} // Moving stone rumbles the camera and, right after a solve, earns the reveal shot.
     return play('stoneMechanism',pitchFor('mechanism',object,options),spanFor(object,options.size));
+  }
+  function progress(step,total){ // Partial success on a multi-part puzzle: rising bell rung (the final step plays puzzleComplete instead).
+    try{return !!root.GameFeel?.progressNote?.(step,total);}catch(_){return false;}
+  }
+  let lastPuzzleCompleteAt=-Infinity;
+  function puzzleComplete(){
+    const now=Number(root.performance?.now?.()??Date.now());
+    if(now-lastPuzzleCompleteAt<500)return true; // One solve reported by both a nested puzzle and its chamber plays once.
+    lastPuzzleCompleteAt=now;
+    try{root.GameFeel?.puzzleSolved?.();}catch(_){} // Original bell motif + reveal window for the mechanism this solve sets moving.
+    root.AudioSystem?.playObjectSfxKey?.('puzzleComplete');
+    debug.lastCue='puzzleComplete';debug.plays++;
+    return true;
   }
   function igniteTorch(){return play('igniteLarge');}
   function igniteAmmo(){return play('igniteSmall');}
@@ -113,6 +127,6 @@
     if(options.silent||previous===undefined&&!next)return false; // An initial unpressed plate is silent.
     return activator(object,options); // A newly seated or released stone plate clicks only on its state edge.
   }
-  return Object.freeze({pitchFor,spanFor,activator,mechanism,igniteTorch,igniteAmmo,metronomeTick,watchMovement,watchPlate,
+  return Object.freeze({pitchFor,spanFor,activator,mechanism,puzzleComplete,progress,igniteTorch,igniteAmmo,metronomeTick,watchMovement,watchPlate,
     debugSnapshot:()=>({...debug,trackedMotion:'per-object',trackedPlates:'per-object'})});
 });

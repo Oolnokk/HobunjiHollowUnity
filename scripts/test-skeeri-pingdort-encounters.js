@@ -176,11 +176,14 @@ async function check(){
       rooms:[{id:'r'+i,kind:'challenge-room',x:60,z:70,w:12,d:12,y:i*16}]}))};
   const ruin=w.SkeeriRuins.mount({rec:{scene,mapData:{id:area}},plan,seed:11,
     getPlayerY:()=>0,difficulty:5,theme:'kanthic'});
+  w.SkeeriRuins.update(.01); // bombers are created lazily once the ruin is the active area
   assert.equal(ruin.theme,'kanthic', "Skeeri inherit the generated ruin’s lich tradition");
   assert(ruin.bombers.every(b=>b.actor.skeeriPalette.theme==='kanthic'
     && w.SkeeriRuins.BODY_GROUPS.kanthic.includes(b.actor.skeeriPalette.body)),
     'all three bombers inherit stable natural Kanthic body palettes');
   assert.equal(ruin.hatches.length,5);assert.equal(ruin.bombers.length,3);
+  { const eyes=w.SkeeriRuins.eyeLights(); assert.ok(eyes.length>=3,'every live ruin Skeeri contributes an eye light to the darkness overlay');
+    for(const l of eyes){assert.ok(Number.isFinite(l.x)&&Number.isFinite(l.y)&&Number.isFinite(l.z)&&l.radius>0&&l.strength>0&&l.active===true&&l.color.length===3&&l.color.every(Number.isFinite),'finite light record in the lich eye colour');assert.equal(l.floorY,undefined,'eye lights are visible from other stories');} }
   assert.equal(ruin.hatches.map(h=>h.floor).join(','),'0,1,2,3,4','hatch difficulty follows floor index, not world elevation');
   const hatch=ruin.hatches.find(h=>h.size==='small')||ruin.hatches[0];
   const before=ruin.actors.size;assert(w.SkeeriRuins.activateCompartment(hatch.id));

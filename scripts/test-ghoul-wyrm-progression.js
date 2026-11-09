@@ -111,7 +111,7 @@ vm.runInContext(read('docs/js/town-mine.js'), mineContext);
   target.x = 64 * 1.5; target.y = 0;
   const gameSource = read('docs/game.js'); // The actual player damage function, not a copied simplified hit resolver.
   const damageStart = gameSource.indexOf('      function damagePlayer(');
-  const damageEnd = gameSource.indexOf('\n      // Closest Root Totem', damageStart);
+  const damageEnd = gameSource.indexOf('\n      // nearestRootTotemFor (closest zone Root Totem', damageStart);
   assert(damageStart >= 0 && damageEnd > damageStart, 'real game.js damagePlayer integration boundary exists');
   const playerDamageFunctionSource = gameSource.slice(damageStart, damageEnd); // Extract exactly one function from the game closure without launching its Three.js app.
   const liveDamageCallbacks = new WeakMap(); // Caches each target's authoritative damage function for multiple spell hits.

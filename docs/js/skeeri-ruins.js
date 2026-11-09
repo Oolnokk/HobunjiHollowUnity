@@ -74,7 +74,7 @@
   }
   function paletteFor(theme,identity) {
     const family=traditionOf(theme),slot=hash(String(identity)); // Stable appearance independent of AI RNG and encounter order.
-    const bodies=catalogPalette(family,BODY_VARIANTS,family==='kanthic');
+    const bodies=catalogPalette(family,BODY_VARIANTS,false); // No neutral dyes on the body: a white/gray multiply leaves the green base sprite uncolored so only the shaded markings looked tinted.
     const corePatterns=catalogPalette(family,BODY_VARIANTS,family==='kanthic');
     const neighborPatterns=catalogPalette(family,BODY_VARIANTS,false,patternNeighborHues(family));
     const eyes=catalogPalette(family,EYE_VARIANTS); // Deliberately NO neighboring hues, even if fur markings can use them.
@@ -203,8 +203,14 @@
     const unit=Number(deps?.TILE)||64;
     return {x:location.x*unit,y:location.z*unit,worldY:location.y};
   }
+  function lineClear(a,b){return window.DevRandomRuin?.flightClear?.(a.x,a.y,a.z,b.x,b.y,b.z)!==false;}
   function flightTo(session,state,to,phase,speed) {
     const actor=state.actor,start=actorLocation(actor,session);
+    if(!lineClear(start,to)){ // Never fly through stone: attacks wait for a clear line; a retreat backtracks along the line the bird came by.
+      if((phase==='return'||phase==='retreat')&&state.attackFrom&&lineClear(start,state.attackFrom))to=state.attackFrom;
+      else return false;
+    }
+    if(phase==='dive'||phase==='approach')state.attackFrom={x:start.x,y:start.y,z:start.z};
     const spatial=Math.hypot(to.x-start.x,to.z-start.z,to.y-start.y); // 3D distance determines consistent travel speed for multi-story drops.
     const line=window.PerchSupport?.line?.(state.id+':flight:'+state.serial++,point(session,start),point(session,to));
     if(!line || !window.PerchSupport.attach(actor,line,0))return false;
@@ -271,6 +277,7 @@
     });
     if(!actor){snapshot.failedSpawns++;return null;}
     actor.areaId=session.mapId;
+    actor.senseRangeTiles=Math.max(30,session.shaftRadius*2.5); // Sense mode reveals ruin Skeeri (the bomber roosts high in the dark) across the whole shaft.
     actor.isRuinSkeeri=true; // Ground-AI arbitration can distinguish this intentional aerial movement.
     actor.skeeriPalette=paletteFor(session.theme,session.seed+':'+index); // Per-instance palette from the actual lich hue family; never mutate the species or shared assets.
     actor.skeeriFlightPose='perched';
@@ -356,9 +363,17 @@
     const THREE=window.THREE;
     if(!THREE)return null;
     const top=plan.floors[plan.floors.length-1],anchor=plan.shaft.anchor;
+    // Scale the nest and the attack range to the shaft (cave/hole/lich shafts are far smaller than the original 45-cell one).
+    const shaftSize=Number(plan.options?.shaftSize)||45,floorHeight=Number(plan.options?.floorHeight)||16;
+    const shaftRadius=Math.max(8,shaftSize/2+3);
+    // Jump-platform shafts have an extra story of open height above the top gallery (no balcony):
+    // the nest is a basket balcony bolted to the north wall in that space, where the bombers roost in view.
+    const headroomShaft=plan.options?.shaftTraversal==='jumpPlatforms';
+    const nestSetback=headroomShaft?Math.max(4,shaftSize/2-1.7):Math.max(6,Math.min(20,shaftRadius*1.05));
+    const nestRise=headroomShaft?floorHeight*.55:clamp(floorHeight*.7,6,11);
     const session={mapId:rec.mapData?.id||MAP_ID,scene:rec.scene,seed:Number(seed)>>>0,
       getPlayerY,theme:traditionOf(options.theme),hatches:[],actors:new Set(),roots:[],materials:new Set(),disposed:false,
-      nest:{x:anchor.x,z:anchor.z-20,y:top.y+11},bombers:[],lastSignal:0}; // All actor, hatch, nest and payload lifetime stays inside one generated map.
+      shaftRadius,nestSetback,nest:{x:anchor.x,z:anchor.z-nestSetback,y:top.y+nestRise},bombers:[],lastSignal:0}; // All actor, hatch, nest and payload lifetime stays inside one generated map.
     session.hatchMaterial=window.ProceduralFurniture?.makePartMaterial?.({
       materialTexture:'carved_smooth.png',materialLighting:'unlit',materialFillMode:'never',color:'#6d6259',
     }) || new THREE.MeshBasicMaterial({color:0x6d6259});
@@ -388,26 +403,40 @@
       hatchVisual(session,selected,medium?'medium':'small',mechanism?'mechanism':'proximity',floor.floor);
     }
     nestVisual(session);
-    const difficulty=clamp(options.difficulty??plan.floorCount,1,9); // One to three bombers as ruin difficulty increases.
-    const bomberCount=difficulty<=3?1:difficulty===4?2:3; // Three-, four- and five-story shafts have one, two and three bombers respectively.
+    session.difficulty=clamp(options.difficulty??plan.floorCount,1,9); // One to three bombers as ruin difficulty increases.
+    session.bombersSpawned=false; // Bombers are created by update() once the ruin is the ACTIVE area. Creating them here, during generation, clamped them into the previous area's tile grid (~150 tiles from their nest), so nobody ever saw one.
+    snapshot.mounts++;
+    return session;
+  }
+  function spawnBombers(session) {
+    session.bombersSpawned=true;
+    const difficulty=session.difficulty,bomberCount=difficulty<=3?1:difficulty===4?2:3; // Three-, four- and five-story shafts have one, two and three bombers respectively.
     for(let i=0;i<bomberCount;i++){
       const x=session.nest.x+(i-(bomberCount-1)/2)*1.8,z=session.nest.z+.1;
       const state=newActor(session,'large',x,z,session.nest.y+1.5,Math.floor(difficulty/2),'b'+i);
       if(state){state.phase='nest';state.cooldown=4+i*3;state.home={x,z,y:session.nest.y+1.5};session.bombers.push(state);}
     }
-    snapshot.mounts++;
-    return session;
+  }
+  // True when a gallery/platform stands between the bird's height and the player's head in this column:
+  // a bomber must never fly or drop through a balcony.
+  function overheadBlocked(x,z,fromY,toY){
+    const DS=window.DynamicSurfaces;
+    if(!DS?.sampleSupport)return false;
+    return !!DS.sampleSupport(x,z,{minY:fromY+2.3,maxY:toY-.3,pad:.45});
   }
   async function dropBomb(session,state) {
     if(!isActive(session)||state.dead||state.pendingBomb)return;
     const player=currentPlayer(),bird=actorLocation(state.actor,session);
     if(!player||distance(player,bird)>5)return;
+    if(window.DevRandomRuin?.isPlayerInShaft&&window.DevRandomRuin.isPlayerInShaft()!==true)return; // Never bomb someone standing in a hallway or wing: only inside the shaft footprint.
+    if(Number(session.getPlayerY?.())>bird.y-.4)return; // The bird must actually be above its target.
+    if(overheadBlocked(player.x,player.z,Number(session.getPlayerY?.())||0,bird.y))return; // Never drop through a higher balcony or platform.
     const bombs=window.HronalWitchBombs;
     if(!bombs?.spawn||!window.Shattercasks?.releaseBurdenDownward)return;
     state.pendingBomb=true;
     try{
-      const bomb=await bombs.spawn({mapId:session.mapId,scene:session.scene,
-        x:bird.x,y:bird.y-.6,z:bird.z,fuseSeconds:14,hanging:false}); // The dropped sphere is an ordinary pickable/throwable Hronal burden.
+      const bomb=await bombs.spawn({mapId:session.mapId,scene:session.scene,variant:session.theme,
+        x:bird.x,y:bird.y-.6,z:bird.z,fuseSeconds:14,hanging:false}); // The dropped sphere is an ordinary pickable/throwable witch-bomb of THIS ruin's tradition (frost in Tothal, plasm in Kanthic).
       if(!bomb)return;
       if(!isActive(session)){window.Shattercasks.discardBurden?.(bomb);return;}
       if(window.Shattercasks.releaseBurdenDownward(bomb,'skeeri-bomber')){
@@ -444,6 +473,7 @@
     if(state.cooldown>0||Math.abs(playerY-room.y)>3.5||distance(player,room)>9)return;
     const to={x:player.x,z:player.z,y:playerY+.48};
     if(flightTo(session,state,to,'dive',state.spec.speed)){snapshot.dives++;}
+    else state.cooldown=.8; // No clear line through the walls yet: try again shortly.
   }
   function updateBomber(session,state,dt,player,playerY) {
     if(state.segment){
@@ -460,14 +490,16 @@
     }
     if(state.phase!=='nest'||!player)return;
     state.cooldown-=dt;
-    if(state.cooldown>0||distance(player,{x:session.nest.x,z:session.nest.z+20})>SHAFT_RADIUS)return;
+    if(state.cooldown>0||distance(player,{x:session.nest.x,z:session.nest.z+session.nestSetback})>session.shaftRadius)return;
     const to={x:player.x+(state.home.x-session.nest.x)*.15,
-      z:player.z,y:playerY+5}; // A fast attack pass descends to player height, then immediately retreats to the inaccessible balcony.
-    flightTo(session,state,to,'approach',state.spec.speed);
+      z:player.z,y:playerY+5};
+    if(overheadBlocked(to.x,to.z,playerY,to.y+.5)||overheadBlocked(player.x,player.z,playerY,session.nest.y)){state.cooldown=1.5;return;} // Roofed over by a balcony: hold at the nest and retry shortly. // A fast attack pass descends to player height, then immediately retreats to the inaccessible balcony.
+    if(!flightTo(session,state,to,'approach',state.spec.speed))state.cooldown=1.2; // Walls in the way: hold at the nest.
   }
   function update(dt=0) {
     const session=owner;
     if(!session||!isActive(session))return;
+    if(!session.bombersSpawned)spawnBombers(session);
     const step=clamp(dt,0,.1),player=currentPlayer(),playerY=Number(session.getPlayerY?.())||0;
     for(const hatch of session.hatches)updateHatch(session,hatch,step,player,playerY);
     for(const state of session.actors){
@@ -476,6 +508,31 @@
       else updateDiver(session,state,step,player,playerY);
     }
   }
+  // Planebent Skeeri eyes (authored #7F00FF, recoloured to the lich's eye swatch) glow through the ruin's darkness:
+  // each live ruin Skeeri contributes one small light to the shared darkness overlay, so the eyes show from far away
+  // even when the body itself is lost in the dark. Records are reused per actor (read at the 60 Hz compositor pass).
+  const eyeLightRecords=new WeakMap();
+  function eyeLights() {
+    const session=owner;
+    if(!session||session.disposed||!isActive(session))return EMPTY_LIGHTS;
+    const unit=Number(deps?.TILE)||64,out=[];
+    for(const state of session.actors){
+      const a=state.actor;
+      if(!a||!(Number(a.health)>0)||a.state==='corpse')continue;
+      let rec=eyeLightRecords.get(a);
+      if(!rec){
+        const hex=String(a.skeeriPalette?.eyes||'#b07dff'),rgb=[1,3,5].map(i=>parseInt(hex.slice(i,i+2),16));
+        rec={x:0,y:0,z:0,radius:state.size==='large'?1.5:1.0,strength:1,active:true,
+          color:rgb.every(Number.isFinite)?rgb:[176,125,255]};
+        eyeLightRecords.set(a,rec);
+      }
+      rec.x=a.x/unit;rec.z=a.y/unit;
+      rec.y=(Number(a.branchSurfaceY)||session.nest.y)+.6;
+      out.push(rec);
+    }
+    return out;
+  }
+  const EMPTY_LIGHTS=Object.freeze([]);
   function debugSnapshot() {
     return {...snapshot,active:!!owner,theme:owner?.theme||null,hatches:owner?.hatches.map(h=>({
       id:h.id,size:h.size,trigger:h.trigger,opened:h.opened,spawned:h.spawned}))||[],
@@ -483,5 +540,5 @@
       health:s.actor.health,y:Number(s.actor.branchSurfaceY)||0,palette:s.actor.skeeriPalette}))};
   }
   window.SkeeriRuins=Object.freeze({SPECIES,SPRITES,BODY_GROUPS,paletteFor,separateEyeMarker,register,init,createRig,mount,update,
-    activateCompartment,signalMechanism,debugSnapshot,get active(){return owner;}});
+    activateCompartment,signalMechanism,eyeLights,debugSnapshot,get active(){return owner;}});
 })();

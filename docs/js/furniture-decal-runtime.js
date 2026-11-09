@@ -55,6 +55,10 @@
   }
 
   function resolvedImageSource(record) {
+    const path = resolvedImageSourceRaw(record);
+    return window.RuinEmblem?.resolve?.(path) || path; // Ruins swap the generic round emblem for the lich tradition's motif.
+  }
+  function resolvedImageSourceRaw(record) {
     const raw = String(record?.runtimeImageSource || record?.imageSource || record?.imageName || '').trim();
     if (!raw || /^(?:data|blob):/i.test(raw)) return raw;
     const docsAsset = raw.lastIndexOf('docs/assets/');

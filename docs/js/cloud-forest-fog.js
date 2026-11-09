@@ -46,6 +46,7 @@
   const UNDERGROUND_NIGHT_LIGHTING = Object.freeze({ r: 5, g: 8, b: 23, a: 0.80 });
   const KANTHIC_STANDARD_DARKNESS_ALPHA = 0.95; // Kanthic uses the same unified mist/night darkness pass at higher opacity, never a second vignette.
   const UNDERGROUND_FOG_DENSITY = 0.055; // Same as map_southern_cloud_forest's fogDensity.
+  let ruinMistFade = 1; // 1 = normal mist, 0 = suppressed while standing in a ruin shaft.
   let undergroundFogOverride = null; // { scene, fog, background } restored when the player leaves.
   const GLOBAL_DARKNESS_DELTA = 0.09; // Added to the previous mine/den/interior darkness levels and scaled by lunar phase for outdoor night darkness.
   const DEFAULT_TUNING = Object.freeze({
@@ -353,12 +354,18 @@
     const pz = deps.player.y / deps.TILE;
     const groundY = deps.getPlayerGroundY();
     const t = performance.now() / 1000;
+    // The mist is three short tubes that follow the player's feet. Inside a ruin's tall shaft that
+    // means a dark band hovering around the player that snaps up and down with every jump or
+    // fall (and is sliced by platforms), so it fades out while the player is in the shaft room.
+    const inRuinShaft = !cloudForest && deps.getCurrentArea?.() === 'map_i_dev_random_ruin' && window.DevRandomRuin?.isPlayerInShaft?.() === true;
+    ruinMistFade += ((inRuinShaft ? 0 : 1) - ruinMistFade) * Math.min(1, dt * 4);
+    if (ruinMistFade < 0.01) ruinMistFade = inRuinShaft ? 0 : ruinMistFade;
 
     for (let i = 0; i < layers.length; i++) {
       const { mesh, material, config } = layers[i];
       const live = layerLive[i];
       // Used to skip both draw submission and animation work for a disabled mist layer.
-      const opacity = clamp01(live.opacity);
+      const opacity = clamp01(live.opacity) * ruinMistFade;
       material.opacity = opacity;
       mesh.visible = opacity > 0;
       if (!mesh.visible) continue;
@@ -649,6 +656,7 @@
       }
       grad.addColorStop(1, 'rgba(0,0,0,0)');
       ctx.fillStyle = grad;
+      const shadows = ruinShadowPolygons(carrier, lanternTuning.radiusTiles * ruinLanternScale * (linearInterior ? INTERIOR_LIGHT_RADIUS_MULTIPLIER : 1)); // Carried light throws stone shadows like a wall torch (was an undefined name that aborted every dark-area overlay frame).
       withRuinShadowClip(ctx,shadows,()=>{ctx.beginPath();ctx.arc(center.x,center.y,shineR,0,Math.PI*2);ctx.fill();});
     }
 
@@ -773,6 +781,7 @@
     }
   }
 
+  const EMPTY_LIGHT_LIST = Object.freeze([]);
   const ruinFireMaskStats={sources:0,lit:0,projected:0,drawn:0}; // Mobile Pixel Probe verifies an ignited brazier actually contributes to the visible darkness overlay.
   function drawRuinTraditionLightMasks(lights = window.DevRandomRuinLichThemes?.lightSources?.() || []) { // Existing Hronal/Tothal sources and Kanthic fixture sources share one compositing path.
     ruinFireMaskStats.sources=lights.length;
@@ -784,7 +793,8 @@
     for (const light of lights) {
       if (light.active === false) continue; // Optional Kanthic shaft braziers cannot reveal anything until the player ignites them.
       const playerY = Number(lightingDeps.getPlayerWorldY?.()); // Prevent a tall shaft's upper-story fire from illuminating unrelated floors below.
-      if (Number.isFinite(light.floorY) && Number.isFinite(playerY) && Math.abs(light.floorY - playerY) > 10) continue;
+      const floorTolerance = Number.isFinite(light.floorTolerance) ? light.floorTolerance : 10; // Per-room lights stay on their own story.
+      if (Number.isFinite(light.floorY) && Number.isFinite(playerY) && Math.abs(light.floorY - playerY) > floorTolerance) continue;
       const transmission = interiorLightTransmission(light.x, light.z);
       if (transmission <= 0.005) continue;
       const center = lightingDeps.worldToOverlay(light.x, light.y, light.z);
@@ -1075,6 +1085,8 @@
       if (ruinTradition !== 'kanthic' && ruinTradition !== 'tothal') drawFurnitureLightMasksCompat(); // The pure-black Kanthic room and cold Tothal room have no generic warm furniture pools.
       if (ruinTradition === 'hronal' || ruinTradition === 'tothal') drawRuinTraditionLightMasks();
       if (ruinTradition === 'kanthic') drawRuinTraditionLightMasks(window.RuinMultifloorV50Style?.lightSources?.() || []); // Only dedicated Kanthic fire fixtures lift the blackness.
+      if (ruinTradition) drawRuinTraditionLightMasks(window.RuinLayerPlayable?.roomLights?.() || []); // A solved puzzle room fills with light.
+      if (ruinTradition) drawRuinTraditionLightMasks(window.SkeeriRuins?.eyeLights?.() || EMPTY_LIGHT_LIST); // Planebent Skeeri eyes pierce the dark.
       if (ruinTradition) drawRuinPatternGlowMasks(activeScene,now); // An emissive wall engraving is legible without a carried lantern.
       if (ordinaryBuildingInterior(currentArea) && !ruinTradition) drawWindowLightMasks();
       if (sceneTransAlpha > 0) {
@@ -1097,6 +1109,8 @@
     drawLanternMasksCompat(undergroundFog ? 1 : currentOutdoorLanternActivation(), !undergroundFog);
     if (!(undergroundFog && activeRuinTradition() === 'kanthic')) drawFurnitureLightMasksCompat(!undergroundFog); // The pure-black Kanthic room has no generic warm furniture pools.
     if (undergroundFog && activeRuinTradition() === 'kanthic') drawRuinTraditionLightMasks(window.RuinMultifloorV50Style?.lightSources?.() || []);
+    if (currentArea === 'map_i_dev_random_ruin') drawRuinTraditionLightMasks(window.RuinLayerPlayable?.roomLights?.() || []); // Solved rooms are lit in the fog path too.
+    if (currentArea === 'map_i_dev_random_ruin') drawRuinTraditionLightMasks(window.SkeeriRuins?.eyeLights?.() || EMPTY_LIGHT_LIST);
     if (currentArea === 'map_i_dev_random_ruin') drawRuinPatternGlowMasks(activeScene,now); // The fog and enclosed paths must agree about engraved emission.
 
     if (lightningAlpha > 0) {

@@ -36,6 +36,14 @@ Before finishing: `node --check` the files you touched, `node scripts/check-cach
 
 Before investigating a lag, memory or "slow after fights" report, read [`docs/architecture/performance-investigation-log.md`](docs/architecture/performance-investigation-log.md). It records the causes already found and fixed (bandit/tribe corpse rigs that never go away, zones that could never be evicted), the suspects that were measured and ruled out (character data, wilderness terrain, outline toggles in an empty scene), the measurement traps that produced wrong conclusions, and the leads that are real but not yet fixed. Add to it when you rule something in or out.
 
+## Game feel and ruin feedback
+
+Camera shake, controller rumble, hit-stop, the hurt flash, puzzle progress/solve audio, the reveal shot that pans to what a solve opened, sinking gates, and chest fanfares all live in `docs/js/game-feel.js` (`window.GameFeel`); desktop/controller Lock-On reuses the mobile auto-target in `game.js`. Read [`docs/architecture/game-feel.md`](docs/architecture/game-feel.md) before adding impact or puzzle feedback, and call those owners (`RuinInteractionAudio.progress/puzzleComplete/mechanism`, `GameFeel.addTrauma`) instead of adding local shakes, beeps or camera moves.
+
+## Ruin size, shaft traversal and witch-bombs
+
+Generated ruins are sized by rarity (cave / hole / lich) through `RuinLayerPlan.TIERS`; the shaft is a free-jump platform staircase (`docs/js/ruin-jump-shaft.js`), not the old obelisk timing puzzle; witch-bombs are three variants (Hronal / Tothal frost / Kanthic plasm) of one pipeline that follow the ruin's tradition. Read [`docs/architecture/ruin-tiers-and-jump-shaft.md`](docs/architecture/ruin-tiers-and-jump-shaft.md) before changing wing counts, shaft size, platform hazards or bomb behaviour, and extend `TIERS` / `VARIANTS` rather than adding another special case.
+
 ## Runtime frame ownership
 
 Before adding, removing, or migrating permanent `requestAnimationFrame` work, read [`docs/architecture/runtime-frame-scheduler.md`](docs/architecture/runtime-frame-scheduler.md). It defines which work belongs to `gameLoop`, `RuntimeFrameScheduler`, Three.js render hooks, timers/events, or an isolated animation context. Feature modules register their own scheduler callbacks; do not add feature-specific behavior to the scheduler itself.

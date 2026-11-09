@@ -56,6 +56,14 @@
 
   function clearRuinPresentationHeight() {
     lastPresentationElevation = null;
+    presentationSink = 0;
+  }
+
+  // Ordinary (unnamed) ruins: wall engravings use their tradition's own glyph, glowing in its lich's colour.
+  function traditionWalls(theme) {
+    const glyph = window.SpecialHarlyaoLiches?.defFor?.(theme)?.glyph;
+    const ink = window.SpecialHarlyaoLiches?.specialRoster?.(theme)?.appearance?.bodyColors?.C?.hex || null;
+    return glyph ? { tradition:true, patternId:glyph, ink } : undefined;
   }
 
   function syncRuinPresentationHeight(worldY) {
@@ -65,9 +73,13 @@
     return true;
   }
 
+  // Plasm immersion: a cosmetic depth subtracted from the presented stand height. A separate offset (not a rewrite of the
+  // stand height) because shaft platforms re-publish their own support height every frame, which used to erase the sink.
+  let presentationSink = 0;
+  function setPresentationSink(depth) { presentationSink = Math.max(0, Number(depth) || 0); }
   function getPlayerSupportY() {
     if (!ruin || deps?.getCurrentArea?.() !== MAP_ID) return null;
-    return Number.isFinite(lastPresentationElevation) ? lastPresentationElevation : null;
+    return Number.isFinite(lastPresentationElevation) ? lastPresentationElevation - presentationSink : null;
   }
   function getPlayerGroundSupportY() {
     if (!ruin || deps?.getCurrentArea?.() !== MAP_ID) return null;
@@ -635,7 +647,7 @@
       ruin.controls.push({kind:'pushBlock',object:block,label:'Push Stone Block',range:.36,touchIcon:'✋',
         onPress:()=>pushBlock(pusher,getPushFace(pusher,.36),true)});
     }
-    ruin.controls.push({kind:'exit',object:null,label:'Leave Test Ruin',point:ruin.spawn,onPress:leaveRuin});
+    ruin.controls.push({kind:'exit',object:null,label:generationLabel?'Leave the Ruin':'Leave Test Ruin',point:ruin.spawn,onPress:leaveRuin});
     ruin.occupancy = TileOccupancy.create({
       mapId:MAP_ID, scope:SCOPE, cols:ruin.cols, rows:ruin.rows, floorSet:ruin.floorSet,
       grid:ruin.grid, solidType:(gridDeps?.TileType||deps?.TileType||{}).ROCK??'rock', // Stamps generated blockers into the same interior grid ordinary movement/AI/knockback already query.
@@ -953,16 +965,7 @@
       wallStyle:'cavern', // Opts the session ruin into the game's existing combat-interior path so mobile receives Fire/Ammo/Potions and combat/reticle updates exactly like a den.
       devSessionOnly:true,devSeed:seed,devRuinTileScale:RUIN_TILE_SCALE,sourceGenerator:'HobunjiDebrisifierV50'};
     const occlusionMeshes=[]; // Normal map_i_* camera boom reads this array from _buildingScenes; generated walls must participate exactly like authored den/shop walls.
-    roots.localeRoot.traverse(mesh=>{
-      if(!mesh?.isMesh)return;
-      let structural=false;
-      for(let node=mesh;node;node=node.parent){
-        const d=node.userData||{},role=String(d.interiorRuinRole||'');
-        if(d.ruinInteriorWall||d.archFootprint||d.transitDoor||d.squarePillarHousing||/ceiling support pillar|doorway flank pillar/i.test(role)){structural=true;break;}
-        if(node===roots.localeRoot)break;
-      }
-      if(structural)occlusionMeshes.push(mesh);
-    });
+    roots.localeRoot.traverse(mesh=>{if(isCameraStructural(mesh,roots.localeRoot))occlusionMeshes.push(mesh);});
     return {scene,grid:projected.grid,cols:projected.cols,rows:projected.rows,mapData,wallStyle:'cavern',sanctumPlan:projected.sanctumPlan,floorSet:projected.walkable,exits:mapData.exits,spawn,localeRoot:roots.localeRoot,particleRoot:roots.particleRoot,ceilingMesh,occlusionMeshes,ceilingCellCount:Number(ceilingMesh?.userData?.devRandomRuinCeilingCells)||0,ceilingY:Number(ceilingMesh?.userData?.devRandomRuinCeilingY)||null,denMaterialMeshCount:materialStats.stoneMeshes,unlitConvertedMaterialCount:materialStats.convertedMaterials,remainingLitMaterialCount:materialStats.remainingLitMaterials,legacyStoneMaterialCount:materialStats.legacyStoneMaterials,totalRuinMeshCount:materialStats.totalMeshes};
   }
 
@@ -1099,6 +1102,8 @@
       const cfg=(path,fallback)=>window.DevRandomRuinConfig?.get?.(path,fallback)??fallback;
       const themeTypes = cfg('sanctum.boss.types', ['tothal', 'hronal', 'kanthic']).filter(type => ['tothal', 'hronal', 'kanthic'].includes(type)); // One seeded tradition owns this ruin's lich, loot and future themed features.
       const theme = ['tothal', 'hronal', 'kanthic'].includes(opts.theme) ? opts.theme : (themeTypes.length ? themeTypes : ['tothal', 'hronal', 'kanthic'])[requestedSeed % (themeTypes.length || 3)]; // Requested site seed keeps the theme stable across solvability retries.
+      const ruinLichNameValue=(singleRoomTrial||requestedRuinType==='hachutu'||/\(Dev\)/.test(String(opts.label||'')))?null:ruinLichName(requestedSeed,specialDef); // Dev labs keep their own labels.
+      if(ruinLichNameValue)generationLabel=ruinTitleFor(requestedSeed,ruinLichNameValue);
       if(requestedRuinType==='hachutu')Object.assign(puzzleOptions,{pressurePlate:false,brazier:false,glyphObelisk:false,stackedObelisk:false,linkedCubePillars:false,nestedRoom:false}); // Freeze the separate Hachutu selection before every V50 solvability retry.
       puzzleOptions.lavaBasin = theme === 'hronal' && puzzleOptions.lavaBasin; // Only Hronal sites contain lava, including rope-basin set pieces.
       const rootMechanismsRequested=!singleRoomTrial&&(requestedRuinType==='hachutu'||(typeof opts.rootMechanisms==='boolean'?opts.rootMechanisms:cfg('generation.rootMechanisms',false)===true)); // Frozen for rerolls and this specific generation.
@@ -1139,13 +1144,13 @@
         if(singleVestibule&&meta.rooms?.length!==1)throw new Error('V50 failed to generate exactly one vestibule room.');
         const placement=singleVestibule&&!singleRoomTrial?window.RuinV50Vestibule?.compose?.({
           meta,seed:candidateSeed,LayerPlan:window.RuinLayerPlan,ShaftHub:window.ShaftHub,
-          Connector:window.RuinShaftConnector,tileScale:RUIN_TILE_SCALE,plinthTrial:trialRequested,
+          Connector:window.RuinShaftConnector,tileScale:RUIN_TILE_SCALE,plinthTrial:trialRequested,tier:opts.tier||null,theme,
         }):null; // Derived from the V50 entrance face, not a post-hoc exterior corridor.
         if(singleVestibule&&!singleRoomTrial&&!placement)throw new Error('Ruin V50 vestibule placement module missing.');
         entryPadX=placement?.padX??PAD;entryPadZ=placement?.padZ??PAD;
         const planned=singleRoomTrial?null:placement?.plan||window.RuinLayerPlan?.compose?.({
           seed:candidateSeed,spacing:64,anchorX:320,anchorZ:320,
-          shaftSize:45,floorHeight:16,shaftTraversal:requestedRuinType==='hachutu'?'buttress':null,nativeV50:requestedRuinType!=='hachutu',plinthTrial:trialRequested,
+          shaftSize:45,floorHeight:16,shaftTraversal:requestedRuinType==='hachutu'?'buttress':null,nativeV50:requestedRuinType!=='hachutu',plinthTrial:trialRequested,theme,
         });
         if(!singleRoomTrial&&!planned?.ok)throw new Error('Pre-generation shaft reservation is invalid.');
         api.snapMechanismState(0); api.pausePreviewLoop();
@@ -1157,7 +1162,7 @@
           rec.mapData.exits[0].tiles=[[Math.floor(rec.spawn.x),Math.floor(rec.spawn.z)]];
         }
         buildingScenes.set(MAP_ID,rec);
-        ruin={preplannedShaft:planned,nativeV50Pending:[],seed:candidateSeed,hachutu:requestedRuinType==='hachutu',theme,specialBoss:!!specialDef,ruinName:generationLabel,specialGlyph:specialDef?.glyph||null,requestedSeed,sourceSeed:generated.seed,api,locale:generated.locale,meta,puzzleOptions:{...puzzleOptions},puzzleGeneration:generated.puzzleGeneration,labFurniture,
+        ruin={preplannedShaft:planned,nativeV50Pending:[],seed:candidateSeed,hachutu:requestedRuinType==='hachutu',theme,lichName:ruinLichNameValue,tier:opts.tier||null,specialBoss:!!specialDef,ruinName:generationLabel,specialGlyph:specialDef?.glyph||null,requestedSeed,sourceSeed:generated.seed,api,locale:generated.locale,meta,puzzleOptions:{...puzzleOptions},puzzleGeneration:generated.puzzleGeneration,labFurniture,
           entranceWallPlanes:generated.runtimeWallPlanes,entranceHallways:generated.runtimeHallways,
           ...rec,compactVestibule:singleVestibule&&!singleRoomTrial,singleRoomTrial:soloChoice,noLoot:singleRoomTrial,entryFloorSet:new Set(rec.floorSet),mechanisms:new Map(),controls:[],activators:[],pushBlocks:[],supportId:null,supportY:0,falling:null,generationAttempt:attempt+1,stoneAgeRequested,stoneAge:false,composedTrialForced:opts.composedTrial===true}; // Rerolls only retain explicit overrides, never an automatically selected encounter. // Keep parent-runtime safe-path/rope/trap flags that the V50 API correctly ignores.
         registerFloor(meta); discoverRuntimeObjects();
@@ -1176,7 +1181,8 @@
         await window.RuinPatternSurfaceRules?.ready; await window.RuinPatternSurfaceRules?.preloadPieces?.(ruin.localeRoot); // Per-piece enable/scale rules (Dev Companion + Furniture Author patternScale).
         const bossBodyColor3 = specialDef ? window.SpecialHarlyaoLiches?.specialRoster?.(theme)?.appearance?.bodyColors?.C?.hex : null; // Read the named lich's actual Body Color 3, never an independent wall-ink constant.
         ruin.specialBodyColor3 = bossBodyColor3; // Mobile dungeon diagnostics can compare wall glow against the eventual guardian portrait.
-        if(!ruin.hachutu)window.FurniturePatternSurfaces?.decorateRuin?.(ruin.localeRoot, candidateSeed, specialDef ? { specialBoss:true, patternId:specialDef.glyph, ink:bossBodyColor3 } : undefined); // No Harlyao wall glyphs inside the Hachutu temple. // The same C hex colors both emissive wall motifs and the boss's dyed eyes.
+        ruin.lichColor = bossBodyColor3 || window.SpecialHarlyaoLiches?.specialRoster?.(theme)?.appearance?.bodyColors?.C?.hex || null; // Wing braziers burn in this lich's colour (named tomb: its exact wall-glow colour; others: their tradition's lich).
+        if(!ruin.hachutu)window.FurniturePatternSurfaces?.decorateRuin?.(ruin.localeRoot, candidateSeed, specialDef ? { specialBoss:true, patternId:specialDef.glyph, ink:bossBodyColor3 } : traditionWalls(theme)); // No Harlyao wall glyphs inside the Hachutu temple. // The same C hex colors both emissive wall motifs and the boss's dyed eyes.
         generationMark('preparing-stone-age');
         if(stoneAgeRequested)await prepareStoneAgeScenery(ruin);
         generationMark('preparing-live-roots');
@@ -1210,7 +1216,7 @@
         if(!ruin.hachutu)for(const item of nativeSnapshots){
           await window.RuinPatternSurfaceRules?.preloadPieces?.(item.roots.localeRoot);
           const ids=window.FurniturePatternSurfaces?.decorateRuin?.(item.roots.localeRoot,candidateSeed,
-            specialDef?{specialBoss:true,patternId:specialDef.glyph,ink:bossBodyColor3}:undefined)||[];
+            specialDef?{specialBoss:true,patternId:specialDef.glyph,ink:bossBodyColor3}:traditionWalls(theme))||[];
           ruin.localeRoot.userData.ruinPatternIds=[...new Set([
             ...(ruin.localeRoot.userData.ruinPatternIds||[]),...ids,
           ])];
@@ -1224,6 +1230,7 @@
           throw error;
         }
         ruin.nativeV50Pending=null; // The mounted native runtime now owns these exact scene roots and their disposal.
+        registerUpperStoryCameraObstacles(ruin);
         lastGenerationAudit.acceptedSeed=candidateSeed;
         generationMark('entering-ruin');
         await enterRuin(); updateBadge();
@@ -1456,6 +1463,67 @@
     return true;
   }
 
+  // Player-facing dungeon title. Boss tombs and dev labs keep their authored
+  // names; ordinary site ruins get a stable seeded epithet + their tradition.
+  const RUIN_EPITHETS = Object.freeze(['Sunken Halls','Hollow Vaults','Silent Galleries','Buried Cloister','Shattered Sanctum','Echoing Deep','Forgotten Crypt','Ashen Stair','Drowned Chambers','Lantern Hold']);
+  // Every ruin is "<crypt word> of <its lich>": the lich is rolled from the site seed, so the title and the lich that rises in
+  // the sanctum are the same person.
+  const CRYPT_WORDS = Object.freeze(['Tomb','Crypt','Grave','Resting Place','Barrow','Sepulchre','Mausoleum','Catacomb','Last Rest','Ossuary','Burial Hall','Final Rest']);
+  function ruinLichName(seed, specialDef) {
+    if (specialDef?.name) return specialDef.name; // Named guardian keeps its authored name and epithet.
+    const gen = window.SCRATCHBONES_NAME_GENERATOR;
+    if (typeof gen?.generateHarlyaoName !== 'function') return null;
+    let n = 0; const rng = () => moduleRoll(seed, (0x1c4a0000 + (n++) * 7919) >>> 0);
+    const given = gen.generateHarlyaoName(rng);
+    const surname = typeof gen.generateHarlyaoSurname === 'function' ? gen.generateHarlyaoSurname(rng, given) : '';
+    return surname ? given + ' ' + surname : given;
+  }
+  function ruinTitleFor(seed, lichName) {
+    if (!lichName) return null;
+    return CRYPT_WORDS[Math.floor(moduleRoll(seed, 0x7171) * CRYPT_WORDS.length) % CRYPT_WORDS.length] + ' of ' + lichName;
+  }
+  function arrivalTitle(entry) {
+    if (!entry) return '';
+    if (entry.lichName && entry.ruinName) return entry.ruinName;
+    if (entry.specialBoss || /\(Dev\)/.test(String(entry.ruinName || ''))) return entry.ruinName || '';
+    const theme = String(entry.theme || '').trim();
+    const tradition = theme ? theme.charAt(0).toUpperCase() + theme.slice(1) : '';
+    const epithet = RUIN_EPITHETS[Math.floor(moduleRoll(entry.seed, 0x7171) * RUIN_EPITHETS.length) % RUIN_EPITHETS.length];
+    return tradition ? `${epithet} of ${tradition}` : (entry.ruinName || epithet);
+  }
+
+  // Solid stone the camera boom must not pass through. Raised daises and push
+  // blocks count too: the camera used to sink through a raised dais and hide
+  // the player behind it.
+  function isCameraStructural(mesh,stopAt){
+    if(!mesh?.isMesh)return false;
+    for(let node=mesh;node;node=node.parent){
+      const d=node.userData||{},role=String(d.interiorRuinRole||'');
+      if(d.ruinInteriorWall||d.archFootprint||d.transitDoor||d.squarePillarHousing||d.movingDaisPlatform||d.pushable||/ceiling support pillar|doorway flank pillar/i.test(role))return true;
+      if(node===stopAt)break;
+    }
+    return false;
+  }
+  // Upper shaft stories (layer wings + native V50 floors) mount after the
+  // ground record is registered, so their walls never reached the camera
+  // boom and the camera clipped through every upstairs wall. Gates are left
+  // out on purpose: r128 raycasts ignore visibility, so an opened (hidden)
+  // gate would still push the camera in.
+  const UPPER_WALL_NAME=/(^|-)walls$|^wing-feature-wall$|-wall-(ns|ew)$|^native-v50-corridor-(north-south|east-west)-\d+$/;
+  function registerUpperStoryCameraObstacles(owner){
+    const occlusion=owner?.occlusionMeshes;
+    if(!Array.isArray(occlusion)||!owner.scene)return 0;
+    const known=new Set(occlusion);let added=0;
+    const visit=node=>{
+      if(node===owner.localeRoot)return; // Ground floor was classified when the record was built (and pruned by stone-age/root passes since).
+      if(node.isMesh&&!known.has(node)&&(UPPER_WALL_NAME.test(String(node.name||''))||isCameraStructural(node,owner.scene))){occlusion.push(node);known.add(node);added++;}
+      for(const child of node.children||[])visit(child);
+    };
+    visit(owner.scene);
+    owner.upperStoryCameraObstacles=added;
+    return added;
+  }
+
   function enterRuin() {
     const entering=ruin;
     return runSceneTransition(()=>{
@@ -1464,7 +1532,7 @@
       if(!entering||ruin!==entering)return;
       for(const o of playerSceneObjects()) detach(o);
       deps.setCurrentArea(MAP_ID); deps.setCurrentBuildingMapId?.(MAP_ID);
-       if (entering.specialBoss) window.LocationArrival?.announce?.(entering.ruinName, {area:MAP_ID}); // Existing cave/camp arrival banner fires with the loading transition.
+       window.LocationArrival?.announce?.(arrivalTitle(entering), {area:MAP_ID}); // Every ruin gets the cave/camp arrival banner (a dungeon title card), not only boss tombs.
       deps.player.x=entering.spawn.x*deps.TILE; deps.player.y=entering.spawn.z*deps.TILE; deps.player.vx=0;deps.player.vy=0;
       movePlayerObjectsTo(entering.scene);
       const s=DS.sampleSupport(entering.spawn.x,entering.spawn.z,{minY:-4,maxY:5,pad:.02}); entering.supportId=s?.id||null;entering.supportY=s?.y||0;
@@ -1609,6 +1677,21 @@
     return floor<0?null:grid.levelToY(floor);
   }
 
+  // Flying creatures (ruin Skeeri): true when the straight segment between two world points (x/z in tiles, y in world
+  // units) stays out of every solid voxel of the shaft hub and the wing grids. Flight used to ignore walls entirely.
+  function flightClear(ax,ay,az,bx,by,bz){
+    if(!ruin?.shaftGrids?.size||deps.getCurrentArea?.()!==MAP_ID)return true;
+    const steps=Math.max(1,Math.ceil(Math.hypot(bx-ax,by-ay,bz-az)/.35));
+    for(let i=1;i<=steps;i++){
+      const t=i/steps,x=ax+(bx-ax)*t,y=ay+(by-ay)*t,z=az+(bz-az)*t;
+      for(const entry of ruin.shaftGrids.values()){
+        const g=entry.grid,c=g.xToCol(x),r=g.zToRow(z),l=g.yToLevel(y);
+        if(g.inBounds(c,r,l)&&g.isSolid(c,r,l))return false;
+      }
+    }
+    return true;
+  }
+
   function shaftCreatureCanEnter(actor,wx,wz,walkingPath=false){
     if(!ruin?.shaftGrids?.size||deps.getCurrentArea?.()!==MAP_ID)return true;
     const x=wx/deps.TILE,z=wz/deps.TILE; // Convert game pixels to grid world coordinates.
@@ -1617,6 +1700,14 @@
     if(floor===undefined && actor && shaftAt(actor.x/deps.TILE,actor.y/deps.TILE,actor.shaftSupportY??actor?.surfaceYOverride?.()??0)){
       // A shaft edge may join ordinary ground, but its rock padding is not a route.
       return ruin.floorSet.has(Math.floor(x)+','+Math.floor(z));
+    }
+    if(floor===undefined&&ruin.floorSet?.size){
+      // Ordinary ground (entrance corridor, hallways, sanctum): creatures used to be checked against NOTHING here, so they
+      // walked straight through walls. Only the generated floor set is walkable; an actor that is already off it
+      // (spawned on an edge, shoved) may still step anywhere so it can never be pinned.
+      const tile=Math.floor(x)+','+Math.floor(z);
+      const standing=actor&&Number.isFinite(actor.x)?Math.floor(actor.x/deps.TILE)+','+Math.floor(actor.y/deps.TILE):null;
+      if(!ruin.floorSet.has(tile)&&(standing===null||ruin.floorSet.has(standing)))return false;
     }
     return true;
   }
@@ -1642,6 +1733,20 @@
     // Rooms with stacked floors (shaft hubs, js/shaft-hub.js) sample relative to where the player stands: the highest surface in a fixed band would be the balcony overhead, so the floor under it could never be walked. Ordinary ruins keep the fixed band.
     const relative=Number.isFinite(refY)?DS.sampleSupport(x,z,{minY:refY-8,maxY:refY+MAX_STEP_HEIGHT+.02,pad:.02}):null;
     return{x,z,pit:DS.pointInPit(x,z,PLAYER_RADIUS*.25),support:relative||DS.sampleSupport(x,z,{minY:-4,maxY:5,pad:.02})};} // Horizontal collision is already resolved by the ordinary registered interior grid; this helper owns only ruin-specific vertical support/pit state.
+  // Jump-platform shafts: a fall is survivable. Short drops are free; longer ones
+  // cost Health (never lethal) and Footing, with a camera kick.
+  function applyShaftFallDamage(drop,runtime){
+    const damage=Number(runtime?.fallDamageFor?.(drop))||0;
+    runtime?.noteFall?.(drop);
+    if(!(damage>0)||!deps?.player)return 0;
+    const player=deps.player,health=Number(player.health)||0;
+    const amount=Math.min(damage,Math.max(0,health-1)); // A fall from a platform never kills outright.
+    window.ResourceSystem?.spendFooting?.(player,Math.min(60,18+damage),'shaft fall');
+    if(amount>0)deps.damagePlayer?.(amount,undefined,undefined,0,{noStagger:true});
+    window.GameFeel?.addTrauma?.(Math.min(.65,.18+damage*.02));
+    return amount;
+  }
+
   function reconcileObeliskPlayer(now,x,z){
     const obelisks=ruin.shaftObeliskRuntime; // The selected traversal owns falling between pillars; the generic 650ms fall would bypass its midair grabs.
     if(!obelisks||(!obelisks.isVoidAt(x,z)&&!ruin.obeliskFall))return false;
@@ -1662,7 +1767,7 @@
       // A horizontal approach cannot phase through the solid side of a raised
       // column. A successful climb/mantle is processed earlier in reconcilePlayer.
       const inside=[...obelisks.columns.values()].find(p=>
-        Math.abs(x-p.x)<p.width/2-.05&&Math.abs(z-p.z)<p.width/2-.05
+        Math.abs(x-p.x)<(p.w||p.width)/2-.05&&Math.abs(z-p.z)<(p.d||p.width)/2-.05
         &&levelY<p.y-.25&&levelY>=p.baseY);
       if(inside){
         deps.player.x=ruin.lastAcceptedPx.x;deps.player.y=ruin.lastAcceptedPx.y;
@@ -1688,6 +1793,7 @@
     fall.v-=obelisks.plan.physics.gravity*dt;
     const surface=DS.sampleSupport(x,z,{minY:pitFloor-2,maxY:previous+.05,pad:.015});
     if(surface&&next<=surface.y+.02&&previous>=surface.y-.05){
+      if(obelisks.softLanding)applyShaftFallDamage(fall.startedY-surface.y,obelisks); // Jump shafts have no death pit: you land on what is below and it hurts.
       ruin.obeliskFall=null;ruin.supportId=surface.id;ruin.supportY=surface.y;
       ruin.lastAcceptedPx={x:deps.player.x,y:deps.player.y};
       ruin.lastSafePx={...ruin.lastAcceptedPx};
@@ -1740,6 +1846,7 @@
       if(Number.isFinite(feetY)){
         const px=deps.player.x/deps.TILE,pz=deps.player.y/deps.TILE;
         if(freeJump.phase==='air'){
+          ruin.airPeakY=Math.max(Number.isFinite(ruin.airPeakY)?ruin.airPeakY:feetY,feetY); // Highest point of this flight, for jump-shaft fall damage on landing.
           // Preserve native shaft geometry while ignoring ground-only support and
           // instant-pit reconciliation until the airborne feet actually land.
           const shaft=shaftAt(px,pz,feetY);
@@ -1749,6 +1856,10 @@
           return;
         }
         if(freeJump.phase==='supported'){
+          if(Number.isFinite(ruin.airPeakY)){ // First supported frame after a flight.
+            if(ruin.shaftObeliskRuntime?.softLanding)applyShaftFallDamage(ruin.airPeakY-feetY,ruin.shaftObeliskRuntime);
+            ruin.airPeakY=null;
+          }
           // Standing on an authored rock/table is a legitimate new elevation,
           // not a ground-level tile the V50 step-height veto should undo.
           ruin.supportY=feetY;ruin.supportId=freeJump.supportId||null;
@@ -1949,8 +2060,18 @@
     if(badge.textContent!==composed)badge.textContent=composed;
     return true;
   }
+  // Opt-in: DevRandomRuin.setDebugBadgeEnabled(true), or load with ?ruinBadge=1.
+  function debugBadgeEnabled(){
+    try{if(/[?&]ruinBadge=1\b/.test(String(location.search)))return true;return localStorage.getItem('hobunjiRuinDebugBadge')==='1';}catch(_){return false;}
+  }
+  function setDebugBadgeEnabled(on){
+    try{localStorage.setItem('hobunjiRuinDebugBadge',on?'1':'0');}catch(_){}
+    const badge=document.getElementById('devRandomRuinBadge');if(badge&&!on)badge.style.display='none';
+    updateBadge();
+  }
   function updateBadge(){
     if(!ruin||!devModeEnabled())return; // Diagnostics badge is for Dev Mode only; wilderness-site ruins are ordinary play.
+    if(!debugBadgeEnabled()){const hidden=document.getElementById('devRandomRuinBadge');if(hidden)hidden.style.display='none';return;} // Dungeon data stays off the gameplay screen unless asked for; the seed lives in the objective window.
     let b=document.getElementById('devRandomRuinBadge'); // Used as the existing mobile-visible Random Test Ruin diagnostic badge.
     if(!b){
       b=document.createElement('div');
@@ -2131,10 +2252,17 @@
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',installSettingsButton,{once:true});else installSettingsButton();
 
-  window.DevRandomRuin=Object.freeze({getVestibuleRoots:()=>ruin?{stone:ruin.vestibuleStone||null,props:ruin.stoneAgeStats?.props||0,bindings:ruin.rootGrowthBindings?.length||0,rooted:!!ruin.rootedMechanisms,ms:ruin.vestibuleRootMs||0,error:ruin.vestibuleRootError||null}:null,generate,generateStoryVault,reroll:()=>ruin?.shaftTest?generateShaftTest():generate(randomSeed(),ruin?.singleRoomTrial?{singleRoomTrial:true,puzzleType:ruin.singleRoomTrial.mode==='weighted'?'weighted':ruin.singleRoomTrial.kind}:{hachutu:ruin?.hachutu===true,rootMechanisms:ruin?.rootedMechanisms===true,stoneAge:ruin?.stoneAgeRequested===true,composedTrial:ruin?.composedTrialForced===true?true:undefined}),clear:()=>{if(deps?.getCurrentArea?.()===MAP_ID)leaveRuin();else clearRuntime(true);},leave:leaveRuin,exitTo,getInteractionControls:()=>ruin?ruin.controls.filter(control=>control.kind!=='story-vault-pedestal'||window.DelversGuild?.vaultPhase?.()==='search').map(control=>({...control,range:Number.isFinite(Number(control.range))?Number(control.range):CONTROL_RANGE})):[],registerLabPushBlock,unregisterLabPushBlock,getNativeV50TestRuntime:()=>devModeEnabled()?ruin?.nativeV50Runtime||null:null, // Developer-mode-only diagnostic handle for Playwright to exercise the actual generated puzzle controls and stage gates; not a gameplay solver.
+  // True while the player is inside the shaft room's shell (gallery or central chamber, any story).
+  function isPlayerInShaft(){
+    const plan=ruin?.shaftHubPlan;
+    if(!plan||!deps?.player||deps.getCurrentArea?.()!==MAP_ID)return false;
+    const half=plan.options.shaftSize/2+1.5,x=deps.player.x/deps.TILE-plan.shaft.anchor.x,z=deps.player.y/deps.TILE-plan.shaft.anchor.z;
+    return Math.abs(x)<=half&&Math.abs(z)<=half;
+  }
+  window.DevRandomRuin=Object.freeze({isPlayerInShaft,getLichName:()=>ruin?.lichName||null,setDebugBadgeEnabled,getSeed:()=>ruin?.seed??null,getTitle:()=>ruin?arrivalTitle(ruin):'',getVestibuleRoots:()=>ruin?{stone:ruin.vestibuleStone||null,props:ruin.stoneAgeStats?.props||0,bindings:ruin.rootGrowthBindings?.length||0,rooted:!!ruin.rootedMechanisms,ms:ruin.vestibuleRootMs||0,error:ruin.vestibuleRootError||null}:null,generate,generateStoryVault,reroll:()=>ruin?.shaftTest?generateShaftTest():generate(randomSeed(),ruin?.singleRoomTrial?{singleRoomTrial:true,puzzleType:ruin.singleRoomTrial.mode==='weighted'?'weighted':ruin.singleRoomTrial.kind}:{hachutu:ruin?.hachutu===true,rootMechanisms:ruin?.rootedMechanisms===true,stoneAge:ruin?.stoneAgeRequested===true,composedTrial:ruin?.composedTrialForced===true?true:undefined}),clear:()=>{if(deps?.getCurrentArea?.()===MAP_ID)leaveRuin();else clearRuntime(true);},leave:leaveRuin,exitTo,getInteractionControls:()=>ruin?ruin.controls.filter(control=>control.kind!=='story-vault-pedestal'||window.DelversGuild?.vaultPhase?.()==='search').map(control=>({...control,range:Number.isFinite(Number(control.range))?Number(control.range):CONTROL_RANGE})):[],registerLabPushBlock,unregisterLabPushBlock,getNativeV50TestRuntime:()=>devModeEnabled()?ruin?.nativeV50Runtime||null:null, // Developer-mode-only diagnostic handle for Playwright to exercise the actual generated puzzle controls and stage gates; not a gameplay solver.
     setPuzzleLabStatus,
     getRuntimeContext:()=>ruin?{scene:ruin.scene,grid:ruin.grid,root:ruin.localeRoot,meta:ruin.meta,floorSet:ruin.floorSet,floorScope:SCOPE,ceilingY:ruin.ceilingY,spawn:{...ruin.spawn},cols:ruin.cols,rows:ruin.rows,sanctumMapSize:ruin.sanctumMapSize,sanctumPlan:ruin.sanctumPlan||null,
-    shaftEntrance:ruin.compactVestibule?window.RuinShaftConnector?.entranceOutside?.(ruin.meta,{x:entryPadX,z:entryPadZ},RUIN_TILE_SCALE)||null:null,seed:ruin.seed,theme:ruin.theme,specialBoss:ruin.specialBoss,ruinName:ruin.ruinName,hachutu:!!ruin.hachutu,stoneAge:!!ruin.stoneAge,stoneAgeStats:ruin.stoneAgeStats||null,shaftHub:!!ruin.shaftHub,singleRoomTrial:ruin.singleRoomTrial||null,labFurniture:ruin.labFurniture,noLoot:ruin.noLoot===true,puzzleOptions:{...ruin.puzzleOptions}}:null,getPuzzleGenerationOptions:()=>readPuzzleGenerationOptions(),setPuzzleGenerationOptions:options=>savePuzzleGenerationOptions(options),getOccupancySnapshot:()=>ruin?.occupancy?.snapshot?.()||null,hasOccupancy:()=>!!ruin?.occupancy?.snapshot,debugPlayerCollision:()=>{ // Pixel Probe readout: the 3D voxel grid (not the footprint registry) is what snaps to whole tiles.
+    shaftEntrance:ruin.compactVestibule?window.RuinShaftConnector?.entranceOutside?.(ruin.meta,{x:entryPadX,z:entryPadZ},RUIN_TILE_SCALE)||null:null,seed:ruin.seed,theme:ruin.theme,tier:ruin.tier||null,specialBoss:ruin.specialBoss,ruinName:ruin.ruinName,hachutu:!!ruin.hachutu,stoneAge:!!ruin.stoneAge,stoneAgeStats:ruin.stoneAgeStats||null,shaftHub:!!ruin.shaftHub,singleRoomTrial:ruin.singleRoomTrial||null,labFurniture:ruin.labFurniture,noLoot:ruin.noLoot===true,puzzleOptions:{...ruin.puzzleOptions}}:null,getPuzzleGenerationOptions:()=>readPuzzleGenerationOptions(),setPuzzleGenerationOptions:options=>savePuzzleGenerationOptions(options),getOccupancySnapshot:()=>ruin?.occupancy?.snapshot?.()||null,hasOccupancy:()=>!!ruin?.occupancy?.snapshot,debugPlayerCollision:()=>{ // Pixel Probe readout: the 3D voxel grid (not the footprint registry) is what snaps to whole tiles.
       if(!ruin||!deps?.player)return null;
       const x=deps.player.x/deps.TILE,z=deps.player.y/deps.TILE,grid=shaftAt(x,z,ruin.supportY);
       const out={x:+x.toFixed(3),z:+z.toFixed(3),supportY:ruin.supportY,supportId:ruin.supportId,lastAccepted:ruin.lastAcceptedPx?{x:+(ruin.lastAcceptedPx.x/deps.TILE).toFixed(3),z:+(ruin.lastAcceptedPx.y/deps.TILE).toFixed(3)}:null,shaftGrids:ruin.shaftGrids?.size||0,grid:null};
@@ -2173,7 +2301,7 @@
     },
     isShaftNetworkComplete:()=>ruin?.shaftLayerRuntime?ruin.shaftNetworkComplete===true:true, // No allocation in the hot Sanctum Great Door update path.
     isSlidingPushBlock:block=>ruin?.blockSlide?.block===block, // Keeps the separate floor-settling pass from adjusting a block mid-slide.
-    getGenerationProgress:()=>({phase:generationPhase,elapsedS:+((performance.now()-generationStartedMs)/1000).toFixed(1),attempts:lastGenerationAudit?.attempts?.length||0}),getDarknessSettings,setDebugBadgePart,getOcclusionMeshes:()=>ruin?.occlusionMeshes||null,setPlayerWorldPoint,getPlayerSupportY,getPlayerGroundSupportY,shaftSegmentHit,shaftCreatureCanEnter,syncShaftCreatureFloor,registerShaftGrid,unregisterShaftGrid:scope=>ruin?.shaftGrids?.delete(scope),setLevelRelativeSupport:on=>{if(ruin)ruin.levelRelativeSupport=on!==false;return !!ruin?.levelRelativeSupport;},getGroundSupportYAt,acceptFreeJumpLanding,setMechanismTarget,lockMechanism,unlockMechanism,mechanismInfo,syncPlayerPresentationHeight:syncRuinPresentationHeight,getState:()=>ruin?{mapId:MAP_ID,storyVault:ruin.storyVault ? {footprints:ruin.storyVaultFootprintCount,doorBlocks:false,puzzles:0,decalReady:ruin.storyVaultDecalReady,decalError:ruin.storyVaultDecalError||null} : null,seed:ruin.seed,theme:ruin.theme,specialBoss:ruin.specialBoss,ruinName:ruin.ruinName,hachutu:!!ruin.hachutu,shaftHub:!!ruin.shaftHub,singleRoomTrial:ruin.singleRoomTrial||null,noLoot:ruin.noLoot===true,shaftConnection:ruin.shaftConnection||null, // The mobile debug snapshot reports the laboratory's chosen puzzle and reward policy.shaftLayerRuntime:ruin.shaftLayerRuntime?.getState?.()||null,
+    getGenerationProgress:()=>({phase:generationPhase,elapsedS:+((performance.now()-generationStartedMs)/1000).toFixed(1),attempts:lastGenerationAudit?.attempts?.length||0}),getDarknessSettings,setDebugBadgePart,getOcclusionMeshes:()=>ruin?.occlusionMeshes||null,setPlayerWorldPoint,getPlayerSupportY,getPlayerGroundSupportY,shaftSegmentHit,shaftCreatureCanEnter,syncShaftCreatureFloor,registerShaftGrid,unregisterShaftGrid:scope=>ruin?.shaftGrids?.delete(scope),setLevelRelativeSupport:on=>{if(ruin)ruin.levelRelativeSupport=on!==false;return !!ruin?.levelRelativeSupport;},getGroundSupportYAt,acceptFreeJumpLanding,setMechanismTarget,lockMechanism,unlockMechanism,mechanismInfo,syncPlayerPresentationHeight:syncRuinPresentationHeight,setPresentationSink,flightClear,getState:()=>ruin?{mapId:MAP_ID,storyVault:ruin.storyVault ? {footprints:ruin.storyVaultFootprintCount,doorBlocks:false,puzzles:0,decalReady:ruin.storyVaultDecalReady,decalError:ruin.storyVaultDecalError||null} : null,seed:ruin.seed,theme:ruin.theme,specialBoss:ruin.specialBoss,ruinName:ruin.ruinName,hachutu:!!ruin.hachutu,shaftHub:!!ruin.shaftHub,singleRoomTrial:ruin.singleRoomTrial||null,noLoot:ruin.noLoot===true,shaftConnection:ruin.shaftConnection||null, // The mobile debug snapshot reports the laboratory's chosen puzzle and reward policy.shaftLayerRuntime:ruin.shaftLayerRuntime?.getState?.()||null,
     nativeV50Runtime:ruin.nativeV50Runtime?.getState?.()||null,
     runtimeWallPlanes:ruin.entranceWallPlanes||null,
     runtimeHallways:ruin.entranceHallways||null, // Persist the authoritative floor-zero generated audit after V50's iframe has detached every upper-floor preview root.

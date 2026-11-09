@@ -13,12 +13,15 @@
   const BLOCK_WIDTH = 0.32; // V50 short-obelisk proportions, enlarged slightly for a readable airborne target.
   const BLOCK_HEIGHT = 0.48;
   const BLOCK_DEPTH = 0.32;
+  let runeTexturePath = null;
   let runeTexture = null; // Cached for every generated target; never destroyed during a ruin reroll.
   let runeGeometry = null; // One immutable rune plane shared by all target decals instead of four allocations per target.
 
   function texture() {
-    if (runeTexture) return runeTexture;
-    runeTexture = new THREE.TextureLoader().load(RUNE_PATH);
+    const path = window.RuinEmblem?.resolve?.(RUNE_PATH) || RUNE_PATH; // The ruin's tradition motif; reloaded when the tradition changes.
+    if (runeTexture && runeTexturePath === path) return runeTexture;
+    runeTexture = new THREE.TextureLoader().load(path);
+    runeTexturePath = path;
     if (THREE.SRGBColorSpace) runeTexture.colorSpace = THREE.SRGBColorSpace;
     return runeTexture;
   }

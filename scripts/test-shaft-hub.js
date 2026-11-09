@@ -65,7 +65,7 @@ for(const file of ['ruin-layer-plan.js','ruin-shaft-corridor.js','ruin-shaft-con
     assert.equal(trial.totalBraziers,baseline.totalBraziers);
     for(const floor of baseline.floors){
       const blocks=floor.rooms.filter(room=>room.challenge==='findBlocks');
-      assert(blocks.length>=1,'Every generated dungeon story has at least one Find the Blocks chamber');
+      // A room is a room: Find the Blocks is one ordinary draw, no longer guaranteed on every story.
       assert(blocks.length<=3,'Short wings should not repeat the same compound challenge excessively');
       assert(blocks.every(room=>room.w>=18&&room.d>=18),'Block puzzles have genuine 18x18 push-space footprints');
       for(const wing of floor.wings){
@@ -139,9 +139,7 @@ for(let seed=1;seed<=100;seed++){
     const sides=new Set(floor.wings.map(wing=>wing.side));
     assert(!sides.has(floor.floor===0?'W':'E'),'a reserved portal must not be reused');
     assert(floor.wings.every(wing=>wing.rooms.length<=3),'a long challenge sequence must not survive inside a wing');
-    assert(floor.wings.some(wing=>wing.rooms.slice(0,-1).some(room=>
-      ['glyphObelisk','ceilingRailTargets'].includes(room.challenge))),
-      'each story retains a real ranged puzzle while distributing rooms');
+    // A room is a room: no story is guaranteed a ranged puzzle any more; every room draws from the whole set.
   }
   assert.equal(plan.totalBraziers+plan.nativeFloorCount,plan.floorCount*4-1,
     'Great Door must require a fire from each free shaft exit and each reserved native V50 floor');
@@ -250,10 +248,8 @@ for(let seed=1;seed<=1000;seed++){
       assert.equal(wing.rooms.filter(r=>r.kind==='brazier-chamber').length,1,'exactly one brazier endpoint');
       assert.equal(wing.corridors.length,wing.rooms.length,'hallway per progression stage');
       if(wing.rooms.length===3){
-        assert(['pressurePlate','findBlocks'].includes(wing.rooms[0].challenge),
-          'a two-puzzle wing begins with a real stone plate or the full four-block compound puzzle');
-        assert(['glyphObelisk','ceilingRailTargets','findBlocks'].includes(wing.rooms[1].challenge),
-          'its second chamber uses the ranged family or Find the Blocks without skipping a progression gate');
+        // A room is a room: either puzzle chamber draws from the whole implemented set (no stage-specific families).
+        assert(wing.rooms.slice(0,-1).every(r=>Plan.PLAYABLE_PUZZLES?.includes?.(r.challenge)||['pressurePlate','glyphObelisk','ceilingRailTargets','melodyEcho','dungeonFire','ropeChain','statueDefense','findBlocks'].includes(r.challenge)),'both chambers use an implemented mechanism');
         assert(!(wing.rooms[0].challenge==='findBlocks'&&wing.rooms[1].challenge==='findBlocks'),
           'consecutive large block puzzles would make a short wing repetitive');
       }else assert(Plan.DEFAULTS.minChallenges===1 && wing.rooms[0].challenge,
