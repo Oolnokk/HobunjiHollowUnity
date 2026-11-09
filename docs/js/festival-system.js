@@ -591,7 +591,16 @@
           entry:value.entry || null,rewarded:!!value.rewarded,favorAwarded:value.favorAwarded !== false}; // Legacy contests already gave old tenfold Favor; never replay them.
       }
     }
-    if (window.FestivalCalendar.blessings[saved?.blessing?.stat] && Number.isFinite(saved.blessing.expiresDay) && Number.isFinite(saved.blessing.level)) state.blessing = { stat: saved.blessing.stat, level: Math.round(Math.max(1,Math.min(5,saved.blessing.level))*100)/100, expiresDay: saved.blessing.expiresDay };
+    if (window.FestivalCalendar.blessings[saved?.blessing?.stat] && Number.isFinite(saved.blessing.expiresDay) && Number.isFinite(saved.blessing.level)) state.blessing = { stat:saved.blessing.stat,
+      level:Math.round(Math.max(1,Math.min(5,saved.blessing.level))*100)/100,expiresDay:saved.blessing.expiresDay,
+      ...(typeof saved.blessing.sourceItem==='string'?{sourceItem:saved.blessing.sourceItem}:{}),
+      sourceStars:Number.isInteger(saved.blessing.sourceStars)?saved.blessing.sourceStars:null,
+      mode:saved.blessing.mode==='release'?'release':saved.blessing.mode==='burn'?'burn':null,
+      scarcityFactor:Number.isFinite(saved.blessing.scarcityFactor)?Math.max(1,Math.min(4,saved.blessing.scarcityFactor)):null,
+      valueFactor:Number.isFinite(saved.blessing.valueFactor)?saved.blessing.valueFactor:null,
+      effortFactor:Number.isFinite(saved.blessing.effortFactor)?saved.blessing.effortFactor:null,
+      source:typeof saved.blessing.source==='string'?saved.blessing.source:null,
+      sourceLabel:typeof saved.blessing.sourceLabel==='string'?saved.blessing.sourceLabel:null }; // Historical sacrifice appraisal is immutable after save; future rarity models must not silently change it.
     state.animalReleases=(Array.isArray(saved?.animalReleases)?saved.animalReleases:[])
       .filter(row=>row&&typeof row.id==='string'&&typeof row.species==='string'&&typeof row.key==='string'&&Number.isFinite(row.createdDay))
       .slice(0,128).map(row=>({id:row.id,species:row.species,key:row.key,createdDay:row.createdDay,
