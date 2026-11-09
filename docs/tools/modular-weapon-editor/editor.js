@@ -7,6 +7,11 @@
     speck: Number(document.getElementById(prefix + '-clean-speck').value) });
   const toolStrength = prefix => Number(document.getElementById(prefix + '-tool-strength').value) / 100;
   const byId = id => document.getElementById(id); // Shared authoring UI lookup.
+  function openWorkspace(section) {
+    const source = byId('source-preview-workflow'); // The whole rig remains primary while a user opts into editable source canvases.
+    if (source) source.open = true;
+    if (section && byId(section)) byId(section).open = true;
+  }
   let data = JSON.parse(JSON.stringify(api.getConfig())); // Editable copy of validated config.
   let mountIndex = 0; // Active mounting line for edits on the selected haft.
   let serial = 0; // Discard outdated async image/assembly requests.
@@ -447,6 +452,7 @@
     byId('assembly-status').textContent = 'Removed one element from this combination. Use Undo to restore it.';
   }
   function selectRecipeElement(index) {
+    openWorkspace('bridge-workflow'); // The selected recipe's box and fields must both be visible on mobile.
     recipeSel = index; // The selected placed box is shared with the existing drag-to-resize recipe UI.
     byId('pair-bridge-on').checked = true;
     byId('pair-brush-mode').value = 'recipe';
@@ -467,7 +473,8 @@
       const used = mount.type === matchedType;
       elementRow(mounts, 'Mount ' + (index + 1) + ': ' + (mount.type === 'eye' ? 'eye / sleeve' : mount.type === 'rope' ? 'rope / chain reach' : 'tang')
         + (used ? (matchedType === 'rope' ? ' — drives connector reach' : ' — draws this head') : ' — not used by this head'), [
-        ['Select line', () => { mountIndex = index; render(); byId('socket').scrollIntoView({ block: 'nearest' }); }],
+        ['Select line', () => { mountIndex = index; openWorkspace('mount-editor-workflow'); render();
+          byId('socket').scrollIntoView({ block: 'nearest' }); }],
         ['Remove mount', () => {
           if (chosenShaft().mounts.length <= 1) {
             byId('assembly-status').textContent = 'At least one mount is required on each haft.'; return;
@@ -679,6 +686,7 @@
     return Math.hypot(event.clientX - x, event.clientY - y) <= radiusPx;
   }
   function setGizmoMode(next) {
+    openWorkspace('mount-editor-workflow');
     gizmoMode = next; // Changing modes never changes line geometry or the saved draft.
     for (const name of ['draw', 'move', 'rotate']) {
       const button = byId('gizmo-' + name); // Accessible toggle state and active CSS.
@@ -801,7 +809,8 @@
     const id = 'bore-' + (Math.max(0,...bores.map(b => Number(String(b.id).replace(/^bore-/,'')) || 0)) + 1);
     bores.push({ id, offsetX: 0, offsetY: 0, rx: 10, ry: 10, rotation: 0,
       rim: 5, outline: 3, warp: 1.5, shade: .65, lightX: -.6, lightY: -.8, enabled: true }); // 0/0 relative offsets; 10px radii make a 20×20px opening. // Safe editable ellipse; the source PNG is never overwritten.
-    selectedBoreId = id; boreMoveEnabled = true; save();
+    selectedBoreId = id; boreMoveEnabled = true; openWorkspace('flail-authoring-panel'); save();
+    msg('Bore added. The source canvases are open; drag on the haft (not the full rig) to move its connector-relative offset.');
     msg('New bore added. Tap or drag its center on the haft preview to reposition and recalculate.');
   };
   byId('bore-remove').onclick = () => {
@@ -814,7 +823,9 @@
   };
   byId('bore-drag').onclick = () => {
     if (!selectedBore()) return;
-    boreMoveEnabled = !boreMoveEnabled; updateBoreControls(); drawLines('shaft-canvas');
+    boreMoveEnabled = !boreMoveEnabled;
+    if (boreMoveEnabled) openWorkspace('flail-authoring-panel'); // Never offer a drag mode with its target canvas collapsed.
+    updateBoreControls(); drawLines('shaft-canvas');
     msg(boreMoveEnabled ? 'Tap/drag on the haft sprite to move the bore. Geometry and shading recalculate while moving.' : 'Bore mover disabled; mounting-line gizmos restored.');
   };
   byId('bore-enabled').onchange = () => { if (!selectedBore()) return; selectedBore().enabled = byId('bore-enabled').checked; save(); };
@@ -938,7 +949,9 @@
     field.addEventListener('input',()=>edit(false));field.onchange=()=>edit(true);
   }
   byId('region-select').onclick=()=>{
-    regionSelecting=!regionSelecting;regionDraft=null;updateRegionControls();
+    regionSelecting=!regionSelecting;
+    if (regionSelecting) openWorkspace('shaft-duplicate-panel'); // Rectangle authoring requires the composite preview to be visible.
+    regionDraft=null;updateRegionControls();
     drawBridgeOverlay(); // Selection overlay replaces brush interaction until a region is completed.
     msg(regionSelecting?'Drag a rectangle on the assembled weapon preview to select rig children.':'Region selection cancelled.');
   };
@@ -1580,6 +1593,7 @@
     drawBridgeOverlay();
   };
   byId('pair-bridge-on').onchange = () => {
+    if (byId('pair-bridge-on').checked) openWorkspace('bridge-workflow');
     previewCanvas.style.cursor = byId('pair-bridge-on').checked ? 'crosshair' : '';
     bridgeHover = null; drawBridgeOverlay();
   };
@@ -1630,6 +1644,7 @@
     const input = byId(pre + '-style-pool'), readout = byId(pre + '-style-pool-value');
     input.addEventListener('input', () => { readout.textContent = Number(input.value) ? input.value + ' px' : 'auto'; });
   }
+  byId('full-assembly-guides').onchange = () => preview(); // Marker toggle only rerenders, never alters the authored draft or undo stack.
   // Maximize: one preview fills its floating panel (the others hide); pressing again restores them.
   for (const button of document.querySelectorAll('[data-max]')) button.addEventListener('click', () => {
     const figure = button.closest('figure'), panel = button.closest('.float-panel');
@@ -1648,6 +1663,6 @@
   }
   measureHeader(); window.addEventListener('resize', measureHeader);
   if (window.ResizeObserver) new ResizeObserver(measureHeader).observe(header);
-  msg('Ready. Drag arrows over head and shaft images to define matching mounting lines.');
+  msg('Ready. Full 2D rig first; expand numbered workflows to edit parts. Open Source canvases for touch-based mount, bore and brush editing.');
   render();
 })();
