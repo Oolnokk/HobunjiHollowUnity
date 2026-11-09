@@ -15,6 +15,81 @@ localStorage draft. An authored key must resolve to an existing
 `TOOL_ITEM_DEFS` item or `shapeKey`; the editor does not invent gameplay
 weapon definitions or acquisitions.
 
+## Foundry modular part names, tool roles, and flexible flails
+
+The [Modular Weapon Editor](../tools/modular-weapon-editor/index.html) owns each
+**part's own descriptive label** (which no longer needs the donor weapon's
+name), the shaft's `namePosition: 'prefix'|'suffix'` and `nameAffix`,
+and the head's `weaponNames: { prefix, suffix }`. The head provides
+**both** grammatical forms. For example:
+
+- The Fishing Mace unlocks a **Bored Wrapped Handle** and a
+  **Barb-flanged Mace Head**; their composed copper weapon is
+  **Copper Bored-handled Barb-flanged Mace**.
+- The Harlyao Longsword unlocks a **Trapezoidal Hilt** and a
+  **Harlyao-style Long-blade**; their composed copper weapon is
+  **Copper Harlyao-style Long-blade with a Trapezoidal Hilt**.
+
+The unchanged `modular:<shaftKey>:<headKey>:<metalKey>` saved ID is still
+the crafting, ownership, mastery and source-shape authority. The labels
+and grammatical affixes are not encoded into inventory keys. Older
+browser drafts with no naming fields inherit the newly shipped names.
+
+A modular head may declare `toolSlots` (e.g. `['axe']`,
+`['pick']`, `['harpoon']`). A shaft may declare `toolWorthy: true`.
+Only when **both** conditions match does the assembled equipment add
+noncombat slots to its always-present `weapon` slot. All configured
+slots then follow the existing `ToolMastery` and
+`HobunjiMasteryPolicy` event routing: successful ordinary tool
+actions, worth-based hoe harvests and shovel digs where applicable,
+and player-attributed combat kills retain their existing source-specific
+XP amounts and the normal dual-role combat multiplier.
+The head never makes a non-tool-worthy weapon hilt into a tool.
+
+### Choosing the owner of a flail
+
+**Step 1 — Tool Hub → Complex Tool Visuals:** Create or select a
+flail **recipe** (a reusable recipe ID need not itself be an item key).
+Author the original shaft/rope or chain, suspension color and
+thickness, effective length, movement damping, inertial lag,
+original separate head-layer stack, head scale, anchors and effects.
+Export and commit `config/weapon-sprite-assemblies.js` as usual.
+
+**Step 2 — Modular Weapon Editor:** Attach that recipe ID to **either**
+the head (`head.flailAssembly`) or the shaft
+(`shaft.flailAssembly`) and export/commit
+`config/modular-weapons.js`. It is invalid for **both** selected
+pieces to own a flail recipe.
+
+- **Head-owned flail:** The final shaft sprite remains rigid. The recipe
+  supplies the hanging head's existing multi-layer textures and chain
+  physics. Its top rope anchor moves to the selected shaft's original
+  compatible tang/eye mount, or to the explicitly authored
+  `flailHaftAnchor` point. This supports a reusable complete flexible
+  head on many different shafts.
+- **Shaft-owned flail:** The final shaft sprite and the original
+  recipe's shaft-side anchor, rope texture, length, color and motion
+  remain unchanged. The recipe's authored head layers are replaced
+  by the selected `head.sprite`, using that head's
+  `flailHeadAnchor` and `flailHeadScale`. This supports one swinging
+  shaft paired with many different modular heads.
+
+The first `grappleFlail` reusable reference is available from either
+a dedicated Rope-bound Grapple Handle or a Grapple Hook Head, unlocked
+through the original weapon's `grappleFlail` source shape. The combo
+of both is forbidden. The old ordinary Grapple-Flail and Hachutu
+Torch-Flail recipes and animations remain untouched.
+
+For a flail, the Foundry's 2D tool sprite represents the **shaft only**.
+The runtime's existing `HobunjiWeaponSpriteAssemblies` Three.js decorator
+loads the chain and the separate, replaceable head and updates their
+position with the real gameplay pendulum physics. It reuses the exact
+same equipment item key and equip stance as rigid modular weapons,
+without baking or double-drawing the moving head. The Foundry's
+details and the modular editor's debug panel explicitly say when a
+flail is active. The 2D Foundry picture does *not* try to imitate the
+live pendulum.
+
 ## Hachutu Torch-Staff: two flame regions
 
 `hachutuTorchStaff` uses the new
