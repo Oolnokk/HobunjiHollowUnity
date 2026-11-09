@@ -195,6 +195,95 @@
     mounts.forEach((mount, i) => lineMarker(ctx, mount, id === 'head-canvas' || i === mountIndex));
     drawGizmo(ctx, mounts[id === 'head-canvas' ? 0 : mountIndex]); // Selected handle is drawn in world/source-canvas space.
   }
+  const previewRopeTints = new Map(); // Reuses each authored rope PNG and Gar-wolf color-fill result across flail preview frames.
+  const previewAlphaBounds = new WeakMap(); // Finds physical rope edges once; transparent margins do not shrink visible thickness.
+  function visibleCrop(image) {
+    if (previewAlphaBounds.has(image)) return previewAlphaBounds.get(image);
+    const width = image.naturalWidth || image.width, height = image.naturalHeight || image.height;
+    const sample = document.createElement('canvas'); sample.width = width; sample.height = height;
+    const c = sample.getContext('2d', { willReadFrequently: true }); c.drawImage(image,0,0);
+    const pixels = c.getImageData(0,0,width,height).data;
+    let left=width, top=height, right=-1, bottom=-1;
+    for (let y=0; y<height; y++) for (let x=0; x<width; x++) {
+      if (pixels[(y*width+x)*4+3]<9) continue;
+      left=Math.min(left,x);top=Math.min(top,y);right=Math.max(right,x);bottom=Math.max(bottom,y);
+    }
+    const crop = right<0 ? {x:0,y:0,w:width,h:height} : {x:left,y:top,w:right-left+1,h:bottom-top+1};
+    previewAlphaBounds.set(image,crop); return crop;
+  }
+  function tintedRopeForPreview(image, color) {
+    if (!/^#[0-9a-f]{6}$/i.test(String(color||'')) || String(color).toUpperCase()==='#FFFFFF') return image;
+    const key = (image.src || '')+'|'+color.toUpperCase(); // Same original sprite and color always receive exactly one tint pass.
+    if (previewRopeTints.has(key)) return previewRopeTints.get(key);
+    const canvas = document.createElement('canvas');
+    canvas.width=image.naturalWidth||image.width;canvas.height=image.naturalHeight||image.height;
+    const ctx=canvas.getContext('2d',{willReadFrequently:true});ctx.drawImage(image,0,0);
+    const rgba=ctx.getImageData(0,0,canvas.width,canvas.height);
+    const rgb=[1,3,5].map(n=>parseInt(color.slice(n,n+2),16));
+    window.ColorFill?.shadeFillPixels?.(rgba.data,rgb,{debugLabel:'modular-preview-rope:'+color}); // Same shader as live Grapple-Flail and animal coats.
+    ctx.putImageData(rgba,0,0);previewRopeTints.set(key,canvas);
+    if(previewRopeTints.size>12)previewRopeTints.delete(previewRopeTints.keys().next().value);
+    return canvas;
+  }
+  async function drawFlailPreview(ticket, shaftKey, headKey, composed) {
+    const canvas=byId('flail-preview'), figure=byId('flail-preview-figure');
+    const recipe=api.flailRecipe(shaftKey,headKey); // Actual gameplay recipe, including rope-mount reach and head replacement.
+    if (!recipe?.flail) {figure.hidden=true;return;}
+    figure.hidden=false;
+    const flail=recipe.flail, chain=flail.chain, head=flail.head;
+    const chainPath=chain.sprite || 'assets/objectsprites/rope_long.png';
+    try {
+      const [ropeImage,...layers] = await Promise.all([chainPath,...head.layers.map(layer=>layer.sprite)]
+        .map(src=>api.loadImage(src,'../../')));
+      if(ticket!==serial)return; // Rapid mobile selections cannot display the prior weapon after this one is chosen.
+      const layerImages=head.layers.map((layer,i)=>({layer,image:layers[i]}));
+      const ropeCrop=visibleCrop(ropeImage);
+      const chainX=Number(chain.scaleX ?? chain.scale ?? 1), chainY=Number(chain.scaleY ?? chain.scale ?? 1);
+      const ropeLength=Number(chain.mountLengthPx)>0 ? Number(chain.mountLengthPx)
+        : chain.type==='rope' ? (Number(chain.lengthPx)||160)*chainY : ropeCrop.h*chainY;
+      const ropeWidth=chain.type==='rope' ? (Number(chain.radiusPx)||2.5)*2*chainX : ropeCrop.w*chainX; // Rope-mount length never scales the connector width.
+      const headScale=Number(head.scale)||1; // Only the modular head's own scale (or original multi-sprite authored scale) may size it.
+      const start={x:Number(flail.haftAnchor?.x)||225,y:Number(flail.haftAnchor?.y)||602};
+      const end={x:start.x,y:start.y+ropeLength}; // At rest the physical rope hangs under gravity rather than following its authoring arrow direction.
+      const anchorImage=layerImages.find(({layer})=>layer.id===head.anchorLayer)?.image || layers[0];
+      const anchorLocal=head.anchorSpace==='composite'
+        ? {x:Number(head.anchor?.x)||0,y:Number(head.anchor?.y)||0}
+        : {x:(Number(head.anchor?.x)??anchorImage.width/2)-anchorImage.width/2,
+           y:(Number(head.anchor?.y)??anchorImage.height/2)-anchorImage.height/2};
+      const positions=layerImages.map(({layer,image})=>({
+        image,layer,x:end.x + headScale*((Number(layer.offsetPx?.x)||0)-image.width/2-anchorLocal.x),
+        y:end.y + headScale*((Number(layer.offsetPx?.y)||0)-image.height/2-anchorLocal.y),
+        w:image.width*headScale,h:image.height*headScale
+      }));
+      const original=composed.modularFrame || {left:0,top:0,width:450,height:1204};
+      const pad=25;
+      const left=Math.floor(Math.min(original.left,start.x-ropeWidth/2,...positions.map(p=>p.x))-pad);
+      const top=Math.floor(Math.min(original.top,start.y,...positions.map(p=>p.y))-pad);
+      const right=Math.ceil(Math.max(original.left+original.width,start.x+ropeWidth/2,...positions.map(p=>p.x+p.w))+pad);
+      const bottom=Math.ceil(Math.max(original.top+original.height,end.y,...positions.map(p=>p.y+p.h))+pad);
+      const w=right-left,h=bottom-top;
+      const scale=Math.min(1,2048/Math.max(w,h),Math.sqrt(2097152/(w*h))); // Bound mobile texture memory without cropping long flails.
+      canvas.width=Math.max(1,Math.ceil(w*scale));canvas.height=Math.max(1,Math.ceil(h*scale));
+      const ctx=canvas.getContext('2d');
+      ctx.clearRect(0,0,canvas.width,canvas.height);ctx.save();ctx.scale(scale,scale);ctx.translate(-left,-top);
+      ctx.drawImage(composed,original.left,original.top,original.width,original.height); // Real composed haft includes any user-authored bore and nonmetal materials.
+      const source=chain.type==='rope' ? tintedRopeForPreview(ropeImage,chain.color||'#FFFFFF') : ropeImage;
+      ctx.drawImage(source,ropeCrop.x,ropeCrop.y,ropeCrop.w,ropeCrop.h,start.x-ropeWidth/2,start.y,ropeWidth,ropeLength); // Actual rope/chain PNG; only connector length is stretched.
+      ctx.save();ctx.translate(end.x,end.y);ctx.scale(headScale,headScale);
+      ctx.translate(-anchorLocal.x,-anchorLocal.y);
+      for(const {layer,image} of layerImages) ctx.drawImage(image,-image.width/2+(Number(layer.offsetPx?.x)||0),-image.height/2+(Number(layer.offsetPx?.y)||0));
+      ctx.restore();
+      ctx.fillStyle='#ffdf81';ctx.beginPath();ctx.arc(start.x,start.y,4,0,Math.PI*2);ctx.fill();
+      ctx.restore();
+      const status=byId('flail-preview-status');
+      if(status)status.textContent='Connector reach '+ropeLength.toFixed(1)+' source px · diameter '+ropeWidth.toFixed(1)
+        +' px · head ×'+headScale.toFixed(2)+' (unchanged by mount length).';
+    } catch(error) {
+      if(ticket!==serial)return;
+      const status=byId('flail-preview-status');
+      if(status)status.textContent='Flail preview: '+(error.message||error);
+    }
+  }
   async function preview() {
     const ticket = ++serial, shaftKey = byId('shaft').value, headKey = byId('head').value; // Preview identity.
     const shaft = chosenShaft(), head = chosenHead();
@@ -215,6 +304,7 @@
         ctx.drawImage(composed, 0, 0);
         bridgeView = { composed, frame: composed.modularFrame };
         drawBridgeOverlay();
+        void drawFlailPreview(ticket, shaftKey, headKey, composed); // Separate complete preview keeps the existing assembled brush canvas and coordinates intact.
         const rig = api.attachmentRig(shaft, head, values); // Same scene tree as production: one parent rig with mount/primitive descendants.
         const matrices = rig.children.flatMap(mount => mount.children.map(child => child.worldMatrix)); // Include parent transform; do NOT fit heads to pre-scaled mounts twice.
         byId('debug').textContent = JSON.stringify({
@@ -231,6 +321,7 @@
           disallowed: api.isDisallowed(shaftKey, headKey), gizmoMode, revision: api.diagnostics('').revision
         }, null, 2);
       } else {
+        byId('flail-preview-figure').hidden = true;
         bridgeView = null;
         canvas.width = 450; canvas.height = 1204; // Incompatible pairs render the donor only.
         ctx.clearRect(0, 0, canvas.width, canvas.height); ctx.drawImage(shaftImage, 0, 0, 450, 1204);
