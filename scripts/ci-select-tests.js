@@ -148,10 +148,10 @@ function emit(result) {
   }
   const lines = [`### ${result.suite} test selection`, '',
     `Mode: **${result.full ? 'full coverage' : 'dependency-aware'}**`,
-    `Changed files: ${result.files.length ? result.files.map(file => `\${file}\`).join(', ') : 'unknown'}`, '',
+    `Changed files: ${result.files.length ? result.files.map(file => String.fromCharCode(96) + file + String.fromCharCode(96)).join(', ') : 'unknown'}`, '',
     '| Check | Run? | Why |', '| --- | --- | --- |'];
   for (const [id, enabled] of Object.entries(result.selected)) {
-    const why = enabled ? (result.reasons[id].slice(0, 3).map(p => `\${p}\`).join(', ') || 'shared dependency') : 'unrelated';
+    const why = enabled ? (result.reasons[id].slice(0, 3).map(p => String.fromCharCode(96) + p + String.fromCharCode(96)).join(', ') || 'shared dependency') : 'unrelated';
     lines.push(`| ${id} | ${enabled ? 'yes' : 'skip'} | ${why} |`);
   }
   lines.push('');
