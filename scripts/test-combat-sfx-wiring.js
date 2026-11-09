@@ -223,7 +223,7 @@ const impactContext = {
   window: { AudioSystem: {
     playRangedImpactSfx: (x, y, areaId, pitch) => impactCalls.push({ x, y, areaId, pitch }),
     playWeaponHitSfx: () => impactCalls.push({ thrown: true }),
-    playObjectSfxKey: key => impactCalls.push({ objectSfx: key }),
+    playThrownCoverChopSfx: (x, y, areaId) => impactCalls.push({ chop: true, x, y, areaId }),
   } },
 };
 vm.runInNewContext(ranged.slice(impactStart, impactEnd) + '\nglobalThis.playImpact = playProjectileImpactSfx;', impactContext);
@@ -238,7 +238,7 @@ assert.deepStrictEqual(impactCalls, [
   { x: 10, y: 5, areaId: 'farm', pitch: 2 },
   { x: 10, y: 5, areaId: 'farm', pitch: 1 },
   { thrown: true },
-  { objectSfx: 'chop' },
+  { chop: true, x: 10, y: 5, areaId: 'farm' },
   { thrown: true },
   { x: 10, y: 5, areaId: 'farm', pitch: 1 },
 ], 'only sharp thrown weapons striking cover use the wood-chop cue; blunt, creature hits, and arrows retain their impact sounds');
