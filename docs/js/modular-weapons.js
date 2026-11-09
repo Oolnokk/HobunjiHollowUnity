@@ -389,7 +389,7 @@
   }
   function boreShaft(shaft, source) {
     if (!shaft?.bores?.length || !global.ModularWeaponBridgeFill?.borePixels || !source) return source;
-    const cacheKey = revision + ':' + (shaft.sprite || ''); // Multiple heads with the same haft reuse the identical aperture geometry.
+    const cacheKey = revision + ':' + (shaft.sprite || '') + ':' + JSON.stringify(shaft.bores); // Distinct duplicate shafts and in-progress drag edits never share the wrong aperture image.
     if (boredCanvases.has(cacheKey)) return boredCanvases.get(cacheKey);
     const canvas = document.createElement('canvas');
     canvas.width = 450; canvas.height = 1204; // Bores are authored in the original sprite's fixed coordinate frame.
