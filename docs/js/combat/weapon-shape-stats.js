@@ -1,8 +1,8 @@
 // Per-weapon-shape melee balance, independent of metal reinforcement and mastery.
 (function (global) {
   'use strict';
-  const DEFAULT = Object.freeze({ power: 1, speed: 1, range: 1, efficiency: 1 }); // Neutral fallback for unregistered and unequipped shapes.
-  const SHAPES = Object.freeze({
+  const DEFAULT = Object.freeze({ power: 1, speed: 1, range: 1, efficiency: 1, attackPower: 12 }); // Neutral fallback for unregistered and unequipped shapes.
+  const SHAPES = Object.freeze(Object.fromEntries(Object.entries({
     workhammer: { power: 1.25, speed: 0.90, range: 0.90, efficiency: 0.90 },
     hatchet: { power: 1.00, speed: 1.00, range: 1.00, efficiency: 1.00 },
     hoe: { power: 0.80, speed: 1.05, range: 0.90, efficiency: 1.15 }, // Farm-tool donor; available as a Foundry head/shaft despite its non-weapon standalone slot.
@@ -10,10 +10,10 @@
     fishingspear: { power: 0.90, speed: 1.15, range: 1.30, efficiency: 1.05 },
     pickshovel: { power: 1.10, speed: 0.85, range: 0.85, efficiency: 0.85 },
     warhammer: { power: 1.50, speed: 0.75, range: 1.00, efficiency: 0.80 },
-    porakanekiGreatclub: { power: 1.60, speed: 0.65, range: 1.25, efficiency: 0.70 }, // Heavy head donor meaningfully alters the selected shaft's stats.
+    porakanekiGreatclub: { power: 1.60, speed: 0.65, range: 1.25, efficiency: 0.70, attackPower: 16 }, // Heavy head donor meaningfully alters the selected shaft's stats.
     harlyaoLongsword: { power: 1.10, speed: 1.05, range: 1.20, efficiency: 1.00 },
     harlyaoBroadsword: { power: 1.25, speed: 0.90, range: 1.15, efficiency: 0.90 },
-    bshuakauitl: { power: 0.50, speed: 1.75, range: 1.25, efficiency: 1.20 },
+    bshuakauitl: { power: 0.50, speed: 1.75, range: 1.25, efficiency: 1.20, attackPower: 18 },
     hachutuTorchStaff: { power: 0.50, speed: 1.75, range: 1.25, efficiency: 1.20 }, // Identical initial melee timings and reach to B'shuakauitl; no blowgun ranged role.
     bgungku: { power: 1.00, speed: 1.00, range: 1.00, efficiency: 1.00 }, // Editor-only unmapped donor remains explicitly neutral until assigned a gameplay shape.
     daggerSword: { power: 0.75, speed: 1.40, range: 0.80, efficiency: 1.20 },
@@ -21,7 +21,7 @@
     dagger: { power: 0.50, speed: 2.00, range: 0.25, efficiency: 1.40 },
     kylie: { power: 0.85, speed: 1.15, range: 1.15, efficiency: 1.05 },
     warCleaver: { power: 1.20, speed: 0.85, range: 1.00, efficiency: 0.90 },
-  }); // Authoritative shape stats used by player combos, quick attacks, charged attacks and Foundry weapons.
+  }).map(([key, values]) => [key, Object.freeze({ attackPower: DEFAULT.attackPower, ...values })]))); // Authored shape stats also supply an independent Attack Power without per-hit allocation.
   const HEAD_INFLUENCE = 0.5; // Foundry: half of each head multiplier's deviation from neutral modifies the shaft baseline.
   const finitePositive = (value, fallback = 1) => Number.isFinite(value) && value > 0 ? value : fallback;
   function forShape(shape) {
@@ -35,7 +35,9 @@
       const head = forShape(config.heads[modular.head]?.sourceShape);
       const result = {};
       for (const stat of Object.keys(DEFAULT)) {
-        result[stat] = finitePositive(shaft[stat] * (1 + HEAD_INFLUENCE * (head[stat] - 1)));
+        result[stat] = stat === 'attackPower'
+          ? finitePositive(shaft[stat] * (1 + HEAD_INFLUENCE * (head[stat] / DEFAULT.attackPower - 1)), DEFAULT.attackPower)
+          : finitePositive(shaft[stat] * (1 + HEAD_INFLUENCE * (head[stat] - 1))); // Blend absolute Attack Power around neutral 12 rather than multiplier 1.
       }
       return result;
     }
@@ -60,9 +62,10 @@
   function applyPower(context) {
     if (!context || context.attacker !== global.Combat?.deps?.player) return context; // Hostile attacks are handled by their own combat executor.
     const stats = forKey(context.weaponKey, global.Combat?.deps?.getWeaponDefinition?.(context.weaponKey));
-    for (const field of ['damage', 'affliction', 'knockback', 'footingDamage']) {
+    for (const field of ['damage', 'knockback', 'footingDamage']) {
       context.modifiers[field] = (Number(context.modifiers[field]) || 1) * stats.power;
     }
+    // ResourceSystem reads Attack Power once; melee damage multipliers must not rescale affliction potency.
     return context;
   }
   global.WeaponShapeStats = Object.freeze({

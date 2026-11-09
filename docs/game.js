@@ -1930,6 +1930,7 @@
       // below, but future weapons no longer have to masquerade as tool definitions.
       const MELEE_WEAPON_SHAPE_DEFS = {
         warhammer: { label: 'Warhammer', icon: '🔨', baseSprite: 'assets/toolsprites/warhammer.png', slots: ['weapon'], animStyle: 'sweep', dmgType: 'blunt', weaponIdleClass: 'heavy', requiresDiscovery: true },
+        porakanekiGreatclub: { label: 'Porakaneki Spiked Club', icon: '🪵', baseSprite: 'assets/toolsprites/porakaneki_greatclub.png', slots: ['weapon'], animStyle: 'sweep', dmgType: 'blunt', weaponIdleClass: 'heavy', requiresDiscovery: true }, // Native Porakaneki armament; tribe weapon roll and Foundry share the same authored sprite and stats.
         harlyaoLongsword: { label: 'Harlyao Longsword', icon: '🗡️', baseSprite: 'assets/toolsprites/harlyao_longsword.png', slots: ['weapon'], animStyle: 'sweep', dmgType: 'sharp', weaponIdleClass: 'light', requiresDiscovery: true },
         harlyaoBroadsword: { label: 'Harlyao Broadsword', icon: '🗡️', baseSprite: 'assets/toolsprites/harlyao_broadsword.png', slots: ['weapon'], animStyle: 'sweep', dmgType: 'sharp', weaponIdleClass: 'light', requiresDiscovery: true },
         bshuakauitl:  { label: "B'shuakauitl", icon: '🗡️', baseSprite: "assets/toolsprites/b'shuakauitl.png",       slots: ['weapon'], animStyle: 'sweep',  dmgType: 'sharp', weaponIdleClass: 'light' },
@@ -30633,6 +30634,7 @@
           return tile ? tileSurfaceYInArea(tile, currentArea) : 0;
         },
         canOccupyAt,
+        creatureCanEnterTile, // NPC ranged/melee decisions use the same incline and cliff-step restrictions as live movement.
         damageCreature,
         damagePlayer,
         angleDiff,

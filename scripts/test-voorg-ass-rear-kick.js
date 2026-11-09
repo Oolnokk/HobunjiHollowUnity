@@ -25,12 +25,15 @@ assert.match(game, /c\._voorgRearKickSpent = true; \/\/ No Stamina/, 'wildlife e
 
 const log = []; // Hit and sprite calls captured to verify the actual shared damage-frame contract.
 const draws = []; // Tracks use of the rigger's own separator polygons for both sprite halves.
+const rearRotations = []; // Records the actual canvas-space hindquarter lift in the compositor for the 30-degree regression.
 const fallbackLoads = []; // Records CORS at the moment fallback image loading begins.
 let clock = 1000; // Deterministic simulated wall clock for the companion-only cooldown.
 const frame = key => ({ width: 128, height: 75, kind: key }); // Fake native-size genotyped idle/run1 PNG canvas.
 const context2d = {
   save() {}, restore() {}, beginPath() {}, moveTo() {}, lineTo() {}, closePath() {}, clip() {},
   drawImage(source) { draws.push(source.kind); },
+  rotate(radians) { rearRotations.push(radians); }, // Only the rear-half clipped image should rotate; the idle head must not.
+  translate() {}, clearRect() {},
 };
 const windowStub = {
   Combat: {
@@ -61,7 +64,7 @@ const windowStub = {
 const sandbox = vm.createContext({
   window: windowStub, document: { createElement: () => ({
     getContext: () => context2d,
-    toDataURL: () => 'data:image/png;base64,KICK_FRAME',
+    toDataURL: () => 'data:image/png;base64,KICK_FRAME_' + rearRotations.length, // Each native pose gets a distinct fake URL so recovery proves that the silhouette actually changes.
   }) },
   performance: { now: () => clock }, Image: class {
     constructor() { this.width = 128; this.height = 75; } // Native fallback sprite dimensions used by the compositor.
@@ -115,7 +118,9 @@ async function main() {
   assert.ok(Math.abs(wild.facing - Math.PI) < 0.0001, 'animal reverses only after its lunge');
   await settle();
   assert.ok(draws.includes('idle') && draws.includes('run1'), 'idle head and run1 hindlegs were composited');
-  assert.equal(log.filter(x => x[0] === 'polygon').length, 2, 'both sides use the saved rigger split');
+  assert.equal(log.filter(x => x[0] === 'polygon').length, 14, 'seven native-resolution poses share both sides of the authored separator');
+  assert.equal(rearRotations.length, 6, 'the rear silhouette rotates once per non-neutral five-degree step');
+  assert.ok(Math.abs(Math.min(...rearRotations) + Math.PI / 6) < 1e-6, 'the furthest rear lift is opposite Grehlr burrow at minus 30 degrees');
   kick.update(wild, state, 0.35, deps);
   kick.update(wild, state, 0.14, deps);
   assert.equal(damageCalls.length, 1, 'kick lands once after windup');
@@ -143,7 +148,9 @@ async function main() {
   assert.equal(damageCalls.length, 1, 'holding the pose never deals a second hit');
   kick.update(wild, state, 0.02, deps);
   assert.equal(state.stage, 'recovery', 'one full second of impact pose precedes recovery');
-  kick.update(wild, state, 0.24, deps);
+  kick.update(wild, state, 0.12, deps);
+  assert.notEqual(wild.currentFrameUrl, heldFrame, 'hindquarters start easing down only after the full impact hold');
+  kick.update(wild, state, 0.12, deps);
   assert.equal(wild.state, 'fleeing-low-health', 'wild Voorg-Ass escapes only after the full kick hold and recovery');
   assert.equal(wild._voorgRearKickThreat, null, 'wild target cleared for retreat');
   assert.equal(wild._voorgRearKickSpent, true, 'wild kick cannot loop while escaping');

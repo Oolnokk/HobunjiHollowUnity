@@ -363,7 +363,7 @@ assert.strictEqual(windowObject.RangedWeapons.config.daggerSword_copper, undefin
 assert.strictEqual(windowObject.RangedWeapons.config.kylie_copper.rangedType, 'thrown');
 assert.strictEqual(windowObject.RangedWeapons.config.bshuakauitl_copper.rangedType, 'blowgun');
 assert.strictEqual(windowObject.RangedWeapons.config.bshuakauitl_copper.damage, 2, 'Blowgun should use deliberately tiny raw damage.');
-assert.strictEqual(windowObject.RangedWeapons.config.bshuakauitl_copper.basicAfflictionScale, 40, 'Blowgun should heavily amplify mastery affliction buildup.');
+assert.strictEqual(windowObject.RangedWeapons.config.bshuakauitl_copper.basicAfflictionScale, 10, 'Blowgun afflictions now scale from independent Attack Power, not two raw damage.');
 assert.strictEqual(windowObject.RangedWeapons.config.bshuakauitl_copper.firePose.neutral.pitch, -180, 'Blowgun stance should copy Drink strike pitch.');
 const blowgunRest = windowObject.RangedWeapons.config.bshuakauitl_copper.loadPose.neutral; // Unloaded stance is the same thrust rest a shovel idles in outside the weapon slot.
 for (const [channel, expected] of Object.entries({ x: 0, y: 0, z: 0, pitch: 10.31, yaw: 0, roll: 0, bodyYaw: 0 })) assert.strictEqual(blowgunRest[channel], expected, `Blowgun unloaded neutral ${channel} should match the shovel's thrust rest.`);
@@ -404,13 +404,13 @@ assert.deepStrictEqual(baseEffectSelections.map(entry => entry.effectId), ['brui
 // The closure-private ranged payload builder still sees the original effect objects.
 // While a Blowgun is equipped, their afflictionId getter emits a projectile-carried
 // alias. ResourceSystem resolves that alias at impact and multiplies the normal 0.15
-// amount by 40 without increasing the dart's raw damage.
+// amount by 10 from the dart's independent 18 Attack Power without increasing Health damage.
 equippedRanged = 'bshuakauitl_copper';
 const poisonAlias = baseBasicEffects.find(effect => effect.id === 'poisonedHealth').afflictionId;
-assert.match(poisonAlias, /^__ranged_blowgun_40x_poisonedHealth$/);
-windowObject.ResourceSystem.addAffliction({}, poisonAlias, 0.3); // 2 raw damage × the ranged system's normal 0.15 mastery multiplier.
+assert.match(poisonAlias, /^__ranged_blowgun_10x_poisonedHealth$/);
+windowObject.ResourceSystem.addAffliction({}, poisonAlias, 2.7); // 18 Attack Power × the ranged system's normal 0.15 mastery coefficient.
 assert.strictEqual(addedAfflictions.at(-1).id, 'poisonedHealth');
-assert.strictEqual(addedAfflictions.at(-1).amount, 12, 'A 2-damage Blowgun dart should build 12 affliction per selected mastery rank (effective 6.0x).');
+assert.strictEqual(addedAfflictions.at(-1).amount, 27, 'A low-damage Blowgun dart builds 27 affliction from 18 Attack Power per chosen mastery rank.');
 
 equippedRanged = 'kylie_copper';
 assert.strictEqual(baseBasicEffects.find(effect => effect.id === 'bruisedHealth').afflictionId, 'bruisedHealth', 'Kylie should use normal ranged buildup multipliers rather than Blowgun scaling aliases.');

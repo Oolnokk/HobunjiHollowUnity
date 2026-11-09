@@ -12,6 +12,7 @@ const read = file => fs.readFileSync(path.join(root, file), 'utf8'); // Runtime 
 const player = { nickname: 'Nima', appearance: { speciesId: 'mao-ao', gender: 'female' } }; // Stable player identity for token expectations.
 const windowStub = {
   SCRATCHBONES_CONFIG: { game: {} },
+  __hobunjiPlayerProfile: player, // Matches the live profile that RomanceSystem reads for spouse nicknames.
   CalendarSystem: { timeDebugSnapshot: () => ({ rawDay: 10 }), getHour: () => 10 },
   HobunjiActivityEvents: { emit() {} },
 };
@@ -23,6 +24,7 @@ const context = vm.createContext({
 });
 const run = file => vm.runInContext(read(file), context, { filename: file }); // Executes real module initialization without browser assets.
 run('docs/config/romance-config.js');
+run('docs/js/name-nicknames.js');
 run('docs/js/romance-system.js');
 vm.runInContext(read('docs/js/dialogue-content.js').replace(
   '  window.DialogueContent = {',
@@ -51,16 +53,16 @@ const npcGreetings = ambient._test.greetingLinesFor('sloomi', 'gorobi_ginju'); /
 assert.ok(ordinaryGreetings.length);
 romance.completeWedding('sloomi');
 const married = romance.spouseDialogueFor('sloomi'); // Marriage-specific lines and nickname resolved from config.
-assert.equal(married.nickname, 'sweetheart');
+assert.equal(married.nickname, 'Nimy');
 assert.equal(romance.spouseDialogueFor('gorobi_ginju'), null, 'marriage is exclusive to the actual spouse');
-assert.equal(dialogue.testTokens('{{playerLocalNickname}} / {{playerName}}', sloomi.rec), 'sweetheart / Nima');
+assert.equal(dialogue.testTokens('{{playerLocalNickname}} / {{playerName}}', sloomi.rec), 'Nimy / Nima');
 assert.equal(dialogue.testTokens('{{playerLocalNickname}}', neighbor.rec), 'Nima', 'other NPC token fallback unaffected');
-assert.equal(ambient._test.playerNicknameFor(sloomi), 'sweetheart');
+assert.equal(ambient._test.playerNicknameFor(sloomi), 'Nimy');
 assert.equal(ambient._test.playerGreetingPolicy(sloomi).allowed, true, 'marriage outranks stale low-favor greeting restrictions');
 assert.equal(ambient._test.playerGreetingPolicy(sloomi).mayUseActualName, true);
 assert.equal(ambient._test.playerGreetingPolicy(neighbor).mayUseActualName, false);
 assert.equal(ambient._test.greetingLinesFor('sloomi', 'player').length, married.greetings.length);
-assert.match(ambient._test.templateLine('sweetheart', 'sloomi', 'player', 10, { walker: sloomi }), /sweetheart/);
+assert.match(ambient._test.templateLine('Nimy', 'sloomi', 'player', 10, { walker: sloomi }), /Nimy/);
 assert.deepEqual(Array.from(ambient._test.greetingLinesFor('sloomi', 'gorobi_ginju')), Array.from(npcGreetings), 'NPC-to-NPC greeting path remains normal');
 
 const saved = JSON.parse(JSON.stringify(romance.serialize())); // Snapshot used to test save restoration and preserve existing dialogue nickname.
@@ -70,10 +72,10 @@ assert.equal(dialogue.testTokens('{{playerLocalNickname}}', sloomi.rec), 'Sprout
 assert.equal(ambient._test.playerNicknameFor(sloomi), 'Sprout');
 assert.deepEqual(Array.from(ambient._test.greetingLinesFor('sloomi', 'player')), Array.from(ordinaryGreetings));
 romance.restore(saved);
-assert.equal(romance.spouseDialogueFor('sloomi').nickname, 'sweetheart', 'a saved marriage restores its greeting layer');
+assert.equal(romance.spouseDialogueFor('sloomi').nickname, 'Nimy', 'a saved marriage restores its greeting layer');
 romance.restore(null);
 romance.completeWedding('unknown_romance_npc');
-assert.equal(romance.spouseDialogueFor('unknown_romance_npc').nickname, 'love', 'unlisted spouses use the shared default');
+assert.equal(romance.spouseDialogueFor('unknown_romance_npc').nickname, 'Nimy', 'unlisted spouses use the same affectionate shortening');
 assert.ok(romance.spouseDialogueFor('unknown_romance_npc').greetings.length);
 for (const [npcId, entry] of Object.entries(windowStub.SCRATCHBONES_CONFIG.game.romance.spouse.dialogue.byNpc)) {
   assert.ok(entry.nickname && entry.greetings.length >= 2, npcId + ' has a personalized post-wedding voice');

@@ -320,7 +320,7 @@
       if (stats) {
         const statsNote = document.createElement('div'); // Readable stat breakdown next to the weapon's mastery and ability selections.
         statsNote.className = 'loadout-slot-combo-note';
-        statsNote.textContent = `Power ×${stats.power.toFixed(2)} · Speed ×${stats.speed.toFixed(2)} · Stamina efficiency ×${stats.efficiency.toFixed(2)} · Range ×${stats.range.toFixed(2)}`;
+        statsNote.textContent = `Power ×${stats.power.toFixed(2)} · Speed ×${stats.speed.toFixed(2)} · Stamina efficiency ×${stats.efficiency.toFixed(2)} · Range ×${stats.range.toFixed(2)} · Attack Power ${stats.attackPower.toFixed(0)} (afflictions)`;
         pane.appendChild(statsNote);
       }
     }

@@ -68,6 +68,7 @@
       date: null, // { npcId, mode: 'follow'|'wait', startHour, endHour, waitSpot, likeCounts, likeLastHour, romanceGained, startedRawDay }
       dateCounts: {}, // npcId → completed dates
       lastDateRawDay: {}, // npcId → raw day of the most recent date
+      lastDatedNpcId: null, // Last person the player actually started a date with; persists independently of the active date.
       engagement: null, // { npcId, proposedRawDay, weddingFromRawDay }
       spouse: null, // { npcId, marriedRawDay, marriedHourStamp }
       family: null, // owned by js/romance-family.js
@@ -219,6 +220,7 @@
       startedRawDay: rawDay(),
     };
     state.lastDateRawDay[npcId] = rawDay();
+    state.lastDatedNpcId = npcId; // The latest date replaces the prior partner even if it ends early.
     say(findWalker(npcId), "I'd love to. Let's go together!");
     toast(`💕 You're on a date with ${npcName(npcId)} for ${num(cfg().dateDurationHours, 4)} hours.`, true);
     persist();
@@ -468,11 +470,20 @@
     persist();
   }
 
+  function getLastDatedNpcId() {
+    if (state.date?.npcId) return state.date.npcId;
+    if (state.lastDatedNpcId) return state.lastDatedNpcId;
+    // Legacy saves only have day-level history: recover the latest if it is unambiguous.
+    const latest = Object.entries(state.lastDateRawDay || {}).filter(([id, day]) => id && Number.isFinite(Number(day))).sort((a, b) => Number(b[1]) - Number(a[1]));
+    return latest.length && (!latest[1] || Number(latest[0][1]) > Number(latest[1][1])) ? latest[0][0] : null;
+  }
+
   function spouseDialogueFor(npcId) {
     if (!npcId || state.spouse?.npcId !== npcId) return null;
     const dialogue = cfg().spouse?.dialogue || {}; // Configured dialogue layer, consulted only for the actual player spouse.
     const authored = dialogue.byNpc?.[npcId] || {}; // Individual NPC's affectionate language wins over the shared default.
-    const nickname = String(authored.nickname || dialogue.nickname || 'love').trim(); // Form of address shared by ambient greetings and {{playerLocalNickname}}.
+    const nickname = window.CharacterNicknames?.forRelationship?.(playerAppearance().name, 'affectionate', playerAppearance().gender)
+      || String(authored.nickname || dialogue.nickname || 'love').trim(); // New short-y form; legacy endearments remain a fallback if the nickname module is unavailable.
     const greetings = Array.isArray(authored.greetings) && authored.greetings.length
       ? authored.greetings : (Array.isArray(dialogue.greetings) ? dialogue.greetings : []); // Spouse-only greeting pool for event-time selection.
     return { nickname, greetings };
@@ -686,6 +697,7 @@
     return {
       date: state.date ? { ...state.date, hoursLeft: Math.round(dateHoursLeft() * 100) / 100 } : null,
       dateCounts: { ...state.dateCounts },
+      lastDatedNpcId: getLastDatedNpcId(), // Mobile diagnostic: last romantic form of address follows this NPC after the date.
       engagement: state.engagement ? { ...state.engagement } : null,
       spouse: state.spouse ? { ...state.spouse } : null,
       family: window.RomanceFamily?.snapshot?.() || null,
@@ -717,6 +729,7 @@
     engage,
     completeWedding,
     getSpouse: () => state.spouse ? { ...state.spouse } : null,
+    getLastDatedNpcId, // Single source of truth for former-partner forms of address, including restored saves.
     spouseDialogueFor, // Event-time read: no mutation of saved NPC nicknames or their authored dialogue.
     spouseTownVisitNow, // Farmwork and town scheduling agree on the same visit window.
     getEngagement: () => state.engagement ? { ...state.engagement } : null,
