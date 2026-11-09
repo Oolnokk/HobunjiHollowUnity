@@ -76,10 +76,28 @@
   function saveActiveRuinProgress(snapshot) {
     if(!activeVisit||activeVisit.kind==='story-vault'||!snapshot||snapshot.version!==1)return false;
     const store=progressStore(); // Do not store scene meshes, mechanisms or player coordinates in world metadata.
-    store.sites[activeVisit.id]=snapshot;
+    const previous=store.sites[activeVisit.id];
+    store.sites[activeVisit.id]=previous?.version===1&&Number(previous.seed)===Number(snapshot.seed)
+      ?{...previous,...snapshot}:snapshot; // Preserve opened chests when a puzzle/waystone writes its next snapshot.
     const ok=window.WorldMetaStore?.saveRuinProgress?.(worldId(),store)===true;
     if(!ok)debug.progressSaveError='World metadata could not be updated';
     return ok;
+  }
+  function isActiveRuinChestOpened(id,seed){
+    const snapshot=activeRuinProgress(); // Stable chest IDs never carry between sites or changed generated seeds.
+    return !!id&&snapshot?.version===1&&Number(snapshot.seed)===Number(seed)
+      &&Array.isArray(snapshot.openedChests)&&snapshot.openedChests.includes(String(id));
+  }
+  function markActiveRuinChestOpened(id,seed){
+    if(!activeVisit||activeVisit.kind==='story-vault'||!id||!Number.isFinite(seed))return false;
+    const store=progressStore(),previous=store.sites[activeVisit.id];
+    const snapshot=previous?.version===1&&Number(previous.seed)===Number(seed)?previous:{version:1,seed};
+    const opened=new Set(Array.isArray(snapshot.openedChests)?snapshot.openedChests:[]); // Stable chest IDs, not reward contents, stop re-looting after re-entry.
+    opened.add(String(id));
+    store.sites[activeVisit.id]={...snapshot,openedChests:[...opened]};
+    const saved=window.WorldMetaStore?.saveRuinProgress?.(worldId(),store)===true;
+    if(!saved)debug.progressSaveError='Opened chest state could not be saved';
+    return saved;
   }
   function forgetActiveRuinProgress() {
     if(!activeVisit)return false;
@@ -708,7 +726,7 @@
     init, registerWorkspace, expandLocaleDefs, buildZoneMeshes, objectAt, completeActiveRuin, onRuinLeft,
     openHole, holeAt, treasureHoleChance, syncMapMarkers, installRangedHook, trackNearby,
     storyVaultSite, storyVaultDigCheck, refreshStoryVault,
-    activeRuinProgress,saveActiveRuinProgress, // Consumed by the mounted ruin's one progress snapshot owner.
+    activeRuinProgress,saveActiveRuinProgress,isActiveRuinChestOpened,markActiveRuinChestOpened, // World-scoped puzzle, checkpoint and chest progress share one record.
     isInSite:() => !!activeVisit,
     debugSnapshot:() => ({
       ...debug, cycle:cycle(), active:activeVisit, rangedHookInstalled,

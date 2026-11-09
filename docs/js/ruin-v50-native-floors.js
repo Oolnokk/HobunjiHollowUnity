@@ -394,6 +394,7 @@
         wallBatch('native-v50-corridor-east-west-'+item.floor,
           routeZ,new THREE.BoxGeometry(.12,2.24,1));
         const record={floor:item.floor,group,nativeRoot,particles,analysis,place,grid,meta,
+          floorY:floor.y,supportYAt:(x,z)=>floor.y+(heights.get(key(Math.floor(x),Math.floor(z)))??0), // Checkpoint placement follows the actual V50 plateau support height.
           route,routeWallSegments:routeX.length+routeZ.length, // Retain exact V50 floor topology for developer-mode automated reachability checks; no second generated model.
 
           solved:0,challenges:[],lit:false,goalBrazier:null,nativeMechanisms:null};
@@ -481,7 +482,7 @@
         const flameRGB=[(flameHex>>16)&255,(flameHex>>8)&255,flameHex&255]; // Used by both campfire particles and the Kanthic darkness mask.
         const brightRGB=flameRGB.map(v=>Math.round(v+(255-v)*.16));
         const flameBright=(brightRGB[0]<<16)|(brightRGB[1]<<8)|brightRGB[2];
-        const flameVisual=root.PersistentGroundFire?.attachCampfireFlame?.(flame,{scale:1.08,rateScale:.95,colorA:flameBright,colorB:flameHex});
+        const flameVisual=root.PersistentGroundFire?.attachCampfireFlame?.(flame,{scale:1.08,rateScale:.95,colorA:'#'+flameBright.toString(16).padStart(6,'0'),colorB:'#'+flameHex.toString(16).padStart(6,'0')}); // The shared emitter only accepts six-digit hex strings.
         if(flameVisual)nativeFlames.push(flameVisual);
         const brazierLight={x:cx,y:goalY+1.4,z:cz,floorY:goalY,radius:10.5,strength:.98,
           color:flameRGB,active:false}; // Uses actual raised support Y, not the nominal story level; otherwise native plateau light floats underground.

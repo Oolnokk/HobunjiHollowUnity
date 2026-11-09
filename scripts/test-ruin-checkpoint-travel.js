@@ -17,27 +17,31 @@ let clock=1000; // Synthetic monotonic time tests Action 1 holds without waiting
 const previousPerformance=globalThis.performance;
 globalThis.performance={now:()=>clock};
 const old={};
-for(const key of ['RuinMultifloorV50Style','PersistentGroundFire','ProceduralFurniture','DevRandomRuin','CloudForestFog','RuinInteractionAudio']){
+for(const key of ['RuinMultifloorV50Style','RuinV50NativeFloors','PersistentGroundFire','ProceduralFurniture','DevRandomRuin','CloudForestFog','RuinInteractionAudio']){
   old[key]=globalThis[key];
 }
 let lightRefreshes=0,ignitions=0; // Confirms activation is a state transition, not repeated every frame.
 const destinations=[];
 let location={x:24,z:12,y:0}; // Actor world position used by proximity and teleport tests.
 globalThis.RuinMultifloorV50Style={chooseHubBrazierCell:()=>[10,10]};
+globalThis.RuinV50NativeFloors={nativeRoom:()=>({x:60,z:10,w:8,d:8})}; // Native rooms can sit on fractional raised V50 plateaus.
 globalThis.PersistentGroundFire={attachCampfireFlame:(_anchor,opts)=>{
-  assert.equal(opts.colorA,0xffffff);return {update(){},dispose(){}};
+  assert.equal(opts.colorA,'#ffffff','the authored particle emitter requires hex strings');
+  assert.equal(opts.colorB,'#d9edff');return {update(){},dispose(){}};
 }};
 globalThis.ProceduralFurniture={makePartMaterial:()=>new Material()};
 globalThis.DevRandomRuin={setPlayerWorldPoint:at=>{location={...at};destinations.push({...at});return true;}};
 globalThis.CloudForestFog={refreshLightingOverlay:()=>lightRefreshes++};
 globalThis.RuinInteractionAudio={igniteTorch:()=>ignitions++};
-function spawn(){
+function spawn(withNative=false){
   const scene=new Node(),controls=[]; // The actual ruin interaction list is injected, not replaced.
   const ruin={controls,seed:77,spawn:{x:2,z:3},shaftGrids:new Map([
     ['wing',{grid:{xToCol:n=>Math.floor(n),zToRow:n=>Math.floor(n),yToLevel:n=>n,inBounds:()=>true,canStand:()=>true},contains:()=>true}]
   ])};
   const manual={kind:'layerBrazier',object:new Node(),floorY:0,range:1.7,lit:()=>true};
   controls.push(manual);
+  if(withNative)ruin.nativeV50Runtime={records:[{floor:0,floorY:0,
+    analysis:{stages:[{}]},place:{},supportYAt:()=>7.5}]}; // Raises the native floor independently of its story datum.
   const plan={floors:[{floor:0,y:0,wings:[
     {id:'east',rooms:[{x:20,z:10,w:8,d:8}]},
     {id:'west',rooms:[{x:40,z:10,w:8,d:8}]}
@@ -85,6 +89,8 @@ try{
   assert.deepEqual(destinations.at(-1),{x:41.5,z:11.5,y:0},'Action 1 tap on shaft returns to the current checkpoint');
   clock+=100;small[1].onHoldStart();clock+=600;small[1].onHoldEnd();
   assert.deepEqual(destinations.at(-1),{x:10.5,z:10.5,y:0},'Action 1 hold on small brazier returns to shaft');
+  clock+=100;shaft.onHoldStart();clock+=700;shaft.onHoldEnd({canceled:true});
+  assert.deepEqual(destinations.at(-1),{x:10.5,z:10.5,y:0},'canceling a hold never teleports the player');
   clock+=100;shaft.onHoldStart();clock+=600;shaft.onHoldEnd();
   assert.deepEqual(destinations.at(-1),{x:2,z:3,y:0},'Action 1 hold on shaft returns to entrance');
   action2.onPress();
@@ -102,6 +108,10 @@ try{
   assert.equal(restored.writes.length,0,'restoring a world save does not cause another write');
   assert.equal(restored.owner.restore({version:1,seed:999,...saved}),false,'wrong ruin seed is ignored');
   restored.owner.dispose();
+  const raised=spawn(true);
+  const plateau=raised.owner.getState().checkpoints.find(c=>c.id==='native:0');
+  assert(plateau&&plateau.y===7.5,'native V50 checkpoints stand on the actual plateau, not floor.y');
+  raised.owner.dispose();
   assert(lightRefreshes>=4);
   console.log('Ruin shaft / small braziers, Action 1 holds, Action 2, world restore: PASS');
 }finally{

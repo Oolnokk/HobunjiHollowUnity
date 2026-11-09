@@ -8,7 +8,7 @@
   'use strict';
   let liveOwner=null; // Lighting compositor reads only the currently mounted ruin's white checkpoint sources.
   const HOLD_MS=550; // Action 1 releases after this duration count as holds, not taps.
-  const WHITE_BRIGHT=0xffffff,WHITE_LOW=0xd9edff; // Shared white-fire colors for shaft and checkpoint particles.
+  const WHITE_BRIGHT='#ffffff',WHITE_LOW='#d9edff'; // The canonical authored campfire emitter requires six-digit hex strings, not numeric colors.
   function point(x,z,y){return {x:Number(x),z:Number(z),y:Number(y)};}
   function closeEnough(a,b,radius=1.65,yTolerance=.95){
     return !!a&&!!b&&Math.abs(a.y-b.y)<=yTolerance
@@ -90,21 +90,22 @@
       }
       return false;
     }
-    function roomCheckpoint(room,y,id){
+    function roomCheckpoint(room,y,id,heightAt=null){
       if(!room)return null;
       const positions=[
         [room.x+1.5,room.z+1.5],[room.x+room.w-1.5,room.z+1.5],
         [room.x+1.5,room.z+room.d-1.5],[room.x+room.w-1.5,room.z+room.d-1.5],
       ]; // Prefer clear room corners, away from central puzzle activators and hallway thresholds.
-      const at=positions.find(([x,z])=>floorCanStand(x,z,y));
-      return at?fixture(id,'small',point(at[0],at[1],y),.72):null;
+      const at=positions.map(([x,z])=>point(x,z,typeof heightAt==='function'?heightAt(x,z):y))
+        .find(candidate=>Number.isFinite(candidate.y)&&floorCanStand(candidate.x,candidate.z,candidate.y));
+      return at?fixture(id,'small',at,.72):null; // Native V50 plateaus need their actual surface height, not the nominal story datum.
     }
     for(const floor of plan.floors)for(const wing of floor.wings||[])
       roomCheckpoint(wing.rooms?.[0],floor.y,'wing:'+wing.id); // One automatic return point at the beginning of each composed wing.
     for(const record of ruin.nativeV50Runtime?.records||[]){
       const first=record.analysis?.stages?.[0];
       const loc=first&&root.RuinV50NativeFloors?.nativeRoom?.(first,record.place);
-      if(loc)roomCheckpoint(loc,record.floorY??(plan.floors[record.floor]?.y||0),'native:'+record.floor);
+      if(loc)roomCheckpoint(loc,record.floorY??(plan.floors[record.floor]?.y||0),'native:'+record.floor,record.supportYAt);
     }
     function igniteShaft(){
       if(shaftLit)return;
@@ -142,9 +143,10 @@
         inputAction:'action1',range:1.8,priority:35,touchIcon:'✦',
         label:()=>record.kind==='shaft'?'Tap: checkpoint · Hold: entrance':'Hold: return to shaft',
         onHoldStart:()=>{pressedAt=now();},
-        onHoldEnd:()=>{
+        onHoldEnd:(detail)=>{
           if(pressedAt===null)return;
           const held=now()-pressedAt;pressedAt=null;
+          if(detail?.canceled||!closeEnough(player(),record.at,2.1))return; // Canceled inputs or stale held prompts cannot teleport the player from elsewhere.
           if(held>=HOLD_MS)onHold();else onTap?.();
         },
       };
@@ -177,6 +179,10 @@
     function tick(dt=0){
       if(disposed)return;
       const p=player();if(!p)return;
+      for(const record of records.values()){
+        const visible=record.at.y<=p.y+.8; // Match wing meshes: never render an upper-floor checkpoint through the floor below.
+        if(record.holder.visible!==visible)record.holder.visible=visible;
+      }
       if(!shaftLit&&closeEnough(p,shaft.at,2.1))igniteShaft();
       for(const record of records.values())if(record.kind==='small'
         &&closeEnough(p,record.at,1.55)){becomeCheckpoint(record.id);break;}
