@@ -11,6 +11,7 @@
   const records = new Set(); // Active or recently detached assemblies, updated at the pre-render checkpoint.
   const states = new WeakMap(); // One attachment state per held visual; no global weapon pose is shared between actors.
   const alphaBounds = new WeakMap(); // Transparent-pixel anchor scans are cached by the loaded image.
+  const ropeSpriteBounds = new WeakMap(); // Original ruin rope alpha extents are scanned once per decoded image; every flail shares the result.
   const PIXEL_ALPHA = 128; // Treat only the solid half of an antialiased edge as the opaque connection tip.
   const MAX_DT = 0.08; // Prevent tab-resume and loading stalls from launching the head sideways.
   const MOTION_LAG = 0.065; // Converts haft travel velocity to idle trailing angle.
@@ -334,13 +335,43 @@
     };
   }
 
+  function ropeOpaqueBounds(image) {
+    if (ropeSpriteBounds.has(image)) return ropeSpriteBounds.get(image);
+    const width = image?.naturalWidth || image?.width, height = image?.naturalHeight || image?.height;
+    let bounds = { minX: 0, minY: 0, maxX: width - 1, maxY: height - 1 }; // Full-image fallback if the browser refuses pixel reads.
+    try {
+      const canvas = document.createElement('canvas'); // Reads only the shared rope PNG once, not every frame.
+      canvas.width = width; canvas.height = height;
+      const context = canvas.getContext('2d', { willReadFrequently: true });
+      if (context) {
+        context.drawImage(image, 0, 0);
+        const rgba = context.getImageData(0, 0, width, height).data;
+        let minX = width, minY = height, maxX = -1, maxY = -1; // Opaque silhouette used to align the visible rope with its physical tips.
+        for (let y = 0; y < height; y++) {
+          for (let x = 0; x < width; x++) {
+            if (rgba[(y * width + x) * 4 + 3] < 9) continue; // Matches the ruin renderer's alphaTest of 0.035.
+            minX = Math.min(minX, x); maxX = Math.max(maxX, x);
+            minY = Math.min(minY, y); maxY = Math.max(maxY, y);
+          }
+        }
+        if (maxX >= minX && maxY >= minY) bounds = { minX, minY, maxX, maxY };
+      }
+    } catch (error) { report('Ruin rope alpha scan unavailable: ' + (error?.message || error)); }
+    ropeSpriteBounds.set(image, bounds); // Subsequent actors reuse the exact bounds without another canvas read.
+    return bounds;
+  }
+
   function makeRope(THREE, spec, unit, renderOrder, sourceTexture) {
     const image = sourceTexture?.image; // The full ruin sprite supplies the physical camera-facing strip.
     const width = image?.naturalWidth || image?.width, height = image?.naturalHeight || image?.height;
     if (!(width > 0 && height > 0)) throw new Error('Ruin rope PNG has no dimensions');
-    const aspect = width / height; // The shipped rope_long.png image measures 152 × 2164.
-    const sizing = ropeSpriteSizing(spec, unit, aspect); // Same final reach and diameter as the former generated cylinder.
+    const opaque = ropeOpaqueBounds(image); // Crop the sprite's transparent margins, so both visible tips land exactly on the existing rope endpoints.
+    const visibleWidth = opaque.maxX - opaque.minX + 1, visibleHeight = opaque.maxY - opaque.minY + 1;
+    const aspect = visibleWidth / visibleHeight; // Keep the opaque silhouette rather than the 152 × 2164 canvas dimensions.
+    const sizing = ropeSpriteSizing(spec, unit, aspect); // Same final visible reach and diameter as the former generated cylinder.
     const map = sourceTexture.clone(); // Per-weapon ownership permits clean disposal without modifying other rope textures.
+    map.offset.set(opaque.minX / width, 1 - (opaque.maxY + 1) / height); // Plane UVs have bottom-left origin, whereas ImageData rows begin at the top.
+    map.repeat.set(visibleWidth / width, visibleHeight / height); // No tiling: one full opaque rope from grip to head.
     map.wrapS = map.wrapT = THREE.ClampToEdgeWrapping;
     map.encoding = THREE.sRGBEncoding;
     map.minFilter = map.magFilter = THREE.LinearFilter; // Match the ruin rope's original full-resolution TextureLoader filtering.
@@ -676,7 +707,7 @@
 
   global.HobunjiWeaponSpriteAssemblies = {
     definitions: DEF, decorate, setAction, tick, drop, debugSnapshot, enchantmentTargets, dualWieldEnchantmentTargets,
-    opaqueAt, anchor, refreshWorldMatrix, definitionFor, ropeSpriteSizing, stepPendulum, flailDamping, flailStrikeStraightening, flailYawTravel, // Pure sizing and phase helpers have regression tests.
+    opaqueAt, anchor, refreshWorldMatrix, definitionFor, ropeSpriteSizing, ropeOpaqueBounds, stepPendulum, flailDamping, flailStrikeStraightening, flailYawTravel, // Pure sizing and phase helpers have regression tests.
   };
   global.HobunjiCacheAudit?.register('weapon assemblies (active or awaiting cleanup)', () => records.size);
   if (global.RuntimeFrameScheduler?.register) {
