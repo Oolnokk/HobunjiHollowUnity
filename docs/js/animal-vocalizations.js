@@ -153,6 +153,7 @@
     const key = String(c?.creatureKey || c?.animalKey || c?.speciesKey || c?.species || c?.def?.key || '').toLowerCase(); // Fixed Skeeri variant ID takes precedence over inherited genotype sizes.
     const skeeriSize = /^skeeri-(small|medium|large)$/.exec(key); // Runtime registration uses separate species IDs for each of the three Skeeri sizes.
     if (skeeriSize) return skeeriSize[1];
+    if (key === 'tzatzul-hatchling') return 'small'; // Hatchlings have fixed small proportions, whatever inherited adult genotype may say.
     const raw = String(c?.genotype?.sizeClass || c?.sizeClass || c?.def?.defaultSizeClass || '').toLowerCase();
     return SIZE_CLASSES.includes(raw) ? raw : 'medium';
   }
