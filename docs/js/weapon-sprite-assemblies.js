@@ -12,7 +12,8 @@
   const states = new WeakMap(); // One attachment state per held visual; no global weapon pose is shared between actors.
   const alphaBounds = new WeakMap(); // Transparent-pixel anchor scans are cached by the loaded image.
   const ropeSpriteBounds = new WeakMap(); // Original ruin rope alpha extents are scanned once per decoded image; every flail shares the result.
-  const tintedRopeTextures = new WeakMap(); // Retains one recolored canvas texture per source image and tint, shared across all equipped flails.
+  const tintedRopeTextures = new WeakMap(); // Retains reusable recolored templates for each source PNG; live weapons own independent texture clones.
+  const ROPE_TINT_CACHE_LIMIT = 12; // Limits the full-resolution canvas footprint when mobile authors try many rope colors.
   const PIXEL_ALPHA = 128; // Treat only the solid half of an antialiased edge as the opaque connection tip.
   const MAX_DT = 0.08; // Prevent tab-resume and loading stalls from launching the head sideways.
   const MOTION_LAG = 0.065; // Converts haft travel velocity to idle trailing angle.
@@ -378,7 +379,11 @@
     if (!image || color === '#FFFFFF') return sourceTexture;
     let variants = tintedRopeTextures.get(image);
     if (!variants) { variants = new Map(); tintedRopeTextures.set(image, variants); }
-    if (variants.has(color)) return variants.get(color);
+    if (variants.has(color)) {
+      const cached = variants.get(color); // Recent artist colors stay resident; old swatches are recycled first.
+      variants.delete(color); variants.set(color, cached);
+      return cached;
+    }
     try {
       const canvas = document.createElement('canvas'); // Paint once per image/tint; weapon instances only clone the result.
       canvas.width = image.naturalWidth || image.width;
@@ -395,6 +400,12 @@
       recolored.minFilter = recolored.magFilter = THREE.LinearFilter;
       recolored.needsUpdate = true;
       variants.set(color, recolored);
+      while (variants.size > ROPE_TINT_CACHE_LIMIT) {
+        const oldest = variants.keys().next().value; // LRU eviction affects only cached templates, never currently rendered flail clones.
+        const stale = variants.get(oldest);
+        variants.delete(oldest);
+        stale?.dispose?.();
+      }
       return recolored;
     } catch (error) {
       report('Ruin rope recolor unavailable: ' + (error?.message || error)); // Existing mobile log explains missing color without blocking the weapon.
