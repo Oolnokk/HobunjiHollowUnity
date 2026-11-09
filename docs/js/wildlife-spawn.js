@@ -1447,8 +1447,10 @@
       const itemKey = otherOffspring[kind] || mother?.nestItemKey || null;
       const registered = !!deps?.CREATURE_DB?.[kind];
       const guardianRegistered = exempt ? true : !!(guardianKey && deps?.CREATURE_DB?.[guardianKey]);
-      const itemDef = itemKey && deps?.ITEM_DEFS?.[itemKey]; // Live collectible definition must exist; a stale itemKinds name alone cannot create a real egg or baby.
-      const offspringMapped = exempt || !!(itemDef?.cat === 'livestock'
+      const itemDef = itemKey && deps?.ITEM_DEFS?.[itemKey]; // A stale itemKinds mapping alone cannot create a usable egg or baby.
+      const tags = Array.isArray(itemDef?.tags) ? itemDef.tags : []; // Authored fertility tags distinguish hatchable eggs from ordinary food eggs.
+      const hatchable = tags.includes('Baby') || (tags.includes('Egg') && tags.includes('Fertile')); // Every non-exempt species must yield a live offspring.
+      const offspringMapped = exempt || !!(itemDef?.cat === 'livestock' && hatchable
         && (kind === 'honeyfuzzle' || itemKinds[itemKey] === family)); // Hive eggs hatch in a Honeyfuzzle House instead of the ordinary Stable.
       const hasGenetics = exempt || !!window.CreatureGeneticsRender?.SPECIES?.[family];
       const ok = registered && guardianRegistered && offspringMapped && hasGenetics;
