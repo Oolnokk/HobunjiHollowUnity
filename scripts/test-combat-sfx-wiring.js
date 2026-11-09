@@ -223,6 +223,7 @@ const impactContext = {
   window: { AudioSystem: {
     playRangedImpactSfx: (x, y, areaId, pitch) => impactCalls.push({ x, y, areaId, pitch }),
     playWeaponHitSfx: () => impactCalls.push({ thrown: true }),
+    playObjectSfxKey: key => impactCalls.push({ objectSfx: key }),
   } },
 };
 vm.runInNewContext(ranged.slice(impactStart, impactEnd) + '\nglobalThis.playImpact = playProjectileImpactSfx;', impactContext);
@@ -230,11 +231,19 @@ const dart = { prevX: 0, prevY: 0, x: 20, y: 10, areaId: 'farm', def: { rangedTy
 impactContext.playImpact(dart, 0.5);
 impactContext.playImpact({ ...dart, def: { rangedType: 'crossbow' } }, 0.5);
 impactContext.playImpact({ ...dart, def: { rangedType: 'thrown', dmgType: 'sharp' } }, 0.5);
+impactContext.playImpact({ ...dart, def: { rangedType: 'thrown', dmgType: 'sharp' } }, 0.5, true);
+impactContext.playImpact({ ...dart, def: { rangedType: 'thrown', dmgType: 'blunt' } }, 0.5, true);
+impactContext.playImpact({ ...dart, def: { rangedType: 'crossbow' } }, 0.5, true);
 assert.deepStrictEqual(impactCalls, [
   { x: 10, y: 5, areaId: 'farm', pitch: 2 },
   { x: 10, y: 5, areaId: 'farm', pitch: 1 },
   { thrown: true },
-], 'blowgun darts double impact pitch without changing arrow/crossbow/thrown hits');
+  { objectSfx: 'chop' },
+  { thrown: true },
+  { x: 10, y: 5, areaId: 'farm', pitch: 1 },
+], 'only sharp thrown weapons striking cover use the wood-chop cue; blunt, creature hits, and arrows retain their impact sounds');
+assert(ranged.includes('playProjectileImpactSfx(p, coverHit.t, true);'), 'volume cover impacts must tag the sound as cover');
+assert(ranged.includes('playProjectileImpactSfx(p, terrainImpact.t, true);'), 'solid terrain impacts must tag the sound as cover');
 
 
 async function testDecodedFinisherTiming() {
