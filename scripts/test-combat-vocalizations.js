@@ -446,7 +446,7 @@ for (const [speciesId, genders] of Object.entries(W.CombatVocalizations.getConfi
     const isSkeleton = speciesId === 'mao-ao-skeleton' || speciesId === 'harlyao-skeleton'; // Both ordinary skeleton species use the dedicated shared shriek recording.
     const expectedGain = isSkeleton ? 1 : profile.gain; // Their old human-vocal modulation muted them; their new special voice is audible.
     const expectedPitch = profile.pitchSemitones + (isSkeleton ? 3 : 1.47); // Math.random() = 0.99 selects +3 of the seven shriek semitone variants.
-    const expectedTempo = profile.tempo * (isSkeleton ? 3 : 1); // Skeleton shrieks are independently rendered at 3× source speed.
+    const expectedTempo = profile.tempo; // The incomplete "3x" phrase must not introduce any skeleton speed change.
     const skeletonShriekUrl = 'assets/audio/sfx/utterances/sfx_skeletonshriek_1.ogg'; // Verified shipped OGG source and runtime routing target.
     for (const category of ['combo', 'quickAttack', 'offensiveHold']) {
       W.CombatVocalizations.playStrikeGrunt(actor, category, 'profile-audit');
@@ -582,7 +582,7 @@ console.log('all species/gender combat voice profiles, dodge duration, native fa
         assert.equal(renders.at(-1).pitchSemitones, token.pitchSemitones);
         assert.equal(token.normalTempo, profile.tempo);
         if (category === 'charge') {
-          assert.equal(token.catchUpTempo, isSkeleton ? Math.min(4, profile.tempo * 6) : profile.tempo * 2);
+          assert.equal(token.catchUpTempo, profile.tempo * 2); // Existing charge catch-up behavior is independent of skeleton vocal identity.
           W.CombatVocalizations.releaseCharge(token);
         }
         token.source.onended();
