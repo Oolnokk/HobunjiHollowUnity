@@ -406,7 +406,7 @@
         rec.doorRise=Math.min(1,rec.doorRise+Math.max(0,Number(dt)||0)/.95);
         gate.position.y=gateY+3.5*rec.doorRise;
       };
-    }else if(kind==='timedMelody'){
+    }else if(kind==='timedMelody'&&options.authoredCliffDoor){
       // Cliff-door score: visible Scratchbone notation on a stone gate, no audible example.
       // The generated score's beat clock advances only while the player stays on the large plate.
       const composer=options.puzzleCaveMelody||root.PuzzleCaveMelody; // One generator/judge for both exterior and interior puzzle cave doors.
@@ -433,7 +433,7 @@
         gate.position.y=baseY+3.6*rec.doorRise;
       };
       installTimedSession(composer,song);
-    }else if(kind==='melodyEcho'){
+    }else if(kind==='timedMelody'||kind==='melodyEcho'){
       // Read the inscription and play the ordinary equipped instrument; the plate never opens or claims input.
       const plate=body('ruin-melody-trigger-'+id,
         new THREE.BoxGeometry(1.35,.14,1.35),plateMat,cx,y+.07,cz);
