@@ -17,7 +17,6 @@ if (!process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH && !fs.existsSync(chromium.
   process.exit(0);
 }
 const source = fs.readFileSync('docs/js/quick-potion-arc-ui.js', 'utf8'); // Runs the shipped presentation module with real layout, CSSStyleDeclaration, and observers.
-const sleepFrames = frames => `new Promise(resolve => { let remaining = ${frames}; const next = () => --remaining ? requestAnimationFrame(next) : resolve(); requestAnimationFrame(next); })`;
 
 (async () => {
   const browser = await chromium.launch({
