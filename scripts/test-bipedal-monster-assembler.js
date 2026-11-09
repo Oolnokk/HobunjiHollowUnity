@@ -11,6 +11,9 @@ const assembler = read('docs/js/bipedal-monster-assembler.js');
 const sidecar = JSON.parse(read('docs/config/npcs/species-overrides.json'));
 const entry = sidecar.npcs.nohuknuk;
 const rig = entry.bipedalMonsterRig;
+const speciesIndex = JSON.parse(read('docs/config/species/index.json')); // Registered NPC species must exist before NpcAvatarPreview.randomProfile selects a fighter.
+const nohuknukSpecies = JSON.parse(read('docs/config/species/nohuknuk.json'));
+const studio = read('docs/tools/character-studio/index.html');
 const rigMaster = read('docs/config/attachment-rig-profiles.js');
 const boots = read('docs/js/attachment-rig-latest-authored-snapshot.js');
 const localDb = read('docs/js/local-db-overrides.js');
@@ -20,6 +23,11 @@ const locale = JSON.parse(read('docs/config/locales/locale_old_man_nohuknuk_shri
 
 assert.equal(entry.kind, 'bipedal-monster');
 assert.equal(entry.species, 'nohuknuk');
+assert.ok(speciesIndex.entries.some(item => item.speciesId === 'nohuknuk' && item.path === './nohuknuk.json'));
+assert.equal(nohuknukSpecies.parentSpecies,'engh-sho');
+assert.equal(nohuknukSpecies.npcOnly,true);
+assert.ok(studio.includes('bipedal-monster-assembler.js'));
+
 assert.equal(rig.handModel, 'primate');
 assert.equal(rig.footModel, 'primate');
 assert.equal(rig.uvMode, 'stretch-fit');
@@ -103,7 +111,10 @@ const window = {
     },
     disposeAvatarModel(){this.fallbackDisposals=(this.fallbackDisposals||0)+1;},
   },
-  NpcAvatarPreview: { renderProfileToCanvas(){return true;} },
+  NpcAvatarPreview: {
+    renderProfileToCanvas(){return true;},
+    buildProfileFromNpcExport(npc){return {portraitSeatId:npc.id};},
+  },
   PerpRotation: {
     CREATURE_PLANE_ROT_MODE:'halt',CREATURE_PERP_DEAD_RAD:.4,
     cameraRelativeCreaturePerpsAtWorldPosition(){return [0,Math.PI/2];},
@@ -126,6 +137,9 @@ assert.equal(api.materialForSpecies('nohuknuk','bone').color,'#0D0D0D');
 assert.equal(api.materialForSpecies('engh-sho','bone'),null);
 
 const npc={id:'nohuknuk',species:'nohuknuk',bipedalMonsterRig:rig};
+const profile=window.NpcAvatarPreview.buildProfileFromNpcExport({id:'nohuknuk',appearance:{bipedalMonsterRig:rig}});
+assert.equal(profile.bipedalMonsterRig?.handModel,'primate','NPC portrait retains reusable hybrid rig metadata');
+
 const root=window.PNGPlaneAvatar.buildSinglePlaneAvatarModel(THREE,{width:200,height:200},{npcRecord:npc});
 assert.equal(root.userData.bipedalMonster,true);
 assert.equal(root.userData.portraitModelHeight,rig.modelHeight);
