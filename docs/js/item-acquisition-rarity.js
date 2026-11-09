@@ -408,6 +408,7 @@
     const def = defs[key] || {};
     const protectedValue = cultivarRarity(key) || def.rarityBaseSellPrice != null
       || G.ArtifactCollection?.ARTIFACTS?.[key] || G.FishCatalog?.get?.(key)
+      || /^(ore|bar)_/.test(key) || Array.isArray(def.tags) && def.tags.some(tag=>['Trinket','Metal','Ore','Bar'].includes(tag))
       || def.isCookedFood || def.recipeId || def.rarityPriced || def.cat === 'livestock'
       || def.cat === 'processed' || def.cat === 'metal' || def.cat === 'seed'
       || G.AnimalHides?.isHide?.(key) || Array.isArray(def.ingredientKeys) && def.ingredientKeys.length
