@@ -40,11 +40,20 @@ assert.equal(authoredLips.firstMouthHeightWorld, .38615);
 assert.equal(authoredLips.secondMouthHeightWorld, .76734);
 assert.ok(authoredLips.tallerSinkWorld > everyday.tallerSinkWorld,
   'true mouth coordinates must cause the taller spouse to lower further than generic sprite heights suggest');
-assert.equal(authoredLips.shorterPosteriorGrip, true,
-  'if real mouth heights cannot meet with a comfortable bow, the shorter spouse must hop around the posterior');
-assert.ok(authoredLips.contactPossible, 'authored-mouth hop must close the vertical gap safely');
-assert.ok(authoredLips.shorterJumpWorld > 0 && authoredLips.shorterJumpWorld <= .675 * .75);
+assert.equal(authoredLips.shorterPosteriorGrip, false,
+  'real knees that can reach the mouths should kneel without forcing a needless hop');
+assert.ok(authoredLips.contactPossible, 'authored-mouth kneel closes the vertical gap safely');
 assert.ok(authoredLips.tallerSinkWorld <= authoredLips.kneeLimitWorld);
+const tightKnees = solver.solveHeights(.675, .855, {
+  firstMouthHeightWorld: .38615, secondMouthHeightWorld: .76734,
+  tallerLegLengthWorld: .12, tallerHipHeightWorld: .50,
+  shorterLegLengthWorld: .24, shorterHipHeightWorld: .34,
+}); // Same skinned mouths but physically constrained tall knees now demand a supported jump.
+assert.equal(tightKnees.shorterPosteriorGrip, true,
+  'when the real tall knee cannot bring the mouths together, use posterior-supported hopping');
+assert.ok(tightKnees.contactPossible && tightKnees.shorterJumpWorld > 0);
+assert.ok(tightKnees.shorterJumpWorld <= .675 * .75);
+assert.ok(tightKnees.tallerSinkWorld <= tightKnees.kneeLimitWorld);
 for (const [first, second] of [[1, .5], [.5, 1], [1, .3]]) {
   const jump = solver.solveHeights(first, second);
   assert.equal(jump.contactPossible, true, 'a straddled kiss must still align mouth heights');
