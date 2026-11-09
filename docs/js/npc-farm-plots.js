@@ -320,7 +320,7 @@
     const townInterrupted = !!(window.WaterSystem?.isTownFloodEmergency?.() || window.FestivalSystem?.festivalHours?.());
     for (const [npcId, claim] of [...claims]) {
       const plot = plotsById.get(claim.plotId);
-      if (!plot || (!plot.family && townInterrupted)) { releaseClaim(npcId); continue; }
+      if (!plot || !plot.managed || !inHours(plot) || unavailable(npcId, plot) || (!plot.family && townInterrupted)) { releaseClaim(npcId); continue; } // Interrupt in-flight jobs when a family worker switches to a vat, date, or companion role.
       claim.ageS += dt;
       const walker = deps.findWalker?.(npcId);
       const at = walker?.area === claim.area && walker.root
