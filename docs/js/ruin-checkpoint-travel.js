@@ -90,18 +90,24 @@
       }
       return false;
     }
-    function roomCheckpoint(room,y,id,heightAt=null){
+    function roomCheckpoint(room,y,id,heightAt=null,entrySide=null){
       if(!room)return null;
-      const positions=[
-        [room.x+1.5,room.z+1.5],[room.x+room.w-1.5,room.z+1.5],
-        [room.x+1.5,room.z+room.d-1.5],[room.x+room.w-1.5,room.z+room.d-1.5],
-      ]; // Prefer clear room corners, away from central puzzle activators and hallway thresholds.
+      const nearX=entrySide==='W'?room.x+room.w-1.5:room.x+1.5;
+      const farX=entrySide==='W'?room.x+1.5:room.x+room.w-1.5;
+      const nearZ=entrySide==='N'?room.z+room.d-1.5:room.z+1.5;
+      const farZ=entrySide==='N'?room.z+1.5:room.z+room.d-1.5;
+      const positions=entrySide==='E'||entrySide==='W'
+        ?[[nearX,room.z+1.5],[nearX,room.z+room.d-1.5],
+          [farX,room.z+1.5],[farX,room.z+room.d-1.5]]
+        :[[room.x+1.5,nearZ],[room.x+room.w-1.5,nearZ],
+          [room.x+1.5,farZ],[room.x+room.w-1.5,farZ]];
+      // Favor the entrance bank: a west/north rope room must not put its white checkpoint across the abyss.
       const at=positions.map(([x,z])=>point(x,z,typeof heightAt==='function'?heightAt(x,z):y))
         .find(candidate=>Number.isFinite(candidate.y)&&floorCanStand(candidate.x,candidate.z,candidate.y));
       return at?fixture(id,'small',at,.72):null; // Native V50 plateaus need their actual surface height, not the nominal story datum.
     }
     for(const floor of plan.floors)for(const wing of floor.wings||[])
-      roomCheckpoint(wing.rooms?.[0],floor.y,'wing:'+wing.id); // One automatic return point at the beginning of each composed wing.
+      roomCheckpoint(wing.rooms?.[0],floor.y,'wing:'+wing.id,null,wing.side); // One automatic return point at the beginning of each composed wing.
     for(const record of ruin.nativeV50Runtime?.records||[]){
       const first=record.analysis?.stages?.[0];
       const loc=first&&root.RuinV50NativeFloors?.nativeRoom?.(first,record.place);
@@ -189,6 +195,10 @@
       const t=now(); // One shared particle-update cadence; the caller need not supply a frame delta.
       if(t-lastBlink>80){const step=Math.min(.05,Math.max(0,Number(dt)||((t-lastBlink)/1000)));lastBlink=t;for(const f of flames)f.update?.(step);} 
     }
+    function activeRespawnPoint(){
+      const at=records.get(activeId)?.at;
+      return !disposed&&at?point(at.x,at.z,at.y):null; // The white shaft/small brazier is authoritative for every ruin death.
+    }
     function serializeProgress(){
       return {shaftLit,activeCheckpoint:activeId}; // Stable IDs, never Three.js objects or source pointers.
     }
@@ -200,10 +210,12 @@
       bowl.dispose();foot.dispose();stone.dispose?.();
       group.parent?.remove(group);
     }
-    const owner={tick,dispose,restore,serializeProgress,lightSources:()=>lights,
+    const owner={tick,dispose,restore,serializeProgress,activeRespawnPoint,isActive:()=>!disposed&&root.DevRandomRuin?.getRuntimeContext?.()?.scene===rec.scene,lightSources:()=>lights,
       getState:()=>({shaftLit,activeCheckpoint:activeId,checkpoints:[...records.values()].map(r=>({id:r.id,lit:r.lit,x:r.at.x,z:r.at.z,y:r.at.y}))})};
     liveOwner=owner;
     return owner;
   }
-  return Object.freeze({mount,closeEnough,snapshotValid,HOLD_MS,lightSources:()=>liveOwner?.lightSources?.()||[]});
+  return Object.freeze({mount,closeEnough,snapshotValid,HOLD_MS,
+    isActive:()=>liveOwner?.isActive?.()===true,activeRespawnPoint:()=>liveOwner?.isActive?.()?liveOwner.activeRespawnPoint():null,
+    lightSources:()=>liveOwner?.lightSources?.()||[]});
 });

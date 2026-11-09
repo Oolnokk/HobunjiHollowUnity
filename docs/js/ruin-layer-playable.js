@@ -436,6 +436,9 @@
       projectileTargetsLinked:states.reduce((n,r)=>n+r.challenges.filter(c=>c.linked).length,0),
       floorlessCells:states.reduce((n,r)=>n+r.voidCells,0),
       ropeChainsLinked:states.reduce((n,r)=>n+r.challenges.filter(c=>c.ropeLinked).length,0),
+      ropeRooms:states.flatMap(r=>r.challenges.filter(c=>c.kind==='ropeChain')
+        .map(c=>({id:c.id,linked:!!c.ropeLinked,count:c.ropesRequested||0,
+          geometry:c.ropeGeometry||null,error:c.error||null}))), // Mobile getState shows baseline range, rope offsets and puzzle linkage without devtools.
       defenseRoomsReady:states.reduce((n,r)=>n+r.challenges.filter(c=>c.kind==='statueDefense'&&c.ready).length,0),
       defenseErrors:states.flatMap(r=>r.challenges.filter(c=>c.kind==='statueDefense'&&c.error)
         .map(c=>({id:c.id,error:c.error,attempts:c.attempts}))),

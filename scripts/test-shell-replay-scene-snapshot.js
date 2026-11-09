@@ -110,8 +110,10 @@ ordinaryShell.parent = holder;
 assert.equal(sceneWalks, 3, 'visibility validation does not require any extra scene traversals');
 
 const replay = section('  function replayShellOutlineXray(', '  function wrappedRender(');
-assert.match(replay, /const replayCandidates = collectShellReplayCandidates\(scene\)/,
-  'shell replay captures the scene after its temporary culling is installed');
+assert.match(replay, /let replayCandidates = null;/,
+  'shell candidate snapshot remains in scope through the final depth restore');
+assert.match(replay, /replayCandidates = collectShellReplayCandidates\(scene\)/,
+  'shell replay captures the scene after temporary culling is installed');
 assert.equal((replay.match(/prepareNonGroundDepthMaterials\(scene, replayCandidates\.depth\)/g) || []).length, 2,
   'grouped depth pass and final depth restore both reuse that one candidate set');
 assert.match(replay, /hideNonXrayShellMeshes\(scene, groupSet, replayCandidates\.shell\)/,
