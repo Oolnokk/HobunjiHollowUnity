@@ -293,7 +293,10 @@
     const qualities = cooking.qualityBuckets || (cooking.qualityBuckets = {});
     for (const item of journal.items || []) {
       if (!item?.key || !Number.isInteger(item.count) || item.count <= 0) continue;
-      inventory[item.key] = (Number(inventory[item.key]) || 0) + item.count;
+      const ownedCount = Math.max(0, Number(inventory[item.key]) || 0);
+      const stackLimit = Number(window.InventoryStacks?.MAX_TOTAL) || 999; // A festival reward must never overflow the real world's item stack during merge.
+      if (ownedCount + item.count > stackLimit) throw new Error('Cannot keep festival reward ' + item.key + ': inventory stack limit (' + stackLimit + ') would be exceeded.');
+      inventory[item.key] = ownedCount + item.count;
       const bucket = qualities[item.key] || (qualities[item.key] = {});
       const stars = String(Math.max(1, Math.min(5, Number(item.stars) || 3)));
       bucket[stars] = (Number(bucket[stars]) || 0) + item.count;
@@ -318,9 +321,12 @@
     const cosmeticIdentity = item => String(item?.baseCosmeticId || item?.cosmeticId || item?.id || (typeof item === 'string' ? item : ''));
     for (const cosmeticId of journal.masks || []) {
       if (!/^(festivalmask_[\w'-]+|replica_bzabag_helm)$/.test(cosmeticId)) continue;
-      if (owned.some(item => cosmeticIdentity(item) === cosmeticId)) continue;
-      const record = earned.find(item => cosmeticIdentity(item) === cosmeticId);
-      if (!record || typeof record !== 'object') throw new Error('Earned festival cosmetic missing from test save: ' + cosmeticId);
+      const alreadyOwned = owned.filter(item => cosmeticIdentity(item) === cosmeticId);
+      const priorUids = new Set(alreadyOwned.map(item => item?.uid).filter(Boolean));
+      const candidates = earned.filter(item => cosmeticIdentity(item) === cosmeticId);
+      const record = candidates.find(item => item?.uid && !priorUids.has(item.uid))
+        || (!alreadyOwned.length ? candidates.at(-1) : null);
+      if (!record || typeof record !== 'object') throw new Error('New festival cosmetic missing from test save: ' + cosmeticId);
       const copy = JSON.parse(JSON.stringify(record)); // Never alias a gear article from the disposable snapshot.
       if (copy.uid && owned.some(item => item?.uid === copy.uid)) copy.uid += '_festival';
       pack.push(copy); owned.push(copy);
@@ -441,7 +447,7 @@
     if (!session) return { ok: false, error: 'No festival restore is pending.' };
     if (session.phase === 'active') return exitFestivalTest();
     const previous = { ...session }; // Recovery restores the last phase if scheduling a reload fails.
-    const slotId = session.phase === 'returning' && session.returnSlotId ? session.returnSlotId : session.baseSlotId;
+    const slotId = ['returning', 'restored'].includes(session.phase) && session.returnSlotId ? session.returnSlotId : session.baseSlotId;
     const restoreSlot = await getSlot(slotId);
     if (!restoreSlot?.snapshot) return { ok: false, error: 'Original festival restore snapshot missing. Use the pinned Quick Save recovery point.' };
     session.returnSlotId = slotId;
