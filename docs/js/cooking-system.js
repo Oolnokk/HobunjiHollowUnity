@@ -409,7 +409,11 @@
   const COOKED_VALUE_PREMIUM = 1.3;
   function cookedSellPrice(recipe, selections, stars, itemDefs = deps?.ITEM_DEFS) {
     const flat = Math.max(4, (recipe?.slots?.length || 0) * 4 + stars * 3);
-    const ingredientValue = (selections || []).reduce((sum, { selected }) => sum + Math.max(0, Number(itemDefs?.[selected?.key]?.sellPrice) || 0), 0);
+    const ingredientValue = (selections || []).reduce((sum, { selected }) => {
+      const base = Math.max(0, Number(itemDefs?.[selected?.key]?.sellPrice) || 0); // Preserve the authored input value as the economy baseline.
+      const rarityPrice = window.ItemAcquisitionRarity?.sellPrice?.(selected?.key, base, { defs:itemDefs }) ?? base; // Shared source scarcity, never a second cooking-only rarity formula.
+      return sum + Math.max(0, Number(rarityPrice) || 0);
+    }, 0);
     return Math.max(flat, Math.round(ingredientValue * COOKED_VALUE_PREMIUM));
   }
 
@@ -452,14 +456,23 @@
       registerCookedDefinition(key, {
         icon: recipeOutputIcon(recipe), label, cat: 'food', sellPrice: cookedSellPrice(recipe, selections, stars),
         tags: ['Cooked Food', ...recipe.outputTags, `${stars} Star`],
+        rarityPriced:!!window.ItemAcquisitionRarity, // Dynamic ingredient prices were already paid into this cooked base; shipping must not apply rarity twice.
+        festivalRarityVersion:window.ItemAcquisitionRarity?.VERSION || 0, // Fixed score mathematics for this saved recipe version.
         desc: `${recipe.description} Eat it for ${effectText || 'a satisfying meal'}.`,
         recipeId: recipe.id,
         cookingCategories: [...(recipe.inventoryCategories || [])],
         foodEffects: effects, foodQuality: stars, cookingDefaultStars: stars,
         ingredientKeys: selections.map(({ selected }) => selected.key), // Used by ordinary item-trait inheritance for this cooked stack.
         giftIngredientKeys: selections.map(({ selected }) => selected.key), // Used by specific NPC food preferences; cooked stack identity is unique to this exact ingredient signature.
-        festivalIngredientQuality: selections.map(({ slot, selected }) => ({key:selected.key,stars:selected.stars,slotId:slot.id,contributesEffects:slot.contributesEffects !== false})), // Snapshot source tier and recipe slot: structural ingredients still score points but never grant cooking buffs.
-        festivalContestScore: window.FestivalPotluckContest?.scoreIngredients?.(selections.map(({ selected })=>selected),deps.ITEM_DEFS) || selections.reduce((sum,{selected})=>sum+selected.stars,0), // Uses provenance-based processing multipliers; not the output meal's aggregate star label.
+        festivalIngredientQuality: selections.map(({ slot, selected }) => {
+          const rarity = window.ItemAcquisitionRarity?.evaluate?.(selected.key,{defs:deps.ITEM_DEFS}) || null; // Snapshot the source economics so later Town Value changes never rewrite cooked dish ratings.
+          return {key:selected.key,stars:selected.stars,slotId:slot.id,contributesEffects:slot.contributesEffects !== false,
+            ...(rarity?.known ? {rarityMultiplier:rarity.contestMultiplier,rarityScore:rarity.score,
+              raritySource:rarity.sourceLabel,rarityCertainty:rarity.uncertainty} : {}) };
+        }), // Snapshot source tier and recipe slot: structural ingredients still score points but never grant cooking buffs.
+        festivalContestScore: window.FestivalPotluckContest?.scoreIngredients?.(selections.map(({ selected })=>({
+          ...selected,rarityMultiplier:window.ItemAcquisitionRarity?.contestMultiplier?.(selected.key,{defs:deps.ITEM_DEFS}) || 1
+        })),deps.ITEM_DEFS) || selections.reduce((sum,{selected})=>sum+selected.stars,0), // Uses provenance-based processing multipliers; not the output meal's aggregate star label.
       });
       deps.inventory[key] = Math.min(window.InventoryStacks.MAX_TOTAL, (deps.inventory[key] || 0) + servings);
       recordItemQuality(key, stars, servings); // Both servings share the same completed dish quality/effects because the perk increases batch yield, not recipe resolution.
