@@ -53,6 +53,10 @@ assert.equal(api.reactionForDialogue({ tone: 'reaction-music-positive' }), 'love
 assert.equal(api.reactionForDialogue({ tone: 'reaction-dance-negative' }), 'disgust');
 assert.equal(api.reactionForDialogue({ tone: 'animal' }), null);
 assert.equal(api.reactionForDialogue({ tone: 'refuse' }), 'disgust');
+assert.equal(api.reactionForDialogue({ tone: 'cheer' }), 'gloat');
+assert.equal(api.reactionForDialogue({ tone: 'reaction-silliness-positive' }), 'gloat');
+assert.equal(api.reactionForDialogue({ tone: 'shock' }), 'shock');
+assert.equal(api.reactionForDialogue({ tone: 'warning' }), 'alarmed');
 assert.equal(api.reactionForDialogue({ emojiReaction: false, tone: 'cheer' }), null);
 for (const kind of ['love', 'disgust', 'alarmed', 'curious', 'shock', 'gloat']) {
   for (const t of [0, .1, .3, .6, .9, 1]) {
