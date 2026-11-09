@@ -30,6 +30,8 @@
   let lastSweepDeg = COMPACT_SWEEP_DEG; // Diagnostic snapshot of current visible-choice sweep.
   let lastVisibleChoiceCount = 0; // Used to send outgoing choices one logical slot beyond the current arc edge.
   const domWriteStats = { applied:0, skipped:0 }; // Exposed in mobile diagnostics to compare selection-wheel DOM mutation work across frames.
+  const normalizedImportantValues = new Map(); // CSSOM normalizes clamp(), shadow colors and lengths; cache parsed values for identical per-frame comparisons.
+  let styleNormalizer = null; // Detached CSSStyleDeclaration used once per unique important declaration; never inserted into the HUD.
 
   function log(message, detail) {
     const text = `[selection-arc-ui] ${message}`;
@@ -53,13 +55,24 @@
     return { x:rect.left + rect.width / 2, y:rect.top + rect.height / 2 };
   }
 
+  function canonicalImportantValue(property, value) {
+    const cacheKey = property + '\0' + value; // Each static selector style parses once; a live element may use CSSOM's normalized serialization.
+    if (normalizedImportantValues.has(cacheKey)) return normalizedImportantValues.get(cacheKey);
+    const probe = styleNormalizer || (styleNormalizer = document.createElement('span').style); // Detached node avoids a visible layout invalidation.
+    probe.setProperty(property, value, 'important');
+    const canonical = probe.getPropertyValue(property) || value;
+    normalizedImportantValues.set(cacheKey, canonical);
+    return canonical;
+  }
+
   function setImportantStyle(element, property, value) {
     if (!element) return;
-    if (element.style.getPropertyValue(property) === value && element.style.getPropertyPriority(property) === 'important') {
+    if (element.style.getPropertyValue(property) === canonicalImportantValue(property, value)
+      && element.style.getPropertyPriority(property) === 'important') {
       domWriteStats.skipped++;
       return;
     }
-    element.style.setProperty(property, value, 'important'); // Keeps shape authoritative when legacy wheel code recycles nodes.
+    element.style.setProperty(property, value, 'important'); // Repair legacy inline styles only when the browser's parsed value or priority differs.
     domWriteStats.applied++;
   }
 
