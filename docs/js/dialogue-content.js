@@ -240,7 +240,7 @@
     let fl2v1 = '';
     for (const ch of name) { fl2v1 += ch; if (VOWELS.has(ch)) break; }
     const st    = getNpcDlgState(npcRec?.id);
-    const local = window.CharacterNicknames?.addressPlayer?.(name, npcRec?.id, { favor: st.favor, customNickname: st.localNickname })
+    const local = window.CharacterNicknames?.addressPlayer?.(name, npcRec?.id, { favor: st.favor, customNickname: st.localNickname, gender: gen })
       || window.RomanceSystem?.spouseDialogueFor?.(npcRec?.id)?.nickname || st.localNickname || name; // The same event-time nickname is used in dialogue and ambient greetings.
     let out = text
       .replace(/\{\{npcName\}\}/g,            npcRec?.name || '')
