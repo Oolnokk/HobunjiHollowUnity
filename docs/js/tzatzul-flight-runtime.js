@@ -11,6 +11,8 @@
   const NEST_STAY_HOURS = .5; // Successful deliveries keep the parent in its cave for thirty in-game minutes.
   const REST_SECONDS = 5; // Initial roost warm-up and a fallback for dev worlds without a clock.
   const SPEED_TILES_PER_SECOND = 7; // Flight travel across world tiles.
+  const TERRAIN_CLEARANCE_WORLD = 1.3; // Exterior body clearance above real plateau tops.
+  const TERRAIN_SAMPLE_TILES = .5; // Cache half-tile terrain height samples before each flight leg.
   const BODY_WIDTH_FRACTION = .30; // Damaging torso/core is narrower than the full articulated wing-span portrait.
   const BODY_HEIGHT_FRACTION = .34; // Half-height of the headfirst body box, based on the existing creature hitbox.
   const NOSE_LEAD_FRACTION = .33; // Moves the body toward the head/beak along its actual 3D flight direction.
@@ -226,11 +228,11 @@
     if (bird) bird.tzatzulCarrying = false;
     const fellFromTalons = reason === 'fled carrying prey' || reason === 'carrier knocked from perch'
       || reason === 'carrier died'; // A killed carrier drops its actual prey; unloaded scenes still use the safe pickup.
-    window.TzatzulLiveVisuals?.restoreCaptive?.(prey); // Revert the talon-payload rotation before ground/prone animation owns this actor again.
+    prey.tzatzulCapturedBy = null; // End talon attachment before native fall/knockback runs.
     if (fellFromTalons) window.PerchSupport?.release?.(prey, 'dropped by Tzatzul'); // Existing elevated-perch fall injury and footing, exactly once.
     window.PerchSupport?.forget?.(prey); // Restore native ground movement, never leave a dangling synthetic branch.
     prey.onBranch = null; prey.branchT = 0; prey.branchSurfaceY = 0;
-    prey.tzatzulCapturedBy = null;
+    window.TzatzulLiveVisuals?.restoreCaptive?.(prey); // Repair rotation AFTER the fall can mutate native actor pose.
     if (prey.health > 0) prey.state = record.state; // Death already owns the dying/corpse state; releasing cannot revive its AI.
     if (record.player) {
       prey.vx = 0; prey.vy = 0; // Native cave entry needs a grounded, stationary exterior exit record.
@@ -362,6 +364,31 @@
     }
     return false;
   }
+  function terrainFlightProfile(start, end, half) {
+    if (typeof deps?.worldSurfaceY !== 'function') return null;
+    const horizontalTiles = distance(start, end) / tile(); // Measure actual horizontal path, including elevated cliffs.
+    const count = Math.max(1, Math.min(240, Math.ceil(horizontalTiles / TERRAIN_SAMPLE_TILES)));
+    const samples = Array.from({ length: count + 1 }, (_, index) => {
+      const fraction = index / count;
+      return surface(start.x + (end.x - start.x) * fraction, start.y + (end.y - start.y) * fraction);
+    }); // Bounded single planning pass, never a per-frame scene traversal.
+    return { samples, count, horizontalTiles, clearance: Math.max(TERRAIN_CLEARANCE_WORLD, half.y + .65) };
+  }
+  function flightHeightAt(leg, fraction) {
+    const t = Math.max(0, Math.min(1, fraction));
+    const linear = leg.from.worldY + (leg.to.worldY - leg.from.worldY) * t;
+    const profile = leg.terrain;
+    if (!profile) return linear; // Indoor boss uses native cave obstruction collisions.
+    const index = Math.min(profile.count, Math.floor(t * profile.count));
+    const ahead = Math.max(1, Math.ceil(2.5 * profile.count / Math.max(1, profile.horizontalTiles)));
+    let highest = -Infinity;
+    for (let sample = Math.max(0, index - 1); sample <= Math.min(profile.count, index + ahead); sample++) {
+      highest = Math.max(highest, profile.samples[sample]); // Climb BEFORE reaching a plateau wall.
+    }
+    const remainingTiles = (1 - t) * profile.horizontalTiles;
+    const descent = leg.mode === 'swoop' ? Math.min(1, remainingTiles / 1.2) : 1;
+    return Math.max(linear, highest + profile.clearance * descent); // Last strike can descend to actual ground-level prey.
+  }
   function startLeg(bird, endpoint, phase, target = null) {
     const state = bird._tzFlight, perch = window.PerchSupport;
     if (!state || !perch) return false;
@@ -377,7 +404,9 @@
       z: (end.y - start.y) / (tile() * length) }; // 3D beak-first facing follows the dive, not the talon pose.
     const half = hitboxSize(bird); // Freeze body dimensions for this leg; no expensive mesh reads each frame.
     state.segment = { duration: Math.max(.55, Math.min(5, distance(start, end) / (tile() * SPEED_TILES_PER_SECOND))),
-      half, heading, from: start, to: end, diveAimFraction: endpoint.diveAimFraction || 1, lastBody: null }; // World-space travel powers cave wall impact's unused-distance calculation.
+      half, heading, from: start, to: end, mode: phase,
+      terrain: bird._tzNestMother ? null : terrainFlightProfile(start, end, half),
+      diveAimFraction: endpoint.diveAimFraction || 1, lastBody: null }; // World-space travel powers cave wall impact's unused-distance calculation.
     state.segment.lastBody = bodyCenter(bird, state.segment); // Swept-body starting frame includes elevated roost height.
     state.elapsed = 0; state.phase = phase; state.target = target; state.struck = false;
     bird.tzatzulDivePitchRad = phase === 'swoop' ? Math.atan2(vertical, horizontal) : 0; // Rig pitches with the nose-first body on descent.
@@ -450,6 +479,7 @@
     const t = Math.max(0, Math.min(1, state.elapsed / state.segment.duration));
     bird.branchT = t;
     window.PerchSupport?.constrain?.(bird); // Reuses native onBranch and branchSurfaceY movement/portrait height.
+    if (!bird._tzNestMother) bird.branchSurfaceY = flightHeightAt(state.segment, t); // Avoid straight-line tunnelling through plateau rock.
     if (state.phase === 'swoop' && state.segment.diveAimFraction < 1) {
       const leg = state.segment; // Follow the frozen descending line to prey height, then continue level toward the far wall.
       const descent = Math.min(1, t / leg.diveAimFraction);
@@ -558,6 +588,6 @@
     returnToRoost: returnHome, // Recovery uses the normal flight path after a genuine perch knock-off.
     beginNestDive: (bird,target) => bird?._tzNestMother === true && swoop(bird,target),
     advanceNestFlight: (bird,dt) => bird?._tzNestMother === true && advance(bird,Math.max(0,Math.min(.1,n(dt)))),
-    __test: Object.freeze({ roosts, choosePrey, seekFood, swoop, returnHome, capture, carryCaptive, releaseCaptive }),
+    __test: Object.freeze({ roosts, choosePrey, seekFood, swoop, returnHome, capture, carryCaptive, releaseCaptive, terrainFlightProfile, flightHeightAt }),
   });
 })();

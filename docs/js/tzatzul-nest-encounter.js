@@ -164,9 +164,13 @@
     if (support.length < 2) return null;
     const appearance = window.TzatzulRegistration?.identityFor?.(plan.zoneId, plan.slot);
     if (!appearance) return null;
+    const building = deps.buildingScenes?.get(mapId); // Actual loaded cave scene, not the preceding exterior map.
+    const placement = building?.scene
+      ? { scene: building.scene, grid: building.grid, cols: building.cols, rows: building.rows, areaId: mapId }
+      : { areaId: mapId }; // Standalone tests can omit scene registries.
     const first = support[0];
     const mother = stateFor(mapId).completed ? null : deps.makeCreatureEntity('tzatzul', first.x, first.y, {
-      homeX: first.x, homeY: first.y, state: 'idle', streamVisuals: true,
+      ...placement, homeX: first.x, homeY: first.y, state: 'idle', streamVisuals: true,
       wildlifeRole: 'predator', tzatzulNestCave: mapId, isBoss: true,
     });
     if (!mother && !stateFor(mapId).completed) return null;
@@ -175,7 +179,7 @@
       mother.maxHealth = Math.max(300, baseline * MOTHER_HEALTH_MULT);
       mother.health = mother.maxHealth;
       mother.def = { ...(mother.def || {}), attackDamage: Math.ceil(Math.max(24, finite(mother.def?.attackDamage, 24)) * MOTHER_DAMAGE_MULT) };
-      mother.areaId = mapId;
+      mother.areaId = mapId; mother.scene = placement.scene || mother.scene; // No outside-the-cave adult.
       mother.tzatzulIdentity = appearance;
       mother.tzatzulFlightPose = 'perched';
       mother._tzNestMother = true; // Gameplay knockback and enemy ground-path skipping use this single marker.
@@ -191,11 +195,11 @@
       if (stateFor(mapId).hatchlingsDead?.includes(index)) continue;
       const x = (finite(child.col) + .5) * tile(), y = (finite(child.row) + .5) * tile();
       const hatchling = deps.makeCreatureEntity('tzatzul-hatchling', x, y, {
-        homeX: x, homeY: y, state: 'idle', streamVisuals: true,
+        ...placement, homeX: x, homeY: y, state: 'idle', streamVisuals: true,
         tzatzulNestCave: mapId, wildlifeRole: 'predator',
       });
       if (!hatchling) continue;
-      hatchling.areaId = mapId;
+      hatchling.areaId = mapId; hatchling.scene = placement.scene || hatchling.scene; // The whole clutch is in the same cavern.
       hatchling.tzatzulIdentity = window.TzatzulRegistration?.identityFor?.(plan.zoneId, plan.slot, appearance);
       hatchling.tzatzulMother = mother;
       hatchling.tzatzulClutchIndex = index; // Saved add deaths preserve the actual surviving clutch after reload.
