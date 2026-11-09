@@ -27,6 +27,11 @@
   let deps = null;
   function init(injectedDeps) { deps = injectedDeps; }
 
+  function shouldDeferCavernLoad(area) {
+    // Cave residents keep their logical schedule while unseen; generating their heavy SDF interior belongs to player entry, not an ambient NPC station lookup.
+    return String(area || '').startsWith('map_i_den_') && deps?.getCurrentArea?.() !== area;
+  }
+
   function npcMovementConfig() { return window.SCRATCHBONES_CONFIG?.game?.movement?.npc || {}; }
 
   function normalizeStationLabel(label) {
@@ -490,10 +495,11 @@
         // warm it up so the lookup succeeds on a later tick, and throttle the
         // warning instead of spamming it every tick until that load completes.
         const missingArea = deps.normalizeNpcArea(rule.area ?? rule.mapId ?? hooks.defaultMapId ?? 'town');
-        if (deps.isBuildingArea(missingArea) && !deps.buildingScenes.has(missingArea)) deps.loadBuildingScene(missingArea);
+        const deferredCavern = shouldDeferCavernLoad(missingArea); // Used to prevent remote den carving and to report why the station is still unregistered.
+        if (deps.isBuildingArea(missingArea) && !deferredCavern && !deps.buildingScenes.has(missingArea)) deps.loadBuildingScene(missingArea);
         const warnKey = `${rec?.id || 'npc'}|${rule.stationId}`;
         if (logScheduleKeyOnce(warnKey)) {
-          window.__farmLog?.(`[schedule] ${rec?.id || 'npc'}: stationId "${rule.stationId}" not found (warming up ${missingArea})`, 'warn');
+          window.__farmLog?.(`[schedule] ${rec?.id || 'npc'}: stationId "${rule.stationId}" not found (${deferredCavern ? 'cave scene deferred until player entry' : `warming up ${missingArea}`})`, 'warn');
         }
       }
       const c = rule.c ?? rule.position?.c;
@@ -716,6 +722,7 @@
 
   window.NpcScheduling = {
     init,
+    shouldDeferCavernLoad,
     normalizeStationLabel,
     isNpcOnDutyAtStation,
     listInstrumentPerformers,
