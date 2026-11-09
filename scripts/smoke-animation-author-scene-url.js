@@ -171,9 +171,10 @@ async function main() {
         contactMouths[0].world.z - contactMouths[1].world.z,
       ); // Real pixel-to-pixel contact, not actor centers or the old generic 82%-height approximation.
       const lipContact = api.kissMouthDiagnostics?.();
-      if (!(mouthDistance < .025 && lipContact?.contact && lipContact.firstHeadMove > 0 &&
-          lipContact.secondHeadMove > 0)) {
-        throw Error('Canonical B\'shuakauitl lip coordinates do not meet without a root sidestep: ' +
+      if (!(lipContact?.contact && lipContact.targetGap > .005 &&
+          Math.abs(mouthDistance - lipContact.targetGap) <= lipContact.gapTolerance &&
+          lipContact.firstHeadMove > 0 && lipContact.secondHeadMove > 0)) {
+        throw Error('Canonical B\'shuakauitl faces must APPROACH with a visible species-scaled gap, never touch: ' +
           JSON.stringify({ mouthDistance, contactMouths, lipContact }));
       }
       const contactShoulderY = Number(afterContact.find(actor => actor.name === 'Pahu')?.initiatorHands?.targetShoulderY);
