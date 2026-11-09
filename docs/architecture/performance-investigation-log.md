@@ -181,6 +181,12 @@ Ranked roughly by how much the numbers say they matter. None of these were the "
 5. **Scheduler `checkpoint` ~5.5 ms**: this is only the dispatcher for every `pre-render` subscriber, so it is the sum
    of many modules. The scheduler's `getDebug()` has per-subscriber timings; the real-hardware trace named
    "procedural hand pose sync" (~8.5 ms) as the biggest scheduler entry.
+   - A subsequent targeted pass (PR #1559, 8 Nov 2026) removes per-sync non-sweep visual-plane traversals,
+     reuses the visual grip basis across two-handed sockets, reuses quaternion ancestor buffers, and
+     updates free-hand fallback poses in place rather than allocating six nested pose objects per
+     two-hand update. It preserves animation cadence and the sweep/grip math. The attached deterministic
+     tests check output parity and lookup counts; **real-hardware CPU/FPS improvement has not yet been
+     measured**, so keep the ~8.5 ms trace as a historical baseline rather than a verified new figure.
 6. **The heap grows slowly across zone visits** (about 4 MB per visit on the second pass after the fixes; was ~25-40).
    The remaining holders are small and bounded; see "Heap growth across zone visits" before touching it.
 7. **The corpse swap keeps the newest 6 per area and any within 5 tiles of the player** (`keepFull`, `nearTiles`,

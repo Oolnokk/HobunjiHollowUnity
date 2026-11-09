@@ -14,9 +14,11 @@
 
     const parity = window.HobunjiHandOutlineParity?.getDebug?.() || null;
     const frame = window.ProceduralHandFrameDriver?.getDebug?.() || [];
+    const handPerf = window.ProceduralHandFrameDriver?.getPerfStats?.() || null; // Captured only when a mobile Pixel Probe report is requested.
     const xray = window.HeldObjectRenderOrder?.snapshot?.() || null;
     const mist = window.CloudForestAvatarDepthOccluder?.snapshot?.() || null;
     const lines = ['', SECTION];
+    if (handPerf) lines.push(`Hand sync budget: skippedNonSweep=${handPerf.nonSweepSearchesAvoided || 0} visualPlaneSearches=${handPerf.visualPlaneSearches || 0} sharedSocketUses=${handPerf.sharedSocketUses || 0}`); // Lets mobile players compare the fast-path savings without DevTools.
     const authoredGrips = window.HobunjiAuthoredGripOverrides?.debugSnapshot?.(); // Reports the loaded migration and fixed spear grip in mobile-copyable Pixel Probe output.
     lines.push(authoredGrips
       ? `Authored grips: revision=${authoredGrips.revision} applied=${authoredGrips.applied} spearMeleeZ=${authoredGrips.fishingspear?.primaryGrip?.position?.z ?? '-'} latest="Fishing spear fixed melee grip now uses the exported Z=0; ranged grip and attack ranges retain their authored values."`

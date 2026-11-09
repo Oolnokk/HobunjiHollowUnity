@@ -26,11 +26,11 @@ assert.match(dual, /planeLocalPosition = socketFrame\.position\.clone\(\)\.apply
 assert.match(dual, /mirrorQuaternionAcrossLocalX[\s\S]*source\.x, -source\.y, -source\.z, source\.w/, 'offhand grip orientation mirrors the proper frame across child-local X instead of losing the reflection in quaternion decomposition');
 assert.match(dual, /mirroredChild = side === 'left'[\s\S]*mirrorQuaternionAcrossLocalX\(planeLocalQ/, 'the offhand receives the flipped grip frame independently of the forward-facing sprite');
 assert.match(dual, /duplicate\.scale\.set\?\.\(1, 1, 1\)/, 'both weapon copies preserve the source blade facing; the idle offhand pose owns its rotation');
-assert.match(driver, /const primarySocket = toolSocketWorld\(record, toolHolder, primaryGrip\)/, 'the original fixed 1H socket remains the canonical grip before Dual Wield remapping');
+assert.match(driver, /const primarySocket = toolSocketWorld\(record, toolHolder, primaryGrip(?:, visualBasis)?\)/, 'the original fixed 1H socket remains the canonical grip before Dual Wield remapping');
 assert.match(driver, /owners\.right = freeHand\?\.influence > 0\.0001 \? 'avatar-local-free-right-hand' : 'primary-grip'[\s\S]*if \(dualWield\) owners\.right = 'dual-wield-main-grip'/, 'free pluck poses are reported separately while ordinary grips retain primary-grip ownership before Dual Wield refinement');
 assert.match(driver, /transformSocketForHand\?\.\(record, 'right'/, 'right hand follows the lagged main duplicate');
 assert.match(driver, /transformSocketForHand\?\.\(record, 'left'/, 'left hand follows the offhand duplicate');
-assert.match(driver, /offhandBaseSocket = toolSocketWorld\(record, toolHolder, offhandGrip\)/, 'the offhand copy resolves its own grip frame');
+assert.match(driver, /offhandBaseSocket = toolSocketWorld\(record, toolHolder, offhandGrip(?:, visualBasis)?\)/, 'the offhand copy resolves its own grip frame');
 assert.match(driver, /offhandGrip = toolGrips\.offhandPrimaryGripForTool\?\.\(toolKey, gripContext, scaleIdentity\) \|\| primaryGrip/, 'that frame is the authored 1H grip without the main hand\'s palm-side offset, falling back to the shared grip');
 assert.match(grips, /dualWieldStateForTool/, 'shared grip state exposes Dual Wield as a melee hand mode');
 assert.match(grips, /defaultTwoHand = sequence === 'attack'/, 'ordinary melee attacks default to 2H');
