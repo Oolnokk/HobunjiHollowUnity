@@ -21,6 +21,9 @@
   let boreDrag = null; // Active touch/pointer, its original center, and the original sprite location for one undo step.
   let borePreviewScheduled = false; // Coalesces rapid touch moves into one regenerated preview per animation frame.
   const selectedBore = () => (chosenShaft()?.bores || []).find(bore => bore.id === selectedBoreId) || null;
+  const currentBoreAnchor = () => api.authoredFlailAnchor(chosenShaft(), chosenHead()); // One source-art point for the guide, the hole, and live rope attachment.
+  const boreIsVisible = () => api.isFlailHead(chosenHead())
+    && !!api.flailRecipe(byId('shaft').value,byId('head').value); // Only the selected valid flail head reveals/drills these holes.
   function scheduleBorePreview() {
     if (borePreviewScheduled) return;
     borePreviewScheduled = true;
@@ -31,6 +34,8 @@
     });
   }
   function updateBoreControls() {
+    const visible = boreIsVisible();
+    byId('shaft-bore-panel').hidden = !visible; // Rigid or shaft-only flails do not expose nor apply the shaft's stored bore operations.
     const bores = chosenShaft().bores || [];
     if (!bores.some(bore => bore.id === selectedBoreId)) selectedBoreId = bores[0]?.id || null;
     const list = byId('bore-list');
@@ -39,16 +44,23 @@
     }));
     if (selectedBoreId) list.value = selectedBoreId;
     const bore = selectedBore();
-    for (const name of ['x','y','rx','ry','rotation','rim','warp','shade','lightX','lightY']) {
-      const input = byId('bore-'+name); input.disabled = !bore; input.value = bore ? String(bore[name]) : '';
+    for (const name of ['x','y','rx','ry','rotation','rim','outline','warp','shade','lightX','lightY']) {
+      const input = byId('bore-'+name); input.disabled = !bore || !visible;
+      const value = name === 'x' ? bore?.offsetX : name === 'y' ? bore?.offsetY
+        : (name === 'rx' || name === 'ry') ? (bore?.[name] * 2) : bore?.[name];
+      input.value = bore ? String(value) : '';
     }
     byId('bore-enabled').disabled = !bore; byId('bore-enabled').checked = bore?.enabled !== false && !!bore;
     byId('bore-remove').disabled = !bore;
     byId('bore-drag').disabled = !bore;
     byId('bore-drag').setAttribute('aria-pressed', String(boreMoveEnabled && !!bore));
-    byId('bore-status').textContent = bore
-      ? bores.length+' bore(s). Selected '+bore.id+': drag in the haft sprite or edit its numbers. The rim is recalculated from the original PNG.'
-      : 'No bores on this shaft. Add one to drill an editable, shaded opening through the original artwork.';
+    const anchor = currentBoreAnchor();
+    byId('bore-status').textContent = !visible
+      ? 'Select a flail head and a valid recipe to author the connector opening.'
+      : bore ? bores.length+' bore(s) anchored at ('+anchor.x.toFixed(1)+', '+anchor.y.toFixed(1)+
+        '). Selected '+bore.id+': offset ('+bore.offsetX.toFixed(1)+', '+bore.offsetY.toFixed(1)+
+        ') · '+(2*bore.rx)+' × '+(2*bore.ry)+'px · interior ink '+bore.outline+'px.'
+      : 'No shaft bores. Add one to drill a 20 × 20px outlined opening exactly at the connector attachment.';
   }
   let regionSelecting = false; // Preview is temporarily a rectangle picker rather than a bridge paint surface.
   let regionDraft = null; // Active local selection box while dragging on the assembled preview.
@@ -175,9 +187,9 @@
     const art = id === 'shaft-canvas' ? api.shaftArtTransform(chosenShaft()) : null;
     ctx.save();
     if (art?.enabled) {ctx.translate(225+art.x,602+art.y);ctx.scale(art.scaleX,art.scaleY);ctx.translate(-225,-602);}
-    ctx.drawImage(id === 'shaft-canvas' ? api.boreShaft(chosenShaft(), image) : image, 0, 0, canvas.width, canvas.height);
-    if (id === 'shaft-canvas') { // The aperture outline is an editing overlay, not part of the exported/composed sprite.
-      for (const bore of chosenShaft().bores || []) {
+    ctx.drawImage(id === 'shaft-canvas' ? api.boreShaft(chosenShaft(), image, chosenHead()) : image, 0, 0, canvas.width, canvas.height);
+    if (id === 'shaft-canvas' && boreIsVisible()) { // Apertures and their annotation only exist when a flail head is selected.
+      for (const bore of api.resolvedBores(chosenShaft(), chosenHead())) {
         ctx.save();
         ctx.translate(bore.x, bore.y); ctx.rotate(bore.rotation * Math.PI / 180);
         ctx.lineWidth = bore.id === selectedBoreId ? 2.2 : 1.3;
@@ -191,8 +203,18 @@
         ctx.restore();
       }
     }
-    ctx.restore(); // Bore overlays follow the optional shaft-art transform; mounting arrows remain independent.
-    const mounts = displayMounts(id); // What the player sees now matches the composed head and transform diagnostics.
+      const guide = api.flailGuide(byId('shaft').value, byId('head').value);
+      if (guide?.explicitMount) { // Dashed connector guide shares the source sprite's transform, and marks both physical ends.
+        ctx.save(); ctx.strokeStyle = '#f4c6ff'; ctx.fillStyle = '#f4c6ff'; ctx.lineWidth = 2.5;
+        ctx.setLineDash([8, 5]); ctx.beginPath(); ctx.moveTo(guide.start.x, guide.start.y);
+        ctx.lineTo(guide.end.x, guide.end.y); ctx.stroke(); ctx.setLineDash([]);
+        ctx.beginPath(); ctx.arc(guide.start.x,guide.start.y,7,0,Math.PI*2); ctx.stroke();
+        ctx.beginPath(); ctx.arc(guide.end.x,guide.end.y,5,0,Math.PI*2); ctx.fill();
+        ctx.restore();
+      }
+    ctx.restore(); // Guide follows the SHAFT ART in the same coordinate frame as the connector bore.
+    if (id === 'head-canvas' && api.isFlailHead(chosenHead())) return; // Original Tool Hub head anchor replaces all modular-head arrow gizmos.
+    const mounts = displayMounts(id); // Ordinary rigid fitting lines continue to use the existing controls.
     mounts.forEach((mount, i) => lineMarker(ctx, mount, id === 'head-canvas' || i === mountIndex));
     drawGizmo(ctx, mounts[id === 'head-canvas' ? 0 : mountIndex]); // Selected handle is drawn in world/source-canvas space.
   }
@@ -591,8 +613,10 @@
     byId('shaft-rope-y').value = ropeMount ? String(ropeMount.start.y) : shaft.flailHaftAnchor?.y ?? '';
     byId('shaft-rope-x').placeholder = String(Math.round(sourcePoint.x)) + (ropeMount ? ' (Rope mount owns contact)' : ' (legacy socket)');
     byId('shaft-rope-y').placeholder = String(Math.round(sourcePoint.y)) + (ropeMount ? ' (Rope mount owns contact)' : ' (legacy socket)');
-    byId('head-rope-x').value = head.flailHeadAnchor?.x ?? head.mount.start.x;
-    byId('head-rope-y').value = head.flailHeadAnchor?.y ?? head.mount.start.y;
+    const authoredHead = api.flailRecipe(byId('shaft').value,byId('head').value)?.flail?.head;
+    byId('head-rope-x').value = authoredHead?.anchor?.x ?? '';
+    byId('head-rope-y').value = authoredHead?.anchor?.y ?? '';
+    byId('head-rope-x').disabled = byId('head-rope-y').disabled = true; // Attachment is read-only here: edit its exact point only in Complex Tool Visuals.
     byId('head-rope-scale').value = head.flailHeadScale || 1;
     const toolSlots = shaft.toolWorthy ? (head.toolSlots || []).join(', ') || 'no utility roles on this head' : 'weapon only: haft not tool-worthy';
     byId('identity-preview').textContent = 'Example forged name: ' + api.weaponName(byId('shaft').value, byId('head').value, 'Copper')
@@ -717,8 +741,12 @@
         const bore = selectedBore();
         if (!bore) return;
         const p = pointFor(element, event), art = api.shaftArtTransform(chosenShaft());
-        bore.x = Math.max(0,Math.min(450,art.enabled ? (p.x-225-art.x)/art.scaleX+225 : p.x));
-        bore.y = Math.max(0,Math.min(1204,art.enabled ? (p.y-602-art.y)/art.scaleY+602 : p.y));
+        const sourceX = art.enabled ? (p.x-225-art.x)/art.scaleX+225 : p.x;
+        const sourceY = art.enabled ? (p.y-602-art.y)/art.scaleY+602 : p.y;
+        const anchor = currentBoreAnchor(); // Moving a hole updates its relative offsets, not an absolute image coordinate.
+        if (!anchor) return;
+        bore.offsetX = Math.max(-450,Math.min(450,sourceX - anchor.x));
+        bore.offsetY = Math.max(-1204,Math.min(1204,sourceY - anchor.y));
         drawLines('shaft-canvas'); scheduleBorePreview(); // Recut and re-shade on each dragged position, at most once per rendered frame.
         return;
       }
@@ -740,7 +768,7 @@
       if (id === 'shaft-canvas' && boreMoveEnabled && selectedBore()) {
         event.preventDefault();
         boreDrag = { id, pointer: event.pointerId,
-          original: { x: selectedBore().x, y: selectedBore().y } }; // One draggable edit, one undo step on release.
+          original: { offsetX: selectedBore().offsetX, offsetY: selectedBore().offsetY } }; // One draggable edit, one undo step on release.
         element.setPointerCapture(event.pointerId); update(event); return;
       }
       event.preventDefault();
@@ -767,7 +795,7 @@
     element.addEventListener('pointerup', event => {
       if (boreDrag?.id === id && boreDrag.pointer === event.pointerId) {
         event.preventDefault(); update(event);
-        const changed = selectedBore() && (selectedBore().x !== boreDrag.original.x || selectedBore().y !== boreDrag.original.y);
+        const changed = selectedBore() && (selectedBore().offsetX !== boreDrag.original.offsetX || selectedBore().offsetY !== boreDrag.original.offsetY);
         boreDrag = null;
         if (changed) save(); else drawLines('shaft-canvas');
         return;
@@ -808,11 +836,12 @@
   };
   byId('shaft').onchange = () => { mountIndex = 0; activeRegionId=null;regionSelecting=false;regionDraft=null;selectedBoreId=null;boreMoveEnabled=false;render(); };
   byId('bore-add').onclick = () => {
+    if (!boreIsVisible() || !currentBoreAnchor()) { msg('Select a flail head with an authored connector first.'); return; }
     const shaft = chosenShaft(), bores = shaft.bores ||= [];
     if (bores.length >= 12) { msg('At most 12 independent bores per shaft.'); return; }
     const id = 'bore-' + (Math.max(0,...bores.map(b => Number(String(b.id).replace(/^bore-/,'')) || 0)) + 1);
-    bores.push({ id, x: 225, y: 602, rx: 20, ry: 12, rotation: 0,
-      rim: 5, warp: 1.5, shade: .65, lightX: -.6, lightY: -.8, enabled: true }); // Safe editable ellipse; the source PNG is never overwritten.
+    bores.push({ id, offsetX: 0, offsetY: 0, rx: 10, ry: 10, rotation: 0,
+      rim: 5, outline: 3, warp: 1.5, shade: .65, lightX: -.6, lightY: -.8, enabled: true }); // 0/0 relative offsets; 10px radii make a 20×20px opening. // Safe editable ellipse; the source PNG is never overwritten.
     selectedBoreId = id; boreMoveEnabled = true; save();
     msg('New bore added. Tap or drag its center on the haft preview to reposition and recalculate.');
   };
@@ -830,8 +859,8 @@
     msg(boreMoveEnabled ? 'Tap/drag on the haft sprite to move the bore. Geometry and shading recalculate while moving.' : 'Bore mover disabled; mounting-line gizmos restored.');
   };
   byId('bore-enabled').onchange = () => { if (!selectedBore()) return; selectedBore().enabled = byId('bore-enabled').checked; save(); };
-  const boreRanges = { x:[0,450], y:[0,1204], rx:[2,160], ry:[2,160],
-    rotation:[-360,360], rim:[.5,24], warp:[0,6], shade:[0,1], lightX:[-1,1], lightY:[-1,1] }; // Numeric validation matches runtime import sanitation.
+  const boreRanges = { x:[-450,450], y:[-1204,1204], rx:[4,320], ry:[4,320],
+    rotation:[-360,360], rim:[.5,24], outline:[1,12], warp:[0,6], shade:[0,1], lightX:[-1,1], lightY:[-1,1] }; // Numeric validation matches runtime import sanitation.
   for (const [field,[min,max]] of Object.entries(boreRanges)) {
     const input = byId('bore-'+field);
     function editBore(commit) {
@@ -839,7 +868,9 @@
       if (!bore || !input.value.trim() || !Number.isFinite(value) || value < min || value > max) {
         if (commit) updateBoreControls(); return;
       }
-      bore[field] = value;
+      if (field === 'x') bore.offsetX = value;
+      else if (field === 'y') bore.offsetY = value;
+      else bore[field] = (field === 'rx' || field === 'ry') ? value / 2 : value; // Inputs describe full 20px width/height; runtime keeps radii.
       if (commit) save(); else { drawLines('shaft-canvas'); scheduleBorePreview(); } // Live shape edits never accumulate repeated destructive cutouts.
     }
     input.addEventListener('input', () => editBore(false));
@@ -877,10 +908,7 @@
     save();
   };
   for (const id of ['head-rope-x','head-rope-y']) byId(id).onchange = () => {
-    const head = chosenHead(); // Head contact point is in the head PNG's original pixel frame.
-    const x = Number(byId('head-rope-x').value), y = Number(byId('head-rope-y').value);
-    if (!Number.isFinite(x) || !Number.isFinite(y)) { drawIdentity(); return; }
-    head.flailHeadAnchor = { x, y }; save();
+    drawIdentity(); // Read-only: Complex Tool Visuals owns the flail's true head attachment point.
   };
   byId('head-rope-scale').onchange = () => {
     const value = Number(byId('head-rope-scale').value);
