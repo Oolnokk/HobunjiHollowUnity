@@ -29,6 +29,8 @@
   // idempotent registration at the owning system's init boundary so runtime
   // correctness no longer depends on document-event ordering.
   function ensurePuktukRuntimeRegistration(injectedDeps) {
+    window.PuktukDenNestRegistration?.registerDenNestConfig?.(); // Restores the real hatchable-baby reward before a den can be inhabited.
+    window.PuktukDenNestRegistration?.registerDenBabyItems?.(injectedDeps?.ITEM_DEFS); // The same inventory item used by nursery and stable.
     const creatureDb = injectedDeps?.CREATURE_DB;
     const garWolf = creatureDb?.['gar-wolf'];
     const predatorBaseline = garWolf || creatureDb?.grehlr || creatureDb?.drenkirra || {};
@@ -83,11 +85,11 @@
       denMotherDefs.puktuk = {
         ...existingMother,
         creatureKey: existingMother.creatureKey || 'puktuk',
-        nestItemKey: existingMother.nestItemKey ?? null,
+        nestItemKey: existingMother.nestItemKey || 'puktukBaby', // A Puktuk nesting family must never silently have a zero-content clutch.
       };
     }
 
-    if (denMotherDefs && creatureDb?.nelk && !denMotherDefs.nelk) denMotherDefs.nelk = { creatureKey: 'nelk', nestItemKey: null }; // Explicit den species participates in cavern ecology without inventing collectible eggs.
+    if (denMotherDefs && creatureDb?.nelk && !denMotherDefs.nelk) denMotherDefs.nelk = { creatureKey: 'nelk', nestItemKey: 'nelkBaby', liveBirth: true }; // A Nelk den must have a real collectible baby, not a null placeholder.
     const ready = !!creatureDb?.puktuk
       && Array.isArray(denSpecies) && denSpecies.includes('puktuk')
       && Array.isArray(herbivores) && herbivores.includes('puktuk')
@@ -1369,8 +1371,10 @@
   // shuffle, stable per zone (den ids survive relocation) and shared with
   // CavernGenerator through denSpeciesFor.
   function denSpeciesAllocation(zoneId, pool) {
-    const dens = deps.zoneLayouts?.get(zoneId)?.dens || [];
-    const denIds = dens.map(den => String(den.id)).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+    const layout = deps.zoneLayouts?.get(zoneId); // CaveSiteSystem temporarily filters layout.dens during the wildlife tick.
+    const anchors = layout?.caveAnchors || layout?.dens || []; // Use the original cave roster when the ecology wrapper has replaced its view.
+    const denIds = anchors.filter(den => den?.caveSite?.inhabitant ? den.caveSite.inhabitant === 'animal_den' : den?.isAnimalDen !== false)
+      .map(den => String(den.id)).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })); // One stable animal-only distribution indoors and out.
     if (!denIds.length) return null;
     const signature = `${pool.join(',')}|${denIds.join(',')}`;
     const cached = _denSpeciesAllocationCache.get(zoneId);
@@ -1402,6 +1406,59 @@
     return pool[Math.floor(rng() * pool.length)] || null;
   }
 
+  // One den identity for exterior home-point residents, interior regular
+  // occupants, the guarding mother and its clutch. Legacy multi-species
+  // pack/herd pools use the same seeded decision on both sides of the door.
+  function denResidentSpeciesFor(zoneId, cavernMapId) {
+    const exact = denSpeciesFor(zoneId, cavernMapId);
+    if (exact) return exact;
+    const zone = deps.EXTERIOR_ZONES?.[zoneId] || {};
+    const pack = zone.packSpecies || [], herd = zone.herbivoreSpecies || [];
+    if (!pack.length && !herd.length) return null;
+    const rng = window.WildernessMapGenerator.makeRng(cavernMapId + '_denpop'); // Existing den-scoped identity seed; never a spawn-cycle roll.
+    const useHerd = herd.length && (!pack.length || rng() < 0.5);
+    const pool = useHerd ? herd : pack;
+    return pool[Math.floor(rng() * pool.length)] || null;
+  }
+
+  // Mobile-readable registration audit: every den/branch/minicliff nesting
+  // species must exist as a live creature and have correctly typed offspring.
+  // Tzatzul (nonfertile valuables) and Skeeri (no livestock) are exempt.
+  function nestingSpeciesAudit() {
+    const cfg = window.SCRATCHBONES_CONFIG?.game || {};
+    const mothers = deps?.DEN_MOTHER_DEFS || cfg.wildlife?.denMothers || {};
+    const itemKinds = cfg.livestock?.itemKinds || {};
+    const otherOffspring = { // Surface nests, hive swarms and open-air herds use their own existing fertility owners.
+      pingdort: 'fertilePingdortEgg', honeyfuzzle: 'fertileHoneyfuzzleEgg',
+      moot: 'mootBaby', 'voorg-ass': 'voorgAssBaby',
+    };
+    const nesting = new Set([...Object.keys(mothers), ...Object.keys(otherOffspring), 'drenkirra',
+      'tzatzul', 'skeeri-small', 'skeeri-medium', 'skeeri-large']); // All ruin Skeeri sizes are real, but not hatchable.
+    for (const zone of Object.values(deps?.EXTERIOR_ZONES || {})) {
+      for (const field of ['denSpecies', 'packSpecies', 'herbivoreSpecies', 'roamingHerdSpecies', 'roamingForagerSpecies'])
+        for (const kind of zone?.[field] || []) nesting.add(kind);
+    }
+    return [...nesting].sort().map(kind => {
+      const exempt = kind === 'tzatzul' || kind.startsWith('skeeri');
+      const family = window.CreatureGenetics?.SPECIES_ALIAS?.[kind] || kind;
+      const mother = mothers[kind];
+      const guardianKey = mother?.creatureKey || (kind === 'voorg-ass' ? 'voorg-ass-herd-mother'
+        : ((otherOffspring[kind] || exempt) ? kind : null)); // Herd-Mothers are a separate live creature; nest/hive guardians use their own species.
+      const itemKey = otherOffspring[kind] || mother?.nestItemKey || null;
+      const registered = !!deps?.CREATURE_DB?.[kind];
+      const guardianRegistered = exempt ? true : !!(guardianKey && deps?.CREATURE_DB?.[guardianKey]);
+      const itemDef = itemKey && deps?.ITEM_DEFS?.[itemKey]; // A stale itemKinds mapping alone cannot create a usable egg or baby.
+      const tags = Array.isArray(itemDef?.tags) ? itemDef.tags : []; // Authored fertility tags distinguish hatchable eggs from ordinary food eggs.
+      const hatchable = tags.includes('Baby') || (tags.includes('Egg') && tags.includes('Fertile')); // Every non-exempt species must yield a live offspring.
+      const offspringMapped = exempt || !!(itemDef?.cat === 'livestock' && hatchable
+        && (kind === 'honeyfuzzle' || itemKinds[itemKey] === family)); // Hive eggs hatch in a Honeyfuzzle House instead of the ordinary Stable.
+      const hasGenetics = exempt || !!window.CreatureGeneticsRender?.SPECIES?.[family];
+      const ok = registered && guardianRegistered && offspringMapped && hasGenetics;
+      return { kind, family, guardianKey, itemKey, registered, guardianRegistered,
+        offspringMapped, hasGenetics, exempt, ok }; // Read directly by the Wildlife developer tab.
+    });
+  }
+
   // Per-den status for the active (or given) zone: species, turnover stage,
   // and how many live pack members are registered. Read by the AI snapshot.
   function denCensus(zoneId = deps.getCurrentArea()) {
@@ -1417,7 +1474,7 @@
       return {
         denId: String(den.id), denKey,
         col: Number(den.x), row: Number(den.y),
-        species: denSpeciesFor(zoneId, cavernMapId) || null,
+        species: denResidentSpeciesFor(zoneId, cavernMapId),
         stage: den.collapsed ? 'collapsed' : (den.turnoverStage || 'active'),
         alive: aliveByKey.get(denKey) || 0,
         everSpawned: denEverSpawned.has(denKey),
@@ -1429,32 +1486,19 @@
   function spawnPackAtDen(zoneId, den, denKey) {
     const zdef = deps.EXTERIOR_ZONES[zoneId];
     const cavernMapId = denCavernMapId(zoneId, den.id);
-    // Zones may author denSpecies when den occupants should be independent
-    // of general pack/herd ecology. Legacy zones without denSpecies retain
-    // the existing deterministic pack-vs-herd choice so this stays fully
-    // backward-compatible.
-    const explicitSpeciesKey = denSpeciesFor(zoneId, cavernMapId); // Exact authored den identity, stable for this den across respawns and shared with CavernGenerator.
-    const hasPack = zdef?.packSpecies?.length, hasHerd = zdef?.herbivoreSpecies?.length;
-    const popRng = window.WildernessMapGenerator.makeRng(cavernMapId + '_denpop');
-    const useHerd = !explicitSpeciesKey && hasHerd && (!hasPack || popRng() < 0.5);
-    const pool = explicitSpeciesKey ? [explicitSpeciesKey] : (useHerd ? zdef.herbivoreSpecies : zdef?.packSpecies);
-    if (!pool || !pool.length) {
-      window.__farmLog?.(`[wildlife] ${denKey}: no denSpecies/packSpecies/herbivoreSpecies pool configured for zone "${zoneId}" — den stays empty (fallback: skipped spawn).`, 'wildlife');
+    const speciesKey = denResidentSpeciesFor(zoneId, cavernMapId); // Same permanent species as the entrance, cavern guard and offspring.
+    if (!speciesKey || !deps.CREATURE_DB?.[speciesKey]) {
+      window.__farmLog?.(`[wildlife] ${denKey}: missing registered den species "${speciesKey || 'none'}" — cannot spawn a mismatched family.`, 'warn');
       return;
     }
-    // Which INDIVIDUAL species within that fixed pool (relevant only for a
-    // zone with multiple pack or multiple herd species) and how many still
-    // vary per spawn cycle — only the pack-vs-herd identity itself is
-    // pinned to the den.
-    const speciesKey = explicitSpeciesKey || pool[Math.floor(deps.rnd() * pool.length)];
-    const speciesIsHerbivore = useHerd || !!zdef?.herbivoreSpecies?.includes(speciesKey)
-      || deps.CREATURE_DB[speciesKey]?.diet === 'herbivore'; // Den-only foragers retain their species' prey role instead of becoming predators.
+    const speciesIsHerbivore = !!zdef?.herbivoreSpecies?.includes(speciesKey)
+      || deps.CREATURE_DB[speciesKey]?.diet === 'herbivore'; // Den-only foragers retain their prey role.
     // Every same-family member of this pack (e.g. gar-wolf + alpha, or
     // the whole uumkaoii-wild herd) shares one rolled-once "family"
     // genotype — see getOrMakeDenGenotype.
     const denFamily = denGenotypeFamily(speciesKey);
     const denGenotype = denFamily ? getOrMakeDenGenotype(cavernMapId, denFamily) : null;
-    const wildPackGenotype = speciesKey === 'nelk' && denGenotype ? { ...denGenotype, sizeClass: 'large' } : denGenotype; // Wild Nelk adults are Large; shared family genetics for nests and owned animals are unchanged.
+    const wildPackGenotype = denGenotype; // Never alter inherited Size (or any other allele) between this den's guardians and clutch.
     // den.x/den.y are the footprint's top-left tile (see workspace.animalDens
     // in wilderness-map-generator.js) — spawn/home anchor is the footprint center.
     const homeX = (den.x + (den.w || 1) * 0.5) * deps.TILE, homeY = (den.y + (den.h || 1) * 0.5) * deps.TILE;
@@ -1493,7 +1537,7 @@
         memberHomeX = homeX + Math.cos(spreadAngle) * spreadDist;
         memberHomeY = homeY + Math.sin(spreadAngle) * spreadDist;
       }
-      const opts = { streamVisuals: true, homeX: memberHomeX, homeY: memberHomeY, denEntranceX, denEntranceY, state: 'idle', denKey, genotype: wildPackGenotype, wildlifeRole: speciesIsHerbivore ? 'prey' : 'predator' }; // Explicit ecology role avoids guessing from hostility/diet overlays later.
+      const opts = { streamVisuals: true, homeX: memberHomeX, homeY: memberHomeY, denEntranceX, denEntranceY, state: 'idle', denKey, genotype: wildPackGenotype, visualSizeClass: speciesKey === 'nelk' ? 'large' : null, wildlifeRole: speciesIsHerbivore ? 'prey' : 'predator' }; // Physical adult size is presentation-only: eggs, mother and exterior retain identical inheritable Size. // Explicit ecology role avoids guessing from hostility/diet overlays later.
       assignWildlifeStation(opts, zoneData, memberHomeX, memberHomeY, speciesIsHerbivore);
       const creature = deps.makeCreatureEntity(speciesKey, x, y, opts);
       if (creature) { deps.hostileObjects.add(creature); spawned++; }
@@ -1877,6 +1921,8 @@
     denCavernMapId,
     denCavernZoneOf: (mapId) => _denCavernZoneOf.get(mapId),
     denSpeciesFor,
+    denResidentSpeciesFor,
+    nestingSpeciesAudit,
     denCensus,
     denKeyForCavern,
     denGenotypeFamily,

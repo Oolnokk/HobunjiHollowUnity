@@ -15,7 +15,7 @@ assert.match(gameSource, /roamingHerdCount:\s*2/, 'Northern Cliffs config author
 assert.match(gameSource, /c\.herdKey\s*&&\s*herdNight[\s\S]*?_animalSleeping\s*=\s*true/, 'game AI beds open-air herd members down at night');
 assert.match(gameSource, /carriedBabyItemKey[\s\S]*?inventory\[carriedBabyKey\]/, 'Herd-Mother babies are recovered only through corpse looting');
 assert.match(gameSource, /!c\._animalSleeping[\s\S]*?c\.state !== 'return'/, 'sleeping herd members do not keep tracking the player with awake look-at behavior');
-assert.match(gameSource, /const sizeScale = window\.CreatureGenetics\.creatureSizeScale\(creatureKey, opts\.genotype\)/, 'wild creature construction resolves the genotype size class through CreatureGenetics');
+assert.match(gameSource, /const visualGenotype = opts\.visualSizeClass && opts\.genotype[\s\S]*?const sizeScale = window\.CreatureGenetics\.creatureSizeScale\(creatureKey, visualGenotype\)/, 'wild creature construction preserves inherited genes while applying optional adult display size');
 assert.match(gameSource, /window\.CreatureGenetics\.applyCreatureBillboardScale\(avatarRef\.group, sizeScale\)/, 'wild creature construction applies the resolved size scale to the rendered animal');
 
 class Group {

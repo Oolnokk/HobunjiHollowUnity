@@ -5210,8 +5210,10 @@
         // Definitions with a different source canvas provide its width/height
         // ratio so the avatar plane preserves the uploaded sprite's aspect.
         const modelHeight = modelWidth * (def.spriteAspect || (600 / 1375));
-        const sizeScale = window.CreatureGenetics.creatureSizeScale(creatureKey, opts.genotype); // Applies Animation Author size-class values in-world.
-        const authoredGroundOffset = window.CreatureGenetics.creatureGroundOffset(creatureKey, opts.genotype); // Optional absolute floor-to-origin lift measured in Rigging; null means keep automatic half-height placement.
+        const visualGenotype = opts.visualSizeClass && opts.genotype
+          ? { ...opts.genotype, sizeClass: opts.visualSizeClass } : opts.genotype; // A wild adult's presentation size never rewrites its inherited offspring genes.
+        const sizeScale = window.CreatureGenetics.creatureSizeScale(creatureKey, visualGenotype); // Applies Animation Author size-class values in-world.
+        const authoredGroundOffset = window.CreatureGenetics.creatureGroundOffset(creatureKey, visualGenotype); // Optional absolute floor-to-origin lift measured in Rigging; null means keep automatic half-height placement.
         const halfH = modelHeight * sizeScale.y / 2; // Existing automatic prism floor-to-origin distance, retained as the fallback and physical half-height.
         const groundLift = Number.isFinite(authoredGroundOffset) ? authoredGroundOffset : halfH; // Replaces, rather than adds to/subtracts from, the automatic terrain baseline.
         const idUniq = (performance.now() | 0) + '_' + Math.floor(Math.random() * 100000);
@@ -14892,16 +14894,17 @@
           if (mapData.wallStyle === 'cavern') {
             if (Number.isFinite(mapData.nestCol) && Number.isFinite(mapData.nestRow)) {
               const nestCol = mapData.nestCol, nestRow = mapData.nestRow;
-              const motherKey = mapData.denMotherKind;
+              const residentSpecies = mapData.denResidentSpecies
+                || window.WildlifeSpawn.denResidentSpeciesFor?.(window.WildlifeSpawn.denCavernZoneOf(mapId), mapId); // The animals using this entrance as their home choose the entire family.
+              const residentMotherConfig = DEN_MOTHER_DEFS[residentSpecies]; // The live registry also includes species registered after the original config snapshot.
+              const motherKey = residentMotherConfig?.creatureKey || mapData.denMotherKind;
               const motherDef = CREATURE_DB[motherKey];
               // Same shared per-family genotype as this den's exterior pack
               // (see spawnPackAtDen/getOrMakeDenGenotype) — whichever of the
               // two spawns first rolls it, the other reuses it, so the
               // Den-Mother and any same-family pack members (and the nest's
-              // eggs/babies) always match. Keyed by family (not just mapId)
-              // since the Den-Mother's species is picked independently of
-              // whatever the exterior pack currently is (see
-              // pickDenMotherKind) — they can genuinely differ.
+              // eggs/babies) always match. The mother now comes from the
+              // entrance's species, so separate species rolls cannot diverge.
               const motherFamily = window.WildlifeSpawn.denGenotypeFamily(motherKey);
               const denGenotype = motherFamily ? window.WildlifeSpawn.getOrMakeDenGenotype(mapId, motherFamily) : null;
               if (motherDef && !mapData.denMotherDefeated) {
@@ -14910,6 +14913,7 @@
                   scene: bScene, grid: bGrid, cols, rows,
                   areaId: mapId, homeX, homeY, state: 'idle',
                   isDenMother: true, genotype: denGenotype,
+                  visualSizeClass: residentSpecies === 'nelk' ? 'large' : null, // Wild Nelk remain large without altering their inheritable Size allele.
                 });
                 if (mother) hostileObjects.add(mother);
               }
@@ -14921,13 +14925,14 @@
               const remaining = clutchMin + Math.floor(nestRng() * (clutchMax - clutchMin + 1));
               const motherConfig = Object.values(DEN_MOTHER_DEFS).find(def => def.creatureKey === motherKey); // Nest presentation may use hatched babies for an egg-laying species.
               const liveBirth = !!(motherConfig?.liveBirth ?? motherDef?.liveBirth);
-              const itemKey = DEN_MOTHER_ITEM_KEYS[motherKey];
+              const itemKey = residentMotherConfig?.nestItemKey || motherConfig?.nestItemKey || DEN_MOTHER_ITEM_KEYS[motherKey]; // Dynamic registration wins over an early snapshot.
               // The authored nest renderer also needs a record when collection
               // is disabled. Only the clutch count depends on having a reward.
               _denNests.set(mapId, {
                 col: nestCol, row: nestRow, w: 2, h: 2,
                 floorY: tileSurfaceYInArea(bGrid?.[nestRow]?.[nestCol], mapId),
                 itemKey, liveBirth, remaining: itemKey ? (mapData.nestState ? Math.max(0, Number(mapData.nestState.remaining) || 0) : remaining) : 0, genotype: denGenotype,
+                speciesKey: residentSpecies, guardianKey: motherKey, // Inspectable den lineage for debugging and future save migration.
               });
               if (!itemKey) {
                 window.__farmLog?.(`[wildlife] Den-Mother "${motherKey || 'missing'}" has no configured nest reward; nest collection is disabled.`, 'warn');
@@ -17092,7 +17097,7 @@
         nazgrakuCrate: { icon: '🐟', label: 'Nazgraku Crate', cat: 'livestock', sellPrice: 0, tags: ['Livestock', 'Crate'], desc: 'Add this Nazgraku to your livestock through the Farm tab.' },
         nazgrakuBaby: { icon: '🐟', label: 'Nazgraku Hatchling', cat: 'livestock', sellPrice: 0, tags: ['Livestock', 'Baby'], desc: 'A Nazgraku hatchling taken from a northern-cliff den. Add it to a farm or stable to raise it.' },
         uumkaoiiMeat: { icon: '🥩', label: 'Uumkao\'ii Meat', cat: 'material', sellPrice: 7, tags: ['Material', 'Meat'], desc: 'Raw meat butchered from a wild uumkao\'ii.' },
-        uumkaoiiEgg: { icon: '🥚', label: 'Uumkao\'ii Egg', cat: 'livestock', sellPrice: 0, tags: ['Livestock', 'Egg'], desc: 'A warm egg taken from a den nest. Add it to your stable to raise the uumkao\'ii inside.' },
+        uumkaoiiEgg: { icon: '🥚', label: 'Uumkao\'ii Egg', cat: 'livestock', sellPrice: 0, tags: ['Livestock', 'Egg', 'Fertile'], desc: 'A fertile egg taken from a den nest. Add it to your stable to raise the uumkao\'ii inside.' },
         garWolfBaby: { icon: '🐾', label: 'Gar-wolf Pup', cat: 'livestock', sellPrice: 0, tags: ['Livestock', 'Baby'], desc: 'A gar-wolf pup taken from a den nest. Add it to your stable to raise it.' },
         dabinggiHoundEgg: { icon: '🥚', label: 'Dabinggi-hound Egg', cat: 'livestock', sellPrice: 0, tags: ['Livestock', 'Egg'], desc: "A warm, oddly leathery egg — Jubmir swears it's a dabinggi-hound egg. Add it to your farm's livestock from the Farm tab, or to your stable to raise it as a companion." },
         grehlrBaby: { icon: '🐾', label: 'Grehlr Baby', cat: 'livestock', sellPrice: 0, tags: ['Livestock', 'Baby'], desc: 'A grehlr baby rescued from a northern-cliff den. Add it to a farm or stable to raise it.' },
@@ -32151,6 +32156,7 @@
         zoneLayouts: _zoneLayouts,
         makeCreatureEntity,
         CREATURE_DB,
+        ITEM_DEFS, // Shared live inventory registry: nest audit validates usable eggs and Puktuk baby fallback registers real pickups.
         showToast,
         showZoneBanner,
         buildingScenes: _buildingScenes,
