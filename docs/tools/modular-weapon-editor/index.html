@@ -68,14 +68,14 @@
 </div>
 <p id="identity-preview" aria-live="polite">Resulting weapon name and eligible slots appear here.</p>
 <h3>Flail ownership</h3>
-<p>Edit rope length, diameter, tint, head layers, suspension anchors and motion in the <a href="../multi-sprite-weapon-editor/" target="_blank" rel="noopener">Multi-sprite Weapon Editor</a>. Here assign an existing flail recipe to either the head or the haft, not both. A head-owned flail hangs from this haft's matching mounting arrow or optional rope point. A haft-owned flail swaps its multi-sprite head for the selected modular head PNG and its custom contact point/scale.</p>
+<p>Author a flail head's exact rope attachment and layered sprite in the <a href="../multi-sprite-weapon-editor/" target="_blank" rel="noopener">Multi-sprite Weapon Editor</a>. The modular head's tang/eye line is completely ignored for flails. Select a recipe owner here; the optional <strong>haft rope mount</strong> sets the opposite attachment and the connector's full reach. Its drawn line and the full flail preview show where the connector extends.</p>
 <div class="grid2">
 <label>Head-owned flail recipe <select id="head-flail-assembly"></select></label>
 <label>Haft-owned flail recipe <select id="shaft-flail-assembly"></select></label>
 <label>Haft rope point X (450px source) <input id="shaft-rope-x" type="number" step="1" min="0" max="450" placeholder="Auto: first compatible socket"></label>
 <label>Haft rope point Y (1204px source) <input id="shaft-rope-y" type="number" step="1" min="0" max="1204" placeholder="Auto: first compatible socket"></label>
-<label>Modular head rope contact X <input id="head-rope-x" type="number" step="1" min="0" max="450"></label>
-<label>Modular head rope contact Y <input id="head-rope-y" type="number" step="1" min="0" max="1204"></label>
+<label>Head contact X (read-only, from Complex Tool Visuals) <input id="head-rope-x" type="number" disabled></label>
+<label>Head contact Y (read-only, from Complex Tool Visuals) <input id="head-rope-y" type="number" disabled></label>
 <label>Modular hanging-head scale <input id="head-rope-scale" type="number" step=".05" min=".05" max="8"></label>
 </div>
 <p id="identity-flail-status" aria-live="polite"></p>
@@ -101,9 +101,9 @@
 <label>Shaft X offset <input id="shaft-art-x" type="number" min="-2400" max="2400" step="1"></label>
 <label>Shaft Y offset <input id="shaft-art-y" type="number" min="-2400" max="2400" step="1"></label>
 </div></details>
-<details id="shaft-bore-panel" open>
+<details id="shaft-bore-panel" open hidden>
 <summary><strong>Recalculating bores in the shaft artwork</strong></summary>
-<p>Bores are non-destructive shaft operations in the existing sprite/brush compositor: the center is erased, the edge is deformed and shaded from the original material. Move one and it recomputes from the uncut PNG, preserving manual bridge, smudge and recipe operations.</p>
+<p>Only visible when a valid <strong>flail head</strong> is selected. Each bore follows that head's exact connector attachment on the shaft. A zero-offset bore drills directly through the attachment: the default opening is <strong>20 × 20 pixels</strong>, with a regenerated interior black outline, shading and deformation. Move a bore or change the rope mount and everything recalculates from the untouched PNG; no manual brush strokes are overwritten.</p>
 <div class="toolbar">
 <button id="bore-add" type="button">+ Add bore</button>
 <button id="bore-remove" type="button">Remove bore</button>
@@ -111,12 +111,13 @@
 </div>
 <label>Bore <select id="bore-list"></select></label>
 <div class="grid2">
-<label>Center X <input id="bore-x" type="number" min="0" max="450" step="1"></label>
-<label>Center Y <input id="bore-y" type="number" min="0" max="1204" step="1"></label>
-<label>Opening X radius <input id="bore-rx" type="number" min="2" max="160" step="1"></label>
-<label>Opening Y radius <input id="bore-ry" type="number" min="2" max="160" step="1"></label>
+<label>X offset from connector (px) <input id="bore-x" type="number" min="-450" max="450" step="1" value="0"></label>
+<label>Y offset from connector (px) <input id="bore-y" type="number" min="-1204" max="1204" step="1" value="0"></label>
+<label>Opening width X (px) <input id="bore-rx" type="number" min="4" max="320" step="1" value="20"></label>
+<label>Opening height Y (px) <input id="bore-ry" type="number" min="4" max="320" step="1" value="20"></label>
 <label>Rotation (degrees) <input id="bore-rotation" type="number" min="-360" max="360" step="1"></label>
 <label>Rim width (px) <input id="bore-rim" type="number" min="0.5" max="24" step=".5"></label>
+<label>Interior black outline thickness (px) <input id="bore-outline" type="number" min="1" max="12" step=".5" value="3"></label>
 <label>Edge deformation (px) <input id="bore-warp" type="number" min="0" max="6" step=".25"></label>
 <label>Edge shade intensity <input id="bore-shade" type="number" min="0" max="1" step=".05"></label>
 <label>Light direction X <input id="bore-lightX" type="number" min="-1" max="1" step=".1"></label>
@@ -146,7 +147,7 @@
 <label><input id="allow-head" type="checkbox"> Allow selected head in Foundry after calibration</label>
 <p id="part-readiness">Heads and hafts require matching tang or eye lines to assemble.</p>
 <p id="head-construction-note" aria-live="polite"></p>
-<p>Drag from one end of a mounting line to the arrow tip directly on the sprite. Arrows align direction-to-direction, then automatically rotate the head and stretch it only along the head arrow axis to match the haft line; its perpendicular width stays unchanged. Gold lines are tangs; aqua lines are eyes/sleeves. All lines use the original 450 × 1204 sprite coordinates.</p>
+<p>For rigid heads, tang/eye arrows determine fitting, rotation and length-axis stretch. A <strong>flail head ignores its modular head arrow entirely</strong>: Complex Tool Visuals supplies the head's attachment point. Purple dashed haft connector guides indicate the physical rope start and the mounting-line extension. Gold lines are tangs and aqua lines eyes; all coordinates use the original 450 × 1204 sprite frame.</p>
 <div class="toolbar" role="group" aria-label="Mount line editing mode">
 <button id="gizmo-draw" type="button" aria-pressed="true">✏️ Draw line</button>
 <button id="gizmo-move" type="button" aria-pressed="false"><span aria-hidden="true">✥</span> Move line</button>
@@ -160,7 +161,7 @@
 <p>Line length is the distance from its fixed origin to its arrow tip. For a <strong>rope</strong> line, this is the full hanging connector reach only; changing it never scales the head or changes rope/chain thickness. Use the number box, its native arrows, or the − / + buttons.</p>
 <div id="attach-controls"></div>
 <label><input id="disallow" type="checkbox"> Explicitly disallow this head on this haft</label>
-<p>A haft may have tang, eye and separate rope lines. A rope line takes priority when the selected head or haft owns a flail recipe. Older flails lacking that line retain their original rope length and legacy attachment. Explicit exclusions still take precedence.</p>
+<p>A haft may have tang, eye and rope lines. The <strong>rope line</strong> is the exact attachment and connector reach whenever present. Without one, the flail uses the exact attachment authored in Complex Tool Visuals — never a modular-head fitting line. Explicit exclusions still take precedence.</p>
 <h2>Selected head + haft corrections</h2>
 <label>Sprite layer order <select id="layer-order" aria-label="Selected head and haft sprite layer order">
 <option value="haft-over-head">Haft over head</option>
