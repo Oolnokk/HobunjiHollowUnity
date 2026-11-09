@@ -37,7 +37,7 @@
   }
   function scoreCooked(def, stars, defs) {
     if (!def) return 0;
-    if (Number.isFinite(def.festivalContestScore)) return Math.max(0, Math.trunc(def.festivalContestScore));
+    if (Number.isFinite(def.festivalContestScore)) return Math.max(0, Math.round(def.festivalContestScore * 10) / 10); // Retain source-rarity decimals stored when the food was cooked.
     const entries = Array.isArray(def.festivalIngredientQuality) ? def.festivalIngredientQuality
       : (def.ingredientKeys || []).map(key => ({ key, stars }));
     return entries.length ? scoreIngredients(entries, defs) : Math.max(1, Math.min(5, Number(stars) || 1));
