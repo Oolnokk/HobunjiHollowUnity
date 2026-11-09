@@ -634,7 +634,7 @@
     ['head-part-label', 'head', 'label'], ['head-name-prefix', 'head', 'prefix'],
     ['head-name-suffix', 'head', 'suffix'],
   ]) byId(id).onchange = () => {
-    const value = byId(id).value.trim().replace(/\\s+/g, ' ').slice(0, 96);
+    const value = byId(id).value.trim().replace(/\s+/g, ' ').slice(0, 96);
     if (!value) { drawIdentity(); msg('Part names and weapon grammatical forms cannot be empty.'); return; }
     const target = owner === 'shaft' ? chosenShaft() : chosenHead();
     if (field === 'prefix' || field === 'suffix') (target.weaponNames ||= {})[field] = value;
