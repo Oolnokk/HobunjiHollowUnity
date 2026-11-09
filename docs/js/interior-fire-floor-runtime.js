@@ -15,12 +15,16 @@
     return;
   }
 
-  const AMBIENT_FIRE_KEYS = new Set(['campfire', 'bonfire', 'candleTable', 'standingLamp', 'hearth']); // Used to limit always-on VFX to intentional flame-bearing furniture.
+  const AMBIENT_FIRE_KEYS = new Set(['campfire', 'bonfire', 'candleTable', 'candleCluster', 'standingLamp', 'hearth']); // Used to limit always-on VFX to intentional flame-bearing furniture.
   const AMBIENT_UNATTACHED_TTL_MS = 5000; // Used to discard preview groups that were built but never added to a scene.
   const FIRE_FURNITURE_DEFS = Object.freeze({ // Used to register real placeable decorative furniture definitions before game init.
     campfireFurniture: Object.freeze({
       name: 'Campfire', icon: '🔥', fw: 1, fd: 1, procKey: 'campfire', color: 0x6d3e20,
       desc: 'A compact stone-ring campfire using the authored campfire furniture preset.',
+    }),
+    candleClusterFurniture: Object.freeze({
+      name: 'Candle Cluster', icon: '🕯️', fw: 1, fd: 1, procKey: 'candleCluster', color: 0xb08d57,
+      desc: 'A bundled 1×1 arrangement of sixteen candles, tallest in the center, made from the candle-table candle.',
     }),
     bonfireFurniture: Object.freeze({
       name: 'Bonfire', icon: '🔥', fw: 2, fd: 2, procKey: 'bonfire', color: 0x6d3e20,
@@ -44,6 +48,7 @@
   let lastFloorMaterialCount = 0; // Included in debug output so a map can prove its floor meshes were found.
   let lastFloorStretchMeshCount = 0; // Included in debug output so mobile tests can verify one-PNG floor UV stretching actually reached the scene meshes.
   let lastFloorError = null; // Captures the most recent per-map floor config/texture failure without requiring devtools.
+  let suppressedFestivalFlames = 0; // Exposed to mobile diagnostics when rain extinguishes outdoor festival fire.
   let lastAmbientKey = null; // Captures the most recently attached ambient-fire furniture key for diagnostics.
   let registeredDefinitions = false; // Reports whether the real campfire/bonfire decorative definitions reached game deps.
 
@@ -147,6 +152,7 @@
   function ambientTick({ timestamp: now }) {
     const dt = Math.min(0.05, Math.max(0, ambientLastNow ? (now - ambientLastNow) / 1000 : 1 / 60)); // Used to keep particle motion stable after tab stalls.
     ambientLastNow = now;
+    suppressedFestivalFlames = 0;
     for (const record of [...ambientRecords]) {
       const attached = !!record.group?.parent; // Used to begin playback only after the caller actually places the furniture in a scene.
       if (attached) record.wasAttached = true;
@@ -154,7 +160,17 @@
         if (record.wasAttached || now - record.createdAt > AMBIENT_UNATTACHED_TTL_MS) disposeAmbientRecord(record);
         continue;
       }
-      for (const visual of record.visuals) visual?.update?.(dt, true);
+      // The festival marker is on the placed decor root; actual authored emitter groups may be descendants.
+      let weatherOwner = record.group;
+      while (weatherOwner && !weatherOwner.userData?.festivalWeatherFire) weatherOwner = weatherOwner.parent;
+      const extinguished = !!weatherOwner && window.WeatherFX?.isRaining?.() === true; // The real rain-window state, including developer weather overrides.
+      if (extinguished) suppressedFestivalFlames += 1;
+      if (weatherOwner?.userData?.mapEditorAux?.light) {
+        const light = weatherOwner.userData.mapEditorAux.light; // Restore the authored intensity instead of inventing a different brightness after rain.
+        if (!Number.isFinite(weatherOwner.userData.festivalFireLightIntensity)) weatherOwner.userData.festivalFireLightIntensity = light.intensity;
+        light.intensity = extinguished ? 0 : weatherOwner.userData.festivalFireLightIntensity;
+      }
+      for (const visual of record.visuals) visual?.update?.(dt, !extinguished);
     }
     if (!ambientRecords.size) {
       ambientLastNow = 0;
@@ -478,6 +494,7 @@
       bonfireCatalog: Object.prototype.hasOwnProperty.call(furniture.CATALOG || {}, 'bonfire'),
       bonfireReady: !!bonfireData,
       ambientGroups: ambientRecords.size,
+      suppressedFestivalFlames,
       ambientVisuals: [...ambientRecords].reduce((sum, record) => sum + record.visuals.length, 0),
       lastAmbientKey,
       floorBuilderWrapped: !!window.InteriorSceneBuilder?.buildFloorMaterial?.__hobunjiFloorStyleWrapped,
