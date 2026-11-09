@@ -67,6 +67,8 @@
   const RANGE_FALLOFF_DISTANCE_MULTIPLIER = 1.6;
   const RANGE_FALLOFF_MIN_FRACTION = 0.15; // Damage/knockback floor at the true despawn distance — never fully free damage, but a spent arrow still stings.
   const actorHitboxCache = new WeakMap(); // Used by actorHitbox() to share one computed portrait volume across same-frame callers.
+  const opaqueSpriteBoundsCache = new WeakMap(); // Alpha-scanned once per loaded sprite image; shared by cloned thrown-weapon textures.
+  const thrownRadiusByDefinition = new WeakMap(); // Keeps NPC LOS and player reticle clearance consistent with the last decoded opaque hitbox.
   let wouldHitCacheAt = -Infinity;
   let wouldHitCacheValue = false;
   let projectileSerial = 0; // Monotonic launch order used only to choose the oldest embedded copy when a per-weapon visual cap is exceeded.
@@ -624,6 +626,52 @@
     deps.refreshActionBar?.();
   }
 
+  function opaqueSpriteBounds(image) {
+    if (!image || typeof image !== 'object') return null;
+    if (opaqueSpriteBoundsCache.has(image)) return opaqueSpriteBoundsCache.get(image);
+    const width = Number(image.naturalWidth || image.width) || 0;
+    const height = Number(image.naturalHeight || image.height) || 0;
+    if (!(width > 0 && height > 0)) return null;
+    let bounds = null; // Transparent padding must not enlarge the terrain collision radius.
+    try {
+      const canvas = document.createElement('canvas'); // One transient 2D alpha read per unique decoded sprite, never per projectile frame.
+      canvas.width = width; canvas.height = height;
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      ctx.drawImage(image, 0, 0, width, height);
+      const rgba = ctx.getImageData(0, 0, width, height).data;
+      let minX = width, maxX = -1, minY = height, maxY = -1;
+      for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+          if (rgba[(y * width + x) * 4 + 3] < 32) continue; // Match the visible, nontransparent silhouette rather than PNG canvas corners.
+          if (x < minX) minX = x;
+          if (x > maxX) maxX = x;
+          if (y < minY) minY = y;
+          if (y > maxY) maxY = y;
+        }
+      }
+      if (maxX >= minX && maxY >= minY) bounds = { minX, maxX, minY, maxY, width, height, widthFraction: (maxX - minX + 1) / width, heightFraction: (maxY - minY + 1) / height };
+    } catch (_) { /* Tainted third-party preview textures retain the existing conservative radius. */ }
+    opaqueSpriteBoundsCache.set(image, bounds);
+    return bounds;
+  }
+
+  function opaqueProjectileRadiusWorld(def, plane, visualScaleX = 1) {
+    const original = Math.max(0, Number(def.projectileRadiusPx) || 0) / deps.TILE; // Non-thrown projectiles keep their unchanged authored hitbox.
+    const bounds = plane?.userData?.opaqueBounds;
+    if (def.rangedType !== 'thrown' || !bounds) return original;
+    const widthWorld = (Number(plane.geometry?.parameters?.width) || 0) * Math.abs(Number(plane.scale?.x) || 1) * Math.abs(visualScaleX);
+    return Math.max(0.012, Math.min(original, (widthWorld * bounds.widthFraction) / 2)); // Thin visible metal pixels, not the mostly transparent sprite plane, determine cliff clearance.
+  }
+
+  function projectileCollisionRadiusWorld(p) {
+    return opaqueProjectileRadiusWorld(p.def, p.mesh?.userData?.projectilePlane, Number(p.visual?.scale?.x) || 1);
+  }
+
+  function projectileAimRadiusWorld(def) {
+    return def?.rangedType === 'thrown' ? (thrownRadiusByDefinition.get(def) ?? Math.max(0, Number(def.projectileRadiusPx) || 0) / deps.TILE)
+      : Math.max(0, Number(def?.projectileRadiusPx) || 0) / deps.TILE; // Aim/LOS degrade safely before the image finishes decoding.
+  }
+
   function createProjectileMesh(def, radiusPx, textureSource = null, sourceTransform = null) {
     const root = new THREE.Group();
     root.name = 'rangedProjectile';
@@ -652,12 +700,20 @@
     const hasExactSourcePlane = weaponSprite && sourcePlaneWidth > 0 && sourcePlaneHeight > 0; // Used to bypass guessed weapon dimensions when the live held plane supplied them.
     let plane = null;
     let pendingAspect = 1;
+    let pendingOpaqueBounds = null; // Delayed image decode may precede the plane mesh constructor; applied as soon as it exists.
     const updateAspect = loadedTexture => {
       if (!weaponSprite) return;
       const imageW = Math.max(1, Number(loadedTexture?.image?.width) || Number(loadedTexture?.image?.naturalWidth) || 1);
       const imageH = Math.max(1, Number(loadedTexture?.image?.height) || Number(loadedTexture?.image?.naturalHeight) || 1);
       pendingAspect = imageH / imageW;
       if (plane && !hasExactSourcePlane) plane.scale.y = pendingAspect;
+      if (def.rangedType === 'thrown') {
+        pendingOpaqueBounds = opaqueSpriteBounds(loadedTexture?.image);
+        if (plane) {
+          plane.userData.opaqueBounds = pendingOpaqueBounds;
+          if (pendingOpaqueBounds) thrownRadiusByDefinition.set(def, opaqueProjectileRadiusWorld(def, plane)); // Makes future actor LOS/reticle rays honor the same opaque width.
+        }
+      }
     };
     let texture = null;
     if (textureSource?.clone) {
@@ -677,6 +733,8 @@
       new THREE.MeshBasicMaterial({ map: texture, transparent: true, alphaTest: 0.08, side: THREE.DoubleSide })
     );
     if (weaponSprite && !hasExactSourcePlane) plane.scale.y = pendingAspect;
+    plane.userData.opaqueBounds = pendingOpaqueBounds;
+    if (def.rangedType === 'thrown' && pendingOpaqueBounds) thrownRadiusByDefinition.set(def, opaqueProjectileRadiusWorld(def, plane));
     // Do not pre-rotate this plane. Its raw local +Y/+Z axes are the sampled
     // PNG plane axes: the launch quaternion supplies the exact Strike transform
     // and spinning weapons rotate only this child around local Z afterward.
@@ -934,7 +992,7 @@
   function terrainImpactForStep(p) {
     const start = _projectileHitStart.set(p.prevX / deps.TILE, p.prevWorldY, p.prevY / deps.TILE);
     const end = _projectileHitEnd.set(p.x / deps.TILE, p.worldY, p.y / deps.TILE);
-    const radiusWorld = p.def.projectileRadiusPx / deps.TILE; // One radius for ray, floor, and door cover.
+    const radiusWorld = projectileCollisionRadiusWorld(p); // Terrain, floors, walls, and doors all sweep the visible opaque projectile width.
     const shaftT = shaftCoverT(start, end, radiusWorld); // True voxel wall collision across stories.
     const floorT = dynamicSupportHitT(start, end, radiusWorld); // Registered support slabs intercept shots across stories.
     let first = steppedTerrainImpact(start, end, radiusWorld);
@@ -1293,7 +1351,7 @@
     let targetPoint = null;
     let reticleTarget = null;
     const cameraRay = normalizedAimRay(deps.getPlayerAimRay?.());
-    const aimRadius = Math.max(0, Number(def.projectileRadiusPx) || 0) / deps.TILE;
+    const aimRadius = projectileAimRadiusWorld(def); // Reticle prediction shares the decoded opaque hitbox once the projectile art has loaded.
     if (cameraRay) {
       const cameraToMuzzle = origin.clone().sub(cameraRay.origin);
       const rayDistance = Math.max(def.rangeTiles + 2, cameraToMuzzle.length() + def.rangeTiles + 2);
@@ -1433,7 +1491,7 @@
   function projectileHit(p, maxSegmentT = 1) {
     const start = _projectileHitStart.set(p.prevX / deps.TILE, p.prevWorldY, p.prevY / deps.TILE);
     const end = _projectileHitEnd.set(p.x / deps.TILE, p.worldY, p.y / deps.TILE);
-    const projectileRadius = p.def.projectileRadiusPx / deps.TILE;
+    const projectileRadius = projectileCollisionRadiusWorld(p); // Same opaque-pixel hitbox used by terrain, actors and breakable cover.
     const segmentLimit = Math.max(0, Math.min(1, Number(maxSegmentT) || 0));
     const rawCoverHit = window.NearbyVolumeCollision?.segmentHit?.(start, end, projectileRadius) || null;
     const coverHit = rawCoverHit && rawCoverHit.t <= segmentLimit + AIM_EPSILON ? rawCoverHit : null;
@@ -1464,7 +1522,7 @@
       playProjectileImpactSfx(p, nearest.interval.enter);
       // RangedWeapons.init receives separate deps from Combat.init. Use the live Combat damage adapter for player shots so wearable combat modifiers, skill/mastery interceptors, and damage attribution see the same hit. Enemy friendly-fire remains on the original independent callback.
       const playerDamageCreature = window.Combat?.deps?.damageCreature || deps.damageCreature; // Live player-shot damage route; the bare callback is a safe fallback during isolated module tests.
-      playerDamageCreature(c, damage, p.prevX, p.prevY, knockbackPxS, { tag: 'sharp', ranged: true, rangedItemKey: p.itemKey, ammoId: p.ammoId, attacker: deps.player, rangedTrinketDamageMultiplier: p.rangedTrinketDamageMultiplier, afflictionBonuses: p.afflictionBonuses, footingDamageMultiplier: p.footingDamageMultiplier });
+      playerDamageCreature(c, damage, p.prevX, p.prevY, knockbackPxS, { tag: 'sharp', ranged: true, rangedItemKey: p.itemKey, ammoId: p.ammoId, attacker: deps.player, rangedTrinketDamageMultiplier: p.rangedTrinketDamageMultiplier, afflictionBonuses: p.afflictionBonuses, attackPower: Number(p.def?.attackPower) || 12, footingDamageMultiplier: p.footingDamageMultiplier });
       applySpecialAmmoDebuff(c, p.specialAmmoId);
       const killed = healthBefore > 0 && Math.max(0, Number(c?.health) || 0) <= 0; // Used to route mastery only on kills, matching mastery-policy's combat progression contract.
       const masteryPolicy = window.HobunjiMasteryPolicy; // Used to bypass the absent production awardRangedMastery callback while retaining it as a compatibility fallback.
@@ -1496,12 +1554,12 @@
     playProjectileImpactSfx(p, nearest.interval.enter);
     if (nearest.kind === 'hostile') {
       friendlyFireHits++;
-      deps.damageCreature(nearest.actor, damage, p.prevX, p.prevY, knockbackPxS, { tag: 'sharp', ranged: true, rangedItemKey: p.itemKey, ammoId: p.ammoId, friendlyFire: true, attacker: p.owner || undefined, afflictionBonuses: p.afflictionBonuses, footingDamageMultiplier: p.footingDamageMultiplier });
+      deps.damageCreature(nearest.actor, damage, p.prevX, p.prevY, knockbackPxS, { tag: 'sharp', ranged: true, rangedItemKey: p.itemKey, ammoId: p.ammoId, friendlyFire: true, attacker: p.owner || undefined, afflictionBonuses: p.afflictionBonuses, attackPower: Number(p.def?.attackPower) || 12, footingDamageMultiplier: p.footingDamageMultiplier });
       applySpecialAmmoDebuff(nearest.actor, p.specialAmmoId);
       lastEvent = `friendly-fire:${p.owner?.id || 'enemy'}->${nearest.actor.id || nearest.actor.name || 'hostile'}`;
       return { kind: 'actor', t: nearest.interval.enter, actor: nearest.actor };
     }
-    deps.damagePlayer(damage, p.prevX, p.prevY, knockbackPxS, { tag: 'sharp', ranged: true, afflictionBonuses: p.afflictionBonuses, footingDamageMultiplier: p.footingDamageMultiplier, attacker: p.owner || null });
+    deps.damagePlayer(damage, p.prevX, p.prevY, knockbackPxS, { tag: 'sharp', ranged: true, afflictionBonuses: p.afflictionBonuses, attackPower: Number(p.def?.attackPower) || 12, footingDamageMultiplier: p.footingDamageMultiplier, attacker: p.owner || null });
     applySpecialAmmoDebuff(deps.player, p.specialAmmoId);
     return { kind: 'actor', t: nearest.interval.enter, actor: deps.player };
   }
@@ -1698,7 +1756,7 @@
 
   function computeBanditLos(c, targetPlayer, def) {
     const segment = banditLosSegment(c, targetPlayer);
-    const radiusWorld = Math.max(0, Number(def.projectileRadiusPx) || 0) / deps.TILE;
+    const radiusWorld = projectileAimRadiusWorld(def); // Narrow thrown weapons may see/shoot across a cliff edge that their transparent PNG plane overlaps.
     const shaftT = shaftCoverT(segment.start, segment.end, radiusWorld); // Enemy sight uses the same occupied cells as shots.
     if (shaftT !== null && shaftT < 0.985) return { clear: false, kind: 'tile', id: 'shaft-wall' };
     const geometryHit = sceneGeometrySightBlock(segment);
@@ -1711,7 +1769,7 @@
 
     let ally = null;
     for (const other of (deps.hostileObjects || [])) {
-      if (other === c || (c.id != null && other.id === c.id) || other.health <= 0 || (other.areaId && other.areaId !== deps.getCurrentArea())) continue;
+      if (other === c || other === targetPlayer || (c.id != null && other.id === c.id) || other.health <= 0 || (other.areaId && other.areaId !== deps.getCurrentArea())) continue; // The opposing tribe hunter is the intended target, not an allied blocker.
       const interval = segmentHitboxInterval(segment.start, segment.end, actorHitbox(other), radiusWorld);
       if (!interval || interval.enter <= 0.02 || interval.enter >= 0.985 || (ally && interval.enter >= ally.interval.enter)) continue;
       ally = { actor: other, interval };
@@ -1737,7 +1795,7 @@
         }
         const groundY = deps.worldSurfaceY?.(x, y); // Raised walkable terrain also occludes lower shot lines.
         if (Number.isFinite(groundY) && rayWorldY - radiusWorld <= groundY + 0.08) return { clear: false, kind: 'ground', id: 'raised-terrain' };
-        if (typeof deps.canOccupyAt === 'function' && !deps.canOccupyAt(x, y, def.projectileRadiusPx, rayWorldY)) {
+        if (typeof deps.canOccupyAt === 'function' && !deps.canOccupyAt(x, y, radiusWorld * deps.TILE, rayWorldY)) {
           return { clear: false, kind: 'tile', id: 'solid-tile' };
         }
       }
@@ -1805,6 +1863,25 @@
     return moving;
   }
 
+  function ledgesBlockMeleeApproach(c, target) {
+    if (!deps?.worldSurfaceY || !target || !Number.isFinite(c.x) || !Number.isFinite(target.x)) return false;
+    const fromY = deps.worldSurfaceY(c.x, c.y), toY = deps.worldSurfaceY(target.x, target.y); // Both actors' actual ground support levels, not model height or sprite plane size.
+    if (!Number.isFinite(fromY) || !Number.isFinite(toY)) return false;
+    if (Math.abs(fromY - toY) > 0.65) return true;
+    const distancePx = Math.hypot(target.x - c.x, target.y - c.y);
+    const steps = Math.min(12, Math.max(2, Math.ceil(distancePx / (deps.TILE * 0.4)))); // Bounded local probe only when evaluating close-range melee.
+    let previousX = c.x, previousY = c.y; // The world navigation gate uses the previous support tile to reject abrupt height changes.
+    for (let i = 1; i < steps; i++) {
+      const t = i / steps;
+      const x = c.x + (target.x - c.x) * t, y = c.y + (target.y - c.y) * t;
+      const support = deps.worldSurfaceY(x, y);
+      if (Number.isFinite(support) && (support < Math.min(fromY, toY) - 0.65 || support > Math.max(fromY, toY) + 0.65)) return true; // Open gaps and intervening raised ridges block direct melee.
+      if (deps.creatureCanEnterTile?.(c.def, x, y, previousX, previousY, c, true) === false) return true; // Reuse the real navigation gate with the actor and prior coordinate, not a directionless tile query.
+      previousX = x; previousY = y;
+    }
+    return false;
+  }
+
   function updateBanditAI(c, dt, targetPlayer, distToPlayer) {
     const itemKey = c.def?.rangedWeaponKey;
     const def = defFor(itemKey);
@@ -1849,7 +1926,9 @@
     // distToPlayer is horizontal-only, so a target hiding straight overhead
     // (up a tree) reads as "close" even though melee can't actually touch
     // them — only drop to melee once melee could really land the hit.
-    if (distToPlayer < minRange && canMeleeReach(c, targetPlayer)) { c._rangedMode = false; return null; }
+    const ledgeSeparated = distToPlayer < minRange && ledgesBlockMeleeApproach(c, targetPlayer); // Don't switch to an impossible melee path just because two ledges are horizontally close.
+    c._rangedLedgeSeparation = ledgeSeparated; // Read by mobile NPC ranged diagnostics.
+    if (distToPlayer < minRange && canMeleeReach(c, targetPlayer) && !ledgeSeparated) { c._rangedMode = false; return null; }
     c._rangedMode = true;
     const aimAngle = Math.atan2(targetPlayer.y - c.y, targetPlayer.x - c.x);
     if (distToPlayer > maxRange) {
@@ -1971,7 +2050,7 @@
     const solution = playerAimSolution(key);
     if (!solution) return null;
     const { start, end } = shotSegment(solution, def);
-    const radiusWorld = def.projectileRadiusPx / deps.TILE; // Same radius used by real projectiles and terrain sweeps.
+    const radiusWorld = projectileAimRadiusWorld(def); // Same alpha-tight radius as live thrown projectiles after their PNG decodes.
     let first = null;
     for (const actor of deps.hostileObjects) {
       if (actor.health <= 0 || actor.areaId !== deps.getCurrentArea()) continue;
@@ -2037,7 +2116,7 @@
     cancelBanditAction, disposeOwner, playerLockRangePx, playerIdlePose: itemKey => idlePose(itemKey),
     isPlayerAttacking: () => playerAction?.kind === 'fire', // Lets shared body-facing logic distinguish firing from the visually similar reload action.
     debugProjectileColliders: () => projectiles.filter(p => !p.dead && !p.embedded && p.areaId === deps?.getCurrentArea()).map(p => ({
-      x: p.x / deps.TILE, y: p.worldY, z: p.y / deps.TILE, radius: p.def.projectileRadiusPx / deps.TILE,
+      x: p.x / deps.TILE, y: p.worldY, z: p.y / deps.TILE, radius: projectileCollisionRadiusWorld(p),
       previous: { x: p.prevX / deps.TILE, y: p.prevWorldY, z: p.prevY / deps.TILE },
     })),
     wouldHitHostile,wouldHitShattercask, playerAimSolution, actorHitbox, hasLineOfSight,
@@ -2053,7 +2132,7 @@
     get config() { return CONFIG; },
   };
   window.__rangedDebug = {
-    get projectiles() { return projectiles.map(p => ({ itemKey: p.itemKey, team: p.team, ammoId: p.ammoId, x: p.x, y: p.y, vx: p.vx, vy: p.vy, worldY: p.worldY, vyWorld: p.vyWorld, distancePx: p.distancePx, flightDistancePx: p.flightDistancePx, projectileSpeedPxS: p.projectileSpeedPxS, projectileSpeedMultiplier: p.projectileSpeedMultiplier, projectileDropStartTiles: p.projectileDropStartTiles, projectileGravityWorldS2: p.projectileGravityWorldS2, lockLaunchAlignment: p.lockLaunchAlignment, embedded: p.embedded, embeddedAgeS: p.embeddedAgeS, impactKind: p.impactKind, fading: p.fading, fadeReason: p.fadeReason, launchTransformMode: p.launchTransformMode, facingSource: p.launchTransformMode === 'held-strike-plane' ? 'sampled-held-plane' : (p.def?.toolEndFlip === true ? 'config-flip-fallback' : 'flight-frame'), spinAxis: p.spinRateRad ? 'png-local-z' : null, trailAfflictionIds: [...p.trailAfflictionIds] })); },
+    get projectiles() { return projectiles.map(p => ({ itemKey: p.itemKey, team: p.team, ammoId: p.ammoId, x: p.x, y: p.y, vx: p.vx, vy: p.vy, worldY: p.worldY, vyWorld: p.vyWorld, distancePx: p.distancePx, flightDistancePx: p.flightDistancePx, projectileSpeedPxS: p.projectileSpeedPxS, projectileSpeedMultiplier: p.projectileSpeedMultiplier, projectileDropStartTiles: p.projectileDropStartTiles, projectileGravityWorldS2: p.projectileGravityWorldS2, lockLaunchAlignment: p.lockLaunchAlignment, embedded: p.embedded, embeddedAgeS: p.embeddedAgeS, impactKind: p.impactKind, fading: p.fading, fadeReason: p.fadeReason, launchTransformMode: p.launchTransformMode, facingSource: p.launchTransformMode === 'held-strike-plane' ? 'sampled-held-plane' : (p.def?.toolEndFlip === true ? 'config-flip-fallback' : 'flight-frame'), spinAxis: p.spinRateRad ? 'png-local-z' : null, collisionRadiusWorld: projectileCollisionRadiusWorld(p), opaqueBounds: p.mesh?.userData?.projectilePlane?.userData?.opaqueBounds || null, trailAfflictionIds: [...p.trailAfflictionIds] })); },
     get playerAction() { return playerAction ? { ...playerAction, def: undefined, releaseAtS: playerAction.durationS * fireReleaseFrac(playerAction.def) } : null; },
     get lastEvent() { return lastEvent; },
     get lastAudioEvent() { return lastAudioEvent; },
@@ -2086,7 +2165,7 @@
     get npcRangedActions() {
       return [...(deps?.hostileObjects || [])].filter(c => c.health > 0 && c.def?.rangedWeaponKey).slice(0, 24).map(c => ({
         id: c.id || c.name, weapon: c.def.rangedWeaponKey, attackRadiusTiles: rangedAttackRadiusPx(c) / (deps?.TILE || 1), type: defFor(c.def.rangedWeaponKey)?.rangedType || 'reloadable',
-        action: c._rangedAction?.kind || 'idle', phase: c._rangedAction?.fired ? 'released' : (c._rangedAction?.kind === 'fire' ? 'windup' : c._rangedAction?.kind || 'idle'),
+        ledgeSeparated: !!c._rangedLedgeSeparation, action: c._rangedAction?.kind || 'idle', phase: c._rangedAction?.fired ? 'released' : (c._rangedAction?.kind === 'fire' ? 'windup' : c._rangedAction?.kind || 'idle'),
         chargedForS: c._rangedAction?.chargeDurationS || 0, releaseAtS: c._rangedAction?.releaseAtS ?? null, loaded: c._rangedLoaded !== false,
       })); // Mobile debug: inspect up to 24 active humanoids without holding references to unloaded actors.
     },

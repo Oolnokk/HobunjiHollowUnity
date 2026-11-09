@@ -132,7 +132,7 @@ const rangedImpactStatements=rangedCode.slice(impactStart,impactEnd); // Executa
 const target={health:100,prone:false}; // Creature the separate ranged module just hit.
 let rawRangedCalls=0; // Tracks accidental calls to the unmodified independent callback.
 const rangedDeps={player,damageCreature(){rawRangedCalls++;}}; // Independent RangedWeapons.init injection.
-const projectile={prevX:150,prevY:170,itemKey:'crossbow',ammoId:null,afflictionBonuses:{},footingDamageMultiplier:0,rangedTrinketDamageMultiplier:1.6}; // Shot is far from the player's position.
+const projectile={def:{attackPower:12},prevX:150,prevY:170,itemKey:'crossbow',ammoId:null,afflictionBonuses:{},footingDamageMultiplier:0,rangedTrinketDamageMultiplier:1.6}; // Shot is far from the player's position.
 calls.length=0;
 vm.runInNewContext(rangedImpactStatements,{window:w,deps:rangedDeps,c:target,damage:10,
   p:projectile,knockbackPxS:0}, {filename:'ranged-weapons.js player projectile impact excerpt'});
