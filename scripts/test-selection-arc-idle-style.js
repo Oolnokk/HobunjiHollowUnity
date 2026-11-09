@@ -28,15 +28,18 @@ function fakeClassList() {
     },
   };
 }
-function fakeStyle() {
+function fakeStyle(trackWrites = true) {
   const values = new Map(); // Tracks declarations and priority just like CSSStyleDeclaration.
   return {
     opacity: '1',
     getPropertyValue(name) { return values.get(name)?.value || ''; },
     getPropertyPriority(name) { return values.get(name)?.priority || ''; },
     setProperty(name, value, priority = '') {
-      actualDomWrites++;
-      values.set(name, { value:String(value), priority:String(priority) });
+      if (trackWrites) actualDomWrites++;
+      const serialized = name === 'box-shadow' ? 'rgba(0, 0, 0, 0.42) 0px 2px 7px'
+        : (name === 'width' || name === 'height') ? String(value).replace(/,\\s*/g, ', ')
+        : String(value); // Simulate Chromium's CSSOM normalization that the prior test missed.
+      values.set(name, { value:serialized, priority:String(priority) });
     },
   };
 }
@@ -64,6 +67,7 @@ const document = {
   readyState:'loading',
   body,
   addEventListener() {},
+  createElement(tag) { assert.equal(tag, 'span'); return { style:fakeStyle(false) }; }, // Detached canonicalizer is not a visible DOM write.
   getElementById(id) { return id === 'toolSelect' ? anchor : id === 'toolBtn' ? toolButton : null; },
   querySelectorAll() { return []; },
 };
@@ -77,6 +81,8 @@ assert(wheel, 'test hook should expose actual wheel functions');
 wheel.layoutSharedSelector([slot]);
 const firstWrites = actualDomWrites; // Baseline includes intentional initial geometry, class, and style writes.
 assert(firstWrites > 1, 'first presentation initializes missing metadata and geometry');
+assert.notEqual(slot.style.getPropertyValue('box-shadow'), '0 2px 7px rgba(0,0,0,.42)',
+  'test DOM models Chromium serialization rather than echoing the input string');
 wheel.layoutSharedSelector([slot]);
 assert.equal(actualDomWrites, firstWrites, 'unchanged wheel geometry never rewrites DOM in subsequent frames');
 
@@ -87,6 +93,13 @@ const denseWrites = actualDomWrites; // New choice density must still update the
 assert(denseWrites > firstWrites, 'choice density change is applied');
 wheel.enforceSlotPresentation(slot, true);
 assert.equal(actualDomWrites, denseWrites, 'stable choice density does not repeat the class mutation');
+slot.style.setProperty('width', '42px', 'important'); // A legacy wheel may overwrite an enforced inline style.
+const legacyWrites = actualDomWrites;
+wheel.enforceSlotPresentation(slot, true);
+assert.equal(actualDomWrites, legacyWrites + 1, 'real external style changes are still repaired exactly once');
+assert.equal(slot.style.getPropertyValue('width'), 'clamp(22px, 4.25vmin, 30px)');
+wheel.enforceSlotPresentation(slot, true);
+assert.equal(actualDomWrites, legacyWrites + 1, 'normalized CSSOM still stabilizes after repairing legacy style');
 
 wheel.setOuterArchHidden(true);
 const hiddenWrites = actualDomWrites; // Permanent ring hides only on transition into selector mode.
