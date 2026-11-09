@@ -17,7 +17,6 @@
   const PIXEL_ALPHA = 128; // Treat only the solid half of an antialiased edge as the opaque connection tip.
   const MAX_DT = 0.08; // Prevent tab-resume and loading stalls from launching the head sideways.
   const MOTION_LAG = 0.065; // Converts haft travel velocity to idle trailing angle.
-  const DETACHED_TIMEOUT = 5000; // Remove orphaned assemblies without deleting reusable inventory meshes immediately.
   const DEF = global.WEAPON_SPRITE_ASSEMBLY_CONFIG?.weapons || {}; // Single committed recipe registry shared with the Tool Hub; tool-specific definitions may still override it.
   const effects = global.HobunjiLayeredWeaponEffects; // Materials, interleaved fire, and visible-metal source masks live outside the animation module.
 
@@ -543,8 +542,11 @@
   function updateOne(state, dt, now, effectsDt = dt) {
     const { root, plane, config, scratch: q } = state;
     if (!root.parent) {
+      // Equipped player tools are cached as detached roots when another tool is selected.
+      // Auto-dropping them after a timeout permanently removes their rope/head:
+      // re-equipping attaches the SAME root without calling decorate() again.
+      // Keep its assembly alive until the owner explicitly calls drop(root).
       if (!state.detachedAt) state.detachedAt = now;
-      if (now - state.detachedAt > DETACHED_TIMEOUT) drop(root);
       return;
     }
     state.detachedAt = 0;
@@ -714,6 +716,7 @@
     return [...records].map(s => ({
       itemKey: s.itemKey, loaded: s.config.flail ? !!(s.chain && s.headRoot) : !!s.staticReady,
       attached: !!s.root.parent, attacking: s.attacking,
+      detachedForMs: s.root.parent ? 0 : Math.max(0, performance.now() - s.detachedAt), // Mobile proof that cached unequipped weapons retain their rope/head without a timeout.
       progress: s.progress, direction: s.direction.toArray(),
       attackTiming: { windup: s.wf, strike: s.sf, hold: s.hf }, // Mobile-readable phase diagnostics.
       pitchTravelDeg: Number.isFinite(s.pitchTravelRad) ? s.pitchTravelRad * 180 / Math.PI : s.strikeTurnRad * 180 / Math.PI, // Authored pitch travel for comparison with physical motion.
