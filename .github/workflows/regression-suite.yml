@@ -62,6 +62,9 @@ jobs:
       - name: Install Chromium for browser regressions
         if: steps.select.outputs.needs_browser == 'true'
         run: npx playwright install --with-deps chromium
+      - name: Selector arc idle DOM and legacy scroll browser regression
+        if: steps.select.outputs.needs_browser == 'true'
+        run: node scripts/test-selection-arc-browser.js
       - name: Clothing species fit runtime portrait browser smoke
         if: steps.select.outputs.clothing == 'true'
         run: node scripts/test-clothing-fit-runtime-browser.js
