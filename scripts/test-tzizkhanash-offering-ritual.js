@@ -72,4 +72,49 @@ assert(wildlife.includes('genotype.sizeClass=\'small\''),'released creatures reu
 const ui=read('docs/js/festival-ui.js');
 assert(!ui.includes("action === 'select-stat'"),'arbitrary stat selection was retired in favor of item-determined buffs');
 assert(ui.includes('preview.scarcityFactor.toFixed(2)'),'mobile offering inspector explains the actual source multiplier');
+const pending=[{id:'1156:tzizkhanash:release:0',key:'puktukBaby',species:'puktuk',stars:3,createdDay:9}];
+const released=[]; // Real makeCreatureEntity calls captured from the production WildlifeSpawn delivery method.
+const spawnWindow={
+  SCRATCHBONES_CONFIG:W.SCRATCHBONES_CONFIG,
+  WildernessMapGenerator:{makeRng:()=>()=>.25},
+  CreatureGenetics:{makeDefaultGenotype:()=>({bodyColor:'brown',sizeClass:'large'})},
+  FestivalSystem:{
+    hasPendingAnimalReleases:()=>pending.length>0,
+    pendingAnimalReleases:()=>pending.map(entry=>({...entry})),
+    acknowledgeAnimalRelease:id=>{const index=pending.findIndex(entry=>entry.id===id);if(index<0)return false;pending.splice(index,1);return true;},
+  },
+};
+const wildContext=vm.createContext({window:spawnWindow,console});
+vm.runInContext(read('docs/js/wildlife-spawn.js'),wildContext);
+const hostiles=new Set();
+const releaseZones={
+  map_northern_cliffs:{denSpecies:['nelk']},
+  map_western_slope:{denSpecies:['puktuk'],roamingHerdSpecies:[]},
+};
+const layout=new Map(Object.keys(releaseZones).map(id=>[id,{cols:20,rows:20,dens:[],
+  foliagePatches:[{tiles:[{x:3,y:4}],centroid:{x:3,y:4}}]}]));
+spawnWindow.WildlifeSpawn.init({
+  zoneLayouts:layout,EXTERIOR_ZONES:releaseZones,CREATURE_DB:{puktuk:{label:'Puktuk'}},
+  hostileObjects:hostiles,TILE:1,getCurrentArea:()=> 'map_western_slope',
+  makeCreatureEntity:(species,x,y,opts)=>{const creature={species,x,y,genotype:opts.genotype,opts,health:100};released.push(creature);return creature;},
+});
+const wild=spawnWindow.WildlifeSpawn;
+assert.equal(wild.deliverFestivalAnimalReleases('map_northern_cliffs'),0,
+  'an offered Puktuk must never appear in the wrong wilderness biome');
+assert.equal(pending.length,1,'a release waits until the player reaches a compatible wild zone');
+assert.equal(wild.deliverFestivalAnimalReleases('map_western_slope'),1,
+  'the real wilderness factory receives the rescued animal when its native area is loaded');
+assert.equal(pending.length,0,'successful animal delivery acknowledges and clears the persisted ritual queue');
+assert.equal(released[0].species,'puktuk','the animal retains its actual species');
+assert.equal(released[0].genotype.sizeClass,'small','the released juvenile uses the genetic small-size pose');
+assert.equal(released[0].opts.wildlifeRole,'prey','ordinary wildlife AI is authoritative after release');
+assert(hostiles.has(released[0]),'the creature is inserted into the real wilderness creature set');
+assert.equal(wild.lastFestivalRelease.zoneId,'map_western_slope','on-device debug records where the animal was released');
+assert.equal(wild.deliverFestivalAnimalReleases('map_western_slope'),0,'a delivered creature must never spawn twice in one session');
+pending.push({id:'forged:1',key:'puktukBaby',species:'tzatzul'});
+assert.equal(wild.deliverFestivalAnimalReleases('map_western_slope'),0,
+  'mismatched saved species and baby item cannot forge a wildlife creature');
+assert.equal(released.length,1,'forged inventory item has not spawned any creature');
+pending.length=0;
+
 console.log('Tzizkhanash source-rarity offering, native-animal release, pyre and mobile preview tests passed.');
