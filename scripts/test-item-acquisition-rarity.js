@@ -515,4 +515,38 @@ for(const [key,value] of Object.entries(priorSources)){
   if(value===undefined)delete globalThis[key];else globalThis[key]=value;
 }
 
+
+const farmHost={window:{
+  CreatureTextureCache:{create:()=>({}),genotypeFrameSetKey:()=>''},
+  CreatureGenetics:{MUTATION_CHANCE:.05,crossOffspring:(a,b,kind,chance)=>({species:kind,mutationRate:chance}),
+    defaultLivestockName:()=> 'Nelk'}
+}};
+vm.runInNewContext(fs.readFileSync('docs/js/farm-animals.js','utf8'),farmHost);
+const farm=farmHost.window.FarmAnimals;
+const livestock=[
+  {id:'mother',kind:'nelk',heartLevel:5,genotype:{coat:'striped'}},
+  {id:'father',kind:'nelk',heartLevel:5,genotype:{coat:'plain'}}];
+let savedLivestock=null;
+let activePairs=[{parentA:{id:'mother',source:'world'},parentB:{id:'father',source:'world'},progress:.99,startedDay:2}];
+farm.init({_loadWorldBreedingPairs:()=>activePairs,loadWorldLivestock:()=>livestock,
+  saveWorldLivestock:entries=>{savedLivestock=JSON.parse(JSON.stringify(entries));},
+  _saveWorldBreedingPairs:entries=>{activePairs=entries;},
+  calendar:{day:5},LIVESTOCK_RESOURCE_DEFS:{nelk:{cooldownDays:2}},
+  showToast:()=>{},getPlayerData:()=>({})});
+farm.tickBreedingProgress(1/16);
+assert.equal(savedLivestock.length,3,'real happy farm pair gives birth to exactly one new living animal');
+assert.equal(activePairs.length,0,'completed pair is consumed after a successful birth');
+const newborn=savedLivestock[2];
+assert.equal(newborn.offspringProvenance.source,'farm-breeding','actual birth persists its acquisition source within the world livestock record');
+assert.equal(newborn.offspringProvenance.parents[0].id,'mother','birth preserves world parent ID');
+assert.equal(newborn.offspringProvenance.parents[0].genotype.coat,'striped','birth snapshots mother genotype before future stable/animal removal');
+assert.equal(newborn.offspringProvenance.parents[1].genotype.coat,'plain','birth snapshots father genotype');
+assert.equal(newborn.offspringProvenance.birthDay,5,'world day is recorded at real birth time');
+assert(Math.abs(newborn.offspringProvenance.mutationChance-.15)<1e-12,
+  'actual five-heart mutation probability is saved with the newborn');
+assert.equal(farm.offspringProvenanceFor(newborn.id).parents[1].id,'father',
+  'mobile read-only animal provenance uses the actual saved newborn record');
+assert.equal(farm.offspringProvenanceFor('mother'),null,
+  'legacy animals without recorded parents never gain a fabricated ancestry');
+
 console.log('Item acquisition rarity tests passed.');
