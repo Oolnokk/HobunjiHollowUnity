@@ -29,6 +29,7 @@
   let candidate = null; // Generated preview clone with its own edited geometry.
   let sourceName = 'model'; // Name for diagnostics and exported GLB files.
   let downloadUrl = null; // Retains a manual-tap GLB link on mobile until replaced.
+  let originalOwnsResources = false; // Imported GLBs own GPU buffers; generated objects may use shared generator caches.
   let linkedGame = null; // Optional game tab opened directly by this workshop.
   let liveBuffer = null, liveName = ''; // Captured live GLB bytes/label for the existing load/preview pipeline.
   let activePick = null; // One-shot game canvas listener, cancelled on another pick or Escape.
@@ -133,6 +134,33 @@
     renderer.render(sceneB, camera);
     renderer.setScissorTest(false);
   }
+  function disposeImported(rootObject) {
+    if (!rootObject) return;
+    const geometries = new Set(); // Independent imported mesh buffers released on source replacement.
+    const materials = new Set(); // Imported glTF materials may be shared among meshes in the same file.
+    const textures = new Set(); // Maps/textures owned by those imported materials only.
+    rootObject.traverse(node => {
+      if (!node.isMesh) return;
+      if (node.geometry) geometries.add(node.geometry);
+      for (const material of (Array.isArray(node.material) ? node.material : [node.material])) {
+        if (!material) continue;
+        materials.add(material);
+        for (const key of ['map', 'alphaMap', 'normalMap', 'roughnessMap', 'metalnessMap', 'aoMap', 'emissiveMap', 'bumpMap', 'displacementMap', 'lightMap', 'envMap', 'clearcoatMap', 'clearcoatNormalMap', 'transmissionMap']) {
+          if (material[key]?.isTexture) textures.add(material[key]);
+        }
+      }
+    });
+    for (const geometry of geometries) geometry.dispose?.();
+    for (const material of materials) material.dispose?.();
+    for (const texture of textures) texture.dispose?.();
+  }
+  function releaseOriginal() {
+    if (!original) return;
+    sceneA.remove(original);
+    if (originalOwnsResources) disposeImported(original);
+    original = null;
+    originalOwnsResources = false;
+  }
   function disposeCandidate() {
     if (!candidate) return;
     sceneB.remove(candidate);
@@ -231,7 +259,8 @@
   }
   function findGame() {
     const parent = window.parent !== window ? window.parent : null;
-    const candidates = [linkedGame, parent?.__hobunjiToolsGameWindow, parent?.opener, window.opener]; // Existing game launched from hub or from this lab.
+    const candidates = [linkedGame, window.opener]; // Same-origin games launched from the workshop.
+    try { if (parent) candidates.push(parent.__hobunjiToolsGameWindow, parent.opener); } catch (_) { /* Cross-origin embedding must not break the tool. */ }
     for (const game of candidates) {
       try {
         if (game && !game.closed && game !== window && game.THREE && game.GridTileAccessors?.getActiveScene) return game;
@@ -296,7 +325,7 @@
         resolve(result);
       }, { binary: true, onlyVisible: true, includeCustomExtensions: true });
     });
-    liveBuffer = bytes;
+    liveBuffer = Uint8Array.from(new Uint8Array(bytes)).buffer; // Convert the game window's ArrayBuffer into this frame's realm before parsing.
     liveName = (target.name || target.type || 'game-mesh') + '.glb';
     pickStatus('Captured ' + counts.triangles.toLocaleString() + ' triangles from ' + (target.name || 'game mesh') + '. Building preview…');
     $('source-kind').value = 'live';
@@ -342,9 +371,11 @@
     if (updating) return;
     const token = ++generation;
     setBusy(true);
+    let next = null, name = '', ownsResources = false; // Staged source is released if loading fails or another selection wins.
     try {
-      let next, name;
-      switch ($('source-kind').value) {
+      const kind = $('source-kind').value;
+      ownsResources = kind !== 'generated'; // The shared procedural generator cache owns generated source resources.
+      switch (kind) {
         case 'local': {
           const file = $('file').files?.[0];
           if (!file || !/\.glb$/i.test(file.name)) throw new Error('Choose a .glb file to load.');
@@ -376,10 +407,11 @@
         default: throw new Error('Unsupported source selection');
       }
       if (!next?.traverse || !Core.stats(next).meshes) throw new Error('Source contains no triangle meshes');
-      if (token !== generation) return;
+      if (token !== generation) { if (ownsResources) disposeImported(next); return; }
       disposeCandidate();
-      if (original) sceneA.remove(original);
+      releaseOriginal();
       original = next;
+      originalOwnsResources = ownsResources;
       original.name ||= name;
       sourceName = name;
       sceneA.add(original);
@@ -390,6 +422,7 @@
       $('summary').textContent = Core.stats(original).triangles.toLocaleString() + ' source triangles. Processing…';
       log('Loaded ' + name);
     } catch (error) {
+      if (next && ownsResources && next !== original) disposeImported(next);
       if (token === generation) log('Load failed: ' + (error?.message || error), true);
       return;
     } finally {
@@ -441,9 +474,16 @@
   $('load').addEventListener('click', loadCurrent);
   $('open-game').addEventListener('click', openLinkedGame);
   $('pick-game').addEventListener('click', armGamePick);
-  window.addEventListener('pagehide', cancelPick);
+  // Pagehide cleanup above also cancels an armed live pick.
   $('update').addEventListener('click', updatePreview);
   $('export').addEventListener('click', exportGLB);
+  window.addEventListener('pagehide', () => {
+    cancelPick();
+    disposeCandidate();
+    releaseOriginal();
+    if (downloadUrl) URL.revokeObjectURL(downloadUrl);
+    renderer.dispose();
+  });
   $('copy-report').addEventListener('click', async () => {
     const report = sourceName + '\n' + $('summary').textContent + '\n' + $('materials').textContent + '\n' + $('log').textContent;
     try { await navigator.clipboard.writeText(report); log('Report copied.'); }

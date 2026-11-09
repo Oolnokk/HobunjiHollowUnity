@@ -221,6 +221,7 @@
     const errorTolerance = Math.max(0.0001, Math.min(1, Number(options.errorTolerance) || 0.02));
     const sourceStats = stats(sourceRoot);
     if (sourceStats.triangles > MAX_SOURCE_TRIANGLES) throw new Error('Object exceeds the ' + MAX_SOURCE_TRIANGLES.toLocaleString() + '-triangle safety budget.');
+    if (remesh && sourceStats.triangles > MAX_OUTPUT_TRIANGLES) throw new Error('Decimate this object before remeshing: it exceeds the ' + MAX_OUTPUT_TRIANGLES.toLocaleString() + '-triangle mobile preview budget.');
     if (reduction) await simplifier?.ready;
 
     const output = sourceRoot.clone(true);
@@ -228,6 +229,7 @@
     sourceRoot.traverse(node => { if (node.isMesh) originals.push(node); });
     output.traverse(node => { if (node.isMesh) copies.push(node); });
     const warnings = [], details = [];
+    let outputTriangleCount = sourceStats.triangles; // Tracks the aggregate remesh budget across every mesh, not merely each component.
     for (let i = 0; i < originals.length; i++) {
       const before = originals[i], after = copies[i];
       if (!before.geometry) continue;
@@ -241,10 +243,11 @@
       try {
         spans(before.geometry, materialSlots(before));
         if (remesh) {
-          if (triangles(before.geometry) * 4 > MAX_OUTPUT_TRIANGLES) {
-            warnings.push(label + ': remesh skipped (mobile triangle budget)');
+          const available = MAX_OUTPUT_TRIANGLES - (outputTriangleCount - triangles(before.geometry)); // Reserve the current triangles of every other mesh in the object.
+          if (triangles(before.geometry) * 4 > available) {
+            warnings.push(label + ': remesh skipped (aggregate mobile triangle budget)');
           } else {
-            working = splitLongEdges(before.geometry, edgeFraction, MAX_OUTPUT_TRIANGLES);
+            working = splitLongEdges(before.geometry, edgeFraction, available);
           }
         }
         if (reduction) {
@@ -254,6 +257,7 @@
         }
         if (working && working !== before.geometry) {
           after.geometry = working; // Never replace/dispose the live source geometry.
+          outputTriangleCount += triangles(working) - triangles(before.geometry); // Include changes before deciding whether the next mesh fits.
           details.push(label + ': ' + triangles(before.geometry) + ' → ' + triangles(working) + ' triangles');
         }
       } catch (error) {

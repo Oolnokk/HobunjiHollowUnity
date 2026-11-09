@@ -96,6 +96,11 @@ function twoMaterialMesh(){
   const invalid=await core.process(malformed,{reduction:50,protectCards:false});
   assert.ok(invalid.warnings.some(x=>x.includes('Overlapping material groups')));
   assert.equal(invalid.object.geometry,malformed.geometry);
+  const coreSource=fs.readFileSync(path.resolve(__dirname,'../docs/tools/geometry-workshop/core.js'),'utf8');
+  const uiSource=fs.readFileSync(path.resolve(__dirname,'../docs/tools/geometry-workshop/workshop.js'),'utf8');
+  assert.match(coreSource,/let outputTriangleCount = sourceStats\.triangles/, 'aggregate remeshing budget must be tracked');
+  assert.match(uiSource,/function releaseOriginal\(/, 'imported models need GPU cleanup on reload');
+  assert.match(uiSource,/Uint8Array\.from\(new Uint8Array\(bytes\)\)\.buffer/, 'captured game GLBs need a local-realm ArrayBuffer');
   const html=fs.readFileSync(path.resolve(__dirname,'../docs/tools/index.html'),'utf8');
   assert.match(html,/fw-geometry-workshop/,'workshop must be reachable from the Dev Tools hub');
   const shell=fs.readFileSync(path.resolve(__dirname,'../docs/tools/geometry-workshop/index.html'),'utf8');
