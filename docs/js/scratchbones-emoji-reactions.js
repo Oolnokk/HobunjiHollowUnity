@@ -23,6 +23,16 @@
   let frameRegistered = false; // Lazy registration keeps this effect entirely inactive until first use.
   const generationByRoot = new WeakMap(); // Ignores stale async image loads when a newer reaction takes over the same actor.
 
+  const POSE_FRAMES = Object.freeze({ // Immutable source animation curves reused by every frame without allocating arrays.
+    love: [[0,0,0,.1,0,0], [.12,0,0,1.55,1,0], [.22,0,0,1.1,1,0],
+      [.60,-.8,1.1,1.5,.95,0], [1,-1.8,2.2,2.1,0,0]],
+    disgust: [[0,0,0,.35,0,0], [.08,0,0,1.3,1,-14],
+      [.26,.65,.25,1.2,1,12], [1,1,-8.4,1.15,0,260]],
+    burst: [[0,0,0,.05,0,0], [.18,0,0,2.1,1,0], [.58,0,0,2.1,1,0],
+      [1,0,1.3,2.9,0,0]],
+    gloatCloud: [[0,0,0,.08,0,0], [.14,0,0,1.12,.88,0],
+      [.22,0,0,.96,.82,0], [.72,0,0,1,.78,0], [1,0,0,1.04,0,0]],
+  });
   function clamp(value) { return Math.max(0, Math.min(1, Number(value) || 0)); }
   function smooth(value) { const t = clamp(value); return t * t * (3 - 2 * t); }
   function lerpFrames(frames, progress) {
@@ -39,15 +49,9 @@
   }
   function sample(type, progress, part = 'icon', index = 0) {
     const t = clamp(progress); // Sample position, size and opacity independently of frame rate.
-    if (type === 'love') return lerpFrames([
-      [0,0,0,.1,0,0], [.12,0,0,1.55,1,0], [.22,0,0,1.1,1,0],
-      [.60,-.8,1.1,1.5,.95,0], [1,-1.8,2.2,2.1,0,0]], t);
-    if (type === 'disgust') return lerpFrames([
-      [0,0,0,.35,0,0], [.08,0,0,1.3,1,-14],
-      [.26,.65,.25,1.2,1,12], [1,1,-8.4,1.15,0,260]], t);
-    if (type === 'alarmed' || type === 'curious') return lerpFrames([
-      [0,0,0,.05,0,0], [.18,0,0,2.1,1,0], [.58,0,0,2.1,1,0],
-      [1,0,1.3,2.9,0,0]], t);
+    if (type === 'love') return lerpFrames(POSE_FRAMES.love, t);
+    if (type === 'disgust') return lerpFrames(POSE_FRAMES.disgust, t);
+    if (type === 'alarmed' || type === 'curious') return lerpFrames(POSE_FRAMES.burst, t);
     if (type === 'shock') {
       const phase = clamp((t * 1500 - index * 25) / 1460); // Five rays burst at staggered 25 ms offsets.
       const angle = (-60 + index * 30) * Math.PI / 180;
@@ -56,9 +60,7 @@
         scale: 1.15, alpha: Math.min(1, phase * 10) * (1 - smooth(Math.max(0, (phase - .45) / .55))),
         rotation: 0 };
     }
-    if (type === 'gloat' && part === 'cloud') return lerpFrames([
-      [0,0,0,.08,0,0], [.14,0,0,1.12,.88,0],
-      [.22,0,0,.96,.82,0], [.72,0,0,1,.78,0], [1,0,0,1.04,0,0]], t);
+    if (type === 'gloat' && part === 'cloud') return lerpFrames(POSE_FRAMES.gloatCloud, t);
     if (type === 'gloat') {
       const phase = (t * 3800 - 150 - index * 105) / 1350; // Three staggered streams of falling coins.
       if (phase <= 0 || phase >= 1) return { x: 0, y: 0, scale: 1, alpha: 0, rotation: 0 };
