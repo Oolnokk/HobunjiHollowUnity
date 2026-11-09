@@ -75,6 +75,19 @@ for (const entry of utteranceIndex.clips) {
   assert.ok(fs.existsSync(path.join(root, 'docs/assets/audio/sfx/utterances', entry.file)), `indexed file exists: ${entry.file}`);
 }
 for (const replacement of Object.values(utteranceIndex.legacyAliases || {})) assert.ok(indexedNames.has(replacement), `alias target is indexed: ${replacement}`);
+for (const species of ['skeeri-small', 'tzatzul', 'pingdort']) {
+  const authored = config.animalVocalizations?.[species]; // Imported editor assignment must remain in the shipped runtime config.
+  assert.ok(authored, `authored animal voice profile exists: ${species}`);
+  for (const response of ['chatter', 'warning', 'growl']) {
+    const clips = authored[response]?.allowedClips; // Check that each imported response references shipped utterance audio.
+    assert.ok(Array.isArray(clips) && clips.length, `authored ${species} ${response} has clips`);
+    for (const clip of clips) assert.ok(indexedNames.has(clip), `authored ${species} ${response} clip is indexed: ${clip}`);
+  }
+}
+for (const fileName of Object.keys(config.animalVocalizations?.default?.clipTuning || {})) {
+  assert.ok(indexedNames.has(fileName), `global authored recording tuning points to indexed clip: ${fileName}`);
+}
+
 
 assert(runtime.includes('npcGreetings'), 'runtime consumes per-NPC greeting pools');
 assert(runtime.includes('npcNicknames'), 'runtime consumes directional NPC nicknames');
