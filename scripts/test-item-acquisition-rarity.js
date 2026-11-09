@@ -124,7 +124,7 @@ assert(Math.abs(rarity.lootPoolItem('drop','variable',quantityPools).probability
 assert(Math.abs(rarity.lootPoolItem('drop','variable',quantityPools).expectedQuantity-.3)<1e-12,'expected drop count includes zero rolls');
 assert.equal(rarity.lootPoolItem('material','stepped',quantityPools).probability,2/3,'step quantization includes zero outcome');
 assert.equal(rarity.lootPoolItem('rare','exclusive',quantityPools).probability,.25,'exclusive tables draw one item by configured weight');
-assert.equal(rarity.lootPoolItem('drop','mixed',quantityPools).probability,null,'nested source pool probability must never be claimed as impossible');
+assert(Math.abs(rarity.lootPoolItem('drop','mixed',quantityPools).probability-.15)<1e-12,'one-source mixed pool inherits the source’s exact positive-quantity chance');
 assert.equal(rarity.scoreCooked,undefined,'rarity module does not duplicate the festival judging owner');
 assert.equal(contest.scoreCooked({festivalContestScore:5.75},2,foodDefs),5.75,'saved cooked rarity fractions must not be truncated');
 assert.equal(contest.ingredientPoints('cv_heftroot_333333',4,foodDefs,1.1),4.4,'archived source multiplier overrides changed current rarity');
