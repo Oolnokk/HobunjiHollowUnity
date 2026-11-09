@@ -57,6 +57,7 @@ assert.match(author, /id="maaShoulderPetScale"/, 'character shoulder-perch inspe
 assert.match(author, /shoulder\.scale\.setScalar\(multiplier\)/, 'X/Y/Z must scale uniformly');
 assert.match(author, /multiplier < 0\.05 \|\| multiplier > 4/, 'bad scale inputs must be rejected');
 assert.match(author, /profile\.anchors\[name\] = normalizeTransformSnapshot\(transformSnapshot\(actor\.rigAnchors\[name\]\), 1\)/, 'authored scale must persist through export');
+assert.match(author, /const authoredScale = target\.characters\[key\]\?\.anchors\?\.shoulderPerch\?\.scale/, 'rig autosave migrations must preserve custom grip multipliers');
 assert.match(author, /applyCreatureSizeClass\(creature, 'small'/, 'pet size genetics remain intact');
 assert.match(author, /setActorAttachment\(creature, character, 'shoulderPerch', 'shoulderGrip'/, 'pet root remains parented to species-level perch');
 assert.match(author, /carrier\.add\(actor\.root\)/, 'THREE parent transform composes grip scale with Small size scale');
