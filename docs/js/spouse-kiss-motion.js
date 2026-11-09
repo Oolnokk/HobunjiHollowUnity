@@ -12,6 +12,7 @@
   const MAX_BOW_DEG = 89.5; // At extreme height ratios the larger spouse must nearly lie forward, without sinking below the floor.
   const MAX_DISTANCE = .95; // A deliberate close-range action; avoids sliding partners through distant obstacles.
   const SOURCE = 'spouse-kiss'; // Composer/input-claim ownership; never replaces other effect owners.
+  const FACE_GAP_FRACTION = .023; // A visible sliver (roughly one tenth of a small face width), scaled to the shorter portrait, not literal inches.
   const COMFORTABLE_BOW_DEG = 35; // Couples prefer a supported, posterior-straddling hop over an extreme neck-to-waist bow.
   const clamp = (n, lo, hi) => Math.min(hi, Math.max(lo, n));
   const finite = (n, fallback = 0) => Number.isFinite(Number(n)) ? Number(n) : fallback;
@@ -387,24 +388,36 @@
     }
     data.delta.subVectors(data.secondFrame.position, data.firstFrame.position);
     const baselineGap = data.delta.length();
-    if (baselineGap <= 1e-7 || blend <= 0) return {
-      contact: baselineGap < .025 && blend > 0, distance: baselineGap, baselineGap, blend,
-    };
     const firstHeight = Math.max(.01, finite(first.userData?.portraitModelHeight, 1) *
       Math.abs(first.getWorldScale(data.firstScale).y));
     const secondHeight = Math.max(.01, finite(second.userData?.portraitModelHeight, 1) *
       Math.abs(second.getWorldScale(data.secondScale).y));
-    const firstLimit = firstHeight * .32; // Anatomical reach budget; no actor-root sidestep, teleport or unbounded floating head.
-    const secondLimit = secondHeight * .32; // Tall heads may contribute more to the final remaining gap.
-    let firstTravel = Math.min(baselineGap * .5, firstLimit);
-    const secondTravel = Math.min(baselineGap - firstTravel, secondLimit);
-    firstTravel += Math.min(Math.max(0, baselineGap - firstTravel - secondTravel),
-      Math.max(0, firstLimit - firstTravel)); // Use unused reach of the other head before giving up on contact.
+    const targetGap = clamp(Math.min(firstHeight, secondHeight) * FACE_GAP_FRACTION, .005, .035); // Small but visible opening between the actual mouth pixels.
+    const gapTolerance = Math.max(.003, targetGap * .22); // Real bone-skin blend is approximate under extreme species scale.
+    if (baselineGap <= 1e-7) {
+      first.getWorldPosition(data.firstWorld);
+      second.getWorldPosition(data.secondWorld);
+      data.delta.subVectors(data.secondWorld, data.firstWorld);
+      if (data.delta.lengthSq() <= 1e-10) data.delta.set(0, 0, 1); // Do not leave the faces touching even for coincident mouth pixels.
+    }
+    const signedTravel = baselineGap - targetGap; // Positive closes the kiss; negative separates already-overlapping faces.
+    const requestedTravel = Math.abs(signedTravel);
+    if (blend <= 0 || requestedTravel <= 1e-8) return {
+      contact: blend >= .99 && Math.abs(baselineGap - targetGap) <= gapTolerance,
+      distance: baselineGap, baselineGap, blend, targetGap, gapTolerance,
+    };
+    const firstLimit = firstHeight * .32; // Anatomical reach budget; actor root, feet, and posterior remain unmoved.
+    const secondLimit = secondHeight * .32; // Larger partner can contribute a proportionally larger head reach.
+    let firstTravel = Math.min(requestedTravel * .5, firstLimit);
+    const secondTravel = Math.min(requestedTravel - firstTravel, secondLimit);
+    firstTravel += Math.min(Math.max(0, requestedTravel - firstTravel - secondTravel),
+      Math.max(0, firstLimit - firstTravel)); // Spend available neck travel before declaring the small gap unreachable.
+    const directionSign = signedTravel >= 0 ? 1 : -1; // For overlapping faces, retract rather than aiming at zero distance.
     const moveJoint = (joint, travel, direction, worldPoint) => {
       if (!(travel > 0)) return;
       joint.getWorldPosition(worldPoint);
       joint.parent.updateWorldMatrix?.(true, false);
-      worldPoint.addScaledVector(data.delta, direction * travel / baselineGap * blend);
+      worldPoint.addScaledVector(data.delta, direction * directionSign * travel / Math.max(1e-8, data.delta.length()) * blend);
       data.localPoint.copy(worldPoint);
       joint.parent.worldToLocal(data.localPoint); // Convert the world lip gap through its true bowed/scaled neck parent.
       joint.position.copy(data.localPoint); // The body, shoulders, posterior, feet, and exported actor root remain unmoved.
@@ -418,8 +431,9 @@
       return { contact: false, distance: null, reason: 'lip-reprojection-failed' };
     }
     const distance = data.firstFrame.position.distanceTo(data.secondFrame.position);
-    return { contact: blend > .99 && distance < .025, distance, baselineGap, blend,
-      reachLimited: firstTravel + secondTravel < baselineGap - .025,
+    return { contact: blend > .99 && Math.abs(distance - targetGap) <= gapTolerance,
+      distance, baselineGap, blend, targetGap, gapTolerance,
+      reachLimited: firstTravel + secondTravel < requestedTravel - gapTolerance,
       firstHeadMove: firstTravel * blend, secondHeadMove: secondTravel * blend };
   }
 
@@ -450,9 +464,12 @@
     body.position.y = rest.y + lift;
     body.position.z = rest.z - Math.cos(session.headingPlayer) * retreat;
     const progress = samplePose(session.elapsed).blend;
-    body.rotation.y = session.originalPlayerYaw +
+    const yaw = session.originalPlayerYaw +
       Math.atan2(Math.sin(session.headingPlayer - session.originalPlayerYaw),
         Math.cos(session.headingPlayer - session.originalPlayerYaw)) * progress;
+    if (body.quaternion?.setFromAxisAngle && session.yawAxis) {
+      body.quaternion.setFromAxisAngle(session.yawAxis, yaw); // Festival-style absolute root orientation excludes equipped-tool torso yaw/roll.
+    } else body.rotation.y = yaw; // Non-Three test rigs preserve the original Euler fallback.
     const torso = session.playerModel;
     if (torso !== body) {
       torso.position.y = session.originalPlayerModelY - drop;
@@ -464,6 +481,24 @@
       hands.group.rotation.x = session.originalPlayerHands.pitch + bow;
     }
     body.updateWorldMatrix?.(true, true); // Rebuild actual shoulder positions after kneeling, not a static hand-parent frame.
+  }
+
+  function aimPairedHead(neck, targetNeck, blend, scratch) {
+    const THREE = window.THREE; // Canonical festival-dance head tracking: solve partner direction in the moving neck parent's frame.
+    if (!THREE?.Vector3 || !neck?.parent?.worldToLocal || !neck?.getWorldPosition ||
+        !targetNeck?.getWorldPosition) return false;
+    const data = scratch || {}; // Session-local reusable vectors avoid allocating during each render pass.
+    data.eye ||= new THREE.Vector3(); // Actual skinned head pivot instead of the camera-facing look vector.
+    data.partner ||= new THREE.Vector3(); // Partner's current pivot already follows their kneeling torso.
+    neck.getWorldPosition(data.eye);
+    targetNeck.getWorldPosition(data.partner);
+    neck.parent.updateWorldMatrix?.(true, false);
+    neck.parent.worldToLocal(data.partner).sub(neck.parent.worldToLocal(data.eye));
+    const yaw = Math.atan2(data.partner.x, data.partner.z);
+    const pitch = -Math.atan2(data.partner.y, Math.max(.0001, Math.hypot(data.partner.x, data.partner.z)));
+    neck.rotation.set(clamp(pitch, -.55, .55) * blend,
+      clamp(yaw, -.66, .66) * blend, 0, 'XYZ'); // Head yaw and pitch are authored by the pair, never the tool/camera.
+    return true;
   }
 
   function actorHeight(model, legs, root) {
@@ -501,7 +536,9 @@
       old.playerHands?.setPoseProvider?.(SOURCE, null);
       if (old.player?.parent === old.playerParent && old.originalPlayerPosition) {
         Object.assign(old.player.position, old.originalPlayerPosition); // Restore from festival-style temporary root hop/retreat.
-        old.player.rotation.y = old.originalPlayerYaw;
+        if (old.originalPlayerQuaternion && old.player.quaternion?.copy) {
+          old.player.quaternion.copy(old.originalPlayerQuaternion); // Restore initial tool-independent root transform, including terrain pitch/roll.
+        } else old.player.rotation.y = old.originalPlayerYaw;
       }
       if (old.playerModel && old.playerModel !== old.player) {
         old.playerModel.position.y = old.originalPlayerModelY;
@@ -641,12 +678,14 @@
       playerParent: player.parent, // A rebuild or scene switch invalidates this exact paired character.
       originalPlayerPosition: { x: player.position.x, y: player.position.y, z: player.position.z }, // Festival-style root staging restores this on exit.
       originalPlayerYaw: player.rotation.y, // Turn the live player to face the partner during the action.
+      originalPlayerQuaternion: player.quaternion?.clone?.() || null, // Restore exact rooted facing after authored yaw, not an Euler approximation.
       originalPlayerModelY: playerModel.position.y, originalPlayerModelPitch: playerModel.rotation.x, // Preserve the skinned torso's neutral transform.
       originalPlayerHands: playerHands.group ? { y: playerHands.group.position.y, pitch: playerHands.group.rotation.x } : null, // GLB hands may live outside the portrait pivot.
       npcTiltPivot, originalNpcTiltX: npcTiltPivot?.rotation?.x,
       originalPlayerKneeLimit, originalNpcKneeLimit,
       playerAnatomy, npcAnatomy,
-      playerHands, npcHands, shoulderScratch: {}, footScratch: {}, mouthScratch: {}, // Scratch for moving shoulder, posterior and head anchor solutions.
+      playerHands, npcHands, shoulderScratch: {}, footScratch: {}, mouthScratch: {},
+      playerGazeScratch: {}, npcGazeScratch: {}, // Reused head-frame vectors for camera-independent mutual gaze.
       lastLipContact: null, // Verified only after the final composed bodies and neck pivots reach the same frame.
       requireLipContact: !!window.SharedAttackPose?.headFrame, // Real rigs are required at start, even when isolated tests omit the pixel helper.
       lastHandContact: null, // Mobile diagnostics expose reach and timing without requiring DevTools.
@@ -663,6 +702,7 @@
       // Tall torso bows forward around the posterior. The partner's feet retreat by
       // the head's horizontal reach so the two mouths remain in the same contact spot.
       bowRetreatWorld: boundedBowRetreat, // Do not withdraw the recipient's whole torso beyond the initiating arms' reach.
+      yawAxis: new window.THREE.Vector3(0, 1, 0), // Cached world-up axis for a full-root, camera-independent festival-style facing.
       headingPlayer: Math.atan2(npcPoint.x - playerPoint.x, npcPoint.z - playerPoint.z),
       headingNpc: Math.atan2(playerPoint.x - npcPoint.x, playerPoint.z - npcPoint.z),
     };
@@ -743,14 +783,8 @@
     }
     session.walker.root.rotation.y = session.originalNpcYaw + 
       Math.atan2(Math.sin(session.headingNpc - session.originalNpcYaw), Math.cos(session.headingNpc - session.originalNpcYaw)) * pose.blend;
-    if (session.playerNeck && session.originalPlayerNeck) {
-      session.playerNeck.quaternion.copy(session.originalPlayerNeck);
-      session.playerNeck.rotateX((playerIsTaller ? -.14 : .10) * pose.blend);
-    }
-    if (session.npcNeck && session.originalNpcNeck) {
-      session.npcNeck.quaternion.copy(session.originalNpcNeck);
-      session.npcNeck.rotateX((playerIsTaller ? .10 : -.14) * pose.blend);
-    }
+    aimPairedHead(session.playerNeck, session.npcNeck, pose.blend, session.playerGazeScratch);
+    aimPairedHead(session.npcNeck, session.playerNeck, pose.blend, session.npcGazeScratch); // Mutual gaze follows each real torso; neither neck samples the camera.
     if (session.height.shorterPosteriorGrip) {
       const shortLegs = playerIsTaller ? session.npcLegs : session.playerLegs; // Feet that must straddle the taller posterior rather than step on the ground.
       const tallLegs = playerIsTaller ? session.playerLegs : session.npcLegs;
@@ -799,7 +833,7 @@
     solveHeights, samplePose, sampleJumpBlend, posteriorStraddleFootTargets,
     sampleKneelBlend, sampleInitiatorHandReach,
     resolveShoulderGripWorld, shoulderGripWorld, applyInitiatorShoulderHands,
-    mouthHeightWorld, syncMouthContact, actorHeight, anatomyWorld, init, start, stop: clearMotion,
+    FACE_GAP_FRACTION, mouthHeightWorld, syncMouthContact, aimPairedHead, actorHeight, anatomyWorld, init, start, stop: clearMotion,
     isPartner: walker => !!active && active.walker === walker,
     diagnostics,
   });
