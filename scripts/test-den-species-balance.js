@@ -156,5 +156,9 @@ assert.equal(inspected('skeeri-small')?.exempt, true, 'Skeeri are not forced to 
 delete auditItems.fertileHoneyfuzzleEgg;
 assert.equal(W.nestingSpeciesAudit().find(record => record.kind === 'honeyfuzzle')?.ok, false,
   'a truly absent fertile egg item is detected instead of being silently accepted');
+auditItems.fertileHoneyfuzzleEgg = { cat: 'livestock' };
+delete auditItems.puktukBaby;
+assert.equal(W.nestingSpeciesAudit().find(record => record.kind === 'puktuk')?.ok, false,
+  'a stale Puktuk itemKinds mapping without an actual baby pickup cannot pass the audit');
 
 console.log('den species balance and real offspring registry audit: ok');
