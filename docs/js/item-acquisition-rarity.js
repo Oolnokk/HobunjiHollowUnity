@@ -289,6 +289,123 @@
     return {key,poolId,probability:odds,expectedQuantity,entries:stages,eligible:odds === null ? null : odds>0,
       model:'per ordinary independent-pool roll, conditional on encounter source and all authored world conditions' };
   }
+
+  let lootSourceIndexOwner = null; // Identity of the live LootRolling pool map; replaced on database reloads.
+  let lootSourceIndex = new Map(); // Direct item -> pool IDs; avoids rescanning all corpse/chest tables for every shipping quote.
+  function lootPoolIdsForItem(key, pools = G.LootRolling?.getLootPools?.()) {
+    if (!pools || typeof pools !== 'object') return [];
+    if (lootSourceIndexOwner !== pools) {
+      lootSourceIndexOwner = pools;
+      lootSourceIndex = new Map();
+      for (const [poolId,pool] of Object.entries(pools)) for (const entry of pool?.entries || []) {
+        if (!entry?.itemKey || pool.mastery) continue;
+        if (!lootSourceIndex.has(entry.itemKey)) lootSourceIndex.set(entry.itemKey,new Set());
+        lootSourceIndex.get(entry.itemKey).add(poolId);
+      }
+    }
+    return [...(lootSourceIndex.get(key) || [])];
+  }
+  function shopListings(key, shops = G.LootRolling?.getShopStock?.()) {
+    if (!shops || typeof shops !== 'object') return [];
+    const found = []; // Genuine authored shop offers; availability is conditional on travel, requirements and rotations.
+    for (const [shopId,shop] of Object.entries(shops)) {
+      for (const entry of shop?.goods || []) {
+        const grants = entry?.gives && Object.hasOwn(entry.gives,key);
+        if (entry?.key !== key && !grants && entry?.givesTool !== key && entry?.givesTrinket !== key) continue;
+        const quantity = grants ? Number(entry.gives[key]) : Number(entry.qty ?? 1);
+        found.push({kind:'shop',sourceId:shopId,label:shop.label || shopId,quantity:Number.isFinite(quantity)?quantity:null,
+          probability:null,certainty:'authored-stock; encounter/access frequency unknown',
+          conditions:entry.conditions || {},price:Number.isFinite(Number(entry.price))?Number(entry.price):null});
+      }
+    }
+    return found;
+  }
+  function acquisitionSources(key, context = {}) {
+    const pools = context.lootPools || G.LootRolling?.getLootPools?.();
+    const sources = []; // Each source retains its *own* opportunity unit: one cast, den, chest, kill or caravan day.
+    const spice = importedSpice(key,{townValue:context.townValue ?? G.TownMine?.getTownValue?.() ?? 1});
+    if (spice) sources.push({kind:'trade',sourceId:'slagothim-spices',label:'Slagothim caravan (daily roll)',
+      probability:spice.probability,expectedQuantity:spice.probability == null ? null : spice.probability*spice.meanQuantityPerListing,
+      certainty:'conditional daily stock roll',detail:spice});
+    const cultivar = cultivarRarity(key);
+    if (cultivar) sources.push({kind:'cultivar',sourceId:'regional-seed-or-breeding',label:cultivar.origin,
+      probability:cultivar.probability,expectedQuantity:null,
+      certainty:cultivar.origin === 'slagothim-import' ? 'daily stock probability before access' : 'ancestry unknown; proxy only',detail:cultivar});
+    const fish = fishRarity(key);
+    if (fish) {
+      const cast = context.fishZone && context.season && context.timeOfDay ? fishCatch(key,{
+        zone:context.fishZone,season:context.season,timeOfDay:context.timeOfDay,
+        allowAmphibious:context.allowAmphibious ?? true,perkRank:context.perkRank || 0}) : null;
+      sources.push({kind:'fishing',sourceId:'fishing-context',label:'Fish selected in cast',
+        probability:cast?.probability ?? null,expectedQuantity:cast?.probability ?? null,
+        certainty:cast ? 'conditional on a cast in supplied zone/time' : 'season/rarity proxy; needs a fishing context',
+        detail:cast || fish});
+    }
+    if (G.ArtifactCollection?.ARTIFACTS?.[key]) {
+      const culture = key.startsWith('hachutu') ? 'hachutu' : 'harlyao';
+      for (let tier=1;tier<=4;tier++) {
+        const chest = artifactChest(key,tier,culture);
+        if (chest && chest.eligible) sources.push({kind:'artifact',sourceId:'dungeonChest_tier'+tier,
+          label:'Tier '+tier+' '+culture+' chest',probability:chest.probability,
+          expectedQuantity:chest.expectedCopies,certainty:'conditional exact weighted chest draws',
+          detail:chest});
+      }
+    }
+    for (const poolId of lootPoolIdsForItem(key,pools)) {
+      const entry = lootPoolItem(key,poolId,pools);
+      if (!entry) continue;
+      sources.push({kind:'loot',sourceId:poolId,label:poolId,probability:entry.probability,
+        expectedQuantity:entry.expectedQuantity ?? null,
+        certainty:entry.probability === null ? 'conditional eligibility or delegated source unknown' : 'conditional on one selected pool roll',
+        detail:entry});
+    }
+    if (context.zoneId) {
+      const den = liveDenOffspring(key,{zoneId:context.zoneId});
+      if (den) sources.push({kind:'offspring',sourceId:context.zoneId,label:'Active den brood',
+        probability:den.probability,expectedQuantity:den.currentlyRecordedOffspring ?? den.potentialMeanOffspring,
+        certainty:den.currentlyRecordedOffspring === null ? 'species assigned; remaining clutch unverified' : 'observed den count and clutch',
+        detail:den});
+    }
+    sources.push(...shopListings(key,context.shopStock || G.LootRolling?.getShopStock?.()));
+    return sources;
+  }
+  function priceQuote(key, authoredPrice, context = {}) {
+    const original = Number(authoredPrice);
+    if (authoredPrice == null || !Number.isFinite(original) || original <= 0)
+      return {key,basePrice:null,price:null,multiplier:1,reason:'no valid authored price'};
+    const defs = context.itemDefs || boundItemDefs || G.ITEM_DEFS || {};
+    const def = defs[key] || {};
+    const protectedValue = cultivarRarity(key) || def.rarityBaseSellPrice != null
+      || G.ArtifactCollection?.ARTIFACTS?.[key] || G.FishCatalog?.get?.(key)
+      || def.isCookedFood || def.recipeId || def.rarityPriced || def.cat === 'livestock'
+      || def.cat === 'processed' || def.cat === 'metal' || def.cat === 'seed'
+      || G.AnimalHides?.isHide?.(key) || Array.isArray(def.ingredientKeys) && def.ingredientKeys.length
+      || Array.isArray(def.giftIngredientKeys) && def.giftIngredientKeys.length;
+    if (protectedValue) return {key,basePrice:original,price:original,multiplier:1,
+      reason:'existing authored/genetic/ingredient scarcity pricing is authoritative'};
+    const sources = acquisitionSources(key,context);
+    if (sources.some(x=>x.kind==='shop')) return {key,basePrice:original,price:original,multiplier:1,
+      reason:'regular authored shop route exists; encounter/restock scarcity unquantified',sources};
+    const spice = sources.find(x=>x.kind==='trade' && x.probability>0);
+    const loot = sources.filter(x=>x.kind==='loot');
+    const hasUnresolvedLoot = loot.some(x=>x.probability == null);
+    const candidate = spice ? {kind:'trade',probability:spice.probability,reference:.15}
+      : !hasUnresolvedLoot && loot.some(x=>x.probability>0) ?
+        {kind:'loot',probability:Math.max(...loot.map(x=>x.probability || 0)),reference:.5} : null;
+    // No universal world encounter denominator exists. Only moderate, capped premiums
+    // from a real conditional roll are permitted; unsupported items remain unchanged.
+    if (!candidate) return {key,basePrice:original,price:original,multiplier:1,
+      reason:hasUnresolvedLoot?'source conditions unresolved':'no comparable exact source probability',sources};
+    const factor = Math.min(1.35,Math.max(1,Math.pow(candidate.reference / candidate.probability,.17)));
+    const price = Math.max(1,Math.round(original*factor));
+    return {key,basePrice:original,price,multiplier:price/original,sourceKind:candidate.kind,
+      referenceChance:candidate.reference,conditionalSourceChance:candidate.probability,
+      certainty:'capped conditional-supply premium; not a universal acquisition frequency',sources};
+  }
+  function sellPrice(key, authoredPrice, context = {}) {
+    return priceQuote(key,authoredPrice,context).price ?? authoredPrice;
+  }
+
   function denOffspring({ zoneId = null, species, denCount = null, denSpecies = null,
     clutchMin = null, clutchMax = null, nestChance = null } = {}) {
     const zone = G.WildlifeSpawn?.zoneConfigFor?.(zoneId) || G.SCRATCHBONES_CONFIG?.game?.wilderness?.zones?.[zoneId];
@@ -434,7 +551,10 @@
     const sourced = context.poolId ? lootPoolItem(key,context.poolId,pools) : null;
     if (sourced) return {key,kind:def.cat || 'loot',acquisition:sourced,note:sourced.model};
     const ingredients = foodRarity(key,defs);
+    const acquisitionRoutes = acquisitionSources(key,context); // Unified on-demand provenance across shopping, loot, fishing, trade and offspring.
+    const basePrice = context.baseSellPrice ?? def.sellPrice ?? null;
     return { key,kind:def.cat || 'unknown',foodRarity:ingredients.factor,
+      acquisitionRoutes,appraisal:priceQuote(key,basePrice,context),
       foodRaritySources:ingredients.sources.slice(0,12), // On-demand mobile ingredient provenance: real source names and their certainty, not only an opaque multiplier.
       foodSourceCount:ingredients.sources.length,foodRarityHasMeasuredSource:ingredients.known,
       acquisition:context.stages ? source({stages:context.stages,opportunities:context.opportunities ?? 1,baseSellPrice:def.sellPrice}) : null,
@@ -442,8 +562,9 @@
         : context.stages ? null : 'Unquantified source; no automatic rarity price or contest premium.' };
   }
   return Object.freeze({ chain, atLeastOne, expected, tierLayout, ruinChest, caravanSeed, inheritance, source,
-    bindItemDefs, rarityFactor, cultivarRarity, cultivarSellPrice, importedSpice, foodRarity, artifactChest, lootPoolItem, denOffspring, liveDenOffspring, fishCatch, fishRarity, ruinArtifactOpportunity, item,
+    bindItemDefs, rarityFactor, cultivarRarity, cultivarSellPrice, importedSpice, foodRarity, artifactChest, lootPoolItem,
+    lootPoolIdsForItem, shopListings, acquisitionSources, priceQuote, sellPrice, denOffspring, liveDenOffspring, fishCatch, fishRarity, ruinArtifactOpportunity, item,
     debugSnapshot: key => key ? item(key) : { supported:['cultivar','artifact-chest','ruin-chest','loot-pool','den-offspring','live-den-offspring','imported-spice','fish-catch','generated-ruin','food-ancestry','inheritance'],
-      priceMode:'cultivar-integrated; other categories retain their authored value', noSilentFallback:true } });
+      priceMode:'cultivar costs and limited loot/spice premiums; existing tuned specialty categories remain protected', noSilentFallback:true } });
 
 });
