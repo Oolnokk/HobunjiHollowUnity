@@ -209,7 +209,10 @@
   nohuknukCharacterRig.gender = 'male';
   nohuknukCharacterRig.anchors.leftHandShoulder = identityAnchor([0.35, 0.70, 0]); // Nohuknuk's left-hand socket, adjustable in Rig Coordinates.
   nohuknukCharacterRig.anchors.rightHandShoulder = identityAnchor([-0.35, 0.70, 0]); // Nohuknuk's right-hand socket, adjustable in Rig Coordinates.
-  nohuknukCharacterRig.anchors.shoulderPerch = identityAnchor([0, 0.77, 0]); // Independent upper-body reference for equipment and interactions.
+  const nohuknukPerchPixel = { x: 100, y: 110 }; // Approximate shoulder reference in the 200px portrait preview; later Rig Coordinates authoring may refine it.
+  nohuknukCharacterRig.anchors.shoulderPerch = {
+    ...identityAnchor([0, 0.77, 0]), sourcePixel: { ...nohuknukPerchPixel },
+  }; // Independently authored shoulder perch and matching preview pixel.
   nohuknukCharacterRig.posteriorRule = {
     ...nohuknukCharacterRig.posteriorRule,
     heightPercentOffset: 0, heightPercentFromFloor: 32,
@@ -220,6 +223,7 @@
   nohuknukCharacterRig.shoulderPerchRule = {
     ...nohuknukCharacterRig.shoulderPerchRule,
     appearanceSpeciesId: 'nohuknuk', portraitModelHeight: 1.19, portraitVerticalPlacementRatio: 0.5,
+    sourcePixel: { ...nohuknukPerchPixel },
   }; // Creature-sprite dimensions supply Nohuknuk's authored shoulder frame.
   masterCharacters['nohuknuk::male'] = nohuknukCharacterRig;
 
