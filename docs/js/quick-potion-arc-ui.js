@@ -29,6 +29,7 @@
   let lastGeometry = null; // Diagnostic snapshot of center/radius currently in use.
   let lastSweepDeg = COMPACT_SWEEP_DEG; // Diagnostic snapshot of current visible-choice sweep.
   let lastVisibleChoiceCount = 0; // Used to send outgoing choices one logical slot beyond the current arc edge.
+  const domWriteStats = { applied:0, skipped:0 }; // Exposed in mobile diagnostics to compare selection-wheel DOM mutation work across frames.
 
   function log(message, detail) {
     const text = `[selection-arc-ui] ${message}`;
@@ -54,18 +55,35 @@
 
   function setImportantStyle(element, property, value) {
     if (!element) return;
-    if (element.style.getPropertyValue(property) === value && element.style.getPropertyPriority(property) === 'important') return;
+    if (element.style.getPropertyValue(property) === value && element.style.getPropertyPriority(property) === 'important') {
+      domWriteStats.skipped++;
+      return;
+    }
     element.style.setProperty(property, value, 'important'); // Keeps shape authoritative when legacy wheel code recycles nodes.
+    domWriteStats.applied++;
   }
 
   function setSharedCoordinate(slot, property, value) {
-    if (slot.style.getPropertyValue(property) === value) return;
+    if (slot.style.getPropertyValue(property) === value) {
+      domWriteStats.skipped++;
+      return;
+    }
     slot.style.setProperty(property, value); // CSS consumes these vars; legacy inline left/top cannot render.
+    domWriteStats.applied++;
+  }
+
+  function setSlotDataIfChanged(slot, name, value) {
+    if (slot.dataset[name] === value) {
+      domWriteStats.skipped++;
+      return;
+    }
+    slot.dataset[name] = value; // Only update geometry metadata when the wheel actually moves or changes choices.
+    domWriteStats.applied++;
   }
 
   function setSharedVisual(slot, opacity, scale) {
-    slot.style.setProperty('--shared-selection-opacity', String(opacity));
-    slot.style.setProperty('--shared-selection-scale', String(scale));
+    setSharedCoordinate(slot, '--shared-selection-opacity', String(opacity));
+    setSharedCoordinate(slot, '--shared-selection-scale', String(scale));
   }
 
   function outerRingGeometry() {
@@ -152,7 +170,10 @@
     // every animation frame (via startFrameEnforcer) for every visible slot
     // while any selector is open, so the guard below is real, continuous savings.
     if (!slot.classList.contains('shared-selection-slot')) slot.classList.add('shared-selection-slot');
-    slot.classList.toggle('shared-selection-dense', dense);
+    if (slot.classList.contains('shared-selection-dense') !== dense) {
+      slot.classList.toggle('shared-selection-dense', dense);
+      domWriteStats.applied++;
+    } else domWriteStats.skipped++;
     setImportantStyle(slot, 'position', 'fixed');
     setImportantStyle(slot, 'width', BUTTON_SIZE);
     setImportantStyle(slot, 'height', BUTTON_SIZE);
@@ -258,12 +279,12 @@
       const targetAngle = selectorAngleDeg(index, slots.length, sweepDeg);
       const targetPoint = pointOnSharedArc(targetAngle, center, radius);
       const wasPresented = slot.dataset.sharedSelectionPresented === '1';
-      slot.dataset.sharedSelectionRadius = radius.toFixed(2);
-      slot.dataset.sharedSelectionAngle = targetAngle.toFixed(2);
-      slot.dataset.sharedSelectionTargetX = targetPoint.x.toFixed(3);
-      slot.dataset.sharedSelectionTargetY = targetPoint.y.toFixed(3);
-      slot.style.setProperty('--shared-selection-motion-ms', `${GROUP_MOVE_MS}ms`);
-      slot.style.setProperty('--shared-selection-delay', '0ms');
+      setSlotDataIfChanged(slot, 'sharedSelectionRadius', radius.toFixed(2));
+      setSlotDataIfChanged(slot, 'sharedSelectionAngle', targetAngle.toFixed(2));
+      setSlotDataIfChanged(slot, 'sharedSelectionTargetX', targetPoint.x.toFixed(3));
+      setSlotDataIfChanged(slot, 'sharedSelectionTargetY', targetPoint.y.toFixed(3));
+      setSharedCoordinate(slot, '--shared-selection-motion-ms', `${GROUP_MOVE_MS}ms`);
+      setSharedCoordinate(slot, '--shared-selection-delay', '0ms');
 
       if (!wasPresented) {
         slot.dataset.sharedSelectionPresented = '1';
@@ -321,7 +342,13 @@
   }
 
   function setOuterArchHidden(hidden) {
-    document.body.classList.toggle('shared-selection-arc-open', Boolean(hidden)); // visibility:hidden preserves permanent-ring geometry for measurement.
+    const desired = Boolean(hidden); // Tracks whether a transient selection arc should hide the permanent outer ring.
+    if (document.body.classList.contains('shared-selection-arc-open') === desired) {
+      domWriteStats.skipped++;
+      return;
+    }
+    document.body.classList.toggle('shared-selection-arc-open', desired); // visibility:hidden preserves permanent-ring geometry for measurement.
+    domWriteStats.applied++;
   }
 
   function removeCurvedLabel() {
@@ -633,6 +660,7 @@
         selectorRadii:activeSelectionSlots().map(slot => Number(slot.dataset.sharedSelectionRadius)),
         groupCommitPending,
         frameEnforcerRunning:frameRunning,
+        domWrites:{ ...domWriteStats }, // Mobile A/B readout: skipped no-op mutations versus actual HUD changes.
       }),
       refresh:scheduleRefresh,
     });
