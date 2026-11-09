@@ -105,6 +105,7 @@ const mothers = {
   'gar-wolf': { creatureKey: 'gar-wolf-den-mother', nestItemKey: 'garWolfBaby' },
   grehlr: { creatureKey: 'grehlr-den-mother', nestItemKey: 'grehlrBaby' },
   'uumkaoii-wild': { creatureKey: 'uumkaoii-wild-den-mother', nestItemKey: 'uumkaoiiEgg' },
+  nazgraku: { creatureKey: 'nazgraku', nestItemKey: 'nazgrakuBaby' },
 }; // Uses the same real Den-Mother/reward keys as scratchbones-config.
 windowStub.CavernGenerator.init({ EXTERIOR_ZONES, DEN_MOTHER_DEFS: mothers });
 for (const den of zoneLayouts.get('map_mixed_wilds').dens) {
@@ -117,6 +118,15 @@ for (const den of zoneLayouts.get('map_mixed_wilds').dens) {
     `${den.id}: revisiting may not reroll its species`);
   assert(mothers[outside].nestItemKey, `${den.id}: usable egg or baby item exists`);
 }
+
+// Loading a persisted den can precede exterior transition registration on
+// startup. The cavern still needs to identify its native guardian and nest.
+const restoredMapId = 'map_i_den_map_northern_cliffs_restored_unminted_den';
+assert.equal(W.denCavernZoneOf(restoredMapId), undefined, 'fixture must not have minted a runtime cavern lookup');
+const restoredSpecies = W.denResidentSpeciesFor('map_northern_cliffs', restoredMapId);
+assert(mothers[restoredSpecies], 'a valid native species is available in the restored region');
+assert.equal(windowStub.CavernGenerator.pickDenMotherKind(restoredMapId), mothers[restoredSpecies].creatureKey,
+  'an interior loaded before exterior registration still finds the correct home-point species');
 
 // Verify the mobile audit against an actual injected inventory registry. Without
 // ITEM_DEFS, fertile Honeyfuzzle eggs are incorrectly marked unavailable.
