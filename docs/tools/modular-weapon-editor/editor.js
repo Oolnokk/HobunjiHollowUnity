@@ -488,7 +488,7 @@
     mounts.replaceChildren(); ops.replaceChildren();
     for (const [index, mount] of shaft.mounts.entries()) {
       const used = mount.type === required;
-      elementRow(mounts, 'Mount ' + (index + 1) + ': ' + (mount.type === 'eye' ? 'eye / sleeve' : 'tang')
+      elementRow(mounts, 'Mount ' + (index + 1) + ': ' + (mount.type === 'eye' ? 'eye / sleeve' : mount.type === 'rope' ? 'rope / chain reach' : 'tang')
         + (used ? ' — draws this head' : ' — not used by this head'), [
         ['Select line', () => { mountIndex = index; render(); byId('socket').scrollIntoView({ block: 'nearest' }); }],
         ['Remove mount', () => {
@@ -514,7 +514,7 @@
       ops.appendChild(hint);
     }
     const placed = strokes.filter(op => op.recipe).length, total = recipeBoxCount(shaft); // Per-pair and per-haft cleanup scopes.
-    byId('assembly-summary').textContent = shaft.mounts.filter(m => m.type === required).length
+    byId('assembly-summary').textContent = shaft.mounts.filter(m => m.type === ((shaft.flailAssembly || head.flailAssembly) && shaft.mounts.some(m=>m.type==='rope') ? 'rope' : required)).length
       + ' matching head primitive(s) · ' + strokes.length + ' saved operation(s), including '
       + placed + ' recipe box(es) on this pair.';
     byId('assembly-clear-pair-recipes').disabled = placed === 0;
@@ -581,11 +581,13 @@
       for (const entry of available) select.add(new Option(entry.label, entry.id));
       select.value = choice || '';
     }
-    const sourcePoint = shaft.mounts.find(mount => mount.type === (head.mount.type === 'blade' ? 'tang' : 'eye'))?.start || shaft.mounts[0]?.start || { x: 225, y: 602 };
-    byId('shaft-rope-x').value = shaft.flailHaftAnchor?.x ?? '';
-    byId('shaft-rope-y').value = shaft.flailHaftAnchor?.y ?? '';
-    byId('shaft-rope-x').placeholder = String(Math.round(sourcePoint.x)) + ' (socket)';
-    byId('shaft-rope-y').placeholder = String(Math.round(sourcePoint.y)) + ' (socket)';
+    const ropeMount = shaft.mounts.find(mount => mount.type === 'rope'); // The new line owns both contact and connector length.
+    const sourcePoint = ropeMount?.start || shaft.mounts.find(mount => mount.type === (head.mount.type === 'blade' ? 'tang' : 'eye'))?.start || shaft.mounts[0]?.start || { x: 225, y: 602 };
+    byId('shaft-rope-x').disabled = byId('shaft-rope-y').disabled = !!ropeMount;
+    byId('shaft-rope-x').value = ropeMount ? String(ropeMount.start.x) : shaft.flailHaftAnchor?.x ?? '';
+    byId('shaft-rope-y').value = ropeMount ? String(ropeMount.start.y) : shaft.flailHaftAnchor?.y ?? '';
+    byId('shaft-rope-x').placeholder = String(Math.round(sourcePoint.x)) + (ropeMount ? ' (Rope mount owns contact)' : ' (legacy socket)');
+    byId('shaft-rope-y').placeholder = String(Math.round(sourcePoint.y)) + (ropeMount ? ' (Rope mount owns contact)' : ' (legacy socket)');
     byId('head-rope-x').value = head.flailHeadAnchor?.x ?? head.mount.start.x;
     byId('head-rope-y').value = head.flailHeadAnchor?.y ?? head.mount.start.y;
     byId('head-rope-scale').value = head.flailHeadScale || 1;
@@ -597,7 +599,10 @@
     byId('identity-flail-status').textContent = both
       ? 'Both parts currently own a rope. This combination cannot be forged: select only one rope owner.'
       : (shaft.flailAssembly || head.flailAssembly)
-        ? (api.flailRecipe(byId('shaft').value, byId('head').value) ? 'Flexible head: rendered separately using existing flail pendulum and connector.' : 'Selected flail recipe could not be resolved.')
+        ? (api.flailRecipe(byId('shaft').value, byId('head').value)
+          ? (ropeMount ? 'Rope mount controls contact and reach. Head scale and connector width are separate; see the full flail preview.'
+            : 'Legacy flail anchor and rope length are preserved. Add a Rope/chain mount to control reach.')
+          : 'Selected flail recipe could not be resolved.')
         : 'Rigid combination: the usual baked modular head and bridge geometry applies.';
   }
   function render() {
