@@ -31750,7 +31750,7 @@
         },
         inventory,
         getItemDefs: () => ITEM_DEFS,
-        getNpcs: () => [...new Map([...scheduledNpcRecords.values(), ...npcWalkers.map(w => w.rec)].filter(Boolean).map(rec => [rec.id, rec])).values()],
+        getNpcs: () => [...new Map([...scheduledNpcRecords.values(), ...npcWalkers.filter(w => !w._doorstepVisitor).map(w => w.rec)].filter(Boolean).map(rec => [rec.id, rec])).values()], // Festival residents must not include temporary doorstep avatar proxies as extra townsfolk.
         getWalkers: () => npcWalkers,
         ensureNpcWalker: ensureScheduledNpcWalker, // Festival guests whose initial avatar failed can be recovered after station warm-up.
         getPlayerMesh: () => playerMesh, // Passes the real player avatar root into authored pair animation without registering a clone.
