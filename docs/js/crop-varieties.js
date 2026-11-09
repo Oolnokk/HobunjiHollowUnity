@@ -44,6 +44,7 @@
   const known = new Set(); // Keys already registered as crops; avoids repeated catalog and UI work.
   const variants = new Map(); // Cached resolved traits: rendering thousands of frames must not rebuild item definitions.
   let lastChange = 'Regional crop varieties are gene-coded; no independent world save is required.';
+  let lastBreeding = null; // Last explicitly observed parent/offspring odds, displayed by mobile crop diagnostics; not saved as genotype ancestry.
 
   const clamp = (n, min, max) => Math.min(max, Math.max(min, n));
   const seedKey = crop => crop + 'Seeds'; // Dynamic seed keys live in the ordinary inventory.
@@ -225,6 +226,9 @@
       ? { id: a, seedKey: cropData[a]?.seedKey, label: cropData[a]?.label, ...phenotype(a, '000000') }
       : register(a, childCode, mixedPigment); // All other crosses visibly blend and preserve color in their ordinary seed IDs.
     if (result) {
+      const odds = window.ItemAcquisitionRarity?.inheritance?.({parentA:first,parentB:second,target:childCode}) || null; // Exact conditional genotype probability for this breeding attempt.
+      lastBreeding = { parentA:firstKey, parentB:secondKey, offspring:result.id, genotypeChance:odds?.probability ?? null,
+        pigmentHex:mixedPigment, source:'observed-parent-pair; descendants do not persist parent provenance' }; // Explicitly separates this attempt from inferred market rarity.
       lastChange = 'Crossbred ' + firstKey + ' × ' + secondKey + ' → ' + result.label + '.';
       window.CookingSystem?.registerIngredientItems?.(); // The newly invented ingredient keeps its inherited buffs in every recipe picker.
     }
@@ -255,5 +259,5 @@
     return a && a === b ? mixHex(colorOf(firstKey), colorOf(secondKey)) : null;
   }
   window.CropVarieties = Object.freeze({ REGIONS, FAMILIES, attach, ensure, hydrate, registered, refreshBrushes, offers, produceFamily, breed, details, colorOf, seedColorOf, blendedColor,
-    get lastChange() { return lastChange; } }); // Exposed for mobile production diagnostics and regression tests.
+    get lastChange() { return lastChange; }, get lastBreeding() { return lastBreeding && { ...lastBreeding }; } }); // Exposed for mobile production diagnostics and regression tests.
 })();
