@@ -77,11 +77,12 @@
       const stars = Math.max(1,Math.min(5,Math.round(Number(entry.stars) || 1)));
       const multiplier = 2 ** processingDepth(entry.key,defs);
       const appraisal = window.ItemAcquisitionRarity?.evaluate?.(entry.key, { defs }) || null; // Authoritative acquisition source for the mobile ingredient inspector.
-      const rarityMultiplier = Math.max(1, Math.min(1.65, Number(entry.rarityMultiplier) || appraisal?.contestMultiplier || 1));
+      const recorded = Number.isFinite(Number(entry.rarityMultiplier)) && Number(entry.rarityMultiplier) >= 1; // Never report present-day rarity as the provenance of an older cooked item.
+      const rarityMultiplier = Math.max(1, Math.min(1.65, recorded ? Number(entry.rarityMultiplier) : (appraisal?.contestMultiplier || 1)));
       return {key:entry.key,label:def.label,icon:def.icon,stars,multiplier,rarityMultiplier,
-        rarityScore:Number(entry.rarityScore) || appraisal?.score || 0,
-        raritySource:entry.raritySource || appraisal?.sourceLabel || null,
-        rarityCertainty:entry.rarityCertainty || appraisal?.uncertainty || 'unknown',
+        rarityScore:recorded ? Number(entry.rarityScore) || 0 : appraisal?.score || 0,
+        raritySource:recorded ? entry.raritySource || null : appraisal?.sourceLabel || null,
+        rarityCertainty:recorded ? entry.rarityCertainty || 'saved' : appraisal?.uncertainty || 'unknown',
         points:ingredientPoints(entry.key,stars,defs,rarityMultiplier),
         contributesEffects:entry.contributesEffects !== false,
         effects:entry.contributesEffects === false ? {} : ingredientEffects(entry.key,stars,defs)};
