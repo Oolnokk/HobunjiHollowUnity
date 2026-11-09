@@ -143,4 +143,40 @@ assert.equal(rarity.fishCatch('gurumahi_tawny',{zone:'town',season:'Deadgrass',t
 assert.equal(rarity.item('cv_heftroot_333333Seeds',{itemDefs:nativeDefs}).proposedSellPrice,nativeDefs.cv_heftroot_333333Seeds.sellPrice,'diagnostic price never compounds its already adjusted sale price');
 assert.equal(rarity.item('cv_heftroot_333333Seeds',{itemDefs:nativeDefs}).actualSellPrice,nativeDefs.cv_heftroot_333333Seeds.sellPrice,'diagnostic report shows actual configured resale');
 
+const oldArtifactCatalog = globalThis.ArtifactCollection; // Integration probe supplies the same loaded artifact table the browser exposes.
+globalThis.ArtifactCollection = catalog;
+const sourceCount = rarity.ruinArtifactOpportunity('hachutuCommon',{chests:[{tier:1,culture:'harlyao'},{tier:1,culture:'hachutu'}]});
+assert.equal(sourceCount.chestCount,1,'generated ruin census filters real Hachutu vs Harlyao chest cultures');
+assert.equal(sourceCount.conditionalChancePerRuin,1,'one eligible chest with a single eligible artifact must contain that artifact');
+assert.equal(rarity.ruinArtifactOpportunity('harlyaoRare',{chests:[{tier:1,culture:'harlyao'}]}).conditionalChancePerRuin,0,'ineligible chest tier cannot generate a higher-tier relic');
+if (oldArtifactCatalog === undefined) delete globalThis.ArtifactCollection;
+else globalThis.ArtifactCollection = oldArtifactCatalog;
+assert.equal(rarity.lootPoolItem('rare','puzzleCave',{puzzleCave:{kind:'exclusive',entries:[{itemKey:'rare',weight:1}]}}).probability,null,
+  'without reward tier, trinket-gated cave odds remain unknown');
+const festivalSource = fs.readFileSync('docs/js/festival-system.js','utf8');
+const ingredientStart = festivalSource.indexOf('  function contestIngredients(');
+const ingredientEnd = festivalSource.indexOf('  function contestData()',ingredientStart);
+assert(ingredientStart >= 0 && ingredientEnd > ingredientStart,'real festival source exposes source-preserving contestIngredients');
+const contestIngredients = vm.runInNewContext('(function(){'+festivalSource.slice(ingredientStart,ingredientEnd)+
+  '; return contestIngredients; })()', {window:{HobunjiCookingData:{recipes:[]}}});
+const snap=contestIngredients({festivalIngredientQuality:[{key:'cv_heftroot_333333',stars:4,rarityMultiplier:1.234,
+  slotId:'main',contributesEffects:true}]},4);
+assert.equal(snap.ingredients[0].rarityMultiplier,1.234,'festival recovery retains a cooked ingredient\'s exact historical rarity factor');
+assert.equal(contest.scoreIngredients(snap.ingredients,foodDefs),4.94,'judge scores the exact retained source multiplier');
+assert.equal(contestIngredients({festivalIngredientQuality:[{key:'plain',stars:4}]},4).ingredients[0].rarityMultiplier,undefined,
+  'legacy ingredient without a snapshot is not fabricated into a saved certainty');
+const cookingSource = fs.readFileSync('docs/js/cooking-system.js','utf8');
+assert(cookingSource.includes('festivalIngredientQuality:contestIngredients') &&
+  cookingSource.includes('scoreIngredients?.(contestIngredients,deps.ITEM_DEFS)'),
+  'newly cooked meals save exactly the ingredient data used to compute the contest score');
+const bootstrapSource = fs.readFileSync('docs/js/dev-random-ruin-bootstrap.js','utf8');
+const chestsSource = fs.readFileSync('docs/js/dev-random-ruin-dungeon-chests.js','utf8');
+assert(bootstrapSource.includes('dev-random-ruin-dungeon-chests.js?v=20261109rarityaudit4') &&
+  chestsSource.includes('culture:chest.culture'),'actual browser ruin chest loader and snapshot both include culture-aware rarity');
+const indexSource = fs.readFileSync('docs/index.html','utf8');
+for (const name of ['item-acquisition-rarity','crop-varieties','cooking-system','festival-potluck-contest','festival-system','festival-ui'])
+  assert(indexSource.includes('js/'+name+'.js?v=20261109rarityaudit4'),'all modified critical browser scripts carry fresh cache keys');
+const childPrice = rarity.item('cv_heftroot_333333Seeds',{itemDefs:nativeDefs});
+assert.equal(childPrice.actualSellPrice,childPrice.proposedSellPrice,'priced cultivar diagnostics apply scarcity only once');
+
 console.log('Item acquisition rarity tests passed.');
