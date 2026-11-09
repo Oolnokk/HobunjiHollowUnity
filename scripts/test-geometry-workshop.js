@@ -87,6 +87,10 @@ function twoMaterialMesh(){
   protectedSource.userData.noOutline=true;
   const protectedOutput=await core.process(protectedSource,{remesh:true,reduction:80});
   assert.equal(protectedOutput.object.geometry,protectedSource.geometry,'protected geometry shares unmodified original');
+  const alpha=twoMaterialMesh();
+  alpha.material[0].transparent=true;
+  const alphaOutput=await core.process(alpha,{remesh:true,reduction:80});
+  assert.equal(alphaOutput.object.geometry,alpha.geometry,'alpha cards remain intact');
   const malformed=twoMaterialMesh();
   malformed.geometry.groups[1].start=0; // Overlapping groups should never be flattened or silently reassigned.
   const invalid=await core.process(malformed,{reduction:50,protectCards:false});

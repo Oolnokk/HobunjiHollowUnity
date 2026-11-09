@@ -28,6 +28,7 @@
   let original = null; // Currently loaded source object; never mutated by the workshop.
   let candidate = null; // Generated preview clone with its own edited geometry.
   let sourceName = 'model'; // Name for diagnostics and exported GLB files.
+  let downloadUrl = null; // Retains a manual-tap GLB link on mobile until replaced.
   let generation = 0; // Invalidates stale async loads and recomputations.
   let updating = false; // Disables competing export operations while a preview is building.
   const host = $('canvas-host'); // In-tool shared WebGL comparison viewport.
@@ -265,6 +266,8 @@
       original.name ||= name;
       sourceName = name;
       sceneA.add(original);
+      $('manual-download').replaceChildren();
+      if (downloadUrl) { URL.revokeObjectURL(downloadUrl); downloadUrl = null; }
       fitCamera(original);
       listMaterials(original);
       $('summary').textContent = Core.stats(original).triangles.toLocaleString() + ' source triangles. Processing…';
@@ -300,12 +303,14 @@
       });
       const filename = sourceName.replace(/\.glb$/i, '').replace(/[^a-zA-Z0-9_-]/g, '_') +
         ($('remesh').checked ? '_remeshed' : '') + '_lod-' + $('reduction').value + '.glb';
-      const url = URL.createObjectURL(new Blob([buffer], { type: 'model/gltf-binary' }));
+      if (downloadUrl) URL.revokeObjectURL(downloadUrl);
+      downloadUrl = URL.createObjectURL(new Blob([buffer], { type: 'model/gltf-binary' }));
       const link = document.createElement('a');
-      link.href = url;
+      link.href = downloadUrl;
       link.download = filename;
-      document.body.appendChild(link); link.click(); link.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 1500);
+      link.textContent = 'Tap to save ' + filename;
+      $('manual-download').replaceChildren(link);
+      link.click(); // Browser may suppress this on mobile; manual link remains available.
       log('Exported ' + filename + ' (' + buffer.byteLength.toLocaleString() + ' bytes).');
     } catch (error) {
       log('GLB export failed: ' + (error?.message || error), true);

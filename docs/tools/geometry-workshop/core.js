@@ -33,7 +33,7 @@
   function hasProtectedMaterial(mesh, protectCards) {
     if (!protectCards) return false;
     if (IGNORE_TAGS.some(tag => !!mesh.userData?.[tag])) return true;
-    return materialSlots(mesh).some(mat => mat?.transparent && (mat.opacity ?? 1) < 0.999);
+    return materialSlots(mesh).some(mat => !!mat && (mat.transparent || (mat.alphaTest || 0) > 0 || !!mat.alphaMap));
   }
   function spans(geometry, slots) {
     const count = geometry.index ? geometry.index.count : geometry.getAttribute('position').count;
@@ -154,7 +154,8 @@
     const out = [], groups = [];
     const src = geometry.index.array;
     function face(a, b, c) { out.push(a, b, c); }
-    for (const group of spans(geometry, [null].concat(Array.from({ length: 256 }, () => null)))) {
+    const slotCount = Math.max(1, ...(geometry.groups || []).map(g => (g.materialIndex || 0) + 1));
+    for (const group of spans(geometry, Array(slotCount).fill(null))) {
       const start = out.length;
       for (let i = group.start; i < group.start + group.count; i += 3) {
         const a = src[i], b = src[i + 1], c = src[i + 2];
