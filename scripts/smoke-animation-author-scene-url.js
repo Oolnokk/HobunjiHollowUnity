@@ -30,6 +30,22 @@ async function main() {
         if (initiator) selectAnimationActor(initiator.id); // Preserve leader identity when rebuilding the preset.
         return applyKissPresetV1546();
       };
+      window.MultiAvatarAnimationAuthor.__testRealMouths = () => {
+        const THREE = state.three.THREE; // Probe actual species-specific B'shuakauitl mouth coordinates.
+        const pose = window.SharedAttackPose;
+        return animationAuthor.actors.filter(actor => actor.source?.type === 'npc').map(actor => {
+          const frame = pose?.createHeadFrame?.(THREE);
+          const resolved = frame && pose?.headFrame?.(frame, actor.model);
+          const pixel = pose?.mouthPixel?.(actor.model);
+          const world = resolved ? frame.position : null;
+          const floor = new THREE.Vector3();
+          actor.root?.getWorldPosition?.(floor);
+          return { name: actor.label, species: actor.source.species, gender: actor.source.gender,
+            pixel: pixel && { x: pixel.x, y: pixel.y },
+            world: world && { x: +world.x.toFixed(5), y: +world.y.toFixed(5), z: +world.z.toFixed(5) },
+            floorY: +floor.y.toFixed(5), mouthHeight: world ? +(world.y-floor.y).toFixed(5) : null };
+        });
+      };
     `);
     await page.route('**/tools/animation-author/index.html**', route =>
       route.fulfill({ status: 200, contentType: 'text/html', body: instrumentedHtml }));
@@ -105,6 +121,7 @@ async function main() {
         scrubber.dispatchEvent(new Event('input', { bubbles: true }));
         return api.fullBodyDiagnostics();
       };
+      const neutralMouths = api.__testRealMouths(); // Grounded neutral frame before kiss.
       const early = seek(.37);
       const earlyInitiator = early.find(actor => actor.name === 'Pahu');
       const earlyTall = early.find(actor => actor.name === 'Leaf');
@@ -135,6 +152,7 @@ async function main() {
         throw Error('Leaf never kneels after the initiator shoulder grasp: ' + JSON.stringify(afterLowering));
       }
       const afterContact = seek(1.12);
+      const contactMouths = api.__testRealMouths(); // Canonical skinned lip positions at actual contact.
       if (!afterContact.find(actor => actor.name === 'Pahu')?.initiatorHands?.applied) {
         throw Error('Initiator wrist anchors must follow the spouse shoulders during contact: ' + JSON.stringify(afterContact));
       }
@@ -212,6 +230,7 @@ async function main() {
         keyframes: project.actors.map(a => a.keyframes.length),
         exportable: again.actors.length === 2,
         fullBodiesAtContact: contactBodies,
+        realMouthFrames: { neutral: neutralMouths, contact: contactMouths },
         facingSamples,
         shoulderGripEarly: earlyInitiator.initiatorHands,
         shoulderGripAtContact: afterContact.find(actor => actor.name === 'Pahu')?.initiatorHands,
