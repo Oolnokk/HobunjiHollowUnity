@@ -23,12 +23,15 @@ name), the shaft's `namePosition: 'prefix'|'suffix'` and `nameAffix`,
 and the head's `weaponNames: { prefix, suffix }`. The head provides
 **both** grammatical forms. For example:
 
-- The Fishing Mace unlocks a **Bored Wrapped Handle** and a
-  **Barb-flanged Mace Head**; their composed copper weapon is
-  **Copper Bored-handled Barb-flanged Mace**.
-- The Harlyao Longsword unlocks a **Trapezoidal Hilt** and a
-  **Harlyao-style Long-blade**; their composed copper weapon is
-  **Copper Harlyao-style Long-blade with a Trapezoidal Hilt**.
+- The Fishing Mace unlocks a **Bored Wrapped Handle** and a **Barb-flanged
+  Mace Head**. The imported authoring affix produces **Copper Looped Fishing Mace**.
+- The Harlyao Longsword unlocks a **Tall Crescent Hilt** and a
+  **Harlyao-style Long-blade**. The imported affixes produce
+  **Copper Crescent-hilted Long- Hilted Slicer**.
+These are the uploaded naming values only: geometry, sockets, pair overrides,
+brush strokes and sprite paths were deliberately not imported. The author's
+head `weaponNames.prefix` and `weaponNames.suffix` values were swapped during
+migration as requested.
 
 The unchanged `modular:<shaftKey>:<headKey>:<metalKey>` saved ID is still
 the crafting, ownership, mastery and source-shape authority. The labels
@@ -62,17 +65,59 @@ the head (`head.flailAssembly`) or the shaft
 pieces to own a flail recipe.
 
 - **Head-owned flail:** The final shaft sprite remains rigid. The recipe
-  supplies the hanging head's existing multi-layer textures and chain
-  physics. Its top rope anchor moves to the selected shaft's original
-  compatible tang/eye mount, or to the explicitly authored
-  `flailHaftAnchor` point. This supports a reusable complete flexible
-  head on many different shafts.
+  supplies the hanging head's original multi-layer textures and chain
+  physics. The newly authored `rope` shaft mount controls its top contact
+  and full reach; shafts without one retain their legacy tang/eye contact
+  and preexisting chain length. This supports reusable complete flexible
+  heads on many shafts.
 - **Shaft-owned flail:** The final shaft sprite and the original
-  recipe's shaft-side anchor, rope texture, length, color and motion
-  remain unchanged. The recipe's authored head layers are replaced
+  recipe's rope texture, color and motion remain unchanged. A `rope`
+  shaft mount sets attachment and rope/chain reach; without one the
+  original recipe's values remain. The authored head layers are replaced
   by the selected `head.sprite`, using that head's
   `flailHeadAnchor` and `flailHeadScale`. This supports one swinging
   shaft paired with many different modular heads.
+
+### Flexible mount geometry and preview
+
+A shaft's directed line may now have `type: 'rope'`. The line's origin
+is the connector's attachment on the original haft artwork; the
+distance from that origin to its arrow tip is the **desired full
+connector length**, in unmodified source pixels. It is a suspension
+setting, never an axis-fit transform on the head. The 3D renderer solves
+the rope/chain's Y stretch while preserving authored `scaleX`,
+`radiusPx`, `head.scale`, colors and head-layer offsets. A shaft
+attachment-rig transform can alter the visible rope line length, but
+does not scale the hanging head. A head may use `mount.type: 'flail'`
+to require a flexible assembly rather than accidentally forging a rigid
+copy. One rope mount is used per modular weapon.
+
+The [Modular Weapon Editor](../tools/modular-weapon-editor/index.html)
+includes a separate **Full flexible assembly** preview alongside the
+usual brush/assembly preview. It shows the actual tinted rope/chain PNG
+and the head's actual separate layers at the chosen contact point,
+including the extra extent beyond the 450×1204 haft sprite. It
+displays physical reach, width, and head scale independently. The
+live in-game pendulum uses the same assembly recipe; the 2D view
+deliberately shows a gravity-hanging rest pose rather than simulating
+player motion. The original assembled brush preview remains available
+without changing its coordinate system.
+
+### Recalculating bores in original shaft artwork
+
+The modular editor also includes a **Recalculating bores** panel,
+reusing the existing manual sprite/bridge engine and undo/draft
+history. A bore has independently editable center, X/Y radii, angle,
+rim width, edge deformation, shading strength and light direction.
+Use the explicit drag mode to reposition it on the original shaft
+sprite; its hole is cut to transparency and its surrounding rim
+deformed/shaded from the original material. Movement and number edits
+recompute the entire image from the *unaltered source PNG* with each
+step, so the former hole is restored and no destructive pixel changes
+accumulate. Bores are stored on `shaft.bores` (not on individual
+pairs), applied before all head geometry and existing pair bridge
+strokes. Removing the bore restores the original shaft image without
+deleting any manual pair recipes or brush strokes.
 
 The first `grappleFlail` reusable reference is available from either
 a dedicated Rope-bound Grapple Handle or a Grapple Hook Head, unlocked
