@@ -2048,11 +2048,13 @@
   // materialized resident must instead die through ordinary combat.
   function slayHunter(hunter, reason = 'slain') {
     if (!hunter || hunter.slain || (hunter.entity && hunter.entity.health > 0 && detailedEntityActive(hunter))) return false;
+    const party = huntingPartyFor(hunter); // A party below its minimum size disbands immediately when a member dies, even during coarse offscreen simulation.
     hunter.slain = true;
     hunter.slainDay = gameDay();
     hunter.activity = 'slain';
     hunter.target = null;
     teardownEntity(hunter);
+    if (party && huntingPartyMembers(hunter.camp, party).length < party.minMembers) clearHuntingParty(hunter.camp, party);
     state.lastReason = `${KEY}-slain:${reason}:${hunter.id}`;
     return true;
   }
