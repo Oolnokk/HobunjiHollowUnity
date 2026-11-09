@@ -16,6 +16,7 @@
   const ROPE_TINT_CACHE_LIMIT = 12; // Limits the full-resolution canvas footprint when mobile authors try many rope colors.
   const PIXEL_ALPHA = 128; // Treat only the solid half of an antialiased edge as the opaque connection tip.
   const MAX_DT = 0.08; // Prevent tab-resume and loading stalls from launching the head sideways.
+  const DETACHED_TIMEOUT = 5000; // Cleans orphaned assemblies, but never a root still owned by the player's current equipment cache.
   const MOTION_LAG = 0.065; // Converts haft travel velocity to idle trailing angle.
   const DEF = global.WEAPON_SPRITE_ASSEMBLY_CONFIG?.weapons || {}; // Single committed recipe registry shared with the Tool Hub; tool-specific definitions may still override it.
   const effects = global.HobunjiLayeredWeaponEffects; // Materials, interleaved fire, and visible-metal source masks live outside the animation module.
@@ -539,14 +540,27 @@
     hooked.updateMatrixWorld(true);
   }
 
+  function isCachedPlayerToolRoot(root) {
+    // The player's equipment map retains unequipped tool roots by reference,
+    // even when they have no parent. A rebuilt/discarded tool is absent from
+    // the current map, so it remains eligible for the ordinary timeout.
+    for (const deps of [global.ProceduralHandAttachments?.gameDeps, global.Combat?.deps]) {
+      const map = deps?.toolMeshMap; // Authoritative live equipment-slot ownership, shared by both gameplay integration paths.
+      if (!map) continue;
+      const candidates = typeof map.values === 'function' ? map.values() : Object.values(map); // Supports the game's object map and editor/test Map adapters.
+      for (const visual of candidates) if (visual === root) return true;
+    }
+    return false;
+  }
+
   function updateOne(state, dt, now, effectsDt = dt) {
     const { root, plane, config, scratch: q } = state;
     if (!root.parent) {
-      // Equipped player tools are cached as detached roots when another tool is selected.
-      // Auto-dropping them after a timeout permanently removes their rope/head:
-      // re-equipping attaches the SAME root without calling decorate() again.
-      // Keep its assembly alive until the owner explicitly calls drop(root).
       if (!state.detachedAt) state.detachedAt = now;
+      // Cached unequipped weapons must outlive the old five-second timeout.
+      // Abandoned meshes (e.g. replaced loadouts) can still be reclaimed,
+      // avoiding an unbounded records/texture leak during equipment rebuilds.
+      if (now - state.detachedAt > DETACHED_TIMEOUT && !isCachedPlayerToolRoot(root)) drop(root);
       return;
     }
     state.detachedAt = 0;
