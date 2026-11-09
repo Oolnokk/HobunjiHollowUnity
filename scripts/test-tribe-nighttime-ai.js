@@ -62,10 +62,13 @@ assert.equal(abstract, 1, 'out-of-range sleeping hunters advance without a nativ
 
 const calls = [];
 const zoneContext = vm.createContext({
-  state: { zones: new Map([['current', { zoneId: 'current' }], ['cached', { zoneId: 'cached' }]]) },
+  state: { zones: new Map([['current', { zoneId: 'current', hunters: [] }], ['cached', { zoneId: 'cached', hunters: [] }]]) },
   currentArea: () => 'current',
   activeCamps: zone => [zone],
-  updateCampHunters: (camp, dt, coarseDt) => calls.push([camp.zoneId, coarseDt]),
+  updateCampHunters: (camp, dt, coarseDt) => {
+    calls.push([camp.zoneId, coarseDt]);
+    camp.hunters.push({ role: 'resident' }); // Mimics the first tick seeding data-only residents.
+  },
   window: { __farmLog() {} }, KEY: 'porakaneki',
 });
 vm.runInContext(
@@ -73,9 +76,11 @@ vm.runInContext(
     + '\nthis.updateAllHunters = updateAllHunters;', zoneContext,
 );
 zoneContext.updateAllHunters(.2, 0);
-assert.deepEqual(calls.map(c => c[0]), ['current'], 'cached wilderness zones skip high-rate AI');
+assert.deepEqual(calls.map(c => c[0]), ['current', 'cached'], 'cached zones initialize their population on the first tick');
+zoneContext.updateAllHunters(.2, 0);
+assert.deepEqual(calls.slice(2).map(c => c[0]), ['current'], 'initialized cached zones skip high-rate AI');
 zoneContext.updateAllHunters(.2, 4);
-assert.deepEqual(calls.slice(1).map(c => c[0]), ['current', 'cached'], 'cached zones retain coarse simulation');
+assert.deepEqual(calls.slice(3).map(c => c[0]), ['current', 'cached'], 'cached zones retain coarse simulation');
 
 const lodContext = vm.createContext({ performance: { now: () => 10000 } });
 vm.runInContext(sourceBetween(lod, '  function canSleepBandit(', '  function setBanditVisuals(')
